@@ -52,6 +52,8 @@ During execution, it's possible that agents come across other problems or unfore
 - code changes can be marked for review or be directly committed depending on user settings.
 - TODO: elaborate on a mechanism for artifact-level abstractiosn to provide feedback for upper levels.
 
+- TODO: Add considerations for what eventually happens to issues, specs as they are completed and age out. They can possibly be archived and tracked through source control, or the specs can migrate into a docs-as-code type context map that tracks implemented specs as human-readable markdown files.
+
 ## Lifecycle of a plan pivot
 
 ## Specs-as-code, Issues-as-code, Agents-as-code

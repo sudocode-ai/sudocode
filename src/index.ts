@@ -7,3 +7,5 @@ export * from './schema.js';
 export * from './db.js';
 export * from './operations/index.js';
 export * from './operations/transactions.js';
+export * from './jsonl.js';
+export * from './export.js';
