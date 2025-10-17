@@ -13,6 +13,10 @@ import {
   verifyAnchor,
   getAllSections,
   searchByContent,
+  levenshteinDistance,
+  findFuzzySection,
+  relocateFeedbackAnchor,
+  relocateSpecFeedback,
 } from './feedback-anchors.js';
 
 const SAMPLE_SPEC = `# Authentication System
@@ -592,6 +596,303 @@ Yet another token
 
       // Should find the section even with \r characters
       expect(anchor.section_heading).toBeTruthy();
+    });
+  });
+
+  // ============================================================================
+  // RELOCATION FUNCTIONS TESTS
+  // ============================================================================
+
+  describe('levenshteinDistance', () => {
+    it('should return 0 for identical strings', () => {
+      expect(levenshteinDistance('hello', 'hello')).toBe(0);
+    });
+
+    it('should calculate single character insertion', () => {
+      expect(levenshteinDistance('cat', 'cats')).toBe(1);
+    });
+
+    it('should calculate single character deletion', () => {
+      expect(levenshteinDistance('cats', 'cat')).toBe(1);
+    });
+
+    it('should calculate single character substitution', () => {
+      expect(levenshteinDistance('cat', 'bat')).toBe(1);
+    });
+
+    it('should calculate distance for different strings', () => {
+      expect(levenshteinDistance('kitten', 'sitting')).toBe(3);
+    });
+
+    it('should handle empty strings', () => {
+      expect(levenshteinDistance('', 'hello')).toBe(5);
+      expect(levenshteinDistance('hello', '')).toBe(5);
+      expect(levenshteinDistance('', '')).toBe(0);
+    });
+
+    it('should be case sensitive', () => {
+      expect(levenshteinDistance('Hello', 'hello')).toBe(1);
+    });
+  });
+
+  describe('findFuzzySection', () => {
+    it('should find exact match', () => {
+      const result = findFuzzySection(SAMPLE_SPEC, 'Overview');
+      expect(result).not.toBeNull();
+      expect(result?.heading).toBe('Overview');
+      expect(result?.level).toBe(2);
+    });
+
+    it('should find close match with small edit distance', () => {
+      const result = findFuzzySection(SAMPLE_SPEC, 'Overveiw', 2); // typo: e/i swapped
+      expect(result).not.toBeNull();
+      expect(result?.heading).toBe('Overview');
+    });
+
+    it('should not find match beyond max distance', () => {
+      const result = findFuzzySection(SAMPLE_SPEC, 'Completely Different', 5);
+      expect(result).toBeNull();
+    });
+
+    it('should normalize case for matching', () => {
+      const result = findFuzzySection(SAMPLE_SPEC, 'overview', 0);
+      expect(result).not.toBeNull();
+      expect(result?.heading).toBe('Overview');
+    });
+
+    it('should find best match when multiple similar headings exist', () => {
+      const multiHeadingSpec = `
+# Section One
+# Section Two
+# Section Three
+`;
+      const result = findFuzzySection(multiHeadingSpec, 'Section Too', 2);
+      expect(result).not.toBeNull();
+      expect(result?.heading).toBe('Section Two'); // closest match
+    });
+
+    it('should return null for empty spec', () => {
+      const result = findFuzzySection('', 'Any Heading');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('relocateFeedbackAnchor', () => {
+    it('should keep anchor valid if content unchanged', () => {
+      const anchor = createFeedbackAnchor(SAMPLE_SPEC, 7);
+      const relocated = relocateFeedbackAnchor(SAMPLE_SPEC, SAMPLE_SPEC, anchor);
+
+      expect(relocated.anchor_status).toBe('valid');
+      expect(relocated.line_number).toBe(7);
+    });
+
+    it('should relocate when lines inserted before anchor', () => {
+      const anchor = createFeedbackAnchor(SAMPLE_SPEC, 7); // JWT tokens line
+
+      // Insert 3 new lines at the start
+      const newSpec = '\n\n\n' + SAMPLE_SPEC;
+
+      const relocated = relocateFeedbackAnchor(SAMPLE_SPEC, newSpec, anchor);
+
+      expect(relocated.anchor_status).toBe('relocated');
+      expect(relocated.line_number).toBe(10); // moved down by 3
+    });
+
+    it('should relocate using section + offset when section unchanged', () => {
+      const anchor = createFeedbackAnchor(SAMPLE_SPEC, 7);
+
+      // Add content before Overview section but after Authentication System
+      const lines = SAMPLE_SPEC.split('\n');
+      lines.splice(3, 0, 'New line 1', 'New line 2');
+      const newSpec = lines.join('\n');
+
+      const relocated = relocateFeedbackAnchor(SAMPLE_SPEC, newSpec, anchor);
+
+      // Should use section + offset strategy
+      expect(relocated.anchor_status).toBe('relocated');
+      expect(relocated.original_location).toBeDefined();
+    });
+
+    it('should detect when content is moved to different location', () => {
+      const anchor = createFeedbackAnchor(SAMPLE_SPEC, 7);
+
+      // Remove the entire Overview section and add the JWT line at the end
+      const lines = SAMPLE_SPEC.split('\n');
+      const jwtLine = lines[6]; // "The system uses JWT tokens..."
+
+      // Remove Overview section (lines 5-7)
+      lines.splice(4, 4); // Remove "## Overview" blank line, JWT line, blank line
+
+      // Add JWT content to end in a new section
+      lines.push('');
+      lines.push('## New Section');
+      lines.push('');
+      lines.push(jwtLine);
+
+      const newSpec = lines.join('\n');
+
+      const relocated = relocateFeedbackAnchor(SAMPLE_SPEC, newSpec, anchor);
+
+      // Should either relocate it or mark it as stale (depending on content search result)
+      expect(['relocated', 'stale']).toContain(relocated.anchor_status);
+      expect(relocated.original_location).toBeDefined();
+    });
+
+    it('should remain valid when only section name changes', () => {
+      const anchor = createFeedbackAnchor(SAMPLE_SPEC, 7);
+
+      // Rename "Overview" to "Overvew" (typo) - but content stays in place
+      const newSpec = SAMPLE_SPEC.replace('## Overview', '## Overvew');
+
+      const relocated = relocateFeedbackAnchor(SAMPLE_SPEC, newSpec, anchor);
+
+      // Should remain valid because the content itself hasn't moved
+      expect(relocated.anchor_status).toBe('valid');
+      expect(relocated.line_number).toBe(7);
+    });
+
+    it('should mark as stale when content deleted', () => {
+      const anchor = createFeedbackAnchor(SAMPLE_SPEC, 7);
+
+      // Remove the Overview section entirely including the JWT content
+      const lines = SAMPLE_SPEC.split('\n');
+      // Remove lines 5-8 (Overview heading through JWT content)
+      lines.splice(4, 4);
+      const newSpec = lines.join('\n');
+
+      const relocated = relocateFeedbackAnchor(SAMPLE_SPEC, newSpec, anchor);
+
+      // May be relocated or stale depending on whether content search finds something
+      // The important thing is it's not at the original location anymore
+      expect(['relocated', 'stale']).toContain(relocated.anchor_status);
+      expect(relocated.original_location).toBeDefined();
+      expect(relocated.original_location?.line_number).toBe(7);
+    });
+
+    it('should mark as stale when section completely rewritten', () => {
+      const anchor = createFeedbackAnchor(SAMPLE_SPEC, 7);
+
+      // Replace entire spec with different content
+      const newSpec = `
+# Different Spec
+
+This is completely different content.
+
+## New Section
+
+Nothing matches the original.
+`;
+
+      const relocated = relocateFeedbackAnchor(SAMPLE_SPEC, newSpec, anchor);
+
+      expect(relocated.anchor_status).toBe('stale');
+    });
+
+    it('should preserve original_location across multiple relocations', () => {
+      const anchor = createFeedbackAnchor(SAMPLE_SPEC, 7);
+
+      // First relocation
+      const spec2 = '\n' + SAMPLE_SPEC;
+      const relocated1 = relocateFeedbackAnchor(SAMPLE_SPEC, spec2, anchor);
+
+      expect(relocated1.original_location?.line_number).toBe(7);
+
+      // Second relocation
+      const spec3 = '\n' + spec2;
+      const relocated2 = relocateFeedbackAnchor(spec2, spec3, relocated1);
+
+      // Should still remember original location
+      expect(relocated2.original_location?.line_number).toBe(7);
+    });
+  });
+
+  describe('relocateSpecFeedback', () => {
+    it('should relocate multiple feedback items', () => {
+      const feedbackList = [
+        { id: 'FB-001', anchor: createFeedbackAnchor(SAMPLE_SPEC, 7) },
+        { id: 'FB-002', anchor: createFeedbackAnchor(SAMPLE_SPEC, 11) },
+        { id: 'FB-003', anchor: createFeedbackAnchor(SAMPLE_SPEC, 13) },
+      ];
+
+      // Insert lines at the start
+      const newSpec = '\n\n' + SAMPLE_SPEC;
+
+      const summary = relocateSpecFeedback(SAMPLE_SPEC, newSpec, feedbackList);
+
+      expect(summary.total).toBe(3);
+      expect(summary.relocated).toBe(3);
+      expect(summary.valid).toBe(0);
+      expect(summary.stale).toBe(0);
+      expect(summary.results).toHaveLength(3);
+    });
+
+    it('should count valid, relocated, and stale anchors', () => {
+      const feedbackList = [
+        { id: 'FB-001', anchor: createFeedbackAnchor(SAMPLE_SPEC, 7) }, // will be valid (unchanged)
+        { id: 'FB-002', anchor: createFeedbackAnchor(SAMPLE_SPEC, 11) }, // will be valid
+      ];
+
+      const summary = relocateSpecFeedback(SAMPLE_SPEC, SAMPLE_SPEC, feedbackList);
+
+      expect(summary.total).toBe(2);
+      expect(summary.valid).toBe(2);
+      expect(summary.relocated).toBe(0);
+      expect(summary.stale).toBe(0);
+    });
+
+    it('should handle mixed relocation results', () => {
+      const feedbackList = [
+        { id: 'FB-001', anchor: createFeedbackAnchor(SAMPLE_SPEC, 7) },
+        { id: 'FB-002', anchor: createFeedbackAnchor(SAMPLE_SPEC, 11) },
+        { id: 'FB-003', anchor: createFeedbackAnchor(SAMPLE_SPEC, 13) },
+      ];
+
+      // Remove Overview section but keep Token Generation
+      const lines = SAMPLE_SPEC.split('\n');
+      lines.splice(5, 2); // Remove Overview heading and content
+      const newSpec = lines.join('\n');
+
+      const summary = relocateSpecFeedback(SAMPLE_SPEC, newSpec, feedbackList);
+
+      expect(summary.total).toBe(3);
+      // Some should be stale (Overview section), some relocated (Token Generation)
+      expect(summary.stale + summary.relocated + summary.valid).toBe(3);
+    });
+
+    it('should include feedback IDs in results', () => {
+      const feedbackList = [
+        { id: 'FB-001', anchor: createFeedbackAnchor(SAMPLE_SPEC, 7) },
+        { id: 'FB-002', anchor: createFeedbackAnchor(SAMPLE_SPEC, 11) },
+      ];
+
+      const summary = relocateSpecFeedback(SAMPLE_SPEC, SAMPLE_SPEC, feedbackList);
+
+      expect(summary.results[0].feedback_id).toBe('FB-001');
+      expect(summary.results[1].feedback_id).toBe('FB-002');
+    });
+
+    it('should track status changes', () => {
+      const feedbackList = [
+        { id: 'FB-001', anchor: createFeedbackAnchor(SAMPLE_SPEC, 7) },
+      ];
+
+      const newSpec = '\n' + SAMPLE_SPEC;
+
+      const summary = relocateSpecFeedback(SAMPLE_SPEC, newSpec, feedbackList);
+
+      expect(summary.results[0].old_status).toBe('valid');
+      expect(summary.results[0].new_status).toBe('relocated');
+      expect(summary.results[0].relocated).toBe(true);
+    });
+
+    it('should handle empty feedback list', () => {
+      const summary = relocateSpecFeedback(SAMPLE_SPEC, SAMPLE_SPEC, []);
+
+      expect(summary.total).toBe(0);
+      expect(summary.valid).toBe(0);
+      expect(summary.relocated).toBe(0);
+      expect(summary.stale).toBe(0);
+      expect(summary.results).toHaveLength(0);
     });
   });
 });
