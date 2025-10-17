@@ -12,17 +12,24 @@ import { initDatabase } from './db.js';
 import type Database from 'better-sqlite3';
 
 // Import command handlers
-import { handleSpecCreate, handleSpecList, handleSpecShow } from './cli/spec-commands.js';
+import {
+  handleSpecCreate,
+  handleSpecList,
+  handleSpecShow,
+  handleSpecDelete
+} from './cli/spec-commands.js';
 import {
   handleIssueCreate,
   handleIssueList,
   handleIssueShow,
   handleIssueUpdate,
   handleIssueClose,
+  handleIssueDelete,
 } from './cli/issue-commands.js';
 import { handleLink } from './cli/relationship-commands.js';
 import { handleReady, handleBlocked } from './cli/query-commands.js';
 import { handleSync, handleExport, handleImport } from './cli/sync-commands.js';
+import { handleStatus, handleStats } from './cli/status-commands.js';
 
 // CLI version
 const VERSION = '0.1.0';
@@ -210,6 +217,14 @@ spec
     await handleSpecShow(getContext(), id);
   });
 
+spec
+  .command('delete <id...>')
+  .description('Delete one or more specs')
+  .option('--hard', 'Permanently delete from database (default: mark as deprecated)')
+  .action(async (ids, options) => {
+    await handleSpecDelete(getContext(), ids, options);
+  });
+
 // ============================================================================
 // ISSUE COMMANDS
 // ============================================================================
@@ -270,6 +285,14 @@ issue
     await handleIssueClose(getContext(), ids, options);
   });
 
+issue
+  .command('delete <id...>')
+  .description('Delete one or more issues')
+  .option('--hard', 'Permanently delete from database (default: close the issue)')
+  .action(async (ids, options) => {
+    await handleIssueDelete(getContext(), ids, options);
+  });
+
 // ============================================================================
 // RELATIONSHIP COMMANDS
 // ============================================================================
@@ -302,6 +325,25 @@ program
   .option('--issues', 'Show issues only')
   .action(async (options) => {
     await handleBlocked(getContext(), options);
+  });
+
+// ============================================================================
+// STATUS & STATS COMMANDS
+// ============================================================================
+
+program
+  .command('status')
+  .description('Show project status summary')
+  .option('-v, --verbose', 'Show detailed status')
+  .action(async (options) => {
+    await handleStatus(getContext(), options);
+  });
+
+program
+  .command('stats')
+  .description('Show detailed project statistics')
+  .action(async (options) => {
+    await handleStats(getContext(), options);
   });
 
 // ============================================================================

@@ -295,3 +295,71 @@ export async function handleIssueClose(
     process.exit(1);
   }
 }
+
+export interface IssueDeleteOptions {
+  hard?: boolean;
+}
+
+export async function handleIssueDelete(
+  ctx: CommandContext,
+  ids: string[],
+  options: IssueDeleteOptions
+): Promise<void> {
+  try {
+    const results = [];
+
+    for (const id of ids) {
+      try {
+        const issue = getIssue(ctx.db, id);
+        if (!issue) {
+          results.push({ id, success: false, error: 'Issue not found' });
+          if (!ctx.jsonOutput) {
+            console.error(chalk.red('✗ Issue not found:'), chalk.cyan(id));
+          }
+          continue;
+        }
+
+        if (options.hard) {
+          // Hard delete - permanently remove from database
+          const { deleteIssue } = await import('../operations/issues.js');
+          const deleted = deleteIssue(ctx.db, id);
+          if (deleted) {
+            results.push({ id, success: true, action: 'hard_delete' });
+            if (!ctx.jsonOutput) {
+              console.log(chalk.green('✓ Permanently deleted issue'), chalk.cyan(id));
+            }
+          } else {
+            results.push({ id, success: false, error: 'Delete failed' });
+            if (!ctx.jsonOutput) {
+              console.error(chalk.red('✗ Failed to delete issue'), chalk.cyan(id));
+            }
+          }
+        } else {
+          // Soft delete - close the issue
+          closeIssue(ctx.db, id);
+          results.push({ id, success: true, action: 'soft_delete', status: 'closed' });
+          if (!ctx.jsonOutput) {
+            console.log(chalk.green('✓ Closed issue'), chalk.cyan(id));
+          }
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        results.push({ id, success: false, error: message });
+        if (!ctx.jsonOutput) {
+          console.error(chalk.red('✗ Failed to process'), chalk.cyan(id), ':', message);
+        }
+      }
+    }
+
+    // Export to JSONL after all deletions
+    await exportToJSONL(ctx.db, { outputDir: ctx.outputDir });
+
+    if (ctx.jsonOutput) {
+      console.log(JSON.stringify(results, null, 2));
+    }
+  } catch (error) {
+    console.error(chalk.red('✗ Failed to delete issues'));
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}

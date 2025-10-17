@@ -219,3 +219,75 @@ export async function handleSpecShow(
     process.exit(1);
   }
 }
+
+export interface SpecDeleteOptions {
+  hard?: boolean;
+}
+
+export async function handleSpecDelete(
+  ctx: CommandContext,
+  ids: string[],
+  options: SpecDeleteOptions
+): Promise<void> {
+  try {
+    const results = [];
+
+    for (const id of ids) {
+      try {
+        const spec = getSpec(ctx.db, id);
+        if (!spec) {
+          results.push({ id, success: false, error: 'Spec not found' });
+          if (!ctx.jsonOutput) {
+            console.error(chalk.red('✗ Spec not found:'), chalk.cyan(id));
+          }
+          continue;
+        }
+
+        if (options.hard) {
+          // Hard delete - permanently remove from database
+          const { deleteSpec } = await import('../operations/specs.js');
+          const deleted = deleteSpec(ctx.db, id);
+          if (deleted) {
+            results.push({ id, success: true, action: 'hard_delete' });
+            if (!ctx.jsonOutput) {
+              console.log(chalk.green('✓ Permanently deleted spec'), chalk.cyan(id));
+            }
+          } else {
+            results.push({ id, success: false, error: 'Delete failed' });
+            if (!ctx.jsonOutput) {
+              console.error(chalk.red('✗ Failed to delete spec'), chalk.cyan(id));
+            }
+          }
+        } else {
+          // Soft delete - mark as deprecated
+          const { updateSpec } = await import('../operations/specs.js');
+          updateSpec(ctx.db, id, {
+            status: 'deprecated',
+            updated_by: process.env.USER || 'system',
+          });
+          results.push({ id, success: true, action: 'soft_delete', status: 'deprecated' });
+          if (!ctx.jsonOutput) {
+            console.log(chalk.green('✓ Marked spec as deprecated'), chalk.cyan(id));
+          }
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        results.push({ id, success: false, error: message });
+        if (!ctx.jsonOutput) {
+          console.error(chalk.red('✗ Failed to process'), chalk.cyan(id), ':', message);
+        }
+      }
+    }
+
+    // Export to JSONL after all deletions
+    await exportToJSONL(ctx.db, { outputDir: ctx.outputDir });
+
+    if (ctx.jsonOutput) {
+      console.log(JSON.stringify(results, null, 2));
+    }
+  } catch (error) {
+    console.error(chalk.red('✗ Failed to delete specs'));
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}
