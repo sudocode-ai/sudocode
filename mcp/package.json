@@ -1,11 +1,11 @@
 {
-  "name": "sudograph-mcp",
+  "name": "sudocode-mcp",
   "version": "0.1.0",
-  "description": "MCP server for Sudograph spec and issue management",
+  "description": "MCP server for sudocode, git-native context management for AI-assisted development",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "sudograph-mcp": "dist/index.js"
+    "sudocode-mcp": "dist/index.js"
   },
   "files": [
     "dist/**/*",
@@ -18,18 +18,37 @@
     "test": "vitest",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "prepublishOnly": "npm test && npm run build"
   },
   "keywords": [
     "mcp",
     "model-context-protocol",
-    "sudograph",
+    "sudocode",
     "project-management",
     "specs",
-    "issues"
+    "context-as-code",
+    "specifications",
+    "spec-driven-development",
+    "issues",
+    "issue-tracking",
+    "ai-assisted-development",
+    "coding-agent",
+    "git-native"
   ],
-  "author": "",
-  "license": "MIT",
+  "author": "sudocode AI",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sudocode-ai/sudocode.git",
+    "directory": "mcp"
+  },
+  "homepage": "https://sudocode.ai",
+  "bugs": {
+    "url": "https://github.com/sudocode-ai/sudocode/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4"
   },
