@@ -3,10 +3,15 @@
  */
 
 import chalk from 'chalk';
+import * as fs from 'fs';
+import * as path from 'path';
 import type Database from 'better-sqlite3';
 import { exportToJSONL } from '../export.js';
 import { importFromJSONL } from '../import.js';
 import { startWatcher, setupGracefulShutdown } from '../watcher.js';
+import { syncMarkdownToJSONL, syncJSONLToMarkdown } from '../sync.js';
+import { listSpecs } from '../operations/specs.js';
+import { listIssues } from '../operations/issues.js';
 
 export interface CommandContext {
   db: Database.Database;
@@ -53,12 +58,10 @@ export async function handleSync(
     });
   } else if (options.fromMarkdown) {
     // Manual sync from markdown to database
-    console.log(chalk.yellow('Manual sync from markdown not yet implemented'));
-    console.log(chalk.gray('  Use: sg sync --watch for automatic sync'));
+    await handleSyncFromMarkdown(ctx);
   } else if (options.toMarkdown) {
     // Manual sync from database to markdown
-    console.log(chalk.yellow('Manual sync to markdown not yet implemented'));
-    console.log(chalk.gray('  Use: sg sync --watch for automatic sync'));
+    await handleSyncToMarkdown(ctx);
   } else {
     // Default: show help
     console.log(chalk.blue('Sync options:'));
@@ -116,4 +119,155 @@ export async function handleImport(
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
+}
+
+/**
+ * Sync from markdown files to database
+ */
+async function handleSyncFromMarkdown(ctx: CommandContext): Promise<void> {
+  console.log(chalk.blue('Syncing from markdown to database...'));
+
+  const specsDir = path.join(ctx.outputDir, 'specs');
+  const issuesDir = path.join(ctx.outputDir, 'issues');
+
+  let syncedCount = 0;
+  let errorCount = 0;
+
+  // Sync specs
+  if (fs.existsSync(specsDir)) {
+    const specFiles = findMarkdownFiles(specsDir);
+    console.log(chalk.gray(`  Found ${specFiles.length} spec files`));
+
+    for (const file of specFiles) {
+      const result = await syncMarkdownToJSONL(ctx.db, file, {
+        outputDir: ctx.outputDir,
+        autoExport: false, // We'll export once at the end
+      });
+
+      if (result.success) {
+        syncedCount++;
+        console.log(chalk.gray(`  ✓ ${result.action} ${result.entityType} ${result.entityId}`));
+      } else {
+        errorCount++;
+        console.log(chalk.red(`  ✗ Failed to sync ${path.basename(file)}: ${result.error}`));
+      }
+    }
+  }
+
+  // Sync issues
+  if (fs.existsSync(issuesDir)) {
+    const issueFiles = findMarkdownFiles(issuesDir);
+    console.log(chalk.gray(`  Found ${issueFiles.length} issue files`));
+
+    for (const file of issueFiles) {
+      const result = await syncMarkdownToJSONL(ctx.db, file, {
+        outputDir: ctx.outputDir,
+        autoExport: false,
+      });
+
+      if (result.success) {
+        syncedCount++;
+        console.log(chalk.gray(`  ✓ ${result.action} ${result.entityType} ${result.entityId}`));
+      } else {
+        errorCount++;
+        console.log(chalk.red(`  ✗ Failed to sync ${path.basename(file)}: ${result.error}`));
+      }
+    }
+  }
+
+  // Export to JSONL
+  if (syncedCount > 0) {
+    await exportToJSONL(ctx.db, { outputDir: ctx.outputDir });
+  }
+
+  console.log();
+  console.log(chalk.green(`✓ Synced ${syncedCount} files to database`));
+  if (errorCount > 0) {
+    console.log(chalk.yellow(`  ${errorCount} errors`));
+  }
+}
+
+/**
+ * Sync from database to markdown files
+ */
+async function handleSyncToMarkdown(ctx: CommandContext): Promise<void> {
+  console.log(chalk.blue('Syncing from database to markdown...'));
+
+  const specsDir = path.join(ctx.outputDir, 'specs');
+  const issuesDir = path.join(ctx.outputDir, 'issues');
+
+  // Ensure directories exist
+  fs.mkdirSync(specsDir, { recursive: true });
+  fs.mkdirSync(issuesDir, { recursive: true });
+
+  let syncedCount = 0;
+  let errorCount = 0;
+
+  // Sync all specs
+  const specs = listSpecs(ctx.db, {});
+  console.log(chalk.gray(`  Found ${specs.length} specs in database`));
+
+  for (const spec of specs) {
+    const fileName = `${spec.id}.md`;
+    const filePath = path.join(specsDir, fileName);
+
+    const result = await syncJSONLToMarkdown(ctx.db, spec.id, 'spec', filePath);
+
+    if (result.success) {
+      syncedCount++;
+      console.log(chalk.gray(`  ✓ ${result.action} spec ${spec.id}`));
+    } else {
+      errorCount++;
+      console.log(chalk.red(`  ✗ Failed to sync spec ${spec.id}: ${result.error}`));
+    }
+  }
+
+  // Sync all issues
+  const issues = listIssues(ctx.db, {});
+  console.log(chalk.gray(`  Found ${issues.length} issues in database`));
+
+  for (const issue of issues) {
+    const fileName = `${issue.id}.md`;
+    const filePath = path.join(issuesDir, fileName);
+
+    const result = await syncJSONLToMarkdown(ctx.db, issue.id, 'issue', filePath);
+
+    if (result.success) {
+      syncedCount++;
+      console.log(chalk.gray(`  ✓ ${result.action} issue ${issue.id}`));
+    } else {
+      errorCount++;
+      console.log(chalk.red(`  ✗ Failed to sync issue ${issue.id}: ${result.error}`));
+    }
+  }
+
+  console.log();
+  console.log(chalk.green(`✓ Synced ${syncedCount} entities to markdown`));
+  if (errorCount > 0) {
+    console.log(chalk.yellow(`  ${errorCount} errors`));
+  }
+}
+
+/**
+ * Helper: Find all markdown files in a directory recursively
+ */
+function findMarkdownFiles(dir: string): string[] {
+  const results: string[] = [];
+
+  function scan(currentDir: string) {
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+
+      if (entry.isDirectory()) {
+        scan(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        results.push(fullPath);
+      }
+    }
+  }
+
+  scan(dir);
+  return results;
 }

@@ -5,8 +5,8 @@
  * and parses their JSON output for use in MCP tools.
  */
 
-import { spawn } from 'child_process';
-import { SudographClientConfig, SudographError } from './types.js';
+import { spawn } from "child_process";
+import { SudographClientConfig, SudographError } from "./types.js";
 
 export class SudographClient {
   private workingDir: string;
@@ -15,9 +15,10 @@ export class SudographClient {
   private versionChecked = false;
 
   constructor(config?: SudographClientConfig) {
-    this.workingDir = config?.workingDir || process.env.SUDOGRAPH_WORKING_DIR || process.cwd();
-    this.cliPath = config?.cliPath || process.env.SUDOGRAPH_PATH || 'sg';
-    this.dbPath = config?.dbPath || process.env.SUDOGRAPH_DB;
+    this.workingDir =
+      config?.workingDir || process.env.SUDOCODE_WORKING_DIR || process.cwd();
+    this.cliPath = config?.cliPath || process.env.SUDOCODE_PATH || "sg";
+    this.dbPath = config?.dbPath || process.env.SUDOCODE_DB;
   }
 
   /**
@@ -34,13 +35,13 @@ export class SudographClient {
     const cmdArgs = [...args];
 
     // Add --json flag if not already present
-    if (!cmdArgs.includes('--json')) {
-      cmdArgs.push('--json');
+    if (!cmdArgs.includes("--json")) {
+      cmdArgs.push("--json");
     }
 
     // Add --db flag if dbPath is configured
-    if (this.dbPath && !cmdArgs.includes('--db')) {
-      cmdArgs.push('--db', this.dbPath);
+    if (this.dbPath && !cmdArgs.includes("--db")) {
+      cmdArgs.push("--db", this.dbPath);
     }
 
     return new Promise((resolve, reject) => {
@@ -49,14 +50,14 @@ export class SudographClient {
         env: process.env,
       });
 
-      let stdout = '';
-      let stderr = '';
+      let stdout = "";
+      let stderr = "";
 
-      proc.stdout.on('data', (data) => {
+      proc.stdout.on("data", (data) => {
         stdout += data.toString();
       });
 
-      proc.stderr.on('data', (data) => {
+      proc.stderr.on("data", (data) => {
         stderr += data.toString();
       });
 
@@ -64,22 +65,26 @@ export class SudographClient {
       const timeout = options?.timeout || 30000; // Default 30s
       const timer = setTimeout(() => {
         proc.kill();
-        reject(new SudographError(
-          `Command timed out after ${timeout}ms`,
-          -1,
-          'Timeout'
-        ));
+        reject(
+          new SudographError(
+            `Command timed out after ${timeout}ms`,
+            -1,
+            "Timeout"
+          )
+        );
       }, timeout);
 
-      proc.on('close', (code) => {
+      proc.on("close", (code) => {
         clearTimeout(timer);
 
         if (code !== 0) {
-          reject(new SudographError(
-            `CLI command failed with exit code ${code}`,
-            code || -1,
-            stderr
-          ));
+          reject(
+            new SudographError(
+              `CLI command failed with exit code ${code}`,
+              code || -1,
+              stderr
+            )
+          );
           return;
         }
 
@@ -88,21 +93,27 @@ export class SudographClient {
           const result = JSON.parse(stdout);
           resolve(result);
         } catch (error) {
-          reject(new SudographError(
-            `Failed to parse JSON output: ${error instanceof Error ? error.message : String(error)}`,
-            -1,
-            stdout
-          ));
+          reject(
+            new SudographError(
+              `Failed to parse JSON output: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+              -1,
+              stdout
+            )
+          );
         }
       });
 
-      proc.on('error', (error) => {
+      proc.on("error", (error) => {
         clearTimeout(timer);
-        reject(new SudographError(
-          `Failed to spawn CLI: ${error.message}`,
-          -1,
-          error.message
-        ));
+        reject(
+          new SudographError(
+            `Failed to spawn CLI: ${error.message}`,
+            -1,
+            error.message
+          )
+        );
       });
     });
   }
@@ -112,29 +123,31 @@ export class SudographClient {
    */
   async checkVersion(): Promise<{ version: string }> {
     try {
-      const proc = spawn(this.cliPath, ['--version'], {
+      const proc = spawn(this.cliPath, ["--version"], {
         cwd: this.workingDir,
       });
 
-      let stdout = '';
-      let stderr = '';
+      let stdout = "";
+      let stderr = "";
 
-      proc.stdout.on('data', (data) => {
+      proc.stdout.on("data", (data) => {
         stdout += data.toString();
       });
 
-      proc.stderr.on('data', (data) => {
+      proc.stderr.on("data", (data) => {
         stderr += data.toString();
       });
 
       return new Promise((resolve, reject) => {
-        proc.on('close', (code) => {
+        proc.on("close", (code) => {
           if (code !== 0) {
-            reject(new SudographError(
-              `CLI not found or failed to execute. Make sure 'sg' is installed and in your PATH.`,
-              code || -1,
-              stderr
-            ));
+            reject(
+              new SudographError(
+                `CLI not found or failed to execute. Make sure 'sg' is installed and in your PATH.`,
+                code || -1,
+                stderr
+              )
+            );
             return;
           }
 
@@ -145,19 +158,23 @@ export class SudographClient {
           resolve({ version });
         });
 
-        proc.on('error', () => {
-          reject(new SudographError(
-            `CLI not found at path: ${this.cliPath}. Make sure 'sg' is installed.`,
-            -1,
-            'CLI not found'
-          ));
+        proc.on("error", () => {
+          reject(
+            new SudographError(
+              `CLI not found at path: ${this.cliPath}. Make sure 'sg' is installed.`,
+              -1,
+              "CLI not found"
+            )
+          );
         });
       });
     } catch (error) {
       throw new SudographError(
-        `Failed to check CLI version: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to check CLI version: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
         -1,
-        ''
+        ""
       );
     }
   }

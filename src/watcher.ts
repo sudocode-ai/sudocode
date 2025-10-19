@@ -3,11 +3,11 @@
  * Watches .sudocode directory for changes and triggers sync operations
  */
 
-import chokidar from 'chokidar';
-import * as path from 'path';
-import type Database from 'better-sqlite3';
-import { syncMarkdownToJSONL } from './sync.js';
-import { importFromJSONL } from './import.js';
+import chokidar from "chokidar";
+import * as path from "path";
+import type Database from "better-sqlite3";
+import { syncMarkdownToJSONL } from "./sync.js";
+import { importFromJSONL } from "./import.js";
 
 export interface WatcherOptions {
   /**
@@ -80,41 +80,40 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
   const pendingChanges = new Map<string, NodeJS.Timeout>();
 
   // Paths to watch
-  const specsDir = path.join(baseDir, 'specs');
-  const issuesDir = path.join(baseDir, 'issues');
-  const specsJSONL = path.join(specsDir, 'specs.jsonl');
-  const issuesJSONL = path.join(issuesDir, 'issues.jsonl');
+  const specsDir = path.join(baseDir, "specs");
+  const issuesDir = path.join(baseDir, "issues");
+  const specsJSONL = path.join(specsDir, "specs.jsonl");
+  const issuesJSONL = path.join(issuesDir, "issues.jsonl");
 
-  const watcher = chokidar.watch(
-    [
-      `${specsDir}/**/*.md`,
-      `${issuesDir}/**/*.md`,
-      specsJSONL,
-      issuesJSONL,
-    ],
-    {
-      persistent: true,
-      ignoreInitial,
-      awaitWriteFinish: {
-        stabilityThreshold: 100, // Reduced for faster detection in tests
-        pollInterval: 50,
-      },
-    }
-  );
+  // Watch directories - chokidar will recursively watch all files inside
+  const watcher = chokidar.watch([specsDir, issuesDir], {
+    persistent: true,
+    ignoreInitial,
+    awaitWriteFinish: {
+      stabilityThreshold: 100, // Reduced for faster detection in tests
+      pollInterval: 50,
+    },
+  });
+
+  // Log watch patterns for debugging
+  onLog(`[watch] Watching directories: ${specsDir}, ${issuesDir}`);
 
   /**
    * Process a file change
    */
-  async function processChange(filePath: string, event: 'add' | 'change' | 'unlink') {
+  async function processChange(
+    filePath: string,
+    event: "add" | "change" | "unlink"
+  ) {
     try {
       const ext = path.extname(filePath);
       const basename = path.basename(filePath);
 
-      if (ext === '.md') {
+      if (ext === ".md") {
         // Markdown file changed - sync to database and JSONL
         onLog(`[watch] ${event} ${path.relative(baseDir, filePath)}`);
 
-        if (event === 'unlink') {
+        if (event === "unlink") {
           // File was deleted - we could handle this by marking entity as deleted
           // For now, just log it
           onLog(`[watch] File deleted: ${basename}`);
@@ -126,17 +125,19 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
           });
 
           if (result.success) {
-            onLog(`[watch] Synced ${result.entityType} ${result.entityId} (${result.action})`);
+            onLog(
+              `[watch] Synced ${result.entityType} ${result.entityId} (${result.action})`
+            );
           } else {
             onError(new Error(`Failed to sync ${filePath}: ${result.error}`));
             stats.errors++;
           }
         }
-      } else if (basename === 'specs.jsonl' || basename === 'issues.jsonl') {
+      } else if (basename === "specs.jsonl" || basename === "issues.jsonl") {
         // JSONL file changed (e.g., from git pull) - import to database
         onLog(`[watch] ${event} ${path.relative(baseDir, filePath)}`);
 
-        if (event !== 'unlink') {
+        if (event !== "unlink") {
           await importFromJSONL(db, {
             inputDir: baseDir,
           });
@@ -155,7 +156,10 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
   /**
    * Debounced file change handler
    */
-  function handleFileChange(filePath: string, event: 'add' | 'change' | 'unlink') {
+  function handleFileChange(
+    filePath: string,
+    event: "add" | "change" | "unlink"
+  ) {
     // Cancel pending change for this file
     const existingTimeout = pendingChanges.get(filePath);
     if (existingTimeout) {
@@ -175,19 +179,20 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
   }
 
   // Set up event handlers
-  watcher.on('add', (filePath) => handleFileChange(filePath, 'add'));
-  watcher.on('change', (filePath) => handleFileChange(filePath, 'change'));
-  watcher.on('unlink', (filePath) => handleFileChange(filePath, 'unlink'));
+  watcher.on("add", (filePath) => handleFileChange(filePath, "add"));
+  watcher.on("change", (filePath) => handleFileChange(filePath, "change"));
+  watcher.on("unlink", (filePath) => handleFileChange(filePath, "unlink"));
 
-  watcher.on('ready', () => {
-    stats.filesWatched = Object.keys(watcher.getWatched()).reduce(
-      (total, dir) => total + watcher.getWatched()[dir].length,
+  watcher.on("ready", () => {
+    const watched = watcher.getWatched();
+    stats.filesWatched = Object.keys(watched).reduce(
+      (total, dir) => total + watched[dir].length,
       0
     );
     onLog(`[watch] Watching ${stats.filesWatched} files in ${baseDir}`);
   });
 
-  watcher.on('error', (error) => {
+  watcher.on("error", (error) => {
     onError(error);
     stats.errors++;
   });
@@ -195,7 +200,7 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
   // Return control object
   return {
     stop: async () => {
-      onLog('[watch] Stopping watcher...');
+      onLog("[watch] Stopping watcher...");
 
       // Cancel all pending changes
       for (const timeout of pendingChanges.values()) {
@@ -206,7 +211,7 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
 
       // Close watcher
       await watcher.close();
-      onLog('[watch] Watcher stopped');
+      onLog("[watch] Watcher stopped");
     },
     getStats: () => ({ ...stats }),
   };
@@ -228,17 +233,22 @@ export function setupGracefulShutdown(control: WatcherControl): void {
       await control.stop();
       process.exit(0);
     } catch (error) {
-      console.error('[watch] Error during shutdown:', error);
+      console.error("[watch] Error during shutdown:", error);
       process.exit(1);
     }
   };
 
   // Handle termination signals
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
 
   // Handle unhandled promise rejections
-  process.on('unhandledRejection', (reason, promise) => {
-    console.error('[watch] Unhandled Rejection at:', promise, 'reason:', reason);
+  process.on("unhandledRejection", (reason, promise) => {
+    console.error(
+      "[watch] Unhandled Rejection at:",
+      promise,
+      "reason:",
+      reason
+    );
   });
 }

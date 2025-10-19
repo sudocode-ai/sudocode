@@ -40,9 +40,9 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
     "sudocode": {
       "command": "sudocode-mcp",
       "env": {
-        "SUDOGRAPH_WORKING_DIR": "/path/to/your/project",
-        "SUDOGRAPH_PATH": "sg",
-        "SUDOGRAPH_DB": "/path/to/custom/db.sqlite"
+        "SUDOCODE_WORKING_DIR": "/path/to/your/project",
+        "SUDOCODE_PATH": "sg",
+        "SUDOCODE_DB": "/path/to/custom/db.sqlite"
       }
     }
   }
@@ -51,10 +51,10 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
 
 ## Environment Variables
 
-- `SUDOGRAPH_PATH` - Path to `sg` CLI executable (default: `sg`)
-- `SUDOGRAPH_WORKING_DIR` - Working directory for Sudograph (default: current directory)
-- `SUDOGRAPH_DB` - Custom database path (default: `.sudocode/db.sqlite`)
-- `SUDOGRAPH_ACTOR` - Actor name for operations (default: system username)
+- `SUDOCODE_PATH` - Path to `sg` CLI executable (default: `sg`)
+- `SUDOCODE_WORKING_DIR` - Working directory for sudocode (default: current directory)
+- `SUDOCODE_DB` - Custom database path (default: `.sudocode/db.sqlite`)
+- `SUDOCODE_ACTOR` - Actor name for operations (default: system username)
 
 ## Available Tools
 
@@ -96,24 +96,24 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
 
 ### Initialization (1 tool)
 
-- `init` - Initialize Sudograph in current directory
+- `init` - Initialize sudocode in current directory
 
 ## Resources
 
 The server provides two resources for AI agents:
 
-- `sudograph://quickstart` - Introduction to Sudograph concepts and workflow
-- `sudograph://workflow` - Step-by-step workflow patterns
+- `sudocode://quickstart` - Introduction to sudocode concepts and workflow
+- `sudocode://workflow` - Step-by-step workflow patterns
 
 ## Prerequisites
 
-You must have the Sudograph CLI (`sg`) installed and available in your PATH.
+You must have the sudocode CLI (aliased `sudocode` or `sdc`) installed and available in your PATH.
 
-Install Sudograph:
+Install sudocode:
 
 ```bash
-# Installation instructions for Sudograph CLI
-# (Add link to main Sudograph installation docs)
+# Installation instructions for sudocode CLI
+# (Add link to main sudocode installation docs)
 ```
 
 ## Usage Example
@@ -132,7 +132,7 @@ Once configured in Claude Desktop, you can ask Claude to:
 
 ```bash
 git clone https://github.com/sudocode-ai/sudocode.git
-cd sudograph/mcp
+cd sudocode/mcp
 npm install
 npm run build
 ```
@@ -172,7 +172,7 @@ mcp/
 If you get "CLI not found" errors:
 
 1. Ensure `sg` is installed and in your PATH
-2. Try setting `SUDOGRAPH_PATH` to the full path of the `sg` executable
+2. Try setting `SUDOCODE_PATH` to the full path of the `sg` executable
 3. Restart Claude Desktop after configuration changes
 
 ### Database Not Found
@@ -201,6 +201,6 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Links
 
-- [Sudograph Main Repository](https://github.com/sudocode-ai/sudocode)
+- [sudocode Main Repository](https://github.com/sudocode-ai/sudocode)
 - [Issue Tracker](https://github.com/sudocode-ai/sudocode/issues)
 - [Model Context Protocol](https://modelcontextprotocol.io/)

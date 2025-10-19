@@ -2,16 +2,16 @@
  * Unit tests for SudographClient
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { spawn } from 'child_process';
-import { EventEmitter } from 'events';
-import { SudographClient } from '../../src/client.js';
-import { SudographError } from '../../src/types.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { spawn } from "child_process";
+import { EventEmitter } from "events";
+import { SudographClient } from "../../src/client.js";
+import { SudographError } from "../../src/types.js";
 
 // Mock child_process
-vi.mock('child_process');
+vi.mock("child_process");
 
-describe('SudographClient', () => {
+describe("SudographClient", () => {
   let mockSpawn: any;
   let mockProcess: any;
 
@@ -31,39 +31,39 @@ describe('SudographClient', () => {
     vi.clearAllMocks();
   });
 
-  describe('constructor', () => {
-    it('should use default configuration', () => {
+  describe("constructor", () => {
+    it("should use default configuration", () => {
       const client = new SudographClient();
       expect(client).toBeDefined();
     });
 
-    it('should use provided configuration', () => {
+    it("should use provided configuration", () => {
       const config = {
-        workingDir: '/custom/path',
-        cliPath: '/usr/local/bin/sg',
-        dbPath: '/custom/db.sqlite',
+        workingDir: "/custom/path",
+        cliPath: "/usr/local/bin/sg",
+        dbPath: "/custom/db.sqlite",
       };
       const client = new SudographClient(config);
       expect(client).toBeDefined();
     });
 
-    it('should read from environment variables', () => {
-      process.env.SUDOGRAPH_WORKING_DIR = '/env/path';
-      process.env.SUDOGRAPH_PATH = 'sg-custom';
-      process.env.SUDOGRAPH_DB = '/env/db.sqlite';
+    it("should read from environment variables", () => {
+      process.env.SUDOCODE_WORKING_DIR = "/env/path";
+      process.env.SUDOCODE_PATH = "sg-custom";
+      process.env.SUDOCODE_DB = "/env/db.sqlite";
 
       const client = new SudographClient();
       expect(client).toBeDefined();
 
       // Cleanup
-      delete process.env.SUDOGRAPH_WORKING_DIR;
-      delete process.env.SUDOGRAPH_PATH;
-      delete process.env.SUDOGRAPH_DB;
+      delete process.env.SUDOCODE_WORKING_DIR;
+      delete process.env.SUDOCODE_PATH;
+      delete process.env.SUDOCODE_DB;
     });
   });
 
-  describe('exec', () => {
-    it('should spawn CLI with correct arguments', async () => {
+  describe("exec", () => {
+    it("should spawn CLI with correct arguments", async () => {
       const client = new SudographClient();
 
       // Mock version check
@@ -74,32 +74,32 @@ describe('SudographClient', () => {
 
       // Emit version response
       setImmediate(() => {
-        versionProcess.stdout.emit('data', '0.1.0\n');
-        versionProcess.emit('close', 0);
+        versionProcess.stdout.emit("data", "0.1.0\n");
+        versionProcess.emit("close", 0);
       });
 
       // Mock actual command
       mockSpawn.mockReturnValueOnce(mockProcess);
       setImmediate(() => {
-        mockProcess.stdout.emit('data', '{"result": "success"}');
-        mockProcess.emit('close', 0);
+        mockProcess.stdout.emit("data", '{"result": "success"}');
+        mockProcess.emit("close", 0);
       });
 
-      const result = await client.exec(['issue', 'list']);
+      const result = await client.exec(["issue", "list"]);
 
       expect(mockSpawn).toHaveBeenCalledTimes(2); // version + command
       expect(mockSpawn).toHaveBeenLastCalledWith(
-        'sg',
-        ['issue', 'list', '--json'],
+        "sg",
+        ["issue", "list", "--json"],
         expect.objectContaining({
           cwd: expect.any(String),
           env: process.env,
         })
       );
-      expect(result).toEqual({ result: 'success' });
+      expect(result).toEqual({ result: "success" });
     });
 
-    it('should automatically add --json flag', async () => {
+    it("should automatically add --json flag", async () => {
       const client = new SudographClient();
 
       // Mock version check
@@ -108,24 +108,24 @@ describe('SudographClient', () => {
       versionProcess.stderr = new EventEmitter();
       mockSpawn.mockReturnValueOnce(versionProcess);
       setImmediate(() => {
-        versionProcess.stdout.emit('data', '0.1.0\n');
-        versionProcess.emit('close', 0);
+        versionProcess.stdout.emit("data", "0.1.0\n");
+        versionProcess.emit("close", 0);
       });
 
       // Mock actual command
       mockSpawn.mockReturnValueOnce(mockProcess);
       setImmediate(() => {
-        mockProcess.stdout.emit('data', '[]');
-        mockProcess.emit('close', 0);
+        mockProcess.stdout.emit("data", "[]");
+        mockProcess.emit("close", 0);
       });
 
-      await client.exec(['ready']);
+      await client.exec(["ready"]);
 
       const lastCall = mockSpawn.mock.calls[mockSpawn.mock.calls.length - 1];
-      expect(lastCall[1]).toContain('--json');
+      expect(lastCall[1]).toContain("--json");
     });
 
-    it('should not duplicate --json flag if already present', async () => {
+    it("should not duplicate --json flag if already present", async () => {
       const client = new SudographClient();
 
       // Mock version check
@@ -134,26 +134,28 @@ describe('SudographClient', () => {
       versionProcess.stderr = new EventEmitter();
       mockSpawn.mockReturnValueOnce(versionProcess);
       setImmediate(() => {
-        versionProcess.stdout.emit('data', '0.1.0\n');
-        versionProcess.emit('close', 0);
+        versionProcess.stdout.emit("data", "0.1.0\n");
+        versionProcess.emit("close", 0);
       });
 
       // Mock actual command
       mockSpawn.mockReturnValueOnce(mockProcess);
       setImmediate(() => {
-        mockProcess.stdout.emit('data', '[]');
-        mockProcess.emit('close', 0);
+        mockProcess.stdout.emit("data", "[]");
+        mockProcess.emit("close", 0);
       });
 
-      await client.exec(['ready', '--json']);
+      await client.exec(["ready", "--json"]);
 
       const lastCall = mockSpawn.mock.calls[mockSpawn.mock.calls.length - 1];
-      const jsonCount = lastCall[1].filter((arg: string) => arg === '--json').length;
+      const jsonCount = lastCall[1].filter(
+        (arg: string) => arg === "--json"
+      ).length;
       expect(jsonCount).toBe(1);
     });
 
-    it('should add --db flag when dbPath is configured', async () => {
-      const client = new SudographClient({ dbPath: '/custom/db.sqlite' });
+    it("should add --db flag when dbPath is configured", async () => {
+      const client = new SudographClient({ dbPath: "/custom/db.sqlite" });
 
       // Mock version check
       const versionProcess = new EventEmitter() as any;
@@ -161,25 +163,25 @@ describe('SudographClient', () => {
       versionProcess.stderr = new EventEmitter();
       mockSpawn.mockReturnValueOnce(versionProcess);
       setImmediate(() => {
-        versionProcess.stdout.emit('data', '0.1.0\n');
-        versionProcess.emit('close', 0);
+        versionProcess.stdout.emit("data", "0.1.0\n");
+        versionProcess.emit("close", 0);
       });
 
       // Mock actual command
       mockSpawn.mockReturnValueOnce(mockProcess);
       setImmediate(() => {
-        mockProcess.stdout.emit('data', '{}');
-        mockProcess.emit('close', 0);
+        mockProcess.stdout.emit("data", "{}");
+        mockProcess.emit("close", 0);
       });
 
-      await client.exec(['stats']);
+      await client.exec(["stats"]);
 
       const lastCall = mockSpawn.mock.calls[mockSpawn.mock.calls.length - 1];
-      expect(lastCall[1]).toContain('--db');
-      expect(lastCall[1]).toContain('/custom/db.sqlite');
+      expect(lastCall[1]).toContain("--db");
+      expect(lastCall[1]).toContain("/custom/db.sqlite");
     });
 
-    it('should parse JSON output correctly', async () => {
+    it("should parse JSON output correctly", async () => {
       const client = new SudographClient();
 
       // Mock version check
@@ -188,23 +190,23 @@ describe('SudographClient', () => {
       versionProcess.stderr = new EventEmitter();
       mockSpawn.mockReturnValueOnce(versionProcess);
       setImmediate(() => {
-        versionProcess.stdout.emit('data', '0.1.0\n');
-        versionProcess.emit('close', 0);
+        versionProcess.stdout.emit("data", "0.1.0\n");
+        versionProcess.emit("close", 0);
       });
 
       // Mock actual command
       mockSpawn.mockReturnValueOnce(mockProcess);
-      const testData = { issues: [{ id: 'sg-1', title: 'Test' }] };
+      const testData = { issues: [{ id: "sg-1", title: "Test" }] };
       setImmediate(() => {
-        mockProcess.stdout.emit('data', JSON.stringify(testData));
-        mockProcess.emit('close', 0);
+        mockProcess.stdout.emit("data", JSON.stringify(testData));
+        mockProcess.emit("close", 0);
       });
 
-      const result = await client.exec(['issue', 'list']);
+      const result = await client.exec(["issue", "list"]);
       expect(result).toEqual(testData);
     });
 
-    it('should handle multi-chunk stdout', async () => {
+    it("should handle multi-chunk stdout", async () => {
       const client = new SudographClient();
 
       // Mock version check
@@ -213,23 +215,23 @@ describe('SudographClient', () => {
       versionProcess.stderr = new EventEmitter();
       mockSpawn.mockReturnValueOnce(versionProcess);
       setImmediate(() => {
-        versionProcess.stdout.emit('data', '0.1.0\n');
-        versionProcess.emit('close', 0);
+        versionProcess.stdout.emit("data", "0.1.0\n");
+        versionProcess.emit("close", 0);
       });
 
       // Mock actual command with chunked output
       mockSpawn.mockReturnValueOnce(mockProcess);
       setImmediate(() => {
-        mockProcess.stdout.emit('data', '{"result":');
-        mockProcess.stdout.emit('data', ' "success"}');
-        mockProcess.emit('close', 0);
+        mockProcess.stdout.emit("data", '{"result":');
+        mockProcess.stdout.emit("data", ' "success"}');
+        mockProcess.emit("close", 0);
       });
 
-      const result = await client.exec(['stats']);
-      expect(result).toEqual({ result: 'success' });
+      const result = await client.exec(["stats"]);
+      expect(result).toEqual({ result: "success" });
     });
 
-    it('should throw SudographError on non-zero exit code', async () => {
+    it("should throw SudographError on non-zero exit code", async () => {
       const client = new SudographClient();
 
       // Mock version check
@@ -238,21 +240,23 @@ describe('SudographClient', () => {
       versionProcess.stderr = new EventEmitter();
       mockSpawn.mockReturnValueOnce(versionProcess);
       setImmediate(() => {
-        versionProcess.stdout.emit('data', '0.1.0\n');
-        versionProcess.emit('close', 0);
+        versionProcess.stdout.emit("data", "0.1.0\n");
+        versionProcess.emit("close", 0);
       });
 
       // Mock failing command
       mockSpawn.mockReturnValueOnce(mockProcess);
       setImmediate(() => {
-        mockProcess.stderr.emit('data', 'Error: Issue not found\n');
-        mockProcess.emit('close', 1);
+        mockProcess.stderr.emit("data", "Error: Issue not found\n");
+        mockProcess.emit("close", 1);
       });
 
-      await expect(client.exec(['issue', 'show', 'sg-999'])).rejects.toThrow(SudographError);
+      await expect(client.exec(["issue", "show", "sg-999"])).rejects.toThrow(
+        SudographError
+      );
     });
 
-    it('should include stderr in error message', async () => {
+    it("should include stderr in error message", async () => {
       const client = new SudographClient();
 
       // Mock version check
@@ -261,21 +265,21 @@ describe('SudographClient', () => {
       versionProcess.stderr = new EventEmitter();
       mockSpawn.mockReturnValueOnce(versionProcess);
       setImmediate(() => {
-        versionProcess.stdout.emit('data', '0.1.0\n');
-        versionProcess.emit('close', 0);
+        versionProcess.stdout.emit("data", "0.1.0\n");
+        versionProcess.emit("close", 0);
       });
 
       // Mock failing command
       mockSpawn.mockReturnValueOnce(mockProcess);
-      const errorMessage = 'Error: Database not found';
+      const errorMessage = "Error: Database not found";
       setImmediate(() => {
-        mockProcess.stderr.emit('data', errorMessage);
-        mockProcess.emit('close', 1);
+        mockProcess.stderr.emit("data", errorMessage);
+        mockProcess.emit("close", 1);
       });
 
       try {
-        await client.exec(['stats']);
-        expect.fail('Should have thrown an error');
+        await client.exec(["stats"]);
+        expect.fail("Should have thrown an error");
       } catch (error) {
         expect(error).toBeInstanceOf(SudographError);
         expect((error as SudographError).stderr).toBe(errorMessage);
@@ -283,7 +287,7 @@ describe('SudographClient', () => {
       }
     });
 
-    it('should throw error on malformed JSON', async () => {
+    it("should throw error on malformed JSON", async () => {
       const client = new SudographClient();
 
       // Mock version check
@@ -292,21 +296,21 @@ describe('SudographClient', () => {
       versionProcess.stderr = new EventEmitter();
       mockSpawn.mockReturnValueOnce(versionProcess);
       setImmediate(() => {
-        versionProcess.stdout.emit('data', '0.1.0\n');
-        versionProcess.emit('close', 0);
+        versionProcess.stdout.emit("data", "0.1.0\n");
+        versionProcess.emit("close", 0);
       });
 
       // Mock command with invalid JSON
       mockSpawn.mockReturnValueOnce(mockProcess);
       setImmediate(() => {
-        mockProcess.stdout.emit('data', '{invalid json}');
-        mockProcess.emit('close', 0);
+        mockProcess.stdout.emit("data", "{invalid json}");
+        mockProcess.emit("close", 0);
       });
 
-      await expect(client.exec(['stats'])).rejects.toThrow(SudographError);
+      await expect(client.exec(["stats"])).rejects.toThrow(SudographError);
     });
 
-    it('should timeout after specified duration', async () => {
+    it("should timeout after specified duration", async () => {
       const client = new SudographClient();
 
       // Mock version check
@@ -315,20 +319,22 @@ describe('SudographClient', () => {
       versionProcess.stderr = new EventEmitter();
       mockSpawn.mockReturnValueOnce(versionProcess);
       setImmediate(() => {
-        versionProcess.stdout.emit('data', '0.1.0\n');
-        versionProcess.emit('close', 0);
+        versionProcess.stdout.emit("data", "0.1.0\n");
+        versionProcess.emit("close", 0);
       });
 
       // Mock command that never completes
       mockSpawn.mockReturnValueOnce(mockProcess);
       // Don't emit close event
 
-      await expect(client.exec(['stats'], { timeout: 100 })).rejects.toThrow('timed out');
+      await expect(client.exec(["stats"], { timeout: 100 })).rejects.toThrow(
+        "timed out"
+      );
       expect(mockProcess.kill).toHaveBeenCalled();
     }, 1000);
 
-    it('should handle spawn errors', async () => {
-      const client = new SudographClient({ cliPath: '/nonexistent/sg' });
+    it("should handle spawn errors", async () => {
+      const client = new SudographClient({ cliPath: "/nonexistent/sg" });
 
       // Mock version check failure
       const versionProcess = new EventEmitter() as any;
@@ -336,42 +342,42 @@ describe('SudographClient', () => {
       versionProcess.stderr = new EventEmitter();
       mockSpawn.mockReturnValueOnce(versionProcess);
       setImmediate(() => {
-        versionProcess.emit('error', new Error('ENOENT'));
+        versionProcess.emit("error", new Error("ENOENT"));
       });
 
-      await expect(client.exec(['stats'])).rejects.toThrow(SudographError);
+      await expect(client.exec(["stats"])).rejects.toThrow(SudographError);
     });
   });
 
-  describe('checkVersion', () => {
-    it('should successfully check CLI version', async () => {
+  describe("checkVersion", () => {
+    it("should successfully check CLI version", async () => {
       const client = new SudographClient();
 
       mockSpawn.mockReturnValueOnce(mockProcess);
       setImmediate(() => {
-        mockProcess.stdout.emit('data', 'sg version 0.1.0\n');
-        mockProcess.emit('close', 0);
+        mockProcess.stdout.emit("data", "sg version 0.1.0\n");
+        mockProcess.emit("close", 0);
       });
 
       const result = await client.checkVersion();
-      expect(result).toEqual({ version: '0.1.0' });
+      expect(result).toEqual({ version: "0.1.0" });
     });
 
-    it('should parse version from numeric output', async () => {
+    it("should parse version from numeric output", async () => {
       const client = new SudographClient();
 
       mockSpawn.mockReturnValueOnce(mockProcess);
       setImmediate(() => {
-        mockProcess.stdout.emit('data', '1.2.3\n');
-        mockProcess.emit('close', 0);
+        mockProcess.stdout.emit("data", "1.2.3\n");
+        mockProcess.emit("close", 0);
       });
 
       const result = await client.checkVersion();
-      expect(result).toEqual({ version: '1.2.3' });
+      expect(result).toEqual({ version: "1.2.3" });
     });
 
-    it('should throw error when CLI not found', async () => {
-      const client = new SudographClient({ cliPath: '/nonexistent' });
+    it("should throw error when CLI not found", async () => {
+      const client = new SudographClient({ cliPath: "/nonexistent" });
 
       mockSpawn.mockReturnValueOnce(mockProcess);
 
@@ -379,20 +385,20 @@ describe('SudographClient', () => {
 
       // Emit error immediately
       setImmediate(() => {
-        mockProcess.emit('error', new Error('ENOENT'));
+        mockProcess.emit("error", new Error("ENOENT"));
       });
 
       await expect(promise).rejects.toThrow(SudographError);
-      await expect(promise).rejects.toThrow('CLI not found');
+      await expect(promise).rejects.toThrow("CLI not found");
     });
 
-    it('should throw error on non-zero exit code', async () => {
+    it("should throw error on non-zero exit code", async () => {
       const client = new SudographClient();
 
       mockSpawn.mockReturnValueOnce(mockProcess);
       setImmediate(() => {
-        mockProcess.stderr.emit('data', 'Command not found\n');
-        mockProcess.emit('close', 127);
+        mockProcess.stderr.emit("data", "Command not found\n");
+        mockProcess.emit("close", 127);
       });
 
       await expect(client.checkVersion()).rejects.toThrow(SudographError);

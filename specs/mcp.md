@@ -17,7 +17,7 @@ Sudograph MCP provides tools for:
 - **Runtime**: Node.js with TypeScript
 - **MCP Framework**: `@modelcontextprotocol/sdk` or `fastmcp` (if available for Node.js)
 - **CLI Integration**: Spawn `sg` CLI commands (similar to beads-mcp approach)
-- **Working Directory**: Use `SUDOGRAPH_WORKING_DIR` env var or `process.cwd()`
+- **Working Directory**: Use `SUDOCODE_WORKING_DIR` env var or `process.cwd()`
 
 ### Design Principles
 1. **CLI-First**: MCP server wraps existing CLI commands rather than duplicating logic
@@ -471,10 +471,10 @@ class SudographClient {
 
 ### Environment Variables
 
-- `SUDOGRAPH_PATH`: Path to `sg` CLI (default: auto-discover from PATH)
-- `SUDOGRAPH_DB`: Path to database file (default: auto-discover)
-- `SUDOGRAPH_WORKING_DIR`: Working directory for commands (default: process.cwd())
-- `SUDOGRAPH_ACTOR`: Actor name for audit trail (default: process.env.USER)
+- `SUDOCODE_PATH`: Path to `sg` CLI (default: auto-discover from PATH)
+- `SUDOCODE_DB`: Path to database file (default: auto-discover)
+- `SUDOCODE_WORKING_DIR`: Working directory for commands (default: process.cwd())
+- `SUDOCODE_ACTOR`: Actor name for audit trail (default: process.env.USER)
 
 ### Error Handling
 
