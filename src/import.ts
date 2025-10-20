@@ -547,8 +547,8 @@ export async function importFromJSONL(
 ): Promise<ImportResult> {
   const {
     inputDir = '.sudocode',
-    specsFile = 'specs/specs.jsonl',
-    issuesFile = 'issues/issues.jsonl',
+    specsFile = 'specs.jsonl',
+    issuesFile = 'issues.jsonl',
     dryRun = false,
     resolveCollisions: shouldResolve = true,
   } = options;

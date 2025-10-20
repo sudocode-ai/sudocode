@@ -2,16 +2,24 @@
  * CLI handlers for spec commands
  */
 
-import chalk from 'chalk';
-import * as path from 'path';
-import type Database from 'better-sqlite3';
-import { generateSpecId } from '../id-generator.js';
-import { createSpec, getSpec, listSpecs, type ListSpecsOptions } from '../operations/specs.js';
-import { getOutgoingRelationships, getIncomingRelationships } from '../operations/relationships.js';
-import { getTags, setTags } from '../operations/tags.js';
-import { listFeedback } from '../operations/feedback.js';
-import { exportToJSONL } from '../export.js';
-import { writeMarkdownFile } from '../markdown.js';
+import chalk from "chalk";
+import * as path from "path";
+import type Database from "better-sqlite3";
+import { generateSpecId } from "../id-generator.js";
+import {
+  createSpec,
+  getSpec,
+  listSpecs,
+  type ListSpecsOptions,
+} from "../operations/specs.js";
+import {
+  getOutgoingRelationships,
+  getIncomingRelationships,
+} from "../operations/relationships.js";
+import { getTags, setTags } from "../operations/tags.js";
+import { listFeedback } from "../operations/feedback.js";
+import { exportToJSONL } from "../export.js";
+import { writeMarkdownFile } from "../markdown.js";
 
 export interface CommandContext {
   db: Database.Database;
@@ -42,23 +50,23 @@ export async function handleSpecCreate(
     const filePath = options.filePath || `specs/${specId}.md`;
 
     // Create spec in database
-    const content = options.description || '';
+    const content = options.description || "";
     const spec = createSpec(ctx.db, {
       id: specId,
       title,
       file_path: filePath,
       content,
       type: options.type as any,
-      status: 'draft',
+      status: "draft",
       priority: parseInt(options.priority),
-      created_by: process.env.USER || 'system',
+      created_by: process.env.USER || "system",
       parent_id: options.parent || null,
     });
 
     // Add tags if provided
     if (options.tags) {
-      const tags = options.tags.split(',').map((t) => t.trim());
-      setTags(ctx.db, specId, 'spec', tags);
+      const tags = options.tags.split(",").map((t) => t.trim());
+      setTags(ctx.db, specId, "spec", tags);
     }
 
     // Create markdown file
@@ -66,32 +74,44 @@ export async function handleSpecCreate(
       id: specId,
       title,
       type: options.type,
-      status: 'draft',
+      status: "draft",
       priority: parseInt(options.priority),
       file_path: filePath,
       created_at: spec.created_at,
       created_by: spec.created_by,
       ...(options.parent && { parent_id: options.parent }),
-      ...(options.tags && { tags: options.tags.split(',').map((t) => t.trim()) }),
+      ...(options.tags && {
+        tags: options.tags.split(",").map((t) => t.trim()),
+      }),
     };
 
-    const markdownContent = options.design || '';
-    writeMarkdownFile(path.join(process.cwd(), filePath), frontmatter, markdownContent);
+    const markdownContent = options.design || "";
+    writeMarkdownFile(
+      path.join(ctx.outputDir, filePath),
+      frontmatter,
+      markdownContent
+    );
 
     // Export to JSONL
     await exportToJSONL(ctx.db, { outputDir: ctx.outputDir });
 
     // Output result
     if (ctx.jsonOutput) {
-      console.log(JSON.stringify({ id: specId, title, file_path: filePath, status: 'draft' }, null, 2));
+      console.log(
+        JSON.stringify(
+          { id: specId, title, file_path: filePath, status: "draft" },
+          null,
+          2
+        )
+      );
     } else {
-      console.log(chalk.green('✓ Created spec'), chalk.cyan(specId));
+      console.log(chalk.green("✓ Created spec"), chalk.cyan(specId));
       console.log(chalk.gray(`  Title: ${title}`));
       console.log(chalk.gray(`  Type: ${options.type}`));
       console.log(chalk.gray(`  File: ${filePath}`));
     }
   } catch (error) {
-    console.error(chalk.red('✗ Failed to create spec'));
+    console.error(chalk.red("✗ Failed to create spec"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
@@ -120,7 +140,7 @@ export async function handleSpecList(
       console.log(JSON.stringify(specs, null, 2));
     } else {
       if (specs.length === 0) {
-        console.log(chalk.gray('No specs found'));
+        console.log(chalk.gray("No specs found"));
         return;
       }
 
@@ -128,9 +148,9 @@ export async function handleSpecList(
 
       for (const spec of specs) {
         const statusColor =
-          spec.status === 'approved'
+          spec.status === "approved"
             ? chalk.green
-            : spec.status === 'review'
+            : spec.status === "review"
             ? chalk.yellow
             : chalk.gray;
 
@@ -140,13 +160,15 @@ export async function handleSpecList(
           spec.title
         );
         console.log(
-          chalk.gray(`  Type: ${spec.type} | Priority: ${spec.priority} | ${spec.file_path}`)
+          chalk.gray(
+            `  Type: ${spec.type} | Priority: ${spec.priority} | ${spec.file_path}`
+          )
         );
       }
       console.log();
     }
   } catch (error) {
-    console.error(chalk.red('✗ Failed to list specs'));
+    console.error(chalk.red("✗ Failed to list specs"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
@@ -163,71 +185,97 @@ export async function handleSpecShow(
       process.exit(1);
     }
 
-    const outgoing = getOutgoingRelationships(ctx.db, id, 'spec');
-    const incoming = getIncomingRelationships(ctx.db, id, 'spec');
-    const tags = getTags(ctx.db, id, 'spec');
+    const outgoing = getOutgoingRelationships(ctx.db, id, "spec");
+    const incoming = getIncomingRelationships(ctx.db, id, "spec");
+    const tags = getTags(ctx.db, id, "spec");
     const feedback = listFeedback(ctx.db, { spec_id: id });
 
     if (ctx.jsonOutput) {
-      console.log(JSON.stringify({ ...spec, relationships: { outgoing, incoming }, tags, feedback }, null, 2));
+      console.log(
+        JSON.stringify(
+          { ...spec, relationships: { outgoing, incoming }, tags, feedback },
+          null,
+          2
+        )
+      );
     } else {
       console.log();
       console.log(chalk.bold.cyan(spec.id), chalk.bold(spec.title));
-      console.log(chalk.gray('─'.repeat(60)));
-      console.log(chalk.gray('Type:'), spec.type);
-      console.log(chalk.gray('Status:'), spec.status);
-      console.log(chalk.gray('Priority:'), spec.priority);
-      console.log(chalk.gray('File:'), spec.file_path);
+      console.log(chalk.gray("─".repeat(60)));
+      console.log(chalk.gray("Type:"), spec.type);
+      console.log(chalk.gray("Status:"), spec.status);
+      console.log(chalk.gray("Priority:"), spec.priority);
+      console.log(chalk.gray("File:"), spec.file_path);
       if (spec.parent_id) {
-        console.log(chalk.gray('Parent:'), spec.parent_id);
+        console.log(chalk.gray("Parent:"), spec.parent_id);
       }
-      console.log(chalk.gray('Created:'), spec.created_at, 'by', spec.created_by);
-      console.log(chalk.gray('Updated:'), spec.updated_at, 'by', spec.updated_by);
+      console.log(
+        chalk.gray("Created:"),
+        spec.created_at,
+        "by",
+        spec.created_by
+      );
+      console.log(
+        chalk.gray("Updated:"),
+        spec.updated_at,
+        "by",
+        spec.updated_by
+      );
 
       if (tags.length > 0) {
-        console.log(chalk.gray('Tags:'), tags.join(', '));
+        console.log(chalk.gray("Tags:"), tags.join(", "));
       }
 
       if (spec.content) {
         console.log();
-        console.log(chalk.bold('Content:'));
+        console.log(chalk.bold("Content:"));
         console.log(spec.content);
       }
 
       if (outgoing.length > 0) {
         console.log();
-        console.log(chalk.bold('Outgoing Relationships:'));
+        console.log(chalk.bold("Outgoing Relationships:"));
         for (const rel of outgoing) {
           console.log(
-            `  ${chalk.yellow(rel.relationship_type)} → ${chalk.cyan(rel.to_id)} (${rel.to_type})`
+            `  ${chalk.yellow(rel.relationship_type)} → ${chalk.cyan(
+              rel.to_id
+            )} (${rel.to_type})`
           );
         }
       }
 
       if (incoming.length > 0) {
         console.log();
-        console.log(chalk.bold('Incoming Relationships:'));
+        console.log(chalk.bold("Incoming Relationships:"));
         for (const rel of incoming) {
           console.log(
-            `  ${chalk.cyan(rel.from_id)} (${rel.from_type}) → ${chalk.yellow(rel.relationship_type)}`
+            `  ${chalk.cyan(rel.from_id)} (${rel.from_type}) → ${chalk.yellow(
+              rel.relationship_type
+            )}`
           );
         }
       }
 
       if (feedback.length > 0) {
         console.log();
-        console.log(chalk.bold('Feedback Received:'));
+        console.log(chalk.bold("Feedback Received:"));
         for (const fb of feedback) {
-          const anchor = typeof fb.anchor === 'string' ? JSON.parse(fb.anchor) : fb.anchor;
+          const anchor =
+            typeof fb.anchor === "string" ? JSON.parse(fb.anchor) : fb.anchor;
           const statusColor =
-            fb.status === 'resolved' ? chalk.green :
-            fb.status === 'acknowledged' ? chalk.yellow :
-            fb.status === 'wont_fix' ? chalk.gray :
-            chalk.white;
+            fb.status === "resolved"
+              ? chalk.green
+              : fb.status === "acknowledged"
+              ? chalk.yellow
+              : fb.status === "wont_fix"
+              ? chalk.gray
+              : chalk.white;
           const anchorStatusColor =
-            anchor.anchor_status === 'valid' ? chalk.green :
-            anchor.anchor_status === 'relocated' ? chalk.yellow :
-            chalk.red;
+            anchor.anchor_status === "valid"
+              ? chalk.green
+              : anchor.anchor_status === "relocated"
+              ? chalk.yellow
+              : chalk.red;
 
           console.log(
             `  ${chalk.cyan(fb.id)} ← ${chalk.cyan(fb.issue_id)}`,
@@ -235,9 +283,14 @@ export async function handleSpecShow(
             anchorStatusColor(`[${anchor.anchor_status}]`)
           );
           console.log(
-            chalk.gray(`    Type: ${fb.feedback_type} | ${anchor.section_heading || 'No section'} (line ${anchor.line_number})`)
+            chalk.gray(
+              `    Type: ${fb.feedback_type} | ${
+                anchor.section_heading || "No section"
+              } (line ${anchor.line_number})`
+            )
           );
-          const contentPreview = fb.content.substring(0, 60) + (fb.content.length > 60 ? '...' : '');
+          const contentPreview =
+            fb.content.substring(0, 60) + (fb.content.length > 60 ? "..." : "");
           console.log(chalk.gray(`    ${contentPreview}`));
         }
       }
@@ -245,7 +298,7 @@ export async function handleSpecShow(
       console.log();
     }
   } catch (error) {
-    console.error(chalk.red('✗ Failed to show spec'));
+    console.error(chalk.red("✗ Failed to show spec"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
@@ -267,45 +320,64 @@ export async function handleSpecDelete(
       try {
         const spec = getSpec(ctx.db, id);
         if (!spec) {
-          results.push({ id, success: false, error: 'Spec not found' });
+          results.push({ id, success: false, error: "Spec not found" });
           if (!ctx.jsonOutput) {
-            console.error(chalk.red('✗ Spec not found:'), chalk.cyan(id));
+            console.error(chalk.red("✗ Spec not found:"), chalk.cyan(id));
           }
           continue;
         }
 
         if (options.hard) {
           // Hard delete - permanently remove from database
-          const { deleteSpec } = await import('../operations/specs.js');
+          const { deleteSpec } = await import("../operations/specs.js");
           const deleted = deleteSpec(ctx.db, id);
           if (deleted) {
-            results.push({ id, success: true, action: 'hard_delete' });
+            results.push({ id, success: true, action: "hard_delete" });
             if (!ctx.jsonOutput) {
-              console.log(chalk.green('✓ Permanently deleted spec'), chalk.cyan(id));
+              console.log(
+                chalk.green("✓ Permanently deleted spec"),
+                chalk.cyan(id)
+              );
             }
           } else {
-            results.push({ id, success: false, error: 'Delete failed' });
+            results.push({ id, success: false, error: "Delete failed" });
             if (!ctx.jsonOutput) {
-              console.error(chalk.red('✗ Failed to delete spec'), chalk.cyan(id));
+              console.error(
+                chalk.red("✗ Failed to delete spec"),
+                chalk.cyan(id)
+              );
             }
           }
         } else {
           // Soft delete - mark as deprecated
-          const { updateSpec } = await import('../operations/specs.js');
+          const { updateSpec } = await import("../operations/specs.js");
           updateSpec(ctx.db, id, {
-            status: 'deprecated',
-            updated_by: process.env.USER || 'system',
+            status: "deprecated",
+            updated_by: process.env.USER || "system",
           });
-          results.push({ id, success: true, action: 'soft_delete', status: 'deprecated' });
+          results.push({
+            id,
+            success: true,
+            action: "soft_delete",
+            status: "deprecated",
+          });
           if (!ctx.jsonOutput) {
-            console.log(chalk.green('✓ Marked spec as deprecated'), chalk.cyan(id));
+            console.log(
+              chalk.green("✓ Marked spec as deprecated"),
+              chalk.cyan(id)
+            );
           }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         results.push({ id, success: false, error: message });
         if (!ctx.jsonOutput) {
-          console.error(chalk.red('✗ Failed to process'), chalk.cyan(id), ':', message);
+          console.error(
+            chalk.red("✗ Failed to process"),
+            chalk.cyan(id),
+            ":",
+            message
+          );
         }
       }
     }
@@ -317,7 +389,7 @@ export async function handleSpecDelete(
       console.log(JSON.stringify(results, null, 2));
     }
   } catch (error) {
-    console.error(chalk.red('✗ Failed to delete specs'));
+    console.error(chalk.red("✗ Failed to delete specs"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }

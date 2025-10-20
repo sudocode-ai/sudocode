@@ -145,8 +145,8 @@ export async function exportToJSONL(
 ): Promise<{ specsCount: number; issuesCount: number }> {
   const {
     outputDir = '.sudocode',
-    specsFile = 'specs/specs.jsonl',
-    issuesFile = 'issues/issues.jsonl',
+    specsFile = 'specs.jsonl',
+    issuesFile = 'issues.jsonl',
   } = options;
 
   const specsPath = `${outputDir}/${specsFile}`;

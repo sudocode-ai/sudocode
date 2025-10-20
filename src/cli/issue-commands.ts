@@ -2,14 +2,23 @@
  * CLI handlers for issue commands
  */
 
-import chalk from 'chalk';
-import type Database from 'better-sqlite3';
-import { generateIssueId } from '../id-generator.js';
-import { createIssue, getIssue, listIssues, updateIssue, closeIssue } from '../operations/issues.js';
-import { getOutgoingRelationships, getIncomingRelationships } from '../operations/relationships.js';
-import { getTags, setTags } from '../operations/tags.js';
-import { listFeedback } from '../operations/feedback.js';
-import { exportToJSONL } from '../export.js';
+import chalk from "chalk";
+import type Database from "better-sqlite3";
+import { generateIssueId } from "../id-generator.js";
+import {
+  createIssue,
+  getIssue,
+  listIssues,
+  updateIssue,
+  closeIssue,
+} from "../operations/issues.js";
+import {
+  getOutgoingRelationships,
+  getIncomingRelationships,
+} from "../operations/relationships.js";
+import { getTags, setTags } from "../operations/tags.js";
+import { listFeedback } from "../operations/feedback.js";
+import { exportToJSONL } from "../export.js";
 
 export interface CommandContext {
   db: Database.Database;
@@ -38,28 +47,30 @@ export async function handleIssueCreate(
     const issue = createIssue(ctx.db, {
       id: issueId,
       title,
-      description: options.description || '',
-      content: '',
+      description: options.description || "",
+      content: "",
       issue_type: options.type as any,
-      status: 'open',
+      status: "open",
       priority: parseInt(options.priority),
-      created_by: process.env.USER || 'system',
+      created_by: process.env.USER || "system",
       assignee: options.assignee || null,
       estimated_minutes: options.estimate ? parseInt(options.estimate) : null,
       parent_id: options.parent || null,
     });
 
     if (options.tags) {
-      const tags = options.tags.split(',').map((t) => t.trim());
-      setTags(ctx.db, issueId, 'issue', tags);
+      const tags = options.tags.split(",").map((t) => t.trim());
+      setTags(ctx.db, issueId, "issue", tags);
     }
 
     await exportToJSONL(ctx.db, { outputDir: ctx.outputDir });
 
     if (ctx.jsonOutput) {
-      console.log(JSON.stringify({ id: issueId, title, status: 'open' }, null, 2));
+      console.log(
+        JSON.stringify({ id: issueId, title, status: "open" }, null, 2)
+      );
     } else {
-      console.log(chalk.green('✓ Created issue'), chalk.cyan(issueId));
+      console.log(chalk.green("✓ Created issue"), chalk.cyan(issueId));
       console.log(chalk.gray(`  Title: ${title}`));
       console.log(chalk.gray(`  Type: ${options.type}`));
       if (options.assignee) {
@@ -67,7 +78,7 @@ export async function handleIssueCreate(
       }
     }
   } catch (error) {
-    console.error(chalk.red('✗ Failed to create issue'));
+    console.error(chalk.red("✗ Failed to create issue"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
@@ -98,7 +109,7 @@ export async function handleIssueList(
       console.log(JSON.stringify(issues, null, 2));
     } else {
       if (issues.length === 0) {
-        console.log(chalk.gray('No issues found'));
+        console.log(chalk.gray("No issues found"));
         return;
       }
 
@@ -106,15 +117,17 @@ export async function handleIssueList(
 
       for (const issue of issues) {
         const statusColor =
-          issue.status === 'closed'
+          issue.status === "closed"
             ? chalk.green
-            : issue.status === 'in_progress'
+            : issue.status === "in_progress"
             ? chalk.yellow
-            : issue.status === 'blocked'
+            : issue.status === "blocked"
             ? chalk.red
             : chalk.gray;
 
-        const assigneeStr = issue.assignee ? chalk.gray(`@${issue.assignee}`) : '';
+        const assigneeStr = issue.assignee
+          ? chalk.gray(`@${issue.assignee}`)
+          : "";
         console.log(
           chalk.cyan(issue.id),
           statusColor(`[${issue.status}]`),
@@ -122,13 +135,15 @@ export async function handleIssueList(
           assigneeStr
         );
         console.log(
-          chalk.gray(`  Type: ${issue.issue_type} | Priority: ${issue.priority}`)
+          chalk.gray(
+            `  Type: ${issue.issue_type} | Priority: ${issue.priority}`
+          )
         );
       }
       console.log();
     }
   } catch (error) {
-    console.error(chalk.red('✗ Failed to list issues'));
+    console.error(chalk.red("✗ Failed to list issues"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
@@ -145,85 +160,109 @@ export async function handleIssueShow(
       process.exit(1);
     }
 
-    const outgoing = getOutgoingRelationships(ctx.db, id, 'issue');
-    const incoming = getIncomingRelationships(ctx.db, id, 'issue');
-    const tags = getTags(ctx.db, id, 'issue');
+    const outgoing = getOutgoingRelationships(ctx.db, id, "issue");
+    const incoming = getIncomingRelationships(ctx.db, id, "issue");
+    const tags = getTags(ctx.db, id, "issue");
     const feedback = listFeedback(ctx.db, { issue_id: id });
 
     if (ctx.jsonOutput) {
-      console.log(JSON.stringify({ ...issue, relationships: { outgoing, incoming }, tags, feedback }, null, 2));
+      console.log(
+        JSON.stringify(
+          { ...issue, relationships: { outgoing, incoming }, tags, feedback },
+          null,
+          2
+        )
+      );
     } else {
       console.log();
       console.log(chalk.bold.cyan(issue.id), chalk.bold(issue.title));
-      console.log(chalk.gray('─'.repeat(60)));
-      console.log(chalk.gray('Type:'), issue.issue_type);
-      console.log(chalk.gray('Status:'), issue.status);
-      console.log(chalk.gray('Priority:'), issue.priority);
+      console.log(chalk.gray("─".repeat(60)));
+      console.log(chalk.gray("Type:"), issue.issue_type);
+      console.log(chalk.gray("Status:"), issue.status);
+      console.log(chalk.gray("Priority:"), issue.priority);
       if (issue.assignee) {
-        console.log(chalk.gray('Assignee:'), issue.assignee);
+        console.log(chalk.gray("Assignee:"), issue.assignee);
       }
       if (issue.estimated_minutes) {
-        console.log(chalk.gray('Estimate:'), `${issue.estimated_minutes} minutes`);
+        console.log(
+          chalk.gray("Estimate:"),
+          `${issue.estimated_minutes} minutes`
+        );
       }
       if (issue.parent_id) {
-        console.log(chalk.gray('Parent:'), issue.parent_id);
+        console.log(chalk.gray("Parent:"), issue.parent_id);
       }
-      console.log(chalk.gray('Created:'), issue.created_at, 'by', issue.created_by);
-      console.log(chalk.gray('Updated:'), issue.updated_at);
+      console.log(
+        chalk.gray("Created:"),
+        issue.created_at,
+        "by",
+        issue.created_by
+      );
+      console.log(chalk.gray("Updated:"), issue.updated_at);
       if (issue.closed_at) {
-        console.log(chalk.gray('Closed:'), issue.closed_at);
+        console.log(chalk.gray("Closed:"), issue.closed_at);
       }
 
       if (tags.length > 0) {
-        console.log(chalk.gray('Tags:'), tags.join(', '));
+        console.log(chalk.gray("Tags:"), tags.join(", "));
       }
 
       if (issue.description) {
         console.log();
-        console.log(chalk.bold('Description:'));
+        console.log(chalk.bold("Description:"));
         console.log(issue.description);
       }
 
       if (issue.content) {
         console.log();
-        console.log(chalk.bold('Content:'));
+        console.log(chalk.bold("Content:"));
         console.log(issue.content);
       }
 
       if (outgoing.length > 0) {
         console.log();
-        console.log(chalk.bold('Outgoing Relationships:'));
+        console.log(chalk.bold("Outgoing Relationships:"));
         for (const rel of outgoing) {
           console.log(
-            `  ${chalk.yellow(rel.relationship_type)} → ${chalk.cyan(rel.to_id)} (${rel.to_type})`
+            `  ${chalk.yellow(rel.relationship_type)} → ${chalk.cyan(
+              rel.to_id
+            )} (${rel.to_type})`
           );
         }
       }
 
       if (incoming.length > 0) {
         console.log();
-        console.log(chalk.bold('Incoming Relationships:'));
+        console.log(chalk.bold("Incoming Relationships:"));
         for (const rel of incoming) {
           console.log(
-            `  ${chalk.cyan(rel.from_id)} (${rel.from_type}) → ${chalk.yellow(rel.relationship_type)}`
+            `  ${chalk.cyan(rel.from_id)} (${rel.from_type}) → ${chalk.yellow(
+              rel.relationship_type
+            )}`
           );
         }
       }
 
       if (feedback.length > 0) {
         console.log();
-        console.log(chalk.bold('Feedback Provided:'));
+        console.log(chalk.bold("Feedback Provided:"));
         for (const fb of feedback) {
-          const anchor = typeof fb.anchor === 'string' ? JSON.parse(fb.anchor) : fb.anchor;
+          const anchor =
+            typeof fb.anchor === "string" ? JSON.parse(fb.anchor) : fb.anchor;
           const statusColor =
-            fb.status === 'resolved' ? chalk.green :
-            fb.status === 'acknowledged' ? chalk.yellow :
-            fb.status === 'wont_fix' ? chalk.gray :
-            chalk.white;
+            fb.status === "resolved"
+              ? chalk.green
+              : fb.status === "acknowledged"
+              ? chalk.yellow
+              : fb.status === "wont_fix"
+              ? chalk.gray
+              : chalk.white;
           const anchorStatusColor =
-            anchor.anchor_status === 'valid' ? chalk.green :
-            anchor.anchor_status === 'relocated' ? chalk.yellow :
-            chalk.red;
+            anchor.anchor_status === "valid"
+              ? chalk.green
+              : anchor.anchor_status === "relocated"
+              ? chalk.yellow
+              : chalk.red;
 
           console.log(
             `  ${chalk.cyan(fb.id)} → ${chalk.cyan(fb.spec_id)}`,
@@ -231,9 +270,14 @@ export async function handleIssueShow(
             anchorStatusColor(`[${anchor.anchor_status}]`)
           );
           console.log(
-            chalk.gray(`    Type: ${fb.feedback_type} | ${anchor.section_heading || 'No section'} (line ${anchor.line_number})`)
+            chalk.gray(
+              `    Type: ${fb.feedback_type} | ${
+                anchor.section_heading || "No section"
+              } (line ${anchor.line_number})`
+            )
           );
-          const contentPreview = fb.content.substring(0, 60) + (fb.content.length > 60 ? '...' : '');
+          const contentPreview =
+            fb.content.substring(0, 60) + (fb.content.length > 60 ? "..." : "");
           console.log(chalk.gray(`    ${contentPreview}`));
         }
       }
@@ -241,7 +285,7 @@ export async function handleIssueShow(
       console.log();
     }
   } catch (error) {
-    console.error(chalk.red('✗ Failed to show issue'));
+    console.error(chalk.red("✗ Failed to show issue"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
@@ -277,13 +321,13 @@ export async function handleIssueUpdate(
     if (ctx.jsonOutput) {
       console.log(JSON.stringify(issue, null, 2));
     } else {
-      console.log(chalk.green('✓ Updated issue'), chalk.cyan(id));
+      console.log(chalk.green("✓ Updated issue"), chalk.cyan(id));
       Object.keys(updates).forEach((key) => {
         console.log(chalk.gray(`  ${key}: ${updates[key]}`));
       });
     }
   } catch (error) {
-    console.error(chalk.red('✗ Failed to update issue'));
+    console.error(chalk.red("✗ Failed to update issue"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
@@ -305,12 +349,21 @@ export async function handleIssueClose(
         closeIssue(ctx.db, id);
         results.push({ id, success: true });
         if (!ctx.jsonOutput) {
-          console.log(chalk.green('✓ Closed issue'), chalk.cyan(id));
+          console.log(chalk.green("✓ Closed issue"), chalk.cyan(id));
         }
       } catch (error) {
-        results.push({ id, success: false, error: error instanceof Error ? error.message : String(error) });
+        results.push({
+          id,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
         if (!ctx.jsonOutput) {
-          console.error(chalk.red('✗ Failed to close'), chalk.cyan(id), ':', error instanceof Error ? error.message : String(error));
+          console.error(
+            chalk.red("✗ Failed to close"),
+            chalk.cyan(id),
+            ":",
+            error instanceof Error ? error.message : String(error)
+          );
         }
       }
     }
@@ -321,7 +374,7 @@ export async function handleIssueClose(
       console.log(JSON.stringify(results, null, 2));
     }
   } catch (error) {
-    console.error(chalk.red('✗ Failed to close issues'));
+    console.error(chalk.red("✗ Failed to close issues"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
@@ -343,41 +396,57 @@ export async function handleIssueDelete(
       try {
         const issue = getIssue(ctx.db, id);
         if (!issue) {
-          results.push({ id, success: false, error: 'Issue not found' });
+          results.push({ id, success: false, error: "Issue not found" });
           if (!ctx.jsonOutput) {
-            console.error(chalk.red('✗ Issue not found:'), chalk.cyan(id));
+            console.error(chalk.red("✗ Issue not found:"), chalk.cyan(id));
           }
           continue;
         }
 
         if (options.hard) {
           // Hard delete - permanently remove from database
-          const { deleteIssue } = await import('../operations/issues.js');
+          const { deleteIssue } = await import("../operations/issues.js");
           const deleted = deleteIssue(ctx.db, id);
           if (deleted) {
-            results.push({ id, success: true, action: 'hard_delete' });
+            results.push({ id, success: true, action: "hard_delete" });
             if (!ctx.jsonOutput) {
-              console.log(chalk.green('✓ Permanently deleted issue'), chalk.cyan(id));
+              console.log(
+                chalk.green("✓ Permanently deleted issue"),
+                chalk.cyan(id)
+              );
             }
           } else {
-            results.push({ id, success: false, error: 'Delete failed' });
+            results.push({ id, success: false, error: "Delete failed" });
             if (!ctx.jsonOutput) {
-              console.error(chalk.red('✗ Failed to delete issue'), chalk.cyan(id));
+              console.error(
+                chalk.red("✗ Failed to delete issue"),
+                chalk.cyan(id)
+              );
             }
           }
         } else {
           // Soft delete - close the issue
           closeIssue(ctx.db, id);
-          results.push({ id, success: true, action: 'soft_delete', status: 'closed' });
+          results.push({
+            id,
+            success: true,
+            action: "soft_delete",
+            status: "closed",
+          });
           if (!ctx.jsonOutput) {
-            console.log(chalk.green('✓ Closed issue'), chalk.cyan(id));
+            console.log(chalk.green("✓ Closed issue"), chalk.cyan(id));
           }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         results.push({ id, success: false, error: message });
         if (!ctx.jsonOutput) {
-          console.error(chalk.red('✗ Failed to process'), chalk.cyan(id), ':', message);
+          console.error(
+            chalk.red("✗ Failed to process"),
+            chalk.cyan(id),
+            ":",
+            message
+          );
         }
       }
     }
@@ -389,7 +458,7 @@ export async function handleIssueDelete(
       console.log(JSON.stringify(results, null, 2));
     }
   } catch (error) {
-    console.error(chalk.red('✗ Failed to delete issues'));
+    console.error(chalk.red("✗ Failed to delete issues"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }

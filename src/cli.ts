@@ -178,8 +178,8 @@ program
       );
 
       // Create empty JSONL files
-      fs.writeFileSync(path.join(dir, "specs", "specs.jsonl"), "", "utf8");
-      fs.writeFileSync(path.join(dir, "issues", "issues.jsonl"), "", "utf8");
+      fs.writeFileSync(path.join(dir, "specs.jsonl"), "", "utf8");
+      fs.writeFileSync(path.join(dir, "issues.jsonl"), "", "utf8");
 
       database.close();
 

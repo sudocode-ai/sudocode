@@ -256,8 +256,8 @@ describe('Export Operations', () => {
       expect(result.issuesCount).toBe(1);
 
       // Verify files exist
-      const specsPath = path.join(TEST_DIR, 'specs', 'specs.jsonl');
-      const issuesPath = path.join(TEST_DIR, 'issues', 'issues.jsonl');
+      const specsPath = path.join(TEST_DIR, 'specs.jsonl');
+      const issuesPath = path.join(TEST_DIR, 'issues.jsonl');
 
       expect(fs.existsSync(specsPath)).toBe(true);
       expect(fs.existsSync(issuesPath)).toBe(true);
@@ -311,7 +311,7 @@ describe('Export Operations', () => {
       expect(debouncer.isPending()).toBe(false);
 
       // Verify export happened once
-      const specsPath = path.join(TEST_DIR, 'specs', 'specs.jsonl');
+      const specsPath = path.join(TEST_DIR, 'specs.jsonl');
       expect(fs.existsSync(specsPath)).toBe(true);
     });
 
@@ -343,7 +343,7 @@ describe('Export Operations', () => {
 
       expect(debouncer.isPending()).toBe(false);
 
-      const specsPath = path.join(TEST_DIR, 'specs', 'specs.jsonl');
+      const specsPath = path.join(TEST_DIR, 'specs.jsonl');
       expect(fs.existsSync(specsPath)).toBe(true);
     });
 

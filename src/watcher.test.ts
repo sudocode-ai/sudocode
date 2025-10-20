@@ -27,8 +27,8 @@ describe('File Watcher', () => {
     fs.mkdirSync(path.join(tempDir, 'issues'), { recursive: true });
 
     // Create empty JSONL files
-    fs.writeFileSync(path.join(tempDir, 'specs', 'specs.jsonl'), '', 'utf8');
-    fs.writeFileSync(path.join(tempDir, 'issues', 'issues.jsonl'), '', 'utf8');
+    fs.writeFileSync(path.join(tempDir, 'specs.jsonl'), '', 'utf8');
+    fs.writeFileSync(path.join(tempDir, 'issues.jsonl'), '', 'utf8');
 
     // Create meta.json
     const meta = {
@@ -308,7 +308,7 @@ This spec will be deleted.
       expect(spec?.title).toBe('Test Delete Spec');
 
       // Verify spec exists in JSONL
-      const jsonlPath = path.join(tempDir, 'specs', 'specs.jsonl');
+      const jsonlPath = path.join(tempDir, 'specs.jsonl');
       let jsonlContent = fs.readFileSync(jsonlPath, 'utf8');
       expect(jsonlContent).toContain('spec-delete-001');
 
@@ -371,7 +371,7 @@ This spec has no frontmatter and will be deleted.
       expect(specId).toBeDefined();
 
       // Verify spec exists in JSONL
-      const jsonlPath = path.join(tempDir, 'specs', 'specs.jsonl');
+      const jsonlPath = path.join(tempDir, 'specs.jsonl');
       let jsonlContent = fs.readFileSync(jsonlPath, 'utf8');
       expect(jsonlContent).toContain(specId!);
 

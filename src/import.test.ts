@@ -250,8 +250,8 @@ describe('Import Operations', () => {
         },
       ];
 
-      await writeJSONL(path.join(TEST_DIR, 'specs', 'specs.jsonl'), specs);
-      await writeJSONL(path.join(TEST_DIR, 'issues', 'issues.jsonl'), issues);
+      await writeJSONL(path.join(TEST_DIR, 'specs.jsonl'), specs);
+      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), issues);
 
       // Import
       const result = await importFromJSONL(db, {
