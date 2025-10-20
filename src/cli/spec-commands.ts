@@ -4,6 +4,7 @@
 
 import chalk from "chalk";
 import * as path from "path";
+import * as fs from "fs";
 import type Database from "better-sqlite3";
 import { generateSpecId } from "../id-generator.js";
 import {
@@ -20,6 +21,7 @@ import { getTags, setTags } from "../operations/tags.js";
 import { listFeedback } from "../operations/feedback.js";
 import { exportToJSONL } from "../export.js";
 import { writeMarkdownFile } from "../markdown.js";
+import { generateUniqueFilename } from "../filename-generator.js";
 
 export interface CommandContext {
   db: Database.Database;
@@ -46,8 +48,15 @@ export async function handleSpecCreate(
     // Generate spec ID
     const specId = generateSpecId(ctx.outputDir);
 
-    // Determine file path
-    const filePath = options.filePath || `specs/${specId}.md`;
+    // Ensure specs directory exists
+    const specsDir = path.join(ctx.outputDir, 'specs');
+    fs.mkdirSync(specsDir, { recursive: true });
+
+    // Generate title-based filename
+    const fileName = options.filePath
+      ? path.basename(options.filePath)
+      : generateUniqueFilename(title, specId, specsDir);
+    const filePath = `specs/${fileName}`;
 
     // Create spec in database
     const content = options.description || "";
@@ -76,9 +85,7 @@ export async function handleSpecCreate(
       type: options.type,
       status: "draft",
       priority: parseInt(options.priority),
-      file_path: filePath,
       created_at: spec.created_at,
-      created_by: spec.created_by,
       ...(options.parent && { parent_id: options.parent }),
       ...(options.tags && {
         tags: options.tags.split(",").map((t) => t.trim()),
