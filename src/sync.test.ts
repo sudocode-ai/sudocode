@@ -213,7 +213,7 @@ Related to [[@issue-042]].`;
       expect(hasIssueRef).toBe(true);
     });
 
-    it('should handle missing id in frontmatter', async () => {
+    it('should handle missing id in frontmatter when autoInitialize is disabled', async () => {
       const mdPath = path.join(TEST_DIR, 'no-id.md');
       const mdContent = `---
 title: No ID
@@ -225,6 +225,7 @@ Content.`;
 
       const result = await syncMarkdownToJSONL(db, mdPath, {
         autoExport: false,
+        autoInitialize: false, // Explicitly disable auto-initialization
       });
 
       expect(result.success).toBe(false);
@@ -254,6 +255,107 @@ Content.`;
 
       const issue = getIssue(db, 'issue-001');
       expect(issue).not.toBeNull();
+    });
+
+    it('should handle ID conflict by preferring file path', async () => {
+      // Create initial spec with file path
+      const mdPath = path.join(TEST_DIR, 'specs', 'test-spec.md');
+      fs.mkdirSync(path.dirname(mdPath), { recursive: true });
+
+      const initialContent = `---
+id: spec-001
+title: Original Spec
+type: feature
+---
+
+Original content.`;
+
+      fs.writeFileSync(mdPath, initialContent, 'utf8');
+
+      // First sync - creates spec-001
+      await syncMarkdownToJSONL(db, mdPath, {
+        autoExport: false,
+        outputDir: TEST_DIR,
+      });
+
+      const original = getSpec(db, 'spec-001');
+      expect(original).not.toBeNull();
+      expect(original?.title).toBe('Original Spec');
+
+      // User mistakenly changes the ID in frontmatter
+      const conflictContent = `---
+id: spec-999
+title: Changed Title
+type: feature
+---
+
+Modified content.`;
+
+      fs.writeFileSync(mdPath, conflictContent, 'utf8');
+
+      // Second sync - should use existing ID (spec-001) based on file path
+      const result = await syncMarkdownToJSONL(db, mdPath, {
+        autoExport: false,
+        outputDir: TEST_DIR,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.action).toBe('updated');
+      expect(result.entityId).toBe('spec-001'); // Should use original ID
+
+      // Verify spec-001 was updated (not spec-999 created)
+      const updated = getSpec(db, 'spec-001');
+      expect(updated).not.toBeNull();
+      expect(updated?.title).toBe('Changed Title');
+      expect(updated?.content).toContain('Modified content');
+
+      // Verify spec-999 was NOT created
+      const wrongSpec = getSpec(db, 'spec-999');
+      expect(wrongSpec).toBeNull();
+    });
+
+    it('should prevent duplicate specs when ID changes', async () => {
+      // Scenario: user creates spec, then changes ID thinking they're renaming it
+      const mdPath = path.join(TEST_DIR, 'specs', 'feature-auth.md');
+      fs.mkdirSync(path.dirname(mdPath), { recursive: true });
+
+      // Initial creation
+      const v1Content = `---
+id: spec-100
+title: Authentication Feature
+type: feature
+---
+
+Initial auth spec.`;
+
+      fs.writeFileSync(mdPath, v1Content, 'utf8');
+      await syncMarkdownToJSONL(db, mdPath, {
+        autoExport: false,
+        outputDir: TEST_DIR,
+      });
+
+      // User changes ID to "rename" it
+      const v2Content = `---
+id: spec-auth-v2
+title: Authentication Feature v2
+type: feature
+---
+
+Updated auth spec.`;
+
+      fs.writeFileSync(mdPath, v2Content, 'utf8');
+      await syncMarkdownToJSONL(db, mdPath, {
+        autoExport: false,
+        outputDir: TEST_DIR,
+      });
+
+      // Should update spec-100, not create spec-auth-v2
+      const original = getSpec(db, 'spec-100');
+      expect(original).not.toBeNull();
+      expect(original?.title).toBe('Authentication Feature v2');
+
+      const newId = getSpec(db, 'spec-auth-v2');
+      expect(newId).toBeNull();
     });
   });
 
@@ -336,6 +438,53 @@ This should be preserved.`;
       expect(parsed.content).toContain('# Original Content');
       expect(parsed.content).toContain('This should be preserved');
       expect(parsed.content).not.toContain('Database content');
+    });
+
+    it('should exclude internal metadata fields from frontmatter', async () => {
+      // Create spec with all fields including internal metadata
+      createSpec(db, {
+        id: 'spec-001',
+        title: 'Test Spec',
+        file_path: 'specs/test.md',
+        content: '# Content',
+        type: 'feature',
+        status: 'draft',
+        priority: 2,
+        created_by: 'alice',
+      });
+
+      const mdPath = path.join(TEST_DIR, 'spec-001.md');
+      const result = await syncJSONLToMarkdown(db, 'spec-001', 'spec', mdPath);
+
+      expect(result.success).toBe(true);
+
+      // Read the generated markdown file
+      const fileContent = fs.readFileSync(mdPath, 'utf8');
+      const parsed = parseMarkdownFile(mdPath);
+
+      // These fields SHOULD be present (user-editable)
+      expect(parsed.data.id).toBe('spec-001');
+      expect(parsed.data.title).toBe('Test Spec');
+      expect(parsed.data.type).toBe('feature');
+      expect(parsed.data.status).toBe('draft');
+      expect(parsed.data.priority).toBe(2);
+      expect(parsed.data.created_at).toBeDefined();
+
+      // These fields SHOULD NOT be present (internal metadata)
+      expect(parsed.data.updated_by).toBeUndefined();
+      expect(parsed.data.file_path).toBeUndefined();
+      expect(parsed.data.entity_type).toBeUndefined();
+      expect(parsed.data.created_by).toBeUndefined();
+      expect(parsed.data.updated_at).toBeUndefined();
+
+      // Double-check by searching raw file content
+      expect(fileContent).not.toContain('updated_by');
+      expect(fileContent).not.toContain('file_path');
+      expect(fileContent).not.toContain('entity_type');
+      expect(fileContent).not.toContain('created_by');
+      // Note: created_at should be present, but updated_at should not
+      expect(fileContent).toContain('created_at');
+      expect(fileContent).not.toContain('updated_at');
     });
 
     it('should create markdown from issue', async () => {
