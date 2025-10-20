@@ -2,7 +2,7 @@
  * MCP tool for initialization
  */
 
-import { SudographClient } from '../client.js';
+import { SudocodeClient } from "../client.js";
 
 // Tool parameter types
 export interface InitParams {
@@ -22,13 +22,13 @@ export interface InitResult {
  * Initialize Sudograph in the current directory
  */
 export async function init(
-  client: SudographClient,
+  client: SudocodeClient,
   params: InitParams = {}
 ): Promise<InitResult> {
-  const args = ['init'];
+  const args = ["init"];
 
   if (params.prefix) {
-    args.push('--prefix', params.prefix);
+    args.push("--prefix", params.prefix);
   }
 
   return client.exec(args);

@@ -6,18 +6,18 @@
  */
 
 import { spawn } from "child_process";
-import { SudographClientConfig, SudographError } from "./types.js";
+import { SudocodeClientConfig, SudocodeError } from "./types.js";
 
-export class SudographClient {
+export class SudocodeClient {
   private workingDir: string;
   private cliPath: string;
   private dbPath?: string;
   private versionChecked = false;
 
-  constructor(config?: SudographClientConfig) {
+  constructor(config?: SudocodeClientConfig) {
     this.workingDir =
       config?.workingDir || process.env.SUDOCODE_WORKING_DIR || process.cwd();
-    this.cliPath = config?.cliPath || process.env.SUDOCODE_PATH || "sg";
+    this.cliPath = config?.cliPath || process.env.SUDOCODE_PATH || "sudocode";
     this.dbPath = config?.dbPath || process.env.SUDOCODE_DB;
   }
 
@@ -66,7 +66,7 @@ export class SudographClient {
       const timer = setTimeout(() => {
         proc.kill();
         reject(
-          new SudographError(
+          new SudocodeError(
             `Command timed out after ${timeout}ms`,
             -1,
             "Timeout"
@@ -79,7 +79,7 @@ export class SudographClient {
 
         if (code !== 0) {
           reject(
-            new SudographError(
+            new SudocodeError(
               `CLI command failed with exit code ${code}`,
               code || -1,
               stderr
@@ -94,7 +94,7 @@ export class SudographClient {
           resolve(result);
         } catch (error) {
           reject(
-            new SudographError(
+            new SudocodeError(
               `Failed to parse JSON output: ${
                 error instanceof Error ? error.message : String(error)
               }`,
@@ -108,7 +108,7 @@ export class SudographClient {
       proc.on("error", (error) => {
         clearTimeout(timer);
         reject(
-          new SudographError(
+          new SudocodeError(
             `Failed to spawn CLI: ${error.message}`,
             -1,
             error.message
@@ -142,7 +142,7 @@ export class SudographClient {
         proc.on("close", (code) => {
           if (code !== 0) {
             reject(
-              new SudographError(
+              new SudocodeError(
                 `CLI not found or failed to execute. Make sure 'sg' is installed and in your PATH.`,
                 code || -1,
                 stderr
@@ -160,7 +160,7 @@ export class SudographClient {
 
         proc.on("error", () => {
           reject(
-            new SudographError(
+            new SudocodeError(
               `CLI not found at path: ${this.cliPath}. Make sure 'sg' is installed.`,
               -1,
               "CLI not found"
@@ -169,7 +169,7 @@ export class SudographClient {
         });
       });
     } catch (error) {
-      throw new SudographError(
+      throw new SudocodeError(
         `Failed to check CLI version: ${
           error instanceof Error ? error.message : String(error)
         }`,

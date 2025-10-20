@@ -447,7 +447,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 ### CLI Client Architecture
 
 ```typescript
-class SudographClient {
+class SudocodeClient {
   private workingDir: string;
   private cliPath: string;
 
@@ -471,7 +471,7 @@ class SudographClient {
 
 ### Environment Variables
 
-- `SUDOCODE_PATH`: Path to `sg` CLI (default: auto-discover from PATH)
+- `SUDOCODE_PATH`: Path to `sudocode` CLI (default: auto-discover from PATH)
 - `SUDOCODE_DB`: Path to database file (default: auto-discover)
 - `SUDOCODE_WORKING_DIR`: Working directory for commands (default: process.cwd())
 - `SUDOCODE_ACTOR`: Actor name for audit trail (default: process.env.USER)

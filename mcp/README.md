@@ -41,7 +41,7 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
       "command": "sudocode-mcp",
       "env": {
         "SUDOCODE_WORKING_DIR": "/path/to/your/project",
-        "SUDOCODE_PATH": "sg",
+        "SUDOCODE_PATH": "sudocode",
         "SUDOCODE_DB": "/path/to/custom/db.sqlite"
       }
     }
@@ -51,7 +51,7 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
 
 ## Environment Variables
 
-- `SUDOCODE_PATH` - Path to `sg` CLI executable (default: `sg`)
+- `SUDOCODE_PATH` - Path to `sudocode` CLI executable (default: `sudocode`)
 - `SUDOCODE_WORKING_DIR` - Working directory for sudocode (default: current directory)
 - `SUDOCODE_DB` - Custom database path (default: `.sudocode/db.sqlite`)
 - `SUDOCODE_ACTOR` - Actor name for operations (default: system username)
@@ -171,15 +171,15 @@ mcp/
 
 If you get "CLI not found" errors:
 
-1. Ensure `sg` is installed and in your PATH
-2. Try setting `SUDOCODE_PATH` to the full path of the `sg` executable
+1. Ensure `sudocode` is installed and in your PATH
+2. Try setting `SUDOCODE_PATH` to the full path of the `sudocode` executable
 3. Restart Claude Desktop after configuration changes
 
 ### Database Not Found
 
 If you get database errors:
 
-1. Run `sg init` in your project directory first
+1. Run `sudocode init` in your project directory first
 2. Ensure the working directory is set correctly
 3. Check that `.sudocode/db.sqlite` exists
 

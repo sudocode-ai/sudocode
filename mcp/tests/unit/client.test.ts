@@ -1,17 +1,17 @@
 /**
- * Unit tests for SudographClient
+ * Unit tests for SudocodeClient
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { spawn } from "child_process";
 import { EventEmitter } from "events";
-import { SudographClient } from "../../src/client.js";
-import { SudographError } from "../../src/types.js";
+import { SudocodeClient } from "../../src/client.js";
+import { SudocodeError } from "../../src/types.js";
 
 // Mock child_process
 vi.mock("child_process");
 
-describe("SudographClient", () => {
+describe("SudocodeClient", () => {
   let mockSpawn: any;
   let mockProcess: any;
 
@@ -33,7 +33,7 @@ describe("SudographClient", () => {
 
   describe("constructor", () => {
     it("should use default configuration", () => {
-      const client = new SudographClient();
+      const client = new SudocodeClient();
       expect(client).toBeDefined();
     });
 
@@ -43,16 +43,16 @@ describe("SudographClient", () => {
         cliPath: "/usr/local/bin/sg",
         dbPath: "/custom/db.sqlite",
       };
-      const client = new SudographClient(config);
+      const client = new SudocodeClient(config);
       expect(client).toBeDefined();
     });
 
     it("should read from environment variables", () => {
       process.env.SUDOCODE_WORKING_DIR = "/env/path";
-      process.env.SUDOCODE_PATH = "sg-custom";
+      process.env.SUDOCODE_PATH = "sudocode-custom";
       process.env.SUDOCODE_DB = "/env/db.sqlite";
 
-      const client = new SudographClient();
+      const client = new SudocodeClient();
       expect(client).toBeDefined();
 
       // Cleanup
@@ -64,7 +64,7 @@ describe("SudographClient", () => {
 
   describe("exec", () => {
     it("should spawn CLI with correct arguments", async () => {
-      const client = new SudographClient();
+      const client = new SudocodeClient();
 
       // Mock version check
       const versionProcess = new EventEmitter() as any;
@@ -100,7 +100,7 @@ describe("SudographClient", () => {
     });
 
     it("should automatically add --json flag", async () => {
-      const client = new SudographClient();
+      const client = new SudocodeClient();
 
       // Mock version check
       const versionProcess = new EventEmitter() as any;
@@ -126,7 +126,7 @@ describe("SudographClient", () => {
     });
 
     it("should not duplicate --json flag if already present", async () => {
-      const client = new SudographClient();
+      const client = new SudocodeClient();
 
       // Mock version check
       const versionProcess = new EventEmitter() as any;
@@ -155,7 +155,7 @@ describe("SudographClient", () => {
     });
 
     it("should add --db flag when dbPath is configured", async () => {
-      const client = new SudographClient({ dbPath: "/custom/db.sqlite" });
+      const client = new SudocodeClient({ dbPath: "/custom/db.sqlite" });
 
       // Mock version check
       const versionProcess = new EventEmitter() as any;
@@ -182,7 +182,7 @@ describe("SudographClient", () => {
     });
 
     it("should parse JSON output correctly", async () => {
-      const client = new SudographClient();
+      const client = new SudocodeClient();
 
       // Mock version check
       const versionProcess = new EventEmitter() as any;
@@ -207,7 +207,7 @@ describe("SudographClient", () => {
     });
 
     it("should handle multi-chunk stdout", async () => {
-      const client = new SudographClient();
+      const client = new SudocodeClient();
 
       // Mock version check
       const versionProcess = new EventEmitter() as any;
@@ -232,7 +232,7 @@ describe("SudographClient", () => {
     });
 
     it("should throw SudographError on non-zero exit code", async () => {
-      const client = new SudographClient();
+      const client = new SudocodeClient();
 
       // Mock version check
       const versionProcess = new EventEmitter() as any;
@@ -252,12 +252,12 @@ describe("SudographClient", () => {
       });
 
       await expect(client.exec(["issue", "show", "sg-999"])).rejects.toThrow(
-        SudographError
+        SudocodeError
       );
     });
 
     it("should include stderr in error message", async () => {
-      const client = new SudographClient();
+      const client = new SudocodeClient();
 
       // Mock version check
       const versionProcess = new EventEmitter() as any;
@@ -281,14 +281,14 @@ describe("SudographClient", () => {
         await client.exec(["stats"]);
         expect.fail("Should have thrown an error");
       } catch (error) {
-        expect(error).toBeInstanceOf(SudographError);
-        expect((error as SudographError).stderr).toBe(errorMessage);
-        expect((error as SudographError).exitCode).toBe(1);
+        expect(error).toBeInstanceOf(SudocodeError);
+        expect((error as SudocodeError).stderr).toBe(errorMessage);
+        expect((error as SudocodeError).exitCode).toBe(1);
       }
     });
 
     it("should throw error on malformed JSON", async () => {
-      const client = new SudographClient();
+      const client = new SudocodeClient();
 
       // Mock version check
       const versionProcess = new EventEmitter() as any;
@@ -307,11 +307,11 @@ describe("SudographClient", () => {
         mockProcess.emit("close", 0);
       });
 
-      await expect(client.exec(["stats"])).rejects.toThrow(SudographError);
+      await expect(client.exec(["stats"])).rejects.toThrow(SudocodeError);
     });
 
     it("should timeout after specified duration", async () => {
-      const client = new SudographClient();
+      const client = new SudocodeClient();
 
       // Mock version check
       const versionProcess = new EventEmitter() as any;
@@ -334,7 +334,7 @@ describe("SudographClient", () => {
     }, 1000);
 
     it("should handle spawn errors", async () => {
-      const client = new SudographClient({ cliPath: "/nonexistent/sg" });
+      const client = new SudocodeClient({ cliPath: "/nonexistent/sg" });
 
       // Mock version check failure
       const versionProcess = new EventEmitter() as any;
@@ -345,13 +345,13 @@ describe("SudographClient", () => {
         versionProcess.emit("error", new Error("ENOENT"));
       });
 
-      await expect(client.exec(["stats"])).rejects.toThrow(SudographError);
+      await expect(client.exec(["stats"])).rejects.toThrow(SudocodeError);
     });
   });
 
   describe("checkVersion", () => {
     it("should successfully check CLI version", async () => {
-      const client = new SudographClient();
+      const client = new SudocodeClient();
 
       mockSpawn.mockReturnValueOnce(mockProcess);
       setImmediate(() => {
@@ -364,7 +364,7 @@ describe("SudographClient", () => {
     });
 
     it("should parse version from numeric output", async () => {
-      const client = new SudographClient();
+      const client = new SudocodeClient();
 
       mockSpawn.mockReturnValueOnce(mockProcess);
       setImmediate(() => {
@@ -377,7 +377,7 @@ describe("SudographClient", () => {
     });
 
     it("should throw error when CLI not found", async () => {
-      const client = new SudographClient({ cliPath: "/nonexistent" });
+      const client = new SudocodeClient({ cliPath: "/nonexistent" });
 
       mockSpawn.mockReturnValueOnce(mockProcess);
 
@@ -388,12 +388,12 @@ describe("SudographClient", () => {
         mockProcess.emit("error", new Error("ENOENT"));
       });
 
-      await expect(promise).rejects.toThrow(SudographError);
+      await expect(promise).rejects.toThrow(SudocodeError);
       await expect(promise).rejects.toThrow("CLI not found");
     });
 
     it("should throw error on non-zero exit code", async () => {
-      const client = new SudographClient();
+      const client = new SudocodeClient();
 
       mockSpawn.mockReturnValueOnce(mockProcess);
       setImmediate(() => {
@@ -401,7 +401,7 @@ describe("SudographClient", () => {
         mockProcess.emit("close", 127);
       });
 
-      await expect(client.checkVersion()).rejects.toThrow(SudographError);
+      await expect(client.checkVersion()).rejects.toThrow(SudocodeError);
     });
   });
 });

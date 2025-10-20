@@ -2,8 +2,8 @@
  * MCP tools for feedback management
  */
 
-import { SudographClient } from '../client.js';
-import { Feedback, FeedbackType, FeedbackStatus } from '../types.js';
+import { SudocodeClient } from "../client.js";
+import { Feedback, FeedbackType, FeedbackStatus } from "../types.js";
 
 // Tool parameter types
 export interface AddFeedbackParams {
@@ -54,24 +54,24 @@ export interface RelocateFeedbackParams {
  * Add anchored feedback to a spec
  */
 export async function addFeedback(
-  client: SudographClient,
+  client: SudocodeClient,
   params: AddFeedbackParams
 ): Promise<Feedback> {
-  const args = ['feedback', 'add', params.issue_id, params.spec_id];
+  const args = ["feedback", "add", params.issue_id, params.spec_id];
 
-  args.push('--content', params.content);
+  args.push("--content", params.content);
 
   if (params.type) {
-    args.push('--type', params.type);
+    args.push("--type", params.type);
   }
   if (params.line !== undefined) {
-    args.push('--line', params.line.toString());
+    args.push("--line", params.line.toString());
   }
   if (params.text) {
-    args.push('--text', params.text);
+    args.push("--text", params.text);
   }
   if (params.agent) {
-    args.push('--agent', params.agent);
+    args.push("--agent", params.agent);
   }
 
   return client.exec(args);
@@ -81,25 +81,25 @@ export async function addFeedback(
  * List feedback with optional filters
  */
 export async function listFeedback(
-  client: SudographClient,
+  client: SudocodeClient,
   params: ListFeedbackParams = {}
 ): Promise<Feedback[]> {
-  const args = ['feedback', 'list'];
+  const args = ["feedback", "list"];
 
   if (params.issue) {
-    args.push('--issue', params.issue);
+    args.push("--issue", params.issue);
   }
   if (params.spec) {
-    args.push('--spec', params.spec);
+    args.push("--spec", params.spec);
   }
   if (params.type) {
-    args.push('--type', params.type);
+    args.push("--type", params.type);
   }
   if (params.status) {
-    args.push('--status', params.status);
+    args.push("--status", params.status);
   }
   if (params.limit !== undefined) {
-    args.push('--limit', params.limit.toString());
+    args.push("--limit", params.limit.toString());
   }
 
   return client.exec(args);
@@ -109,10 +109,10 @@ export async function listFeedback(
  * Show detailed feedback information
  */
 export async function showFeedback(
-  client: SudographClient,
+  client: SudocodeClient,
   params: ShowFeedbackParams
 ): Promise<any> {
-  const args = ['feedback', 'show', params.feedback_id];
+  const args = ["feedback", "show", params.feedback_id];
   return client.exec(args);
 }
 
@@ -120,10 +120,10 @@ export async function showFeedback(
  * Acknowledge feedback
  */
 export async function acknowledgeFeedback(
-  client: SudographClient,
+  client: SudocodeClient,
   params: AcknowledgeFeedbackParams
 ): Promise<Feedback> {
-  const args = ['feedback', 'acknowledge', params.feedback_id];
+  const args = ["feedback", "acknowledge", params.feedback_id];
   return client.exec(args);
 }
 
@@ -133,10 +133,10 @@ export async function acknowledgeFeedback(
  * Resolve feedback
  */
 export async function resolveFeedback(
-  client: SudographClient,
+  client: SudocodeClient,
   params: ResolveFeedbackParams
 ): Promise<Feedback> {
-  const args = ['feedback', 'resolve', params.feedback_id];
+  const args = ["feedback", "resolve", params.feedback_id];
   return client.exec(args);
 }
 
@@ -144,10 +144,10 @@ export async function resolveFeedback(
  * Mark feedback as won't fix
  */
 export async function wontfixFeedback(
-  client: SudographClient,
+  client: SudocodeClient,
   params: WontfixFeedbackParams
 ): Promise<Feedback> {
-  const args = ['feedback', 'wontfix', params.feedback_id];
+  const args = ["feedback", "wontfix", params.feedback_id];
   return client.exec(args);
 }
 
@@ -155,13 +155,13 @@ export async function wontfixFeedback(
  * Get stale feedback
  */
 export async function staleFeedback(
-  client: SudographClient,
+  client: SudocodeClient,
   params: StaleFeedbackParams = {}
 ): Promise<Feedback[]> {
-  const args = ['feedback', 'stale'];
+  const args = ["feedback", "stale"];
 
   if (params.limit !== undefined) {
-    args.push('--limit', params.limit.toString());
+    args.push("--limit", params.limit.toString());
   }
 
   return client.exec(args);
@@ -171,9 +171,9 @@ export async function staleFeedback(
  * Relocate feedback anchors after spec changes
  */
 export async function relocateFeedback(
-  client: SudographClient,
+  client: SudocodeClient,
   params: RelocateFeedbackParams
 ): Promise<Feedback> {
-  const args = ['feedback', 'relocate', params.feedback_id];
+  const args = ["feedback", "relocate", params.feedback_id];
   return client.exec(args);
 }

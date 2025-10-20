@@ -2,7 +2,7 @@
  * MCP tools for analytics and statistics
  */
 
-import { SudographClient } from '../client.js';
+import { SudocodeClient } from "../client.js";
 
 // Tool parameter types
 export interface StatusParams {
@@ -41,23 +41,21 @@ export interface StatsResult {
 /**
  * Get comprehensive project statistics
  */
-export async function stats(
-  client: SudographClient
-): Promise<StatsResult> {
-  return client.exec(['stats']);
+export async function stats(client: SudocodeClient): Promise<StatsResult> {
+  return client.exec(["stats"]);
 }
 
 /**
  * Get quick project status
  */
 export async function status(
-  client: SudographClient,
+  client: SudocodeClient,
   params: StatusParams = {}
 ): Promise<any> {
-  const args = ['status'];
+  const args = ["status"];
 
   if (params.verbose) {
-    args.push('--verbose');
+    args.push("--verbose");
   }
 
   return client.exec(args);

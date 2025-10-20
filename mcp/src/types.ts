@@ -1,31 +1,36 @@
 /**
- * Type definitions for Sudograph MCP server
+ * Type definitions for sudocode MCP server
  */
 
-// Sudograph entity types
-export type SpecStatus = 'draft' | 'review' | 'approved' | 'deprecated';
-export type SpecType = 'architecture' | 'api' | 'database' | 'feature' | 'research';
+// sudocode entity types
+export type SpecStatus = "draft" | "review" | "approved" | "deprecated";
+export type SpecType =
+  | "architecture"
+  | "api"
+  | "database"
+  | "feature"
+  | "research";
 
-export type IssueStatus = 'open' | 'in_progress' | 'blocked' | 'closed';
-export type IssueType = 'bug' | 'feature' | 'task' | 'epic' | 'chore';
+export type IssueStatus = "open" | "in_progress" | "blocked" | "closed";
+export type IssueType = "bug" | "feature" | "task" | "epic" | "chore";
 
 export type RelationshipType =
-  | 'blocks'
-  | 'implements'
-  | 'references'
-  | 'depends-on'
-  | 'parent-child'
-  | 'discovered-from'
-  | 'related';
+  | "blocks"
+  | "implements"
+  | "references"
+  | "depends-on"
+  | "parent-child"
+  | "discovered-from"
+  | "related";
 
 export type FeedbackType =
-  | 'ambiguity'
-  | 'missing_requirement'
-  | 'technical_constraint'
-  | 'suggestion'
-  | 'question';
+  | "ambiguity"
+  | "missing_requirement"
+  | "technical_constraint"
+  | "suggestion"
+  | "question";
 
-export type FeedbackStatus = 'open' | 'acknowledged' | 'resolved' | 'wont_fix';
+export type FeedbackStatus = "open" | "acknowledged" | "resolved" | "wont_fix";
 
 // Entity interfaces
 export interface Spec {
@@ -62,9 +67,9 @@ export interface Issue {
 
 export interface Relationship {
   from_id: string;
-  from_type: 'spec' | 'issue';
+  from_type: "spec" | "issue";
   to_id: string;
-  to_type: 'spec' | 'issue';
+  to_type: "spec" | "issue";
   relationship_type: RelationshipType;
   created_at: string;
   created_by: string;
@@ -93,7 +98,7 @@ export interface FeedbackAnchor {
   context_before?: string;
   context_after?: string;
   content_hash?: string;
-  anchor_status: 'valid' | 'relocated' | 'stale';
+  anchor_status: "valid" | "relocated" | "stale";
   last_verified_at?: string;
   original_location?: {
     line_number: number;
@@ -102,20 +107,16 @@ export interface FeedbackAnchor {
 }
 
 // Client configuration
-export interface SudographClientConfig {
+export interface SudocodeClientConfig {
   workingDir?: string;
   cliPath?: string;
   dbPath?: string;
 }
 
 // Custom error type
-export class SudographError extends Error {
-  constructor(
-    message: string,
-    public exitCode: number,
-    public stderr: string
-  ) {
+export class SudocodeError extends Error {
+  constructor(message: string, public exitCode: number, public stderr: string) {
     super(message);
-    this.name = 'SudographError';
+    this.name = "SudocodeError";
   }
 }
