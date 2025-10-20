@@ -8,7 +8,7 @@ Model Context Protocol (MCP) server for [sudocode](https://github.com/sudocode-a
 - **Git-native workflow** - All data stored in git
 - **Anchored feedback** - Link issues to specific lines in specs with smart relocation
 - **Relationship tracking** - Model dependencies and blockers
-- **CLI-first design** - Wraps existing `sg` CLI commands
+- **CLI-first design** - Wraps existing `sudocode` CLI commands
 
 ## Installation
 

@@ -89,7 +89,7 @@ describe("SudocodeClient", () => {
 
       expect(mockSpawn).toHaveBeenCalledTimes(2); // version + command
       expect(mockSpawn).toHaveBeenLastCalledWith(
-        "sg",
+        "sudocode",
         ["issue", "list", "--json"],
         expect.objectContaining({
           cwd: expect.any(String),

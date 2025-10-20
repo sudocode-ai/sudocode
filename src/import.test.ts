@@ -292,8 +292,8 @@ describe('Import Operations', () => {
         },
       ];
 
-      await writeJSONL(path.join(TEST_DIR, 'specs', 'specs.jsonl'), specs);
-      await writeJSONL(path.join(TEST_DIR, 'issues', 'issues.jsonl'), []);
+      await writeJSONL(path.join(TEST_DIR, 'specs.jsonl'), specs);
+      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), []);
 
       // Dry run import
       const result = await importFromJSONL(db, {
@@ -336,8 +336,8 @@ describe('Import Operations', () => {
         },
       ];
 
-      await writeJSONL(path.join(TEST_DIR, 'specs', 'specs.jsonl'), specs);
-      await writeJSONL(path.join(TEST_DIR, 'issues', 'issues.jsonl'), []);
+      await writeJSONL(path.join(TEST_DIR, 'specs.jsonl'), specs);
+      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), []);
 
       // Import
       const result = await importFromJSONL(db, {
@@ -383,8 +383,8 @@ describe('Import Operations', () => {
         },
       ];
 
-      await writeJSONL(path.join(TEST_DIR, 'specs', 'specs.jsonl'), specs);
-      await writeJSONL(path.join(TEST_DIR, 'issues', 'issues.jsonl'), []);
+      await writeJSONL(path.join(TEST_DIR, 'specs.jsonl'), specs);
+      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), []);
 
       // Import
       const result = await importFromJSONL(db, {
