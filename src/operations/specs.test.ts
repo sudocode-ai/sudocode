@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { initDatabase } from '../db.js';
-import { createSpec, getSpec, updateSpec, deleteSpec, listSpecs, getReadySpecs, searchSpecs } from './specs.js';
+import { createSpec, getSpec, getSpecByFilePath, updateSpec, deleteSpec, listSpecs, getReadySpecs, searchSpecs } from './specs.js';
 import type Database from 'better-sqlite3';
 
 describe('Spec Operations', () => {
@@ -85,6 +85,50 @@ describe('Spec Operations', () => {
     it('should return null for non-existent spec', () => {
       const spec = getSpec(db, 'non-existent');
       expect(spec).toBeNull();
+    });
+  });
+
+  describe('getSpecByFilePath', () => {
+    it('should retrieve a spec by its file path', () => {
+      createSpec(db, {
+        id: 'spec-001',
+        title: 'Test Spec',
+        file_path: 'specs/test-spec.md',
+        created_by: 'user1',
+      });
+
+      const spec = getSpecByFilePath(db, 'specs/test-spec.md');
+      expect(spec).not.toBeNull();
+      expect(spec?.id).toBe('spec-001');
+      expect(spec?.title).toBe('Test Spec');
+      expect(spec?.file_path).toBe('specs/test-spec.md');
+    });
+
+    it('should return null for non-existent file path', () => {
+      const spec = getSpecByFilePath(db, 'specs/non-existent.md');
+      expect(spec).toBeNull();
+    });
+
+    it('should distinguish between different specs with similar paths', () => {
+      createSpec(db, {
+        id: 'spec-001',
+        title: 'First Spec',
+        file_path: 'specs/test.md',
+        created_by: 'user1',
+      });
+
+      createSpec(db, {
+        id: 'spec-002',
+        title: 'Second Spec',
+        file_path: 'specs/test2.md',
+        created_by: 'user1',
+      });
+
+      const spec1 = getSpecByFilePath(db, 'specs/test.md');
+      const spec2 = getSpecByFilePath(db, 'specs/test2.md');
+
+      expect(spec1?.id).toBe('spec-001');
+      expect(spec2?.id).toBe('spec-002');
     });
   });
 

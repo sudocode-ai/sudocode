@@ -9,15 +9,15 @@ import {
   parseMarkdownFile,
   updateFrontmatterFile,
   writeMarkdownFile,
-  extractCrossReferences,
 } from './markdown.js';
-import { getSpec, createSpec, updateSpec } from './operations/specs.js';
+import { getSpec, getSpecByFilePath, createSpec, updateSpec } from './operations/specs.js';
 import { getIssue, createIssue, updateIssue } from './operations/issues.js';
 import { addRelationship } from './operations/relationships.js';
 import { getTags, setTags } from './operations/tags.js';
 import { listFeedback, updateFeedback } from './operations/feedback.js';
 import { relocateFeedbackAnchor } from './operations/feedback-anchors.js';
 import { exportToJSONL } from './export.js';
+import { generateSpecId, generateIssueId } from './id-generator.js';
 import type { Spec, Issue, SpecStatus, SpecType, IssueStatus, IssueType } from './types.js';
 
 export interface SyncResult {
@@ -41,6 +41,86 @@ export interface SyncOptions {
    * User performing the sync
    */
   user?: string;
+  /**
+   * Auto-initialize missing frontmatter fields (default: true)
+   * If true, generates missing IDs and provides default values
+   * If false, rejects files with missing required fields
+   */
+  autoInitialize?: boolean;
+  /**
+   * Whether to write back initialized frontmatter to the file (default: true)
+   * Only applies when autoInitialize is true
+   */
+  writeBackFrontmatter?: boolean;
+}
+
+/**
+ * Initialize missing frontmatter fields
+ */
+function initializeFrontmatter(
+  data: Record<string, any>,
+  entityType: 'spec' | 'issue',
+  mdPath: string,
+  outputDir: string,
+  user: string
+): Record<string, any> {
+  const now = new Date().toISOString();
+  const initialized = { ...data };
+
+  // Generate ID if missing
+  if (!initialized.id) {
+    initialized.id = entityType === 'spec'
+      ? generateSpecId(outputDir)
+      : generateIssueId(outputDir);
+  }
+
+  // Extract title from content if missing
+  if (!initialized.title) {
+    const content = fs.readFileSync(mdPath, 'utf8');
+    const titleMatch = content.match(/^#\s+(.+)$/m);
+    initialized.title = titleMatch ? titleMatch[1] : path.basename(mdPath, '.md');
+  }
+
+  // Set timestamps
+  if (!initialized.created_at) {
+    initialized.created_at = now;
+  }
+  if (!initialized.updated_at) {
+    initialized.updated_at = now;
+  }
+
+  // Set user
+  if (!initialized.created_by) {
+    initialized.created_by = user;
+  }
+  if (!initialized.updated_by && entityType === 'spec') {
+    initialized.updated_by = user;
+  }
+
+  // Set entity type
+  initialized.entity_type = entityType;
+
+  // Set type-specific defaults
+  if (entityType === 'spec') {
+    if (!initialized.type) initialized.type = 'feature';
+    if (!initialized.status) initialized.status = 'draft';
+    if (!initialized.priority && initialized.priority !== 0) initialized.priority = 2;
+    if (!initialized.file_path) {
+      // Try to make path relative to outputDir
+      const relPath = path.relative(outputDir, mdPath);
+      initialized.file_path = relPath.startsWith('..')
+        ? path.relative(process.cwd(), mdPath)
+        : relPath;
+    }
+  } else {
+    // issue
+    if (!initialized.issue_type) initialized.issue_type = 'task';
+    if (!initialized.status) initialized.status = 'open';
+    if (!initialized.priority && initialized.priority !== 0) initialized.priority = 2;
+    if (!initialized.description) initialized.description = '';
+  }
+
+  return initialized;
 }
 
 /**
@@ -52,28 +132,65 @@ export async function syncMarkdownToJSONL(
   mdPath: string,
   options: SyncOptions = {}
 ): Promise<SyncResult> {
-  const { outputDir = '.sudocode', autoExport = true, user = 'system' } = options;
+  const {
+    outputDir = '.sudocode',
+    autoExport = true,
+    user = 'system',
+    autoInitialize = true,
+    writeBackFrontmatter = true,
+  } = options;
 
   try {
     // Parse markdown file
     const parsed = parseMarkdownFile(mdPath);
-    const { data, content, references } = parsed;
+    let { data, content, references } = parsed;
 
     // Determine entity type from frontmatter or file path
     const entityType = determineEntityType(data, mdPath);
-    const entityId = data.id as string | undefined;
+    let entityId = data.id as string | undefined;
 
-    if (!entityId) {
-      return {
-        success: false,
-        action: 'no-change',
-        entityId: '',
-        entityType,
-        error: 'Missing id in frontmatter',
-      };
+    // Calculate relative file path from outputDir
+    const relPath = path.relative(outputDir, mdPath);
+    const filePath = relPath.startsWith('..')
+      ? path.relative(process.cwd(), mdPath)
+      : relPath;
+
+    // For specs without frontmatter, check if a spec already exists with this file path
+    // This prevents duplicates when files don't have frontmatter
+    let existingByPath: any = null;
+    if (!entityId && entityType === 'spec') {
+      existingByPath = getSpecByFilePath(db, filePath);
+      if (existingByPath) {
+        entityId = existingByPath.id;
+        // Update data with the existing ID and file_path
+        data.id = entityId;
+        data.file_path = filePath;
+      }
     }
 
-    // Check if entity exists
+    // Handle missing frontmatter
+    if (!entityId) {
+      if (autoInitialize) {
+        // Auto-initialize missing fields
+        data = initializeFrontmatter(data, entityType, mdPath, outputDir, user);
+        entityId = data.id as string;
+
+        // Write back frontmatter if requested
+        if (writeBackFrontmatter) {
+          updateFrontmatterFile(mdPath, data);
+        }
+      } else {
+        return {
+          success: false,
+          action: 'no-change',
+          entityId: '',
+          entityType,
+          error: 'Missing id in frontmatter (auto-initialization disabled)',
+        };
+      }
+    }
+
+    // Check if entity exists by ID
     const existing =
       entityType === 'spec'
         ? getSpec(db, entityId)

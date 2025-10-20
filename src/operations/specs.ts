@@ -90,6 +90,17 @@ export function getSpec(db: Database.Database, id: string): Spec | null {
 }
 
 /**
+ * Get a spec by file path
+ */
+export function getSpecByFilePath(db: Database.Database, filePath: string): Spec | null {
+  const stmt = db.prepare(`
+    SELECT * FROM specs WHERE file_path = ?
+  `);
+
+  return (stmt.get(filePath) as Spec | undefined) ?? null;
+}
+
+/**
  * Update a spec
  */
 export function updateSpec(

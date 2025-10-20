@@ -8,6 +8,8 @@ import * as path from "path";
 import type Database from "better-sqlite3";
 import { syncMarkdownToJSONL } from "./sync.js";
 import { importFromJSONL } from "./import.js";
+import { exportToJSONL } from "./export.js";
+import { getSpecByFilePath, deleteSpec } from "./operations/specs.js";
 
 export interface WatcherOptions {
   /**
@@ -114,14 +116,31 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
         onLog(`[watch] ${event} ${path.relative(baseDir, filePath)}`);
 
         if (event === "unlink") {
-          // File was deleted - we could handle this by marking entity as deleted
-          // For now, just log it
-          onLog(`[watch] File deleted: ${basename}`);
+          // File was deleted - remove from database and JSONL
+          // Calculate relative file path
+          const relPath = path.relative(baseDir, filePath);
+
+          // Look up spec by file path
+          const spec = getSpecByFilePath(db, relPath);
+          if (spec) {
+            // Delete from database
+            const deleted = deleteSpec(db, spec.id);
+            if (deleted) {
+              onLog(`[watch] Deleted spec ${spec.id} (file removed)`);
+
+              // Export to JSONL to reflect deletion
+              await exportToJSONL(db, { outputDir: baseDir });
+            }
+          } else {
+            onLog(`[watch] File deleted but no spec found: ${relPath}`);
+          }
         } else {
           // Sync markdown to database
           const result = await syncMarkdownToJSONL(db, filePath, {
             outputDir: baseDir,
             autoExport: true,
+            autoInitialize: true,
+            writeBackFrontmatter: false,
           });
 
           if (result.success) {

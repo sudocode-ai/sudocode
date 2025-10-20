@@ -264,6 +264,139 @@ Content version: `;
       expect(changesProcessed).toBeGreaterThan(0);
     });
 
+    it('should delete spec from database when file is deleted', async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create a markdown file BEFORE starting watcher
+      const specPath = path.join(tempDir, 'specs', 'test-delete.md');
+      const content = `---
+id: spec-delete-001
+title: Test Delete Spec
+type: feature
+status: draft
+priority: 2
+created_by: test
+file_path: specs/test-delete.md
+---
+
+# Test Delete Spec
+
+This spec will be deleted.
+`;
+      fs.writeFileSync(specPath, content, 'utf8');
+
+      // Start watcher with ignoreInitial: false to detect and sync the file
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 100,
+        ignoreInitial: false, // Detect existing files
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for watcher to start and process initial file
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Import getSpec to verify the spec exists
+      const { getSpec } = await import('./operations/specs.js');
+
+      // Verify spec was created in database
+      let spec = getSpec(db, 'spec-delete-001');
+      expect(spec).not.toBeNull();
+      expect(spec?.title).toBe('Test Delete Spec');
+
+      // Verify spec exists in JSONL
+      const jsonlPath = path.join(tempDir, 'specs', 'specs.jsonl');
+      let jsonlContent = fs.readFileSync(jsonlPath, 'utf8');
+      expect(jsonlContent).toContain('spec-delete-001');
+
+      // Delete the markdown file
+      fs.unlinkSync(specPath);
+
+      // Wait for deletion to be processed
+      // awaitWriteFinish + debounce + processing
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Verify spec was deleted from database
+      spec = getSpec(db, 'spec-delete-001');
+      expect(spec).toBeNull();
+
+      // Verify spec was removed from JSONL
+      jsonlContent = fs.readFileSync(jsonlPath, 'utf8');
+      expect(jsonlContent).not.toContain('spec-delete-001');
+
+      // Verify deletion was logged
+      expect(logs.some((log) => log.includes('Deleted spec spec-delete-001'))).toBe(true);
+      expect(logs.some((log) => log.includes('unlink'))).toBe(true);
+
+      // No errors should occur
+      expect(errors.length).toBe(0);
+    });
+
+    it('should handle deletion of spec without frontmatter (identified by file path)', async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create a markdown file WITHOUT frontmatter BEFORE starting watcher
+      const specPath = path.join(tempDir, 'specs', 'no-frontmatter-delete.md');
+      const content = `# No Frontmatter Delete Test
+
+This spec has no frontmatter and will be deleted.
+`;
+      fs.writeFileSync(specPath, content, 'utf8');
+
+      // Start watcher with ignoreInitial: false to detect and sync the file
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 100,
+        ignoreInitial: false, // Detect existing files
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for watcher to start and process initial file
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Import getSpecByFilePath to find the auto-created spec
+      const { getSpecByFilePath } = await import('./operations/specs.js');
+
+      // Verify spec was auto-created in database (by file path)
+      const relPath = 'specs/no-frontmatter-delete.md';
+      let spec = getSpecByFilePath(db, relPath);
+      expect(spec).not.toBeNull();
+      const specId = spec?.id;
+      expect(specId).toBeDefined();
+
+      // Verify spec exists in JSONL
+      const jsonlPath = path.join(tempDir, 'specs', 'specs.jsonl');
+      let jsonlContent = fs.readFileSync(jsonlPath, 'utf8');
+      expect(jsonlContent).toContain(specId!);
+
+      // Delete the markdown file
+      fs.unlinkSync(specPath);
+
+      // Wait for deletion to be processed
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Verify spec was deleted from database (by file path lookup)
+      spec = getSpecByFilePath(db, relPath);
+      expect(spec).toBeNull();
+
+      // Verify spec was removed from JSONL
+      jsonlContent = fs.readFileSync(jsonlPath, 'utf8');
+      expect(jsonlContent).not.toContain(specId!);
+
+      // Verify deletion was logged
+      expect(logs.some((log) => log.includes(`Deleted spec ${specId}`))).toBe(true);
+      expect(logs.some((log) => log.includes('unlink'))).toBe(true);
+
+      // No errors should occur
+      expect(errors.length).toBe(0);
+    });
+
     it('should stop cleanly', async () => {
       const logs: string[] = [];
 
