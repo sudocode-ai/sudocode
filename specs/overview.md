@@ -72,7 +72,7 @@ We can expand this to support sudograph-specific configs to modify behavior.
 
 The repository is used as the source of truth, and a db is synced and derived from the repo data as a cache for access and queryability.
 
-Each machine has a local SQLite cache (.sudocode/sudograph.db) - gitignored
+Each machine has a local SQLite cache (.sudocode/sudocode.db) - gitignored
 Source of truth is JSONL (.sudocode/issues/issues.jsonl, .sudocode/specs/specs.jsonl, etc) - committed to git
 Auto-export syncs SQLite → JSONL after CRUD operations (5-second debounce)
 Auto-import syncs JSONL → SQLite when JSONL is newer (e.g., after git pull)

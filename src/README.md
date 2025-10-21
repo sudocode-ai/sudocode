@@ -54,7 +54,7 @@ This directory contains the SQLite schema implementation for sudograph.
 import { initDatabase } from './db.js';
 
 const db = initDatabase({
-  path: '.sudocode/sudograph.db',
+  path: '.sudocode/sudocode.db',
   verbose: false
 });
 ```

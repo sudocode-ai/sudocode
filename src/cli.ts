@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Sudograph CLI - Git-native spec and issue management
+ * sudocode CLI - Git-native spec and issue management
  */
 
 import { Command } from "commander";
@@ -52,14 +52,14 @@ let jsonOutput: boolean = false;
 
 /**
  * Find database path
- * Searches for .sudocode/sudograph.db in current directory and parent directories
+ * Searches for .sudocode/sudocode.db in current directory and parent directories
  */
 function findDatabasePath(): string | null {
   let currentDir = process.cwd();
   const root = path.parse(currentDir).root;
 
   while (currentDir !== root) {
-    const potentialPath = path.join(currentDir, ".sudocode", "sudograph.db");
+    const potentialPath = path.join(currentDir, ".sudocode", "sudocode.db");
     if (fs.existsSync(potentialPath)) {
       return potentialPath;
     }
@@ -81,7 +81,7 @@ function initDB() {
     } else {
       // Default location
       outputDir = path.join(process.cwd(), ".sudocode");
-      dbPath = path.join(outputDir, "sudograph.db");
+      dbPath = path.join(outputDir, "sudocode.db");
     }
   }
 
@@ -142,9 +142,9 @@ program
 program
   .command("init")
   .description("Initialize .sudocode directory structure")
-  .option("--prefix <prefix>", "ID prefix for specs/issues", "sg")
+  .option("--prefix <prefix>", "ID prefix for specs/issues", "sudocode")
   .action((options) => {
-    const prefix = options.prefix || "sg";
+    const prefix = options.prefix || "sudocode";
     const dir = path.join(process.cwd(), ".sudocode");
 
     try {
@@ -154,7 +154,7 @@ program
       fs.mkdirSync(path.join(dir, "issues"), { recursive: true });
 
       // Initialize database
-      const dbPath = path.join(dir, "sudograph.db");
+      const dbPath = path.join(dir, "sudocode.db");
       // Ensure the database directory exists before creating the database
       fs.mkdirSync(path.dirname(dbPath), { recursive: true });
       const database = initDatabase({ path: dbPath });
@@ -183,7 +183,7 @@ program
 
       database.close();
 
-      console.log(chalk.green("✓ Initialized sudograph in"), chalk.cyan(dir));
+      console.log(chalk.green("✓ Initialized sudocode in"), chalk.cyan(dir));
       console.log(chalk.gray(`  Prefix: ${prefix}`));
       console.log(chalk.gray(`  Database: ${dbPath}`));
     } catch (error) {

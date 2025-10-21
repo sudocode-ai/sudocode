@@ -27,7 +27,7 @@ This document defines the storage layer for sudograph, inspired by the beads pro
       ┌──────────────────┐
       │   SQLite Cache   │
       │ .sudocode/       │
-      │   sudograph.db   │
+      │   sudocode.db   │
       │                  │
       │  ✗ Gitignored    │
       │  ✓ Fast queries  │
@@ -59,7 +59,7 @@ This document defines the storage layer for sudograph, inspired by the beads pro
 │   ├── issue-002.md
 │   └── issues.jsonl            # JSONL snapshot (git-tracked)
 ├── meta.json                   # ID counters, config (git-tracked)
-├── sudograph.db                # SQLite cache (gitignored)
+├── sudocode.db                # SQLite cache (gitignored)
 └── .gitignore                  # Ignore *.db
 ```
 
