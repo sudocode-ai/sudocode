@@ -125,7 +125,7 @@ const result = await importFromJSONL(db, {
 import { initDatabase } from './db.js';
 import { importFromJSONL } from './import.js';
 
-const db = initDatabase({ path: '.sudocode/sudocode.db' });
+const db = initDatabase({ path: '.sudocode/cache.db' });
 
 // Import from default location
 const result = await importFromJSONL(db);

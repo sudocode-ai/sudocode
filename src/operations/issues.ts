@@ -4,9 +4,11 @@
 
 import type Database from 'better-sqlite3';
 import type { Issue, IssueStatus } from '../types.js';
+import { generateUUID } from '../id-generator.js';
 
 export interface CreateIssueInput {
   id: string;
+  uuid?: string;
   title: string;
   description?: string;
   content?: string;
@@ -39,12 +41,14 @@ export interface ListIssuesOptions {
  * Create a new issue
  */
 export function createIssue(db: Database.Database, input: CreateIssueInput): Issue {
+  const uuid = input.uuid || generateUUID();
+
   const stmt = db.prepare(`
     INSERT INTO issues (
-      id, title, description, content, status, priority,
+      id, uuid, title, description, content, status, priority,
       assignee, parent_id
     ) VALUES (
-      @id, @title, @description, @content, @status, @priority,
+      @id, @uuid, @title, @description, @content, @status, @priority,
       @assignee, @parent_id
     )
   `);
@@ -52,6 +56,7 @@ export function createIssue(db: Database.Database, input: CreateIssueInput): Iss
   try {
     stmt.run({
       id: input.id,
+      uuid: uuid,
       title: input.title,
       description: input.description || '',
       content: input.content || '',

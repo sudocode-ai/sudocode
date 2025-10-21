@@ -45,13 +45,13 @@ describe('Import Operations', () => {
   });
 
   describe('detectChanges', () => {
-    it('should detect added entities', () => {
+    it('should detect added entities (using UUID matching)', () => {
       const existing = [
-        { id: 'spec-001', updated_at: '2025-01-01T00:00:00Z' },
+        { id: 'spec-001', uuid: 'uuid-001', updated_at: '2025-01-01T00:00:00Z' },
       ];
       const incoming = [
-        { id: 'spec-001', updated_at: '2025-01-01T00:00:00Z' },
-        { id: 'spec-002', updated_at: '2025-01-02T00:00:00Z' },
+        { id: 'spec-001', uuid: 'uuid-001', updated_at: '2025-01-01T00:00:00Z' },
+        { id: 'spec-002', uuid: 'uuid-002', updated_at: '2025-01-02T00:00:00Z' },
       ];
 
       const changes = detectChanges(existing, incoming);
@@ -61,12 +61,12 @@ describe('Import Operations', () => {
       expect(changes.deleted).toEqual([]);
     });
 
-    it('should detect updated entities', () => {
+    it('should detect updated entities (using UUID matching)', () => {
       const existing = [
-        { id: 'spec-001', updated_at: '2025-01-01T00:00:00Z' },
+        { id: 'spec-001', uuid: 'uuid-001', updated_at: '2025-01-01T00:00:00Z' },
       ];
       const incoming = [
-        { id: 'spec-001', updated_at: '2025-01-02T00:00:00Z' },
+        { id: 'spec-001', uuid: 'uuid-001', updated_at: '2025-01-02T00:00:00Z' },
       ];
 
       const changes = detectChanges(existing, incoming);
@@ -76,13 +76,13 @@ describe('Import Operations', () => {
       expect(changes.deleted).toEqual([]);
     });
 
-    it('should detect deleted entities', () => {
+    it('should detect deleted entities (using UUID matching)', () => {
       const existing = [
-        { id: 'spec-001', updated_at: '2025-01-01T00:00:00Z' },
-        { id: 'spec-002', updated_at: '2025-01-01T00:00:00Z' },
+        { id: 'spec-001', uuid: 'uuid-001', updated_at: '2025-01-01T00:00:00Z' },
+        { id: 'spec-002', uuid: 'uuid-002', updated_at: '2025-01-01T00:00:00Z' },
       ];
       const incoming = [
-        { id: 'spec-001', updated_at: '2025-01-01T00:00:00Z' },
+        { id: 'spec-001', uuid: 'uuid-001', updated_at: '2025-01-01T00:00:00Z' },
       ];
 
       const changes = detectChanges(existing, incoming);
@@ -94,41 +94,70 @@ describe('Import Operations', () => {
 
     it('should detect unchanged entities', () => {
       const existing = [
-        { id: 'spec-001', updated_at: '2025-01-01T00:00:00Z' },
+        { id: 'spec-001', uuid: 'uuid-001', updated_at: '2025-01-01T00:00:00Z' },
       ];
       const incoming = [
-        { id: 'spec-001', updated_at: '2025-01-01T00:00:00Z' },
+        { id: 'spec-001', uuid: 'uuid-001', updated_at: '2025-01-01T00:00:00Z' },
       ];
 
       const changes = detectChanges(existing, incoming);
 
       expect(changes.unchanged).toEqual(['spec-001']);
     });
+
+    it('should treat same UUID with different ID as update (entity was renamed)', () => {
+      const existing = [
+        { id: 'spec-001', uuid: 'uuid-same', updated_at: '2025-01-01T00:00:00Z' },
+      ];
+      const incoming = [
+        { id: 'spec-999', uuid: 'uuid-same', updated_at: '2025-01-02T00:00:00Z' },
+      ];
+
+      const changes = detectChanges(existing, incoming);
+
+      expect(changes.added).toEqual([]);
+      expect(changes.updated).toEqual(['spec-999']); // Returns new ID
+      expect(changes.deleted).toEqual([]);
+    });
   });
 
   describe('detectCollisions', () => {
-    it('should detect ID collisions with different content', () => {
+    it('should detect ID collisions when UUIDs differ (different entities with same ID)', () => {
       const existing = [
-        { id: 'spec-001', title: 'Original Title' },
+        { id: 'spec-001', uuid: 'uuid-aaa', title: 'Original Title' },
       ];
       const incoming = [
-        { id: 'spec-001', title: 'Different Title' },
+        { id: 'spec-001', uuid: 'uuid-bbb', title: 'Different Title' },
       ];
 
       const collisions = detectCollisions(existing, incoming);
 
       expect(collisions).toHaveLength(1);
       expect(collisions[0].id).toBe('spec-001');
+      expect(collisions[0].reason).toBe('Same ID but different UUID (different entities)');
       expect(collisions[0].localContent).toBe('Original Title');
       expect(collisions[0].incomingContent).toBe('Different Title');
     });
 
-    it('should not detect collision for same content', () => {
+    it('should not detect collision when UUIDs match (same entity)', () => {
       const existing = [
-        { id: 'spec-001', title: 'Same Title' },
+        { id: 'spec-001', uuid: 'uuid-same', title: 'Original Title' },
       ];
       const incoming = [
-        { id: 'spec-001', title: 'Same Title' },
+        { id: 'spec-001', uuid: 'uuid-same', title: 'Updated Title' },
+      ];
+
+      const collisions = detectCollisions(existing, incoming);
+
+      expect(collisions).toHaveLength(0);
+    });
+
+    it('should not detect collision for different IDs (even if content is same)', () => {
+      const existing = [
+        { id: 'spec-001', uuid: 'uuid-aaa', title: 'Same Title' },
+      ];
+      const incoming = [
+        { id: 'spec-002', uuid: 'uuid-bbb', title: 'Same Title' },
       ];
 
       const collisions = detectCollisions(existing, incoming);
@@ -208,6 +237,7 @@ describe('Import Operations', () => {
       const specs: SpecJSONL[] = [
         {
           id: 'spec-001',
+          uuid: 'uuid-spec-001',
           title: 'Test Spec',
           file_path: 'test.md',
           content: '# Test',
@@ -223,6 +253,7 @@ describe('Import Operations', () => {
       const issues: IssueJSONL[] = [
         {
           id: 'issue-001',
+          uuid: 'uuid-issue-001',
           title: 'Test Issue',
           description: 'Test description',
           content: '# Details',
@@ -235,6 +266,7 @@ describe('Import Operations', () => {
           parent_id: null,
           relationships: [],
           tags: ['test'],
+          feedback: [],
         },
       ];
 
@@ -251,18 +283,20 @@ describe('Import Operations', () => {
       expect(result.collisions).toHaveLength(0);
     });
 
-    it('should detect and report collisions in dry-run mode', async () => {
-      // Create existing data
+    it('should detect and report collisions in dry-run mode (same ID, different UUID)', async () => {
+      // Create existing data with UUID
       createSpec(db, {
         id: 'spec-001',
+        uuid: 'uuid-original',
         title: 'Original Title',
         file_path: 'orig.md',
       });
 
-      // Create JSONL with conflicting content
+      // Create JSONL with same ID but different UUID (collision!)
       const specs: SpecJSONL[] = [
         {
           id: 'spec-001',
+          uuid: 'uuid-different',
           title: 'Different Title',
           file_path: 'diff.md',
           content: '',
@@ -285,12 +319,15 @@ describe('Import Operations', () => {
       });
 
       expect(result.collisions.length).toBeGreaterThan(0);
+      expect(result.collisions[0].reason).toBe('Same ID but different UUID (different entities)');
     });
 
-    it('should update existing entities', async () => {
-      // Create existing data
+    it('should update existing entities (same UUID, different content)', async () => {
+      // Create existing data with UUID
+      const uuid = 'uuid-same';
       createSpec(db, {
         id: 'spec-001',
+        uuid: uuid,
         title: 'Original',
         file_path: 'orig.md',
       });
@@ -298,10 +335,11 @@ describe('Import Operations', () => {
       // Wait to ensure different timestamp
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      // Create JSONL with updated content
+      // Create JSONL with updated content but same UUID
       const specs: SpecJSONL[] = [
         {
           id: 'spec-001',
+          uuid: uuid,
           title: 'Updated',
           file_path: 'updated.md',
           content: 'New content',
@@ -325,24 +363,27 @@ describe('Import Operations', () => {
       expect(result.specs.updated).toBe(1);
     });
 
-    it('should delete entities not in JSONL', async () => {
-      // Create existing data
+    it('should delete entities not in JSONL (UUID not present)', async () => {
+      // Create existing data with UUIDs
       createSpec(db, {
         id: 'spec-001',
+        uuid: 'uuid-001',
         title: 'To Delete',
         file_path: 'delete.md',
       });
 
       createSpec(db, {
         id: 'spec-002',
+        uuid: 'uuid-002',
         title: 'To Keep',
         file_path: 'keep.md',
       });
 
-      // Create JSONL with only spec-002
+      // Create JSONL with only spec-002 (uuid-002)
       const specs: SpecJSONL[] = [
         {
           id: 'spec-002',
+          uuid: 'uuid-002',
           title: 'To Keep',
           file_path: 'keep.md',
           content: '',

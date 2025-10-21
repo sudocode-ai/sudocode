@@ -71,29 +71,32 @@ export interface ChangeDetection {
 
 /**
  * Detect changes between existing and incoming entities
+ * Uses UUID as the source of truth for entity identity
  */
-export function detectChanges<T extends { id: string; updated_at: string }>(
+export function detectChanges<T extends { id: string; uuid: string; updated_at: string }>(
   existing: T[],
   incoming: T[]
 ): ChangeDetection {
-  const existingIds = new Set(existing.map((e) => e.id));
-  const incomingIds = new Set(incoming.map((e) => e.id));
+  // Map by UUID (the true identity)
+  const existingByUUID = new Map(existing.map((e) => [e.uuid, e]));
+  const incomingUUIDs = new Set(incoming.map((e) => e.uuid));
 
   const added = incoming
-    .filter((e) => !existingIds.has(e.id))
+    .filter((e) => !existingByUUID.has(e.uuid))
     .map((e) => e.id);
 
   const deleted = existing
-    .filter((e) => !incomingIds.has(e.id))
+    .filter((e) => !incomingUUIDs.has(e.uuid))
     .map((e) => e.id);
 
   const updated: string[] = [];
   const unchanged: string[] = [];
 
   for (const inc of incoming) {
-    if (existingIds.has(inc.id)) {
-      const ex = existing.find((e) => e.id === inc.id);
-      if (ex && hasChanged(ex, inc)) {
+    const ex = existingByUUID.get(inc.uuid);
+    if (ex) {
+      // Same entity (same UUID), check if content changed
+      if (hasChanged(ex, inc)) {
         updated.push(inc.id);
       } else {
         unchanged.push(inc.id);
@@ -116,9 +119,10 @@ function hasChanged<T extends { updated_at: string }>(
 }
 
 /**
- * Detect ID collisions (same ID, different content hash)
+ * Detect ID collisions (same ID, different UUID)
+ * UUIDs are the source of truth for entity identity
  */
-export function detectCollisions<T extends { id: string; title: string }>(
+export function detectCollisions<T extends { id: string; uuid: string; title: string }>(
   existing: T[],
   incoming: T[]
 ): CollisionInfo[] {
@@ -127,12 +131,12 @@ export function detectCollisions<T extends { id: string; title: string }>(
 
   for (const inc of incoming) {
     const ex = existingMap.get(inc.id);
-    if (ex && ex.title !== inc.title) {
-      // Different content with same ID = collision
+    // Collision only if same ID but different UUID (different entities)
+    if (ex && ex.uuid !== inc.uuid) {
       collisions.push({
         id: inc.id,
         type: 'spec', // Will be set correctly by caller
-        reason: 'Different content with same ID',
+        reason: 'Same ID but different UUID (different entities)',
         localContent: ex.title,
         incomingContent: inc.title,
       });

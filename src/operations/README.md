@@ -70,7 +70,7 @@ This directory contains all database CRUD operations for sudograph.
 import { initDatabase } from '../db.js';
 import { createSpec, createIssue, addRelationship, addTags } from './index.js';
 
-const db = initDatabase({ path: '.sudocode/sudocode.db' });
+const db = initDatabase({ path: '.sudocode/cache.db' });
 
 // Create a spec
 const spec = createSpec(db, {

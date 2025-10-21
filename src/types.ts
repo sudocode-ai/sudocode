@@ -4,6 +4,7 @@
 
 export interface Spec {
   id: string;
+  uuid: string;
   title: string;
   file_path: string;
   content: string;
@@ -15,6 +16,7 @@ export interface Spec {
 
 export interface Issue {
   id: string;
+  uuid: string;
   title: string;
   description: string;
   content: string;

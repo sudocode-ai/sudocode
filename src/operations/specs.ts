@@ -4,9 +4,11 @@
 
 import type Database from 'better-sqlite3';
 import type { Spec } from '../types.js';
+import { generateUUID } from '../id-generator.js';
 
 export interface CreateSpecInput {
   id: string;
+  uuid?: string;
   title: string;
   file_path: string;
   content?: string;
@@ -33,17 +35,20 @@ export interface ListSpecsOptions {
  * Create a new spec
  */
 export function createSpec(db: Database.Database, input: CreateSpecInput): Spec {
+  const uuid = input.uuid || generateUUID();
+
   const stmt = db.prepare(`
     INSERT INTO specs (
-      id, title, file_path, content, priority, parent_id
+      id, uuid, title, file_path, content, priority, parent_id
     ) VALUES (
-      @id, @title, @file_path, @content, @priority, @parent_id
+      @id, @uuid, @title, @file_path, @content, @priority, @parent_id
     )
   `);
 
   try {
     stmt.run({
       id: input.id,
+      uuid: uuid,
       title: input.title,
       file_path: input.file_path,
       content: input.content || '',

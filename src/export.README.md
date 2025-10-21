@@ -166,7 +166,7 @@ const debouncer = createDebouncedExport(db, 5000, {
 import { initDatabase } from './db.js';
 import { exportToJSONL } from './export.js';
 
-const db = initDatabase({ path: '.sudocode/sudocode.db' });
+const db = initDatabase({ path: '.sudocode/cache.db' });
 
 // Export everything
 const result = await exportToJSONL(db);

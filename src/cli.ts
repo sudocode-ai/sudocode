@@ -52,14 +52,14 @@ let jsonOutput: boolean = false;
 
 /**
  * Find database path
- * Searches for .sudocode/sudocode.db in current directory and parent directories
+ * Searches for .sudocode/cache.db in current directory and parent directories
  */
 function findDatabasePath(): string | null {
   let currentDir = process.cwd();
   const root = path.parse(currentDir).root;
 
   while (currentDir !== root) {
-    const potentialPath = path.join(currentDir, ".sudocode", "sudocode.db");
+    const potentialPath = path.join(currentDir, ".sudocode", "cache.db");
     if (fs.existsSync(potentialPath)) {
       return potentialPath;
     }
@@ -81,7 +81,7 @@ function initDB() {
     } else {
       // Default location
       outputDir = path.join(process.cwd(), ".sudocode");
-      dbPath = path.join(outputDir, "sudocode.db");
+      dbPath = path.join(outputDir, "cache.db");
     }
   }
 
@@ -156,7 +156,7 @@ program
       fs.mkdirSync(path.join(dir, "issues"), { recursive: true });
 
       // Initialize database
-      const dbPath = path.join(dir, "sudocode.db");
+      const dbPath = path.join(dir, "cache.db");
       // Ensure the database directory exists before creating the database
       fs.mkdirSync(path.dirname(dbPath), { recursive: true });
       const database = initDatabase({ path: dbPath });

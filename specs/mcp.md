@@ -16,7 +16,7 @@ Sudograph MCP provides tools for:
 ### Technology Stack
 - **Runtime**: Node.js with TypeScript
 - **MCP Framework**: `@modelcontextprotocol/sdk` or `fastmcp` (if available for Node.js)
-- **CLI Integration**: Spawn `sg` CLI commands (similar to beads-mcp approach)
+- **CLI Integration**: Spawn `sudocode` CLI commands (similar to beads-mcp approach)
 - **Working Directory**: Use `SUDOCODE_WORKING_DIR` env var or `process.cwd()`
 
 ### Design Principles
@@ -43,7 +43,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 **Specs**: Technical specifications stored as markdown files
 - Types: architecture, api, database, feature, research
 - Status: draft → review → approved → deprecated
-- Each spec has a unique ID (e.g., sg-spec-1) and file path
+- Each spec has a unique ID (e.g., sudocode-spec-1) and file path
 
 **Issues**: Work items tracked in the database
 - Types: bug, feature, task, epic, chore
@@ -93,7 +93,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: `{ specs?: Spec[], issues?: Issue[] }`
 
-**CLI Command**: `sg ready --json [--limit N] [--priority P] [--assignee A] [--specs] [--issues]`
+**CLI Command**: `sudocode ready --json [--limit N] [--priority P] [--assignee A] [--specs] [--issues]`
 
 **Considerations**: Make sure the returned issue doesn't overflow context.
 
@@ -111,7 +111,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: `Issue[]`
 
-**CLI Command**: `sg issue list --json [filters]`
+**CLI Command**: `sudocode issue list --json [filters]`
 
 **Considerations**: This may produce too much context. The MCP server needs a way of reducing the total context (maybe just name/description) if the total context is too large.
 
@@ -121,11 +121,11 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 **Description**: Show detailed issue information including relationships and feedback
 
 **Parameters**:
-- `issue_id` (string, required): Issue ID (e.g., "sg-1")
+- `issue_id` (string, required): Issue ID (e.g., "sudocode-1")
 
 **Returns**: `IssueDetail` (includes relationships, tags, feedback provided)
 
-**CLI Command**: `sg issue show <id> --json`
+**CLI Command**: `sudocode issue show <id> --json`
 
 ---
 
@@ -144,7 +144,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: `Issue`
 
-**CLI Command**: `sg issue create "<title>" --json [options]`
+**CLI Command**: `sudocode issue create "<title>" --json [options]`
 
 ---
 
@@ -162,7 +162,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: `Issue`
 
-**CLI Command**: `sg issue update <id> --json [options]`
+**CLI Command**: `sudocode issue update <id> --json [options]`
 
 ---
 
@@ -175,7 +175,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: `CloseResult[]` (array of { id, success, error? })
 
-**CLI Command**: `sg issue close <ids...> --json [--reason]`
+**CLI Command**: `sudocode issue close <ids...> --json [--reason]`
 
 ---
 
@@ -188,7 +188,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: `{ specs?: BlockedSpec[], issues?: BlockedIssue[] }`
 
-**CLI Command**: `sg blocked --json [--specs] [--issues]`
+**CLI Command**: `sudocode blocked --json [--specs] [--issues]`
 
 ---
 
@@ -205,7 +205,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: `Spec[]`
 
-**CLI Command**: `sg spec list --json [filters]`
+**CLI Command**: `sudocode spec list --json [filters]`
 
 ---
 
@@ -213,11 +213,11 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 **Description**: Show detailed spec information including relationships and feedback received
 
 **Parameters**:
-- `spec_id` (string, required): Spec ID (e.g., "sg-spec-1")
+- `spec_id` (string, required): Spec ID (e.g., "sudocode-spec-1")
 
 **Returns**: `SpecDetail` (includes relationships, tags, feedback received)
 
-**CLI Command**: `sg spec show <id> --json`
+**CLI Command**: `sudocode spec show <id> --json`
 
 ---
 
@@ -236,7 +236,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: `Spec`
 
-**CLI Command**: `sg spec create "<title>" --json [options]`
+**CLI Command**: `sudocode spec create "<title>" --json [options]`
 
 ---
 
@@ -259,7 +259,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: `{ from, to, type, success }`
 
-**CLI Command**: `sg link <from> <to> --json [--type]`
+**CLI Command**: `sudocode link <from> <to> --json [--type]`
 
 ---
 
@@ -280,7 +280,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: `Feedback`
 
-**CLI Command**: `sg feedback add <issue-id> <spec-id> --json --content "<text>" [options]`
+**CLI Command**: `sudocode feedback add <issue-id> <spec-id> --json --content "<text>" [options]`
 
 **Notes**: Either `line` or `text` must be provided to create an anchor
 
@@ -298,7 +298,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: `Feedback[]`
 
-**CLI Command**: `sg feedback list --json [filters]`
+**CLI Command**: `sudocode feedback list --json [filters]`
 
 ---
 
@@ -310,7 +310,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: `FeedbackDetail` (includes parsed anchor with location info)
 
-**CLI Command**: `sg feedback show <id> --json`
+**CLI Command**: `sudocode feedback show <id> --json`
 
 ---
 
@@ -322,7 +322,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: `Feedback`
 
-**CLI Command**: `sg feedback acknowledge <id> --json`
+**CLI Command**: `sudocode feedback acknowledge <id> --json`
 
 ---
 
@@ -335,7 +335,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: `Feedback`
 
-**CLI Command**: `sg feedback resolve <id> --json [--comment]`
+**CLI Command**: `sudocode feedback resolve <id> --json [--comment]`
 
 ---
 
@@ -348,7 +348,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: `Feedback`
 
-**CLI Command**: `sg feedback wont-fix <id> --json [--reason]`
+**CLI Command**: `sudocode feedback wont-fix <id> --json [--reason]`
 
 ---
 
@@ -359,7 +359,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: `Feedback[]` (filtered to anchor_status === 'stale')
 
-**CLI Command**: `sg feedback stale --json`
+**CLI Command**: `sudocode feedback stale --json`
 
 ---
 
@@ -372,7 +372,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: `Feedback`
 
-**CLI Command**: `sg feedback relocate <id> --json --line <number>`
+**CLI Command**: `sudocode feedback relocate <id> --json --line <number>`
 
 ---
 
@@ -412,7 +412,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 }
 ```
 
-**CLI Command**: `sg stats --json`
+**CLI Command**: `sudocode stats --json`
 
 ---
 
@@ -424,7 +424,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 
 **Returns**: Simplified version of stats
 
-**CLI Command**: `sg status --json [--verbose]`
+**CLI Command**: `sudocode status --json [--verbose]`
 
 ---
 
@@ -434,11 +434,11 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 **Description**: Initialize Sudograph in current directory
 
 **Parameters**:
-- `prefix` (string, default: "sg"): ID prefix for specs/issues
+- `prefix` (string, default: "sudocode"): ID prefix for specs/issues
 
 **Returns**: `{ success: boolean, path: string, prefix: string }`
 
-**CLI Command**: `sg init --json [--prefix]`
+**CLI Command**: `sudocode init --json [--prefix]`
 
 ---
 

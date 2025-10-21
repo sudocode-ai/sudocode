@@ -4,6 +4,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import type { Metadata } from './types.js';
 
 /**
@@ -78,4 +79,11 @@ export function updateMeta(outputDir: string, updates: Partial<Metadata>): void 
   const meta = readMeta(outputDir);
   Object.assign(meta, updates);
   writeMeta(outputDir, meta);
+}
+
+/**
+ * Generate a UUID v4
+ */
+export function generateUUID(): string {
+  return crypto.randomUUID();
 }

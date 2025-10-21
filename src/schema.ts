@@ -29,6 +29,7 @@ PRAGMA cache_size=10000;
 export const SPECS_TABLE = `
 CREATE TABLE IF NOT EXISTS specs (
     id TEXT PRIMARY KEY,
+    uuid TEXT NOT NULL UNIQUE,
     title TEXT NOT NULL CHECK(length(title) <= 500),
     file_path TEXT NOT NULL,
     content TEXT NOT NULL DEFAULT '',
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS specs (
 export const ISSUES_TABLE = `
 CREATE TABLE IF NOT EXISTS issues (
     id TEXT PRIMARY KEY,
+    uuid TEXT NOT NULL UNIQUE,
     title TEXT NOT NULL CHECK(length(title) <= 500),
     description TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL DEFAULT '',
