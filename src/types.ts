@@ -151,15 +151,18 @@ export interface FeedbackJSONL {
 
 export interface RelationshipJSONL {
   from: string;
+  from_type: EntityType;
   to: string;
+  to_type: EntityType;
   type: RelationshipType;
+  // TODO: Add relationship metadata options.
 }
 
 /**
- * Metadata file structure
+ * Config metadata file structure
  */
 
-export interface Metadata {
+export interface ConfigMetadata {
   version: string;
   next_spec_id: number;
   next_issue_id: number;

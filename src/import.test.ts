@@ -645,5 +645,135 @@ describe('Import Operations', () => {
       expect(olderAfter).not.toBeNull();
       expect(olderAfter?.uuid).toBe('uuid-older');
     });
+
+    it('should import relationships with entity types', async () => {
+      // Create specs
+      const specs: SpecJSONL[] = [
+        {
+          id: 'spec-001',
+          uuid: 'uuid-spec-001',
+          title: 'Spec One',
+          file_path: 'spec1.md',
+          content: '',
+          priority: 2,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          parent_id: null,
+          relationships: [
+            {
+              from: 'spec-001',
+              from_type: 'spec',
+              to: 'spec-002',
+              to_type: 'spec',
+              type: 'references',
+            },
+          ],
+          tags: [],
+        },
+        {
+          id: 'spec-002',
+          uuid: 'uuid-spec-002',
+          title: 'Spec Two',
+          file_path: 'spec2.md',
+          content: '',
+          priority: 2,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          parent_id: null,
+          relationships: [],
+          tags: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, 'specs.jsonl'), specs);
+      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), []);
+
+      // Import
+      const result = await importFromJSONL(db, {
+        inputDir: TEST_DIR,
+      });
+
+      expect(result.specs.added).toBe(2);
+
+      // Verify relationship was imported correctly
+      const { getOutgoingRelationships } = await import('./operations/relationships.js');
+      const relationships = getOutgoingRelationships(db, 'spec-001', 'spec');
+
+      expect(relationships).toHaveLength(1);
+      expect(relationships[0].from_id).toBe('spec-001');
+      expect(relationships[0].from_type).toBe('spec');
+      expect(relationships[0].to_id).toBe('spec-002');
+      expect(relationships[0].to_type).toBe('spec');
+      expect(relationships[0].relationship_type).toBe('references');
+    });
+
+    it('should import cross-type relationships (spec to issue)', async () => {
+      // Create spec and issue with cross-type relationship
+      const specs: SpecJSONL[] = [
+        {
+          id: 'spec-001',
+          uuid: 'uuid-spec-001',
+          title: 'Spec One',
+          file_path: 'spec1.md',
+          content: '',
+          priority: 2,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          parent_id: null,
+          relationships: [
+            {
+              from: 'spec-001',
+              from_type: 'spec',
+              to: 'issue-001',
+              to_type: 'issue',
+              type: 'implements',
+            },
+          ],
+          tags: [],
+        },
+      ];
+
+      const issues: IssueJSONL[] = [
+        {
+          id: 'issue-001',
+          uuid: 'uuid-issue-001',
+          title: 'Issue One',
+          description: 'Test',
+          content: '',
+          status: 'open',
+          priority: 2,
+          assignee: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          closed_at: null,
+          parent_id: null,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, 'specs.jsonl'), specs);
+      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), issues);
+
+      // Import
+      const result = await importFromJSONL(db, {
+        inputDir: TEST_DIR,
+      });
+
+      expect(result.specs.added).toBe(1);
+      expect(result.issues.added).toBe(1);
+
+      // Verify cross-type relationship was imported correctly
+      const { getOutgoingRelationships } = await import('./operations/relationships.js');
+      const relationships = getOutgoingRelationships(db, 'spec-001', 'spec');
+
+      expect(relationships).toHaveLength(1);
+      expect(relationships[0].from_id).toBe('spec-001');
+      expect(relationships[0].from_type).toBe('spec');
+      expect(relationships[0].to_id).toBe('issue-001');
+      expect(relationships[0].to_type).toBe('issue');
+      expect(relationships[0].relationship_type).toBe('implements');
+    });
   });
 });

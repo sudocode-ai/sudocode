@@ -82,7 +82,9 @@ describe('Export Operations', () => {
       expect(jsonl.relationships).toHaveLength(1);
       expect(jsonl.relationships[0]).toEqual({
         from: 'spec-001',
+        from_type: 'spec',
         to: 'spec-002',
+        to_type: 'spec',
         type: 'related',
       });
       expect(jsonl.tags).toHaveLength(2);
@@ -137,7 +139,9 @@ describe('Export Operations', () => {
       expect(jsonl.relationships).toHaveLength(1);
       expect(jsonl.relationships[0]).toEqual({
         from: 'issue-001',
+        from_type: 'issue',
         to: 'issue-002',
+        to_type: 'issue',
         type: 'blocks',
       });
       expect(jsonl.tags).toEqual(['auth', 'backend']);

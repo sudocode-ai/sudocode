@@ -2,17 +2,43 @@
  * Import JSONL data to SQLite with collision resolution
  */
 
-import type Database from 'better-sqlite3';
-import type { Spec, Issue, SpecJSONL, IssueJSONL, Metadata, CollisionLogEntry } from './types.js';
-import { readJSONL } from './jsonl.js';
-import { listSpecs, createSpec, updateSpec, deleteSpec, getSpec } from './operations/specs.js';
-import { listIssues, createIssue, updateIssue, deleteIssue, getIssue } from './operations/issues.js';
-import { addRelationship, removeAllRelationships } from './operations/relationships.js';
-import { setTags } from './operations/tags.js';
-import { createFeedback, listFeedback, deleteFeedback } from './operations/feedback.js';
-import { transaction } from './operations/transactions.js';
-import * as fs from 'fs';
-import * as path from 'path';
+import type Database from "better-sqlite3";
+import type {
+  Spec,
+  Issue,
+  SpecJSONL,
+  IssueJSONL,
+  ConfigMetadata,
+  CollisionLogEntry,
+} from "./types.js";
+import { readJSONL } from "./jsonl.js";
+import {
+  listSpecs,
+  createSpec,
+  updateSpec,
+  deleteSpec,
+  getSpec,
+} from "./operations/specs.js";
+import {
+  listIssues,
+  createIssue,
+  updateIssue,
+  deleteIssue,
+  getIssue,
+} from "./operations/issues.js";
+import {
+  addRelationship,
+  removeAllRelationships,
+} from "./operations/relationships.js";
+import { setTags } from "./operations/tags.js";
+import {
+  createFeedback,
+  listFeedback,
+  deleteFeedback,
+} from "./operations/feedback.js";
+import { transaction } from "./operations/transactions.js";
+import * as fs from "fs";
+import * as path from "path";
 
 export interface ImportOptions {
   /**
@@ -54,14 +80,14 @@ export interface ImportResult {
 
 export interface CollisionInfo {
   id: string;
-  uuid: string;  // UUID of the colliding entity
-  type: 'spec' | 'issue';
+  uuid: string; // UUID of the colliding entity
+  type: "spec" | "issue";
   reason: string;
   localContent: string;
   incomingContent: string;
-  localCreatedAt?: string;  // Created timestamp of local entity
-  incomingCreatedAt: string;  // Created timestamp of incoming entity
-  resolution?: 'keep-local' | 'use-incoming' | 'renumber';
+  localCreatedAt?: string; // Created timestamp of local entity
+  incomingCreatedAt: string; // Created timestamp of incoming entity
+  resolution?: "keep-local" | "use-incoming" | "renumber";
   newId?: string;
 }
 
@@ -76,10 +102,9 @@ export interface ChangeDetection {
  * Detect changes between existing and incoming entities
  * Uses UUID as the source of truth for entity identity
  */
-export function detectChanges<T extends { id: string; uuid: string; updated_at: string }>(
-  existing: T[],
-  incoming: T[]
-): ChangeDetection {
+export function detectChanges<
+  T extends { id: string; uuid: string; updated_at: string }
+>(existing: T[], incoming: T[]): ChangeDetection {
   // Map by UUID (the true identity)
   const existingByUUID = new Map(existing.map((e) => [e.uuid, e]));
   const incomingUUIDs = new Set(incoming.map((e) => e.uuid));
@@ -125,10 +150,9 @@ function hasChanged<T extends { updated_at: string }>(
  * Detect ID collisions (same ID, different UUID)
  * UUIDs are the source of truth for entity identity
  */
-export function detectCollisions<T extends { id: string; uuid: string; title: string; created_at: string }>(
-  existing: T[],
-  incoming: T[]
-): CollisionInfo[] {
+export function detectCollisions<
+  T extends { id: string; uuid: string; title: string; created_at: string }
+>(existing: T[], incoming: T[]): CollisionInfo[] {
   const collisions: CollisionInfo[] = [];
   const existingMap = new Map(existing.map((e) => [e.id, e]));
 
@@ -139,9 +163,9 @@ export function detectCollisions<T extends { id: string; uuid: string; title: st
     if (ex && ex.uuid !== inc.uuid) {
       collisions.push({
         id: inc.id,
-        uuid: inc.uuid,  // UUID of the incoming entity
-        type: 'spec', // Will be set correctly by caller
-        reason: 'Same ID but different UUID (different entities)',
+        uuid: inc.uuid, // UUID of the incoming entity
+        type: "spec", // Will be set correctly by caller
+        reason: "Same ID but different UUID (different entities)",
         localContent: ex.title,
         incomingContent: inc.title,
         localCreatedAt: ex.created_at,
@@ -169,9 +193,9 @@ export function detectCollisions<T extends { id: string; uuid: string; title: st
         for (let i = 1; i < entities.length; i++) {
           collisions.push({
             id: entities[i].id,
-            uuid: entities[i].uuid,  // UUID of the colliding entity
-            type: 'spec', // Will be set correctly by caller
-            reason: 'Duplicate ID in incoming data with different UUID',
+            uuid: entities[i].uuid, // UUID of the colliding entity
+            type: "spec", // Will be set correctly by caller
+            reason: "Duplicate ID in incoming data with different UUID",
             localContent: entities[0].title,
             incomingContent: entities[i].title,
             localCreatedAt: entities[0].created_at,
@@ -191,14 +215,14 @@ export function detectCollisions<T extends { id: string; uuid: string; title: st
 export function countReferences(
   db: Database.Database,
   entityId: string,
-  entityType: 'spec' | 'issue'
+  entityType: "spec" | "issue"
 ): number {
   let count = 0;
 
   // Count in specs
   const specs = listSpecs(db);
   for (const spec of specs) {
-    const regex = new RegExp(`\\b${entityId}\\b`, 'g');
+    const regex = new RegExp(`\\b${entityId}\\b`, "g");
     const matches = spec.content.match(regex);
     if (matches) {
       count += matches.length;
@@ -208,7 +232,7 @@ export function countReferences(
   // Count in issues
   const issues = listIssues(db);
   for (const issue of issues) {
-    const regex = new RegExp(`\\b${entityId}\\b`, 'g');
+    const regex = new RegExp(`\\b${entityId}\\b`, "g");
     const contentMatches = issue.content.match(regex);
     const descMatches = issue.description.match(regex);
     if (contentMatches) count += contentMatches.length;
@@ -245,9 +269,9 @@ export function resolveCollisions(
 
       // Check which is newer
       if (incomingTime > localTime) {
-        incomingIsNewer = true;  // Incoming is newer
+        incomingIsNewer = true; // Incoming is newer
       } else if (localTime > incomingTime) {
-        incomingIsNewer = false;  // Local is newer
+        incomingIsNewer = false; // Local is newer
       } else {
         // Same timestamp - use UUID comparison for determinism
         incomingIsNewer = collision.uuid > collision.localContent;
@@ -265,11 +289,15 @@ export function resolveCollisions(
 
     resolved.push({
       ...collision,
-      resolution: 'renumber',  // Incoming always gets renumbered
+      resolution: "renumber", // Incoming always gets renumbered
       newId,
       // Track which one was logically newer (for logging/debugging)
-      ...(incomingIsNewer && { note: 'incoming is newer - correctly renumbered' }),
-      ...(!incomingIsNewer && { note: 'local is newer - incoming (older) being renumbered' }),
+      ...(incomingIsNewer && {
+        note: "incoming is newer - correctly renumbered",
+      }),
+      ...(!incomingIsNewer && {
+        note: "local is newer - incoming (older) being renumbered",
+      }),
     });
   }
 
@@ -282,7 +310,7 @@ export function resolveCollisions(
 function generateNewId(
   db: Database.Database,
   oldId: string,
-  type: 'spec' | 'issue'
+  type: "spec" | "issue"
 ): string {
   // Extract prefix and number
   const match = oldId.match(/^([a-z]+-)?(\d+)$/i);
@@ -300,7 +328,7 @@ function generateNewId(
 
   while (attempts < 1000) {
     const exists =
-      type === 'spec'
+      type === "spec"
         ? getSpec(db, newId) !== null
         : getIssue(db, newId) !== null;
 
@@ -330,7 +358,7 @@ export function updateTextReferences(
   // Update specs
   const specs = listSpecs(db);
   for (const spec of specs) {
-    const regex = new RegExp(`\\b${oldId}\\b`, 'g');
+    const regex = new RegExp(`\\b${oldId}\\b`, "g");
     if (regex.test(spec.content)) {
       const newContent = spec.content.replace(regex, newId);
       updateSpec(db, spec.id, {
@@ -343,7 +371,7 @@ export function updateTextReferences(
   // Update issues
   const issues = listIssues(db);
   for (const issue of issues) {
-    const regex = new RegExp(`\\b${oldId}\\b`, 'g');
+    const regex = new RegExp(`\\b${oldId}\\b`, "g");
     let updated = false;
     let newContent = issue.content;
     let newDescription = issue.description;
@@ -353,7 +381,7 @@ export function updateTextReferences(
       updated = true;
     }
 
-    const descRegex = new RegExp(`\\b${oldId}\\b`, 'g');
+    const descRegex = new RegExp(`\\b${oldId}\\b`, "g");
     if (descRegex.test(issue.description)) {
       newDescription = issue.description.replace(descRegex, newId);
       updated = true;
@@ -398,7 +426,7 @@ export function importSpecs(
     if (spec) {
       createSpec(db, {
         id: spec.id,
-        uuid: spec.uuid,  // Preserve UUID from incoming data
+        uuid: spec.uuid,
         title: spec.title,
         file_path: spec.file_path,
         content: spec.content,
@@ -406,22 +434,27 @@ export function importSpecs(
         parent_id: spec.parent_id,
       });
 
-      // Add relationships
-      removeAllRelationships(db, spec.id, 'spec');
-      for (const rel of spec.relationships || []) {
-        addRelationship(db, {
-          from_id: rel.from,
-          from_type: 'spec',
-          to_id: rel.to,
-          to_type: 'spec',
-          relationship_type: rel.type,
-        });
-      }
-
       // Add tags
-      setTags(db, spec.id, 'spec', spec.tags || []);
-
+      setTags(db, spec.id, "spec", spec.tags || []);
       added++;
+    }
+  }
+
+  // Add relationships
+  for (const id of changes.added) {
+    const spec = specs.find((s) => s.id === id);
+    if (spec) {
+      if (spec.relationships && spec.relationships.length > 0) {
+        for (const rel of spec.relationships) {
+          addRelationship(db, {
+            from_id: rel.from,
+            from_type: rel.from_type,
+            to_id: rel.to,
+            to_type: rel.to_type,
+            relationship_type: rel.type,
+          });
+        }
+      }
     }
   }
 
@@ -436,23 +469,25 @@ export function importSpecs(
         priority: spec.priority,
         parent_id: spec.parent_id,
       });
+      setTags(db, spec.id, "spec", spec.tags || []);
+      updated++;
+    }
+  }
 
-      // Update relationships
-      removeAllRelationships(db, spec.id, 'spec');
+  // Update relationships
+  for (const id of changes.updated) {
+    const spec = specs.find((s) => s.id === id);
+    if (spec) {
+      removeAllRelationships(db, spec.id, "spec");
       for (const rel of spec.relationships || []) {
         addRelationship(db, {
           from_id: rel.from,
-          from_type: 'spec',
+          from_type: rel.from_type,
           to_id: rel.to,
-          to_type: 'spec',
+          to_type: rel.to_type,
           relationship_type: rel.type,
         });
       }
-
-      // Update tags
-      setTags(db, spec.id, 'spec', spec.tags || []);
-
-      updated++;
     }
   }
 
@@ -471,7 +506,7 @@ export function importSpecs(
 function syncIssueFeedback(
   db: Database.Database,
   issueId: string,
-  feedbackJSONL: IssueJSONL['feedback']
+  feedbackJSONL: IssueJSONL["feedback"]
 ): void {
   // Delete all existing feedback for this issue
   const existingFeedback = listFeedback(db, { issue_id: issueId });
@@ -488,7 +523,7 @@ function syncIssueFeedback(
         spec_id: fb.spec_id,
         feedback_type: fb.type,
         content: fb.content,
-        agent: 'import',
+        agent: "import",
         anchor: fb.anchor,
         status: fb.status,
       });
@@ -523,7 +558,7 @@ export function importIssues(
     if (issue) {
       createIssue(db, {
         id: issue.id,
-        uuid: issue.uuid,  // Preserve UUID from incoming data
+        uuid: issue.uuid,
         title: issue.title,
         description: issue.description,
         content: issue.content,
@@ -532,26 +567,25 @@ export function importIssues(
         assignee: issue.assignee,
         parent_id: issue.parent_id,
       });
+      setTags(db, issue.id, "issue", issue.tags || []);
+      syncIssueFeedback(db, issue.id, issue.feedback);
+      added++;
+    }
+  }
 
-      // Add relationships
-      removeAllRelationships(db, issue.id, 'issue');
+  // Add relationships
+  for (const id of changes.added) {
+    const issue = issues.find((i) => i.id === id);
+    if (issue) {
       for (const rel of issue.relationships || []) {
         addRelationship(db, {
           from_id: rel.from,
-          from_type: 'issue',
+          from_type: rel.from_type,
           to_id: rel.to,
-          to_type: 'issue',
+          to_type: rel.to_type,
           relationship_type: rel.type,
         });
       }
-
-      // Add tags
-      setTags(db, issue.id, 'issue', issue.tags || []);
-
-      // Sync feedback
-      syncIssueFeedback(db, issue.id, issue.feedback);
-
-      added++;
     }
   }
 
@@ -568,26 +602,26 @@ export function importIssues(
         assignee: issue.assignee,
         parent_id: issue.parent_id,
       });
+      setTags(db, issue.id, "issue", issue.tags || []);
+      syncIssueFeedback(db, issue.id, issue.feedback);
+      updated++;
+    }
+  }
 
-      // Update relationships
-      removeAllRelationships(db, issue.id, 'issue');
+  // Update relationships
+  for (const id of changes.updated) {
+    const issue = issues.find((i) => i.id === id);
+    if (issue) {
+      removeAllRelationships(db, issue.id, "issue");
       for (const rel of issue.relationships || []) {
         addRelationship(db, {
           from_id: rel.from,
-          from_type: 'issue',
+          from_type: rel.from_type,
           to_id: rel.to,
-          to_type: 'issue',
+          to_type: rel.to_type,
           relationship_type: rel.type,
         });
       }
-
-      // Update tags
-      setTags(db, issue.id, 'issue', issue.tags || []);
-
-      // Sync feedback
-      syncIssueFeedback(db, issue.id, issue.feedback);
-
-      updated++;
     }
   }
 
@@ -608,9 +642,9 @@ export async function importFromJSONL(
   options: ImportOptions = {}
 ): Promise<ImportResult> {
   const {
-    inputDir = '.sudocode',
-    specsFile = 'specs.jsonl',
-    issuesFile = 'issues.jsonl',
+    inputDir = ".sudocode",
+    specsFile = "specs.jsonl",
+    issuesFile = "issues.jsonl",
     dryRun = false,
     resolveCollisions: shouldResolve = true,
   } = options;
@@ -619,8 +653,12 @@ export async function importFromJSONL(
   const issuesPath = path.join(inputDir, issuesFile);
 
   // Read JSONL files
-  const incomingSpecs = await readJSONL<SpecJSONL>(specsPath, { skipErrors: true });
-  const incomingIssues = await readJSONL<IssueJSONL>(issuesPath, { skipErrors: true });
+  const incomingSpecs = await readJSONL<SpecJSONL>(specsPath, {
+    skipErrors: true,
+  });
+  const incomingIssues = await readJSONL<IssueJSONL>(issuesPath, {
+    skipErrors: true,
+  });
 
   // Get existing data
   const existingSpecs = listSpecs(db);
@@ -631,8 +669,8 @@ export async function importFromJSONL(
   const issueCollisions = detectCollisions(existingIssues, incomingIssues);
 
   const allCollisions = [
-    ...specCollisions.map((c) => ({ ...c, type: 'spec' as const })),
-    ...issueCollisions.map((c) => ({ ...c, type: 'issue' as const })),
+    ...specCollisions.map((c) => ({ ...c, type: "spec" as const })),
+    ...issueCollisions.map((c) => ({ ...c, type: "issue" as const })),
   ];
 
   // Resolve collisions if requested
@@ -643,14 +681,18 @@ export async function importFromJSONL(
     // Modify incoming data to use new IDs for colliding entities
     // Use UUID to identify the correct entity to rename (in case of duplicate IDs)
     for (const collision of resolvedCollisions) {
-      if (collision.resolution === 'renumber' && collision.newId) {
-        if (collision.type === 'spec') {
-          const spec = incomingSpecs.find((s) => s.id === collision.id && s.uuid === collision.uuid);
+      if (collision.resolution === "renumber" && collision.newId) {
+        if (collision.type === "spec") {
+          const spec = incomingSpecs.find(
+            (s) => s.id === collision.id && s.uuid === collision.uuid
+          );
           if (spec) {
             spec.id = collision.newId;
           }
-        } else if (collision.type === 'issue') {
-          const issue = incomingIssues.find((i) => i.id === collision.id && i.uuid === collision.uuid);
+        } else if (collision.type === "issue") {
+          const issue = incomingIssues.find(
+            (i) => i.id === collision.id && i.uuid === collision.uuid
+          );
           if (issue) {
             issue.id = collision.newId;
           }
@@ -667,7 +709,8 @@ export async function importFromJSONL(
   const result: ImportResult = {
     specs: { added: 0, updated: 0, deleted: 0 },
     issues: { added: 0, updated: 0, deleted: 0 },
-    collisions: resolvedCollisions.length > 0 ? resolvedCollisions : allCollisions,
+    collisions:
+      resolvedCollisions.length > 0 ? resolvedCollisions : allCollisions,
   };
 
   if (!dryRun) {

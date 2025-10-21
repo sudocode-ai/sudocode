@@ -40,7 +40,9 @@ export function specToJSONL(
   // Convert to JSONL format
   const relationshipsJSONL: RelationshipJSONL[] = relationships.map((rel) => ({
     from: rel.from_id,
+    from_type: rel.from_type,
     to: rel.to_id,
+    to_type: rel.to_type,
     type: rel.relationship_type,
   }));
 
@@ -67,7 +69,9 @@ export function issueToJSONL(
   // Convert to JSONL format
   const relationshipsJSONL: RelationshipJSONL[] = relationships.map((rel) => ({
     from: rel.from_id,
+    from_type: rel.from_type,
     to: rel.to_id,
+    to_type: rel.to_type,
     type: rel.relationship_type,
   }));
 

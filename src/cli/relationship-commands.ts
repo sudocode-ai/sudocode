@@ -3,9 +3,13 @@
  */
 
 import chalk from 'chalk';
+import * as path from 'path';
 import type Database from 'better-sqlite3';
 import { addRelationship } from '../operations/relationships.js';
 import { exportToJSONL } from '../export.js';
+import { syncJSONLToMarkdown } from '../sync.js';
+import { getSpec } from '../operations/specs.js';
+import { getIssue } from '../operations/issues.js';
 import type { RelationshipType } from '../types.js';
 
 export interface CommandContext {
@@ -25,9 +29,11 @@ export async function handleLink(
   options: LinkOptions
 ): Promise<void> {
   try {
-    // Parse entity IDs to determine types
-    const fromType = from.startsWith('spec-') ? 'spec' : 'issue';
-    const toType = to.startsWith('spec-') ? 'spec' : 'issue';
+    // Parse entity IDs to determine types (case-insensitive)
+    const fromLower = from.toLowerCase();
+    const toLower = to.toLowerCase();
+    const fromType = fromLower.startsWith('spec-') ? 'spec' : 'issue';
+    const toType = toLower.startsWith('spec-') ? 'spec' : 'issue';
 
     addRelationship(ctx.db, {
       from_id: from,
@@ -37,7 +43,23 @@ export async function handleLink(
       relationship_type: options.type as RelationshipType,
     });
 
+    // Export to JSONL to persist the relationship
     await exportToJSONL(ctx.db, { outputDir: ctx.outputDir });
+
+    // Sync the "from" entity back to markdown so the relationship appears in frontmatter
+    if (fromType === 'spec') {
+      const spec = getSpec(ctx.db, from);
+      if (spec) {
+        const specPath = path.join(ctx.outputDir, spec.file_path);
+        await syncJSONLToMarkdown(ctx.db, from, 'spec', specPath);
+      }
+    } else {
+      const issue = getIssue(ctx.db, from);
+      if (issue) {
+        const issuePath = path.join(ctx.outputDir, 'issues', `${from}.md`);
+        await syncJSONLToMarkdown(ctx.db, from, 'issue', issuePath);
+      }
+    }
 
     if (ctx.jsonOutput) {
       console.log(JSON.stringify({ from, to, type: options.type, success: true }, null, 2));
