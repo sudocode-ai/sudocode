@@ -18,7 +18,7 @@ export type {
   FeedbackType,
   FeedbackStatus,
   IssueFeedback as Feedback,
-} from "sudocode/types";
+} from "@sudocode/types";
 
 // ============================================================================
 // MCP-SPECIFIC TYPES

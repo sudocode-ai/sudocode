@@ -10,7 +10,7 @@ import type {
   IssueJSONL,
   ConfigMetadata,
   CollisionLogEntry,
-} from "./types.js";
+} from "@sudocode/types";
 import { readJSONL } from "./jsonl.js";
 import {
   listSpecs,

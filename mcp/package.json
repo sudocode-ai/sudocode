@@ -1,5 +1,5 @@
 {
-  "name": "sudocode-mcp",
+  "name": "@sudocode/mcp",
   "version": "0.1.0",
   "description": "MCP server for sudocode, git-native context management for AI-assisted development",
   "type": "module",
@@ -18,8 +18,7 @@
     "test": "vitest",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
-    "prepare": "npm run build",
-    "prepublishOnly": "npm test && npm run build"
+    "clean": "rm -rf dist"
   },
   "keywords": [
     "mcp",
@@ -51,7 +50,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
-    "sudocode": "file:.."
+    "@sudocode/types": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.6",

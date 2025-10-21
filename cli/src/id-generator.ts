@@ -5,7 +5,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
-import type { ConfigMetadata } from "./types.js";
+import type { ConfigMetadata } from "@sudocode/types";
 
 /**
  * Generate next spec ID

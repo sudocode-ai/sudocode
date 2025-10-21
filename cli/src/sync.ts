@@ -29,7 +29,7 @@ import type {
   Spec,
   Issue,
   IssueStatus,
-} from "./types.js";
+} from "@sudocode/types";
 
 export interface SyncResult {
   success: boolean;

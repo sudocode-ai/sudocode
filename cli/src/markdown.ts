@@ -9,7 +9,7 @@ import { getSpec } from "./operations/specs.js";
 import { getIssue } from "./operations/issues.js";
 import { getMeta } from "./id-generator.js";
 import { createFeedbackAnchor } from "./operations/feedback-anchors.js";
-import type { ConfigMetadata, LocationAnchor } from "./types.js";
+import type { ConfigMetadata, LocationAnchor } from "@sudocode/types";
 
 export interface ParsedMarkdown<T extends object = Record<string, any>> {
   /**

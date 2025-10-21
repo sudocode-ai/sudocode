@@ -200,7 +200,7 @@ program
 // SPEC COMMANDS
 // ============================================================================
 
-const spec = program.command("spec").description("Manage specifications");
+const spec = program.command("spec").alias("specs").description("Manage specifications");
 
 spec
   .command("create <title>")
@@ -242,7 +242,7 @@ spec
 // ISSUE COMMANDS
 // ============================================================================
 
-const issue = program.command("issue").description("Manage issues");
+const issue = program.command("issue").alias("issues").description("Manage issues");
 
 issue
   .command("create <title>")
