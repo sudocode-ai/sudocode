@@ -41,8 +41,8 @@ function readMeta(outputDir: string): Metadata {
       next_spec_id: 1,
       next_issue_id: 1,
       id_prefix: {
-        spec: 'spec',
-        issue: 'issue',
+        spec: 'SPEC',
+        issue: 'ISSUE',
       },
       last_sync: new Date().toISOString(),
       collision_log: [],

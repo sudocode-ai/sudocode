@@ -415,7 +415,7 @@ export class SudocodeMCPServer {
                 prefix: {
                   type: "string",
                   description: "ID prefix for specs and issues",
-                  default: "sg",
+                  default: "sudocode",
                 },
               },
             },

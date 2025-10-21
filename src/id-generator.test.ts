@@ -27,9 +27,9 @@ describe('ID Generator', () => {
       const id2 = generateSpecId(tempDir);
       const id3 = generateSpecId(tempDir);
 
-      expect(id1).toBe('spec-001');
-      expect(id2).toBe('spec-002');
-      expect(id3).toBe('spec-003');
+      expect(id1).toBe('SPEC-001');
+      expect(id2).toBe('SPEC-002');
+      expect(id3).toBe('SPEC-003');
     });
 
     it('should use custom prefix from meta.json', () => {
@@ -69,9 +69,9 @@ describe('ID Generator', () => {
       const id2 = generateIssueId(tempDir);
       const id3 = generateIssueId(tempDir);
 
-      expect(id1).toBe('issue-001');
-      expect(id2).toBe('issue-002');
-      expect(id3).toBe('issue-003');
+      expect(id1).toBe('ISSUE-001');
+      expect(id2).toBe('ISSUE-002');
+      expect(id3).toBe('ISSUE-003');
     });
 
     it('should use custom prefix from meta.json', () => {
@@ -100,7 +100,7 @@ describe('ID Generator', () => {
       generateSpecId(tempDir);
       const issueId = generateIssueId(tempDir);
 
-      expect(issueId).toBe('issue-001');
+      expect(issueId).toBe('ISSUE-001');
 
       const meta = getMeta(tempDir);
       expect(meta.next_spec_id).toBe(3);
@@ -115,8 +115,8 @@ describe('ID Generator', () => {
       expect(meta.version).toBe('1.0.0');
       expect(meta.next_spec_id).toBe(1);
       expect(meta.next_issue_id).toBe(1);
-      expect(meta.id_prefix.spec).toBe('spec');
-      expect(meta.id_prefix.issue).toBe('issue');
+      expect(meta.id_prefix.spec).toBe('SPEC');
+      expect(meta.id_prefix.issue).toBe('ISSUE');
       expect(meta.collision_log).toEqual([]);
     });
 

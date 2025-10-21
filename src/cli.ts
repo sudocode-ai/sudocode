@@ -142,9 +142,11 @@ program
 program
   .command("init")
   .description("Initialize .sudocode directory structure")
-  .option("--prefix <prefix>", "ID prefix for specs/issues", "sudocode")
+  .option("--spec-prefix <prefix>", "ID prefix for specs", "SPEC")
+  .option("--issue-prefix <prefix>", "ID prefix for issues", "ISSUE")
   .action((options) => {
-    const prefix = options.prefix || "sudocode";
+    const specPrefix = options.specPrefix || "SPEC";
+    const issuePrefix = options.issuePrefix || "ISSUE";
     const dir = path.join(process.cwd(), ".sudocode");
 
     try {
@@ -165,8 +167,8 @@ program
         next_spec_id: 1,
         next_issue_id: 1,
         id_prefix: {
-          spec: prefix,
-          issue: prefix,
+          spec: specPrefix,
+          issue: issuePrefix,
         },
         last_sync: new Date().toISOString(),
         collision_log: [],
@@ -184,7 +186,8 @@ program
       database.close();
 
       console.log(chalk.green("✓ Initialized sudocode in"), chalk.cyan(dir));
-      console.log(chalk.gray(`  Prefix: ${prefix}`));
+      console.log(chalk.gray(`  Spec prefix: ${specPrefix}`));
+      console.log(chalk.gray(`  Issue prefix: ${issuePrefix}`));
       console.log(chalk.gray(`  Database: ${dbPath}`));
     } catch (error) {
       console.error(chalk.red("✗ Initialization failed"));
