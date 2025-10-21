@@ -34,8 +34,6 @@ describe('Feedback Operations', () => {
       title: 'Test Spec',
       file_path: 'specs/test.md',
       content: 'Test content',
-      type: 'feature',
-      status: 'draft',
       priority: 2,
       created_by: 'user1',
     });
@@ -375,8 +373,6 @@ describe('Feedback Operations', () => {
         title: 'Another Spec',
         file_path: 'specs/another.md',
         content: 'Content',
-        type: 'feature',
-        status: 'draft',
         priority: 2,
         created_by: 'user1',
       });
@@ -595,8 +591,6 @@ describe('Feedback Operations', () => {
         title: 'Another Spec',
         file_path: 'specs/another.md',
         content: 'Content',
-        type: 'feature',
-        status: 'draft',
         priority: 2,
         created_by: 'user1',
       });

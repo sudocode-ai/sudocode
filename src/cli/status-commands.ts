@@ -7,7 +7,6 @@ import Table from 'cli-table3';
 import type Database from 'better-sqlite3';
 import { listSpecs } from '../operations/specs.js';
 import { listIssues } from '../operations/issues.js';
-import { getReadySpecs } from '../operations/specs.js';
 import { getReadyIssues, getBlockedIssues } from '../operations/issues.js';
 
 export interface CommandContext {
@@ -27,17 +26,8 @@ export async function handleStatus(
   // Get counts
   const allSpecs = listSpecs(ctx.db, {});
   const allIssues = listIssues(ctx.db, {});
-  const readySpecs = getReadySpecs(ctx.db);
   const readyIssues = getReadyIssues(ctx.db);
   const blockedIssues = getBlockedIssues(ctx.db);
-
-  // Count by status
-  const specsByStatus = {
-    draft: allSpecs.filter(s => s.status === 'draft').length,
-    review: allSpecs.filter(s => s.status === 'review').length,
-    approved: allSpecs.filter(s => s.status === 'approved').length,
-    deprecated: allSpecs.filter(s => s.status === 'deprecated').length,
-  };
 
   const issuesByStatus = {
     open: allIssues.filter(i => i.status === 'open').length,
@@ -50,8 +40,6 @@ export async function handleStatus(
     console.log(JSON.stringify({
       specs: {
         total: allSpecs.length,
-        by_status: specsByStatus,
-        ready: readySpecs.length,
       },
       issues: {
         total: allIssues.length,
@@ -67,8 +55,7 @@ export async function handleStatus(
   console.log(chalk.bold('\nSudograph Status\n'));
 
   console.log(chalk.blue('Specs:'));
-  console.log(`  ${chalk.cyan(allSpecs.length)} total (${specsByStatus.draft} draft, ${specsByStatus.review} review, ${specsByStatus.approved} approved, ${specsByStatus.deprecated} deprecated)`);
-  console.log(`  ${chalk.green(readySpecs.length)} ready to work on`);
+  console.log(`  ${chalk.cyan(allSpecs.length)} total`);
 
   console.log();
   console.log(chalk.blue('Issues:'));
@@ -90,26 +77,8 @@ export async function handleStats(
   // Get all entities
   const allSpecs = listSpecs(ctx.db, {});
   const allIssues = listIssues(ctx.db, {});
-  const readySpecs = getReadySpecs(ctx.db);
   const readyIssues = getReadyIssues(ctx.db);
   const blockedIssues = getBlockedIssues(ctx.db);
-
-  // Count by status
-  const specsByStatus = {
-    draft: allSpecs.filter(s => s.status === 'draft').length,
-    review: allSpecs.filter(s => s.status === 'review').length,
-    approved: allSpecs.filter(s => s.status === 'approved').length,
-    deprecated: allSpecs.filter(s => s.status === 'deprecated').length,
-  };
-
-  // Count by type
-  const specsByType = {
-    architecture: allSpecs.filter(s => s.type === 'architecture').length,
-    api: allSpecs.filter(s => s.type === 'api').length,
-    database: allSpecs.filter(s => s.type === 'database').length,
-    feature: allSpecs.filter(s => s.type === 'feature').length,
-    research: allSpecs.filter(s => s.type === 'research').length,
-  };
 
   const issuesByStatus = {
     open: allIssues.filter(i => i.status === 'open').length,
@@ -151,9 +120,6 @@ export async function handleStats(
     console.log(JSON.stringify({
       specs: {
         total: allSpecs.length,
-        by_status: specsByStatus,
-        by_type: specsByType,
-        ready: readySpecs.length,
       },
       issues: {
         total: allIssues.length,
@@ -181,9 +147,6 @@ export async function handleStats(
 
   console.log(chalk.blue('Specs:'));
   console.log(`  Total: ${chalk.cyan(allSpecs.length)}`);
-  console.log(`  By Status: ${specsByStatus.draft} draft, ${specsByStatus.review} review, ${specsByStatus.approved} approved, ${specsByStatus.deprecated} deprecated`);
-  console.log(`  By Type: ${specsByType.architecture} architecture, ${specsByType.api} api, ${specsByType.database} database, ${specsByType.feature} feature, ${specsByType.research} research`);
-  console.log(`  Ready: ${chalk.green(readySpecs.length)}`);
 
   console.log();
   console.log(chalk.blue('Issues:'));

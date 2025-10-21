@@ -202,7 +202,6 @@ const spec = program.command("spec").description("Manage specifications");
 spec
   .command("create <title>")
   .description("Create a new spec")
-  .option("-t, --type <type>", "Spec type", "feature")
   .option("-p, --priority <priority>", "Priority (0-4)", "2")
   .option("-d, --description <desc>", "Description")
   .option("--design <design>", "Design notes")
@@ -216,8 +215,6 @@ spec
 spec
   .command("list")
   .description("List all specs")
-  .option("-s, --status <status>", "Filter by status")
-  .option("-t, --type <type>", "Filter by type")
   .option("-p, --priority <priority>", "Filter by priority")
   .option("--limit <num>", "Limit results", "50")
   .action(async (options) => {
@@ -234,10 +231,6 @@ spec
 spec
   .command("delete <id...>")
   .description("Delete one or more specs")
-  .option(
-    "--hard",
-    "Permanently delete from database (default: mark as deprecated)"
-  )
   .action(async (ids, options) => {
     await handleSpecDelete(getContext(), ids, options);
   });
@@ -331,18 +324,14 @@ program
 
 program
   .command("ready")
-  .description("Show ready work (no blockers)")
-  .option("--specs", "Show specs only")
-  .option("--issues", "Show issues only")
+  .description("Show ready issues (no blockers)")
   .action(async (options) => {
     await handleReady(getContext(), options);
   });
 
 program
   .command("blocked")
-  .description("Show blocked items")
-  .option("--specs", "Show specs only")
-  .option("--issues", "Show issues only")
+  .description("Show blocked issues")
   .action(async (options) => {
     await handleBlocked(getContext(), options);
   });

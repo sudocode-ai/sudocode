@@ -27,8 +27,6 @@ import { generateUniqueFilename, findExistingSpecFile } from "./filename-generat
 import type {
   Spec,
   Issue,
-  SpecStatus,
-  SpecType,
   IssueStatus,
   IssueType,
 } from "./types.js";
@@ -400,8 +398,6 @@ async function syncSpec(
     title: frontmatter.title || "Untitled",
     file_path: frontmatter.file_path || "",
     content,
-    type: (frontmatter.type as SpecType) || "feature",
-    status: (frontmatter.status as SpecStatus) || "draft",
     priority: frontmatter.priority ?? 2,
     parent_id: frontmatter.parent_id || null,
   };
@@ -594,7 +590,6 @@ function entityToFrontmatter(
   const base: Record<string, any> = {
     id: entity.id,
     title: entity.title,
-    status: entity.status,
     priority: entity.priority,
     created_at: entity.created_at,
   };
@@ -605,16 +600,12 @@ function entityToFrontmatter(
   if (relationships.length > 0) base.relationships = relationships;
 
   if (entityType === "spec") {
-    const spec = entity as Spec;
-    const result: Record<string, any> = {
-      ...base,
-      type: spec.type,
-    };
-    return result;
+    return base;
   } else {
     const issue = entity as Issue;
     const result: Record<string, any> = {
       ...base,
+      status: issue.status,
       description: issue.description,
       issue_type: issue.issue_type,
     };

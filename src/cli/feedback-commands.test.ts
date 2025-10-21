@@ -82,8 +82,6 @@ This is the second section.
       title: 'Test Spec',
       file_path: path.join(tempDir, 'specs', 'test.md'),
       content: specContent,
-      type: 'feature',
-      status: 'draft',
       priority: 2,
       created_by: 'test',
     });

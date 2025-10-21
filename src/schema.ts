@@ -32,8 +32,6 @@ CREATE TABLE IF NOT EXISTS specs (
     title TEXT NOT NULL CHECK(length(title) <= 500),
     file_path TEXT NOT NULL,
     content TEXT NOT NULL DEFAULT '',
-    type TEXT NOT NULL DEFAULT 'feature',
-    status TEXT NOT NULL DEFAULT 'draft',
     priority INTEGER NOT NULL DEFAULT 2 CHECK(priority >= 0 AND priority <= 4),
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -126,8 +124,6 @@ CREATE TABLE IF NOT EXISTS issue_feedback (
  */
 
 export const SPECS_INDEXES = `
-CREATE INDEX IF NOT EXISTS idx_specs_status ON specs(status);
-CREATE INDEX IF NOT EXISTS idx_specs_type ON specs(type);
 CREATE INDEX IF NOT EXISTS idx_specs_priority ON specs(priority);
 CREATE INDEX IF NOT EXISTS idx_specs_parent ON specs(parent_id);
 CREATE INDEX IF NOT EXISTS idx_specs_created_at ON specs(created_at);
@@ -176,21 +172,6 @@ CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON issue_feedback(created_at)
 /**
  * View definitions
  */
-
-export const READY_SPECS_VIEW = `
-CREATE VIEW IF NOT EXISTS ready_specs AS
-SELECT s.*
-FROM specs s
-WHERE s.status IN ('draft', 'review')
-  AND NOT EXISTS (
-    SELECT 1 FROM relationships r
-    JOIN specs blocker ON r.to_id = blocker.id AND r.to_type = 'spec'
-    WHERE r.from_id = s.id
-      AND r.from_type = 'spec'
-      AND r.relationship_type = 'blocks'
-      AND blocker.status IN ('draft', 'review')
-  );
-`;
 
 export const READY_ISSUES_VIEW = `
 CREATE VIEW IF NOT EXISTS ready_issues AS
@@ -244,7 +225,6 @@ export const ALL_INDEXES = [
 ];
 
 export const ALL_VIEWS = [
-  READY_SPECS_VIEW,
   READY_ISSUES_VIEW,
   BLOCKED_ISSUES_VIEW,
 ];

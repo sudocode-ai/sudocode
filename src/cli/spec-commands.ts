@@ -30,7 +30,6 @@ export interface CommandContext {
 }
 
 export interface SpecCreateOptions {
-  type: string;
   priority: string;
   description?: string;
   design?: string;
@@ -49,7 +48,7 @@ export async function handleSpecCreate(
     const specId = generateSpecId(ctx.outputDir);
 
     // Ensure specs directory exists
-    const specsDir = path.join(ctx.outputDir, 'specs');
+    const specsDir = path.join(ctx.outputDir, "specs");
     fs.mkdirSync(specsDir, { recursive: true });
 
     // Generate title-based filename
@@ -65,8 +64,6 @@ export async function handleSpecCreate(
       title,
       file_path: filePath,
       content,
-      type: options.type as any,
-      status: "draft",
       priority: parseInt(options.priority),
       created_by: process.env.USER || "system",
       parent_id: options.parent || null,
@@ -82,8 +79,6 @@ export async function handleSpecCreate(
     const frontmatter = {
       id: specId,
       title,
-      type: options.type,
-      status: "draft",
       priority: parseInt(options.priority),
       created_at: spec.created_at,
       ...(options.parent && { parent_id: options.parent }),
@@ -106,7 +101,7 @@ export async function handleSpecCreate(
     if (ctx.jsonOutput) {
       console.log(
         JSON.stringify(
-          { id: specId, title, file_path: filePath, status: "draft" },
+          { id: specId, title, file_path: filePath },
           null,
           2
         )
@@ -114,7 +109,6 @@ export async function handleSpecCreate(
     } else {
       console.log(chalk.green("✓ Created spec"), chalk.cyan(specId));
       console.log(chalk.gray(`  Title: ${title}`));
-      console.log(chalk.gray(`  Type: ${options.type}`));
       console.log(chalk.gray(`  File: ${filePath}`));
     }
   } catch (error) {
@@ -125,8 +119,6 @@ export async function handleSpecCreate(
 }
 
 export interface SpecListOptions {
-  status?: string;
-  type?: string;
   priority?: string;
   limit: string;
 }
@@ -137,8 +129,6 @@ export async function handleSpecList(
 ): Promise<void> {
   try {
     const specs = listSpecs(ctx.db, {
-      status: options.status as any,
-      type: options.type as any,
       priority: options.priority ? parseInt(options.priority) : undefined,
       limit: parseInt(options.limit),
     });
@@ -154,22 +144,9 @@ export async function handleSpecList(
       console.log(chalk.bold(`\nFound ${specs.length} spec(s):\n`));
 
       for (const spec of specs) {
-        const statusColor =
-          spec.status === "approved"
-            ? chalk.green
-            : spec.status === "review"
-            ? chalk.yellow
-            : chalk.gray;
-
+        console.log(chalk.cyan(spec.id), spec.title);
         console.log(
-          chalk.cyan(spec.id),
-          statusColor(`[${spec.status}]`),
-          spec.title
-        );
-        console.log(
-          chalk.gray(
-            `  Type: ${spec.type} | Priority: ${spec.priority} | ${spec.file_path}`
-          )
+          chalk.gray(`  Priority: ${spec.priority} | ${spec.file_path}`)
         );
       }
       console.log();
@@ -209,8 +186,6 @@ export async function handleSpecShow(
       console.log();
       console.log(chalk.bold.cyan(spec.id), chalk.bold(spec.title));
       console.log(chalk.gray("─".repeat(60)));
-      console.log(chalk.gray("Type:"), spec.type);
-      console.log(chalk.gray("Status:"), spec.status);
       console.log(chalk.gray("Priority:"), spec.priority);
       console.log(chalk.gray("File:"), spec.file_path);
       if (spec.parent_id) {
@@ -311,9 +286,7 @@ export async function handleSpecShow(
   }
 }
 
-export interface SpecDeleteOptions {
-  hard?: boolean;
-}
+export interface SpecDeleteOptions {}
 
 export async function handleSpecDelete(
   ctx: CommandContext,
@@ -334,45 +307,25 @@ export async function handleSpecDelete(
           continue;
         }
 
-        if (options.hard) {
-          // Hard delete - permanently remove from database
-          const { deleteSpec } = await import("../operations/specs.js");
-          const deleted = deleteSpec(ctx.db, id);
-          if (deleted) {
-            results.push({ id, success: true, action: "hard_delete" });
-            if (!ctx.jsonOutput) {
-              console.log(
-                chalk.green("✓ Permanently deleted spec"),
-                chalk.cyan(id)
-              );
-            }
-          } else {
-            results.push({ id, success: false, error: "Delete failed" });
-            if (!ctx.jsonOutput) {
-              console.error(
-                chalk.red("✗ Failed to delete spec"),
-                chalk.cyan(id)
-              );
-            }
+        // Get the markdown file path before deletion
+        const markdownPath = path.join(ctx.outputDir, spec.file_path);
+
+        // Delete spec from database
+        const { deleteSpec } = await import("../operations/specs.js");
+        const deleted = deleteSpec(ctx.db, id);
+        if (deleted) {
+          // Remove markdown file
+          if (fs.existsSync(markdownPath)) {
+            fs.unlinkSync(markdownPath);
+          }
+          results.push({ id, success: true });
+          if (!ctx.jsonOutput) {
+            console.log(chalk.green("✓ Deleted spec"), chalk.cyan(id));
           }
         } else {
-          // Soft delete - mark as deprecated
-          const { updateSpec } = await import("../operations/specs.js");
-          updateSpec(ctx.db, id, {
-            status: "deprecated",
-            updated_by: process.env.USER || "system",
-          });
-          results.push({
-            id,
-            success: true,
-            action: "soft_delete",
-            status: "deprecated",
-          });
+          results.push({ id, success: false, error: "Delete failed" });
           if (!ctx.jsonOutput) {
-            console.log(
-              chalk.green("✓ Marked spec as deprecated"),
-              chalk.cyan(id)
-            );
+            console.error(chalk.red("✗ Failed to delete spec"), chalk.cyan(id));
           }
         }
       } catch (error) {

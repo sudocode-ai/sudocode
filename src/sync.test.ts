@@ -72,7 +72,6 @@ This is the spec content.`;
       const spec = getSpec(db, 'spec-001');
       expect(spec).not.toBeNull();
       expect(spec?.title).toBe('New Spec');
-      expect(spec?.type).toBe('feature');
       expect(spec?.content).toContain('# Content');
 
       // Verify tags
@@ -115,7 +114,6 @@ Updated content.`;
       // Verify update
       const spec = getSpec(db, 'spec-001');
       expect(spec?.title).toBe('Updated Title');
-      expect(spec?.status).toBe('approved');
       expect(spec?.priority).toBe(3);
       expect(spec?.content).toContain('Updated content');
       expect(spec?.updated_by).toBe('alice');
@@ -483,8 +481,6 @@ Spec A trying to take spec-b's path.`;
         title: 'Test Spec',
         file_path: 'spec.md',
         content: '# Spec content',
-        type: 'feature',
-        status: 'draft',
         priority: 2,
         created_by: 'alice',
       });
@@ -509,7 +505,6 @@ Spec A trying to take spec-b's path.`;
       const parsed = parseMarkdownFile(mdPath);
       expect(parsed.data.id).toBe('spec-001');
       expect(parsed.data.title).toBe('Test Spec');
-      expect(parsed.data.type).toBe('feature');
       expect(parsed.data.tags).toContain('test');
       expect(parsed.content).toContain('# Spec content');
     });
@@ -521,7 +516,6 @@ Spec A trying to take spec-b's path.`;
         title: 'Updated Title',
         file_path: 'spec.md',
         content: 'Database content',
-        status: 'approved',
         priority: 3,
         created_by: 'alice',
       });
@@ -549,7 +543,6 @@ This should be preserved.`;
       // Verify frontmatter updated but content preserved
       const parsed = parseMarkdownFile(mdPath);
       expect(parsed.data.title).toBe('Updated Title');
-      expect(parsed.data.status).toBe('approved');
       expect(parsed.data.priority).toBe(3);
       expect(parsed.content).toContain('# Original Content');
       expect(parsed.content).toContain('This should be preserved');
@@ -563,8 +556,6 @@ This should be preserved.`;
         title: 'Test Spec',
         file_path: 'specs/test.md',
         content: '# Content',
-        type: 'feature',
-        status: 'draft',
         priority: 2,
         created_by: 'alice',
       });
@@ -581,8 +572,6 @@ This should be preserved.`;
       // These fields SHOULD be present (user-editable)
       expect(parsed.data.id).toBe('spec-001');
       expect(parsed.data.title).toBe('Test Spec');
-      expect(parsed.data.type).toBe('feature');
-      expect(parsed.data.status).toBe('draft');
       expect(parsed.data.priority).toBe(2);
       expect(parsed.data.created_at).toBeDefined();
 

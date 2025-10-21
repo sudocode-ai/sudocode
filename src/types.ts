@@ -7,8 +7,6 @@ export interface Spec {
   title: string;
   file_path: string;
   content: string;
-  type: SpecType;
-  status: SpecStatus;
   priority: number;
   created_at: string;
   updated_at: string;
@@ -16,9 +14,6 @@ export interface Spec {
   updated_by: string;
   parent_id: string | null;
 }
-
-export type SpecType = 'architecture' | 'api' | 'database' | 'feature' | 'research';
-export type SpecStatus = 'draft' | 'review' | 'approved' | 'deprecated';
 
 export interface Issue {
   id: string;

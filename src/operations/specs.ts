@@ -3,15 +3,13 @@
  */
 
 import type Database from 'better-sqlite3';
-import type { Spec, SpecStatus, SpecType } from '../types.js';
+import type { Spec } from '../types.js';
 
 export interface CreateSpecInput {
   id: string;
   title: string;
   file_path: string;
   content?: string;
-  type?: SpecType;
-  status?: SpecStatus;
   priority?: number;
   created_by: string;
   parent_id?: string | null;
@@ -21,16 +19,12 @@ export interface UpdateSpecInput {
   title?: string;
   file_path?: string;
   content?: string;
-  type?: SpecType;
-  status?: SpecStatus;
   priority?: number;
   updated_by: string;
   parent_id?: string | null;
 }
 
 export interface ListSpecsOptions {
-  status?: SpecStatus;
-  type?: SpecType;
   priority?: number;
   parent_id?: string | null;
   limit?: number;
@@ -43,10 +37,10 @@ export interface ListSpecsOptions {
 export function createSpec(db: Database.Database, input: CreateSpecInput): Spec {
   const stmt = db.prepare(`
     INSERT INTO specs (
-      id, title, file_path, content, type, status, priority,
+      id, title, file_path, content, priority,
       created_by, updated_by, parent_id
     ) VALUES (
-      @id, @title, @file_path, @content, @type, @status, @priority,
+      @id, @title, @file_path, @content, @priority,
       @created_by, @updated_by, @parent_id
     )
   `);
@@ -57,8 +51,6 @@ export function createSpec(db: Database.Database, input: CreateSpecInput): Spec 
       title: input.title,
       file_path: input.file_path,
       content: input.content || '',
-      type: input.type || 'feature',
-      status: input.status || 'draft',
       priority: input.priority ?? 2,
       created_by: input.created_by,
       updated_by: input.created_by,
@@ -128,14 +120,6 @@ export function updateSpec(
     updates.push('content = @content');
     params.content = input.content;
   }
-  if (input.type !== undefined) {
-    updates.push('type = @type');
-    params.type = input.type;
-  }
-  if (input.status !== undefined) {
-    updates.push('status = @status');
-    params.status = input.status;
-  }
   if (input.priority !== undefined) {
     updates.push('priority = @priority');
     params.priority = input.priority;
@@ -192,14 +176,6 @@ export function listSpecs(
   const conditions: string[] = [];
   const params: Record<string, any> = {};
 
-  if (options.status !== undefined) {
-    conditions.push('status = @status');
-    params.status = options.status;
-  }
-  if (options.type !== undefined) {
-    conditions.push('type = @type');
-    params.type = options.type;
-  }
   if (options.priority !== undefined) {
     conditions.push('priority = @priority');
     params.priority = options.priority;
@@ -230,14 +206,6 @@ export function listSpecs(
 
   const stmt = db.prepare(query);
   return stmt.all(params) as Spec[];
-}
-
-/**
- * Get ready specs (no blockers)
- */
-export function getReadySpecs(db: Database.Database): Spec[] {
-  const stmt = db.prepare('SELECT * FROM ready_specs ORDER BY priority DESC, created_at DESC');
-  return stmt.all() as Spec[];
 }
 
 /**

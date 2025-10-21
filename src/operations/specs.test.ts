@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { initDatabase } from '../db.js';
-import { createSpec, getSpec, getSpecByFilePath, updateSpec, deleteSpec, listSpecs, getReadySpecs, searchSpecs } from './specs.js';
+import { createSpec, getSpec, getSpecByFilePath, updateSpec, deleteSpec, listSpecs, searchSpecs } from './specs.js';
 import type Database from 'better-sqlite3';
 
 describe('Spec Operations', () => {
@@ -22,16 +22,12 @@ describe('Spec Operations', () => {
         title: 'Test Spec',
         file_path: '.sudocode/specs/test.md',
         content: '# Test Content',
-        type: 'architecture',
-        status: 'draft',
         priority: 1,
         created_by: 'user1',
       });
 
       expect(spec.id).toBe('spec-001');
       expect(spec.title).toBe('Test Spec');
-      expect(spec.type).toBe('architecture');
-      expect(spec.status).toBe('draft');
       expect(spec.priority).toBe(1);
     });
 
@@ -44,8 +40,6 @@ describe('Spec Operations', () => {
       });
 
       expect(spec.content).toBe('');
-      expect(spec.type).toBe('feature');
-      expect(spec.status).toBe('draft');
       expect(spec.priority).toBe(2);
     });
 
@@ -143,12 +137,10 @@ describe('Spec Operations', () => {
 
       const updated = updateSpec(db, 'spec-001', {
         title: 'Updated Title',
-        status: 'approved',
         updated_by: 'user2',
       });
 
       expect(updated.title).toBe('Updated Title');
-      expect(updated.status).toBe('approved');
       expect(updated.updated_by).toBe('user2');
     });
 
@@ -190,8 +182,6 @@ describe('Spec Operations', () => {
         id: 'spec-001',
         title: 'Spec 1',
         file_path: 'spec1.md',
-        type: 'architecture',
-        status: 'draft',
         priority: 1,
         created_by: 'user1',
       });
@@ -199,8 +189,6 @@ describe('Spec Operations', () => {
         id: 'spec-002',
         title: 'Spec 2',
         file_path: 'spec2.md',
-        type: 'feature',
-        status: 'approved',
         priority: 2,
         created_by: 'user1',
       });
@@ -211,16 +199,10 @@ describe('Spec Operations', () => {
       expect(specs).toHaveLength(2);
     });
 
-    it('should filter by status', () => {
-      const specs = listSpecs(db, { status: 'draft' });
+    it('should filter by priority', () => {
+      const specs = listSpecs(db, { priority: 1 });
       expect(specs).toHaveLength(1);
       expect(specs[0].id).toBe('spec-001');
-    });
-
-    it('should filter by type', () => {
-      const specs = listSpecs(db, { type: 'feature' });
-      expect(specs).toHaveLength(1);
-      expect(specs[0].id).toBe('spec-002');
     });
 
     it('should respect limit', () => {
