@@ -11,7 +11,6 @@ export interface CreateRelationshipInput {
   to_id: string;
   to_type: EntityType;
   relationship_type: RelationshipType;
-  created_by: string;
   metadata?: string | null;
 }
 
@@ -24,11 +23,9 @@ export function addRelationship(
 ): Relationship {
   const stmt = db.prepare(`
     INSERT INTO relationships (
-      from_id, from_type, to_id, to_type, relationship_type,
-      created_by, metadata
+      from_id, from_type, to_id, to_type, relationship_type, metadata
     ) VALUES (
-      @from_id, @from_type, @to_id, @to_type, @relationship_type,
-      @created_by, @metadata
+      @from_id, @from_type, @to_id, @to_type, @relationship_type, @metadata
     )
   `);
 
@@ -39,7 +36,6 @@ export function addRelationship(
       to_id: input.to_id,
       to_type: input.to_type,
       relationship_type: input.relationship_type,
-      created_by: input.created_by,
       metadata: input.metadata || null,
     });
 

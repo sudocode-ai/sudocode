@@ -34,7 +34,6 @@ describe('Issue Operations', () => {
         status: 'open',
         priority: 1,
         assignee: 'agent1',
-        created_by: 'user1',
       });
 
       expect(issue.id).toBe('issue-001');
@@ -47,7 +46,6 @@ describe('Issue Operations', () => {
       const issue = createIssue(db, {
         id: 'issue-002',
         title: 'Minimal Issue',
-        created_by: 'user1',
       });
 
       expect(issue.status).toBe('open');
@@ -59,14 +57,12 @@ describe('Issue Operations', () => {
       createIssue(db, {
         id: 'issue-001',
         title: 'First',
-        created_by: 'user1',
       });
 
       expect(() => {
         createIssue(db, {
           id: 'issue-001',
           title: 'Duplicate',
-          created_by: 'user1',
         });
       }).toThrow('Constraint violation');
     });
@@ -77,7 +73,6 @@ describe('Issue Operations', () => {
       createIssue(db, {
         id: 'issue-001',
         title: 'Original',
-        created_by: 'user1',
       });
 
       const updated = updateIssue(db, 'issue-001', {
@@ -95,7 +90,6 @@ describe('Issue Operations', () => {
       createIssue(db, {
         id: 'issue-001',
         title: 'To Close',
-        created_by: 'user1',
       });
 
       const closed = updateIssue(db, 'issue-001', { status: 'closed' });
@@ -108,7 +102,6 @@ describe('Issue Operations', () => {
         id: 'issue-001',
         title: 'Issue',
         status: 'closed',
-        created_by: 'user1',
       });
 
       // Close it first
@@ -126,7 +119,6 @@ describe('Issue Operations', () => {
       createIssue(db, {
         id: 'issue-001',
         title: 'To Close',
-        created_by: 'user1',
       });
 
       const closed = closeIssue(db, 'issue-001');
@@ -139,7 +131,6 @@ describe('Issue Operations', () => {
         id: 'issue-001',
         title: 'Issue',
         status: 'closed',
-        created_by: 'user1',
       });
 
       closeIssue(db, 'issue-001');
@@ -157,7 +148,6 @@ describe('Issue Operations', () => {
         title: 'Issue 1',
         status: 'open',
         priority: 1,
-        created_by: 'user1',
       });
       createIssue(db, {
         id: 'issue-002',
@@ -165,7 +155,6 @@ describe('Issue Operations', () => {
         status: 'closed',
         priority: 2,
         assignee: 'agent1',
-        created_by: 'user1',
       });
     });
 
@@ -199,13 +188,11 @@ describe('Issue Operations', () => {
         id: 'issue-001',
         title: 'Fix authentication bug',
         description: 'OAuth is broken',
-        created_by: 'user1',
       });
       createIssue(db, {
         id: 'issue-002',
         title: 'Add database migration',
         content: 'PostgreSQL schema update',
-        created_by: 'user1',
       });
     });
 

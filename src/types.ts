@@ -10,8 +10,6 @@ export interface Spec {
   priority: number;
   created_at: string;
   updated_at: string;
-  created_by: string;
-  updated_by: string;
   parent_id: string | null;
 }
 
@@ -26,7 +24,6 @@ export interface Issue {
   created_at: string;
   updated_at: string;
   closed_at: string | null;
-  created_by: string;
   parent_id: string | null;
 }
 
@@ -39,7 +36,6 @@ export interface Relationship {
   to_type: EntityType;
   relationship_type: RelationshipType;
   created_at: string;
-  created_by: string;
   metadata: string | null;
 }
 

@@ -35,13 +35,11 @@ describe('Feedback Operations', () => {
       file_path: 'specs/test.md',
       content: 'Test content',
       priority: 2,
-      created_by: 'user1',
     });
 
     createIssue(db, {
       id: 'issue-001',
       title: 'Test Issue',
-      created_by: 'user1',
     });
   });
 
@@ -374,13 +372,11 @@ describe('Feedback Operations', () => {
         file_path: 'specs/another.md',
         content: 'Content',
         priority: 2,
-        created_by: 'user1',
       });
 
       createIssue(db, {
         id: 'issue-002',
         title: 'Another Issue',
-        created_by: 'user1',
       });
 
       const anchor: FeedbackAnchor = { anchor_status: 'valid' };
@@ -592,7 +588,6 @@ describe('Feedback Operations', () => {
         file_path: 'specs/another.md',
         content: 'Content',
         priority: 2,
-        created_by: 'user1',
       });
 
       const anchor: FeedbackAnchor = { anchor_status: 'valid' };

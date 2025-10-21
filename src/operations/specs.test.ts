@@ -23,7 +23,6 @@ describe('Spec Operations', () => {
         file_path: '.sudocode/specs/test.md',
         content: '# Test Content',
         priority: 1,
-        created_by: 'user1',
       });
 
       expect(spec.id).toBe('spec-001');
@@ -36,7 +35,6 @@ describe('Spec Operations', () => {
         id: 'spec-002',
         title: 'Minimal Spec',
         file_path: '.sudocode/specs/minimal.md',
-        created_by: 'user1',
       });
 
       expect(spec.content).toBe('');
@@ -48,7 +46,6 @@ describe('Spec Operations', () => {
         id: 'spec-001',
         title: 'First',
         file_path: 'first.md',
-        created_by: 'user1',
       });
 
       expect(() => {
@@ -56,7 +53,6 @@ describe('Spec Operations', () => {
           id: 'spec-001',
           title: 'Duplicate',
           file_path: 'duplicate.md',
-          created_by: 'user1',
         });
       }).toThrow('Constraint violation');
     });
@@ -68,7 +64,6 @@ describe('Spec Operations', () => {
         id: 'spec-001',
         title: 'Test Spec',
         file_path: 'test.md',
-        created_by: 'user1',
       });
 
       const spec = getSpec(db, 'spec-001');
@@ -88,7 +83,6 @@ describe('Spec Operations', () => {
         id: 'spec-001',
         title: 'Test Spec',
         file_path: 'specs/test-spec.md',
-        created_by: 'user1',
       });
 
       const spec = getSpecByFilePath(db, 'specs/test-spec.md');
@@ -108,14 +102,12 @@ describe('Spec Operations', () => {
         id: 'spec-001',
         title: 'First Spec',
         file_path: 'specs/test.md',
-        created_by: 'user1',
       });
 
       createSpec(db, {
         id: 'spec-002',
         title: 'Second Spec',
         file_path: 'specs/test2.md',
-        created_by: 'user1',
       });
 
       const spec1 = getSpecByFilePath(db, 'specs/test.md');
@@ -132,23 +124,19 @@ describe('Spec Operations', () => {
         id: 'spec-001',
         title: 'Original Title',
         file_path: 'test.md',
-        created_by: 'user1',
       });
 
       const updated = updateSpec(db, 'spec-001', {
         title: 'Updated Title',
-        updated_by: 'user2',
       });
 
       expect(updated.title).toBe('Updated Title');
-      expect(updated.updated_by).toBe('user2');
     });
 
     it('should throw error for non-existent spec', () => {
       expect(() => {
         updateSpec(db, 'non-existent', {
           title: 'New Title',
-          updated_by: 'user1',
         });
       }).toThrow('Spec not found');
     });
@@ -160,7 +148,6 @@ describe('Spec Operations', () => {
         id: 'spec-001',
         title: 'To Delete',
         file_path: 'delete.md',
-        created_by: 'user1',
       });
 
       const deleted = deleteSpec(db, 'spec-001');
@@ -183,14 +170,12 @@ describe('Spec Operations', () => {
         title: 'Spec 1',
         file_path: 'spec1.md',
         priority: 1,
-        created_by: 'user1',
       });
       createSpec(db, {
         id: 'spec-002',
         title: 'Spec 2',
         file_path: 'spec2.md',
         priority: 2,
-        created_by: 'user1',
       });
     });
 
@@ -218,14 +203,12 @@ describe('Spec Operations', () => {
         title: 'Authentication System',
         file_path: 'auth.md',
         content: 'Implements OAuth 2.0',
-        created_by: 'user1',
       });
       createSpec(db, {
         id: 'spec-002',
         title: 'Database Design',
         file_path: 'db.md',
         content: 'PostgreSQL schema',
-        created_by: 'user1',
       });
     });
 

@@ -259,7 +259,6 @@ export function updateTextReferences(
       const newContent = spec.content.replace(regex, newId);
       updateSpec(db, spec.id, {
         content: newContent,
-        updated_by: 'system',
       });
       updatedCount++;
     }
@@ -327,7 +326,6 @@ export function importSpecs(
         file_path: spec.file_path,
         content: spec.content,
         priority: spec.priority,
-        created_by: spec.created_by,
         parent_id: spec.parent_id,
       });
 
@@ -340,7 +338,6 @@ export function importSpecs(
           to_id: rel.to,
           to_type: 'spec',
           relationship_type: rel.type,
-          created_by: spec.updated_by,
         });
       }
 
@@ -360,7 +357,6 @@ export function importSpecs(
         file_path: spec.file_path,
         content: spec.content,
         priority: spec.priority,
-        updated_by: spec.updated_by,
         parent_id: spec.parent_id,
       });
 
@@ -373,7 +369,6 @@ export function importSpecs(
           to_id: rel.to,
           to_type: 'spec',
           relationship_type: rel.type,
-          created_by: spec.updated_by,
         });
       }
 
@@ -457,7 +452,6 @@ export function importIssues(
         status: issue.status,
         priority: issue.priority,
         assignee: issue.assignee,
-        created_by: issue.created_by,
         parent_id: issue.parent_id,
       });
 
@@ -470,7 +464,6 @@ export function importIssues(
           to_id: rel.to,
           to_type: 'issue',
           relationship_type: rel.type,
-          created_by: issue.created_by,
         });
       }
 
@@ -507,7 +500,6 @@ export function importIssues(
           to_id: rel.to,
           to_type: 'issue',
           relationship_type: rel.type,
-          created_by: issue.created_by,
         });
       }
 

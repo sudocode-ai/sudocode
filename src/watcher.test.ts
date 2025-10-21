@@ -102,7 +102,6 @@ title: Test Spec
 type: feature
 status: draft
 priority: 2
-created_by: test
 ---
 
 # Test Spec
@@ -173,7 +172,6 @@ title: Test Spec Change
 type: feature
 status: draft
 priority: 2
-created_by: test
 ---
 
 # Test Spec
@@ -235,7 +233,6 @@ title: Test Debounce
 type: feature
 status: draft
 priority: 2
-created_by: test
 ---
 
 # Test Spec
@@ -276,7 +273,6 @@ title: Test Delete Spec
 type: feature
 status: draft
 priority: 2
-created_by: test
 file_path: specs/test-delete.md
 ---
 

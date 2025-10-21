@@ -13,7 +13,6 @@ export interface CreateIssueInput {
   status?: IssueStatus;
   priority?: number;
   assignee?: string | null;
-  created_by: string;
   parent_id?: string | null;
 }
 
@@ -43,10 +42,10 @@ export function createIssue(db: Database.Database, input: CreateIssueInput): Iss
   const stmt = db.prepare(`
     INSERT INTO issues (
       id, title, description, content, status, priority,
-      assignee, created_by, parent_id
+      assignee, parent_id
     ) VALUES (
       @id, @title, @description, @content, @status, @priority,
-      @assignee, @created_by, @parent_id
+      @assignee, @parent_id
     )
   `);
 
@@ -59,7 +58,6 @@ export function createIssue(db: Database.Database, input: CreateIssueInput): Iss
       status: input.status || 'open',
       priority: input.priority ?? 2,
       assignee: input.assignee || null,
-      created_by: input.created_by,
       parent_id: input.parent_id || null,
     });
 

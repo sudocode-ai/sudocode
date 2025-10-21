@@ -86,7 +86,6 @@ This is the spec content.`;
         id: 'spec-001',
         title: 'Original Title',
         file_path: 'spec.md',
-        created_by: 'bob',
       });
 
       const mdPath = path.join(TEST_DIR, 'spec-001.md');
@@ -116,7 +115,6 @@ Updated content.`;
       expect(spec?.title).toBe('Updated Title');
       expect(spec?.priority).toBe(3);
       expect(spec?.content).toContain('Updated content');
-      expect(spec?.updated_by).toBe('alice');
     });
 
     it('should create new issue from markdown', async () => {
@@ -163,7 +161,6 @@ This is urgent.`;
         id: 'spec-002',
         title: 'Referenced Spec',
         file_path: 'ref.md',
-        created_by: 'alice',
       });
 
       createIssue(db, {
@@ -171,7 +168,6 @@ This is urgent.`;
         title: 'Referenced Issue',
         description: 'desc',
         content: '',
-        created_by: 'alice',
       });
 
       const mdPath = path.join(TEST_DIR, 'spec-001.md');
@@ -481,7 +477,6 @@ Spec A trying to take spec-b's path.`;
         file_path: 'spec.md',
         content: '# Spec content',
         priority: 2,
-        created_by: 'alice',
       });
 
       addTag(db, 'spec-001', 'spec', 'test');
@@ -516,7 +511,6 @@ Spec A trying to take spec-b's path.`;
         file_path: 'spec.md',
         content: 'Database content',
         priority: 3,
-        created_by: 'alice',
       });
 
       // Create existing markdown with different content
@@ -556,7 +550,6 @@ This should be preserved.`;
         file_path: 'specs/test.md',
         content: '# Content',
         priority: 2,
-        created_by: 'alice',
       });
 
       const mdPath = path.join(TEST_DIR, 'spec-001.md');
@@ -601,7 +594,6 @@ This should be preserved.`;
         status: 'open',
         priority: 1,
         assignee: 'bob',
-        created_by: 'alice',
       });
 
       const mdPath = path.join(TEST_DIR, 'issue-001.md');
@@ -624,14 +616,12 @@ This should be preserved.`;
         id: 'spec-001',
         title: 'Main Spec',
         file_path: 'main.md',
-        created_by: 'alice',
       });
 
       createSpec(db, {
         id: 'spec-002',
         title: 'Related Spec',
         file_path: 'related.md',
-        created_by: 'alice',
       });
 
       // Add relationship
@@ -641,7 +631,6 @@ This should be preserved.`;
         to_id: 'spec-002',
         to_type: 'spec',
         relationship_type: 'depends-on',
-        created_by: 'alice',
       });
 
       const mdPath = path.join(TEST_DIR, 'spec-001.md');
@@ -672,14 +661,12 @@ This should be preserved.`;
         id: 'spec-001',
         title: 'Main Spec',
         file_path: 'main.md',
-        created_by: 'alice',
       });
 
       createSpec(db, {
         id: 'spec-002',
         title: 'Related Spec',
         file_path: 'related.md',
-        created_by: 'alice',
       });
 
       // Add relationship via API (not in markdown)
@@ -689,7 +676,6 @@ This should be preserved.`;
         to_id: 'spec-002',
         to_type: 'spec',
         relationship_type: 'depends-on',
-        created_by: 'alice',
       });
 
       // Sync markdown that doesn't mention this relationship

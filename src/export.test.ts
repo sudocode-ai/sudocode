@@ -54,14 +54,12 @@ describe('Export Operations', () => {
         title: 'Auth System',
         file_path: '.sudocode/specs/auth.md',
         content: '# Auth',
-        created_by: 'alice',
       });
 
       const spec2 = createSpec(db, {
         id: 'spec-002',
         title: 'Database',
         file_path: '.sudocode/specs/db.md',
-        created_by: 'alice',
       });
 
       // Add relationship
@@ -71,7 +69,6 @@ describe('Export Operations', () => {
         to_id: 'spec-002',
         to_type: 'spec',
         relationship_type: 'related',
-        created_by: 'alice',
       });
 
       // Add tags
@@ -98,7 +95,6 @@ describe('Export Operations', () => {
         id: 'spec-001',
         title: 'Simple Spec',
         file_path: 'simple.md',
-        created_by: 'alice',
       });
 
       const jsonl = specToJSONL(db, spec);
@@ -114,13 +110,11 @@ describe('Export Operations', () => {
       const issue1 = createIssue(db, {
         id: 'issue-001',
         title: 'Implement OAuth',
-        created_by: 'alice',
       });
 
       const issue2 = createIssue(db, {
         id: 'issue-002',
         title: 'Setup database',
-        created_by: 'alice',
       });
 
       // Add relationship
@@ -130,7 +124,6 @@ describe('Export Operations', () => {
         to_id: 'issue-002',
         to_type: 'issue',
         relationship_type: 'blocks',
-        created_by: 'alice',
       });
 
       // Add tags
@@ -158,13 +151,11 @@ describe('Export Operations', () => {
         id: 'spec-001',
         title: 'Spec 1',
         file_path: 'spec1.md',
-        created_by: 'alice',
       });
       createSpec(db, {
         id: 'spec-002',
         title: 'Spec 2',
         file_path: 'spec2.md',
-        created_by: 'alice',
       });
       addTags(db, 'spec-001', 'spec', ['tag1']);
     });
@@ -193,7 +184,6 @@ describe('Export Operations', () => {
         id: 'spec-003',
         title: 'New Spec',
         file_path: 'spec3.md',
-        created_by: 'alice',
       });
 
       // Wait a bit more
@@ -213,12 +203,10 @@ describe('Export Operations', () => {
       createIssue(db, {
         id: 'issue-001',
         title: 'Issue 1',
-        created_by: 'alice',
       });
       createIssue(db, {
         id: 'issue-002',
         title: 'Issue 2',
-        created_by: 'alice',
       });
       addTags(db, 'issue-001', 'issue', ['bug']);
     });
@@ -240,12 +228,10 @@ describe('Export Operations', () => {
         id: 'spec-001',
         title: 'Test Spec',
         file_path: 'test.md',
-        created_by: 'alice',
       });
       createIssue(db, {
         id: 'issue-001',
         title: 'Test Issue',
-        created_by: 'alice',
       });
     });
 
@@ -293,7 +279,6 @@ describe('Export Operations', () => {
         id: 'spec-001',
         title: 'Test',
         file_path: 'test.md',
-        created_by: 'alice',
       });
 
       const debouncer = new ExportDebouncer(db, 100, { outputDir: TEST_DIR });
@@ -330,7 +315,6 @@ describe('Export Operations', () => {
         id: 'spec-001',
         title: 'Test',
         file_path: 'test.md',
-        created_by: 'alice',
       });
 
       const debouncer = new ExportDebouncer(db, 5000, { outputDir: TEST_DIR });

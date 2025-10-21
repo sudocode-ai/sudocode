@@ -35,7 +35,6 @@ export async function handleLink(
       to_id: to,
       to_type: toType,
       relationship_type: options.type as RelationshipType,
-      created_by: process.env.USER || 'system',
     });
 
     await exportToJSONL(ctx.db, { outputDir: ctx.outputDir });

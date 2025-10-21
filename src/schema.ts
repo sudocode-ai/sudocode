@@ -35,8 +35,6 @@ CREATE TABLE IF NOT EXISTS specs (
     priority INTEGER NOT NULL DEFAULT 2 CHECK(priority >= 0 AND priority <= 4),
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_by TEXT NOT NULL,
-    updated_by TEXT NOT NULL,
     parent_id TEXT,
     FOREIGN KEY (parent_id) REFERENCES specs(id) ON DELETE SET NULL
 );
@@ -54,7 +52,6 @@ CREATE TABLE IF NOT EXISTS issues (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     closed_at DATETIME,
-    created_by TEXT NOT NULL,
     parent_id TEXT,
     FOREIGN KEY (parent_id) REFERENCES issues(id) ON DELETE SET NULL
 );
@@ -68,7 +65,6 @@ CREATE TABLE IF NOT EXISTS relationships (
     to_type TEXT NOT NULL,
     relationship_type TEXT NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_by TEXT NOT NULL,
     metadata TEXT,
     PRIMARY KEY (from_id, from_type, to_id, to_type, relationship_type)
 );

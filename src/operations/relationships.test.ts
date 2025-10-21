@@ -27,17 +27,14 @@ describe('Relationship Operations', () => {
     createIssue(db, {
       id: 'issue-001',
       title: 'Issue 1',
-      created_by: 'user1',
     });
     createIssue(db, {
       id: 'issue-002',
       title: 'Issue 2',
-      created_by: 'user1',
     });
     createIssue(db, {
       id: 'issue-003',
       title: 'Issue 3',
-      created_by: 'user1',
     });
   });
 
@@ -49,7 +46,6 @@ describe('Relationship Operations', () => {
         to_id: 'issue-002',
         to_type: 'issue',
         relationship_type: 'blocks',
-        created_by: 'user1',
       });
 
       expect(rel.from_id).toBe('issue-001');
@@ -64,7 +60,6 @@ describe('Relationship Operations', () => {
         to_id: 'issue-002',
         to_type: 'issue',
         relationship_type: 'blocks',
-        created_by: 'user1',
       });
 
       expect(() => {
@@ -74,7 +69,6 @@ describe('Relationship Operations', () => {
           to_id: 'issue-002',
           to_type: 'issue',
           relationship_type: 'blocks',
-          created_by: 'user1',
         });
       }).toThrow('Constraint violation');
     });
@@ -88,7 +82,6 @@ describe('Relationship Operations', () => {
         to_id: 'issue-002',
         to_type: 'issue',
         relationship_type: 'blocks',
-        created_by: 'user1',
       });
 
       const removed = removeRelationship(
@@ -127,7 +120,6 @@ describe('Relationship Operations', () => {
         to_id: 'issue-002',
         to_type: 'issue',
         relationship_type: 'blocks',
-        created_by: 'user1',
       });
       addRelationship(db, {
         from_id: 'issue-001',
@@ -135,7 +127,6 @@ describe('Relationship Operations', () => {
         to_id: 'issue-003',
         to_type: 'issue',
         relationship_type: 'related',
-        created_by: 'user1',
       });
     });
 
@@ -159,7 +150,6 @@ describe('Relationship Operations', () => {
         to_id: 'issue-003',
         to_type: 'issue',
         relationship_type: 'blocks',
-        created_by: 'user1',
       });
       addRelationship(db, {
         from_id: 'issue-002',
@@ -167,7 +157,6 @@ describe('Relationship Operations', () => {
         to_id: 'issue-003',
         to_type: 'issue',
         relationship_type: 'blocks',
-        created_by: 'user1',
       });
     });
 
@@ -191,7 +180,6 @@ describe('Relationship Operations', () => {
         to_id: 'issue-002',
         to_type: 'issue',
         relationship_type: 'blocks',
-        created_by: 'user1',
       });
     });
 
@@ -216,7 +204,6 @@ describe('Relationship Operations', () => {
         to_id: 'issue-002',
         to_type: 'issue',
         relationship_type: 'blocks',
-        created_by: 'user1',
       });
       addRelationship(db, {
         from_id: 'issue-003',
@@ -224,7 +211,6 @@ describe('Relationship Operations', () => {
         to_id: 'issue-001',
         to_type: 'issue',
         relationship_type: 'related',
-        created_by: 'user1',
       });
     });
 

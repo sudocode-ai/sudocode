@@ -90,7 +90,6 @@ describe("Spec CLI Commands", () => {
         file_path: path.join(tempDir, "specs", "test.md"),
         content: "",
         priority: 2,
-        created_by: "test-user",
       });
 
       expect(spec).toBeDefined();
@@ -115,7 +114,6 @@ describe("Spec CLI Commands", () => {
         file_path: path.join(tempDir, "specs", "spec1.md"),
         content: "",
         priority: 1,
-        created_by: "test",
       });
 
       createSpec(db, {
@@ -124,7 +122,6 @@ describe("Spec CLI Commands", () => {
         file_path: path.join(tempDir, "specs", "spec2.md"),
         content: "",
         priority: 2,
-        created_by: "test",
       });
 
       consoleLogSpy.mockClear();
@@ -191,7 +188,6 @@ describe("Spec CLI Commands", () => {
         file_path: path.join(tempDir, "specs", "show.md"),
         content: "Test description",
         priority: 2,
-        created_by: "test",
       });
 
       setTags(db, "spec-001", "spec", ["tag1", "tag2"]);
@@ -245,7 +241,6 @@ describe("Spec CLI Commands", () => {
         file_path: "specs/delete_test_1.md",
         content: "Test content",
         priority: 2,
-        created_by: "test",
       });
 
       // Create markdown file for delete test 1
@@ -267,7 +262,6 @@ describe("Spec CLI Commands", () => {
         file_path: "specs/delete_test_2.md",
         content: "Test content",
         priority: 2,
-        created_by: "test",
       });
 
       // Create markdown file for delete test 2

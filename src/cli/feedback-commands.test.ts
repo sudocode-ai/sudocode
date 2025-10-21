@@ -83,7 +83,6 @@ This is the second section.
       file_path: path.join(tempDir, 'specs', 'test.md'),
       content: specContent,
       priority: 2,
-      created_by: 'test',
     });
 
     createIssue(db, {
@@ -93,7 +92,6 @@ This is the second section.
       content: '',
       status: 'open',
       priority: 2,
-      created_by: 'test',
     });
 
     // Spy on console methods

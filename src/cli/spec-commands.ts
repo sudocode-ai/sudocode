@@ -65,7 +65,6 @@ export async function handleSpecCreate(
       file_path: filePath,
       content,
       priority: parseInt(options.priority),
-      created_by: process.env.USER || "system",
       parent_id: options.parent || null,
     });
 
@@ -193,15 +192,11 @@ export async function handleSpecShow(
       }
       console.log(
         chalk.gray("Created:"),
-        spec.created_at,
-        "by",
-        spec.created_by
+        spec.created_at
       );
       console.log(
         chalk.gray("Updated:"),
-        spec.updated_at,
-        "by",
-        spec.updated_by
+        spec.updated_at
       );
 
       if (tags.length > 0) {

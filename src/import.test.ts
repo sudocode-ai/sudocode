@@ -145,7 +145,6 @@ describe('Import Operations', () => {
         title: 'Main Spec',
         file_path: 'main.md',
         content: 'See spec-002 for details. Also spec-002 is important.',
-        created_by: 'alice',
       });
 
       createSpec(db, {
@@ -153,7 +152,6 @@ describe('Import Operations', () => {
         title: 'Referenced Spec',
         file_path: 'ref.md',
         content: 'Content',
-        created_by: 'alice',
       });
 
       // Create issue with reference
@@ -162,7 +160,6 @@ describe('Import Operations', () => {
         title: 'Issue',
         description: 'Implements spec-002',
         content: 'Based on spec-002',
-        created_by: 'alice',
       });
     });
 
@@ -186,7 +183,6 @@ describe('Import Operations', () => {
         title: 'Spec with reference',
         file_path: 'spec.md',
         content: 'See spec-OLD for details',
-        created_by: 'alice',
       });
 
       createIssue(db, {
@@ -194,7 +190,6 @@ describe('Import Operations', () => {
         title: 'Issue',
         description: 'Related to spec-OLD',
         content: 'Implements spec-OLD feature',
-        created_by: 'alice',
       });
     });
 
@@ -219,8 +214,6 @@ describe('Import Operations', () => {
           priority: 2,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          created_by: 'alice',
-          updated_by: 'alice',
           parent_id: null,
           relationships: [],
           tags: ['test'],
@@ -239,7 +232,6 @@ describe('Import Operations', () => {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           closed_at: null,
-          created_by: 'alice',
           parent_id: null,
           relationships: [],
           tags: ['test'],
@@ -265,7 +257,6 @@ describe('Import Operations', () => {
         id: 'spec-001',
         title: 'Original Title',
         file_path: 'orig.md',
-        created_by: 'alice',
       });
 
       // Create JSONL with conflicting content
@@ -278,8 +269,6 @@ describe('Import Operations', () => {
           priority: 2,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          created_by: 'bob',
-          updated_by: 'bob',
           parent_id: null,
           relationships: [],
           tags: [],
@@ -304,7 +293,6 @@ describe('Import Operations', () => {
         id: 'spec-001',
         title: 'Original',
         file_path: 'orig.md',
-        created_by: 'alice',
       });
 
       // Wait to ensure different timestamp
@@ -320,8 +308,6 @@ describe('Import Operations', () => {
           priority: 2,
           created_at: new Date(Date.now() - 1000).toISOString(),
           updated_at: new Date().toISOString(),
-          created_by: 'alice',
-          updated_by: 'alice',
           parent_id: null,
           relationships: [],
           tags: [],
@@ -345,14 +331,12 @@ describe('Import Operations', () => {
         id: 'spec-001',
         title: 'To Delete',
         file_path: 'delete.md',
-        created_by: 'alice',
       });
 
       createSpec(db, {
         id: 'spec-002',
         title: 'To Keep',
         file_path: 'keep.md',
-        created_by: 'alice',
       });
 
       // Create JSONL with only spec-002
@@ -365,8 +349,6 @@ describe('Import Operations', () => {
           priority: 2,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-          created_by: 'alice',
-          updated_by: 'alice',
           parent_id: null,
           relationships: [],
           tags: [],

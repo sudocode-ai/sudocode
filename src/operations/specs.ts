@@ -11,7 +11,6 @@ export interface CreateSpecInput {
   file_path: string;
   content?: string;
   priority?: number;
-  created_by: string;
   parent_id?: string | null;
 }
 
@@ -20,7 +19,6 @@ export interface UpdateSpecInput {
   file_path?: string;
   content?: string;
   priority?: number;
-  updated_by: string;
   parent_id?: string | null;
 }
 
@@ -37,11 +35,9 @@ export interface ListSpecsOptions {
 export function createSpec(db: Database.Database, input: CreateSpecInput): Spec {
   const stmt = db.prepare(`
     INSERT INTO specs (
-      id, title, file_path, content, priority,
-      created_by, updated_by, parent_id
+      id, title, file_path, content, priority, parent_id
     ) VALUES (
-      @id, @title, @file_path, @content, @priority,
-      @created_by, @updated_by, @parent_id
+      @id, @title, @file_path, @content, @priority, @parent_id
     )
   `);
 
@@ -52,8 +48,6 @@ export function createSpec(db: Database.Database, input: CreateSpecInput): Spec 
       file_path: input.file_path,
       content: input.content || '',
       priority: input.priority ?? 2,
-      created_by: input.created_by,
-      updated_by: input.created_by,
       parent_id: input.parent_id || null,
     });
 
@@ -128,9 +122,6 @@ export function updateSpec(
     updates.push('parent_id = @parent_id');
     params.parent_id = input.parent_id;
   }
-
-  updates.push('updated_by = @updated_by');
-  params.updated_by = input.updated_by;
 
   updates.push('updated_at = CURRENT_TIMESTAMP');
 

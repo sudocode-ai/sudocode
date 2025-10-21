@@ -28,12 +28,10 @@ describe('Tag Operations', () => {
     createIssue(db, {
       id: 'issue-001',
       title: 'Issue 1',
-      created_by: 'user1',
     });
     createIssue(db, {
       id: 'issue-002',
       title: 'Issue 2',
-      created_by: 'user1',
     });
   });
 

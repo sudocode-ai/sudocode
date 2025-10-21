@@ -102,21 +102,12 @@ function initializeFrontmatter(
     initialized.updated_at = now;
   }
 
-  // Set user
-  if (!initialized.created_by) {
-    initialized.created_by = user;
-  }
-  if (!initialized.updated_by && entityType === "spec") {
-    initialized.updated_by = user;
-  }
 
   // Set entity type
   initialized.entity_type = entityType;
 
   // Set type-specific defaults
   if (entityType === "spec") {
-    if (!initialized.type) initialized.type = "feature";
-    if (!initialized.status) initialized.status = "draft";
     if (!initialized.priority && initialized.priority !== 0)
       initialized.priority = 2;
     if (!initialized.file_path) {
@@ -403,12 +394,10 @@ async function syncSpec(
   if (isNew) {
     createSpec(db, {
       ...specData,
-      created_by: user,
     } as any);
   } else {
     updateSpec(db, id, {
       ...specData,
-      updated_by: user,
     });
 
     // Relocate feedback anchors if content changed
@@ -481,7 +470,6 @@ async function syncIssue(
   if (isNew) {
     createIssue(db, {
       ...issueData,
-      created_by: user,
     } as any);
   } else {
     updateIssue(db, id, {
@@ -541,7 +529,6 @@ async function syncRelationships(
           to_id: ref.id,
           to_type: ref.type,
           relationship_type: "references",
-          created_by: user,
         });
       } catch (error) {
         // Ignore errors (e.g., target not found, duplicate)
@@ -561,7 +548,6 @@ async function syncRelationships(
             to_id: rel.target_id,
             to_type: rel.target_type as "spec" | "issue",
             relationship_type: rel.relationship_type as any,
-            created_by: user,
           });
         } catch (error) {
           // Ignore errors

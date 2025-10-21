@@ -21,12 +21,10 @@ describe('Transaction Operations', () => {
         createIssue(db, {
           id: 'issue-001',
           title: 'Test Issue',
-          created_by: 'user1',
         });
         createIssue(db, {
           id: 'issue-002',
           title: 'Another Issue',
-          created_by: 'user1',
         });
       });
 
@@ -40,14 +38,12 @@ describe('Transaction Operations', () => {
           createIssue(db, {
             id: 'issue-001',
             title: 'Test Issue',
-            created_by: 'user1',
           });
 
           // This should fail (duplicate ID)
           createIssue(db, {
             id: 'issue-001',
             title: 'Duplicate',
-            created_by: 'user1',
           });
         });
       } catch (error) {
@@ -63,14 +59,12 @@ describe('Transaction Operations', () => {
         createIssue(db, {
           id: 'issue-001',
           title: 'Outer',
-          created_by: 'user1',
         });
 
         transaction(db, () => {
           createIssue(db, {
             id: 'issue-002',
             title: 'Inner',
-            created_by: 'user1',
           });
         });
       });
@@ -86,12 +80,10 @@ describe('Transaction Operations', () => {
         () => createIssue(db, {
           id: 'issue-001',
           title: 'Issue 1',
-          created_by: 'user1',
         }),
         () => createIssue(db, {
           id: 'issue-002',
           title: 'Issue 2',
-          created_by: 'user1',
         }),
       ]);
 
@@ -106,7 +98,6 @@ describe('Transaction Operations', () => {
           () => createIssue(db, {
             id: 'issue-001',
             title: 'Issue 1',
-            created_by: 'user1',
           }),
           () => {
             throw new Error('Test error');
@@ -126,7 +117,6 @@ describe('Transaction Operations', () => {
         createIssue(db, {
           id: 'issue-001',
           title: 'Test Issue',
-          created_by: 'user1',
         });
       });
 
@@ -139,7 +129,6 @@ describe('Transaction Operations', () => {
           createIssue(db, {
             id: 'issue-001',
             title: 'Test Issue',
-            created_by: 'user1',
           });
 
           throw new Error('Test error');
@@ -156,7 +145,6 @@ describe('Transaction Operations', () => {
       createIssue(db, {
         id: 'issue-001',
         title: 'Test Issue',
-        created_by: 'user1',
       });
       sp.commit();
 
@@ -168,7 +156,6 @@ describe('Transaction Operations', () => {
       createIssue(db, {
         id: 'issue-001',
         title: 'Test Issue',
-        created_by: 'user1',
       });
       sp.rollback();
 

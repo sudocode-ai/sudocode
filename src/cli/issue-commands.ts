@@ -49,7 +49,6 @@ export async function handleIssueCreate(
       content: "",
       status: "open",
       priority: parseInt(options.priority),
-      created_by: process.env.USER || "system",
       assignee: options.assignee || null,
       parent_id: options.parent || null,
     });
@@ -180,9 +179,7 @@ export async function handleIssueShow(
       }
       console.log(
         chalk.gray("Created:"),
-        issue.created_at,
-        "by",
-        issue.created_by
+        issue.created_at
       );
       console.log(chalk.gray("Updated:"), issue.updated_at);
       if (issue.closed_at) {
