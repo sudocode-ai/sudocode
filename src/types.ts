@@ -98,7 +98,10 @@ export interface IssueFeedback {
   resolution: string | null;
 }
 
-export interface FeedbackAnchor {
+/**
+ * Base location anchor for tracking positions in markdown documents
+ */
+export interface LocationAnchor {
   section_heading?: string;
   section_level?: number;
   line_number?: number;
@@ -107,6 +110,12 @@ export interface FeedbackAnchor {
   context_before?: string;
   context_after?: string;
   content_hash?: string;
+}
+
+/**
+ * Feedback anchor with additional tracking for changes over time
+ */
+export interface FeedbackAnchor extends LocationAnchor {
   anchor_status: "valid" | "relocated" | "stale";
   last_verified_at?: string;
   original_location?: {

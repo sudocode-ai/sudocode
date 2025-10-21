@@ -10,6 +10,7 @@ import {
   updateFrontmatterFile,
   writeMarkdownFile,
 } from "./markdown.js";
+import type { CrossReference } from "./markdown.js";
 import {
   getSpec,
   getSpecByFilePath,
@@ -377,7 +378,7 @@ async function syncSpec(
   id: string,
   frontmatter: Record<string, any>,
   content: string,
-  references: Array<{ id: string; type: "spec" | "issue" }>,
+  references: CrossReference[],
   isNew: boolean,
   user: string
 ): Promise<void> {
@@ -455,7 +456,7 @@ async function syncIssue(
   id: string,
   frontmatter: Record<string, any>,
   content: string,
-  references: Array<{ id: string; type: "spec" | "issue" }>,
+  references: CrossReference[],
   isNew: boolean,
   user: string
 ): Promise<void> {
@@ -504,7 +505,7 @@ async function syncRelationships(
   db: Database.Database,
   entityId: string,
   entityType: "spec" | "issue",
-  references: Array<{ id: string; type: "spec" | "issue"; relationshipType?: string }>,
+  references: CrossReference[],
   frontmatterRels?: Array<{
     target_id: string;
     target_type: string;
@@ -533,6 +534,7 @@ async function syncRelationships(
           to_id: ref.id,
           to_type: ref.type,
           relationship_type: relType as any,
+          metadata: ref.anchor ? JSON.stringify({ anchor: ref.anchor }) : null,
         });
       } catch (error) {
         // Ignore errors (e.g., target not found, duplicate)

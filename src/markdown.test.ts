@@ -599,4 +599,137 @@ See [[spec-001]] and [[@issue-042]].`;
       expect(result.references[1].id).toBe('issue-042');
     });
   });
+
+  describe('Cross-reference anchors', () => {
+    it('should create anchors for cross-references', () => {
+      const content = `# Main Section
+
+This is a paragraph with [[spec-001]] reference.
+
+Another paragraph with [[spec-002]].`;
+
+      const refs = extractCrossReferences(content);
+
+      expect(refs).toHaveLength(2);
+
+      // First reference should have an anchor
+      expect(refs[0].anchor).toBeDefined();
+      expect(refs[0].anchor?.section_heading).toBe('Main Section');
+      expect(refs[0].anchor?.section_level).toBe(1);
+      expect(refs[0].anchor?.line_number).toBeDefined();
+      expect(refs[0].anchor?.text_snippet).toBeDefined();
+      expect(refs[0].anchor?.content_hash).toBeDefined();
+
+      // Second reference should also have an anchor
+      expect(refs[1].anchor).toBeDefined();
+      expect(refs[1].anchor?.section_heading).toBe('Main Section');
+    });
+
+    it('should include context in anchors', () => {
+      const content = `# Authentication
+
+## Login Flow
+
+The user authentication [[spec-001|Auth Spec]] requires validation.
+
+Post-login, redirect to dashboard.`;
+
+      const refs = extractCrossReferences(content);
+
+      expect(refs).toHaveLength(1);
+      expect(refs[0].anchor).toBeDefined();
+      expect(refs[0].anchor?.section_heading).toBe('Login Flow');
+      expect(refs[0].anchor?.section_level).toBe(2);
+      expect(refs[0].anchor?.context_before).toBeDefined();
+      expect(refs[0].anchor?.context_after).toBeDefined();
+    });
+
+    it('should create unique anchors for multiple references on same line', () => {
+      const content = `# Overview
+
+See [[spec-001]] and [[spec-002]] for details.`;
+
+      const refs = extractCrossReferences(content);
+
+      expect(refs).toHaveLength(2);
+      expect(refs[0].anchor).toBeDefined();
+      expect(refs[1].anchor).toBeDefined();
+
+      // Both should have same section but potentially different offsets
+      expect(refs[0].anchor?.section_heading).toBe('Overview');
+      expect(refs[1].anchor?.section_heading).toBe('Overview');
+      expect(refs[0].anchor?.line_number).toBe(refs[1].anchor?.line_number);
+    });
+
+    it('should handle references without section headings', () => {
+      const content = `Just a reference [[spec-001]] with no heading.`;
+
+      const refs = extractCrossReferences(content);
+
+      expect(refs).toHaveLength(1);
+      expect(refs[0].anchor).toBeDefined();
+      expect(refs[0].anchor?.section_heading).toBeUndefined();
+      expect(refs[0].anchor?.line_number).toBe(1);
+    });
+
+    it('should track line numbers correctly', () => {
+      const content = `Line 1
+Line 2
+Line 3 with [[spec-001]]
+Line 4
+Line 5 with [[spec-002]]`;
+
+      const refs = extractCrossReferences(content);
+
+      expect(refs).toHaveLength(2);
+      expect(refs[0].anchor?.line_number).toBe(3);
+      expect(refs[1].anchor?.line_number).toBe(5);
+    });
+
+    it('should create anchors with all reference metadata', () => {
+      const content = `# Features
+
+Implementing [[spec-001|Authentication]]{ implements } is required.`;
+
+      const refs = extractCrossReferences(content);
+
+      expect(refs).toHaveLength(1);
+      expect(refs[0].id).toBe('spec-001');
+      expect(refs[0].displayText).toBe('Authentication');
+      expect(refs[0].relationshipType).toBe('implements');
+      expect(refs[0].anchor).toBeDefined();
+      expect(refs[0].anchor?.section_heading).toBe('Features');
+      expect(refs[0].anchor?.text_snippet).toBeDefined();
+      expect(refs[0].anchor?.text_snippet?.length).toBeGreaterThan(0);
+    });
+
+    it('should handle anchor creation failures gracefully', () => {
+      // This tests that even if anchor creation fails, the reference is still extracted
+      const content = `[[spec-001]]`;
+
+      const refs = extractCrossReferences(content);
+
+      expect(refs).toHaveLength(1);
+      expect(refs[0].id).toBe('spec-001');
+      // Anchor might be undefined or defined depending on implementation
+      // The important part is that extraction doesn't fail
+    });
+
+    it('should create anchors for nested sections', () => {
+      const content = `# Top Level
+
+## Second Level
+
+### Third Level
+
+Reference to [[spec-001]] here.`;
+
+      const refs = extractCrossReferences(content);
+
+      expect(refs).toHaveLength(1);
+      expect(refs[0].anchor).toBeDefined();
+      expect(refs[0].anchor?.section_heading).toBe('Third Level');
+      expect(refs[0].anchor?.section_level).toBe(3);
+    });
+  });
 });

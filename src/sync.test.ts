@@ -206,6 +206,105 @@ Related to [[@issue-042]].`;
       expect(hasIssueRef).toBe(true);
     });
 
+    it('should store anchor information in relationship metadata', async () => {
+      // Create referenced entity
+      createSpec(db, {
+        id: 'spec-002',
+        title: 'Referenced Spec',
+        file_path: 'ref.md',
+      });
+
+      const mdPath = path.join(TEST_DIR, 'spec-with-anchor.md');
+      const mdContent = `---
+id: spec-001
+title: Spec with Anchored Reference
+type: feature
+status: draft
+priority: 2
+file_path: spec.md
+---
+
+# Implementation Details
+
+This section describes the implementation.
+
+See [[spec-002]] for additional context.`;
+
+      fs.writeFileSync(mdPath, mdContent, 'utf8');
+
+      const result = await syncMarkdownToJSONL(db, mdPath, {
+        autoExport: false,
+      });
+
+      expect(result.success).toBe(true);
+
+      // Get the relationship
+      const deps = getOutgoingRelationships(db, 'spec-001', 'spec');
+      const specRel = deps.find(
+        d => d.to_id === 'spec-002' && d.relationship_type === 'references'
+      );
+
+      expect(specRel).toBeDefined();
+      expect(specRel?.metadata).toBeDefined();
+
+      // Parse and verify anchor metadata
+      const metadata = JSON.parse(specRel!.metadata!);
+      expect(metadata.anchor).toBeDefined();
+      expect(metadata.anchor.section_heading).toBe('Implementation Details');
+      expect(metadata.anchor.section_level).toBe(1);
+      expect(metadata.anchor.line_number).toBeDefined();
+      expect(metadata.anchor.text_snippet).toBeDefined();
+      expect(metadata.anchor.content_hash).toBeDefined();
+    });
+
+    it('should store anchors for references with relationship types', async () => {
+      // Create referenced entities
+      createSpec(db, {
+        id: 'spec-002',
+        title: 'Dependency Spec',
+        file_path: 'dep.md',
+      });
+
+      const mdPath = path.join(TEST_DIR, 'spec-with-typed-ref.md');
+      const mdContent = `---
+id: spec-001
+title: Spec with Typed Reference
+type: feature
+status: draft
+priority: 2
+file_path: spec.md
+---
+
+## Requirements
+
+This implementation [[spec-002|Dependency]]{ depends-on } must be completed first.`;
+
+      fs.writeFileSync(mdPath, mdContent, 'utf8');
+
+      const result = await syncMarkdownToJSONL(db, mdPath, {
+        autoExport: false,
+      });
+
+      expect(result.success).toBe(true);
+
+      // Get the relationship
+      const deps = getOutgoingRelationships(db, 'spec-001', 'spec');
+      const depRel = deps.find(
+        d => d.to_id === 'spec-002' && d.relationship_type === 'depends-on'
+      );
+
+      expect(depRel).toBeDefined();
+      expect(depRel?.metadata).toBeDefined();
+
+      // Verify anchor in metadata
+      const metadata = JSON.parse(depRel!.metadata!);
+      expect(metadata.anchor).toBeDefined();
+      expect(metadata.anchor.section_heading).toBe('Requirements');
+      expect(metadata.anchor.section_level).toBe(2);
+      expect(metadata.anchor.text_snippet).toBeDefined();
+      expect(metadata.anchor.text_snippet.length).toBeGreaterThan(0);
+    });
+
     it('should handle missing id in frontmatter when autoInitialize is disabled', async () => {
       const mdPath = path.join(TEST_DIR, 'no-id.md');
       const mdContent = `---

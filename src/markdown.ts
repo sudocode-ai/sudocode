@@ -8,7 +8,8 @@ import type Database from "better-sqlite3";
 import { getSpec } from "./operations/specs.js";
 import { getIssue } from "./operations/issues.js";
 import { getMeta } from "./id-generator.js";
-import type { ConfigMetadata } from "./types.js";
+import { createFeedbackAnchor } from "./operations/feedback-anchors.js";
+import type { ConfigMetadata, LocationAnchor } from "./types.js";
 
 export interface ParsedMarkdown<T extends object = Record<string, any>> {
   /**
@@ -55,6 +56,10 @@ export interface CrossReference {
    * Defaults to "references" if not specified
    */
   relationshipType?: string;
+  /**
+   * Optional location anchor for spatial context of the reference
+   */
+  anchor?: LocationAnchor;
 }
 
 /**
@@ -107,6 +112,30 @@ export function parseMarkdownFile<T extends object = Record<string, any>>(
 }
 
 /**
+ * Convert character index to line number
+ */
+function getLineNumber(content: string, charIndex: number): number {
+  const beforeMatch = content.substring(0, charIndex);
+  return beforeMatch.split('\n').length;
+}
+
+/**
+ * Convert FeedbackAnchor to LocationAnchor (strips tracking fields)
+ */
+function feedbackAnchorToLocationAnchor(feedbackAnchor: ReturnType<typeof createFeedbackAnchor>): LocationAnchor {
+  return {
+    section_heading: feedbackAnchor.section_heading,
+    section_level: feedbackAnchor.section_level,
+    line_number: feedbackAnchor.line_number,
+    line_offset: feedbackAnchor.line_offset,
+    text_snippet: feedbackAnchor.text_snippet,
+    context_before: feedbackAnchor.context_before,
+    context_after: feedbackAnchor.context_after,
+    content_hash: feedbackAnchor.content_hash,
+  };
+}
+
+/**
  * Extract cross-references from markdown content
  * Supports formats:
  * - [[entity-001]] - entity reference (type determined by database lookup)
@@ -146,6 +175,17 @@ export function extractCrossReferences(
     const displayText = match[3]?.trim();
     const relationshipType = match[4]?.trim();
 
+    // Create location anchor for this reference
+    let anchor: LocationAnchor | undefined;
+    try {
+      const lineNumber = getLineNumber(content, match.index);
+      const feedbackAnchor = createFeedbackAnchor(content, lineNumber, match.index);
+      anchor = feedbackAnchorToLocationAnchor(feedbackAnchor);
+    } catch (error) {
+      // If anchor creation fails, continue without it
+      anchor = undefined;
+    }
+
     if (db) {
       let entityType: "spec" | "issue" | null = null;
       try {
@@ -172,6 +212,7 @@ export function extractCrossReferences(
           index: match.index,
           displayText,
           relationshipType,
+          anchor,
         });
       }
     } else {
@@ -198,6 +239,7 @@ export function extractCrossReferences(
         index: match.index,
         displayText,
         relationshipType,
+        anchor,
       });
     }
   }

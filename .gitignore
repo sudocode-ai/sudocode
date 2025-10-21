@@ -5,5 +5,4 @@ dist/
 *.db-wal
 .DS_Store
 .env
-.sudocode/
 references/
