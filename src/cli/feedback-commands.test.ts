@@ -91,7 +91,6 @@ This is the second section.
       title: 'Test Issue',
       description: 'Test issue description',
       content: '',
-      issue_type: 'task',
       status: 'open',
       priority: 2,
       created_by: 'test',

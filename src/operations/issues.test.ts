@@ -33,15 +33,12 @@ describe('Issue Operations', () => {
         content: '# Details',
         status: 'open',
         priority: 1,
-        issue_type: 'bug',
         assignee: 'agent1',
-        estimated_minutes: 120,
         created_by: 'user1',
       });
 
       expect(issue.id).toBe('issue-001');
       expect(issue.title).toBe('Test Issue');
-      expect(issue.issue_type).toBe('bug');
       expect(issue.priority).toBe(1);
       expect(issue.assignee).toBe('agent1');
     });
@@ -55,7 +52,6 @@ describe('Issue Operations', () => {
 
       expect(issue.status).toBe('open');
       expect(issue.priority).toBe(2);
-      expect(issue.issue_type).toBe('task');
       expect(issue.assignee).toBeNull();
     });
 
@@ -160,7 +156,6 @@ describe('Issue Operations', () => {
         id: 'issue-001',
         title: 'Issue 1',
         status: 'open',
-        issue_type: 'bug',
         priority: 1,
         created_by: 'user1',
       });
@@ -168,7 +163,6 @@ describe('Issue Operations', () => {
         id: 'issue-002',
         title: 'Issue 2',
         status: 'closed',
-        issue_type: 'feature',
         priority: 2,
         assignee: 'agent1',
         created_by: 'user1',
@@ -186,8 +180,8 @@ describe('Issue Operations', () => {
       expect(issues[0].id).toBe('issue-001');
     });
 
-    it('should filter by type', () => {
-      const issues = listIssues(db, { issue_type: 'bug' });
+    it('should filter by priority', () => {
+      const issues = listIssues(db, { priority: 1 });
       expect(issues).toHaveLength(1);
       expect(issues[0].id).toBe('issue-001');
     });

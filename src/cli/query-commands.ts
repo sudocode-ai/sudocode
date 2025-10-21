@@ -35,7 +35,7 @@ export async function handleReady(
         for (const issue of results.issues) {
           const assigneeStr = issue.assignee ? chalk.gray(`@${issue.assignee}`) : '';
           console.log(chalk.cyan(issue.id), issue.title, assigneeStr);
-          console.log(chalk.gray(`  Type: ${issue.issue_type} | Priority: ${issue.priority}`));
+          console.log(chalk.gray(`  Priority: ${issue.priority}`));
         }
       }
       console.log();

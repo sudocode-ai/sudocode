@@ -244,13 +244,11 @@ const issue = program.command("issue").description("Manage issues");
 issue
   .command("create <title>")
   .description("Create a new issue")
-  .option("-t, --type <type>", "Issue type", "task")
   .option("-p, --priority <priority>", "Priority (0-4)", "2")
   .option("-d, --description <desc>", "Description")
   .option("-a, --assignee <assignee>", "Assignee")
   .option("--parent <id>", "Parent issue ID")
   .option("--tags <tags>", "Comma-separated tags")
-  .option("--estimate <minutes>", "Estimated minutes")
   .action(async (title, options) => {
     await handleIssueCreate(getContext(), title, options);
   });
@@ -259,7 +257,6 @@ issue
   .command("list")
   .description("List all issues")
   .option("-s, --status <status>", "Filter by status")
-  .option("-t, --type <type>", "Filter by type")
   .option("-a, --assignee <assignee>", "Filter by assignee")
   .option("-p, --priority <priority>", "Filter by priority")
   .option("--limit <num>", "Limit results", "50")
@@ -280,7 +277,6 @@ issue
   .option("-s, --status <status>", "New status")
   .option("-p, --priority <priority>", "New priority")
   .option("-a, --assignee <assignee>", "New assignee")
-  .option("-t, --type <type>", "New type")
   .option("--title <title>", "New title")
   .option("--description <desc>", "New description")
   .action(async (id, options) => {

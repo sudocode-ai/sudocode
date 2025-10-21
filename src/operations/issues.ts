@@ -3,7 +3,7 @@
  */
 
 import type Database from 'better-sqlite3';
-import type { Issue, IssueStatus, IssueType } from '../types.js';
+import type { Issue, IssueStatus } from '../types.js';
 
 export interface CreateIssueInput {
   id: string;
@@ -12,9 +12,7 @@ export interface CreateIssueInput {
   content?: string;
   status?: IssueStatus;
   priority?: number;
-  issue_type?: IssueType;
   assignee?: string | null;
-  estimated_minutes?: number | null;
   created_by: string;
   parent_id?: string | null;
 }
@@ -25,15 +23,12 @@ export interface UpdateIssueInput {
   content?: string;
   status?: IssueStatus;
   priority?: number;
-  issue_type?: IssueType;
   assignee?: string | null;
-  estimated_minutes?: number | null;
   parent_id?: string | null;
 }
 
 export interface ListIssuesOptions {
   status?: IssueStatus;
-  issue_type?: IssueType;
   priority?: number;
   assignee?: string | null;
   parent_id?: string | null;
@@ -47,11 +42,11 @@ export interface ListIssuesOptions {
 export function createIssue(db: Database.Database, input: CreateIssueInput): Issue {
   const stmt = db.prepare(`
     INSERT INTO issues (
-      id, title, description, content, status, priority, issue_type,
-      assignee, estimated_minutes, created_by, parent_id
+      id, title, description, content, status, priority,
+      assignee, created_by, parent_id
     ) VALUES (
-      @id, @title, @description, @content, @status, @priority, @issue_type,
-      @assignee, @estimated_minutes, @created_by, @parent_id
+      @id, @title, @description, @content, @status, @priority,
+      @assignee, @created_by, @parent_id
     )
   `);
 
@@ -63,9 +58,7 @@ export function createIssue(db: Database.Database, input: CreateIssueInput): Iss
       content: input.content || '',
       status: input.status || 'open',
       priority: input.priority ?? 2,
-      issue_type: input.issue_type || 'task',
       assignee: input.assignee || null,
-      estimated_minutes: input.estimated_minutes || null,
       created_by: input.created_by,
       parent_id: input.parent_id || null,
     });
@@ -138,17 +131,9 @@ export function updateIssue(
     updates.push('priority = @priority');
     params.priority = input.priority;
   }
-  if (input.issue_type !== undefined) {
-    updates.push('issue_type = @issue_type');
-    params.issue_type = input.issue_type;
-  }
   if (input.assignee !== undefined) {
     updates.push('assignee = @assignee');
     params.assignee = input.assignee;
-  }
-  if (input.estimated_minutes !== undefined) {
-    updates.push('estimated_minutes = @estimated_minutes');
-    params.estimated_minutes = input.estimated_minutes;
   }
   if (input.parent_id !== undefined) {
     updates.push('parent_id = @parent_id');
@@ -216,10 +201,6 @@ export function listIssues(
   if (options.status !== undefined) {
     conditions.push('status = @status');
     params.status = options.status;
-  }
-  if (options.issue_type !== undefined) {
-    conditions.push('issue_type = @issue_type');
-    params.issue_type = options.issue_type;
   }
   if (options.priority !== undefined) {
     conditions.push('priority = @priority');

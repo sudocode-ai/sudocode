@@ -456,9 +456,7 @@ export function importIssues(
         content: issue.content,
         status: issue.status,
         priority: issue.priority,
-        issue_type: issue.issue_type,
         assignee: issue.assignee,
-        estimated_minutes: issue.estimated_minutes,
         created_by: issue.created_by,
         parent_id: issue.parent_id,
       });
@@ -496,9 +494,7 @@ export function importIssues(
         content: issue.content,
         status: issue.status,
         priority: issue.priority,
-        issue_type: issue.issue_type,
         assignee: issue.assignee,
-        estimated_minutes: issue.estimated_minutes,
         parent_id: issue.parent_id,
       });
 

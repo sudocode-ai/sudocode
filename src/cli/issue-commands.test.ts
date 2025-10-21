@@ -112,8 +112,8 @@ describe('Issue CLI Commands', () => {
   describe('handleIssueList', () => {
     beforeEach(async () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
-      await handleIssueCreate(ctx, 'Issue 1', { type: 'task', priority: '1' });
-      await handleIssueCreate(ctx, 'Issue 2', { type: 'bug', priority: '2', assignee: 'user1' });
+      await handleIssueCreate(ctx, 'Issue 1', { priority: '1' });
+      await handleIssueCreate(ctx, 'Issue 2', { priority: '2', assignee: 'user1' });
       consoleLogSpy.mockClear();
     });
 
@@ -128,10 +128,10 @@ describe('Issue CLI Commands', () => {
       );
     });
 
-    it('should filter issues by type', async () => {
+    it('should filter issues by priority', async () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
       const options = {
-        type: 'bug',
+        priority: '2',
         limit: '50',
       };
 
@@ -161,7 +161,6 @@ describe('Issue CLI Commands', () => {
     beforeEach(async () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
       await handleIssueCreate(ctx, 'Show Test Issue', {
-        type: 'task',
         priority: '2',
         description: 'Test description',
         assignee: 'user1',
@@ -196,7 +195,6 @@ describe('Issue CLI Commands', () => {
     beforeEach(async () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
       await handleIssueCreate(ctx, 'Update Test', {
-        type: 'task',
         priority: '2',
       });
       consoleLogSpy.mockClear();
@@ -239,8 +237,8 @@ describe('Issue CLI Commands', () => {
   describe('handleIssueClose', () => {
     beforeEach(async () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
-      await handleIssueCreate(ctx, 'Close Test 1', { type: 'task', priority: '2' });
-      await handleIssueCreate(ctx, 'Close Test 2', { type: 'task', priority: '2' });
+      await handleIssueCreate(ctx, 'Close Test 1', { priority: '2' });
+      await handleIssueCreate(ctx, 'Close Test 2', { priority: '2' });
       consoleLogSpy.mockClear();
     });
 

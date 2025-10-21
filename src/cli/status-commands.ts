@@ -87,14 +87,6 @@ export async function handleStats(
     closed: allIssues.filter(i => i.status === 'closed').length,
   };
 
-  const issuesByType = {
-    bug: allIssues.filter(i => i.issue_type === 'bug').length,
-    feature: allIssues.filter(i => i.issue_type === 'feature').length,
-    task: allIssues.filter(i => i.issue_type === 'task').length,
-    epic: allIssues.filter(i => i.issue_type === 'epic').length,
-    chore: allIssues.filter(i => i.issue_type === 'chore').length,
-  };
-
   // Get relationship counts
   const relationshipsStmt = ctx.db.prepare(`
     SELECT relationship_type, COUNT(*) as count
@@ -124,7 +116,6 @@ export async function handleStats(
       issues: {
         total: allIssues.length,
         by_status: issuesByStatus,
-        by_type: issuesByType,
         ready: readyIssues.length,
         blocked: blockedIssues.length,
       },
@@ -152,7 +143,6 @@ export async function handleStats(
   console.log(chalk.blue('Issues:'));
   console.log(`  Total: ${chalk.cyan(allIssues.length)}`);
   console.log(`  By Status: ${issuesByStatus.open} open, ${issuesByStatus.in_progress} in_progress, ${issuesByStatus.blocked} blocked, ${issuesByStatus.closed} closed`);
-  console.log(`  By Type: ${issuesByType.bug} bug, ${issuesByType.feature} feature, ${issuesByType.task} task, ${issuesByType.epic} epic, ${issuesByType.chore} chore`);
   console.log(`  Ready: ${chalk.green(readyIssues.length)}`);
   console.log(`  Blocked: ${chalk.yellow(blockedIssues.length)}`);
 

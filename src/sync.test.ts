@@ -153,7 +153,6 @@ This is urgent.`;
       const issue = getIssue(db, 'issue-001');
       expect(issue).not.toBeNull();
       expect(issue?.title).toBe('New Issue');
-      expect(issue?.issue_type).toBe('bug');
       expect(issue?.assignee).toBe('alice');
       expect(issue?.content).toContain('# Issue Details');
     });
@@ -599,7 +598,6 @@ This should be preserved.`;
         title: 'Test Issue',
         description: 'Issue description',
         content: '# Issue details',
-        issue_type: 'bug',
         status: 'open',
         priority: 1,
         assignee: 'bob',
@@ -616,7 +614,6 @@ This should be preserved.`;
       const parsed = parseMarkdownFile(mdPath);
       expect(parsed.data.id).toBe('issue-001');
       expect(parsed.data.title).toBe('Test Issue');
-      expect(parsed.data.issue_type).toBe('bug');
       expect(parsed.data.assignee).toBe('bob');
       expect(parsed.content).toContain('# Issue details');
     });

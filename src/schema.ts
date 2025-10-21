@@ -50,9 +50,7 @@ CREATE TABLE IF NOT EXISTS issues (
     content TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'open',
     priority INTEGER NOT NULL DEFAULT 2 CHECK(priority >= 0 AND priority <= 4),
-    issue_type TEXT NOT NULL DEFAULT 'task',
     assignee TEXT,
-    estimated_minutes INTEGER,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     closed_at DATETIME,
@@ -133,7 +131,6 @@ CREATE INDEX IF NOT EXISTS idx_specs_updated_at ON specs(updated_at);
 export const ISSUES_INDEXES = `
 CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);
 CREATE INDEX IF NOT EXISTS idx_issues_priority ON issues(priority);
-CREATE INDEX IF NOT EXISTS idx_issues_type ON issues(issue_type);
 CREATE INDEX IF NOT EXISTS idx_issues_assignee ON issues(assignee);
 CREATE INDEX IF NOT EXISTS idx_issues_parent ON issues(parent_id);
 CREATE INDEX IF NOT EXISTS idx_issues_created_at ON issues(created_at);

@@ -28,7 +28,6 @@ import type {
   Spec,
   Issue,
   IssueStatus,
-  IssueType,
 } from "./types.js";
 
 export interface SyncResult {
@@ -129,7 +128,6 @@ function initializeFrontmatter(
     }
   } else {
     // issue
-    if (!initialized.issue_type) initialized.issue_type = "task";
     if (!initialized.status) initialized.status = "open";
     if (!initialized.priority && initialized.priority !== 0)
       initialized.priority = 2;
@@ -358,10 +356,10 @@ function determineEntityType(
   filePath: string
 ): "spec" | "issue" {
   // Check frontmatter type field
-  if (frontmatter.entity_type === "issue" || frontmatter.issue_type) {
+  if (frontmatter.entity_type === "issue") {
     return "issue";
   }
-  if (frontmatter.entity_type === "spec" || frontmatter.type) {
+  if (frontmatter.entity_type === "spec") {
     return "spec";
   }
 
@@ -476,9 +474,7 @@ async function syncIssue(
     content,
     status: (frontmatter.status as IssueStatus) || "open",
     priority: frontmatter.priority ?? 2,
-    issue_type: (frontmatter.issue_type as IssueType) || "task",
     assignee: frontmatter.assignee || null,
-    estimated_minutes: frontmatter.estimated_minutes || null,
     parent_id: frontmatter.parent_id || null,
   };
 
@@ -607,13 +603,10 @@ function entityToFrontmatter(
       ...base,
       status: issue.status,
       description: issue.description,
-      issue_type: issue.issue_type,
     };
 
     // Only add optional issue fields if they have values
     if (issue.assignee) result.assignee = issue.assignee;
-    if (issue.estimated_minutes !== null)
-      result.estimated_minutes = issue.estimated_minutes;
     if (issue.closed_at) result.closed_at = issue.closed_at;
 
     return result;

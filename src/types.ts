@@ -22,9 +22,7 @@ export interface Issue {
   content: string;
   status: IssueStatus;
   priority: number;
-  issue_type: IssueType;
   assignee: string | null;
-  estimated_minutes: number | null;
   created_at: string;
   updated_at: string;
   closed_at: string | null;
@@ -32,8 +30,7 @@ export interface Issue {
   parent_id: string | null;
 }
 
-export type IssueStatus = 'open' | 'in_progress' | 'blocked' | 'closed';
-export type IssueType = 'bug' | 'feature' | 'task' | 'epic' | 'chore';
+export type IssueStatus = "open" | "in_progress" | "blocked" | "closed";
 
 export interface Relationship {
   from_id: string;
@@ -46,8 +43,15 @@ export interface Relationship {
   metadata: string | null;
 }
 
-export type EntityType = 'spec' | 'issue';
-export type RelationshipType = 'blocks' | 'related' | 'parent-child' | 'discovered-from' | 'implements' | 'references' | 'depends-on';
+export type EntityType = "spec" | "issue";
+export type RelationshipType =
+  | "blocks"
+  | "related"
+  | "parent-child"
+  | "discovered-from"
+  | "implements"
+  | "references"
+  | "depends-on";
 
 export interface Tag {
   entity_id: string;
@@ -70,13 +74,13 @@ export interface Event {
 }
 
 export type EventType =
-  | 'created'
-  | 'updated'
-  | 'status_changed'
-  | 'relationship_added'
-  | 'relationship_removed'
-  | 'tag_added'
-  | 'tag_removed';
+  | "created"
+  | "updated"
+  | "status_changed"
+  | "relationship_added"
+  | "relationship_removed"
+  | "tag_added"
+  | "tag_removed";
 
 /**
  * Issue-based spec feedback types
@@ -105,7 +109,7 @@ export interface FeedbackAnchor {
   context_before?: string;
   context_after?: string;
   content_hash?: string;
-  anchor_status: 'valid' | 'relocated' | 'stale';
+  anchor_status: "valid" | "relocated" | "stale";
   last_verified_at?: string;
   original_location?: {
     line_number: number;
@@ -114,17 +118,13 @@ export interface FeedbackAnchor {
 }
 
 export type FeedbackType =
-  | 'ambiguity'
-  | 'missing_requirement'
-  | 'technical_constraint'
-  | 'suggestion'
-  | 'question';
+  | "ambiguity"
+  | "missing_requirement"
+  | "technical_constraint"
+  | "suggestion"
+  | "question";
 
-export type FeedbackStatus =
-  | 'open'
-  | 'acknowledged'
-  | 'resolved'
-  | 'wont_fix';
+export type FeedbackStatus = "open" | "acknowledged" | "resolved" | "wont_fix";
 
 /**
  * JSONL format types

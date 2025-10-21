@@ -27,13 +27,11 @@ export interface CommandContext {
 }
 
 export interface IssueCreateOptions {
-  type: string;
   priority: string;
   description?: string;
   assignee?: string;
   parent?: string;
   tags?: string;
-  estimate?: string;
 }
 
 export async function handleIssueCreate(
@@ -49,12 +47,10 @@ export async function handleIssueCreate(
       title,
       description: options.description || "",
       content: "",
-      issue_type: options.type as any,
       status: "open",
       priority: parseInt(options.priority),
       created_by: process.env.USER || "system",
       assignee: options.assignee || null,
-      estimated_minutes: options.estimate ? parseInt(options.estimate) : null,
       parent_id: options.parent || null,
     });
 
@@ -72,7 +68,6 @@ export async function handleIssueCreate(
     } else {
       console.log(chalk.green("✓ Created issue"), chalk.cyan(issueId));
       console.log(chalk.gray(`  Title: ${title}`));
-      console.log(chalk.gray(`  Type: ${options.type}`));
       if (options.assignee) {
         console.log(chalk.gray(`  Assignee: ${options.assignee}`));
       }
@@ -86,7 +81,6 @@ export async function handleIssueCreate(
 
 export interface IssueListOptions {
   status?: string;
-  type?: string;
   assignee?: string;
   priority?: string;
   limit: string;
@@ -99,7 +93,6 @@ export async function handleIssueList(
   try {
     const issues = listIssues(ctx.db, {
       status: options.status as any,
-      issue_type: options.type as any,
       assignee: options.assignee,
       priority: options.priority ? parseInt(options.priority) : undefined,
       limit: parseInt(options.limit),
@@ -136,7 +129,7 @@ export async function handleIssueList(
         );
         console.log(
           chalk.gray(
-            `  Type: ${issue.issue_type} | Priority: ${issue.priority}`
+            `  Priority: ${issue.priority}`
           )
         );
       }
@@ -177,17 +170,10 @@ export async function handleIssueShow(
       console.log();
       console.log(chalk.bold.cyan(issue.id), chalk.bold(issue.title));
       console.log(chalk.gray("─".repeat(60)));
-      console.log(chalk.gray("Type:"), issue.issue_type);
       console.log(chalk.gray("Status:"), issue.status);
       console.log(chalk.gray("Priority:"), issue.priority);
       if (issue.assignee) {
         console.log(chalk.gray("Assignee:"), issue.assignee);
-      }
-      if (issue.estimated_minutes) {
-        console.log(
-          chalk.gray("Estimate:"),
-          `${issue.estimated_minutes} minutes`
-        );
       }
       if (issue.parent_id) {
         console.log(chalk.gray("Parent:"), issue.parent_id);
@@ -295,7 +281,6 @@ export interface IssueUpdateOptions {
   status?: string;
   priority?: string;
   assignee?: string;
-  type?: string;
   title?: string;
   description?: string;
 }
@@ -310,7 +295,6 @@ export async function handleIssueUpdate(
     if (options.status) updates.status = options.status;
     if (options.priority) updates.priority = parseInt(options.priority);
     if (options.assignee) updates.assignee = options.assignee;
-    if (options.type) updates.issue_type = options.type;
     if (options.title) updates.title = options.title;
     if (options.description) updates.description = options.description;
 
