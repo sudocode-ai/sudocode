@@ -1,8 +1,8 @@
-# sudograph: Abstractions for Agent-Assisted Development
+# sudocode: Abstractions for Agent-Assisted Development
 
 Agentic software development is difficult because managing human context, planning, agent implementations/trajectories, and code outputs/artifacts is difficult. User-initiated changes to a plan might live in the human user's mental context, but might not be made explicit. Changes might ripple through existing planning or spec docs and make documents stale. Agents might encounter issues in implementation that might require human intervention, or they might pivot to other directions without fully updating underlying issue or plan documents. Context is constantly turning stale, and traceability is often ad-hoc.
 
-I propose a 4-tiered abstraction structure called the `sudograph` for representing context. The tiers correspond to increasing granularity from high-level requirements to low-level implementation.
+I propose a 4-tiered abstraction structure called the `sudocode` for representing context. The tiers correspond to increasing granularity from high-level requirements to low-level implementation.
 
 1. Spec: a primitive for user intent. It can be a request for change (RFC) in implementing a code change, a set of requirements for a high-level task like answering deep research questions, etc. A specification/spec captures user intent and requirements. It captures the WHAT of what the user is doing and what they want. Specs can be thought of as a node in a graph structure with links to other specs. Specs can have hierarchical relationships to lower-level specs that capture more detailed context about a user intent, and they can have cross-cutting links to other specs.
 2. Issue: a primitive for capturing agent intent. Issues are derived from the spec and capture work within the agent scope that might include tasks or implementation details. Issues can be thought of as nodes that link back to specific requirements and sections of a spec(s). Issues can also be hierarchically organized and have dependencies and relationships to other issues.
@@ -66,7 +66,7 @@ In the /.sudocode directory, we support the following structures:
 
 TODO: Expand to support environment configurations (worktrees, credentials, etc)
 
-We can expand this to support sudograph-specific configs to modify behavior.
+We can expand this to support sudocode-specific configs to modify behavior.
 
 ### Distributed Git Database
 

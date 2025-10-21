@@ -1,5 +1,5 @@
 /**
- * Core entity types for sudograph
+ * Core entity types for sudocode
  */
 
 export interface Spec {

@@ -1,6 +1,6 @@
 # Storage Layer Architecture
 
-This document defines the storage layer for sudograph, inspired by the beads project's dual-storage pattern: human-editable files (Markdown) + machine-optimized cache (SQLite) with JSONL as the git-committed source of truth.
+This document defines the storage layer for sudocode, inspired by the beads project's dual-storage pattern: human-editable files (Markdown) + machine-optimized cache (SQLite) with JSONL as the git-committed source of truth.
 
 ## Architecture Overview
 

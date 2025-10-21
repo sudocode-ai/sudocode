@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 
 /**
- * Sudograph MCP Server entry point
+ * sudocode MCP Server entry point
  */
 
-import { SudographMCPServer } from './server.js';
+import { SudocodeMCPServer } from "./server.js";
 
 async function main() {
-  const server = new SudographMCPServer();
+  const server = new SudocodeMCPServer();
   await server.run();
 }
 
 main().catch((error) => {
-  console.error('Fatal error:', error);
+  console.error("Fatal error:", error);
   process.exit(1);
 });

@@ -1,6 +1,6 @@
-# Sudograph CRUD Operations
+# Sudocode CRUD Operations
 
-This directory contains all database CRUD operations for sudograph.
+This directory contains all database CRUD operations for sudocode.
 
 ## Modules
 

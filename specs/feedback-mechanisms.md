@@ -168,19 +168,19 @@ async function provideFeedback(
 
 ```bash
 # List all feedback for a spec
-sudograph feedback list spec-001
+sudocode feedback list spec-001
 
 # Show open feedback across all specs
-sudograph feedback list --status open
+sudocode feedback list --status open
 
 # Address feedback
-sudograph feedback resolve FB-001 --comment "Updated spec section 3.2"
+sudocode feedback resolve FB-001 --comment "Updated spec section 3.2"
 
 # Dismiss feedback
-sudograph feedback dismiss FB-002 --reason "Out of scope"
+sudocode feedback dismiss FB-002 --reason "Out of scope"
 
 # Add feedback manually
-sudograph feedback add spec-001 --type question --content "Should we support MFA?"
+sudocode feedback add spec-001 --type question --content "Should we support MFA?"
 ```
 
 ### 2. Artifact → Issue Linking
@@ -222,21 +222,21 @@ CREATE TABLE artifact_changes (
 
 **In code comments:**
 ```typescript
-// @sudograph issue-010
+// @sudocode issue-010
 // Created: 2025-01-15
 // Purpose: Implement JWT token refresh logic
 export async function refreshToken(refreshToken: string): Promise<AuthTokens> {
   // Implementation...
 }
 
-// @sudograph issue-010
+// @sudocode issue-010
 // Modified: 2025-01-16 (added concurrent request handling)
 export class TokenManager {
   // ...
 }
 ```
 
-**In special marker file (`.sudograph/artifacts.jsonl`):**
+**In special marker file (`.sudocode/artifacts.jsonl`):**
 ```jsonl
 {"id":"artifact-001","issue_id":"issue-010","type":"function","file_path":"src/auth/tokens.ts","name":"refreshToken","line_start":45,"line_end":78,"created_at":"2025-01-15T10:00:00Z"}
 {"id":"artifact-002","issue_id":"issue-010","type":"class","file_path":"src/auth/tokens.ts","name":"TokenManager","line_start":80,"line_end":150,"created_at":"2025-01-15T11:00:00Z"}
@@ -249,7 +249,7 @@ export class TokenManager {
 ```bash
 # .git/hooks/post-commit
 #!/bin/bash
-sudograph artifacts scan --commit HEAD
+sudocode artifacts scan --commit HEAD
 ```
 
 ```typescript
@@ -282,29 +282,29 @@ async function scanCommitForArtifacts(commitSha: string): Promise<void> {
 
 ```bash
 # Link file to issue
-sudograph artifact add issue-010 src/auth/tokens.ts
+sudocode artifact add issue-010 src/auth/tokens.ts
 
 # Link specific function to issue
-sudograph artifact add issue-010 src/auth/tokens.ts:refreshToken
+sudocode artifact add issue-010 src/auth/tokens.ts:refreshToken
 
 # Link with line numbers
-sudograph artifact add issue-010 src/auth/tokens.ts --lines 45:78
+sudocode artifact add issue-010 src/auth/tokens.ts --lines 45:78
 ```
 
 **Querying Artifacts:**
 
 ```bash
 # List all artifacts for an issue
-sudograph artifact list issue-010
+sudocode artifact list issue-010
 
 # Find what issue created/modified a file
-sudograph artifact find src/auth/tokens.ts
+sudocode artifact find src/auth/tokens.ts
 
 # Find what issue created a specific function
-sudograph artifact find src/auth/tokens.ts:refreshToken
+sudocode artifact find src/auth/tokens.ts:refreshToken
 
 # Show artifact history
-sudograph artifact history artifact-001
+sudocode artifact history artifact-001
 ```
 
 #### Artifact Analysis
@@ -340,7 +340,7 @@ function extractArtifactsFromFile(filePath: string): CodeArtifact[] {
       const { line: lineStart } = sourceFile.getLineAndCharacterOfPosition(node.pos);
       const { line: lineEnd } = sourceFile.getLineAndCharacterOfPosition(node.end);
 
-      // Check for @sudograph comment
+      // Check for @sudocode comment
       const issueId = extractIssueFromComments(node, sourceFile);
 
       artifacts.push({
@@ -390,7 +390,7 @@ function extractIssueFromComments(
 
   for (const range of commentRanges) {
     const comment = sourceFile.getFullText().substring(range.pos, range.end);
-    const match = comment.match(/@sudograph\s+(issue-\d+)/);
+    const match = comment.match(/@sudocode\s+(issue-\d+)/);
     if (match) {
       return match[1];
     }
@@ -417,7 +417,7 @@ Enable navigation from specs to code and code to specs.
 **Example VS Code extension:**
 
 ```typescript
-// VS Code Extension: sudograph
+// VS Code Extension: sudocode
 import * as vscode from 'vscode';
 
 export function activate(context: vscode.ExtensionContext) {
@@ -467,7 +467,7 @@ export function activate(context: vscode.ExtensionContext) {
           lenses.push(
             new vscode.CodeLens(range, {
               title: `📋 Created by: ${artifact.issue_id}`,
-              command: 'sudograph.openIssue',
+              command: 'sudocode.openIssue',
               arguments: [artifact.issue_id],
             })
           );
@@ -486,7 +486,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 ```bash
 # From spec, find implementations
-sudograph spec show spec-001 --implementations
+sudocode spec show spec-001 --implementations
 
 # Output:
 # spec-001: Authentication System
@@ -501,7 +501,7 @@ sudograph spec show spec-001 --implementations
 #   src/auth/middleware.ts:authMiddleware (issue-012)
 
 # From code file, find related issues/specs
-sudograph artifact find src/auth/tokens.ts
+sudocode artifact find src/auth/tokens.ts
 
 # Output:
 # Artifacts in src/auth/tokens.ts:
@@ -523,39 +523,39 @@ sudograph artifact find src/auth/tokens.ts
 ```bash
 # While implementing issue-010, Claude discovers ambiguity
 # Claude runs:
-sudograph feedback add spec-001 \
+sudocode feedback add spec-001 \
   --type implementation \
   --content "Token rotation policy for concurrent requests not specified" \
   --context '{"issue_id":"issue-010","file_path":"src/auth/tokens.ts","line_number":45}'
 
 # Spec author reviews feedback
-sudograph feedback list --status open
+sudocode feedback list --status open
 
 # Spec author updates spec and resolves feedback
 vim specs/spec-001-auth.md  # Add token rotation policy
-sudograph feedback resolve FB-001 --comment "Added section 3.3 on token rotation"
+sudocode feedback resolve FB-001 --comment "Added section 3.3 on token rotation"
 ```
 
 ### Example 2: Tracking implementation artifacts
 
 ```bash
 # Developer starts work on issue-010
-sudograph issue update issue-010 --status in_progress
+sudocode issue update issue-010 --status in_progress
 
 # During implementation, annotate code
 # In src/auth/tokens.ts:
-# @sudograph issue-010
+# @sudocode issue-010
 # export async function refreshToken(...)
 
 # After commit, scan for artifacts
 git commit -m "feat: implement token refresh (issue-010)"
-sudograph artifacts scan --commit HEAD
+sudocode artifacts scan --commit HEAD
 
 # View artifacts created
-sudograph artifact list issue-010
+sudocode artifact list issue-010
 
 # Later, find what created a function
-sudograph artifact find src/auth/tokens.ts:refreshToken
+sudocode artifact find src/auth/tokens.ts:refreshToken
 # Output: Created by issue-010 (Implement JWT tokens)
 ```
 
@@ -563,10 +563,10 @@ sudograph artifact find src/auth/tokens.ts:refreshToken
 
 ```bash
 # View spec and see implementations
-sudograph spec show spec-001 --implementations
+sudocode spec show spec-001 --implementations
 
 # Jump to specific artifact
-sudograph artifact open src/auth/tokens.ts:refreshToken
+sudocode artifact open src/auth/tokens.ts:refreshToken
 
 # Or in IDE: Hover over spec-001 in code → Click "View Spec"
 ```
@@ -575,14 +575,14 @@ sudograph artifact open src/auth/tokens.ts:refreshToken
 
 These feedback mechanisms should be tracked as implementation issues:
 
-1. **sudograph-20:** Implement spec feedback table and CRUD operations
-2. **sudograph-21:** Add feedback commands to CLI (add, list, resolve, dismiss)
-3. **sudograph-22:** Implement artifact tracking table and CRUD operations
-4. **sudograph-23:** Add artifact commands to CLI (add, list, find, history)
-5. **sudograph-24:** Implement TypeScript AST parser for artifact extraction
-6. **sudograph-25:** Create git post-commit hook for automatic artifact scanning
-7. **sudograph-26:** Build VS Code extension with hover and CodeLens providers
-8. **sudograph-27:** Add bidirectional navigation in CLI (spec→code, code→spec)
+1. **sudocode-20:** Implement spec feedback table and CRUD operations
+2. **sudocode-21:** Add feedback commands to CLI (add, list, resolve, dismiss)
+3. **sudocode-22:** Implement artifact tracking table and CRUD operations
+4. **sudocode-23:** Add artifact commands to CLI (add, list, find, history)
+5. **sudocode-24:** Implement TypeScript AST parser for artifact extraction
+6. **sudocode-25:** Create git post-commit hook for automatic artifact scanning
+7. **sudocode-26:** Build VS Code extension with hover and CodeLens providers
+8. **sudocode-27:** Add bidirectional navigation in CLI (spec→code, code→spec)
 
 ## Future Enhancements
 

@@ -231,7 +231,7 @@ describe("SudocodeClient", () => {
       expect(result).toEqual({ result: "success" });
     });
 
-    it("should throw SudographError on non-zero exit code", async () => {
+    it("should throw SudocodeError on non-zero exit code", async () => {
       const client = new SudocodeClient();
 
       // Mock version check

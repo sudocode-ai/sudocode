@@ -127,8 +127,6 @@ export async function acknowledgeFeedback(
   return client.exec(args);
 }
 
-// Tool implementations - Part 2 (for sudograph-31)
-
 /**
  * Resolve feedback
  */

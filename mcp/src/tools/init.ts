@@ -19,7 +19,7 @@ export interface InitResult {
 // Tool implementation
 
 /**
- * Initialize Sudograph in the current directory
+ * Initialize sudocode in the current directory
  */
 export async function init(
   client: SudocodeClient,

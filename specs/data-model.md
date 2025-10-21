@@ -1,6 +1,6 @@
 # Data Model Specification
 
-This document defines the core data schemas for Specs and Issues in the sudograph system. Agent, Artifact, and Execution entities will be defined incrementally as the design evolves.
+This document defines the core data schemas for Specs and Issues in the sudocode system. Agent, Artifact, and Execution entities will be defined incrementally as the design evolves.
 
 ## Design Principles
 

@@ -1,8 +1,8 @@
 /**
- * SQLite schema definition for sudograph
+ * SQLite schema definition for sudocode
  */
 
-export const SCHEMA_VERSION = '1.0';
+export const SCHEMA_VERSION = "1.0";
 
 /**
  * Database configuration SQL
@@ -219,7 +219,4 @@ export const ALL_INDEXES = [
   ISSUE_FEEDBACK_INDEXES,
 ];
 
-export const ALL_VIEWS = [
-  READY_ISSUES_VIEW,
-  BLOCKED_ISSUES_VIEW,
-];
+export const ALL_VIEWS = [READY_ISSUES_VIEW, BLOCKED_ISSUES_VIEW];

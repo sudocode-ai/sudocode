@@ -1,9 +1,48 @@
 /**
  * Type definitions for sudocode MCP server
+ *
+ * Core entity types are imported from the main sudocode package.
+ * This file contains MCP-specific types and some forward-compatible types
+ * for fields that may be added to the core package in the future.
  */
 
-// sudocode entity types
+// Re-export core types from the main package
+export type {
+  Spec,
+  Issue,
+  Relationship,
+  EntityType,
+  RelationshipType,
+  IssueStatus,
+  FeedbackAnchor,
+  FeedbackType,
+  FeedbackStatus,
+  IssueFeedback as Feedback,
+} from "sudocode/types";
+
+// ============================================================================
+// MCP-SPECIFIC TYPES
+// These types are used by the MCP interface but may not be fully supported
+// by the current CLI implementation. They represent forward-compatible
+// features that may be added in the future.
+// ============================================================================
+
+/**
+ * Issue type classification
+ * NOTE: Not yet stored in database or supported by CLI filtering
+ */
+export type IssueType = "bug" | "feature" | "task" | "epic" | "chore";
+
+/**
+ * Spec status lifecycle
+ * NOTE: Not yet stored in database or supported by CLI filtering
+ */
 export type SpecStatus = "draft" | "review" | "approved" | "deprecated";
+
+/**
+ * Spec type classification
+ * NOTE: Not yet stored in database or supported by CLI filtering
+ */
 export type SpecType =
   | "architecture"
   | "api"
@@ -11,109 +50,20 @@ export type SpecType =
   | "feature"
   | "research";
 
-export type IssueStatus = "open" | "in_progress" | "blocked" | "closed";
-export type IssueType = "bug" | "feature" | "task" | "epic" | "chore";
+// ============================================================================
+// CLIENT CONFIGURATION
+// ============================================================================
 
-export type RelationshipType =
-  | "blocks"
-  | "implements"
-  | "references"
-  | "depends-on"
-  | "parent-child"
-  | "discovered-from"
-  | "related";
-
-export type FeedbackType =
-  | "ambiguity"
-  | "missing_requirement"
-  | "technical_constraint"
-  | "suggestion"
-  | "question";
-
-export type FeedbackStatus = "open" | "acknowledged" | "resolved" | "wont_fix";
-
-// Entity interfaces
-export interface Spec {
-  id: string;
-  title: string;
-  file_path: string;
-  content: string;
-  type: SpecType;
-  status: SpecStatus;
-  priority: number;
-  created_at: string;
-  updated_at: string;
-  created_by: string;
-  updated_by: string;
-  parent_id: string | null;
-}
-
-export interface Issue {
-  id: string;
-  title: string;
-  description: string;
-  content: string;
-  status: IssueStatus;
-  priority: number;
-  issue_type: IssueType;
-  assignee: string | null;
-  estimated_minutes: number | null;
-  created_at: string;
-  updated_at: string;
-  closed_at: string | null;
-  created_by: string;
-  parent_id: string | null;
-}
-
-export interface Relationship {
-  from_id: string;
-  from_type: "spec" | "issue";
-  to_id: string;
-  to_type: "spec" | "issue";
-  relationship_type: RelationshipType;
-  created_at: string;
-  created_by: string;
-}
-
-export interface Feedback {
-  id: string;
-  issue_id: string;
-  spec_id: string;
-  feedback_type: FeedbackType;
-  content: string;
-  agent: string;
-  anchor: FeedbackAnchor;
-  status: FeedbackStatus;
-  created_at: string;
-  updated_at: string;
-  resolution: string | null;
-}
-
-export interface FeedbackAnchor {
-  section_heading?: string;
-  section_level?: number;
-  line_number?: number;
-  line_offset?: number;
-  text_snippet?: string;
-  context_before?: string;
-  context_after?: string;
-  content_hash?: string;
-  anchor_status: "valid" | "relocated" | "stale";
-  last_verified_at?: string;
-  original_location?: {
-    line_number: number;
-    section_heading?: string;
-  };
-}
-
-// Client configuration
 export interface SudocodeClientConfig {
   workingDir?: string;
   cliPath?: string;
   dbPath?: string;
 }
 
-// Custom error type
+// ============================================================================
+// ERROR TYPES
+// ============================================================================
+
 export class SudocodeError extends Error {
   constructor(message: string, public exitCode: number, public stderr: string) {
     super(message);

@@ -1,5 +1,5 @@
 /**
- * MCP Server for Sudograph
+ * MCP Server for sudocode
  *
  * This module sets up the MCP server with tools and resources.
  */
@@ -408,7 +408,7 @@ export class SudocodeMCPServer {
           },
           {
             name: "init",
-            description: "Initialize Sudograph in the current directory",
+            description: "Initialize sudocode in the current directory",
             inputSchema: {
               type: "object",
               properties: {

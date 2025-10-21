@@ -1,10 +1,10 @@
-# Sudograph MCP Server Specification
+# Sudocode MCP Server Specification
 
-The Sudograph MCP will be a local MCP server that exposes Sudograph CLI functionality to AI agents via the Model Context Protocol, enabling agentic management of specs, issues, and the feedback system.
+The Sudocode MCP will be a local MCP server that exposes Sudocode CLI functionality to AI agents via the Model Context Protocol, enabling agentic management of specs, issues, and the feedback system.
 
 ## Overview
 
-Sudograph MCP provides tools for:
+Sudocode MCP provides tools for:
 - **Spec Management**: Creating and managing specifications with markdown support
 - **Issue Management**: Full CRUD operations for bugs, features, tasks, epics, and chores
 - **Relationship Management**: Creating links between specs and issues (blocks, implements, etc.)
@@ -28,15 +28,15 @@ Sudograph MCP provides tools for:
 
 ## Resources
 
-### 1. `sudograph://quickstart`
-**Name**: "Sudograph Quickstart Guide"
-**Description**: Introduction to Sudograph workflow and best practices for agents
+### 1. `sudocode://quickstart`
+**Name**: "Sudocode Quickstart Guide"
+**Description**: Introduction to Sudocode workflow and best practices for agents
 
 **Content**:
 ```markdown
-# Sudograph Quickstart
+# Sudocode Quickstart
 
-Sudograph is a git-native spec and issue management system designed for AI-assisted development.
+Sudocode is a git-native spec and issue management system designed for AI-assisted development.
 
 ## Core Concepts
 
@@ -73,7 +73,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 - `discovered-from`: New work found during implementation
 ```
 
-### 2. `sudograph://workflow`
+### 2. `sudocode://workflow`
 **Name**: "Agent Workflow Guide"
 **Description**: Step-by-step workflow patterns for AI agents
 
@@ -431,7 +431,7 @@ Sudograph is a git-native spec and issue management system designed for AI-assis
 ### Initialization
 
 #### 22. `init`
-**Description**: Initialize Sudograph in current directory
+**Description**: Initialize Sudocode in current directory
 
 **Parameters**:
 - `prefix` (string, default: "sudocode"): ID prefix for specs/issues

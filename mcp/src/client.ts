@@ -1,5 +1,5 @@
 /**
- * Sudograph CLI client wrapper
+ * sudocode CLI client wrapper
  *
  * This module provides a client class that spawns `sg` CLI commands
  * and parses their JSON output for use in MCP tools.

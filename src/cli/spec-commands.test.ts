@@ -27,7 +27,7 @@ describe("Spec CLI Commands", () => {
     db = initDatabase({ path: ":memory:" });
 
     // Create temporary directory for files
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "sudograph-test-"));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "sudocode-test-"));
 
     // Create necessary subdirectories
     fs.mkdirSync(path.join(tempDir, "specs"), { recursive: true });
