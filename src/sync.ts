@@ -147,8 +147,8 @@ export async function syncMarkdownToJSONL(
   } = options;
 
   try {
-    // Parse markdown file
-    const parsed = parseMarkdownFile(mdPath);
+    // Parse markdown file with database validation for cross-references
+    const parsed = parseMarkdownFile(mdPath, db, outputDir);
     let { data, content, references } = parsed;
 
     // Determine entity type from frontmatter or file path
@@ -504,7 +504,7 @@ async function syncRelationships(
   db: Database.Database,
   entityId: string,
   entityType: "spec" | "issue",
-  references: Array<{ id: string; type: "spec" | "issue" }>,
+  references: Array<{ id: string; type: "spec" | "issue"; relationshipType?: string }>,
   frontmatterRels?: Array<{
     target_id: string;
     target_type: string;
@@ -521,9 +521,10 @@ async function syncRelationships(
     existing.map((r) => `${r.relationship_type}:${r.to_type}:${r.to_id}`)
   );
 
-  // Add relationships from cross-references (as 'references' type)
+  // Add relationships from cross-references (defaults to 'references' type)
   for (const ref of references) {
-    const key = `references:${ref.type}:${ref.id}`;
+    const relType = ref.relationshipType || "references";
+    const key = `${relType}:${ref.type}:${ref.id}`;
     if (!existingSet.has(key)) {
       try {
         addRelationship(db, {
@@ -531,7 +532,7 @@ async function syncRelationships(
           from_type: entityType,
           to_id: ref.id,
           to_type: ref.type,
-          relationship_type: "references",
+          relationship_type: relType as any,
         });
       } catch (error) {
         // Ignore errors (e.g., target not found, duplicate)

@@ -191,7 +191,7 @@ Related to [[@issue-042]].`;
 
       expect(result.success).toBe(true);
 
-      // Verify relationships were created
+      // Verify relationships were created (as references type by default)
       const deps = getOutgoingRelationships(db, 'spec-001', 'spec');
       expect(deps.length).toBeGreaterThan(0);
 

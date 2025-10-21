@@ -2,8 +2,13 @@
  * Markdown parser with frontmatter support
  */
 
-import matter from 'gray-matter';
-import * as fs from 'fs';
+import matter from "gray-matter";
+import * as fs from "fs";
+import type Database from "better-sqlite3";
+import { getSpec } from "./operations/specs.js";
+import { getIssue } from "./operations/issues.js";
+import { getMeta } from "./id-generator.js";
+import type { ConfigMetadata } from "./types.js";
 
 export interface ParsedMarkdown<T extends object = Record<string, any>> {
   /**
@@ -36,23 +41,47 @@ export interface CrossReference {
   /**
    * Entity type (spec or issue)
    */
-  type: 'spec' | 'issue';
+  type: "spec" | "issue";
   /**
    * Position in content
    */
   index: number;
+  /**
+   * Optional display text (e.g., "Authentication" from "[[spec-001|Authentication]]")
+   */
+  displayText?: string;
+  /**
+   * Optional relationship type (e.g., "blocks" from "[[spec-001]]{ blocks }")
+   * Defaults to "references" if not specified
+   */
+  relationshipType?: string;
 }
 
 /**
  * Parse markdown file with YAML frontmatter
+ * @param content - Markdown content to parse
+ * @param db - Optional database for validating cross-references
+ * @param outputDir - Optional output directory for loading config metadata
  */
 export function parseMarkdown<T extends object = Record<string, any>>(
-  content: string
+  content: string,
+  db?: Database.Database,
+  outputDir?: string
 ): ParsedMarkdown<T> {
   const parsed = matter(content);
 
+  // Load metadata if outputDir is provided
+  let metadata: ConfigMetadata | undefined;
+  if (outputDir && !db) {
+    try {
+      metadata = getMeta(outputDir);
+    } catch (error) {
+      // Ignore - will fall back to default heuristics
+    }
+  }
+
   // Extract cross-references from content
-  const references = extractCrossReferences(parsed.content);
+  const references = extractCrossReferences(parsed.content, db, metadata);
 
   return {
     data: parsed.data as T,
@@ -64,48 +93,113 @@ export function parseMarkdown<T extends object = Record<string, any>>(
 
 /**
  * Parse markdown file from disk
+ * @param filePath - Path to markdown file
+ * @param db - Optional database for validating cross-references
+ * @param outputDir - Optional output directory for loading config metadata
  */
 export function parseMarkdownFile<T extends object = Record<string, any>>(
-  filePath: string
+  filePath: string,
+  db?: Database.Database,
+  outputDir?: string
 ): ParsedMarkdown<T> {
-  const content = fs.readFileSync(filePath, 'utf8');
-  return parseMarkdown<T>(content);
+  const content = fs.readFileSync(filePath, "utf8");
+  return parseMarkdown<T>(content, db, outputDir);
 }
 
 /**
  * Extract cross-references from markdown content
  * Supports formats:
- * - [[spec-001]] - spec reference
- * - [[@issue-042]] - issue reference (with @ prefix)
- * - [[issue-001]] - issue reference (without @ prefix, detected by pattern)
+ * - [[entity-001]] - entity reference (type determined by database lookup)
+ * - [[@entity-042]] - entity reference with @ prefix (for clarity)
+ * - [[entity-001|Display Text]] - with custom display text
+ * - [[entity-001]]{ blocks } - with relationship type (shorthand)
+ * - [[entity-001]]{ type: blocks } - with relationship type (explicit)
+ * - [[entity-001|Display]]{ blocks } - combination of display text and type
+ *
+ * If db is provided, validates references against the database and determines entity type.
+ * Only returns references to entities that actually exist.
+ *
+ * If metadata is provided (but no db), uses configured ID prefixes for type detection.
  */
-export function extractCrossReferences(content: string): CrossReference[] {
+export function extractCrossReferences(
+  content: string,
+  db?: Database.Database,
+  metadata?: ConfigMetadata
+): CrossReference[] {
   const references: CrossReference[] = [];
 
-  // Pattern: [[optional-@][entity-id]]
-  // Matches: [[spec-001]], [[@issue-042]], [[issue-001]]
-  const refPattern = /\[\[(@)?([a-z]+-\d+)\]\]/gi;
+  // Pattern: [[optional-@][entity-id][|display-text]]optional-metadata
+  // Matches:
+  // - [[entity-001]]
+  // - [[entity-001|Display Text]]
+  // - [[entity-001]]{ blocks }
+  // - [[entity-001]]{ type: depends-on }
+  // - [[entity-001|Auth Flow]]{ implements }
+  const refPattern =
+    /\[\[(@)?([a-z]+-\d+)(?:\|([^\]]+))?\]\](?:\{\s*(?:type:\s*)?([a-z-]+)\s*\})?/gi;
 
   let match: RegExpExecArray | null;
 
   while ((match = refPattern.exec(content)) !== null) {
-    const hasAt = match[1] === '@';
+    const hasAt = match[1] === "@";
     const id = match[2];
+    const displayText = match[3]?.trim();
+    const relationshipType = match[4]?.trim();
 
-    // Determine type: @ prefix or starts with "issue"
-    let type: 'spec' | 'issue';
-    if (hasAt || id.startsWith('issue-')) {
-      type = 'issue';
+    if (db) {
+      let entityType: "spec" | "issue" | null = null;
+      try {
+        const spec = getSpec(db, id);
+        if (spec) {
+          entityType = "spec";
+        }
+      } catch (error) {}
+
+      if (!entityType) {
+        try {
+          const issue = getIssue(db, id);
+          if (issue) {
+            entityType = "issue";
+          }
+        } catch (error) {}
+      }
+
+      if (entityType) {
+        references.push({
+          match: match[0],
+          id,
+          type: entityType,
+          index: match.index,
+          displayText,
+          relationshipType,
+        });
+      }
     } else {
-      type = 'spec';
-    }
+      let type: "spec" | "issue";
+      if (metadata) {
+        const specPrefix = metadata.id_prefix.spec.toLowerCase();
+        const issuePrefix = metadata.id_prefix.issue.toLowerCase();
+        if (hasAt || id.toLowerCase().startsWith(issuePrefix + "-")) {
+          type = "issue";
+        } else if (id.toLowerCase().startsWith(specPrefix + "-")) {
+          type = "spec";
+        } else {
+          // TODO: No issue resolved - skip the reference.
+          type = "spec";
+        }
+      } else {
+        type = hasAt || id.startsWith("issue-") ? "issue" : "spec";
+      }
 
-    references.push({
-      match: match[0],
-      id,
-      type,
-      index: match.index,
-    });
+      references.push({
+        match: match[0],
+        id,
+        type,
+        index: match.index,
+        displayText,
+        relationshipType,
+      });
+    }
   }
 
   return references;
@@ -147,16 +241,16 @@ export function updateFrontmatterFile<T extends object = Record<string, any>>(
   filePath: string,
   updates: Partial<T>
 ): void {
-  const content = fs.readFileSync(filePath, 'utf8');
+  const content = fs.readFileSync(filePath, "utf8");
   const updated = updateFrontmatter(content, updates);
-  fs.writeFileSync(filePath, updated, 'utf8');
+  fs.writeFileSync(filePath, updated, "utf8");
 }
 
 /**
  * Check if a file has frontmatter
  */
 export function hasFrontmatter(content: string): boolean {
-  return content.trimStart().startsWith('---');
+  return content.trimStart().startsWith("---");
 }
 
 /**
@@ -178,7 +272,7 @@ export function writeMarkdownFile<T extends object = Record<string, any>>(
   content: string
 ): void {
   const markdown = createMarkdown(data, content);
-  fs.writeFileSync(filePath, markdown, 'utf8');
+  fs.writeFileSync(filePath, markdown, "utf8");
 }
 
 /**
@@ -211,7 +305,7 @@ export interface FeedbackMarkdownData {
   location: {
     section?: string;
     line?: number;
-    status: 'valid' | 'relocated' | 'stale';
+    status: "valid" | "relocated" | "stale";
   };
   status: string;
   content: string;
@@ -232,7 +326,8 @@ export function parseFeedbackSection(content: string): FeedbackMarkdownData[] {
     return feedback;
   }
 
-  const startIndex = feedbackSectionMatch.index! + feedbackSectionMatch[0].length;
+  const startIndex =
+    feedbackSectionMatch.index! + feedbackSectionMatch[0].length;
 
   // Find the end of this section (next ## heading or end of content)
   const remainingContent = content.slice(startIndex);
@@ -242,14 +337,17 @@ export function parseFeedbackSection(content: string): FeedbackMarkdownData[] {
     : remainingContent;
 
   // Parse individual feedback items (### heading for each)
-  const feedbackPattern = /^### (FB-\d+) → ([a-z]+-\d+)(?: \((.*?)\))?\s*\n\*\*Type:\*\* (.+?)\s*\n\*\*Location:\*\* (.*?)\s*\n\*\*Status:\*\* (.+?)\s*\n\n([\s\S]*?)(?=\n###|$)/gm;
+  const feedbackPattern =
+    /^### (FB-\d+) → ([a-z]+-\d+)(?: \((.*?)\))?\s*\n\*\*Type:\*\* (.+?)\s*\n\*\*Location:\*\* (.*?)\s*\n\*\*Status:\*\* (.+?)\s*\n\n([\s\S]*?)(?=\n###|$)/gm;
 
   let match;
   while ((match = feedbackPattern.exec(sectionContent)) !== null) {
     const [, id, specId, specTitle, type, locationStr, status, content] = match;
 
     // Parse location string: "## Section Name, line 45 ✓" or "line 45 ⚠" or "Unknown ✗"
-    const locationMatch = locationStr.match(/(?:(.+?),\s+)?line (\d+)\s*([✓⚠✗])/);
+    const locationMatch = locationStr.match(
+      /(?:(.+?),\s+)?line (\d+)\s*([✓⚠✗])/
+    );
 
     const feedbackData: FeedbackMarkdownData = {
       id,
@@ -259,11 +357,16 @@ export function parseFeedbackSection(content: string): FeedbackMarkdownData[] {
       location: {
         section: locationMatch?.[1]?.trim(),
         line: locationMatch?.[2] ? parseInt(locationMatch[2]) : undefined,
-        status: locationMatch?.[3] === '✓' ? 'valid' : locationMatch?.[3] === '⚠' ? 'relocated' : 'stale',
+        status:
+          locationMatch?.[3] === "✓"
+            ? "valid"
+            : locationMatch?.[3] === "⚠"
+            ? "relocated"
+            : "stale",
       },
       status: status.trim(),
       content: content.trim(),
-      createdAt: '', // Would need to parse from content or get from DB
+      createdAt: "", // Would need to parse from content or get from DB
     };
 
     // Check for resolution
@@ -281,22 +384,26 @@ export function parseFeedbackSection(content: string): FeedbackMarkdownData[] {
 /**
  * Format feedback data for inclusion in issue markdown
  */
-export function formatFeedbackForIssue(feedback: FeedbackMarkdownData[]): string {
+export function formatFeedbackForIssue(
+  feedback: FeedbackMarkdownData[]
+): string {
   if (feedback.length === 0) {
-    return '';
+    return "";
   }
 
-  let output = '\n## Spec Feedback Provided\n\n';
+  let output = "\n## Spec Feedback Provided\n\n";
 
   for (const fb of feedback) {
     // Determine status indicator
     const statusIndicator =
-      fb.location.status === 'valid' ? '✓' :
-      fb.location.status === 'relocated' ? '⚠' :
-      '✗';
+      fb.location.status === "valid"
+        ? "✓"
+        : fb.location.status === "relocated"
+        ? "⚠"
+        : "✗";
 
     // Format location
-    let locationStr = '';
+    let locationStr = "";
     if (fb.location.section && fb.location.line) {
       locationStr = `${fb.location.section}, line ${fb.location.line} ${statusIndicator}`;
     } else if (fb.location.line) {
@@ -305,7 +412,7 @@ export function formatFeedbackForIssue(feedback: FeedbackMarkdownData[]): string
       locationStr = `Unknown ${statusIndicator}`;
     }
 
-    const titlePart = fb.specTitle ? ` (${fb.specTitle})` : '';
+    const titlePart = fb.specTitle ? ` (${fb.specTitle})` : "";
 
     output += `### ${fb.id} → ${fb.specId}${titlePart}\n`;
     output += `**Type:** ${fb.type}  \n`;
@@ -317,7 +424,7 @@ export function formatFeedbackForIssue(feedback: FeedbackMarkdownData[]): string
       output += `\n**Resolution:** ${fb.resolution}\n`;
     }
 
-    output += '\n';
+    output += "\n";
   }
 
   return output;
@@ -331,7 +438,9 @@ export function updateFeedbackInIssue(
   feedback: FeedbackMarkdownData[]
 ): string {
   // Remove existing feedback section if present
-  const feedbackSectionMatch = issueContent.match(/^## Spec Feedback Provided\s*$/m);
+  const feedbackSectionMatch = issueContent.match(
+    /^## Spec Feedback Provided\s*$/m
+  );
 
   if (feedbackSectionMatch) {
     const startIndex = feedbackSectionMatch.index!;
@@ -343,7 +452,8 @@ export function updateFeedbackInIssue(
     if (endMatch && endMatch.index! > 0) {
       // There's another section after feedback
       const endIndex = startIndex + endMatch.index!;
-      issueContent = issueContent.slice(0, startIndex) + issueContent.slice(endIndex);
+      issueContent =
+        issueContent.slice(0, startIndex) + issueContent.slice(endIndex);
     } else {
       // Feedback section is at the end
       issueContent = issueContent.slice(0, startIndex);
@@ -354,7 +464,7 @@ export function updateFeedbackInIssue(
   const feedbackMarkdown = formatFeedbackForIssue(feedback);
   if (feedbackMarkdown) {
     // Ensure there's a blank line before the new section
-    issueContent = issueContent.trimEnd() + '\n' + feedbackMarkdown;
+    issueContent = issueContent.trimEnd() + "\n" + feedbackMarkdown;
   }
 
   return issueContent;

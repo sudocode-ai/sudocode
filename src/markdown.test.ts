@@ -236,6 +236,121 @@ More [[spec-003]]
       expect(refs[0].index).toBe(6);  // "Start "
       expect(refs[1].index).toBe(26); // "Start [[spec-001]] middle "
     });
+
+    it('should extract references with display text', () => {
+      const content = `
+See [[spec-001|Authentication Flow]] for details.
+Also [[issue-042|Bug Fix]].
+`;
+
+      const refs = extractCrossReferences(content);
+
+      expect(refs).toHaveLength(2);
+      expect(refs[0].id).toBe('spec-001');
+      expect(refs[0].type).toBe('spec');
+      expect(refs[0].displayText).toBe('Authentication Flow');
+      expect(refs[0].relationshipType).toBeUndefined();
+
+      expect(refs[1].id).toBe('issue-042');
+      expect(refs[1].type).toBe('issue');
+      expect(refs[1].displayText).toBe('Bug Fix');
+    });
+
+    it('should extract references with relationship type (shorthand)', () => {
+      const content = `
+This spec [[spec-001]]{ blocks } the implementation.
+Requires [[spec-002]]{ depends-on } to be completed.
+`;
+
+      const refs = extractCrossReferences(content);
+
+      expect(refs).toHaveLength(2);
+      expect(refs[0].id).toBe('spec-001');
+      expect(refs[0].type).toBe('spec');
+      expect(refs[0].relationshipType).toBe('blocks');
+      expect(refs[0].displayText).toBeUndefined();
+
+      expect(refs[1].id).toBe('spec-002');
+      expect(refs[1].relationshipType).toBe('depends-on');
+    });
+
+    it('should extract references with relationship type (explicit)', () => {
+      const content = `
+Implementation [[spec-001]]{ type: implements } the requirements.
+Related to [[issue-042]]{ type: related }.
+`;
+
+      const refs = extractCrossReferences(content);
+
+      expect(refs).toHaveLength(2);
+      expect(refs[0].id).toBe('spec-001');
+      expect(refs[0].relationshipType).toBe('implements');
+
+      expect(refs[1].id).toBe('issue-042');
+      expect(refs[1].relationshipType).toBe('related');
+    });
+
+    it('should extract references with both display text and relationship type', () => {
+      const content = `
+See [[spec-001|Auth Flow]]{ implements } for the implementation.
+Also [[issue-042|Bug Fix]]{ blocks } this work.
+`;
+
+      const refs = extractCrossReferences(content);
+
+      expect(refs).toHaveLength(2);
+      expect(refs[0].id).toBe('spec-001');
+      expect(refs[0].type).toBe('spec');
+      expect(refs[0].displayText).toBe('Auth Flow');
+      expect(refs[0].relationshipType).toBe('implements');
+
+      expect(refs[1].id).toBe('issue-042');
+      expect(refs[1].type).toBe('issue');
+      expect(refs[1].displayText).toBe('Bug Fix');
+      expect(refs[1].relationshipType).toBe('blocks');
+    });
+
+    it('should handle relationship type metadata with extra whitespace', () => {
+      const content = `
+[[spec-001]]{  blocks  }
+[[spec-002]]{ type:  depends-on  }
+`;
+
+      const refs = extractCrossReferences(content);
+
+      expect(refs).toHaveLength(2);
+      expect(refs[0].relationshipType).toBe('blocks');
+      expect(refs[1].relationshipType).toBe('depends-on');
+    });
+
+    it('should extract mixed references with and without metadata', () => {
+      const content = `
+Regular [[spec-001]] reference.
+With display [[spec-002|Display Text]].
+With type [[spec-003]]{ blocks }.
+With both [[spec-004|Both]]{ implements }.
+`;
+
+      const refs = extractCrossReferences(content);
+
+      expect(refs).toHaveLength(4);
+
+      expect(refs[0].id).toBe('spec-001');
+      expect(refs[0].displayText).toBeUndefined();
+      expect(refs[0].relationshipType).toBeUndefined();
+
+      expect(refs[1].id).toBe('spec-002');
+      expect(refs[1].displayText).toBe('Display Text');
+      expect(refs[1].relationshipType).toBeUndefined();
+
+      expect(refs[2].id).toBe('spec-003');
+      expect(refs[2].displayText).toBeUndefined();
+      expect(refs[2].relationshipType).toBe('blocks');
+
+      expect(refs[3].id).toBe('spec-004');
+      expect(refs[3].displayText).toBe('Both');
+      expect(refs[3].relationshipType).toBe('implements');
+    });
   });
 
   describe('stringifyMarkdown', () => {
