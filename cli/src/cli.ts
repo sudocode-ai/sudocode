@@ -219,6 +219,7 @@ spec
   .command("list")
   .description("List all specs")
   .option("-p, --priority <priority>", "Filter by priority")
+  .option("-g, --grep <query>", "Search by title or content")
   .option("--limit <num>", "Limit results", "50")
   .action(async (options) => {
     await handleSpecList(getContext(), options);
@@ -262,6 +263,7 @@ issue
   .option("-s, --status <status>", "Filter by status")
   .option("-a, --assignee <assignee>", "Filter by assignee")
   .option("-p, --priority <priority>", "Filter by priority")
+  .option("-g, --grep <query>", "Search by title, description, or content")
   .option("--limit <num>", "Limit results", "50")
   .action(async (options) => {
     await handleIssueList(getContext(), options);

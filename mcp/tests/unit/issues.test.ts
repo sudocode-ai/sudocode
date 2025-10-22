@@ -65,20 +65,45 @@ describe('Issue Tools', () => {
 
       await issueTools.listIssues(mockClient, {
         status: 'open',
-        type: 'bug',
         priority: 1,
-        assignee: 'bob',
         limit: 20,
       });
 
       expect(mockClient.exec).toHaveBeenCalledWith([
         'issue', 'list',
         '--status', 'open',
-        '--type', 'bug',
         '--priority', '1',
-        '--assignee', 'bob',
         '--limit', '20',
       ]);
+    });
+
+    it('should include search parameter', async () => {
+      mockClient.exec.mockResolvedValue([]);
+
+      await issueTools.listIssues(mockClient, {
+        search: 'authentication',
+      });
+
+      expect(mockClient.exec).toHaveBeenCalledWith([
+        'issue', 'list',
+        '--grep', 'authentication',
+      ]);
+    });
+
+    it('should redact content field from issues', async () => {
+      mockClient.exec.mockResolvedValue([
+        { id: 'sg-1', title: 'Test Issue', content: 'Long content...', priority: 2 },
+        { id: 'sg-2', title: 'Another Issue', content: 'More content...', priority: 1 },
+      ]);
+
+      const result = await issueTools.listIssues(mockClient);
+
+      // Verify content field is removed
+      expect(result[0]).not.toHaveProperty('content');
+      expect(result[1]).not.toHaveProperty('content');
+      // Verify other fields are preserved
+      expect(result[0]).toEqual({ id: 'sg-1', title: 'Test Issue', priority: 2 });
+      expect(result[1]).toEqual({ id: 'sg-2', title: 'Another Issue', priority: 1 });
     });
   });
 
@@ -108,23 +133,17 @@ describe('Issue Tools', () => {
         await issueTools.upsertIssue(mockClient, {
           title: 'Test Issue',
           description: 'Test description',
-          type: 'bug',
           priority: 1,
-          assignee: 'alice',
           parent: 'sg-epic-1',
           tags: ['urgent', 'security'],
-          estimate: 120,
         });
 
         expect(mockClient.exec).toHaveBeenCalledWith([
           'issue', 'create', 'Test Issue',
           '--description', 'Test description',
-          '--type', 'bug',
           '--priority', '1',
-          '--assignee', 'alice',
           '--parent', 'sg-epic-1',
           '--tags', 'urgent,security',
-          '--estimate', '120',
         ]);
       });
 
@@ -157,7 +176,6 @@ describe('Issue Tools', () => {
           issue_id: 'sg-1',
           status: 'in_progress',
           priority: 0,
-          assignee: 'bob',
           title: 'Updated Title',
         });
 
@@ -165,7 +183,6 @@ describe('Issue Tools', () => {
           'issue', 'update', 'sg-1',
           '--status', 'in_progress',
           '--priority', '0',
-          '--assignee', 'bob',
           '--title', 'Updated Title',
         ]);
       });

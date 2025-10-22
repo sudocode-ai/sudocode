@@ -63,25 +63,20 @@ export class SudocodeMCPServer {
                 status: {
                   type: "string",
                   enum: ["open", "in_progress", "blocked", "closed"],
-                  description: "Filter by status",
-                },
-                type: {
-                  type: "string",
-                  enum: ["bug", "feature", "task", "epic", "chore"],
-                  description: "Filter by issue type",
+                  description: "Filter by status (optional)",
                 },
                 priority: {
                   type: "number",
-                  description: "Filter by priority (0-4)",
-                },
-                assignee: {
-                  type: "string",
-                  description: "Filter by assignee",
+                  description: "Filter by priority (0-4) (optional)",
                 },
                 limit: {
                   type: "number",
-                  description: "Max results",
+                  description: "Max results (optional)",
                   default: 50,
+                },
+                search: {
+                  type: "string",
+                  description: "Search issues by title or description (optional)",
                 },
               },
             },
@@ -122,36 +117,23 @@ export class SudocodeMCPServer {
                   type: "string",
                   description: "Issue description",
                 },
-                type: {
-                  type: "string",
-                  enum: ["bug", "feature", "task", "epic", "chore"],
-                  description: "Issue type",
-                },
                 priority: {
                   type: "number",
-                  description: "Priority (0-4, 0=highest)",
-                },
-                assignee: {
-                  type: "string",
-                  description: "Assignee username",
+                  description: "Priority (0-4, 0=highest) (optional)",
                 },
                 parent: {
                   type: "string",
-                  description: "Parent issue ID",
+                  description: "Parent issue ID (optional)",
                 },
                 tags: {
                   type: "array",
                   items: { type: "string" },
-                  description: "Tags",
-                },
-                estimate: {
-                  type: "number",
-                  description: "Estimated minutes",
+                  description: "Tags (optional)",
                 },
                 status: {
                   type: "string",
                   enum: ["open", "in_progress", "blocked", "closed"],
-                  description: "Issue status",
+                  description: "Issue status (optional)",
                 },
               },
             },
@@ -162,30 +144,14 @@ export class SudocodeMCPServer {
             inputSchema: {
               type: "object",
               properties: {
-                status: {
-                  type: "string",
-                  enum: ["draft", "review", "approved", "deprecated"],
-                  description: "Filter by status",
-                },
-                type: {
-                  type: "string",
-                  enum: [
-                    "architecture",
-                    "api",
-                    "database",
-                    "feature",
-                    "research",
-                  ],
-                  description: "Filter by spec type",
-                },
-                priority: {
-                  type: "number",
-                  description: "Filter by priority (0-4)",
-                },
                 limit: {
                   type: "number",
-                  description: "Max results",
+                  description: "Max results (optional)",
                   default: 50,
+                },
+                search: {
+                  type: "string",
+                  description: "Search specs by title or description (optional)",
                 },
               },
             },
@@ -214,47 +180,32 @@ export class SudocodeMCPServer {
                 spec_id: {
                   type: "string",
                   description:
-                    "Spec ID (not yet supported - leave empty to create)",
+                    "Spec ID (optional - if provided, updates the spec; if not, creates new)",
                 },
                 title: {
                   type: "string",
                   description: "Spec title (required for create)",
                 },
-                type: {
-                  type: "string",
-                  enum: [
-                    "architecture",
-                    "api",
-                    "database",
-                    "feature",
-                    "research",
-                  ],
-                  description: "Spec type",
-                },
                 priority: {
                   type: "number",
-                  description: "Priority (0-4, 0=highest)",
+                  description: "Priority (0-4, 0=highest) (optional)",
                 },
                 description: {
                   type: "string",
-                  description: "Spec description",
+                  description: "Spec description (optional)",
                 },
                 design: {
                   type: "string",
-                  description: "Design notes",
-                },
-                file_path: {
-                  type: "string",
-                  description: "Path for spec markdown file",
+                  description: "Design notes (optional)",
                 },
                 parent: {
                   type: "string",
-                  description: "Parent spec ID",
+                  description: "Parent spec ID (optional)",
                 },
                 tags: {
                   type: "array",
                   items: { type: "string" },
-                  description: "Tags",
+                  description: "Tags (optional)",
                 },
               },
             },

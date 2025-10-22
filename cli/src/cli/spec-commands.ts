@@ -11,7 +11,7 @@ import {
   createSpec,
   getSpec,
   listSpecs,
-  type ListSpecsOptions,
+  searchSpecs,
 } from "../operations/specs.js";
 import {
   getOutgoingRelationships,
@@ -99,11 +99,7 @@ export async function handleSpecCreate(
     // Output result
     if (ctx.jsonOutput) {
       console.log(
-        JSON.stringify(
-          { id: specId, title, file_path: filePath },
-          null,
-          2
-        )
+        JSON.stringify({ id: specId, title, file_path: filePath }, null, 2)
       );
     } else {
       console.log(chalk.green("✓ Created spec"), chalk.cyan(specId));
@@ -119,6 +115,7 @@ export async function handleSpecCreate(
 
 export interface SpecListOptions {
   priority?: string;
+  grep?: string;
   limit: string;
 }
 
@@ -127,10 +124,15 @@ export async function handleSpecList(
   options: SpecListOptions
 ): Promise<void> {
   try {
-    const specs = listSpecs(ctx.db, {
-      priority: options.priority ? parseInt(options.priority) : undefined,
-      limit: parseInt(options.limit),
-    });
+    // Use search if grep is provided, otherwise use list with filters
+    const specs = options.grep
+      ? searchSpecs(ctx.db, options.grep, {
+          limit: parseInt(options.limit),
+        })
+      : listSpecs(ctx.db, {
+          priority: options.priority ? parseInt(options.priority) : undefined,
+          limit: parseInt(options.limit),
+        });
 
     if (ctx.jsonOutput) {
       console.log(JSON.stringify(specs, null, 2));
@@ -190,14 +192,8 @@ export async function handleSpecShow(
       if (spec.parent_id) {
         console.log(chalk.gray("Parent:"), spec.parent_id);
       }
-      console.log(
-        chalk.gray("Created:"),
-        spec.created_at
-      );
-      console.log(
-        chalk.gray("Updated:"),
-        spec.updated_at
-      );
+      console.log(chalk.gray("Created:"), spec.created_at);
+      console.log(chalk.gray("Updated:"), spec.updated_at);
 
       if (tags.length > 0) {
         console.log(chalk.gray("Tags:"), tags.join(", "));

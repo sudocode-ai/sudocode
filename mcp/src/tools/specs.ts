@@ -3,42 +3,26 @@
  */
 
 import { SudocodeClient } from "../client.js";
-import { Spec, SpecStatus, SpecType } from "../types.js";
+import { Spec } from "../types.js";
 
 // Tool parameter types
 export interface ListSpecsParams {
-  status?: SpecStatus;
-  type?: SpecType;
-  priority?: number;
   limit?: number;
+  search?: string;
 }
 
 export interface ShowSpecParams {
   spec_id: string;
 }
 
-export interface CreateSpecParams {
-  title: string;
-  type?: SpecType;
-  priority?: number;
-  description?: string;
-  design?: string;
-  file_path?: string;
-  parent?: string;
-  tags?: string[];
-}
-
 export interface UpsertSpecParams {
   spec_id?: string; // If provided, update; otherwise create
   title?: string; // Required for create, optional for update
-  type?: SpecType;
   priority?: number;
   description?: string;
   design?: string;
-  file_path?: string;
   parent?: string;
   tags?: string[];
-  status?: SpecStatus;
 }
 
 // Tool implementations
@@ -52,20 +36,24 @@ export async function listSpecs(
 ): Promise<Spec[]> {
   const args = ["spec", "list"];
 
-  if (params.status) {
-    args.push("--status", params.status);
-  }
-  if (params.type) {
-    args.push("--type", params.type);
-  }
-  if (params.priority !== undefined) {
-    args.push("--priority", params.priority.toString());
-  }
   if (params.limit !== undefined) {
     args.push("--limit", params.limit.toString());
   }
+  if (params.search) {
+    args.push("--grep", params.search);
+  }
 
-  return client.exec(args);
+  const specs = await client.exec(args);
+
+  // Redact content field from specs to keep response shorter
+  if (Array.isArray(specs)) {
+    return specs.map((spec: any) => {
+      const { content, ...rest } = spec;
+      return rest;
+    });
+  }
+
+  return specs;
 }
 
 /**
@@ -76,40 +64,6 @@ export async function showSpec(
   params: ShowSpecParams
 ): Promise<any> {
   const args = ["spec", "show", params.spec_id];
-  return client.exec(args);
-}
-
-/**
- * Create a new spec
- */
-export async function createSpec(
-  client: SudocodeClient,
-  params: CreateSpecParams
-): Promise<Spec> {
-  const args = ["spec", "create", params.title];
-
-  if (params.type) {
-    args.push("--type", params.type);
-  }
-  if (params.priority !== undefined) {
-    args.push("--priority", params.priority.toString());
-  }
-  if (params.description) {
-    args.push("--description", params.description);
-  }
-  if (params.design) {
-    args.push("--design", params.design);
-  }
-  if (params.file_path) {
-    args.push("--file-path", params.file_path);
-  }
-  if (params.parent) {
-    args.push("--parent", params.parent);
-  }
-  if (params.tags && params.tags.length > 0) {
-    args.push("--tags", params.tags.join(","));
-  }
-
   return client.exec(args);
 }
 
@@ -136,9 +90,6 @@ export async function upsertSpec(
 
     const args = ["spec", "create", params.title];
 
-    if (params.type) {
-      args.push("--type", params.type);
-    }
     if (params.priority !== undefined) {
       args.push("--priority", params.priority.toString());
     }
@@ -147,9 +98,6 @@ export async function upsertSpec(
     }
     if (params.design) {
       args.push("--design", params.design);
-    }
-    if (params.file_path) {
-      args.push("--file-path", params.file_path);
     }
     if (params.parent) {
       args.push("--parent", params.parent);

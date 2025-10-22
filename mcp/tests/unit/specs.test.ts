@@ -27,19 +27,42 @@ describe('Spec Tools', () => {
       mockClient.exec.mockResolvedValue([]);
 
       await specTools.listSpecs(mockClient, {
-        status: 'approved',
-        type: 'api',
-        priority: 1,
         limit: 10,
       });
 
       expect(mockClient.exec).toHaveBeenCalledWith([
         'spec', 'list',
-        '--status', 'approved',
-        '--type', 'api',
-        '--priority', '1',
         '--limit', '10',
       ]);
+    });
+
+    it('should include search parameter', async () => {
+      mockClient.exec.mockResolvedValue([]);
+
+      await specTools.listSpecs(mockClient, {
+        search: 'database',
+      });
+
+      expect(mockClient.exec).toHaveBeenCalledWith([
+        'spec', 'list',
+        '--grep', 'database',
+      ]);
+    });
+
+    it('should redact content field from specs', async () => {
+      mockClient.exec.mockResolvedValue([
+        { id: 'sg-spec-1', title: 'API Spec', content: 'Long content...', priority: 2 },
+        { id: 'sg-spec-2', title: 'Database Spec', content: 'More content...', priority: 1 },
+      ]);
+
+      const result = await specTools.listSpecs(mockClient);
+
+      // Verify content field is removed
+      expect(result[0]).not.toHaveProperty('content');
+      expect(result[1]).not.toHaveProperty('content');
+      // Verify other fields are preserved
+      expect(result[0]).toEqual({ id: 'sg-spec-1', title: 'API Spec', priority: 2 });
+      expect(result[1]).toEqual({ id: 'sg-spec-2', title: 'Database Spec', priority: 1 });
     });
   });
 
@@ -68,22 +91,18 @@ describe('Spec Tools', () => {
 
         await specTools.upsertSpec(mockClient, {
           title: 'API Spec',
-          type: 'api',
           priority: 1,
           description: 'API specification',
           design: 'REST API design',
-          file_path: '/specs/api.md',
           parent: 'sg-spec-parent',
           tags: ['api', 'v1'],
         });
 
         expect(mockClient.exec).toHaveBeenCalledWith([
           'spec', 'create', 'API Spec',
-          '--type', 'api',
           '--priority', '1',
           '--description', 'API specification',
           '--design', 'REST API design',
-          '--file-path', '/specs/api.md',
           '--parent', 'sg-spec-parent',
           '--tags', 'api,v1',
         ]);

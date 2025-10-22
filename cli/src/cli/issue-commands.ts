@@ -9,6 +9,7 @@ import {
   createIssue,
   getIssue,
   listIssues,
+  searchIssues,
   updateIssue,
   closeIssue,
 } from "../operations/issues.js";
@@ -82,6 +83,7 @@ export interface IssueListOptions {
   status?: string;
   assignee?: string;
   priority?: string;
+  grep?: string;
   limit: string;
 }
 
@@ -90,12 +92,17 @@ export async function handleIssueList(
   options: IssueListOptions
 ): Promise<void> {
   try {
-    const issues = listIssues(ctx.db, {
-      status: options.status as any,
-      assignee: options.assignee,
-      priority: options.priority ? parseInt(options.priority) : undefined,
-      limit: parseInt(options.limit),
-    });
+    // Use search if grep is provided, otherwise use list with filters
+    const issues = options.grep
+      ? searchIssues(ctx.db, options.grep, {
+          limit: parseInt(options.limit),
+        })
+      : listIssues(ctx.db, {
+          status: options.status as any,
+          assignee: options.assignee,
+          priority: options.priority ? parseInt(options.priority) : undefined,
+          limit: parseInt(options.limit),
+        });
 
     if (ctx.jsonOutput) {
       console.log(JSON.stringify(issues, null, 2));
