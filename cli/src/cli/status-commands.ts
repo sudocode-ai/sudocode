@@ -33,6 +33,7 @@ export async function handleStatus(
     open: allIssues.filter((i) => i.status === "open").length,
     in_progress: allIssues.filter((i) => i.status === "in_progress").length,
     blocked: allIssues.filter((i) => i.status === "blocked").length,
+    needs_review: allIssues.filter((i) => i.status === "needs_review").length,
     closed: allIssues.filter((i) => i.status === "closed").length,
   };
 
@@ -69,8 +70,8 @@ export async function handleStatus(
     `  ${chalk.cyan(allIssues.length)} total (${issuesByStatus.open} open, ${
       issuesByStatus.in_progress
     } in_progress, ${issuesByStatus.blocked} blocked, ${
-      issuesByStatus.closed
-    } closed)`
+      issuesByStatus.needs_review
+    } needs_review, ${issuesByStatus.closed} closed)`
   );
   console.log(`  ${chalk.green(readyIssues.length)} ready to work on`);
   console.log(`  ${chalk.yellow(blockedIssues.length)} blocked`);
@@ -96,6 +97,7 @@ export async function handleStats(
     open: allIssues.filter((i) => i.status === "open").length,
     in_progress: allIssues.filter((i) => i.status === "in_progress").length,
     blocked: allIssues.filter((i) => i.status === "blocked").length,
+    needs_review: allIssues.filter((i) => i.status === "needs_review").length,
     closed: allIssues.filter((i) => i.status === "closed").length,
   };
 
@@ -175,7 +177,7 @@ export async function handleStats(
   console.log(chalk.blue("Issues:"));
   console.log(`  Total: ${chalk.cyan(allIssues.length)}`);
   console.log(
-    `  By Status: ${issuesByStatus.open} open, ${issuesByStatus.in_progress} in_progress, ${issuesByStatus.blocked} blocked, ${issuesByStatus.closed} closed`
+    `  By Status: ${issuesByStatus.open} open, ${issuesByStatus.in_progress} in_progress, ${issuesByStatus.blocked} blocked, ${issuesByStatus.needs_review} needs_review, ${issuesByStatus.closed} closed`
   );
   console.log(`  Ready: ${chalk.green(readyIssues.length)}`);
   console.log(`  Blocked: ${chalk.yellow(blockedIssues.length)}`);

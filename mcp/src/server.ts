@@ -272,11 +272,9 @@ export class SudocodeMCPServer {
                 type: {
                   type: "string",
                   enum: [
-                    "ambiguity",
-                    "missing_requirement",
-                    "technical_constraint",
+                    "comment",
                     "suggestion",
-                    "question",
+                    "request",
                   ],
                   description: "Feedback type",
                 },
@@ -439,7 +437,7 @@ sudocode is a git-native spec and issue management system designed for AI-assist
 **Feedback**: Issues can provide anchored feedback on specs
 - Anchors track specific lines/sections in spec markdown
 - Auto-relocates when specs change (smart anchoring)
-- Types: ambiguity, missing_requirement, technical_constraint, suggestion, question
+- Types: comment, suggestion, request
 
 ## Typical Workflow
 

@@ -38,7 +38,7 @@ describe('Feedback Tools', () => {
           issue_id: 'sg-1',
           spec_id: 'sg-spec-1',
           content: 'Needs clarification',
-          type: 'ambiguity',
+          type: 'comment',
           line: 42,
           agent: 'claude',
         });
@@ -46,7 +46,7 @@ describe('Feedback Tools', () => {
         expect(mockClient.exec).toHaveBeenCalledWith([
           'feedback', 'add', 'sg-1', 'sg-spec-1',
           '--content', 'Needs clarification',
-          '--type', 'ambiguity',
+          '--type', 'comment',
           '--line', '42',
           '--agent', 'claude',
         ]);

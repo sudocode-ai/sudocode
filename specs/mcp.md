@@ -53,7 +53,7 @@ Sudocode is a git-native spec and issue management system designed for AI-assist
 **Feedback**: Issues can provide anchored feedback on specs
 - Anchors track specific lines/sections in spec markdown
 - Auto-relocates when specs change (smart anchoring)
-- Types: ambiguity, missing_requirement, technical_constraint, suggestion, question
+- Types: comment, suggestion, request
 
 ## Typical Workflow
 
@@ -103,7 +103,7 @@ Sudocode is a git-native spec and issue management system designed for AI-assist
 **Description**: List all issues with optional filters
 
 **Parameters**:
-- `status` (IssueStatus?): Filter by status (open, in_progress, blocked, closed)
+- `status` (IssueStatus?): Filter by status (open, in_progress, blocked, needs_review, closed)
 - `type` (IssueType?): Filter by type (bug, feature, task, epic, chore)
 - `priority` (number?): Filter by priority (0-4)
 - `assignee` (string?): Filter by assignee
@@ -272,8 +272,8 @@ Sudocode is a git-native spec and issue management system designed for AI-assist
 - `issue_id` (string, required): Issue providing feedback
 - `spec_id` (string, required): Spec receiving feedback
 - `content` (string, required): Feedback content
-- `type` (FeedbackType, default: "ambiguity"): Feedback type
-  - `ambiguity`, `missing_requirement`, `technical_constraint`, `suggestion`, `question`
+- `type` (FeedbackType, default: "comment"): Feedback type
+  - `comment`, `suggestion`, `request`
 - `line` (number?): Line number in spec (exclusive with text)
 - `text` (string?): Text to search for anchor (exclusive with line)
 - `agent` (string?): Agent name (default: USER env var)

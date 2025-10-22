@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS issue_feedback (
     id TEXT PRIMARY KEY,
     issue_id TEXT NOT NULL,
     spec_id TEXT NOT NULL,
-    feedback_type TEXT NOT NULL CHECK(feedback_type IN ('ambiguity', 'missing_requirement', 'technical_constraint', 'suggestion', 'question')),
+    feedback_type TEXT NOT NULL CHECK(feedback_type IN ('comment', 'suggestion', 'request')),
     content TEXT NOT NULL,
     agent TEXT NOT NULL,
     anchor TEXT NOT NULL,

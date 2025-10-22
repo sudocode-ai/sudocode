@@ -59,7 +59,7 @@ describe('Feedback Operations', () => {
       createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'First feedback',
         agent: 'claude-code',
         anchor,
@@ -105,7 +105,7 @@ describe('Feedback Operations', () => {
       const feedback = createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Token rotation policy not specified',
         agent: 'claude-code',
         anchor,
@@ -115,7 +115,7 @@ describe('Feedback Operations', () => {
       expect(feedback.id).toMatch(/^FB-\d{3}$/);
       expect(feedback.issue_id).toBe('issue-001');
       expect(feedback.spec_id).toBe('spec-001');
-      expect(feedback.feedback_type).toBe('ambiguity');
+      expect(feedback.feedback_type).toBe('comment');
       expect(feedback.content).toBe('Token rotation policy not specified');
       expect(feedback.agent).toBe('claude-code');
       expect(feedback.status).toBe('open');
@@ -134,7 +134,7 @@ describe('Feedback Operations', () => {
       const feedback = createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'question',
+        feedback_type: 'request',
         content: 'Simple question',
         agent: 'claude-code',
         anchor,
@@ -153,7 +153,7 @@ describe('Feedback Operations', () => {
         createFeedback(db, {
           issue_id: 'invalid-issue',
           spec_id: 'spec-001',
-          feedback_type: 'ambiguity',
+          feedback_type: 'comment',
           content: 'Test',
           agent: 'claude-code',
           anchor,
@@ -187,7 +187,7 @@ describe('Feedback Operations', () => {
         createFeedback(db, {
           issue_id: 'issue-001',
           spec_id: 'spec-001',
-          feedback_type: 'ambiguity',
+          feedback_type: 'comment',
           content: 'Test',
           agent: 'claude-code',
           anchor,
@@ -233,7 +233,7 @@ describe('Feedback Operations', () => {
       const created = createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Original content',
         agent: 'claude-code',
         anchor,
@@ -254,7 +254,7 @@ describe('Feedback Operations', () => {
       const created = createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Test',
         agent: 'claude-code',
         anchor,
@@ -278,7 +278,7 @@ describe('Feedback Operations', () => {
       const created = createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Test',
         agent: 'claude-code',
         anchor,
@@ -318,7 +318,7 @@ describe('Feedback Operations', () => {
       const created = createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Test',
         agent: 'claude-code',
         anchor,
@@ -384,7 +384,7 @@ describe('Feedback Operations', () => {
       createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Feedback 1',
         agent: 'claude-code',
         anchor,
@@ -404,7 +404,7 @@ describe('Feedback Operations', () => {
       createFeedback(db, {
         issue_id: 'issue-002',
         spec_id: 'spec-001',
-        feedback_type: 'missing_requirement',
+        feedback_type: 'request',
         content: 'Feedback 3',
         agent: 'cursor',
         anchor,
@@ -436,9 +436,9 @@ describe('Feedback Operations', () => {
     });
 
     it('should filter by feedback_type', () => {
-      const feedback = listFeedback(db, { feedback_type: 'ambiguity' });
+      const feedback = listFeedback(db, { feedback_type: 'comment' });
       expect(feedback).toHaveLength(1);
-      expect(feedback[0].feedback_type).toBe('ambiguity');
+      expect(feedback[0].feedback_type).toBe('comment');
     });
 
     it('should combine filters', () => {
@@ -463,7 +463,7 @@ describe('Feedback Operations', () => {
       createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Feedback 1',
         agent: 'claude-code',
         anchor,
@@ -490,7 +490,7 @@ describe('Feedback Operations', () => {
       createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Feedback 1',
         agent: 'claude-code',
         anchor,
@@ -517,7 +517,7 @@ describe('Feedback Operations', () => {
       createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Open feedback',
         agent: 'claude-code',
         anchor,
@@ -547,7 +547,7 @@ describe('Feedback Operations', () => {
       createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Open 1',
         agent: 'claude-code',
         anchor,
@@ -567,7 +567,7 @@ describe('Feedback Operations', () => {
       createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'question',
+        feedback_type: 'request',
         content: 'Resolved',
         agent: 'claude-code',
         anchor,
@@ -595,7 +595,7 @@ describe('Feedback Operations', () => {
       createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Spec 1',
         agent: 'claude-code',
         anchor,
@@ -625,7 +625,7 @@ describe('Feedback Operations', () => {
       createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Test',
         agent: 'claude-code',
         anchor,
@@ -643,7 +643,7 @@ describe('Feedback Operations', () => {
       createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Test',
         agent: 'claude-code',
         anchor,
@@ -678,7 +678,7 @@ describe('Feedback Operations', () => {
       const created = createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'technical_constraint',
+        feedback_type: 'comment',
         content: 'Performance concern',
         agent: 'claude-code',
         anchor,

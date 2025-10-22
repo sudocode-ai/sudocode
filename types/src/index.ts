@@ -29,7 +29,7 @@ export interface Issue {
   parent_id: string | null;
 }
 
-export type IssueStatus = "open" | "in_progress" | "blocked" | "closed";
+export type IssueStatus = "open" | "in_progress" | "blocked" | "needs_review" | "closed";
 
 export interface Relationship {
   from_id: string;
@@ -123,12 +123,7 @@ export interface FeedbackAnchor extends LocationAnchor {
   };
 }
 
-export type FeedbackType =
-  | "ambiguity"
-  | "missing_requirement"
-  | "technical_constraint"
-  | "suggestion"
-  | "question";
+export type FeedbackType = "comment" | "suggestion" | "request";
 
 export type FeedbackStatus = "open" | "acknowledged" | "resolved" | "wont_fix";
 

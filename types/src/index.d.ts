@@ -97,7 +97,7 @@ export interface FeedbackAnchor extends LocationAnchor {
         section_heading?: string;
     };
 }
-export type FeedbackType = "ambiguity" | "missing_requirement" | "technical_constraint" | "suggestion" | "question";
+export type FeedbackType = "comment" | "suggestion" | "request";
 export type FeedbackStatus = "open" | "acknowledged" | "resolved" | "wont_fix";
 /**
  * JSONL format types

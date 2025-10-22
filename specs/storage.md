@@ -104,7 +104,7 @@ CREATE TABLE issues (
     title TEXT NOT NULL CHECK(length(title) <= 500),
     description TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL DEFAULT '',      -- Full markdown content (no frontmatter)
-    status TEXT NOT NULL DEFAULT 'open',   -- open|in_progress|blocked|closed
+    status TEXT NOT NULL DEFAULT 'open',   -- open|in_progress|blocked|needs_review|closed
     priority INTEGER NOT NULL DEFAULT 2 CHECK(priority >= 0 AND priority <= 4),
     issue_type TEXT NOT NULL DEFAULT 'task', -- bug|feature|task|epic|chore
     assignee TEXT,

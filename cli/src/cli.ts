@@ -371,8 +371,8 @@ feedback
   .option("-t, --text <text>", "Text to search for anchor")
   .option(
     "--type <type>",
-    "Feedback type (ambiguity, missing_requirement, technical_constraint, etc.)",
-    "ambiguity"
+    "Feedback type (comment, suggestion, request)",
+    "comment"
   )
   .option("-c, --content <text>", "Feedback content (required)")
   .option("-a, --agent <name>", "Agent name")

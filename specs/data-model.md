@@ -188,7 +188,7 @@ Links back to [[spec-001]] requirements section.
 id: string                    # Unique identifier (issue-NNN)
 title: string                 # Short description (max 500 chars)
 description: string           # Detailed problem statement
-status: enum                  # open | in_progress | blocked | closed
+status: enum                  # open | in_progress | blocked | needs_review | closed
 priority: int                 # 0-4 (0=highest, 2=default)
 issue_type: enum              # bug | feature | task | epic | chore
 assignee: string?             # Agent ID or username

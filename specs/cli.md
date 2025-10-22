@@ -243,7 +243,7 @@ sudocode issue unlink <from-id> <to-id>
 
 **Issue types:** bug, feature, task, epic, chore
 
-**Issue statuses:** open, in_progress, blocked, closed
+**Issue statuses:** open, in_progress, blocked, needs_review, closed
 
 ## Query Commands
 

@@ -117,7 +117,7 @@ This is the second section.
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
       const options = {
         line: '7',
-        type: 'ambiguity',
+        type: 'comment',
         content: 'This section needs clarification',
       };
 
@@ -139,7 +139,7 @@ This is the second section.
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
       const options = {
         text: 'first section',
-        type: 'missing_requirement',
+        type: 'request',
         content: 'Need more details here',
       };
 
@@ -155,7 +155,7 @@ This is the second section.
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
       const options = {
         text: 'nonexistent text',
-        type: 'ambiguity',
+        type: 'comment',
         content: 'Test content',
       };
 
@@ -170,7 +170,7 @@ This is the second section.
     it('should fail when neither line nor text specified', async () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
       const options = {
-        type: 'ambiguity',
+        type: 'comment',
         content: 'Test content',
       };
 
@@ -186,7 +186,7 @@ This is the second section.
       const ctx = { db, outputDir: tempDir, jsonOutput: true };
       const options = {
         line: '7',
-        type: 'ambiguity',
+        type: 'comment',
         content: 'Test content',
       };
 
@@ -212,7 +212,7 @@ This is the second section.
       createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Feedback 1',
         agent: 'test',
         anchor,
@@ -221,7 +221,7 @@ This is the second section.
       createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'missing_requirement',
+        feedback_type: 'request',
         content: 'Feedback 2',
         agent: 'test',
         anchor,
@@ -257,7 +257,7 @@ This is the second section.
     it('should filter feedback by type', async () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
       const options = {
-        type: 'ambiguity',
+        type: 'comment',
         limit: '50',
       };
 
@@ -307,7 +307,7 @@ This is the second section.
         id: 'FB-001',
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Test feedback content',
         agent: 'test',
         anchor,
@@ -365,7 +365,7 @@ This is the second section.
         id: 'FB-001',
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Test feedback',
         agent: 'test',
         anchor,
@@ -405,7 +405,7 @@ This is the second section.
         id: 'FB-001',
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Test feedback',
         agent: 'test',
         anchor,
@@ -447,7 +447,7 @@ This is the second section.
       createFeedback(db, {
         issue_id: 'issue-001',
         spec_id: 'spec-001',
-        feedback_type: 'ambiguity',
+        feedback_type: 'comment',
         content: 'Stale feedback',
         agent: 'test',
         anchor,
