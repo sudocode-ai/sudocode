@@ -70,7 +70,31 @@ describe('Relationship Operations', () => {
           to_type: 'issue',
           relationship_type: 'blocks',
         });
-      }).toThrow('Constraint violation');
+      }).toThrow('Relationship already exists');
+    });
+
+    it('should throw error when from_id does not exist', () => {
+      expect(() => {
+        addRelationship(db, {
+          from_id: 'issue-999',
+          from_type: 'issue',
+          to_id: 'issue-001',
+          to_type: 'issue',
+          relationship_type: 'blocks',
+        });
+      }).toThrow('Issue not found: issue-999');
+    });
+
+    it('should throw error when to_id does not exist', () => {
+      expect(() => {
+        addRelationship(db, {
+          from_id: 'issue-001',
+          from_type: 'issue',
+          to_id: 'issue-999',
+          to_type: 'issue',
+          relationship_type: 'blocks',
+        });
+      }).toThrow('Issue not found: issue-999');
     });
   });
 

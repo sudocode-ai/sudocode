@@ -66,6 +66,31 @@ describe('Issue Operations', () => {
         });
       }).toThrow('Constraint violation');
     });
+
+    it('should throw error when parent_id does not exist', () => {
+      expect(() => {
+        createIssue(db, {
+          id: 'issue-001',
+          title: 'Child Issue',
+          parent_id: 'issue-999',
+        });
+      }).toThrow('Parent issue not found: issue-999');
+    });
+
+    it('should create issue with valid parent_id', () => {
+      createIssue(db, {
+        id: 'issue-001',
+        title: 'Parent Issue',
+      });
+
+      const child = createIssue(db, {
+        id: 'issue-002',
+        title: 'Child Issue',
+        parent_id: 'issue-001',
+      });
+
+      expect(child.parent_id).toBe('issue-001');
+    });
   });
 
   describe('updateIssue', () => {
@@ -111,6 +136,37 @@ describe('Issue Operations', () => {
       const reopened = updateIssue(db, 'issue-001', { status: 'open' });
       expect(reopened.status).toBe('open');
       expect(reopened.closed_at).toBeNull();
+    });
+
+    it('should throw error when updating with non-existent parent_id', () => {
+      createIssue(db, {
+        id: 'issue-001',
+        title: 'Test Issue',
+      });
+
+      expect(() => {
+        updateIssue(db, 'issue-001', {
+          parent_id: 'issue-999',
+        });
+      }).toThrow('Parent issue not found: issue-999');
+    });
+
+    it('should update issue with valid parent_id', () => {
+      createIssue(db, {
+        id: 'issue-001',
+        title: 'Parent Issue',
+      });
+
+      createIssue(db, {
+        id: 'issue-002',
+        title: 'Child Issue',
+      });
+
+      const updated = updateIssue(db, 'issue-002', {
+        parent_id: 'issue-001',
+      });
+
+      expect(updated.parent_id).toBe('issue-001');
     });
   });
 

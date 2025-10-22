@@ -406,7 +406,8 @@ export function importSpecs(
   db: Database.Database,
   specs: SpecJSONL[],
   changes: ChangeDetection,
-  dryRun: boolean = false
+  dryRun: boolean = false,
+  skipRelationships: boolean = false
 ): { added: number; updated: number; deleted: number } {
   if (dryRun) {
     return {
@@ -441,18 +442,20 @@ export function importSpecs(
   }
 
   // Add relationships
-  for (const id of changes.added) {
-    const spec = specs.find((s) => s.id === id);
-    if (spec) {
-      if (spec.relationships && spec.relationships.length > 0) {
-        for (const rel of spec.relationships) {
-          addRelationship(db, {
-            from_id: rel.from,
-            from_type: rel.from_type,
-            to_id: rel.to,
-            to_type: rel.to_type,
-            relationship_type: rel.type,
-          });
+  if (!skipRelationships) {
+    for (const id of changes.added) {
+      const spec = specs.find((s) => s.id === id);
+      if (spec) {
+        if (spec.relationships && spec.relationships.length > 0) {
+          for (const rel of spec.relationships) {
+            addRelationship(db, {
+              from_id: rel.from,
+              from_type: rel.from_type,
+              to_id: rel.to,
+              to_type: rel.to_type,
+              relationship_type: rel.type,
+            });
+          }
         }
       }
     }
@@ -475,18 +478,20 @@ export function importSpecs(
   }
 
   // Update relationships
-  for (const id of changes.updated) {
-    const spec = specs.find((s) => s.id === id);
-    if (spec) {
-      removeAllRelationships(db, spec.id, "spec");
-      for (const rel of spec.relationships || []) {
-        addRelationship(db, {
-          from_id: rel.from,
-          from_type: rel.from_type,
-          to_id: rel.to,
-          to_type: rel.to_type,
-          relationship_type: rel.type,
-        });
+  if (!skipRelationships) {
+    for (const id of changes.updated) {
+      const spec = specs.find((s) => s.id === id);
+      if (spec) {
+        removeAllRelationships(db, spec.id, "spec");
+        for (const rel of spec.relationships || []) {
+          addRelationship(db, {
+            from_id: rel.from,
+            from_type: rel.from_type,
+            to_id: rel.to,
+            to_type: rel.to_type,
+            relationship_type: rel.type,
+          });
+        }
       }
     }
   }
@@ -538,7 +543,8 @@ export function importIssues(
   db: Database.Database,
   issues: IssueJSONL[],
   changes: ChangeDetection,
-  dryRun: boolean = false
+  dryRun: boolean = false,
+  skipRelationships: boolean = false
 ): { added: number; updated: number; deleted: number } {
   if (dryRun) {
     return {
@@ -574,17 +580,19 @@ export function importIssues(
   }
 
   // Add relationships
-  for (const id of changes.added) {
-    const issue = issues.find((i) => i.id === id);
-    if (issue) {
-      for (const rel of issue.relationships || []) {
-        addRelationship(db, {
-          from_id: rel.from,
-          from_type: rel.from_type,
-          to_id: rel.to,
-          to_type: rel.to_type,
-          relationship_type: rel.type,
-        });
+  if (!skipRelationships) {
+    for (const id of changes.added) {
+      const issue = issues.find((i) => i.id === id);
+      if (issue) {
+        for (const rel of issue.relationships || []) {
+          addRelationship(db, {
+            from_id: rel.from,
+            from_type: rel.from_type,
+            to_id: rel.to,
+            to_type: rel.to_type,
+            relationship_type: rel.type,
+          });
+        }
       }
     }
   }
@@ -609,18 +617,20 @@ export function importIssues(
   }
 
   // Update relationships
-  for (const id of changes.updated) {
-    const issue = issues.find((i) => i.id === id);
-    if (issue) {
-      removeAllRelationships(db, issue.id, "issue");
-      for (const rel of issue.relationships || []) {
-        addRelationship(db, {
-          from_id: rel.from,
-          from_type: rel.from_type,
-          to_id: rel.to,
-          to_type: rel.to_type,
-          relationship_type: rel.type,
-        });
+  if (!skipRelationships) {
+    for (const id of changes.updated) {
+      const issue = issues.find((i) => i.id === id);
+      if (issue) {
+        removeAllRelationships(db, issue.id, "issue");
+        for (const rel of issue.relationships || []) {
+          addRelationship(db, {
+            from_id: rel.from,
+            from_type: rel.from_type,
+            to_id: rel.to,
+            to_type: rel.to_type,
+            relationship_type: rel.type,
+          });
+        }
       }
     }
   }
@@ -715,8 +725,76 @@ export async function importFromJSONL(
 
   if (!dryRun) {
     transaction(db, () => {
-      result.specs = importSpecs(db, incomingSpecs, specChanges, dryRun);
-      result.issues = importIssues(db, incomingIssues, issueChanges, dryRun);
+      // First pass: Import all entities without relationships
+      result.specs = importSpecs(db, incomingSpecs, specChanges, dryRun, true);
+      result.issues = importIssues(db, incomingIssues, issueChanges, dryRun, true);
+
+      // Second pass: Import all relationships after all entities exist
+      // Import spec relationships for added specs
+      for (const id of specChanges.added) {
+        const spec = incomingSpecs.find((s) => s.id === id);
+        if (spec && spec.relationships && spec.relationships.length > 0) {
+          for (const rel of spec.relationships) {
+            addRelationship(db, {
+              from_id: rel.from,
+              from_type: rel.from_type,
+              to_id: rel.to,
+              to_type: rel.to_type,
+              relationship_type: rel.type,
+            });
+          }
+        }
+      }
+
+      // Import spec relationships for updated specs
+      for (const id of specChanges.updated) {
+        const spec = incomingSpecs.find((s) => s.id === id);
+        if (spec) {
+          removeAllRelationships(db, spec.id, "spec");
+          for (const rel of spec.relationships || []) {
+            addRelationship(db, {
+              from_id: rel.from,
+              from_type: rel.from_type,
+              to_id: rel.to,
+              to_type: rel.to_type,
+              relationship_type: rel.type,
+            });
+          }
+        }
+      }
+
+      // Import issue relationships for added issues
+      for (const id of issueChanges.added) {
+        const issue = incomingIssues.find((i) => i.id === id);
+        if (issue && issue.relationships && issue.relationships.length > 0) {
+          for (const rel of issue.relationships) {
+            addRelationship(db, {
+              from_id: rel.from,
+              from_type: rel.from_type,
+              to_id: rel.to,
+              to_type: rel.to_type,
+              relationship_type: rel.type,
+            });
+          }
+        }
+      }
+
+      // Import issue relationships for updated issues
+      for (const id of issueChanges.updated) {
+        const issue = incomingIssues.find((i) => i.id === id);
+        if (issue) {
+          removeAllRelationships(db, issue.id, "issue");
+          for (const rel of issue.relationships || []) {
+            addRelationship(db, {
+              from_id: rel.from,
+              from_type: rel.from_type,
+              to_id: rel.to,
+              to_type: rel.to_type,
+              relationship_type: rel.type,
+            });
+          }
+        }
+      }
 
       // Note: Text reference updating is intentionally not done here
       // The renumbered entity is imported with its new ID

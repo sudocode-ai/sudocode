@@ -35,6 +35,14 @@ export interface ListSpecsOptions {
  * Create a new spec
  */
 export function createSpec(db: Database.Database, input: CreateSpecInput): Spec {
+  // Validate parent_id exists if provided
+  if (input.parent_id) {
+    const parent = getSpec(db, input.parent_id);
+    if (!parent) {
+      throw new Error(`Parent spec not found: ${input.parent_id}`);
+    }
+  }
+
   const uuid = input.uuid || generateUUID();
 
   const stmt = db.prepare(`
@@ -102,6 +110,14 @@ export function updateSpec(
   const existing = getSpec(db, id);
   if (!existing) {
     throw new Error(`Spec not found: ${id}`);
+  }
+
+  // Validate parent_id exists if provided (and not null)
+  if (input.parent_id !== undefined && input.parent_id !== null) {
+    const parent = getSpec(db, input.parent_id);
+    if (!parent) {
+      throw new Error(`Parent spec not found: ${input.parent_id}`);
+    }
   }
 
   const updates: string[] = [];

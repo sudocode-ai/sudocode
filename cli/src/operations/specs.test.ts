@@ -56,6 +56,34 @@ describe('Spec Operations', () => {
         });
       }).toThrow('Constraint violation');
     });
+
+    it('should throw error when parent_id does not exist', () => {
+      expect(() => {
+        createSpec(db, {
+          id: 'spec-001',
+          title: 'Child Spec',
+          file_path: 'child.md',
+          parent_id: 'spec-999',
+        });
+      }).toThrow('Parent spec not found: spec-999');
+    });
+
+    it('should create spec with valid parent_id', () => {
+      createSpec(db, {
+        id: 'spec-001',
+        title: 'Parent Spec',
+        file_path: 'parent.md',
+      });
+
+      const child = createSpec(db, {
+        id: 'spec-002',
+        title: 'Child Spec',
+        file_path: 'child.md',
+        parent_id: 'spec-001',
+      });
+
+      expect(child.parent_id).toBe('spec-001');
+    });
   });
 
   describe('getSpec', () => {
@@ -139,6 +167,40 @@ describe('Spec Operations', () => {
           title: 'New Title',
         });
       }).toThrow('Spec not found');
+    });
+
+    it('should throw error when updating with non-existent parent_id', () => {
+      createSpec(db, {
+        id: 'spec-001',
+        title: 'Test Spec',
+        file_path: 'test.md',
+      });
+
+      expect(() => {
+        updateSpec(db, 'spec-001', {
+          parent_id: 'spec-999',
+        });
+      }).toThrow('Parent spec not found: spec-999');
+    });
+
+    it('should update spec with valid parent_id', () => {
+      createSpec(db, {
+        id: 'spec-001',
+        title: 'Parent Spec',
+        file_path: 'parent.md',
+      });
+
+      createSpec(db, {
+        id: 'spec-002',
+        title: 'Child Spec',
+        file_path: 'child.md',
+      });
+
+      const updated = updateSpec(db, 'spec-002', {
+        parent_id: 'spec-001',
+      });
+
+      expect(updated.parent_id).toBe('spec-001');
     });
   });
 

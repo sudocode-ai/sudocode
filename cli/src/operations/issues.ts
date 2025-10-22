@@ -41,6 +41,14 @@ export interface ListIssuesOptions {
  * Create a new issue
  */
 export function createIssue(db: Database.Database, input: CreateIssueInput): Issue {
+  // Validate parent_id exists if provided
+  if (input.parent_id) {
+    const parent = getIssue(db, input.parent_id);
+    if (!parent) {
+      throw new Error(`Parent issue not found: ${input.parent_id}`);
+    }
+  }
+
   const uuid = input.uuid || generateUUID();
 
   const stmt = db.prepare(`
@@ -101,6 +109,14 @@ export function updateIssue(
   const existing = getIssue(db, id);
   if (!existing) {
     throw new Error(`Issue not found: ${id}`);
+  }
+
+  // Validate parent_id exists if provided (and not null)
+  if (input.parent_id !== undefined && input.parent_id !== null) {
+    const parent = getIssue(db, input.parent_id);
+    if (!parent) {
+      throw new Error(`Parent issue not found: ${input.parent_id}`);
+    }
   }
 
   const updates: string[] = [];

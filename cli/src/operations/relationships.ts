@@ -21,6 +21,36 @@ export function addRelationship(
   db: Database.Database,
   input: CreateRelationshipInput
 ): Relationship {
+  // Check if from_id exists
+  const fromTable = input.from_type === 'spec' ? 'specs' : 'issues';
+  const fromExists = db.prepare(`SELECT 1 FROM ${fromTable} WHERE id = ?`).get(input.from_id);
+  if (!fromExists) {
+    throw new Error(`${input.from_type === 'spec' ? 'Spec' : 'Issue'} not found: ${input.from_id}`);
+  }
+
+  // Check if to_id exists
+  const toTable = input.to_type === 'spec' ? 'specs' : 'issues';
+  const toExists = db.prepare(`SELECT 1 FROM ${toTable} WHERE id = ?`).get(input.to_id);
+  if (!toExists) {
+    throw new Error(`${input.to_type === 'spec' ? 'Spec' : 'Issue'} not found: ${input.to_id}`);
+  }
+
+  // Check if relationship already exists
+  const existing = getRelationship(
+    db,
+    input.from_id,
+    input.from_type,
+    input.to_id,
+    input.to_type,
+    input.relationship_type
+  );
+
+  if (existing) {
+    throw new Error(
+      `Relationship already exists: ${input.from_id} (${input.from_type}) --[${input.relationship_type}]--> ${input.to_id} (${input.to_type})`
+    );
+  }
+
   const stmt = db.prepare(`
     INSERT INTO relationships (
       from_id, from_type, to_id, to_type, relationship_type, metadata
@@ -55,7 +85,9 @@ export function addRelationship(
     return rel;
   } catch (error: any) {
     if (error.code && error.code.startsWith('SQLITE_CONSTRAINT')) {
-      throw new Error(`Constraint violation: ${error.message}`);
+      throw new Error(
+        `Relationship already exists: ${input.from_id} (${input.from_type}) --[${input.relationship_type}]--> ${input.to_id} (${input.to_type})`
+      );
     }
     throw error;
   }
