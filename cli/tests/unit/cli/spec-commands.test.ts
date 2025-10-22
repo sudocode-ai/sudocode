@@ -3,13 +3,13 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { initDatabase } from "../db.js";
+import { initDatabase } from "../../../src/db.js";
 import {
   handleSpecCreate,
   handleSpecList,
   handleSpecShow,
   handleSpecDelete,
-} from "./spec-commands.js";
+} from "../../../src/cli/spec-commands.js";
 import type Database from "better-sqlite3";
 import * as fs from "fs";
 import * as path from "path";
@@ -79,9 +79,9 @@ describe("Spec CLI Commands", () => {
     it("should create a spec in database", async () => {
       // Test that the spec is created in the database
       // We'll test the handler indirectly through database operations
-      const { generateSpecId } = await import("../id-generator.js");
-      const { createSpec } = await import("../operations/specs.js");
-      const { getSpec } = await import("../operations/specs.js");
+      const { generateSpecId } = await import("../../../src/id-generator.js");
+      const { createSpec } = await import("../../../src/operations/specs.js");
+      const { getSpec } = await import("../../../src/operations/specs.js");
 
       const specId = generateSpecId(tempDir);
       const spec = createSpec(db, {
@@ -105,8 +105,8 @@ describe("Spec CLI Commands", () => {
   describe("handleSpecList", () => {
     beforeEach(async () => {
       // Create test specs directly in database
-      const { createSpec } = await import("../operations/specs.js");
-      const { generateSpecId } = await import("../id-generator.js");
+      const { createSpec } = await import("../../../src/operations/specs.js");
+      const { generateSpecId } = await import("../../../src/id-generator.js");
 
       createSpec(db, {
         id: generateSpecId(tempDir),
@@ -179,8 +179,8 @@ describe("Spec CLI Commands", () => {
   describe("handleSpecShow", () => {
     beforeEach(async () => {
       // Create a test spec directly in database
-      const { createSpec } = await import("../operations/specs.js");
-      const { setTags } = await import("../operations/tags.js");
+      const { createSpec } = await import("../../../src/operations/specs.js");
+      const { setTags } = await import("../../../src/operations/tags.js");
 
       createSpec(db, {
         id: "spec-001",
@@ -231,8 +231,8 @@ describe("Spec CLI Commands", () => {
   describe("handleSpecDelete", () => {
     beforeEach(async () => {
       // Create test specs directly in database with markdown files
-      const { createSpec } = await import("../operations/specs.js");
-      const { writeMarkdownFile } = await import("../markdown.js");
+      const { createSpec } = await import("../../../src/operations/specs.js");
+      const { writeMarkdownFile } = await import("../../../src/markdown.js");
 
       // Create spec for delete test 1
       createSpec(db, {
@@ -289,7 +289,7 @@ describe("Spec CLI Commands", () => {
       await handleSpecDelete(ctx, ["spec-delete-1"], {});
 
       // Verify spec is removed from database
-      const { getSpec } = await import("../operations/specs.js");
+      const { getSpec } = await import("../../../src/operations/specs.js");
       const spec = getSpec(db, "spec-delete-1");
       expect(spec).toBeNull();
 
@@ -318,7 +318,7 @@ describe("Spec CLI Commands", () => {
       expect(fs.existsSync(deleteTest2Path)).toBe(false);
 
       // Verify both specs were deleted from database
-      const { getSpec } = await import("../operations/specs.js");
+      const { getSpec } = await import("../../../src/operations/specs.js");
       expect(getSpec(db, "spec-delete-1")).toBeNull();
       expect(getSpec(db, "spec-delete-2")).toBeNull();
     });
@@ -346,7 +346,7 @@ describe("Spec CLI Commands", () => {
       await handleSpecDelete(ctx, ["spec-delete-1"], {});
 
       // Verify spec is removed from database
-      const { getSpec } = await import("../operations/specs.js");
+      const { getSpec } = await import("../../../src/operations/specs.js");
       const spec = getSpec(db, "spec-delete-1");
       expect(spec).toBeNull();
 

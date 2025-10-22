@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { initDatabase } from '../db.js';
+import { initDatabase } from '../../../src/db.js';
 import {
   addTag,
   addTags,
@@ -14,8 +14,8 @@ import {
   hasTag,
   getAllTags,
   setTags,
-} from './tags.js';
-import { createIssue } from './issues.js';
+} from '../../../src/operations/tags.js';
+import { createIssue } from '../../../src/operations/issues.js';
 import type Database from 'better-sqlite3';
 
 describe('Tag Operations', () => {

@@ -5,13 +5,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { initDatabase } from './db.js';
-import { createSpec, getSpec } from './operations/specs.js';
-import { createIssue, getIssue } from './operations/issues.js';
-import { addRelationship, getOutgoingRelationships } from './operations/relationships.js';
-import { addTag, getTags } from './operations/tags.js';
-import { syncMarkdownToJSONL, syncJSONLToMarkdown } from './sync.js';
-import { parseMarkdownFile } from './markdown.js';
+import { initDatabase } from '../../src/db.js';
+import { createSpec, getSpec } from '../../src/operations/specs.js';
+import { createIssue, getIssue } from '../../src/operations/issues.js';
+import { addRelationship, getOutgoingRelationships } from '../../src/operations/relationships.js';
+import { addTag, getTags } from '../../src/operations/tags.js';
+import { syncMarkdownToJSONL, syncJSONLToMarkdown } from '../../src/sync.js';
+import { parseMarkdownFile } from '../../src/markdown.js';
 import type Database from 'better-sqlite3';
 
 const TEST_DIR = path.join(process.cwd(), 'test-sync');
@@ -501,7 +501,7 @@ This spec was renamed.`;
       expect(spec?.content).toContain('This spec was renamed');
 
       // Verify no duplicate was created
-      const { listSpecs } = await import('./operations/specs.js');
+      const { listSpecs } = await import('../../src/operations/specs.js');
       const allSpecs = listSpecs(db, {});
       const renameSpecs = allSpecs.filter(s => s.title === 'Renameable Spec');
       expect(renameSpecs.length).toBe(1);

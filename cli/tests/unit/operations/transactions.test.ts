@@ -3,9 +3,9 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { initDatabase } from '../db.js';
-import { transaction, batchTransaction, SavepointTransaction } from './transactions.js';
-import { createIssue, getIssue } from './issues.js';
+import { initDatabase } from '../../../src/db.js';
+import { transaction, batchTransaction, SavepointTransaction } from '../../../src/operations/transactions.js';
+import { createIssue, getIssue } from '../../../src/operations/issues.js';
 import type Database from 'better-sqlite3';
 
 describe('Transaction Operations', () => {

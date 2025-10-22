@@ -17,8 +17,8 @@ import {
   removeFrontmatter,
   getFrontmatter,
   writeMarkdownFile,
-} from './markdown.js';
-import type { ParsedMarkdown, CrossReference } from './markdown.js';
+} from '../../src/markdown.js';
+import type { ParsedMarkdown, CrossReference } from '../../src/markdown.js';
 
 const TEST_DIR = path.join(process.cwd(), 'test-markdown');
 

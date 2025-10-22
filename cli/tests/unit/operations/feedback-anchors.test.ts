@@ -17,7 +17,7 @@ import {
   findFuzzySection,
   relocateFeedbackAnchor,
   relocateSpecFeedback,
-} from './feedback-anchors.js';
+} from '../../../src/operations/feedback-anchors.js';
 
 const SAMPLE_SPEC = `# Authentication System
 

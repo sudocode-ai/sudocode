@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { initDatabase } from '../db.js';
+import { initDatabase } from '../../../src/db.js';
 import {
   handleFeedbackAdd,
   handleFeedbackList,
@@ -11,7 +11,7 @@ import {
   handleFeedbackAcknowledge,
   handleFeedbackResolve,
   handleFeedbackStale,
-} from './feedback-commands.js';
+} from '../../../src/cli/feedback-commands.js';
 import type Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -57,8 +57,8 @@ describe('Feedback CLI Commands', () => {
     );
 
     // Create test spec and issue
-    const { createSpec } = await import('../operations/specs.js');
-    const { createIssue } = await import('../operations/issues.js');
+    const { createSpec } = await import('../../../src/operations/specs.js');
+    const { createIssue } = await import('../../../src/operations/issues.js');
 
     const specContent = `# Test Spec
 
@@ -129,7 +129,7 @@ This is the second section.
       );
 
       // Verify feedback was created in database
-      const { listFeedback } = await import('../operations/feedback.js');
+      const { listFeedback } = await import('../../../src/operations/feedback.js');
       const feedbackList = listFeedback(db, { issue_id: 'issue-001' });
       expect(feedbackList.length).toBe(1);
       expect(feedbackList[0].content).toBe('This section needs clarification');
@@ -200,9 +200,9 @@ This is the second section.
   describe('handleFeedbackList', () => {
     beforeEach(async () => {
       // Create test feedback
-      const { createFeedback } = await import('../operations/feedback.js');
-      const { createFeedbackAnchor } = await import('../operations/feedback-anchors.js');
-      const { getSpec } = await import('../operations/specs.js');
+      const { createFeedback } = await import('../../../src/operations/feedback.js');
+      const { createFeedbackAnchor } = await import('../../../src/operations/feedback-anchors.js');
+      const { getSpec } = await import('../../../src/operations/specs.js');
 
       const spec = getSpec(db, 'spec-001');
       if (!spec) throw new Error('Spec not found');
@@ -294,9 +294,9 @@ This is the second section.
   describe('handleFeedbackShow', () => {
     beforeEach(async () => {
       // Create test feedback
-      const { createFeedback } = await import('../operations/feedback.js');
-      const { createFeedbackAnchor } = await import('../operations/feedback-anchors.js');
-      const { getSpec } = await import('../operations/specs.js');
+      const { createFeedback } = await import('../../../src/operations/feedback.js');
+      const { createFeedbackAnchor } = await import('../../../src/operations/feedback-anchors.js');
+      const { getSpec } = await import('../../../src/operations/specs.js');
 
       const spec = getSpec(db, 'spec-001');
       if (!spec) throw new Error('Spec not found');
@@ -352,9 +352,9 @@ This is the second section.
 
   describe('handleFeedbackAcknowledge', () => {
     beforeEach(async () => {
-      const { createFeedback } = await import('../operations/feedback.js');
-      const { createFeedbackAnchor } = await import('../operations/feedback-anchors.js');
-      const { getSpec } = await import('../operations/specs.js');
+      const { createFeedback } = await import('../../../src/operations/feedback.js');
+      const { createFeedbackAnchor } = await import('../../../src/operations/feedback-anchors.js');
+      const { getSpec } = await import('../../../src/operations/specs.js');
 
       const spec = getSpec(db, 'spec-001');
       if (!spec) throw new Error('Spec not found');
@@ -384,7 +384,7 @@ This is the second section.
         expect.anything()
       );
 
-      const { getFeedback } = await import('../operations/feedback.js');
+      const { getFeedback } = await import('../../../src/operations/feedback.js');
       const feedback = getFeedback(db, 'FB-001');
       expect(feedback?.status).toBe('acknowledged');
     });
@@ -392,9 +392,9 @@ This is the second section.
 
   describe('handleFeedbackResolve', () => {
     beforeEach(async () => {
-      const { createFeedback } = await import('../operations/feedback.js');
-      const { createFeedbackAnchor } = await import('../operations/feedback-anchors.js');
-      const { getSpec } = await import('../operations/specs.js');
+      const { createFeedback } = await import('../../../src/operations/feedback.js');
+      const { createFeedbackAnchor } = await import('../../../src/operations/feedback-anchors.js');
+      const { getSpec } = await import('../../../src/operations/specs.js');
 
       const spec = getSpec(db, 'spec-001');
       if (!spec) throw new Error('Spec not found');
@@ -425,7 +425,7 @@ This is the second section.
         expect.anything()
       );
 
-      const { getFeedback } = await import('../operations/feedback.js');
+      const { getFeedback } = await import('../../../src/operations/feedback.js');
       const feedback = getFeedback(db, 'FB-001');
       expect(feedback?.status).toBe('resolved');
       expect(feedback?.resolution).toBe('Fixed the issue');
@@ -434,9 +434,9 @@ This is the second section.
 
   describe('handleFeedbackStale', () => {
     beforeEach(async () => {
-      const { createFeedback } = await import('../operations/feedback.js');
-      const { createFeedbackAnchor } = await import('../operations/feedback-anchors.js');
-      const { getSpec } = await import('../operations/specs.js');
+      const { createFeedback } = await import('../../../src/operations/feedback.js');
+      const { createFeedbackAnchor } = await import('../../../src/operations/feedback-anchors.js');
+      const { getSpec } = await import('../../../src/operations/specs.js');
 
       const spec = getSpec(db, 'spec-001');
       if (!spec) throw new Error('Spec not found');

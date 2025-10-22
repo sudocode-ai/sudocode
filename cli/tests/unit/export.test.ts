@@ -5,11 +5,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { initDatabase } from './db.js';
-import { createSpec } from './operations/specs.js';
-import { createIssue } from './operations/issues.js';
-import { addRelationship } from './operations/relationships.js';
-import { addTags } from './operations/tags.js';
+import { initDatabase } from '../../src/db.js';
+import { createSpec } from '../../src/operations/specs.js';
+import { createIssue } from '../../src/operations/issues.js';
+import { addRelationship } from '../../src/operations/relationships.js';
+import { addTags } from '../../src/operations/tags.js';
 import {
   specToJSONL,
   issueToJSONL,
@@ -18,10 +18,10 @@ import {
   exportToJSONL,
   ExportDebouncer,
   createDebouncedExport,
-} from './export.js';
-import { readJSONL } from './jsonl.js';
+} from '../../src/export.js';
+import { readJSONL } from '../../src/jsonl.js';
 import type Database from 'better-sqlite3';
-import type { SpecJSONL, IssueJSONL } from './types.js';
+import type { SpecJSONL, IssueJSONL } from '../../src/types.js';
 
 const TEST_DIR = path.join(process.cwd(), 'test-export');
 

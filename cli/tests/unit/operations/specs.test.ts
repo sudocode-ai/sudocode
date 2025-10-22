@@ -3,8 +3,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { initDatabase } from '../db.js';
-import { createSpec, getSpec, getSpecByFilePath, updateSpec, deleteSpec, listSpecs, searchSpecs } from './specs.js';
+import { initDatabase } from '../../../src/db.js';
+import { createSpec, getSpec, getSpecByFilePath, updateSpec, deleteSpec, listSpecs, searchSpecs } from '../../../src/operations/specs.js';
 import type Database from 'better-sqlite3';
 
 describe('Spec Operations', () => {

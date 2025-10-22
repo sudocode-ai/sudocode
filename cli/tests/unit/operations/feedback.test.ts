@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { initDatabase } from '../db.js';
+import { initDatabase } from '../../../src/db.js';
 import {
   createFeedback,
   getFeedback,
@@ -16,11 +16,11 @@ import {
   getOpenFeedbackForSpec,
   countFeedbackByStatus,
   generateFeedbackId,
-} from './feedback.js';
-import { createSpec, deleteSpec } from './specs.js';
-import { createIssue, deleteIssue } from './issues.js';
+} from '../../../src/operations/feedback.js';
+import { createSpec, deleteSpec } from '../../../src/operations/specs.js';
+import { createIssue, deleteIssue } from '../../../src/operations/issues.js';
 import type Database from 'better-sqlite3';
-import type { FeedbackAnchor } from '../types.js';
+import type { FeedbackAnchor } from '../../../src/types.js';
 
 describe('Feedback Operations', () => {
   let db: Database.Database;

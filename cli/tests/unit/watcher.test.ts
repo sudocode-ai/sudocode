@@ -3,8 +3,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { initDatabase } from "./db.js";
-import { startWatcher } from "./watcher.js";
+import { initDatabase } from "../../src/db.js";
+import { startWatcher } from "../../src/watcher.js";
 import type Database from "better-sqlite3";
 import * as fs from "fs";
 import * as path from "path";
@@ -309,7 +309,7 @@ This spec will be deleted.
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
       // Import getSpec to verify the spec exists
-      const { getSpec } = await import("./operations/specs.js");
+      const { getSpec } = await import("../../src/operations/specs.js");
 
       // Verify spec was created in database
       let spec = getSpec(db, "spec-delete-001");
@@ -372,7 +372,7 @@ This spec has no frontmatter and will be deleted.
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
       // Import getSpecByFilePath to find the auto-created spec
-      const { getSpecByFilePath } = await import("./operations/specs.js");
+      const { getSpecByFilePath } = await import("../../src/operations/specs.js");
 
       // Verify spec was auto-created in database (by file path)
       const relPath = "specs/no-frontmatter-delete.md";

@@ -3,11 +3,11 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { initDatabase } from "../db.js";
-import { handleSync } from "./sync-commands.js";
-import { createSpec } from "../operations/specs.js";
-import { createIssue } from "../operations/issues.js";
-import { exportToJSONL } from "../export.js";
+import { initDatabase } from "../../../src/db.js";
+import { handleSync } from "../../../src/cli/sync-commands.js";
+import { createSpec } from "../../../src/operations/specs.js";
+import { createIssue } from "../../../src/operations/issues.js";
+import { exportToJSONL } from "../../../src/export.js";
 import type Database from "better-sqlite3";
 import * as fs from "fs";
 import * as path from "path";
@@ -323,7 +323,7 @@ describe("Sync Commands - Auto Direction Detection", () => {
       expect(finalContent).toContain("SPEC-001");
 
       // Verify database also has correct content
-      const { getSpec } = await import("../operations/specs.js");
+      const { getSpec } = await import("../../../src/operations/specs.js");
       const spec = getSpec(db, "SPEC-001");
       // Use toContain for content since there may be whitespace differences
       expect(spec?.content).toContain("# Original Content");
@@ -365,7 +365,7 @@ describe("Sync Commands - Auto Direction Detection", () => {
       expect(output).toContain("Syncing from markdown to database");
 
       // Verify markdown content was synced
-      const { getSpec } = await import("../operations/specs.js");
+      const { getSpec } = await import("../../../src/operations/specs.js");
       const spec = getSpec(db, "SPEC-001");
       expect(spec?.title).toBe("Markdown Spec");
       expect(spec?.content).toContain("# Markdown content");
@@ -404,7 +404,7 @@ describe("Sync Commands - Auto Direction Detection", () => {
       expect(output).toContain("Syncing from database to markdown");
 
       // Verify database content was synced to markdown
-      const { parseMarkdownFile } = await import("../markdown.js");
+      const { parseMarkdownFile } = await import("../../../src/markdown.js");
       const parsed = parseMarkdownFile(mdPath, db, tempDir);
       expect(parsed.data.title).toBe("DB Spec");
       // Note: syncJSONLToMarkdown preserves existing content, only updates frontmatter
@@ -449,7 +449,7 @@ describe("Sync Commands - Auto Direction Detection", () => {
       expect(output).toContain("FROM markdown TO database");
 
       // Verify user edits were synced to database
-      const { getSpec } = await import("../operations/specs.js");
+      const { getSpec } = await import("../../../src/operations/specs.js");
       const spec = getSpec(db, "SPEC-001");
       expect(spec?.title).toBe("User Edited Title");
       expect(spec?.content).toContain("# User edited content");
@@ -470,7 +470,7 @@ describe("Sync Commands - Auto Direction Detection", () => {
       await handleSync(ctx, { fromMarkdown: true });
 
       // Simulate external tool updating database
-      const { updateSpec } = await import("../operations/specs.js");
+      const { updateSpec } = await import("../../../src/operations/specs.js");
       updateSpec(db, "SPEC-001", {
         title: "External Tool Updated Title",
         content: "# External tool content",
@@ -491,7 +491,7 @@ describe("Sync Commands - Auto Direction Detection", () => {
       expect(output).toContain("FROM database TO markdown");
 
       // Verify external updates were synced to markdown
-      const { parseMarkdownFile } = await import("../markdown.js");
+      const { parseMarkdownFile } = await import("../../../src/markdown.js");
       const parsed = parseMarkdownFile(mdPath, db, tempDir);
       expect(parsed.data.title).toBe("External Tool Updated Title");
     });

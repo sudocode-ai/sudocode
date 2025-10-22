@@ -5,21 +5,21 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { initDatabase } from './db.js';
-import { createSpec, getSpec } from './operations/specs.js';
-import { createIssue } from './operations/issues.js';
-import { addRelationship } from './operations/relationships.js';
-import { addTags } from './operations/tags.js';
-import { writeJSONL } from './jsonl.js';
+import { initDatabase } from '../../src/db.js';
+import { createSpec, getSpec } from '../../src/operations/specs.js';
+import { createIssue } from '../../src/operations/issues.js';
+import { addRelationship } from '../../src/operations/relationships.js';
+import { addTags } from '../../src/operations/tags.js';
+import { writeJSONL } from '../../src/jsonl.js';
 import {
   detectChanges,
   detectCollisions,
   countReferences,
   updateTextReferences,
   importFromJSONL,
-} from './import.js';
+} from '../../src/import.js';
 import type Database from 'better-sqlite3';
-import type { SpecJSONL, IssueJSONL } from './types.js';
+import type { SpecJSONL, IssueJSONL } from '../../src/types.js';
 
 const TEST_DIR = path.join(process.cwd(), 'test-import');
 
@@ -696,7 +696,7 @@ describe('Import Operations', () => {
       expect(result.specs.added).toBe(2);
 
       // Verify relationship was imported correctly
-      const { getOutgoingRelationships } = await import('./operations/relationships.js');
+      const { getOutgoingRelationships } = await import('../../src/operations/relationships.js');
       const relationships = getOutgoingRelationships(db, 'spec-001', 'spec');
 
       expect(relationships).toHaveLength(1);
@@ -765,7 +765,7 @@ describe('Import Operations', () => {
       expect(result.issues.added).toBe(1);
 
       // Verify cross-type relationship was imported correctly
-      const { getOutgoingRelationships } = await import('./operations/relationships.js');
+      const { getOutgoingRelationships } = await import('../../src/operations/relationships.js');
       const relationships = getOutgoingRelationships(db, 'spec-001', 'spec');
 
       expect(relationships).toHaveLength(1);

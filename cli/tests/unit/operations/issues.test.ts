@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { initDatabase } from '../db.js';
+import { initDatabase } from '../../../src/db.js';
 import {
   createIssue,
   getIssue,
@@ -14,7 +14,7 @@ import {
   listIssues,
   getReadyIssues,
   searchIssues,
-} from './issues.js';
+} from '../../../src/operations/issues.js';
 import type Database from 'better-sqlite3';
 
 describe('Issue Operations', () => {

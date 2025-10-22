@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { initDatabase } from '../db.js';
+import { initDatabase } from '../../../src/db.js';
 import {
   addRelationship,
   removeRelationship,
@@ -13,8 +13,8 @@ import {
   getDependents,
   relationshipExists,
   removeAllRelationships,
-} from './relationships.js';
-import { createIssue } from './issues.js';
+} from '../../../src/operations/relationships.js';
+import { createIssue } from '../../../src/operations/issues.js';
 import type Database from 'better-sqlite3';
 
 describe('Relationship Operations', () => {

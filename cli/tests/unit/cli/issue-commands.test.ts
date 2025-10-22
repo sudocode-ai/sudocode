@@ -3,14 +3,14 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { initDatabase } from "../db.js";
+import { initDatabase } from "../../../src/db.js";
 import {
   handleIssueCreate,
   handleIssueList,
   handleIssueShow,
   handleIssueUpdate,
   handleIssueClose,
-} from "./issue-commands.js";
+} from "../../../src/cli/issue-commands.js";
 import type Database from "better-sqlite3";
 import * as fs from "fs";
 import * as path from "path";

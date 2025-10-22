@@ -16,7 +16,7 @@ import {
   deleteJSONLLineSync,
   getJSONLEntity,
   getJSONLEntitySync,
-} from './jsonl.js';
+} from '../../src/jsonl.js';
 
 const TEST_DIR = path.join(process.cwd(), 'test-temp');
 const TEST_FILE = path.join(TEST_DIR, 'test.jsonl');

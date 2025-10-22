@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { titleToFilename, generateUniqueFilename, findExistingSpecFile } from './filename-generator.js';
+import { titleToFilename, generateUniqueFilename, findExistingSpecFile } from '../../src/filename-generator.js';
 
 describe('Filename Generator', () => {
   describe('titleToFilename', () => {
