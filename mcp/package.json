@@ -1,0 +1,60 @@
+{
+  "name": "@sudocode/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for sudocode, git-native context management for AI-assisted development",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "sudocode-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "sudocode",
+    "project-management",
+    "specs",
+    "context-as-code",
+    "specifications",
+    "spec-driven-development",
+    "issues",
+    "issue-tracking",
+    "ai-assisted-development",
+    "coding-agent",
+    "git-native"
+  ],
+  "author": "sudocode AI",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sudocode-ai/sudocode.git",
+    "directory": "mcp"
+  },
+  "homepage": "https://sudocode.ai",
+  "bugs": {
+    "url": "https://github.com/sudocode-ai/sudocode/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@sudocode/types": "^0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "typescript": "^5.3.3",
+    "vitest": "^1.1.0"
+  }
+}

@@ -1,6 +1,6 @@
 # Storage Layer Architecture
 
-This document defines the storage layer for sudograph, inspired by the beads project's dual-storage pattern: human-editable files (Markdown) + machine-optimized cache (SQLite) with JSONL as the git-committed source of truth.
+This document defines the storage layer for sudocode, inspired by the beads project's dual-storage pattern: human-editable files (Markdown) + machine-optimized cache (SQLite) with JSONL as the git-committed source of truth.
 
 ## Architecture Overview
 
@@ -27,7 +27,7 @@ This document defines the storage layer for sudograph, inspired by the beads pro
       ┌──────────────────┐
       │   SQLite Cache   │
       │ .sudocode/       │
-      │   sudograph.db   │
+      │   cache.db   │
       │                  │
       │  ✗ Gitignored    │
       │  ✓ Fast queries  │
@@ -59,7 +59,7 @@ This document defines the storage layer for sudograph, inspired by the beads pro
 │   ├── issue-002.md
 │   └── issues.jsonl            # JSONL snapshot (git-tracked)
 ├── meta.json                   # ID counters, config (git-tracked)
-├── sudograph.db                # SQLite cache (gitignored)
+├── cache.db                # SQLite cache (gitignored)
 └── .gitignore                  # Ignore *.db
 ```
 
@@ -104,7 +104,7 @@ CREATE TABLE issues (
     title TEXT NOT NULL CHECK(length(title) <= 500),
     description TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL DEFAULT '',      -- Full markdown content (no frontmatter)
-    status TEXT NOT NULL DEFAULT 'open',   -- open|in_progress|blocked|closed
+    status TEXT NOT NULL DEFAULT 'open',   -- open|in_progress|blocked|needs_review|closed
     priority INTEGER NOT NULL DEFAULT 2 CHECK(priority >= 0 AND priority <= 4),
     issue_type TEXT NOT NULL DEFAULT 'task', -- bug|feature|task|epic|chore
     assignee TEXT,

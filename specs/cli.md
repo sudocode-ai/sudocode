@@ -2,12 +2,12 @@
 
 ## Overview
 
-The `sudograph` CLI tool provides commands for managing technical specifications, issues, and their relationships. It follows a git-like command structure with subcommands for different entity types and operations.
+The `sudocode` CLI tool provides commands for managing technical specifications, issues, and their relationships. It follows a git-like command structure with subcommands for different entity types and operations.
 
 ## Command Structure
 
 ```
-sudograph <command> [subcommand] [options] [arguments]
+sudocode <command> [subcommand] [options] [arguments]
 ```
 
 ## Core Commands
@@ -15,32 +15,32 @@ sudograph <command> [subcommand] [options] [arguments]
 ### Initialization
 
 ```bash
-# Initialize sudograph in current directory
-sudograph init [--prefix <prefix>]
+# Initialize sudocode in current directory
+sudocode init [--prefix <prefix>]
 
 # Creates:
-# - .sudograph/ directory
-# - .sudograph/db.sqlite
-# - .sudograph/specs/ directory (for JSONL)
-# - .sudograph/issues/ directory (for JSONL)
+# - .sudocode/ directory
+# - .sudocode/db.sqlite
+# - .sudocode/specs/ directory (for JSONL)
+# - .sudocode/issues/ directory (for JSONL)
 # - specs/ directory (for markdown files)
 # - issues/ directory (for markdown files)
 ```
 
 **Options:**
-- `--prefix`: Custom prefix for IDs (default: repo name or "sudograph")
+- `--prefix`: Custom prefix for IDs (default: repo name or "sudocode")
 
 **Behavior:**
-- Fails if .sudograph already exists
+- Fails if .sudocode already exists
 - Initializes SQLite database with schema
 - Creates directory structure
-- Adds .sudograph/db.sqlite to .gitignore
+- Adds .sudocode/db.sqlite to .gitignore
 
 ### Status
 
 ```bash
 # Show status of specs and issues
-sudograph status [--verbose]
+sudocode status [--verbose]
 
 # Output:
 # Specs:
@@ -65,16 +65,16 @@ sudograph status [--verbose]
 
 ```bash
 # Create new spec interactively
-sudograph spec create
+sudocode spec create
 
 # Create with options
-sudograph spec create --title "Authentication System" \
+sudocode spec create --title "Authentication System" \
   --type architecture \
   --priority 1 \
   --tags auth,security
 
 # Create from template
-sudograph spec create --template feature
+sudocode spec create --template feature
 ```
 
 **Interactive prompts:**
@@ -88,7 +88,7 @@ sudograph spec create --template feature
 **Behavior:**
 - Generates next ID: `spec-NNN`
 - Creates markdown file: `specs/spec-NNN-title-slug.md`
-- Adds entry to `.sudograph/specs/specs.jsonl`
+- Adds entry to `.sudocode/specs/specs.jsonl`
 - Inserts into SQLite
 - Records creation event
 - Opens in $EDITOR if requested
@@ -97,22 +97,22 @@ sudograph spec create --template feature
 
 ```bash
 # List all specs
-sudograph spec list
+sudocode spec list
 
 # Filter by status
-sudograph spec list --status draft
+sudocode spec list --status draft
 
 # Filter by type
-sudograph spec list --type architecture
+sudocode spec list --type architecture
 
 # Filter by tag
-sudograph spec list --tag security
+sudocode spec list --tag security
 
 # Show only ready specs
-sudograph spec list --ready
+sudocode spec list --ready
 
 # Limit results
-sudograph spec list --limit 10
+sudocode spec list --limit 10
 ```
 
 **Output format:**
@@ -126,7 +126,7 @@ spec-003  Database Migration Process   [process]      approved   P2
 
 ```bash
 # Show detailed spec information
-sudograph spec show <id>
+sudocode spec show <id>
 
 # Example output:
 # spec-001: Authentication System
@@ -162,13 +162,13 @@ sudograph spec show <id>
 
 ```bash
 # Update spec fields
-sudograph spec update <id> --status review
-sudograph spec update <id> --priority 1
-sudograph spec update <id> --add-tag security
-sudograph spec update <id> --remove-tag draft
+sudocode spec update <id> --status review
+sudocode spec update <id> --priority 1
+sudocode spec update <id> --add-tag security
+sudocode spec update <id> --remove-tag draft
 
 # Update interactively
-sudograph spec update <id>
+sudocode spec update <id>
 ```
 
 **Behavior:**
@@ -181,10 +181,10 @@ sudograph spec update <id>
 
 ```bash
 # Delete spec (soft delete by default)
-sudograph spec delete <id>
+sudocode spec delete <id>
 
 # Hard delete (removes files)
-sudograph spec delete <id> --hard
+sudocode spec delete <id> --hard
 
 # Confirmation prompt unless --force
 ```
@@ -193,13 +193,13 @@ sudograph spec delete <id> --hard
 
 ```bash
 # Add relationship between specs
-sudograph spec link <from-id> <to-id> [--type <type>]
+sudocode spec link <from-id> <to-id> [--type <type>]
 
 # Types: blocks, depends-on, related, parent-child
 # Examples:
-sudograph spec link spec-001 spec-002 --type blocks
-sudograph spec link spec-003 spec-001 --type depends-on
-sudograph spec link spec-001 issue-010 --type implements
+sudocode spec link spec-001 spec-002 --type blocks
+sudocode spec link spec-003 spec-001 --type depends-on
+sudocode spec link spec-001 issue-010 --type implements
 ```
 
 **Behavior:**
@@ -211,7 +211,7 @@ sudograph spec link spec-001 issue-010 --type implements
 ### Remove Relationship
 
 ```bash
-sudograph spec unlink <from-id> <to-id>
+sudocode spec unlink <from-id> <to-id>
 ```
 
 ## Issue Commands
@@ -220,30 +220,30 @@ Similar structure to spec commands:
 
 ```bash
 # Create
-sudograph issue create [--title] [--type] [--priority] [--assignee]
+sudocode issue create [--title] [--type] [--priority] [--assignee]
 
 # List
-sudograph issue list [--status] [--type] [--assignee] [--ready] [--blocked]
+sudocode issue list [--status] [--type] [--assignee] [--ready] [--blocked]
 
 # Show
-sudograph issue show <id> [--json] [--content] [--graph]
+sudocode issue show <id> [--json] [--content] [--graph]
 
 # Update
-sudograph issue update <id> [--status] [--priority] [--assignee]
+sudocode issue update <id> [--status] [--priority] [--assignee]
 
 # Close
-sudograph issue close <id> [--reason]
+sudocode issue close <id> [--reason]
 
 # Link
-sudograph issue link <from-id> <to-id> [--type]
+sudocode issue link <from-id> <to-id> [--type]
 
 # Unlink
-sudograph issue unlink <from-id> <to-id>
+sudocode issue unlink <from-id> <to-id>
 ```
 
 **Issue types:** bug, feature, task, epic, chore
 
-**Issue statuses:** open, in_progress, blocked, closed
+**Issue statuses:** open, in_progress, blocked, needs_review, closed
 
 ## Query Commands
 
@@ -251,7 +251,7 @@ sudograph issue unlink <from-id> <to-id>
 
 ```bash
 # Show all ready-to-work entities
-sudograph ready [--type spec|issue]
+sudocode ready [--type spec|issue]
 
 # Output:
 # Ready Specs (no blocking dependencies):
@@ -267,7 +267,7 @@ sudograph ready [--type spec|issue]
 
 ```bash
 # Show blocked entities
-sudograph blocked [--type spec|issue]
+sudocode blocked [--type spec|issue]
 
 # Output:
 # Blocked Specs:
@@ -282,7 +282,7 @@ sudograph blocked [--type spec|issue]
 
 ```bash
 # Show project statistics
-sudograph stats
+sudocode stats
 
 # Output:
 # Project Statistics
@@ -316,18 +316,18 @@ sudograph stats
 
 ```bash
 # Show relationship graph
-sudograph graph [--from <id>] [--depth <n>] [--format ascii|dot|json]
+sudocode graph [--from <id>] [--depth <n>] [--format ascii|dot|json]
 
 # Examples:
 # Show dependencies from a spec
-sudograph graph --from spec-001
+sudocode graph --from spec-001
 
 # Generate DOT format for Graphviz
-sudograph graph --from spec-001 --format dot > graph.dot
+sudocode graph --from spec-001 --format dot > graph.dot
 dot -Tpng graph.dot -o graph.png
 
 # Show full project graph
-sudograph graph --depth 10
+sudocode graph --depth 10
 ```
 
 **ASCII output example:**
@@ -343,16 +343,16 @@ spec-001 (Authentication System)
 
 ```bash
 # Sync all markdown files to JSONL and SQLite
-sudograph sync [--dry-run] [--force]
+sudocode sync [--dry-run] [--force]
 
 # Sync specific file
-sudograph sync specs/spec-001-auth.md
+sudocode sync specs/spec-001-auth.md
 
 # Watch for changes and auto-sync
-sudograph sync --watch
+sudocode sync --watch
 
 # Check sync status
-sudograph sync --status
+sudocode sync --status
 ```
 
 **Options:**
@@ -365,55 +365,55 @@ sudograph sync --status
 
 ```bash
 # Search across all content
-sudograph search <query> [--type spec|issue] [--field title|content|all]
+sudocode search <query> [--type spec|issue] [--field title|content|all]
 
 # Examples:
-sudograph search "authentication"
-sudograph search "auth" --type spec
-sudograph search "bug" --field title
+sudocode search "authentication"
+sudocode search "auth" --type spec
+sudocode search "bug" --field title
 ```
 
 ## Export Commands
 
 ```bash
 # Export to various formats
-sudograph export --format json > project.json
-sudograph export --format csv --type spec > specs.csv
-sudograph export --format markdown > summary.md
+sudocode export --format json > project.json
+sudocode export --format csv --type spec > specs.csv
+sudocode export --format markdown > summary.md
 
 # Export graph
-sudograph export --graph --format dot > graph.dot
+sudocode export --graph --format dot > graph.dot
 ```
 
 ## History Commands
 
 ```bash
 # Show event history for an entity
-sudograph history <id> [--limit 10] [--full]
+sudocode history <id> [--limit 10] [--full]
 
 # Show recent events across project
-sudograph history --recent [--limit 20]
+sudocode history --recent [--limit 20]
 
 # Reconstruct full history from git (future)
-sudograph history --rebuild [--from-git]
+sudocode history --rebuild [--from-git]
 ```
 
 ## Configuration
 
 ```bash
 # Show current configuration
-sudograph config list
+sudocode config list
 
 # Set configuration
-sudograph config set editor "code --wait"
-sudograph config set author.name "Alex Ngai"
-sudograph config set sync.auto true
+sudocode config set editor "code --wait"
+sudocode config set author.name "Alex Ngai"
+sudocode config set sync.auto true
 
 # Get configuration value
-sudograph config get editor
+sudocode config get editor
 ```
 
-**Config file location:** `.sudograph/config.json`
+**Config file location:** `.sudocode/config.json`
 
 ## Workflow Examples
 
@@ -421,49 +421,49 @@ sudograph config get editor
 
 ```bash
 # 1. Create the spec
-sudograph spec create --title "WebSocket Support" --type feature --priority 1
+sudocode spec create --title "WebSocket Support" --type feature --priority 1
 
 # 2. Open in editor (opens automatically or run:)
 vim specs/spec-012-websocket-support.md
 
 # 3. Add relationships
-sudograph spec link spec-012 spec-001 --type depends-on
+sudocode spec link spec-012 spec-001 --type depends-on
 
 # 4. Create implementation issues
-sudograph issue create --title "Implement WebSocket server"
-sudograph issue link issue-025 spec-012 --type implements
+sudocode issue create --title "Implement WebSocket server"
+sudocode issue link issue-025 spec-012 --type implements
 
 # 5. Check what's ready
-sudograph ready
+sudocode ready
 ```
 
 ### Working on issues
 
 ```bash
 # 1. Find ready issues
-sudograph ready --type issue
+sudocode ready --type issue
 
 # 2. Start work on an issue
-sudograph issue update issue-010 --status in_progress
+sudocode issue update issue-010 --status in_progress
 
 # 3. Complete the issue
-sudograph issue close issue-010 --reason "Implemented and tested"
+sudocode issue close issue-010 --reason "Implemented and tested"
 
 # 4. Check project status
-sudograph stats
+sudocode stats
 ```
 
 ### Reviewing dependencies
 
 ```bash
 # 1. Show blocked items
-sudograph blocked
+sudocode blocked
 
 # 2. Show specific dependency graph
-sudograph graph --from spec-001
+sudocode graph --from spec-001
 
 # 3. Update spec status to unblock others
-sudograph spec update spec-002 --status approved
+sudocode spec update spec-002 --status approved
 ```
 
 ## Implementation Notes
@@ -478,13 +478,13 @@ import { Command } from 'commander';
 const program = new Command();
 
 program
-  .name('sudograph')
+  .name('sudocode')
   .description('Technical specification and issue tracker')
   .version('0.1.0');
 
 program
   .command('init')
-  .description('Initialize sudograph in current directory')
+  .description('Initialize sudocode in current directory')
   .option('--prefix <prefix>', 'Custom prefix for IDs')
   .action(initCommand);
 
@@ -603,17 +603,17 @@ async function openInEditor(filePath: string): Promise<void> {
 All commands should provide clear error messages:
 
 ```typescript
-class SudographError extends Error {
+class SudocodeError extends Error {
   constructor(message: string, public code: string) {
     super(message);
-    this.name = 'SudographError';
+    this.name = 'SudocodeError';
   }
 }
 
 // Usage:
-if (!fs.existsSync('.sudograph')) {
-  throw new SudographError(
-    'Not a sudograph directory. Run "sudograph init" first.',
+if (!fs.existsSync('.sudocode')) {
+  throw new SudocodeError(
+    'Not a sudocode directory. Run "sudocode init" first.',
     'NOT_INITIALIZED'
   );
 }
@@ -622,7 +622,7 @@ if (!fs.existsSync('.sudograph')) {
 try {
   await program.parseAsync(process.argv);
 } catch (error) {
-  if (error instanceof SudographError) {
+  if (error instanceof SudocodeError) {
     console.error(chalk.red(`Error: ${error.message}`));
     process.exit(1);
   }
@@ -643,7 +643,7 @@ describe('spec create command', () => {
   beforeEach(() => {
     tmpDir = createTempDir();
     process.chdir(tmpDir);
-    execSync('sudograph init');
+    execSync('sudocode init');
   });
 
   afterEach(() => {
@@ -652,7 +652,7 @@ describe('spec create command', () => {
 
   it('should create a new spec', async () => {
     const result = await execCommand(
-      'sudograph spec create --title "Test Spec" --type feature'
+      'sudocode spec create --title "Test Spec" --type feature'
     );
 
     expect(result.stdout).toContain('Created spec-001');

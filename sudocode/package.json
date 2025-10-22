@@ -1,0 +1,36 @@
+{
+  "name": "sudocode",
+  "version": "0.1.0",
+  "description": "Git-native spec and issue management for AI-assisted software development - meta-package",
+  "type": "module",
+  "bin": {
+    "sudocode": "./node_modules/@sudocode/cli/dist/cli.js",
+    "sdc": "./node_modules/@sudocode/cli/dist/cli.js"
+  },
+  "scripts": {
+    "build": "echo 'Meta-package has no build step'",
+    "prepack": "npm install --install-links",
+    "postinstall": "echo 'sudocode installed successfully!'"
+  },
+  "keywords": [
+    "sudocode",
+    "project-management",
+    "specs",
+    "issues",
+    "mcp",
+    "cli"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@sudocode/cli": "^0.1.0",
+    "@sudocode/types": "^0.1.0",
+    "@sudocode/mcp": "^0.1.0"
+  },
+  "bundleDependencies": [
+    "@sudocode/cli",
+    "@sudocode/types",
+    "@sudocode/mcp"
+  ],
+  "files": ["README.md", "node_modules"]
+}
