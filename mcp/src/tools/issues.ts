@@ -6,13 +6,7 @@ import { SudocodeClient } from "../client.js";
 import { Issue, IssueStatus, IssueType } from "../types.js";
 
 // Tool parameter types
-export interface ReadyParams {
-  limit?: number;
-  priority?: number;
-  assignee?: string;
-  show_specs?: boolean;
-  show_issues?: boolean;
-}
+export interface ReadyParams {}
 
 export interface ListIssuesParams {
   status?: IssueStatus;
@@ -57,34 +51,43 @@ export interface BlockedIssuesParams {
   show_issues?: boolean;
 }
 
+export interface UpsertIssueParams {
+  issue_id?: string; // If provided, update; otherwise create
+  title?: string; // Required for create, optional for update
+  description?: string;
+  type?: IssueType;
+  priority?: number;
+  assignee?: string;
+  parent?: string;
+  tags?: string[];
+  estimate?: number;
+  status?: IssueStatus;
+}
+
 // Tool implementations
 
 /**
- * Find issues and specs ready to work on (no blockers)
+ * Find issues ready to work on (no blockers) and get project status
  */
 export async function ready(
   client: SudocodeClient,
   params: ReadyParams = {}
 ): Promise<any> {
-  const args = ["ready"];
+  const readyResult = await client.exec(["ready"]);
+  const statusResult = await client.exec(["status"]);
 
-  if (params.limit !== undefined) {
-    args.push("--limit", params.limit.toString());
-  }
-  if (params.priority !== undefined) {
-    args.push("--priority", params.priority.toString());
-  }
-  if (params.assignee) {
-    args.push("--assignee", params.assignee);
-  }
-  if (params.show_specs) {
-    args.push("--specs");
-  }
-  if (params.show_issues !== false) {
-    args.push("--issues");
+  // Redact content field from issues to keep response shorter
+  if (readyResult.issues && Array.isArray(readyResult.issues)) {
+    readyResult.issues = readyResult.issues.map((issue: any) => {
+      const { content, ...rest } = issue;
+      return rest;
+    });
   }
 
-  return client.exec(args);
+  return {
+    ready: readyResult,
+    status: statusResult,
+  };
 }
 
 /**
@@ -224,4 +227,71 @@ export async function blockedIssues(
   }
 
   return client.exec(args);
+}
+
+/**
+ * Upsert an issue (create if no issue_id, update if issue_id provided)
+ */
+export async function upsertIssue(
+  client: SudocodeClient,
+  params: UpsertIssueParams
+): Promise<Issue> {
+  const isUpdate = !!params.issue_id;
+
+  if (isUpdate) {
+    // Update mode
+    const args = ["issue", "update", params.issue_id!];
+
+    if (params.status) {
+      args.push("--status", params.status);
+    }
+    if (params.priority !== undefined) {
+      args.push("--priority", params.priority.toString());
+    }
+    if (params.assignee) {
+      args.push("--assignee", params.assignee);
+    }
+    if (params.type) {
+      args.push("--type", params.type);
+    }
+    if (params.title) {
+      args.push("--title", params.title);
+    }
+    if (params.description) {
+      args.push("--description", params.description);
+    }
+
+    return client.exec(args);
+  } else {
+    // Create mode
+    if (!params.title) {
+      throw new Error("title is required when creating a new issue");
+    }
+
+    const args = ["issue", "create", params.title];
+
+    if (params.description) {
+      args.push("--description", params.description);
+    }
+    if (params.type) {
+      args.push("--type", params.type);
+    }
+    if (params.priority !== undefined) {
+      args.push("--priority", params.priority.toString());
+    }
+    if (params.assignee) {
+      args.push("--assignee", params.assignee);
+    }
+    if (params.parent) {
+      args.push("--parent", params.parent);
+    }
+    if (params.tags && params.tags.length > 0) {
+      args.push("--tags", params.tags.join(","));
+    }
+    if (params.estimate !== undefined) {
+      args.push("--estimate", params.estimate.toString());
+    }
+
+    return client.exec(args);
+  }
 }

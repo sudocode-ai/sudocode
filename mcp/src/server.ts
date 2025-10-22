@@ -16,15 +16,13 @@ import { SudocodeClient } from "./client.js";
 import * as issueTools from "./tools/issues.js";
 import * as specTools from "./tools/specs.js";
 import * as relationshipTools from "./tools/relationships.js";
-import * as analyticsTools from "./tools/analytics.js";
-import * as initTools from "./tools/init.js";
 import * as feedbackTools from "./tools/feedback.js";
 
 export class SudocodeMCPServer {
   private server: Server;
   private client: SudocodeClient;
 
-  constructor() {
+  constructor(config?: import("./types.js").SudocodeClientConfig) {
     this.server = new Server(
       {
         name: "sudocode",
@@ -38,7 +36,7 @@ export class SudocodeMCPServer {
       }
     );
 
-    this.client = new SudocodeClient();
+    this.client = new SudocodeClient(config);
     this.setupHandlers();
   }
 
@@ -49,34 +47,11 @@ export class SudocodeMCPServer {
         tools: [
           {
             name: "ready",
-            description: "Find issues and specs ready to work on (no blockers)",
+            description:
+              "Find issues ready to work on (no blockers) and gets project status.",
             inputSchema: {
               type: "object",
-              properties: {
-                limit: {
-                  type: "number",
-                  description: "Max items to return",
-                  default: 10,
-                },
-                priority: {
-                  type: "number",
-                  description: "Filter by priority (0-4, 0=highest)",
-                },
-                assignee: {
-                  type: "string",
-                  description: "Filter by assignee",
-                },
-                show_specs: {
-                  type: "boolean",
-                  description: "Include ready specs",
-                  default: false,
-                },
-                show_issues: {
-                  type: "boolean",
-                  description: "Include ready issues",
-                  default: true,
-                },
-              },
+              properties: {},
             },
           },
           {
@@ -127,30 +102,34 @@ export class SudocodeMCPServer {
             },
           },
           {
-            name: "create_issue",
-            description: "Create a new issue",
+            name: "upsert_issue",
+            description:
+              "Create or update an issue. If issue_id is provided, updates the issue; otherwise creates a new one. To close an issue, set status='closed'.",
             inputSchema: {
               type: "object",
               properties: {
+                issue_id: {
+                  type: "string",
+                  description:
+                    "Issue ID (optional - if provided, updates the issue; if not, creates new)",
+                },
                 title: {
                   type: "string",
-                  description: "Issue title",
+                  description:
+                    "Issue title (required for create, optional for update)",
                 },
                 description: {
                   type: "string",
                   description: "Issue description",
-                  default: "",
                 },
                 type: {
                   type: "string",
                   enum: ["bug", "feature", "task", "epic", "chore"],
                   description: "Issue type",
-                  default: "task",
                 },
                 priority: {
                   type: "number",
                   description: "Priority (0-4, 0=highest)",
-                  default: 2,
                 },
                 assignee: {
                   type: "string",
@@ -169,85 +148,10 @@ export class SudocodeMCPServer {
                   type: "number",
                   description: "Estimated minutes",
                 },
-              },
-              required: ["title"],
-            },
-          },
-          {
-            name: "update_issue",
-            description: "Update an existing issue",
-            inputSchema: {
-              type: "object",
-              properties: {
-                issue_id: {
-                  type: "string",
-                  description: "Issue ID",
-                },
                 status: {
                   type: "string",
                   enum: ["open", "in_progress", "blocked", "closed"],
-                  description: "New status",
-                },
-                priority: {
-                  type: "number",
-                  description: "New priority",
-                },
-                assignee: {
-                  type: "string",
-                  description: "New assignee",
-                },
-                type: {
-                  type: "string",
-                  enum: ["bug", "feature", "task", "epic", "chore"],
-                  description: "New type",
-                },
-                title: {
-                  type: "string",
-                  description: "New title",
-                },
-                description: {
-                  type: "string",
-                  description: "New description",
-                },
-              },
-              required: ["issue_id"],
-            },
-          },
-          {
-            name: "close_issue",
-            description: "Close one or more issues",
-            inputSchema: {
-              type: "object",
-              properties: {
-                issue_ids: {
-                  type: "array",
-                  items: { type: "string" },
-                  description: "Issue IDs to close",
-                },
-                reason: {
-                  type: "string",
-                  description: "Reason for closing",
-                  default: "Completed",
-                },
-              },
-              required: ["issue_ids"],
-            },
-          },
-          {
-            name: "blocked_issues",
-            description: "Get blocked issues showing what is blocking them",
-            inputSchema: {
-              type: "object",
-              properties: {
-                show_specs: {
-                  type: "boolean",
-                  description: "Include blocked specs",
-                  default: false,
-                },
-                show_issues: {
-                  type: "boolean",
-                  description: "Include blocked issues",
-                  default: true,
+                  description: "Issue status",
                 },
               },
             },
@@ -288,7 +192,8 @@ export class SudocodeMCPServer {
           },
           {
             name: "show_spec",
-            description: "Show detailed spec information including feedback",
+            description:
+              "Show detailed spec information including all feedback anchored to the spec",
             inputSchema: {
               type: "object",
               properties: {
@@ -301,14 +206,19 @@ export class SudocodeMCPServer {
             },
           },
           {
-            name: "create_spec",
-            description: "Create a new spec",
+            name: "upsert_spec",
+            description: "Create a new spec (update not yet supported in CLI)",
             inputSchema: {
               type: "object",
               properties: {
+                spec_id: {
+                  type: "string",
+                  description:
+                    "Spec ID (not yet supported - leave empty to create)",
+                },
                 title: {
                   type: "string",
-                  description: "Spec title",
+                  description: "Spec title (required for create)",
                 },
                 type: {
                   type: "string",
@@ -320,12 +230,10 @@ export class SudocodeMCPServer {
                     "research",
                   ],
                   description: "Spec type",
-                  default: "feature",
                 },
                 priority: {
                   type: "number",
                   description: "Priority (0-4, 0=highest)",
-                  default: 2,
                 },
                 description: {
                   type: "string",
@@ -349,7 +257,6 @@ export class SudocodeMCPServer {
                   description: "Tags",
                 },
               },
-              required: ["title"],
             },
           },
           {
@@ -385,58 +292,30 @@ export class SudocodeMCPServer {
             },
           },
           {
-            name: "stats",
-            description: "Get comprehensive project statistics",
-            inputSchema: {
-              type: "object",
-              properties: {},
-            },
-          },
-          {
-            name: "status",
-            description: "Get quick project status",
+            name: "upsert_feedback",
+            description:
+              "Create or update feedback. If feedback_id is provided, updates status or relocates anchor; otherwise creates new feedback anchored to a spec.",
             inputSchema: {
               type: "object",
               properties: {
-                verbose: {
-                  type: "boolean",
-                  description: "Show verbose output",
-                  default: false,
-                },
-              },
-            },
-          },
-          {
-            name: "init",
-            description: "Initialize sudocode in the current directory",
-            inputSchema: {
-              type: "object",
-              properties: {
-                prefix: {
+                feedback_id: {
                   type: "string",
-                  description: "ID prefix for specs and issues",
-                  default: "sudocode",
+                  description:
+                    "Feedback ID (optional - if provided, updates/relocates; if not, creates new)",
                 },
-              },
-            },
-          },
-          {
-            name: "add_feedback",
-            description: "Add anchored feedback to a spec",
-            inputSchema: {
-              type: "object",
-              properties: {
                 issue_id: {
                   type: "string",
-                  description: "Issue ID providing feedback",
+                  description:
+                    "Issue ID providing feedback (required for create)",
                 },
                 spec_id: {
                   type: "string",
-                  description: "Spec ID receiving feedback",
+                  description:
+                    "Spec ID receiving feedback (required for create)",
                 },
                 content: {
                   type: "string",
-                  description: "Feedback content",
+                  description: "Feedback content (required for create)",
                 },
                 type: {
                   type: "string",
@@ -463,130 +342,18 @@ export class SudocodeMCPServer {
                   type: "string",
                   description: "Agent providing feedback",
                 },
-              },
-              required: ["issue_id", "spec_id", "content"],
-            },
-          },
-          {
-            name: "list_feedback",
-            description: "List feedback with optional filters",
-            inputSchema: {
-              type: "object",
-              properties: {
-                issue: {
-                  type: "string",
-                  description: "Filter by issue ID",
-                },
-                spec: {
-                  type: "string",
-                  description: "Filter by spec ID",
-                },
-                type: {
-                  type: "string",
-                  enum: [
-                    "ambiguity",
-                    "missing_requirement",
-                    "technical_constraint",
-                    "suggestion",
-                    "question",
-                  ],
-                  description: "Filter by feedback type",
-                },
                 status: {
                   type: "string",
-                  enum: ["open", "acknowledged", "resolved", "wont_fix"],
-                  description: "Filter by feedback status",
+                  enum: ["acknowledged", "resolved", "wont_fix"],
+                  description:
+                    "Update feedback status (only when feedback_id is provided)",
                 },
-                limit: {
-                  type: "number",
-                  description: "Max results",
-                  default: 50,
-                },
-              },
-            },
-          },
-          {
-            name: "show_feedback",
-            description: "Show detailed feedback information",
-            inputSchema: {
-              type: "object",
-              properties: {
-                feedback_id: {
-                  type: "string",
-                  description: "Feedback ID",
+                relocate: {
+                  type: "boolean",
+                  description:
+                    "Relocate stale anchor (only when feedback_id is provided)",
                 },
               },
-              required: ["feedback_id"],
-            },
-          },
-          {
-            name: "acknowledge_feedback",
-            description: "Acknowledge feedback",
-            inputSchema: {
-              type: "object",
-              properties: {
-                feedback_id: {
-                  type: "string",
-                  description: "Feedback ID to acknowledge",
-                },
-              },
-              required: ["feedback_id"],
-            },
-          },
-          {
-            name: "resolve_feedback",
-            description: "Resolve feedback",
-            inputSchema: {
-              type: "object",
-              properties: {
-                feedback_id: {
-                  type: "string",
-                  description: "Feedback ID to resolve",
-                },
-              },
-              required: ["feedback_id"],
-            },
-          },
-          {
-            name: "wontfix_feedback",
-            description: "Mark feedback as won't fix",
-            inputSchema: {
-              type: "object",
-              properties: {
-                feedback_id: {
-                  type: "string",
-                  description: "Feedback ID to mark as won't fix",
-                },
-              },
-              required: ["feedback_id"],
-            },
-          },
-          {
-            name: "stale_feedback",
-            description: "Get stale feedback with outdated anchors",
-            inputSchema: {
-              type: "object",
-              properties: {
-                limit: {
-                  type: "number",
-                  description: "Max results",
-                  default: 50,
-                },
-              },
-            },
-          },
-          {
-            name: "relocate_feedback",
-            description: "Relocate feedback anchor after spec changes",
-            inputSchema: {
-              type: "object",
-              properties: {
-                feedback_id: {
-                  type: "string",
-                  description: "Feedback ID to relocate",
-                },
-              },
-              required: ["feedback_id"],
             },
           },
         ],
@@ -613,20 +380,8 @@ export class SudocodeMCPServer {
             result = await issueTools.showIssue(this.client, args as any);
             break;
 
-          case "create_issue":
-            result = await issueTools.createIssue(this.client, args as any);
-            break;
-
-          case "update_issue":
-            result = await issueTools.updateIssue(this.client, args as any);
-            break;
-
-          case "close_issue":
-            result = await issueTools.closeIssue(this.client, args as any);
-            break;
-
-          case "blocked_issues":
-            result = await issueTools.blockedIssues(this.client, args as any);
+          case "upsert_issue":
+            result = await issueTools.upsertIssue(this.client, args as any);
             break;
 
           case "list_specs":
@@ -637,68 +392,16 @@ export class SudocodeMCPServer {
             result = await specTools.showSpec(this.client, args as any);
             break;
 
-          case "create_spec":
-            result = await specTools.createSpec(this.client, args as any);
+          case "upsert_spec":
+            result = await specTools.upsertSpec(this.client, args as any);
             break;
 
           case "link":
             result = await relationshipTools.link(this.client, args as any);
             break;
 
-          case "stats":
-            result = await analyticsTools.stats(this.client);
-            break;
-
-          case "status":
-            result = await analyticsTools.status(this.client, args as any);
-            break;
-
-          case "init":
-            result = await initTools.init(this.client, args as any);
-            break;
-
-          case "add_feedback":
-            result = await feedbackTools.addFeedback(this.client, args as any);
-            break;
-
-          case "list_feedback":
-            result = await feedbackTools.listFeedback(this.client, args as any);
-            break;
-
-          case "show_feedback":
-            result = await feedbackTools.showFeedback(this.client, args as any);
-            break;
-
-          case "acknowledge_feedback":
-            result = await feedbackTools.acknowledgeFeedback(
-              this.client,
-              args as any
-            );
-            break;
-
-          case "resolve_feedback":
-            result = await feedbackTools.resolveFeedback(
-              this.client,
-              args as any
-            );
-            break;
-
-          case "wontfix_feedback":
-            result = await feedbackTools.wontfixFeedback(
-              this.client,
-              args as any
-            );
-            break;
-
-          case "stale_feedback":
-            result = await feedbackTools.staleFeedback(
-              this.client,
-              args as any
-            );
-            break;
-
-          case "relocate_feedback":
-            result = await feedbackTools.relocateFeedback(
+          case "upsert_feedback":
+            result = await feedbackTools.upsertFeedback(
               this.client,
               args as any
             );

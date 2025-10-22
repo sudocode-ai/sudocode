@@ -48,6 +48,19 @@ export interface RelocateFeedbackParams {
   feedback_id: string;
 }
 
+export interface UpsertFeedbackParams {
+  feedback_id?: string; // If provided, update status; otherwise create
+  issue_id?: string; // Required for create
+  spec_id?: string; // Required for create
+  content?: string; // Required for create
+  type?: FeedbackType;
+  line?: number;
+  text?: string;
+  agent?: string;
+  status?: FeedbackStatus; // For updating feedback status
+  relocate?: boolean; // If true and feedback_id provided, relocate the anchor
+}
+
 // Tool implementations - Part 1
 
 /**
@@ -174,4 +187,71 @@ export async function relocateFeedback(
 ): Promise<Feedback> {
   const args = ["feedback", "relocate", params.feedback_id];
   return client.exec(args);
+}
+
+/**
+ * Upsert feedback (create if no feedback_id, update/relocate if feedback_id provided)
+ */
+export async function upsertFeedback(
+  client: SudocodeClient,
+  params: UpsertFeedbackParams
+): Promise<Feedback> {
+  const isUpdate = !!params.feedback_id;
+
+  if (isUpdate) {
+    // Update mode - handle status changes or relocation
+    if (params.relocate) {
+      // Relocate the feedback anchor
+      const args = ["feedback", "relocate", params.feedback_id!];
+      return client.exec(args);
+    } else if (params.status) {
+      // Update feedback status
+      const args: string[] = [];
+
+      switch (params.status) {
+        case "acknowledged":
+          args.push("feedback", "acknowledge", params.feedback_id!);
+          break;
+        case "resolved":
+          args.push("feedback", "resolve", params.feedback_id!);
+          break;
+        case "wont_fix":
+          args.push("feedback", "wont-fix", params.feedback_id!);
+          break;
+        default:
+          throw new Error(`Cannot update feedback to status: ${params.status}`);
+      }
+
+      return client.exec(args);
+    } else {
+      throw new Error(
+        "When updating feedback, you must provide either status or relocate=true"
+      );
+    }
+  } else {
+    // Create mode
+    if (!params.issue_id || !params.spec_id || !params.content) {
+      throw new Error(
+        "issue_id, spec_id, and content are required when creating feedback"
+      );
+    }
+
+    const args = ["feedback", "add", params.issue_id, params.spec_id];
+    args.push("--content", params.content);
+
+    if (params.type) {
+      args.push("--type", params.type);
+    }
+    if (params.line !== undefined) {
+      args.push("--line", params.line.toString());
+    }
+    if (params.text) {
+      args.push("--text", params.text);
+    }
+    if (params.agent) {
+      args.push("--agent", params.agent);
+    }
+
+    return client.exec(args);
+  }
 }

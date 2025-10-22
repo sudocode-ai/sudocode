@@ -53,39 +53,58 @@ describe('Spec Tools', () => {
     });
   });
 
-  describe('createSpec', () => {
-    it('should call exec with create command', async () => {
-      mockClient.exec.mockResolvedValue({});
+  describe('upsertSpec', () => {
+    describe('create mode (no spec_id)', () => {
+      it('should call exec with create command', async () => {
+        mockClient.exec.mockResolvedValue({});
 
-      await specTools.createSpec(mockClient, { title: 'New Spec' });
+        await specTools.upsertSpec(mockClient, { title: 'New Spec' });
 
-      expect(mockClient.exec).toHaveBeenCalledWith(['spec', 'create', 'New Spec']);
-    });
-
-    it('should include all optional parameters', async () => {
-      mockClient.exec.mockResolvedValue({});
-
-      await specTools.createSpec(mockClient, {
-        title: 'API Spec',
-        type: 'api',
-        priority: 1,
-        description: 'API specification',
-        design: 'REST API design',
-        file_path: '/specs/api.md',
-        parent: 'sg-spec-parent',
-        tags: ['api', 'v1'],
+        expect(mockClient.exec).toHaveBeenCalledWith(['spec', 'create', 'New Spec']);
       });
 
-      expect(mockClient.exec).toHaveBeenCalledWith([
-        'spec', 'create', 'API Spec',
-        '--type', 'api',
-        '--priority', '1',
-        '--description', 'API specification',
-        '--design', 'REST API design',
-        '--file-path', '/specs/api.md',
-        '--parent', 'sg-spec-parent',
-        '--tags', 'api,v1',
-      ]);
+      it('should include all optional parameters', async () => {
+        mockClient.exec.mockResolvedValue({});
+
+        await specTools.upsertSpec(mockClient, {
+          title: 'API Spec',
+          type: 'api',
+          priority: 1,
+          description: 'API specification',
+          design: 'REST API design',
+          file_path: '/specs/api.md',
+          parent: 'sg-spec-parent',
+          tags: ['api', 'v1'],
+        });
+
+        expect(mockClient.exec).toHaveBeenCalledWith([
+          'spec', 'create', 'API Spec',
+          '--type', 'api',
+          '--priority', '1',
+          '--description', 'API specification',
+          '--design', 'REST API design',
+          '--file-path', '/specs/api.md',
+          '--parent', 'sg-spec-parent',
+          '--tags', 'api,v1',
+        ]);
+      });
+
+      it('should throw error if title is missing', async () => {
+        await expect(specTools.upsertSpec(mockClient, {})).rejects.toThrow(
+          'title is required when creating a new spec'
+        );
+      });
+    });
+
+    describe('update mode (spec_id provided)', () => {
+      it('should throw error for update (not yet supported)', async () => {
+        await expect(
+          specTools.upsertSpec(mockClient, {
+            spec_id: 'sg-spec-1',
+            title: 'Updated Spec',
+          })
+        ).rejects.toThrow('Spec update is not yet supported');
+      });
     });
   });
 });

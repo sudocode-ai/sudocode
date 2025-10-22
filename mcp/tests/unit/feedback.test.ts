@@ -14,140 +14,105 @@ describe('Feedback Tools', () => {
     };
   });
 
-  describe('addFeedback', () => {
-    it('should call exec with add feedback command', async () => {
-      mockClient.exec.mockResolvedValue({});
+  describe('upsertFeedback', () => {
+    describe('create mode (no feedback_id)', () => {
+      it('should call exec with add feedback command', async () => {
+        mockClient.exec.mockResolvedValue({});
 
-      await feedbackTools.addFeedback(mockClient, {
-        issue_id: 'sg-1',
-        spec_id: 'sg-spec-1',
-        content: 'This is unclear',
+        await feedbackTools.upsertFeedback(mockClient, {
+          issue_id: 'sg-1',
+          spec_id: 'sg-spec-1',
+          content: 'This is unclear',
+        });
+
+        expect(mockClient.exec).toHaveBeenCalledWith([
+          'feedback', 'add', 'sg-1', 'sg-spec-1',
+          '--content', 'This is unclear',
+        ]);
       });
 
-      expect(mockClient.exec).toHaveBeenCalledWith([
-        'feedback', 'add', 'sg-1', 'sg-spec-1',
-        '--content', 'This is unclear',
-      ]);
-    });
+      it('should include all optional parameters', async () => {
+        mockClient.exec.mockResolvedValue({});
 
-    it('should include all optional parameters', async () => {
-      mockClient.exec.mockResolvedValue({});
+        await feedbackTools.upsertFeedback(mockClient, {
+          issue_id: 'sg-1',
+          spec_id: 'sg-spec-1',
+          content: 'Needs clarification',
+          type: 'ambiguity',
+          line: 42,
+          agent: 'claude',
+        });
 
-      await feedbackTools.addFeedback(mockClient, {
-        issue_id: 'sg-1',
-        spec_id: 'sg-spec-1',
-        content: 'Needs clarification',
-        type: 'ambiguity',
-        line: 42,
-        agent: 'claude',
+        expect(mockClient.exec).toHaveBeenCalledWith([
+          'feedback', 'add', 'sg-1', 'sg-spec-1',
+          '--content', 'Needs clarification',
+          '--type', 'ambiguity',
+          '--line', '42',
+          '--agent', 'claude',
+        ]);
       });
 
-      expect(mockClient.exec).toHaveBeenCalledWith([
-        'feedback', 'add', 'sg-1', 'sg-spec-1',
-        '--content', 'Needs clarification',
-        '--type', 'ambiguity',
-        '--line', '42',
-        '--agent', 'claude',
-      ]);
-    });
-  });
-
-  describe('listFeedback', () => {
-    it('should call exec with list command', async () => {
-      mockClient.exec.mockResolvedValue([]);
-
-      await feedbackTools.listFeedback(mockClient);
-
-      expect(mockClient.exec).toHaveBeenCalledWith(['feedback', 'list']);
+      it('should throw error if required fields are missing', async () => {
+        await expect(
+          feedbackTools.upsertFeedback(mockClient, {
+            issue_id: 'sg-1',
+          })
+        ).rejects.toThrow('issue_id, spec_id, and content are required when creating feedback');
+      });
     });
 
-    it('should include filter parameters', async () => {
-      mockClient.exec.mockResolvedValue([]);
+    describe('update mode (feedback_id provided)', () => {
+      it('should call acknowledge when status is acknowledged', async () => {
+        mockClient.exec.mockResolvedValue({});
 
-      await feedbackTools.listFeedback(mockClient, {
-        issue: 'sg-1',
-        spec: 'sg-spec-1',
-        type: 'question',
-        status: 'open',
-        limit: 10,
+        await feedbackTools.upsertFeedback(mockClient, {
+          feedback_id: 'fb-1',
+          status: 'acknowledged',
+        });
+
+        expect(mockClient.exec).toHaveBeenCalledWith(['feedback', 'acknowledge', 'fb-1']);
       });
 
-      expect(mockClient.exec).toHaveBeenCalledWith([
-        'feedback', 'list',
-        '--issue', 'sg-1',
-        '--spec', 'sg-spec-1',
-        '--type', 'question',
-        '--status', 'open',
-        '--limit', '10',
-      ]);
-    });
-  });
+      it('should call resolve when status is resolved', async () => {
+        mockClient.exec.mockResolvedValue({});
 
-  describe('showFeedback', () => {
-    it('should call exec with show command', async () => {
-      mockClient.exec.mockResolvedValue({});
+        await feedbackTools.upsertFeedback(mockClient, {
+          feedback_id: 'fb-1',
+          status: 'resolved',
+        });
 
-      await feedbackTools.showFeedback(mockClient, { feedback_id: 'fb-1' });
+        expect(mockClient.exec).toHaveBeenCalledWith(['feedback', 'resolve', 'fb-1']);
+      });
 
-      expect(mockClient.exec).toHaveBeenCalledWith(['feedback', 'show', 'fb-1']);
-    });
-  });
+      it('should call wont-fix when status is wont_fix', async () => {
+        mockClient.exec.mockResolvedValue({});
 
-  describe('acknowledgeFeedback', () => {
-    it('should call exec with acknowledge command', async () => {
-      mockClient.exec.mockResolvedValue({});
+        await feedbackTools.upsertFeedback(mockClient, {
+          feedback_id: 'fb-1',
+          status: 'wont_fix',
+        });
 
-      await feedbackTools.acknowledgeFeedback(mockClient, { feedback_id: 'fb-1' });
+        expect(mockClient.exec).toHaveBeenCalledWith(['feedback', 'wont-fix', 'fb-1']);
+      });
 
-      expect(mockClient.exec).toHaveBeenCalledWith(['feedback', 'acknowledge', 'fb-1']);
-    });
-  });
+      it('should call relocate when relocate is true', async () => {
+        mockClient.exec.mockResolvedValue({});
 
-  describe('resolveFeedback', () => {
-    it('should call exec with resolve command', async () => {
-      mockClient.exec.mockResolvedValue({});
+        await feedbackTools.upsertFeedback(mockClient, {
+          feedback_id: 'fb-1',
+          relocate: true,
+        });
 
-      await feedbackTools.resolveFeedback(mockClient, { feedback_id: 'fb-1' });
+        expect(mockClient.exec).toHaveBeenCalledWith(['feedback', 'relocate', 'fb-1']);
+      });
 
-      expect(mockClient.exec).toHaveBeenCalledWith(['feedback', 'resolve', 'fb-1']);
-    });
-  });
-
-  describe('wontfixFeedback', () => {
-    it('should call exec with wontfix command', async () => {
-      mockClient.exec.mockResolvedValue({});
-
-      await feedbackTools.wontfixFeedback(mockClient, { feedback_id: 'fb-1' });
-
-      expect(mockClient.exec).toHaveBeenCalledWith(['feedback', 'wontfix', 'fb-1']);
-    });
-  });
-
-  describe('staleFeedback', () => {
-    it('should call exec with stale command', async () => {
-      mockClient.exec.mockResolvedValue([]);
-
-      await feedbackTools.staleFeedback(mockClient);
-
-      expect(mockClient.exec).toHaveBeenCalledWith(['feedback', 'stale']);
-    });
-
-    it('should include limit parameter', async () => {
-      mockClient.exec.mockResolvedValue([]);
-
-      await feedbackTools.staleFeedback(mockClient, { limit: 5 });
-
-      expect(mockClient.exec).toHaveBeenCalledWith(['feedback', 'stale', '--limit', '5']);
-    });
-  });
-
-  describe('relocateFeedback', () => {
-    it('should call exec with relocate command', async () => {
-      mockClient.exec.mockResolvedValue({});
-
-      await feedbackTools.relocateFeedback(mockClient, { feedback_id: 'fb-1' });
-
-      expect(mockClient.exec).toHaveBeenCalledWith(['feedback', 'relocate', 'fb-1']);
+      it('should throw error if neither status nor relocate is provided', async () => {
+        await expect(
+          feedbackTools.upsertFeedback(mockClient, {
+            feedback_id: 'fb-1',
+          })
+        ).rejects.toThrow('When updating feedback, you must provide either status or relocate=true');
+      });
     });
   });
 });
