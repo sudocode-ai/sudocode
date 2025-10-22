@@ -14,92 +14,92 @@ describe('Feedback Tools', () => {
     };
   });
 
-  describe('upsertFeedback', () => {
-    describe('create mode (no feedback_id)', () => {
-      it('should call exec with add feedback command', async () => {
-        mockClient.exec.mockResolvedValue({});
+  describe('addFeedback', () => {
+    it('should call exec with add feedback command', async () => {
+      mockClient.exec.mockResolvedValue({});
 
-        await feedbackTools.upsertFeedback(mockClient, {
-          issue_id: 'sg-1',
-          spec_id: 'sg-spec-1',
-          content: 'This is unclear',
-        });
-
-        expect(mockClient.exec).toHaveBeenCalledWith([
-          'feedback', 'add', 'sg-1', 'sg-spec-1',
-          '--content', 'This is unclear',
-        ]);
+      await feedbackTools.addFeedback(mockClient, {
+        issue_id: 'sg-1',
+        spec_id: 'sg-spec-1',
+        content: 'This is unclear',
       });
 
-      it('should include all optional parameters', async () => {
-        mockClient.exec.mockResolvedValue({});
-
-        await feedbackTools.upsertFeedback(mockClient, {
-          issue_id: 'sg-1',
-          spec_id: 'sg-spec-1',
-          content: 'Needs clarification',
-          type: 'comment',
-          line: 42,
-          agent: 'claude',
-        });
-
-        expect(mockClient.exec).toHaveBeenCalledWith([
-          'feedback', 'add', 'sg-1', 'sg-spec-1',
-          '--content', 'Needs clarification',
-          '--type', 'comment',
-          '--line', '42',
-          '--agent', 'claude',
-        ]);
-      });
-
-      it('should throw error if required fields are missing', async () => {
-        await expect(
-          feedbackTools.upsertFeedback(mockClient, {
-            issue_id: 'sg-1',
-          })
-        ).rejects.toThrow('issue_id, spec_id, and content are required when creating feedback');
-      });
+      expect(mockClient.exec).toHaveBeenCalledWith([
+        'feedback', 'add', 'sg-1', 'sg-spec-1',
+        '--content', 'This is unclear',
+      ]);
     });
 
-    describe('update mode (feedback_id provided)', () => {
-      it('should call dismiss when dismissed is true', async () => {
-        mockClient.exec.mockResolvedValue({});
+    it('should include type parameter when provided', async () => {
+      mockClient.exec.mockResolvedValue({});
 
-        await feedbackTools.upsertFeedback(mockClient, {
-          feedback_id: 'fb-1',
-          dismissed: true,
-        });
-
-        expect(mockClient.exec).toHaveBeenCalledWith(['feedback', 'dismiss', 'fb-1']);
+      await feedbackTools.addFeedback(mockClient, {
+        issue_id: 'sg-1',
+        spec_id: 'sg-spec-1',
+        content: 'Needs clarification',
+        type: 'comment',
       });
 
-      it('should throw error when dismissed is false (cannot un-dismiss)', async () => {
-        await expect(
-          feedbackTools.upsertFeedback(mockClient, {
-            feedback_id: 'fb-1',
-            dismissed: false,
-          })
-        ).rejects.toThrow('Cannot un-dismiss feedback; only dismissing is supported');
+      expect(mockClient.exec).toHaveBeenCalledWith([
+        'feedback', 'add', 'sg-1', 'sg-spec-1',
+        '--content', 'Needs clarification',
+        '--type', 'comment',
+      ]);
+    });
+
+    it('should include line parameter when provided', async () => {
+      mockClient.exec.mockResolvedValue({});
+
+      await feedbackTools.addFeedback(mockClient, {
+        issue_id: 'sg-1',
+        spec_id: 'sg-spec-1',
+        content: 'Fix this line',
+        line: 42,
       });
 
-      it('should call relocate when relocate is true', async () => {
-        mockClient.exec.mockResolvedValue({});
+      expect(mockClient.exec).toHaveBeenCalledWith([
+        'feedback', 'add', 'sg-1', 'sg-spec-1',
+        '--content', 'Fix this line',
+        '--line', '42',
+      ]);
+    });
 
-        await feedbackTools.upsertFeedback(mockClient, {
-          feedback_id: 'fb-1',
-          relocate: true,
-        });
+    it('should include text parameter when provided', async () => {
+      mockClient.exec.mockResolvedValue({});
 
-        expect(mockClient.exec).toHaveBeenCalledWith(['feedback', 'relocate', 'fb-1']);
+      await feedbackTools.addFeedback(mockClient, {
+        issue_id: 'sg-1',
+        spec_id: 'sg-spec-1',
+        content: 'This text needs updating',
+        text: 'original text',
       });
 
-      it('should throw error if neither dismissed nor relocate is provided', async () => {
-        await expect(
-          feedbackTools.upsertFeedback(mockClient, {
-            feedback_id: 'fb-1',
-          })
-        ).rejects.toThrow('When updating feedback, you must provide either dismissed or relocate=true');
+      expect(mockClient.exec).toHaveBeenCalledWith([
+        'feedback', 'add', 'sg-1', 'sg-spec-1',
+        '--content', 'This text needs updating',
+        '--text', 'original text',
+      ]);
+    });
+
+    it('should include all optional parameters when provided', async () => {
+      mockClient.exec.mockResolvedValue({});
+
+      await feedbackTools.addFeedback(mockClient, {
+        issue_id: 'sg-1',
+        spec_id: 'sg-spec-1',
+        content: 'Needs clarification',
+        type: 'comment',
+        line: 42,
+        text: 'some text',
       });
+
+      expect(mockClient.exec).toHaveBeenCalledWith([
+        'feedback', 'add', 'sg-1', 'sg-spec-1',
+        '--content', 'Needs clarification',
+        '--type', 'comment',
+        '--line', '42',
+        '--text', 'some text',
+      ]);
     });
   });
 });

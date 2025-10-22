@@ -91,7 +91,7 @@ export class SudocodeMCPServer {
               properties: {
                 issue_id: {
                   type: "string",
-                  description: 'Issue ID (e.g., "sg-1")',
+                  description: 'Issue ID (e.g., "ISSUE-001")',
                 },
               },
               required: ["issue_id"],
@@ -167,7 +167,7 @@ export class SudocodeMCPServer {
               properties: {
                 spec_id: {
                   type: "string",
-                  description: 'Spec ID (e.g., "sg-spec-1")',
+                  description: 'Spec ID (e.g., "SPEC-001")',
                 },
               },
               required: ["spec_id"],
@@ -244,17 +244,11 @@ export class SudocodeMCPServer {
             },
           },
           {
-            name: "upsert_feedback",
-            description:
-              "Create or update feedback. If feedback_id is provided, updates status or relocates anchor; otherwise creates new feedback anchored to a spec.",
+            name: "add_feedback",
+            description: "Provide feedback to a spec.",
             inputSchema: {
               type: "object",
               properties: {
-                feedback_id: {
-                  type: "string",
-                  description:
-                    "Feedback ID (optional - if provided, updates/relocates; if not, creates new)",
-                },
                 issue_id: {
                   type: "string",
                   description:
@@ -271,11 +265,7 @@ export class SudocodeMCPServer {
                 },
                 type: {
                   type: "string",
-                  enum: [
-                    "comment",
-                    "suggestion",
-                    "request",
-                  ],
+                  enum: ["comment", "suggestion", "request"],
                   description: "Feedback type",
                 },
                 line: {
@@ -288,21 +278,11 @@ export class SudocodeMCPServer {
                   description:
                     "Text snippet to anchor feedback (use line OR text, not both)",
                 },
-                agent: {
-                  type: "string",
-                  description: "Agent providing feedback",
-                },
-                status: {
-                  type: "string",
-                  enum: ["acknowledged", "resolved", "wont_fix"],
-                  description:
-                    "Update feedback status (only when feedback_id is provided)",
-                },
-                relocate: {
-                  type: "boolean",
-                  description:
-                    "Relocate stale anchor (only when feedback_id is provided)",
-                },
+                // TODO: Re-enable when the agent data structure is more developed.
+                // agent: {
+                //   type: "string",
+                //   description: "Agent providing feedback",
+                // },
               },
             },
           },
@@ -350,11 +330,8 @@ export class SudocodeMCPServer {
             result = await relationshipTools.link(this.client, args as any);
             break;
 
-          case "upsert_feedback":
-            result = await feedbackTools.upsertFeedback(
-              this.client,
-              args as any
-            );
+          case "add_feedback":
+            result = await feedbackTools.addFeedback(this.client, args as any);
             break;
 
           default:

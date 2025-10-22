@@ -68,6 +68,7 @@ export async function handleSync(
     await handleSyncToMarkdown(ctx);
   } else {
     // Auto-detect sync direction based on file modification times
+    // TODO: Independently handle sync direction from specs and issues.
     const { direction, reason } = determineSyncDirection(ctx);
 
     console.log(chalk.blue("Detecting sync direction..."));
@@ -430,12 +431,16 @@ function determineSyncDirection(ctx: CommandContext): {
     if (specsMarkdownTime > specsJsonlTime) {
       syncFromMarkdown = true;
       reasons.push(
-        `Spec markdown files are newer (${formatTime(specsMarkdownTime)} > ${formatTime(specsJsonlTime)})`
+        `Spec markdown files are newer (${formatTime(
+          specsMarkdownTime
+        )} > ${formatTime(specsJsonlTime)})`
       );
     } else if (specsJsonlTime > specsMarkdownTime) {
       syncToMarkdown = true;
       reasons.push(
-        `Specs JSONL is newer (${formatTime(specsJsonlTime)} > ${formatTime(specsMarkdownTime)})`
+        `Specs JSONL is newer (${formatTime(specsJsonlTime)} > ${formatTime(
+          specsMarkdownTime
+        )})`
       );
     } else {
       reasons.push("Specs are in sync");
@@ -459,12 +464,16 @@ function determineSyncDirection(ctx: CommandContext): {
     if (issuesMarkdownTime > issuesJsonlTime) {
       syncFromMarkdown = true;
       reasons.push(
-        `Issue markdown files are newer (${formatTime(issuesMarkdownTime)} > ${formatTime(issuesJsonlTime)})`
+        `Issue markdown files are newer (${formatTime(
+          issuesMarkdownTime
+        )} > ${formatTime(issuesJsonlTime)})`
       );
     } else if (issuesJsonlTime > issuesMarkdownTime) {
       syncToMarkdown = true;
       reasons.push(
-        `Issues JSONL is newer (${formatTime(issuesJsonlTime)} > ${formatTime(issuesMarkdownTime)})`
+        `Issues JSONL is newer (${formatTime(issuesJsonlTime)} > ${formatTime(
+          issuesMarkdownTime
+        )})`
       );
     } else {
       reasons.push("Issues are in sync");
