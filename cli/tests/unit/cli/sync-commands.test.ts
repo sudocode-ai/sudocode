@@ -13,6 +13,9 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
+// Helper to ensure timestamps are different between operations
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 describe("Sync Commands - Auto Direction Detection", () => {
   let db: Database.Database;
   let tempDir: string;
@@ -264,6 +267,9 @@ describe("Sync Commands - Auto Direction Detection", () => {
         ? "from-markdown"
         : "to-markdown";
 
+      // Wait to ensure timestamp difference
+      await sleep(10);
+
       // Run 2: Should detect opposite direction
       consoleLogSpy.mockClear();
       await handleSync(ctx, {});
@@ -271,6 +277,9 @@ describe("Sync Commands - Auto Direction Detection", () => {
       const direction2 = output2.includes("FROM markdown TO database")
         ? "from-markdown"
         : "to-markdown";
+
+      // Wait to ensure timestamp difference
+      await sleep(10);
 
       // Run 3: Should flip again
       consoleLogSpy.mockClear();
@@ -309,9 +318,11 @@ describe("Sync Commands - Auto Direction Detection", () => {
 
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
 
-      // Run sync 3 times
+      // Run sync 3 times with delays to ensure timestamps differ
       await handleSync(ctx, {});
+      await sleep(10);
       await handleSync(ctx, {});
+      await sleep(10);
       await handleSync(ctx, {});
 
       // Read final markdown content
