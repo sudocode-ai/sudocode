@@ -271,6 +271,103 @@ export async function handleSpecShow(
   }
 }
 
+export interface SpecUpdateOptions {
+  title?: string;
+  priority?: string;
+  description?: string;
+  design?: string;
+  parent?: string;
+  tags?: string;
+}
+
+export async function handleSpecUpdate(
+  ctx: CommandContext,
+  id: string,
+  options: SpecUpdateOptions
+): Promise<void> {
+  try {
+    const spec = getSpec(ctx.db, id);
+    if (!spec) {
+      console.error(chalk.red(`✗ Spec not found: ${id}`));
+      process.exit(1);
+    }
+
+    // Prepare update
+    const { updateSpec } = await import("../operations/specs.js");
+    const updateData: any = {};
+
+    if (options.title) {
+      updateData.title = options.title;
+    }
+    if (options.priority) {
+      updateData.priority = parseInt(options.priority);
+    }
+    if (options.description !== undefined) {
+      updateData.content = options.description;
+    }
+    if (options.parent !== undefined) {
+      updateData.parent_id = options.parent || null;
+    }
+
+    // Update spec in database
+    const updated = updateSpec(ctx.db, id, updateData);
+
+    // Update tags if provided
+    if (options.tags !== undefined) {
+      const tags = options.tags.split(",").map((t) => t.trim());
+      setTags(ctx.db, id, "spec", tags);
+    }
+
+    // Update markdown file if design or title changed
+    if (options.design !== undefined || options.title || options.priority || options.parent || options.tags) {
+      const fullPath = path.join(ctx.outputDir, spec.file_path);
+
+      // Read existing file to preserve content
+      let existingContent = "";
+      if (fs.existsSync(fullPath)) {
+        existingContent = fs.readFileSync(fullPath, "utf8");
+        // Extract the content after frontmatter
+        const match = existingContent.match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
+        if (match) {
+          existingContent = match[1];
+        }
+      }
+
+      // Get current tags
+      const currentTags = getTags(ctx.db, id, "spec");
+
+      // Build frontmatter with updated values
+      const frontmatter = {
+        id: updated.id,
+        title: updated.title,
+        priority: updated.priority,
+        created_at: updated.created_at,
+        ...(updated.parent_id && { parent_id: updated.parent_id }),
+        ...(currentTags.length > 0 && { tags: currentTags }),
+      };
+
+      const markdownContent = options.design !== undefined ? options.design : existingContent;
+      writeMarkdownFile(fullPath, frontmatter, markdownContent);
+    }
+
+    // Export to JSONL
+    await exportToJSONL(ctx.db, { outputDir: ctx.outputDir });
+
+    // Output result
+    if (ctx.jsonOutput) {
+      console.log(JSON.stringify(updated, null, 2));
+    } else {
+      console.log(chalk.green("✓ Updated spec"), chalk.cyan(id));
+      if (options.title) console.log(chalk.gray(`  Title: ${updated.title}`));
+      if (options.priority) console.log(chalk.gray(`  Priority: ${updated.priority}`));
+    }
+  } catch (error) {
+    console.error(chalk.red("✗ Failed to update spec"));
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}
+
 export interface SpecDeleteOptions {}
 
 export async function handleSpecDelete(

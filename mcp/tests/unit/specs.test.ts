@@ -116,13 +116,112 @@ describe('Spec Tools', () => {
     });
 
     describe('update mode (spec_id provided)', () => {
-      it('should throw error for update (not yet supported)', async () => {
-        await expect(
-          specTools.upsertSpec(mockClient, {
-            spec_id: 'sg-spec-1',
-            title: 'Updated Spec',
-          })
-        ).rejects.toThrow('Spec update is not yet supported');
+      it('should call exec with update command', async () => {
+        mockClient.exec.mockResolvedValue({});
+
+        await specTools.upsertSpec(mockClient, {
+          spec_id: 'sg-spec-1',
+          title: 'Updated Spec',
+        });
+
+        expect(mockClient.exec).toHaveBeenCalledWith([
+          'spec', 'update', 'sg-spec-1',
+          '--title', 'Updated Spec',
+        ]);
+      });
+
+      it('should include all optional update parameters', async () => {
+        mockClient.exec.mockResolvedValue({});
+
+        await specTools.upsertSpec(mockClient, {
+          spec_id: 'sg-spec-1',
+          title: 'Updated Spec',
+          priority: 0,
+          description: 'Updated description',
+          design: 'Updated design notes',
+          parent: 'sg-spec-parent',
+          tags: ['updated', 'tags'],
+        });
+
+        expect(mockClient.exec).toHaveBeenCalledWith([
+          'spec', 'update', 'sg-spec-1',
+          '--title', 'Updated Spec',
+          '--priority', '0',
+          '--description', 'Updated description',
+          '--design', 'Updated design notes',
+          '--parent', 'sg-spec-parent',
+          '--tags', 'updated,tags',
+        ]);
+      });
+
+      it('should handle updating only priority', async () => {
+        mockClient.exec.mockResolvedValue({});
+
+        await specTools.upsertSpec(mockClient, {
+          spec_id: 'sg-spec-1',
+          priority: 1,
+        });
+
+        expect(mockClient.exec).toHaveBeenCalledWith([
+          'spec', 'update', 'sg-spec-1',
+          '--priority', '1',
+        ]);
+      });
+
+      it('should handle updating only description', async () => {
+        mockClient.exec.mockResolvedValue({});
+
+        await specTools.upsertSpec(mockClient, {
+          spec_id: 'sg-spec-1',
+          description: 'New description',
+        });
+
+        expect(mockClient.exec).toHaveBeenCalledWith([
+          'spec', 'update', 'sg-spec-1',
+          '--description', 'New description',
+        ]);
+      });
+
+      it('should handle clearing parent with empty string', async () => {
+        mockClient.exec.mockResolvedValue({});
+
+        await specTools.upsertSpec(mockClient, {
+          spec_id: 'sg-spec-1',
+          parent: '',
+        });
+
+        expect(mockClient.exec).toHaveBeenCalledWith([
+          'spec', 'update', 'sg-spec-1',
+          '--parent', '',
+        ]);
+      });
+
+      it('should handle updating tags', async () => {
+        mockClient.exec.mockResolvedValue({});
+
+        await specTools.upsertSpec(mockClient, {
+          spec_id: 'sg-spec-1',
+          tags: ['new', 'tag', 'list'],
+        });
+
+        expect(mockClient.exec).toHaveBeenCalledWith([
+          'spec', 'update', 'sg-spec-1',
+          '--tags', 'new,tag,list',
+        ]);
+      });
+
+      it('should handle updating design notes', async () => {
+        mockClient.exec.mockResolvedValue({});
+
+        await specTools.upsertSpec(mockClient, {
+          spec_id: 'sg-spec-1',
+          design: 'New design content',
+        });
+
+        expect(mockClient.exec).toHaveBeenCalledWith([
+          'spec', 'update', 'sg-spec-1',
+          '--design', 'New design content',
+        ]);
       });
     });
   });

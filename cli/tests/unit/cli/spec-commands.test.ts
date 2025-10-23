@@ -8,6 +8,7 @@ import {
   handleSpecCreate,
   handleSpecList,
   handleSpecShow,
+  handleSpecUpdate,
   handleSpecDelete,
 } from "../../../src/cli/spec-commands.js";
 import type Database from "better-sqlite3";
@@ -225,6 +226,199 @@ describe("Spec CLI Commands", () => {
         expect.stringContaining("✗ Spec not found")
       );
       expect(processExitSpy).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe("handleSpecUpdate", () => {
+    beforeEach(async () => {
+      // Create test spec directly in database with markdown file
+      const { createSpec } = await import("../../../src/operations/specs.js");
+      const { setTags } = await import("../../../src/operations/tags.js");
+      const { writeMarkdownFile } = await import("../../../src/markdown.js");
+
+      createSpec(db, {
+        id: "spec-update-1",
+        title: "Update Test Spec",
+        file_path: "specs/update_test.md",
+        content: "Original description",
+        priority: 2,
+      });
+
+      // Create markdown file
+      const markdownPath = path.join(tempDir, "specs", "update_test.md");
+      writeMarkdownFile(
+        markdownPath,
+        {
+          id: "spec-update-1",
+          title: "Update Test Spec",
+          priority: 2,
+        },
+        "Original design notes"
+      );
+
+      setTags(db, "spec-update-1", "spec", ["tag1", "tag2"]);
+
+      consoleLogSpy.mockClear();
+    });
+
+    it("should update spec title", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const options = {
+        title: "Updated Title",
+      };
+
+      await handleSpecUpdate(ctx, "spec-update-1", options);
+
+      const { getSpec } = await import("../../../src/operations/specs.js");
+      const spec = getSpec(db, "spec-update-1");
+      expect(spec?.title).toBe("Updated Title");
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining("✓ Updated spec"),
+        expect.anything()
+      );
+    });
+
+    it("should update spec priority", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const options = {
+        priority: "0",
+      };
+
+      await handleSpecUpdate(ctx, "spec-update-1", options);
+
+      const { getSpec } = await import("../../../src/operations/specs.js");
+      const spec = getSpec(db, "spec-update-1");
+      expect(spec?.priority).toBe(0);
+    });
+
+    it("should update spec description", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const options = {
+        description: "Updated description",
+      };
+
+      await handleSpecUpdate(ctx, "spec-update-1", options);
+
+      const { getSpec } = await import("../../../src/operations/specs.js");
+      const spec = getSpec(db, "spec-update-1");
+      expect(spec?.content).toBe("Updated description");
+    });
+
+    it("should update spec design notes", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const options = {
+        design: "Updated design notes",
+      };
+
+      await handleSpecUpdate(ctx, "spec-update-1", options);
+
+      // Read the markdown file to verify design notes updated
+      const markdownPath = path.join(tempDir, "specs", "update_test.md");
+      const content = fs.readFileSync(markdownPath, "utf8");
+      expect(content).toContain("Updated design notes");
+    });
+
+    it("should update spec tags", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const options = {
+        tags: "newtag1,newtag2,newtag3",
+      };
+
+      await handleSpecUpdate(ctx, "spec-update-1", options);
+
+      const { getTags } = await import("../../../src/operations/tags.js");
+      const tags = getTags(db, "spec-update-1", "spec");
+      expect(tags).toEqual(["newtag1", "newtag2", "newtag3"]);
+    });
+
+    it("should update spec parent", async () => {
+      const { createSpec } = await import("../../../src/operations/specs.js");
+
+      // Create parent spec
+      createSpec(db, {
+        id: "spec-parent",
+        title: "Parent Spec",
+        file_path: "specs/parent.md",
+        content: "",
+        priority: 1,
+      });
+
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const options = {
+        parent: "spec-parent",
+      };
+
+      await handleSpecUpdate(ctx, "spec-update-1", options);
+
+      const { getSpec } = await import("../../../src/operations/specs.js");
+      const spec = getSpec(db, "spec-update-1");
+      expect(spec?.parent_id).toBe("spec-parent");
+    });
+
+    it("should update multiple fields at once", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const options = {
+        title: "Multi Update Test",
+        priority: "1",
+        description: "Multi update description",
+        tags: "multi,update,tags",
+      };
+
+      await handleSpecUpdate(ctx, "spec-update-1", options);
+
+      const { getSpec } = await import("../../../src/operations/specs.js");
+      const { getTags } = await import("../../../src/operations/tags.js");
+
+      const spec = getSpec(db, "spec-update-1");
+      expect(spec?.title).toBe("Multi Update Test");
+      expect(spec?.priority).toBe(1);
+      expect(spec?.content).toBe("Multi update description");
+
+      const tags = getTags(db, "spec-update-1", "spec");
+      expect(tags.sort()).toEqual(["multi", "tags", "update"]);
+    });
+
+    it("should handle non-existent spec", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const options = {
+        title: "New Title",
+      };
+
+      await handleSpecUpdate(ctx, "non-existent", options);
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("✗ Spec not found")
+      );
+      expect(processExitSpy).toHaveBeenCalledWith(1);
+    });
+
+    it("should output JSON format", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: true };
+      const options = {
+        title: "JSON Update Test",
+      };
+
+      await handleSpecUpdate(ctx, "spec-update-1", options);
+
+      const output = consoleLogSpy.mock.calls[0][0];
+      const parsed = JSON.parse(output);
+      expect(parsed.id).toBe("spec-update-1");
+      expect(parsed.title).toBe("JSON Update Test");
+    });
+
+    it("should preserve existing markdown content when updating frontmatter only", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const options = {
+        title: "Only Title Update",
+      };
+
+      await handleSpecUpdate(ctx, "spec-update-1", options);
+
+      // Read the markdown file to verify original design notes preserved
+      const markdownPath = path.join(tempDir, "specs", "update_test.md");
+      const content = fs.readFileSync(markdownPath, "utf8");
+      expect(content).toContain("Original design notes");
     });
   });
 

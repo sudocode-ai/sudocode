@@ -16,6 +16,7 @@ import {
   handleSpecCreate,
   handleSpecList,
   handleSpecShow,
+  handleSpecUpdate,
   handleSpecDelete,
 } from "./cli/spec-commands.js";
 import {
@@ -238,6 +239,19 @@ spec
   .description("Show spec details")
   .action(async (id) => {
     await handleSpecShow(getContext(), id);
+  });
+
+spec
+  .command("update <id>")
+  .description("Update a spec")
+  .option("-p, --priority <priority>", "New priority")
+  .option("--title <title>", "New title")
+  .option("-d, --description <desc>", "New description")
+  .option("--design <design>", "New design notes")
+  .option("--parent <id>", "New parent spec ID")
+  .option("--tags <tags>", "New comma-separated tags")
+  .action(async (id, options) => {
+    await handleSpecUpdate(getContext(), id, options);
   });
 
 spec

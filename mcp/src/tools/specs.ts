@@ -69,7 +69,6 @@ export async function showSpec(
 
 /**
  * Upsert a spec (create if no spec_id, update if spec_id provided)
- * Note: Update mode is not yet implemented in the CLI, so this currently only supports create
  */
 export async function upsertSpec(
   client: SudocodeClient,
@@ -78,10 +77,29 @@ export async function upsertSpec(
   const isUpdate = !!params.spec_id;
 
   if (isUpdate) {
-    // TODO: Implement spec update in CLI first
-    throw new Error(
-      "Spec update is not yet supported. Please use spec_id=undefined to create a new spec."
-    );
+    // Update mode
+    const args = ["spec", "update", params.spec_id!];
+
+    if (params.title) {
+      args.push("--title", params.title);
+    }
+    if (params.priority !== undefined) {
+      args.push("--priority", params.priority.toString());
+    }
+    if (params.description) {
+      args.push("--description", params.description);
+    }
+    if (params.design) {
+      args.push("--design", params.design);
+    }
+    if (params.parent !== undefined) {
+      args.push("--parent", params.parent || "");
+    }
+    if (params.tags !== undefined) {
+      args.push("--tags", params.tags.join(","));
+    }
+
+    return client.exec(args);
   } else {
     // Create mode
     if (!params.title) {
