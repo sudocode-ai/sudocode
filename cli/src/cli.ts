@@ -181,6 +181,13 @@ program
       fs.writeFileSync(path.join(dir, "specs.jsonl"), "", "utf8");
       fs.writeFileSync(path.join(dir, "issues.jsonl"), "", "utf8");
 
+      // Create .gitignore file
+      const gitignoreContent = `cache.db
+issues/
+specs/
+`;
+      fs.writeFileSync(path.join(dir, ".gitignore"), gitignoreContent, "utf8");
+
       database.close();
 
       console.log(chalk.green("✓ Initialized sudocode in"), chalk.cyan(dir));

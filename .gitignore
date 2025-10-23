@@ -5,4 +5,3 @@ dist/
 *.db-wal
 .DS_Store
 .env
-references/
