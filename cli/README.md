@@ -12,6 +12,7 @@ The sudocode CLI provides a complete toolkit for managing specifications and iss
 - **Fast local cache** - SQLite database for instant queries
 - **Bidirectional sync** - Export to markdown for editing, import back to database
 - **Relationship tracking** - Link specs and issues with typed relationships
+- **Cross-references** - Add inline Obsidian-style `[[ID]]` references in markdown
 - **Anchored feedback** - Attach issue feedback to specific lines in specs
 - **Priority management** - 5-level priority system (0-4)
 - **Flexible queries** - Filter by status, assignee, priority, or grep content
@@ -151,6 +152,50 @@ sudocode link <from> <to> [options]
 - `depends-on` - From depends on To
 - `related` - General relation
 - `discovered-from` - Issue discovered from spec feedback
+
+### Cross-References
+
+Add inline references to specs or issues using Obsidian-style `[[ID]]` syntax.
+
+```bash
+# Add reference to a spec or issue
+sudocode spec add-ref <entity-id> <reference-id> [options]
+sudocode issue add-ref <entity-id> <reference-id> [options]
+  -l, --line <number>         Line number to insert reference
+  -t, --text <text>           Text to search for insertion point
+  --display <text>            Display text for reference (creates [[ID|text]])
+  --type <type>               Relationship type (creates [[ID]]{ type })
+  --format <format>           Format: inline or newline (default: inline)
+  --position <position>       Position: before or after (default: after)
+```
+
+**Notes:**
+- Either `--line` or `--text` is required (mutually exclusive)
+- References use Obsidian-style syntax: `[[ISSUE-001]]`
+- Display text: `[[ISSUE-001|OAuth Implementation]]`
+- With relationship: `[[SPEC-002]]{ implements }`
+- Combined: `[[SPEC-002|Auth Spec]]{ blocks }`
+- Inline format adds reference on same line with surrounding text
+- Newline format adds reference on its own line
+
+**Examples:**
+
+```bash
+# Add reference inline after line 45
+sudocode spec add-ref SPEC-001 ISSUE-003 --line 45
+
+# Add reference after specific text
+sudocode spec add-ref SPEC-001 ISSUE-003 --text "Requirements:"
+
+# Add with display text
+sudocode spec add-ref SPEC-001 ISSUE-003 --line 45 --display "OAuth implementation"
+
+# Add with relationship type
+sudocode issue add-ref ISSUE-001 SPEC-002 --text "Design" --type implements
+
+# Add on new line before text
+sudocode spec add-ref SPEC-001 ISSUE-004 --text "## Tasks" --format newline --position before
+```
 
 ### Query Commands
 

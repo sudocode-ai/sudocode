@@ -116,7 +116,8 @@ export class SudocodeMCPServer {
                 },
                 description: {
                   type: "string",
-                  description: "Issue description",
+                  description:
+                    "Issue descriptions. Supports inline references to other specs/issues by ID in Obsidian internal link format (e.g. `[[SPEC-002]]`).",
                 },
                 priority: {
                   type: "number",
@@ -198,7 +199,8 @@ export class SudocodeMCPServer {
                 },
                 design: {
                   type: "string",
-                  description: "Design notes (optional)",
+                  description:
+                    "Design notes (optional). Supports inline references to other specs/issues by ID in Obsidian internal link format (e.g. `[[ISSUE-001]]`).",
                 },
                 parent: {
                   type: "string",
@@ -243,6 +245,7 @@ export class SudocodeMCPServer {
               required: ["from_id", "to_id"],
             },
           },
+          // TODO: Add a tool to add an inline reference to a spec or issue.
           {
             name: "add_feedback",
             description: "Provide feedback to a spec.",

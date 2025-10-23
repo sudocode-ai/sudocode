@@ -28,6 +28,7 @@ import {
   handleIssueDelete,
 } from "./cli/issue-commands.js";
 import { handleLink } from "./cli/relationship-commands.js";
+import { handleAddReference } from "./cli/reference-commands.js";
 import { handleReady, handleBlocked } from "./cli/query-commands.js";
 import { handleSync, handleExport, handleImport } from "./cli/sync-commands.js";
 import { handleStatus, handleStats } from "./cli/status-commands.js";
@@ -261,6 +262,19 @@ spec
     await handleSpecDelete(getContext(), ids, options);
   });
 
+spec
+  .command("add-ref <entity-id> <reference-id>")
+  .description("Add a reference to a spec")
+  .option("-l, --line <number>", "Line number to insert reference")
+  .option("-t, --text <text>", "Text to search for insertion point")
+  .option("--display <text>", "Display text for reference")
+  .option("--type <type>", "Relationship type (blocks, implements, etc.)")
+  .option("--format <format>", "Format: inline or newline", "inline")
+  .option("--position <position>", "Position: before or after", "after")
+  .action(async (entityId, referenceId, options) => {
+    await handleAddReference(getContext(), entityId, referenceId, options);
+  });
+
 // ============================================================================
 // ISSUE COMMANDS
 // ============================================================================
@@ -330,6 +344,19 @@ issue
   )
   .action(async (ids, options) => {
     await handleIssueDelete(getContext(), ids, options);
+  });
+
+issue
+  .command("add-ref <entity-id> <reference-id>")
+  .description("Add a reference to an issue")
+  .option("-l, --line <number>", "Line number to insert reference")
+  .option("-t, --text <text>", "Text to search for insertion point")
+  .option("--display <text>", "Display text for reference")
+  .option("--type <type>", "Relationship type (blocks, implements, etc.)")
+  .option("--format <format>", "Format: inline or newline", "inline")
+  .option("--position <position>", "Position: before or after", "after")
+  .action(async (entityId, referenceId, options) => {
+    await handleAddReference(getContext(), entityId, referenceId, options);
   });
 
 // ============================================================================

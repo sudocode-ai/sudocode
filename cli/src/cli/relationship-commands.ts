@@ -29,11 +29,29 @@ export async function handleLink(
   options: LinkOptions
 ): Promise<void> {
   try {
-    // Parse entity IDs to determine types (case-insensitive)
-    const fromLower = from.toLowerCase();
-    const toLower = to.toLowerCase();
-    const fromType = fromLower.startsWith('spec-') ? 'spec' : 'issue';
-    const toType = toLower.startsWith('spec-') ? 'spec' : 'issue';
+    // Determine entity types by checking existence
+    let fromType: 'spec' | 'issue';
+    let toType: 'spec' | 'issue';
+
+    // Determine 'from' entity type
+    if (getSpec(ctx.db, from)) {
+      fromType = 'spec';
+    } else if (getIssue(ctx.db, from)) {
+      fromType = 'issue';
+    } else {
+      console.error(chalk.red(`✗ Entity not found: ${from}`));
+      process.exit(1);
+    }
+
+    // Determine 'to' entity type
+    if (getSpec(ctx.db, to)) {
+      toType = 'spec';
+    } else if (getIssue(ctx.db, to)) {
+      toType = 'issue';
+    } else {
+      console.error(chalk.red(`✗ Entity not found: ${to}`));
+      process.exit(1);
+    }
 
     addRelationship(ctx.db, {
       from_id: from,
