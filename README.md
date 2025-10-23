@@ -142,7 +142,7 @@ This design provides centralized database semantics through distributed git infr
 Define requirements, behaviors, abstractions, and design decisions:
 
 ```bash
-sg spec create auth-system
+sudocode spec create auth-system
 # Then update created spec markdown file.
 ```
 

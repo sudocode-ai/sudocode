@@ -196,7 +196,7 @@ describe("SudocodeClient", () => {
 
       // Mock actual command
       mockSpawn.mockReturnValueOnce(mockProcess);
-      const testData = { issues: [{ id: "sg-1", title: "Test" }] };
+      const testData = { issues: [{ id: "ISSUE-001", title: "Test" }] };
       setImmediate(() => {
         mockProcess.stdout.emit("data", JSON.stringify(testData));
         mockProcess.emit("close", 0);
@@ -251,7 +251,7 @@ describe("SudocodeClient", () => {
         mockProcess.emit("close", 1);
       });
 
-      await expect(client.exec(["issue", "show", "sg-999"])).rejects.toThrow(
+      await expect(client.exec(["issue", "show", "ISSUE-999"])).rejects.toThrow(
         SudocodeError
       );
     });

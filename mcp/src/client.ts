@@ -1,7 +1,7 @@
 /**
  * sudocode CLI client wrapper
  *
- * This module provides a client class that spawns `sg` CLI commands
+ * This module provides a client class that spawns `sudocode` CLI commands
  * and parses their JSON output for use in MCP tools.
  */
 
@@ -143,7 +143,7 @@ export class SudocodeClient {
           if (code !== 0) {
             reject(
               new SudocodeError(
-                `CLI not found or failed to execute. Make sure 'sg' is installed and in your PATH.`,
+                `CLI not found or failed to execute. Make sure 'sudocode' is installed and in your PATH.`,
                 code || -1,
                 stderr
               )
@@ -151,7 +151,7 @@ export class SudocodeClient {
             return;
           }
 
-          // Version output format: "sg version X.Y.Z" or just "X.Y.Z"
+          // Version output format: "sudocode version X.Y.Z" or just "X.Y.Z"
           const versionMatch = stdout.match(/(\d+\.\d+\.\d+)/);
           const version = versionMatch ? versionMatch[1] : stdout.trim();
 
@@ -161,7 +161,7 @@ export class SudocodeClient {
         proc.on("error", () => {
           reject(
             new SudocodeError(
-              `CLI not found at path: ${this.cliPath}. Make sure 'sg' is installed.`,
+              `CLI not found at path: ${this.cliPath}. Make sure 'sudocode' is installed.`,
               -1,
               "CLI not found"
             )

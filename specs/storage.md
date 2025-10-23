@@ -250,7 +250,7 @@ The events table is populated through three mechanisms:
    - **Approach**: Walk git log, diff JSONL files across commits, reconstruct full timeline
    - **Implementation considerations**:
      ```typescript
-     // Future: sg history rebuild --from-git
+     // Future: sudocode history rebuild --from-git
      async function rebuildHistoryFromGit(): Promise<void> {
          // 1. Walk git log for .jsonl file changes
          const commits = await git.log(['--follow', '--', '.sudocode/specs/specs.jsonl']);
@@ -295,7 +295,7 @@ The events table is populated through three mechanisms:
 
 1. Start with real-time + short history reconstruction (phases 1-4)
 2. Add git history reconstruction later when collaboration patterns emerge
-3. Make it opt-in: `sg history rebuild --from-git --since 2025-01-01`
+3. Make it opt-in: `sudocode history rebuild --from-git --since 2025-01-01`
 
 ### Views for Common Queries
 
@@ -458,7 +458,7 @@ async function syncMarkdownToJSONL(mdPath: string): Promise<void> {
 
 #### 2. SQLite → JSONL → Markdown (CLI updates)
 
-**Trigger**: `sg` CLI command modifies database
+**Trigger**: `sudocode` CLI command modifies database
 
 **Process**:
 1. Update SQLite row
@@ -493,7 +493,7 @@ async function updateIssue(id: string, updates: Record<string, any>): Promise<vo
 
 #### 3. JSONL → SQLite (After git pull)
 
-**Trigger**: User runs `sg sync` or automatic after git operations
+**Trigger**: User runs `sudocode sync` or automatic after git operations
 
 **Process**:
 1. Detect JSONL file changes (compare mtime or hash)
@@ -603,33 +603,33 @@ watcher.on('add', (path) => {
 
 ## Export/Import CLI Commands
 
-### sg export
+### sudocode export
 
 ```bash
 # Export SQLite → JSONL
-sg export                  # Export specs + issues to respective JSONL files
-sg export --specs          # Export only specs
-sg export --issues         # Export only issues
-sg export --output backup/ # Export to custom directory
+sudocode export                  # Export specs + issues to respective JSONL files
+sudocode export --specs          # Export only specs
+sudocode export --issues         # Export only issues
+sudocode export --output backup/ # Export to custom directory
 ```
 
-### sg import
+### sudocode import
 
 ```bash
 # Import JSONL → SQLite
-sg import                        # Import from .sudocode/specs.jsonl & issues.jsonl
-sg import --input backup/        # Import from custom directory
-sg import --resolve-collisions   # Auto-resolve ID collisions
-sg import --dry-run              # Show changes without applying
+sudocode import                        # Import from .sudocode/specs.jsonl & issues.jsonl
+sudocode import --input backup/        # Import from custom directory
+sudocode import --resolve-collisions   # Auto-resolve ID collisions
+sudocode import --dry-run              # Show changes without applying
 ```
 
-### sg sync
+### sudocode sync
 
 ```bash
 # Bi-directional sync
-sg sync                    # Detect changes, sync all directions
-sg sync --watch            # Start file watcher, continuous sync
-sg sync --from-git         # Import after git pull
+sudocode sync                    # Detect changes, sync all directions
+sudocode sync --watch            # Start file watcher, continuous sync
+sudocode sync --from-git         # Import after git pull
 ```
 
 ---
@@ -708,7 +708,7 @@ Stores ID counters and configuration:
 - [ ] File watcher (fsnotify)
 - [ ] Debouncing mechanism
 - [ ] Git hooks (pre-commit, post-merge)
-- [ ] `sg sync` command with watch mode
+- [ ] `sudocode sync` command with watch mode
 
 ### Phase 5: Optimization
 
@@ -723,7 +723,7 @@ Stores ID counters and configuration:
 - [ ] Design git history parser (walk commits, diff JSONL files)
 - [ ] Handle attribution challenges (git author vs actual actor)
 - [ ] Optimize for large repos (incremental parsing, caching)
-- [ ] Add `sg history rebuild --from-git` command
+- [ ] Add `sudocode history rebuild --from-git` command
 - [ ] Support filtering by date range and entity type
 - [ ] Document performance characteristics and limitations
 

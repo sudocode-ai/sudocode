@@ -120,10 +120,10 @@ Install sudocode:
 Once configured in Claude Code, you can ask Claude to:
 
 1. Find ready tasks: "Show me issues that are ready to work on"
-2. Claim work: "Set issue sg-123 to in_progress status"
-3. Review specs: "Show me the spec for issue sg-123"
-4. Provide feedback: "Add feedback to spec sg-spec-5 about the authentication section"
-5. Complete work: "Close issue sg-123"
+2. Claim work: "Set issue ISSUE-123 to in_progress status"
+3. Review specs: "Show me the spec for issue ISSUE-123"
+4. Provide feedback: "Add feedback to spec SPEC-005 about the authentication section"
+5. Complete work: "Close issue ISSUE-123"
 
 ## Development
 

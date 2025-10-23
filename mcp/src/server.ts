@@ -404,7 +404,7 @@ sudocode is a git-native spec and issue management system designed for AI-assist
 **Specs**: Technical specifications stored as markdown files
 - Types: architecture, api, database, feature, research
 - Status: draft → review → approved → deprecated
-- Each spec has a unique ID (e.g., sg-spec-1) and file path
+- Each spec has a unique ID (e.g., SPEC-001) and file path
 
 **Issues**: Work items tracked in the database
 - Types: bug, feature, task, epic, chore

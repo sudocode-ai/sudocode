@@ -318,7 +318,7 @@ On import/merge conflicts:
 **1. User creates spec**
 
 ```bash
-sg spec create auth-system
+sudocode spec create auth-system
 ```
 
 Creates:
@@ -330,7 +330,7 @@ Creates:
 **2. User invokes planning**
 
 ```bash
-sg plan spec-001
+sudocode plan spec-001
 ```
 
 Creates:
@@ -343,7 +343,7 @@ Creates:
 **3. User or agent updates issue status**
 
 ```bash
-sg issue update issue-001 --status in_progress
+sudocode issue update issue-001 --status in_progress
 ```
 
 Updates:
