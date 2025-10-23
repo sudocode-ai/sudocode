@@ -270,7 +270,6 @@ spec
   .option("--display <text>", "Display text for reference")
   .option("--type <type>", "Relationship type (blocks, implements, etc.)")
   .option("--format <format>", "Format: inline or newline", "inline")
-  .option("--position <position>", "Position: before or after", "after")
   .action(async (entityId, referenceId, options) => {
     await handleAddReference(getContext(), entityId, referenceId, options);
   });

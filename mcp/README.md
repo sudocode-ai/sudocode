@@ -4,7 +4,7 @@ Model Context Protocol (MCP) server for [sudocode](https://github.com/sudocode-a
 
 ## Features
 
-- **22 MCP Tools** for complete issue and spec management
+- **MCP Tools** for complete issue and spec management
 - **Git-native workflow** - All data stored in git
 - **Anchored feedback** - Link issues to specific lines in specs with smart relocation
 - **Relationship tracking** - Model dependencies and blockers
@@ -57,52 +57,30 @@ Add to your Claude Code configuration:
 
 ## Available Tools
 
-### Issue Management (7 tools)
+### Issue Management
 
 - `ready` - Find issues and specs with no blockers
 - `list_issues` - List issues with filters (status, type, priority, assignee)
 - `show_issue` - Show detailed issue information
-- `create_issue` - Create new issue
-- `update_issue` - Update issue (status, priority, assignee, etc.)
-- `close_issue` - Close one or more issues
-- `blocked_issues` - Get issues that are blocked
+- `upsert_issue` - Create/update issue
 
-### Spec Management (3 tools)
+### Spec Management
 
 - `list_specs` - List specs with filters (status, type, priority)
 - `show_spec` - Show detailed spec information with feedback
-- `create_spec` - Create new specification
+- `upsert_spec` - Create/update a specification
 
-### Relationships (1 tool)
+### Relationships
 
 - `link` - Create relationships between entities (blocks, implements, references, depends-on, parent-child, discovered-from, related)
 
-### Feedback System (8 tools)
+### Cross-References
 
-- `add_feedback` - Add anchored feedback to specs
-- `list_feedback` - List feedback with filters
-- `show_feedback` - Show feedback details
-- `acknowledge_feedback` - Acknowledge feedback
-- `resolve_feedback` - Mark feedback as resolved
-- `wontfix_feedback` - Mark feedback as won't fix
-- `stale_feedback` - Find feedback with stale anchors
-- `relocate_feedback` - Manually relocate feedback anchors
+- `add_reference` - Add inline cross-reference to spec or issue using Obsidian-style `[[ID]]` syntax. Insert references at specific locations (line or text-based) with optional display text and relationship types.
 
-### Analytics (2 tools)
+### Feedback System
 
-- `stats` - Get comprehensive project statistics
-- `status` - Get quick project status
-
-### Initialization (1 tool)
-
-- `init` - Initialize sudocode in current directory
-
-## Resources
-
-The server provides two resources for AI agents:
-
-- `sudocode://quickstart` - Introduction to sudocode concepts and workflow
-- `sudocode://workflow` - Step-by-step workflow patterns
+- `upsert_feedback` - Create/update anchored feedback to specs
 
 ## Prerequisites
 
@@ -122,8 +100,9 @@ Once configured in Claude Code, you can ask Claude to:
 1. Find ready tasks: "Show me issues that are ready to work on"
 2. Claim work: "Set issue ISSUE-123 to in_progress status"
 3. Review specs: "Show me the spec for issue ISSUE-123"
-4. Provide feedback: "Add feedback to spec SPEC-005 about the authentication section"
-5. Complete work: "Close issue ISSUE-123"
+4. Add cross-references: "Add a reference to ISSUE-042 in the requirements section of SPEC-010"
+5. Provide feedback: "Add feedback to spec SPEC-005 about the authentication section"
+6. Complete work: "Close issue ISSUE-123"
 
 ## Development
 
@@ -157,10 +136,11 @@ mcp/
 │       ├── specs.ts
 │       ├── feedback.ts
 │       ├── relationships.ts
+│       ├── references.ts
 │       ├── analytics.ts
 │       └── init.ts
 ├── tests/
-│   └── unit/               # Unit tests (56 tests)
+│   └── unit/               # Unit tests
 └── dist/                   # Built output
 ```
 

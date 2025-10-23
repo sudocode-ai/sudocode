@@ -17,6 +17,7 @@ import * as issueTools from "./tools/issues.js";
 import * as specTools from "./tools/specs.js";
 import * as relationshipTools from "./tools/relationships.js";
 import * as feedbackTools from "./tools/feedback.js";
+import * as referenceTools from "./tools/references.js";
 
 export class SudocodeMCPServer {
   private server: Server;
@@ -245,7 +246,59 @@ export class SudocodeMCPServer {
               required: ["from_id", "to_id"],
             },
           },
-          // TODO: Add a tool to add an inline reference to a spec or issue.
+          {
+            name: "add_reference",
+            description:
+              "Add an inline cross-reference to a spec or issue using Obsidian-style [[ID]] syntax. References are inserted at a specific location in the markdown content.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                entity_id: {
+                  type: "string",
+                  description: "Target entity ID (where to add the reference)",
+                },
+                reference_id: {
+                  type: "string",
+                  description: "ID to reference (e.g., ISSUE-001, SPEC-002)",
+                },
+                display_text: {
+                  type: "string",
+                  description: "Display text (optional)",
+                },
+                relationship_type: {
+                  type: "string",
+                  enum: [
+                    "blocks",
+                    "implements",
+                    "references",
+                    "depends-on",
+                    "discovered-from",
+                    "related",
+                  ],
+                  description: "Relationship type (optional)",
+                },
+                line: {
+                  type: "number",
+                  description:
+                    "Line number to insert reference (use line OR text, not both)",
+                },
+                text: {
+                  type: "string",
+                  description:
+                    "Text to search for insertion point (use line OR text, not both)",
+                },
+                format: {
+                  type: "string",
+                  enum: ["inline", "newline"],
+                  description:
+                    "Format: inline (same line) or newline (new line)",
+                  default: "inline",
+                },
+                // TODO: Add position handling later if needed.
+              },
+              required: ["entity_id", "reference_id"],
+            },
+          },
           {
             name: "add_feedback",
             description: "Provide feedback to a spec.",
@@ -331,6 +384,13 @@ export class SudocodeMCPServer {
 
           case "link":
             result = await relationshipTools.link(this.client, args as any);
+            break;
+
+          case "add_reference":
+            result = await referenceTools.addReference(
+              this.client,
+              args as any
+            );
             break;
 
           case "add_feedback":
