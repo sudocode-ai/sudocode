@@ -22,6 +22,7 @@
     "test:cli": "npm test --workspace=cli",
     "test:mcp": "npm test --workspace=mcp",
     "test:server": "npm test --workspace=server",
+    "test:frontend": "npm test --workspace=frontend",
     "clean": "npm run clean --workspaces --if-present",
     "dev": "npm run dev --workspaces --if-present"
   },
