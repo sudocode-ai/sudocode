@@ -25,12 +25,14 @@
   "dependencies": {
     "@sudocode/cli": "^0.1.0",
     "@sudocode/types": "^0.1.0",
-    "@sudocode/mcp": "^0.1.0"
+    "@sudocode/mcp": "^0.1.0",
+    "@sudocode/server": "^0.1.0"
   },
   "bundleDependencies": [
     "@sudocode/cli",
     "@sudocode/types",
-    "@sudocode/mcp"
+    "@sudocode/mcp",
+    "@sudocode/server"
   ],
   "files": ["README.md", "node_modules"]
 }

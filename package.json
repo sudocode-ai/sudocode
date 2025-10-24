@@ -8,6 +8,7 @@
     "types",
     "cli",
     "mcp",
+    "server",
     "sudocode"
   ],
   "scripts": {
@@ -15,6 +16,7 @@
     "build:types": "npm run build --workspace=types",
     "build:cli": "npm run build --workspace=cli",
     "build:mcp": "npm run build --workspace=mcp",
+    "build:server": "npm run build --workspace=server",
     "test": "npm test --workspaces --if-present",
     "test:cli": "npm test --workspace=cli",
     "test:mcp": "npm test --workspace=mcp",

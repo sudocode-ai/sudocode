@@ -40,6 +40,7 @@ import {
   handleFeedbackStale,
   handleFeedbackRelocate,
 } from "./cli/feedback-commands.js";
+import { handleServerStart } from "./cli/server-commands.js";
 import { VERSION } from "./version.js";
 
 // Global state
@@ -498,6 +499,19 @@ program
   .option("-i, --input <dir>", "Input directory", ".sudocode")
   .action(async (options) => {
     await handleImport(getContext(), options);
+  });
+
+// ============================================================================
+// SERVER COMMANDS
+// ============================================================================
+
+program
+  .command("server")
+  .description("Start the sudocode local server")
+  .option("-p, --port <port>", "Port to run server on", "3000")
+  .option("-d, --detach", "Run server in background")
+  .action(async (options) => {
+    await handleServerStart(getContext(), options);
   });
 
 // Parse arguments
