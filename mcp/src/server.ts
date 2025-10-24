@@ -18,12 +18,15 @@ import * as specTools from "./tools/specs.js";
 import * as relationshipTools from "./tools/relationships.js";
 import * as feedbackTools from "./tools/feedback.js";
 import * as referenceTools from "./tools/references.js";
+import { SudocodeClientConfig } from "./types.js";
 
 export class SudocodeMCPServer {
   private server: Server;
   private client: SudocodeClient;
+  private config: SudocodeClientConfig;
 
-  constructor(config?: import("./types.js").SudocodeClientConfig) {
+  constructor(config?: SudocodeClientConfig) {
+    this.config = config || {};
     this.server = new Server(
       {
         name: "sudocode",
@@ -506,7 +509,36 @@ sudocode is a git-native spec and issue management system designed for AI-assist
     );
   }
 
+  /**
+   * Initialize database by syncing from markdown files
+   * This ensures gitignored files (.sudocode/cache.db, JSONL) are created
+   */
+  private async initializeDatabase() {
+    // Skip sync if disabled via config (default: true)
+    if (this.config.syncOnStartup === false) {
+      console.error("Skipping initial sync (disabled via --no-sync)");
+      return;
+    }
+
+    try {
+      console.error("Initializing sudocode database...");
+      await this.client.exec(["sync", "--from-markdown"]);
+      console.error("Database initialized successfully");
+    } catch (error) {
+      // Log error but don't fail startup - database may not exist yet
+      console.error(
+        `Warning: Failed to initialize database: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+      console.error("The server will still start, but may have stale data");
+    }
+  }
+
   async run() {
+    // Initialize database before starting server
+    await this.initializeDatabase();
+
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error("sudocode MCP server running on stdio");
