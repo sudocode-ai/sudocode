@@ -5,6 +5,7 @@ import * as path from "path";
 import type Database from "better-sqlite3";
 import { initDatabase, getDatabaseInfo } from "./services/db.js";
 import { createIssuesRouter } from "./routes/issues.js";
+import { createSpecsRouter } from "./routes/specs.js";
 
 // Load environment variables
 dotenv.config();
@@ -40,6 +41,7 @@ app.use(express.json());
 
 // API Routes
 app.use("/api/issues", createIssuesRouter(db));
+app.use("/api/specs", createSpecsRouter(db));
 
 // Health check endpoint
 app.get("/health", (_req: Request, res: Response) => {
