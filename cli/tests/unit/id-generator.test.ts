@@ -12,6 +12,7 @@ import {
 import { initDatabase } from "../../src/db.js";
 import { createSpec } from "../../src/operations/specs.js";
 import { createIssue } from "../../src/operations/issues.js";
+import { VERSION } from "../../src/version.js";
 import type Database from "better-sqlite3";
 import * as fs from "fs";
 import * as path from "path";
@@ -43,10 +44,20 @@ describe("ID Generator", () => {
   describe("generateSpecId", () => {
     it("should generate sequential spec IDs based on database", () => {
       const id1 = generateSpecId(db, tempDir);
-      createSpec(db, { id: id1, title: "Test 1", file_path: "test1.md", content: "" });
+      createSpec(db, {
+        id: id1,
+        title: "Test 1",
+        file_path: "test1.md",
+        content: "",
+      });
 
       const id2 = generateSpecId(db, tempDir);
-      createSpec(db, { id: id2, title: "Test 2", file_path: "test2.md", content: "" });
+      createSpec(db, {
+        id: id2,
+        title: "Test 2",
+        file_path: "test2.md",
+        content: "",
+      });
 
       const id3 = generateSpecId(db, tempDir);
 
@@ -75,7 +86,12 @@ describe("ID Generator", () => {
 
     it("should increment from latest ID in database", () => {
       // Create a spec with a specific ID
-      createSpec(db, { id: "SPEC-042", title: "Test", file_path: "test.md", content: "" });
+      createSpec(db, {
+        id: "SPEC-042",
+        title: "Test",
+        file_path: "test.md",
+        content: "",
+      });
 
       const nextId = generateSpecId(db, tempDir);
       expect(nextId).toBe("SPEC-043");
@@ -83,8 +99,18 @@ describe("ID Generator", () => {
 
     it("should fallback to count + 1 if ID extraction fails", () => {
       // Create specs with non-standard IDs
-      createSpec(db, { id: "custom-foo", title: "Test 1", file_path: "test1.md", content: "" });
-      createSpec(db, { id: "custom-bar", title: "Test 2", file_path: "test2.md", content: "" });
+      createSpec(db, {
+        id: "custom-foo",
+        title: "Test 1",
+        file_path: "test1.md",
+        content: "",
+      });
+      createSpec(db, {
+        id: "custom-bar",
+        title: "Test 2",
+        file_path: "test2.md",
+        content: "",
+      });
 
       const nextId = generateSpecId(db, tempDir);
       expect(nextId).toBe("SPEC-003"); // count is 2, so next is 3
@@ -94,10 +120,22 @@ describe("ID Generator", () => {
   describe("generateIssueId", () => {
     it("should generate sequential issue IDs based on database", () => {
       const id1 = generateIssueId(db, tempDir);
-      createIssue(db, { id: id1, title: "Test 1", description: "", content: "", status: "open" });
+      createIssue(db, {
+        id: id1,
+        title: "Test 1",
+        description: "",
+        content: "",
+        status: "open",
+      });
 
       const id2 = generateIssueId(db, tempDir);
-      createIssue(db, { id: id2, title: "Test 2", description: "", content: "", status: "open" });
+      createIssue(db, {
+        id: id2,
+        title: "Test 2",
+        description: "",
+        content: "",
+        status: "open",
+      });
 
       const id3 = generateIssueId(db, tempDir);
 
@@ -125,13 +163,29 @@ describe("ID Generator", () => {
 
     it("should maintain separate counters for specs and issues", () => {
       const specId1 = generateSpecId(db, tempDir);
-      createSpec(db, { id: specId1, title: "Spec 1", file_path: "spec1.md", content: "" });
+      createSpec(db, {
+        id: specId1,
+        title: "Spec 1",
+        file_path: "spec1.md",
+        content: "",
+      });
 
       const specId2 = generateSpecId(db, tempDir);
-      createSpec(db, { id: specId2, title: "Spec 2", file_path: "spec2.md", content: "" });
+      createSpec(db, {
+        id: specId2,
+        title: "Spec 2",
+        file_path: "spec2.md",
+        content: "",
+      });
 
       const issueId = generateIssueId(db, tempDir);
-      createIssue(db, { id: issueId, title: "Issue 1", description: "", content: "", status: "open" });
+      createIssue(db, {
+        id: issueId,
+        title: "Issue 1",
+        description: "",
+        content: "",
+        status: "open",
+      });
 
       expect(issueId).toBe("ISSUE-001");
 
@@ -147,7 +201,7 @@ describe("ID Generator", () => {
     it("should create default config.json if not exists", () => {
       const config = getConfig(tempDir);
 
-      expect(config.version).toBe("1.0.0");
+      expect(config.version).toBe(VERSION);
       expect(config.id_prefix.spec).toBe("SPEC");
       expect(config.id_prefix.issue).toBe("ISSUE");
     });

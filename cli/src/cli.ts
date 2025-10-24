@@ -40,9 +40,7 @@ import {
   handleFeedbackStale,
   handleFeedbackRelocate,
 } from "./cli/feedback-commands.js";
-
-// CLI version
-const VERSION = "0.1.0";
+import { VERSION } from "./version.js";
 
 // Global state
 let db: Database.Database | null = null;

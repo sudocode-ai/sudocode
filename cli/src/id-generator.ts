@@ -7,6 +7,7 @@ import * as path from "path";
 import * as crypto from "crypto";
 import type Database from "better-sqlite3";
 import type { Config } from "@sudocode/types";
+import { VERSION } from "./version.js";
 
 /**
  * Generate next spec ID based on database contents
@@ -103,7 +104,7 @@ function readConfig(outputDir: string): Config {
   if (!fs.existsSync(configPath)) {
     // Create default config if not exists
     const defaultConfig: Config = {
-      version: "1.0.0",
+      version: VERSION,
       id_prefix: {
         spec: "SPEC",
         issue: "ISSUE",
