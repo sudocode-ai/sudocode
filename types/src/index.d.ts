@@ -3,8 +3,8 @@
  */
 export interface Spec {
   id: string;
-  uuid: string;
   title: string;
+  uuid: string;
   file_path: string;
   content: string;
   priority: number;
@@ -12,10 +12,11 @@ export interface Spec {
   updated_at: string;
   parent_id: string | null;
 }
+
 export interface Issue {
   id: string;
-  uuid: string;
   title: string;
+  uuid: string;
   description: string;
   content: string;
   status: IssueStatus;
@@ -26,7 +27,14 @@ export interface Issue {
   closed_at: string | null;
   parent_id: string | null;
 }
-export type IssueStatus = "open" | "in_progress" | "blocked" | "closed";
+
+export type IssueStatus =
+  | "open"
+  | "in_progress"
+  | "blocked"
+  | "needs_review"
+  | "closed";
+
 export interface Relationship {
   from_id: string;
   from_type: EntityType;
@@ -36,20 +44,23 @@ export interface Relationship {
   created_at: string;
   metadata: string | null;
 }
+
 export type EntityType = "spec" | "issue";
+
 export type RelationshipType =
   | "blocks"
   | "related"
-  | "parent-child"
   | "discovered-from"
   | "implements"
   | "references"
   | "depends-on";
+
 export interface Tag {
   entity_id: string;
   entity_type: EntityType;
   tag: string;
 }
+
 export interface Event {
   id: number;
   entity_id: string;
@@ -63,6 +74,7 @@ export interface Event {
   git_commit_sha: string | null;
   source?: string;
 }
+
 export type EventType =
   | "created"
   | "updated"
@@ -71,6 +83,7 @@ export type EventType =
   | "relationship_removed"
   | "tag_added"
   | "tag_removed";
+
 /**
  * Issue-based spec feedback types
  */
@@ -86,6 +99,7 @@ export interface IssueFeedback {
   created_at: string;
   updated_at: string;
 }
+
 /**
  * Base location anchor for tracking positions in markdown documents
  */
@@ -99,6 +113,7 @@ export interface LocationAnchor {
   context_after?: string;
   content_hash?: string;
 }
+
 /**
  * Feedback anchor with additional tracking for changes over time
  */
@@ -110,7 +125,9 @@ export interface FeedbackAnchor extends LocationAnchor {
     section_heading?: string;
   };
 }
+
 export type FeedbackType = "comment" | "suggestion" | "request";
+
 /**
  * JSONL format types
  */
@@ -118,11 +135,13 @@ export interface SpecJSONL extends Spec {
   relationships: RelationshipJSONL[];
   tags: string[];
 }
+
 export interface IssueJSONL extends Issue {
   relationships: RelationshipJSONL[];
   tags: string[];
   feedback?: FeedbackJSONL[];
 }
+
 export interface FeedbackJSONL {
   id: string;
   spec_id: string;
@@ -132,6 +151,7 @@ export interface FeedbackJSONL {
   dismissed: boolean;
   created_at: string;
 }
+
 export interface RelationshipJSONL {
   from: string;
   from_type: EntityType;
@@ -139,6 +159,7 @@ export interface RelationshipJSONL {
   to_type: EntityType;
   type: RelationshipType;
 }
+
 /**
  * Config metadata file structure
  */
@@ -148,4 +169,21 @@ export interface Config {
     spec: string;
     issue: string;
   };
+}
+
+/**
+ * Represents an attempt to resolve an issue.
+ */
+export interface Execution {
+  id: string;
+  issue_id: string;
+  status: "pending" | "in_progress" | "completed" | "failed" | "cancelled";
+  target_branch: string;
+  worktree_path?: string;
+  created_at: string;
+  started_at?: string;
+  completed_at?: string;
+  error_message?: string;
+  // TODO: Add fields to track branch commit status.
+  // TODO: Add fields to track execution trajectories.
 }
