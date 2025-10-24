@@ -2,6 +2,7 @@ import express, { Request, Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import * as path from "path";
+import * as http from "http";
 import type Database from "better-sqlite3";
 import { initDatabase, getDatabaseInfo } from "./services/db.js";
 import { createIssuesRouter } from "./routes/issues.js";
@@ -12,6 +13,11 @@ import {
   startServerWatcher,
   type ServerWatcherControl,
 } from "./services/watcher.js";
+import {
+  initWebSocketServer,
+  getWebSocketStats,
+  shutdownWebSocketServer,
+} from "./services/websocket.js";
 
 // Load environment variables
 dotenv.config();
@@ -97,35 +103,86 @@ app.get("/health", (_req: Request, res: Response) => {
   });
 });
 
+// WebSocket stats endpoint
+app.get("/ws/stats", (_req: Request, res: Response) => {
+  const stats = getWebSocketStats();
+  res.status(200).json(stats);
+});
+
 // Root endpoint
 app.get("/", (_req: Request, res: Response) => {
   res.json({
     message: "sudocode local server",
     version: "0.1.0",
+    endpoints: {
+      rest: {
+        health: "/health",
+        issues: "/api/issues",
+        specs: "/api/specs",
+        relationships: "/api/relationships",
+        feedback: "/api/feedback",
+      },
+      websocket: {
+        path: "/ws",
+        stats: "/ws/stats",
+      },
+    },
   });
 });
 
-app.listen(PORT, () => {
+// Create HTTP server and initialize WebSocket
+const server = http.createServer(app);
+
+// Initialize WebSocket server
+initWebSocketServer(server, "/ws");
+
+// Start listening
+server.listen(PORT, () => {
   console.log(`sudocode local server running on http://localhost:${PORT}`);
+  console.log(`WebSocket server available at ws://localhost:${PORT}/ws`);
 });
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
   console.log("\nShutting down server...");
+
+  // Stop file watcher
   if (watcher) {
     await watcher.stop();
   }
+
+  // Shutdown WebSocket server
+  await shutdownWebSocketServer();
+
+  // Close database
   db.close();
-  process.exit(0);
+
+  // Close HTTP server
+  server.close(() => {
+    console.log("Server closed");
+    process.exit(0);
+  });
 });
 
 process.on("SIGTERM", async () => {
   console.log("\nShutting down server...");
+
+  // Stop file watcher
   if (watcher) {
     await watcher.stop();
   }
+
+  // Shutdown WebSocket server
+  await shutdownWebSocketServer();
+
+  // Close database
   db.close();
-  process.exit(0);
+
+  // Close HTTP server
+  server.close(() => {
+    console.log("Server closed");
+    process.exit(0);
+  });
 });
 
 export default app;
