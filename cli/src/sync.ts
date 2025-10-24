@@ -80,6 +80,7 @@ function cleanFrontmatterForMarkdown(
  * Initialize missing frontmatter fields
  */
 function initializeFrontmatter(
+  db: Database.Database,
   data: Record<string, any>,
   entityType: "spec" | "issue",
   mdPath: string,
@@ -93,8 +94,8 @@ function initializeFrontmatter(
   if (!initialized.id) {
     initialized.id =
       entityType === "spec"
-        ? generateSpecId(outputDir)
-        : generateIssueId(outputDir);
+        ? generateSpecId(db, outputDir)
+        : generateIssueId(db, outputDir);
   }
 
   // Extract title from content if missing
@@ -218,7 +219,7 @@ export async function syncMarkdownToJSONL(
     if (!entityId) {
       if (autoInitialize) {
         // Auto-initialize missing fields
-        data = initializeFrontmatter(data, entityType, mdPath, outputDir, user);
+        data = initializeFrontmatter(db, data, entityType, mdPath, outputDir, user);
         entityId = data.id as string;
 
         // Write back frontmatter if requested

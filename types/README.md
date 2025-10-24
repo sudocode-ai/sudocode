@@ -230,28 +230,19 @@ interface RelationshipJSONL {
 }
 ```
 
-## Configuration
+### Configuration
 
-#### `ConfigMetadata`
+#### `Config`
+
 Metadata stored in `.sudocode/meta.json`.
 
 ```typescript
-interface ConfigMetadata {
+interface Config {
   version: string;               // Schema version
-  next_spec_id: number;          // Next spec number
-  next_issue_id: number;         // Next issue number
   id_prefix: {
     spec: string;                // Spec prefix (e.g., "SPEC")
     issue: string;               // Issue prefix (e.g., "ISSUE")
   };
-  last_sync: string;             // Last sync timestamp
-  collision_log: CollisionLogEntry[];
 }
 
-interface CollisionLogEntry {
-  old_id: string;                // Original ID
-  new_id: string;                // Reassigned ID
-  reason: string;                // Why it changed
-  timestamp: string;             // When it changed
-}
 ```

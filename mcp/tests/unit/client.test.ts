@@ -88,14 +88,27 @@ describe("SudocodeClient", () => {
       const result = await client.exec(["issue", "list"]);
 
       expect(mockSpawn).toHaveBeenCalledTimes(2); // version + command
-      expect(mockSpawn).toHaveBeenLastCalledWith(
-        "sudocode",
-        ["issue", "list", "--json"],
-        expect.objectContaining({
-          cwd: expect.any(String),
-          env: process.env,
-        })
-      );
+
+      // When CLI is found in node_modules, it uses node binary + cli.js
+      // Otherwise it uses "sudocode" command
+      const lastCall = mockSpawn.mock.calls[1];
+      const [command, args, options] = lastCall;
+
+      // Check that the command includes the correct arguments
+      if (command === "sudocode") {
+        // CLI found in PATH
+        expect(args).toEqual(expect.arrayContaining(["issue", "list", "--json"]));
+      } else {
+        // CLI found in node_modules - uses node binary
+        expect(command).toBe(process.execPath);
+        expect(args).toEqual(expect.arrayContaining(["issue", "list", "--json"]));
+        expect(args[0]).toContain("cli.js");
+      }
+
+      expect(options).toEqual(expect.objectContaining({
+        cwd: expect.any(String),
+        env: process.env,
+      }));
       expect(result).toEqual({ result: "success" });
     });
 

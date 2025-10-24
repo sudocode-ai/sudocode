@@ -3,14 +3,7 @@
  */
 
 import type Database from "better-sqlite3";
-import type {
-  Spec,
-  Issue,
-  SpecJSONL,
-  IssueJSONL,
-  ConfigMetadata,
-  CollisionLogEntry,
-} from "@sudocode/types";
+import type { SpecJSONL, IssueJSONL } from "@sudocode/types";
 import { readJSONL } from "./jsonl.js";
 import {
   listSpecs,
@@ -37,7 +30,6 @@ import {
   deleteFeedback,
 } from "./operations/feedback.js";
 import { transaction } from "./operations/transactions.js";
-import * as fs from "fs";
 import * as path from "path";
 
 export interface ImportOptions {
@@ -727,7 +719,13 @@ export async function importFromJSONL(
     transaction(db, () => {
       // First pass: Import all entities without relationships
       result.specs = importSpecs(db, incomingSpecs, specChanges, dryRun, true);
-      result.issues = importIssues(db, incomingIssues, issueChanges, dryRun, true);
+      result.issues = importIssues(
+        db,
+        incomingIssues,
+        issueChanges,
+        dryRun,
+        true
+      );
 
       // Second pass: Import all relationships after all entities exist
       // Import spec relationships for added specs

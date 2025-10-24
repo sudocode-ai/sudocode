@@ -41,7 +41,7 @@ export async function handleIssueCreate(
   options: IssueCreateOptions
 ): Promise<void> {
   try {
-    const issueId = generateIssueId(ctx.outputDir);
+    const issueId = generateIssueId(ctx.db, ctx.outputDir);
 
     const issue = createIssue(ctx.db, {
       id: issueId,

@@ -57,6 +57,7 @@ export interface SudocodeClientConfig {
   workingDir?: string;
   cliPath?: string;
   dbPath?: string;
+  syncOnStartup?: boolean;
 }
 
 // ============================================================================

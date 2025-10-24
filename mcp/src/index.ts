@@ -26,6 +26,9 @@ function parseArgs(): SudocodeClientConfig {
       case "--db":
         config.dbPath = args[++i];
         break;
+      case "--no-sync":
+        config.syncOnStartup = false;
+        break;
       case "--help":
       case "-h":
         console.log(`
@@ -37,6 +40,7 @@ Options:
   -w, --working-dir <path>  Working directory (default: cwd or SUDOCODE_WORKING_DIR)
   --cli-path <path>         Path to sudocode CLI (default: 'sudocode' or SUDOCODE_PATH)
   --db-path <path>          Database path (default: auto-discover or SUDOCODE_DB)
+  --no-sync                 Skip initial sync on startup (default: sync enabled)
   -h, --help                Show this help message
 
 Environment Variables:

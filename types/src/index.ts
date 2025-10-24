@@ -4,8 +4,8 @@
 
 export interface Spec {
   id: string;
-  uuid: string;
   title: string;
+  uuid: string;
   file_path: string;
   content: string;
   priority: number;
@@ -16,9 +16,9 @@ export interface Spec {
 
 export interface Issue {
   id: string;
-  uuid: string;
   title: string;
   description: string;
+  uuid: string;
   content: string;
   status: IssueStatus;
   priority: number;
@@ -29,7 +29,12 @@ export interface Issue {
   parent_id: string | null;
 }
 
-export type IssueStatus = "open" | "in_progress" | "blocked" | "needs_review" | "closed";
+export type IssueStatus =
+  | "open"
+  | "in_progress"
+  | "blocked"
+  | "needs_review"
+  | "closed";
 
 export interface Relationship {
   from_id: string;
@@ -162,21 +167,10 @@ export interface RelationshipJSONL {
  * Config metadata file structure
  */
 
-export interface ConfigMetadata {
+export interface Config {
   version: string;
-  next_spec_id: number;
-  next_issue_id: number;
   id_prefix: {
     spec: string;
     issue: string;
   };
-  last_sync: string;
-  collision_log: CollisionLogEntry[];
-}
-
-export interface CollisionLogEntry {
-  old_id: string;
-  new_id: string;
-  reason: string;
-  timestamp: string;
 }

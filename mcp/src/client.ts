@@ -6,19 +6,86 @@
  */
 
 import { spawn } from "child_process";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import { existsSync, writeFileSync, chmodSync } from "fs";
 import { SudocodeClientConfig, SudocodeError } from "./types.js";
 
 export class SudocodeClient {
   private workingDir: string;
   private cliPath: string;
+  private cliArgs: string[];
   private dbPath?: string;
   private versionChecked = false;
 
   constructor(config?: SudocodeClientConfig) {
-    this.workingDir =
+    // Get working directory and expand variables if needed
+    let workingDir =
       config?.workingDir || process.env.SUDOCODE_WORKING_DIR || process.cwd();
-    this.cliPath = config?.cliPath || process.env.SUDOCODE_PATH || "sudocode";
+
+    // Fix unexpanded ${workspaceFolder} variable - use PWD or cwd() instead
+    if (workingDir === "${workspaceFolder}" || workingDir.includes("${")) {
+      workingDir = process.env.PWD || process.cwd();
+    }
+
+    this.workingDir = workingDir;
     this.dbPath = config?.dbPath || process.env.SUDOCODE_DB;
+
+    // Auto-discover CLI path from node_modules or use configured/env path
+    const cliInfo = this.findCliPath();
+    this.cliPath = cliInfo.path;
+    this.cliArgs = cliInfo.args;
+  }
+
+  /**
+   * Find the CLI by looking in node_modules/@sudocode/cli
+   * Since we added @sudocode/cli as a dependency, it should be there
+   */
+  private findCliPath(): { path: string; args: string[] } {
+    try {
+      const currentFile = fileURLToPath(import.meta.url);
+      const currentDir = dirname(currentFile);
+
+      // Look for @sudocode/cli in various possible locations
+      const possiblePaths = [
+        // Workspace root node_modules (development)
+        join(
+          currentDir,
+          "..",
+          "..",
+          "node_modules",
+          "@sudocode",
+          "cli",
+          "dist",
+          "cli.js"
+        ),
+        // Local package node_modules (when installed from npm)
+        join(
+          currentDir,
+          "..",
+          "node_modules",
+          "@sudocode",
+          "cli",
+          "dist",
+          "cli.js"
+        ),
+      ];
+
+      for (const cliJsPath of possiblePaths) {
+        if (existsSync(cliJsPath)) {
+          // Return node + cli.js path instead of creating a wrapper
+          return {
+            path: process.execPath, // Use current node binary
+            args: [cliJsPath], // Pass cli.js as first argument
+          };
+        }
+      }
+    } catch (error) {
+      // Ignore errors and fall back to 'sudocode' command
+    }
+
+    // Fall back to 'sudocode' command in PATH
+    return { path: "sudocode", args: [] };
   }
 
   /**
@@ -31,8 +98,8 @@ export class SudocodeClient {
       this.versionChecked = true;
     }
 
-    // Build command arguments
-    const cmdArgs = [...args];
+    // Build command arguments - prepend cliArgs (e.g., cli.js path)
+    const cmdArgs = [...this.cliArgs, ...args];
 
     // Add --json flag if not already present
     if (!cmdArgs.includes("--json")) {
@@ -123,7 +190,7 @@ export class SudocodeClient {
    */
   async checkVersion(): Promise<{ version: string }> {
     try {
-      const proc = spawn(this.cliPath, ["--version"], {
+      const proc = spawn(this.cliPath, [...this.cliArgs, "--version"], {
         cwd: this.workingDir,
       });
 
