@@ -43,6 +43,7 @@ export async function handleSync(
       db: ctx.db,
       baseDir: ctx.outputDir,
       debounceDelay: 2000,
+      syncJSONLToMarkdown: true,
       onLog: (message) => {
         if (!ctx.jsonOutput) {
           console.log(chalk.gray(message));

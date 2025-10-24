@@ -45,6 +45,7 @@ try {
 
 // Start file watcher (enabled by default, disable with WATCH=false)
 const WATCH_ENABLED = process.env.WATCH !== "false";
+const SYNC_JSONL_TO_MARKDOWN = process.env.SYNC_JSONL_TO_MARKDOWN === "true";
 if (WATCH_ENABLED) {
   try {
     const SUDOCODE_DIR = path.dirname(DB_PATH); // .sudocode directory
@@ -52,9 +53,9 @@ if (WATCH_ENABLED) {
       db,
       baseDir: SUDOCODE_DIR,
       debounceDelay: parseInt(process.env.WATCH_DEBOUNCE || "2000", 10),
+      syncJSONLToMarkdown: SYNC_JSONL_TO_MARKDOWN,
       onFileChange: (info) => {
         // TODO: Broadcast WebSocket updates when implemented (ISSUE-013, ISSUE-014)
-        // TODO: Add some syncing operation to keep the database, jsonl, markdown files consistent.
         console.log(
           `[server] File change detected: ${info.entityType || "unknown"} ${
             info.entityId || ""

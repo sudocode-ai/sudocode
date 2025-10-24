@@ -23,6 +23,10 @@ export interface ServerWatcherOptions {
    */
   debounceDelay?: number;
   /**
+   * Enable reverse sync (JSONL → Markdown) when JSONL files change (default: false)
+   */
+  syncJSONLToMarkdown?: boolean;
+  /**
    * Callback for file change events
    * This will be used to broadcast WebSocket updates
    */
@@ -56,23 +60,29 @@ export function startServerWatcher(
     db,
     baseDir,
     debounceDelay = 2000,
+    syncJSONLToMarkdown = false,
     onFileChange,
   } = options;
 
   console.log(`[watcher] Starting file watcher for ${baseDir}`);
   console.log(`[watcher] Debounce delay: ${debounceDelay}ms`);
+  if (syncJSONLToMarkdown) {
+    console.log(`[watcher] Reverse sync (JSONL → Markdown) enabled`);
+  }
 
   // Start the CLI watcher with server-specific callbacks
   const control = startCliWatcher({
     db,
     baseDir,
     debounceDelay,
+    syncJSONLToMarkdown,
     onLog: (message) => {
       console.log(message);
 
       // Extract entity info from log messages if available
       // Log format: "[watch] <event> <path>" or "[watch] Synced <type> <id> (<action>)"
       if (onFileChange) {
+        // TODO: Use something more robust than regex parsing here.
         const syncMatch = message.match(
           /\[watch\] Synced (spec|issue) ([A-Z]+-\d+) \((created|updated)\)/
         );
