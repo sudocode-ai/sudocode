@@ -3,10 +3,10 @@
  * Supports reading and writing .jsonl files for specs and issues
  */
 
-import * as fs from 'fs';
-import * as readline from 'readline';
-import * as path from 'path';
-import type { SpecJSONL, IssueJSONL } from './types.js';
+import * as fs from "fs";
+import * as readline from "readline";
+import * as path from "path";
+import type { SpecJSONL, IssueJSONL } from "./types.js";
 
 export type JSONLEntity = SpecJSONL | IssueJSONL | Record<string, any>;
 
@@ -44,7 +44,7 @@ export async function readJSONL<T extends JSONLEntity = JSONLEntity>(
   }
 
   const entities: T[] = [];
-  const fileStream = fs.createReadStream(filePath, { encoding: 'utf8' });
+  const fileStream = fs.createReadStream(filePath, { encoding: "utf8" });
   const rl = readline.createInterface({
     input: fileStream,
     crlfDelay: Infinity,
@@ -56,7 +56,7 @@ export async function readJSONL<T extends JSONLEntity = JSONLEntity>(
     lineNumber++;
 
     // Skip empty lines
-    if (line.trim() === '') {
+    if (line.trim() === "") {
       continue;
     }
 
@@ -96,15 +96,15 @@ export function readJSONLSync<T extends JSONLEntity = JSONLEntity>(
   }
 
   const entities: T[] = [];
-  const content = fs.readFileSync(filePath, 'utf8');
-  const lines = content.split('\n');
+  const content = fs.readFileSync(filePath, "utf8");
+  const lines = content.split("\n");
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     const lineNumber = i + 1;
 
     // Skip empty lines
-    if (line === '') {
+    if (line === "") {
       continue;
     }
 
@@ -132,6 +132,7 @@ export function readJSONLSync<T extends JSONLEntity = JSONLEntity>(
 /**
  * Write entities to a JSONL file
  * Each entity is written as a single line of JSON
+ * Entities are sorted by created_at date to minimize merge conflicts
  */
 export async function writeJSONL<T extends JSONLEntity = JSONLEntity>(
   filePath: string,
@@ -148,11 +149,25 @@ export async function writeJSONL<T extends JSONLEntity = JSONLEntity>(
 
   const targetPath = atomic ? `${filePath}.tmp` : filePath;
 
-  // Write each entity as a line
-  const lines = entities.map((entity) => JSON.stringify(entity));
-  const content = lines.join('\n') + '\n';
+  // Sort entities by created_at date to minimize merge conflicts
+  const sortedEntities = [...entities].sort((a, b) => {
+    const aDate = (a as any).created_at;
+    const bDate = (b as any).created_at;
 
-  fs.writeFileSync(targetPath, content, 'utf8');
+    // Handle missing created_at fields - put them at the end
+    if (!aDate && !bDate) return 0;
+    if (!aDate) return 1;
+    if (!bDate) return -1;
+
+    // Compare dates as strings (ISO 8601 format sorts lexicographically)
+    return aDate < bDate ? -1 : aDate > bDate ? 1 : 0;
+  });
+
+  // Write each entity as a line
+  const lines = sortedEntities.map((entity) => JSON.stringify(entity));
+  const content = lines.join("\n") + "\n";
+
+  fs.writeFileSync(targetPath, content, "utf8");
 
   // Atomic rename if requested
   if (atomic) {
@@ -162,6 +177,7 @@ export async function writeJSONL<T extends JSONLEntity = JSONLEntity>(
 
 /**
  * Write entities to a JSONL file synchronously
+ * Entities are sorted by created_at date to minimize merge conflicts
  */
 export function writeJSONLSync<T extends JSONLEntity = JSONLEntity>(
   filePath: string,
@@ -178,11 +194,25 @@ export function writeJSONLSync<T extends JSONLEntity = JSONLEntity>(
 
   const targetPath = atomic ? `${filePath}.tmp` : filePath;
 
-  // Write each entity as a line
-  const lines = entities.map((entity) => JSON.stringify(entity));
-  const content = lines.join('\n') + '\n';
+  // Sort entities by created_at date to minimize merge conflicts
+  const sortedEntities = [...entities].sort((a, b) => {
+    const aDate = (a as any).created_at;
+    const bDate = (b as any).created_at;
 
-  fs.writeFileSync(targetPath, content, 'utf8');
+    // Handle missing created_at fields - put them at the end
+    if (!aDate && !bDate) return 0;
+    if (!aDate) return 1;
+    if (!bDate) return -1;
+
+    // Compare dates as strings (ISO 8601 format sorts lexicographically)
+    return aDate < bDate ? -1 : aDate > bDate ? 1 : 0;
+  });
+
+  // Write each entity as a line
+  const lines = sortedEntities.map((entity) => JSON.stringify(entity));
+  const content = lines.join("\n") + "\n";
+
+  fs.writeFileSync(targetPath, content, "utf8");
 
   // Atomic rename if requested
   if (atomic) {
@@ -198,7 +228,7 @@ export function writeJSONLSync<T extends JSONLEntity = JSONLEntity>(
 export async function updateJSONLLine<T extends JSONLEntity = JSONLEntity>(
   filePath: string,
   entity: T,
-  idField: string = 'id'
+  idField: string = "id"
 ): Promise<void> {
   const entityId = (entity as any)[idField];
 
@@ -230,7 +260,7 @@ export async function updateJSONLLine<T extends JSONLEntity = JSONLEntity>(
 export function updateJSONLLineSync<T extends JSONLEntity = JSONLEntity>(
   filePath: string,
   entity: T,
-  idField: string = 'id'
+  idField: string = "id"
 ): void {
   const entityId = (entity as any)[idField];
 
@@ -262,7 +292,7 @@ export function updateJSONLLineSync<T extends JSONLEntity = JSONLEntity>(
 export async function deleteJSONLLine<T extends JSONLEntity = JSONLEntity>(
   filePath: string,
   entityId: string,
-  idField: string = 'id'
+  idField: string = "id"
 ): Promise<boolean> {
   // Read existing entities
   const entities = await readJSONL<T>(filePath, { skipErrors: true });
@@ -286,7 +316,7 @@ export async function deleteJSONLLine<T extends JSONLEntity = JSONLEntity>(
 export function deleteJSONLLineSync<T extends JSONLEntity = JSONLEntity>(
   filePath: string,
   entityId: string,
-  idField: string = 'id'
+  idField: string = "id"
 ): boolean {
   // Read existing entities
   const entities = readJSONLSync<T>(filePath, { skipErrors: true });
@@ -310,7 +340,7 @@ export function deleteJSONLLineSync<T extends JSONLEntity = JSONLEntity>(
 export async function getJSONLEntity<T extends JSONLEntity = JSONLEntity>(
   filePath: string,
   entityId: string,
-  idField: string = 'id'
+  idField: string = "id"
 ): Promise<T | null> {
   const entities = await readJSONL<T>(filePath, { skipErrors: true });
   return entities.find((e: any) => e[idField] === entityId) ?? null;
@@ -322,7 +352,7 @@ export async function getJSONLEntity<T extends JSONLEntity = JSONLEntity>(
 export function getJSONLEntitySync<T extends JSONLEntity = JSONLEntity>(
   filePath: string,
   entityId: string,
-  idField: string = 'id'
+  idField: string = "id"
 ): T | null {
   const entities = readJSONLSync<T>(filePath, { skipErrors: true });
   return entities.find((e: any) => e[idField] === entityId) ?? null;
