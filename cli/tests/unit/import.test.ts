@@ -776,4 +776,261 @@ describe('Import Operations', () => {
       expect(relationships[0].relationship_type).toBe('implements');
     });
   });
+
+  describe('Timestamp Preservation', () => {
+    it('should preserve timestamps when importing new issues from JSONL', async () => {
+      const customTimestamps = {
+        created_at: '2024-01-15T10:30:00Z',
+        updated_at: '2024-01-20T15:45:00Z',
+        closed_at: null,
+      };
+
+      const issues: IssueJSONL[] = [
+        {
+          id: 'issue-001',
+          uuid: 'uuid-001',
+          title: 'Test Issue',
+          description: 'Test description',
+          content: 'Test content',
+          status: 'open',
+          priority: 1,
+          assignee: null,
+          parent_id: null,
+          created_at: customTimestamps.created_at,
+          updated_at: customTimestamps.updated_at,
+          closed_at: customTimestamps.closed_at,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), issues);
+
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      const { getIssue } = await import('../../src/operations/issues.js');
+      const imported = getIssue(db, 'issue-001');
+
+      expect(imported).toBeTruthy();
+      expect(imported!.created_at).toBe(customTimestamps.created_at);
+      expect(imported!.updated_at).toBe(customTimestamps.updated_at);
+      expect(imported!.closed_at).toBe(customTimestamps.closed_at);
+    });
+
+    it('should preserve timestamps when importing new specs from JSONL', async () => {
+      const customTimestamps = {
+        created_at: '2024-02-10T08:00:00Z',
+        updated_at: '2024-02-15T12:00:00Z',
+      };
+
+      const specs: SpecJSONL[] = [
+        {
+          id: 'spec-001',
+          uuid: 'uuid-001',
+          title: 'Test Spec',
+          file_path: 'specs/test.md',
+          content: 'Test content',
+          priority: 2,
+          parent_id: null,
+          created_at: customTimestamps.created_at,
+          updated_at: customTimestamps.updated_at,
+          relationships: [],
+          tags: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, 'specs.jsonl'), specs);
+
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      const imported = getSpec(db, 'spec-001');
+
+      expect(imported).toBeTruthy();
+      expect(imported!.created_at).toBe(customTimestamps.created_at);
+      expect(imported!.updated_at).toBe(customTimestamps.updated_at);
+    });
+
+    it('should preserve timestamps when updating existing issues from JSONL', async () => {
+      // First create an issue
+      const { createIssue, getIssue } = await import('../../src/operations/issues.js');
+      createIssue(db, {
+        id: 'issue-001',
+        title: 'Original Title',
+        description: 'Original description',
+        content: 'Original content',
+        status: 'open',
+      });
+
+      // Now import from JSONL with specific timestamps
+      const preservedTimestamps = {
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-10T10:00:00Z',
+        closed_at: null,
+      };
+
+      const issues: IssueJSONL[] = [
+        {
+          id: 'issue-001',
+          uuid: getIssue(db, 'issue-001')!.uuid,
+          title: 'Updated Title',
+          description: 'Updated description',
+          content: 'Updated content',
+          status: 'open',
+          priority: 1,
+          assignee: null,
+          parent_id: null,
+          created_at: preservedTimestamps.created_at,
+          updated_at: preservedTimestamps.updated_at,
+          closed_at: preservedTimestamps.closed_at,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), issues);
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      const updated = getIssue(db, 'issue-001');
+
+      expect(updated!.title).toBe('Updated Title');
+      expect(updated!.updated_at).toBe(preservedTimestamps.updated_at);
+      expect(updated!.closed_at).toBe(preservedTimestamps.closed_at);
+    });
+
+    it('should preserve closed_at timestamp when importing closed issues', async () => {
+      const closedTimestamp = '2024-03-15T14:30:00Z';
+
+      const issues: IssueJSONL[] = [
+        {
+          id: 'issue-001',
+          uuid: 'uuid-001',
+          title: 'Closed Issue',
+          description: 'This issue is closed',
+          content: 'Content',
+          status: 'closed',
+          priority: 1,
+          assignee: null,
+          parent_id: null,
+          created_at: '2024-03-01T00:00:00Z',
+          updated_at: '2024-03-15T14:30:00Z',
+          closed_at: closedTimestamp,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), issues);
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      const { getIssue } = await import('../../src/operations/issues.js');
+      const imported = getIssue(db, 'issue-001');
+
+      expect(imported!.status).toBe('closed');
+      expect(imported!.closed_at).toBe(closedTimestamp);
+    });
+
+    it('should preserve updated_at when updating existing specs from JSONL', async () => {
+      // First create a spec
+      createSpec(db, {
+        id: 'spec-001',
+        title: 'Original Spec',
+        file_path: 'specs/original.md',
+        content: 'Original content',
+      });
+
+      // Now import from JSONL with specific timestamps
+      const preservedTimestamp = '2024-02-20T16:00:00Z';
+
+      const specs: SpecJSONL[] = [
+        {
+          id: 'spec-001',
+          uuid: getSpec(db, 'spec-001')!.uuid,
+          title: 'Updated Spec',
+          file_path: 'specs/updated.md',
+          content: 'Updated content',
+          priority: 3,
+          parent_id: null,
+          created_at: '2024-02-01T00:00:00Z',
+          updated_at: preservedTimestamp,
+          relationships: [],
+          tags: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, 'specs.jsonl'), specs);
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      const updated = getSpec(db, 'spec-001');
+
+      expect(updated!.title).toBe('Updated Spec');
+      expect(updated!.updated_at).toBe(preservedTimestamp);
+    });
+
+    it('should not modify JSONL after import when timestamps are identical', async () => {
+      const originalTimestamps = {
+        created_at: '2024-04-01T00:00:00Z',
+        updated_at: '2024-04-05T12:00:00Z',
+        closed_at: null,
+      };
+
+      const issues: IssueJSONL[] = [
+        {
+          id: 'issue-001',
+          uuid: 'uuid-001',
+          title: 'Stable Issue',
+          description: 'Should not change',
+          content: 'Content',
+          status: 'open',
+          priority: 1,
+          assignee: null,
+          parent_id: null,
+          created_at: originalTimestamps.created_at,
+          updated_at: originalTimestamps.updated_at,
+          closed_at: originalTimestamps.closed_at,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+      ];
+
+      const jsonlPath = path.join(TEST_DIR, 'issues.jsonl');
+      await writeJSONL(jsonlPath, issues);
+
+      // Get original file content and modification time
+      const originalContent = fs.readFileSync(jsonlPath, 'utf-8');
+      const originalMtime = fs.statSync(jsonlPath).mtime;
+
+      // Wait a bit to ensure mtime would change if file was written
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Import from JSONL
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      // Export back to JSONL
+      const { exportToJSONL } = await import('../../src/export.js');
+      await exportToJSONL(db, { outputDir: TEST_DIR });
+
+      // Check that JSONL content hasn't changed (compare parsed objects, not string equality)
+      const newContent = fs.readFileSync(jsonlPath, 'utf-8');
+      const originalData = JSON.parse(originalContent);
+      const newData = JSON.parse(newContent);
+
+      // Compare key fields that matter for timestamp preservation
+      expect(newData.id).toBe(originalData.id);
+      expect(newData.title).toBe(originalData.title);
+      expect(newData.created_at).toBe(originalData.created_at);
+      expect(newData.updated_at).toBe(originalData.updated_at);
+      expect(newData.closed_at).toBe(originalData.closed_at);
+
+      // Verify timestamps are still identical in the database
+      const { getIssue } = await import('../../src/operations/issues.js');
+      const issue = getIssue(db, 'issue-001');
+      expect(issue!.created_at).toBe(originalTimestamps.created_at);
+      expect(issue!.updated_at).toBe(originalTimestamps.updated_at);
+      expect(issue!.closed_at).toBe(originalTimestamps.closed_at);
+    });
+  });
 });

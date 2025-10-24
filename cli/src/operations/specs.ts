@@ -14,6 +14,8 @@ export interface CreateSpecInput {
   content?: string;
   priority?: number;
   parent_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface UpdateSpecInput {
@@ -22,6 +24,7 @@ export interface UpdateSpecInput {
   content?: string;
   priority?: number;
   parent_id?: string | null;
+  updated_at?: string;
 }
 
 export interface ListSpecsOptions {
@@ -45,16 +48,29 @@ export function createSpec(db: Database.Database, input: CreateSpecInput): Spec 
 
   const uuid = input.uuid || generateUUID();
 
+  // Build INSERT statement with optional timestamp fields
+  const columns = ['id', 'uuid', 'title', 'file_path', 'content', 'priority', 'parent_id'];
+  const values = ['@id', '@uuid', '@title', '@file_path', '@content', '@priority', '@parent_id'];
+
+  if (input.created_at) {
+    columns.push('created_at');
+    values.push('@created_at');
+  }
+  if (input.updated_at) {
+    columns.push('updated_at');
+    values.push('@updated_at');
+  }
+
   const stmt = db.prepare(`
     INSERT INTO specs (
-      id, uuid, title, file_path, content, priority, parent_id
+      ${columns.join(', ')}
     ) VALUES (
-      @id, @uuid, @title, @file_path, @content, @priority, @parent_id
+      ${values.join(', ')}
     )
   `);
 
   try {
-    stmt.run({
+    const params: Record<string, any> = {
       id: input.id,
       uuid: uuid,
       title: input.title,
@@ -62,7 +78,17 @@ export function createSpec(db: Database.Database, input: CreateSpecInput): Spec 
       content: input.content || '',
       priority: input.priority ?? 2,
       parent_id: input.parent_id || null,
-    });
+    };
+
+    // Add optional timestamp parameters
+    if (input.created_at) {
+      params.created_at = input.created_at;
+    }
+    if (input.updated_at) {
+      params.updated_at = input.updated_at;
+    }
+
+    stmt.run(params);
 
     const spec = getSpec(db, input.id);
     if (!spec) {
@@ -144,7 +170,14 @@ export function updateSpec(
     params.parent_id = input.parent_id;
   }
 
-  updates.push('updated_at = CURRENT_TIMESTAMP');
+  // Handle updated_at - use provided value or set to current timestamp
+  if (input.updated_at !== undefined) {
+    updates.push('updated_at = @updated_at');
+    params.updated_at = input.updated_at;
+  } else if (updates.length > 0) {
+    // Only update timestamp if there are actual changes
+    updates.push('updated_at = CURRENT_TIMESTAMP');
+  }
 
   if (updates.length === 0) {
     return existing;
