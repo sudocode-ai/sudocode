@@ -23,6 +23,5 @@ export type {
   IssueJSONL,
   FeedbackJSONL,
   RelationshipJSONL,
-  ConfigMetadata,
-  CollisionLogEntry,
+  Config,
 } from "@sudocode/types";

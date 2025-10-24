@@ -39,21 +39,17 @@ describe("Spec CLI Commands", () => {
     fs.writeFileSync(path.join(tempDir, "specs", "specs.jsonl"), "", "utf8");
     fs.writeFileSync(path.join(tempDir, "issues", "issues.jsonl"), "", "utf8");
 
-    // Create meta.json
-    const meta = {
+    // Create config.json
+    const config = {
       version: "1.0.0",
-      next_spec_id: 1,
-      next_issue_id: 1,
       id_prefix: {
         spec: "spec",
         issue: "issue",
       },
-      last_sync: new Date().toISOString(),
-      collision_log: [],
     };
     fs.writeFileSync(
-      path.join(tempDir, "meta.json"),
-      JSON.stringify(meta, null, 2)
+      path.join(tempDir, "config.json"),
+      JSON.stringify(config, null, 2)
     );
 
     // Spy on console methods
@@ -84,7 +80,7 @@ describe("Spec CLI Commands", () => {
       const { createSpec } = await import("../../../src/operations/specs.js");
       const { getSpec } = await import("../../../src/operations/specs.js");
 
-      const specId = generateSpecId(tempDir);
+      const specId = generateSpecId(db, tempDir);
       const spec = createSpec(db, {
         id: specId,
         title: "Test Spec",
@@ -110,7 +106,7 @@ describe("Spec CLI Commands", () => {
       const { generateSpecId } = await import("../../../src/id-generator.js");
 
       createSpec(db, {
-        id: generateSpecId(tempDir),
+        id: generateSpecId(db, tempDir),
         title: "Spec 1",
         file_path: path.join(tempDir, "specs", "spec1.md"),
         content: "",
@@ -118,7 +114,7 @@ describe("Spec CLI Commands", () => {
       });
 
       createSpec(db, {
-        id: generateSpecId(tempDir),
+        id: generateSpecId(db, tempDir),
         title: "Spec 2",
         file_path: path.join(tempDir, "specs", "spec2.md"),
         content: "",

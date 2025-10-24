@@ -27,20 +27,16 @@ describe("Issue CLI Commands", () => {
     db = initDatabase({ path: ":memory:" });
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "sudocode-test-"));
 
-    const meta = {
+    const config = {
       version: "1.0.0",
-      next_spec_id: 1,
-      next_issue_id: 1,
       id_prefix: {
         spec: "spec",
         issue: "issue",
       },
-      last_sync: new Date().toISOString(),
-      collision_log: [],
     };
     fs.writeFileSync(
-      path.join(tempDir, "meta.json"),
-      JSON.stringify(meta, null, 2)
+      path.join(tempDir, "config.json"),
+      JSON.stringify(config, null, 2)
     );
 
     consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});

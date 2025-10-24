@@ -45,7 +45,7 @@ export async function handleSpecCreate(
 ): Promise<void> {
   try {
     // Generate spec ID
-    const specId = generateSpecId(ctx.outputDir);
+    const specId = generateSpecId(ctx.db, ctx.outputDir);
 
     // Ensure specs directory exists
     const specsDir = path.join(ctx.outputDir, "specs");

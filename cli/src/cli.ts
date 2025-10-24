@@ -161,21 +161,17 @@ program
       fs.mkdirSync(path.dirname(dbPath), { recursive: true });
       const database = initDatabase({ path: dbPath });
 
-      // Create meta.json with correct structure matching Metadata interface
-      const meta = {
+      // Create config.json (version-controlled)
+      const config = {
         version: VERSION,
-        next_spec_id: 1,
-        next_issue_id: 1,
         id_prefix: {
           spec: specPrefix,
           issue: issuePrefix,
         },
-        last_sync: new Date().toISOString(),
-        collision_log: [],
       };
       fs.writeFileSync(
-        path.join(dir, "meta.json"),
-        JSON.stringify(meta, null, 2),
+        path.join(dir, "config.json"),
+        JSON.stringify(config, null, 2),
         "utf8"
       );
 

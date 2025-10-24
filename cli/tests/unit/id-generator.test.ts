@@ -6,174 +6,197 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   generateSpecId,
   generateIssueId,
-  getMeta,
-  updateMeta,
+  getConfig,
+  updateConfig,
 } from "../../src/id-generator.js";
+import { initDatabase } from "../../src/db.js";
+import { createSpec } from "../../src/operations/specs.js";
+import { createIssue } from "../../src/operations/issues.js";
+import type Database from "better-sqlite3";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
 describe("ID Generator", () => {
   let tempDir: string;
+  let db: Database.Database;
 
   beforeEach(() => {
     // Create a temporary directory for testing
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "sudocode-test-"));
+
+    // Initialize database
+    const dbPath = path.join(tempDir, "test.db");
+    db = initDatabase({ path: dbPath });
   });
 
   afterEach(() => {
+    // Close database
+    if (db) {
+      db.close();
+    }
+
     // Clean up temporary directory
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
   describe("generateSpecId", () => {
-    it("should generate sequential spec IDs", () => {
-      const id1 = generateSpecId(tempDir);
-      const id2 = generateSpecId(tempDir);
-      const id3 = generateSpecId(tempDir);
+    it("should generate sequential spec IDs based on database", () => {
+      const id1 = generateSpecId(db, tempDir);
+      createSpec(db, { id: id1, title: "Test 1", file_path: "test1.md", content: "" });
+
+      const id2 = generateSpecId(db, tempDir);
+      createSpec(db, { id: id2, title: "Test 2", file_path: "test2.md", content: "" });
+
+      const id3 = generateSpecId(db, tempDir);
 
       expect(id1).toBe("SPEC-001");
       expect(id2).toBe("SPEC-002");
       expect(id3).toBe("SPEC-003");
     });
 
-    it("should use custom prefix from meta.json", () => {
-      // Create meta.json with custom prefix
-      const meta = {
+    it("should use custom prefix from config.json", () => {
+      // Create config.json with custom prefix
+      const config = {
         version: "1.0.0",
-        next_spec_id: 1,
-        next_issue_id: 1,
         id_prefix: {
           spec: "custom",
           issue: "issue",
         },
-        last_sync: new Date().toISOString(),
-        collision_log: [],
       };
       fs.writeFileSync(
-        path.join(tempDir, "meta.json"),
-        JSON.stringify(meta, null, 2)
+        path.join(tempDir, "config.json"),
+        JSON.stringify(config, null, 2)
       );
 
-      const id = generateSpecId(tempDir);
+      const id = generateSpecId(db, tempDir);
       expect(id).toBe("custom-001");
     });
 
-    it("should persist counter across multiple calls", () => {
-      generateSpecId(tempDir);
-      generateSpecId(tempDir);
+    it("should increment from latest ID in database", () => {
+      // Create a spec with a specific ID
+      createSpec(db, { id: "SPEC-042", title: "Test", file_path: "test.md", content: "" });
 
-      const meta = getMeta(tempDir);
-      expect(meta.next_spec_id).toBe(3);
+      const nextId = generateSpecId(db, tempDir);
+      expect(nextId).toBe("SPEC-043");
+    });
+
+    it("should fallback to count + 1 if ID extraction fails", () => {
+      // Create specs with non-standard IDs
+      createSpec(db, { id: "custom-foo", title: "Test 1", file_path: "test1.md", content: "" });
+      createSpec(db, { id: "custom-bar", title: "Test 2", file_path: "test2.md", content: "" });
+
+      const nextId = generateSpecId(db, tempDir);
+      expect(nextId).toBe("SPEC-003"); // count is 2, so next is 3
     });
   });
 
   describe("generateIssueId", () => {
-    it("should generate sequential issue IDs", () => {
-      const id1 = generateIssueId(tempDir);
-      const id2 = generateIssueId(tempDir);
-      const id3 = generateIssueId(tempDir);
+    it("should generate sequential issue IDs based on database", () => {
+      const id1 = generateIssueId(db, tempDir);
+      createIssue(db, { id: id1, title: "Test 1", description: "", content: "", status: "open" });
+
+      const id2 = generateIssueId(db, tempDir);
+      createIssue(db, { id: id2, title: "Test 2", description: "", content: "", status: "open" });
+
+      const id3 = generateIssueId(db, tempDir);
 
       expect(id1).toBe("ISSUE-001");
       expect(id2).toBe("ISSUE-002");
       expect(id3).toBe("ISSUE-003");
     });
 
-    it("should use custom prefix from meta.json", () => {
-      const meta = {
+    it("should use custom prefix from config.json", () => {
+      const config = {
         version: "1.0.0",
-        next_spec_id: 1,
-        next_issue_id: 1,
         id_prefix: {
           spec: "spec",
           issue: "bug",
         },
-        last_sync: new Date().toISOString(),
-        collision_log: [],
       };
       fs.writeFileSync(
-        path.join(tempDir, "meta.json"),
-        JSON.stringify(meta, null, 2)
+        path.join(tempDir, "config.json"),
+        JSON.stringify(config, null, 2)
       );
 
-      const id = generateIssueId(tempDir);
+      const id = generateIssueId(db, tempDir);
       expect(id).toBe("bug-001");
     });
 
     it("should maintain separate counters for specs and issues", () => {
-      generateSpecId(tempDir);
-      generateSpecId(tempDir);
-      const issueId = generateIssueId(tempDir);
+      const specId1 = generateSpecId(db, tempDir);
+      createSpec(db, { id: specId1, title: "Spec 1", file_path: "spec1.md", content: "" });
+
+      const specId2 = generateSpecId(db, tempDir);
+      createSpec(db, { id: specId2, title: "Spec 2", file_path: "spec2.md", content: "" });
+
+      const issueId = generateIssueId(db, tempDir);
+      createIssue(db, { id: issueId, title: "Issue 1", description: "", content: "", status: "open" });
 
       expect(issueId).toBe("ISSUE-001");
 
-      const meta = getMeta(tempDir);
-      expect(meta.next_spec_id).toBe(3);
-      expect(meta.next_issue_id).toBe(2);
+      // Verify counters by generating next IDs
+      const nextSpecId = generateSpecId(db, tempDir);
+      const nextIssueId = generateIssueId(db, tempDir);
+      expect(nextSpecId).toBe("SPEC-003");
+      expect(nextIssueId).toBe("ISSUE-002");
     });
   });
 
-  describe("getMeta", () => {
-    it("should create default meta.json if not exists", () => {
-      const meta = getMeta(tempDir);
+  describe("getConfig", () => {
+    it("should create default config.json if not exists", () => {
+      const config = getConfig(tempDir);
 
-      expect(meta.version).toBe("1.0.0");
-      expect(meta.next_spec_id).toBe(1);
-      expect(meta.next_issue_id).toBe(1);
-      expect(meta.id_prefix.spec).toBe("SPEC");
-      expect(meta.id_prefix.issue).toBe("ISSUE");
-      expect(meta.collision_log).toEqual([]);
+      expect(config.version).toBe("1.0.0");
+      expect(config.id_prefix.spec).toBe("SPEC");
+      expect(config.id_prefix.issue).toBe("ISSUE");
     });
 
-    it("should read existing meta.json", () => {
-      const existingMeta = {
+    it("should read existing config.json", () => {
+      const existingConfig = {
         version: "1.0.0",
-        next_spec_id: 42,
-        next_issue_id: 99,
         id_prefix: {
           spec: "test",
           issue: "test",
         },
-        last_sync: "2024-01-01T00:00:00.000Z",
-        collision_log: [],
       };
       fs.writeFileSync(
-        path.join(tempDir, "meta.json"),
-        JSON.stringify(existingMeta, null, 2)
+        path.join(tempDir, "config.json"),
+        JSON.stringify(existingConfig, null, 2)
       );
 
-      const meta = getMeta(tempDir);
-      expect(meta.next_spec_id).toBe(42);
-      expect(meta.next_issue_id).toBe(99);
+      const config = getConfig(tempDir);
+      expect(config.id_prefix.spec).toBe("test");
+      expect(config.id_prefix.issue).toBe("test");
     });
   });
 
-  describe("updateMeta", () => {
-    it("should update metadata fields", () => {
-      getMeta(tempDir); // Create initial meta.json
+  describe("updateConfig", () => {
+    it("should update config fields", () => {
+      getConfig(tempDir); // Create initial config.json
 
-      updateMeta(tempDir, {
+      updateConfig(tempDir, {
         id_prefix: {
           spec: "updated",
           issue: "updated",
         },
       });
 
-      const meta = getMeta(tempDir);
-      expect(meta.id_prefix.spec).toBe("updated");
-      expect(meta.id_prefix.issue).toBe("updated");
+      const config = getConfig(tempDir);
+      expect(config.id_prefix.spec).toBe("updated");
+      expect(config.id_prefix.issue).toBe("updated");
     });
 
     it("should preserve unmodified fields", () => {
-      getMeta(tempDir); // Create initial meta.json
+      getConfig(tempDir); // Create initial config.json
 
-      updateMeta(tempDir, {
-        next_spec_id: 100,
+      updateConfig(tempDir, {
+        version: "2.0.0",
       });
 
-      const meta = getMeta(tempDir);
-      expect(meta.next_spec_id).toBe(100);
-      expect(meta.next_issue_id).toBe(1); // Unchanged
+      const config = getConfig(tempDir);
+      expect(config.version).toBe("2.0.0");
+      expect(config.id_prefix.spec).toBe("SPEC"); // Unchanged
     });
   });
 });

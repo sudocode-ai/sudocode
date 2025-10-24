@@ -7,9 +7,9 @@ import * as fs from "fs";
 import type Database from "better-sqlite3";
 import { getSpec } from "./operations/specs.js";
 import { getIssue } from "./operations/issues.js";
-import { getMeta } from "./id-generator.js";
+import { getConfig } from "./id-generator.js";
 import { createFeedbackAnchor } from "./operations/feedback-anchors.js";
-import type { ConfigMetadata, LocationAnchor } from "@sudocode/types";
+import type { LocationAnchor, Config } from "@sudocode/types";
 
 export interface ParsedMarkdown<T extends object = Record<string, any>> {
   /**
@@ -76,17 +76,17 @@ export function parseMarkdown<T extends object = Record<string, any>>(
   const parsed = matter(content);
 
   // Load metadata if outputDir is provided
-  let metadata: ConfigMetadata | undefined;
-  if (outputDir && !db) {
+  let config: Config | undefined;
+  if (outputDir && db) {
     try {
-      metadata = getMeta(outputDir);
+      config = getConfig(outputDir);
     } catch (error) {
       // Ignore - will fall back to default heuristics
     }
   }
 
   // Extract cross-references from content
-  const references = extractCrossReferences(parsed.content, db, metadata);
+  const references = extractCrossReferences(parsed.content, db, config);
 
   return {
     data: parsed.data as T,
@@ -116,13 +116,15 @@ export function parseMarkdownFile<T extends object = Record<string, any>>(
  */
 function getLineNumber(content: string, charIndex: number): number {
   const beforeMatch = content.substring(0, charIndex);
-  return beforeMatch.split('\n').length;
+  return beforeMatch.split("\n").length;
 }
 
 /**
  * Convert FeedbackAnchor to LocationAnchor (strips tracking fields)
  */
-function feedbackAnchorToLocationAnchor(feedbackAnchor: ReturnType<typeof createFeedbackAnchor>): LocationAnchor {
+function feedbackAnchorToLocationAnchor(
+  feedbackAnchor: ReturnType<typeof createFeedbackAnchor>
+): LocationAnchor {
   return {
     section_heading: feedbackAnchor.section_heading,
     section_level: feedbackAnchor.section_level,
@@ -153,7 +155,7 @@ function feedbackAnchorToLocationAnchor(feedbackAnchor: ReturnType<typeof create
 export function extractCrossReferences(
   content: string,
   db?: Database.Database,
-  metadata?: ConfigMetadata
+  config?: Config
 ): CrossReference[] {
   const references: CrossReference[] = [];
 
@@ -179,7 +181,11 @@ export function extractCrossReferences(
     let anchor: LocationAnchor | undefined;
     try {
       const lineNumber = getLineNumber(content, match.index);
-      const feedbackAnchor = createFeedbackAnchor(content, lineNumber, match.index);
+      const feedbackAnchor = createFeedbackAnchor(
+        content,
+        lineNumber,
+        match.index
+      );
       anchor = feedbackAnchorToLocationAnchor(feedbackAnchor);
     } catch (error) {
       // If anchor creation fails, continue without it
@@ -217,14 +223,15 @@ export function extractCrossReferences(
       }
     } else {
       let type: "spec" | "issue";
-      if (metadata) {
-        const specPrefix = metadata.id_prefix.spec.toLowerCase();
-        const issuePrefix = metadata.id_prefix.issue.toLowerCase();
+      if (config) {
+        const specPrefix = config.id_prefix.spec.toLowerCase();
+        const issuePrefix = config.id_prefix.issue.toLowerCase();
         if (hasAt || id.toLowerCase().startsWith(issuePrefix + "-")) {
           type = "issue";
         } else if (id.toLowerCase().startsWith(specPrefix + "-")) {
           type = "spec";
         } else {
+          // TODO: Check the actual entity ID.
           // TODO: No issue resolved - skip the reference.
           type = "spec";
         }
