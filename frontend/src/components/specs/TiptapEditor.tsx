@@ -23,8 +23,16 @@ import {
   Heading3,
   Undo,
   Redo,
+  ImageIcon,
+  Table as TableIcon,
 } from 'lucide-react'
 import { Extension } from '@tiptap/core'
+import { Table } from '@tiptap/extension-table'
+import { TableRow } from '@tiptap/extension-table-row'
+import { TableHeader } from '@tiptap/extension-table-header'
+import { TableCell } from '@tiptap/extension-table-cell'
+import Image from '@tiptap/extension-image'
+import { ListKit } from '@tiptap/extension-list'
 import './tiptap.css'
 
 // Create lowlight instance with common languages
@@ -42,7 +50,7 @@ const TabHandler = Extension.create({
         const { $from } = state.selection
         const listItem = $from.node($from.depth - 1)
 
-        if (listItem && (listItem.type.name === 'listItem')) {
+        if (listItem && listItem.type.name === 'listItem') {
           // Sink the list item (increase indent)
           return this.editor.commands.sinkListItem('listItem')
         }
@@ -56,7 +64,7 @@ const TabHandler = Extension.create({
         const { $from } = state.selection
         const listItem = $from.node($from.depth - 1)
 
-        if (listItem && (listItem.type.name === 'listItem')) {
+        if (listItem && listItem.type.name === 'listItem') {
           // Lift the list item (decrease indent)
           return this.editor.commands.liftListItem('listItem')
         }
@@ -117,6 +125,29 @@ export function TiptapEditor({
           class: 'bg-muted/50 rounded-md p-4 font-mono text-sm my-4 overflow-x-auto',
         },
       }),
+      Table.configure({
+        resizable: true,
+        HTMLAttributes: {
+          class: 'border-collapse table-auto w-full my-4',
+        },
+      }),
+      TableRow,
+      TableHeader.configure({
+        HTMLAttributes: {
+          class: 'border border-border bg-muted/50 px-4 py-2 text-left font-bold',
+        },
+      }),
+      TableCell.configure({
+        HTMLAttributes: {
+          class: 'border border-border px-4 py-2',
+        },
+      }),
+      Image.configure({
+        HTMLAttributes: {
+          class: 'max-w-full h-auto rounded-md my-4',
+        },
+      }),
+      ListKit,
       TabHandler,
     ],
     editable,
@@ -183,6 +214,43 @@ export function TiptapEditor({
       replacement: (content) => `~~${content}~~`,
     })
 
+    // Add table support
+    turndownService.addRule('table', {
+      filter: 'table',
+      replacement: (content) => {
+        return '\n' + content + '\n'
+      },
+    })
+
+    turndownService.addRule('tableRow', {
+      filter: 'tr',
+      replacement: (content, node) => {
+        const row = '|' + content + '\n'
+
+        // Check if this row contains header cells (th elements)
+        const headerCells = (node as HTMLElement).querySelectorAll('th')
+        if (headerCells.length > 0) {
+          // Add separator row after header row
+          const separatorRow =
+            '|' +
+            Array.from(headerCells)
+              .map(() => ' --- |')
+              .join('') +
+            '\n'
+          return row + separatorRow
+        }
+
+        return row
+      },
+    })
+
+    turndownService.addRule('tableCell', {
+      filter: ['th', 'td'],
+      replacement: (content) => {
+        return ' ' + content.trim() + ' |'
+      },
+    })
+
     // Fix list item formatting to prevent extra newlines
     turndownService.addRule('listItem', {
       filter: 'li',
@@ -212,6 +280,19 @@ export function TiptapEditor({
       setHasChanges(false)
     }
     onCancel?.()
+  }
+
+  const handleInsertImage = () => {
+    const url = window.prompt('Enter image URL:')
+    if (url && editor) {
+      editor.chain().focus().setImage({ src: url }).run()
+    }
+  }
+
+  const handleInsertTable = () => {
+    if (editor) {
+      editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+    }
   }
 
   if (!editor) {
@@ -326,6 +407,21 @@ export function TiptapEditor({
             type="button"
           >
             <CodeSquare className="h-4 w-4" />
+          </Button>
+
+          <div className="mx-1 h-6 w-px bg-border" />
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleInsertTable}
+            className={editor.isActive('table') ? 'bg-muted' : ''}
+            type="button"
+          >
+            <TableIcon className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={handleInsertImage} type="button">
+            <ImageIcon className="h-4 w-4" />
           </Button>
 
           <div className="mx-1 h-6 w-px bg-border" />
