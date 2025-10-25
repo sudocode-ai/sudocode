@@ -4,11 +4,27 @@ import type { Issue, IssueStatus } from '@/types/api'
 import type { DragEndEvent } from '@/components/ui/kanban'
 import IssueKanbanBoard from '@/components/issues/IssueKanbanBoard'
 import IssuePanel from '@/components/issues/IssuePanel'
+import { CreateIssueDialog } from '@/components/issues/CreateIssueDialog'
 
 export default function IssuesPage() {
-  const { issues, isLoading, isError, error } = useIssues()
+  const {
+    issues,
+    isLoading,
+    isError,
+    error,
+    createIssueAsync,
+    updateIssue,
+    deleteIssue,
+    isCreating,
+    isUpdating,
+    isDeleting,
+  } = useIssues()
   const updateStatus = useUpdateIssueStatus()
   const [selectedIssue, setSelectedIssue] = useState<Issue | undefined>()
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [createDialogStatus, setCreateDialogStatus] = useState<
+    IssueStatus | undefined
+  >()
 
   // Group issues by status
   const groupedIssues = useMemo(() => {
@@ -59,6 +75,41 @@ export default function IssuesPage() {
     setSelectedIssue(undefined)
   }, [])
 
+  const handleCreateIssue = useCallback(
+    (status?: IssueStatus) => {
+      setCreateDialogStatus(status)
+      setShowCreateDialog(true)
+    },
+    []
+  )
+
+  const handleCreateSubmit = useCallback(
+    async (data: Partial<Issue>) => {
+      try {
+        await createIssueAsync(data as Omit<Issue, 'id' | 'created_at' | 'updated_at'>)
+        setShowCreateDialog(false)
+        setCreateDialogStatus(undefined)
+      } catch (error) {
+        console.error('Failed to create issue:', error)
+      }
+    },
+    [createIssueAsync]
+  )
+
+  const handleUpdateIssue = useCallback(
+    (data: Partial<Issue>) => {
+      if (!selectedIssue) return
+      updateIssue({ id: selectedIssue.id, data })
+    },
+    [selectedIssue, updateIssue]
+  )
+
+  const handleDeleteIssue = useCallback(() => {
+    if (!selectedIssue) return
+    deleteIssue(selectedIssue.id)
+    setSelectedIssue(undefined)
+  }, [selectedIssue, deleteIssue])
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -96,16 +147,35 @@ export default function IssuesPage() {
             onDragEnd={handleDragEnd}
             onViewIssueDetails={handleViewIssueDetails}
             selectedIssue={selectedIssue}
+            onCreateIssue={handleCreateIssue}
           />
         </div>
 
         {/* Issue Detail Panel (slide-out) */}
         {selectedIssue && (
           <div className="w-96 border-l bg-background shadow-lg">
-            <IssuePanel issue={selectedIssue} onClose={handleClosePanel} />
+            <IssuePanel
+              issue={selectedIssue}
+              onClose={handleClosePanel}
+              onUpdate={handleUpdateIssue}
+              onDelete={handleDeleteIssue}
+              isUpdating={isUpdating}
+              isDeleting={isDeleting}
+            />
           </div>
         )}
       </div>
+
+      <CreateIssueDialog
+        isOpen={showCreateDialog}
+        onClose={() => {
+          setShowCreateDialog(false)
+          setCreateDialogStatus(undefined)
+        }}
+        onCreate={handleCreateSubmit}
+        isCreating={isCreating}
+        defaultStatus={createDialogStatus}
+      />
     </div>
   )
 }

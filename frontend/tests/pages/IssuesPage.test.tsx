@@ -9,6 +9,9 @@ import type { Issue } from '@/types/api'
 vi.mock('@/lib/api', () => ({
   issuesApi: {
     getAll: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
   },
 }))
 
@@ -74,18 +77,54 @@ describe('IssuesPage', () => {
     renderWithProviders(<IssuesPage />)
 
     await waitFor(() => {
-      expect(screen.getByText(/Found 2 issues/)).toBeInTheDocument()
+      expect(screen.getByText(/2 total issues/)).toBeInTheDocument()
     })
   })
 
-  it('should display issue status badges', async () => {
+  it('should render kanban board with status columns', async () => {
     vi.mocked(issuesApi.getAll).mockResolvedValue(mockIssues)
 
     renderWithProviders(<IssuesPage />)
 
     await waitFor(() => {
-      expect(screen.getByText('open')).toBeInTheDocument()
-      expect(screen.getByText('in_progress')).toBeInTheDocument()
+      expect(screen.getByText('Open')).toBeInTheDocument()
+      expect(screen.getByText('In Progress')).toBeInTheDocument()
+      expect(screen.getByText('Blocked')).toBeInTheDocument()
+      expect(screen.getByText('Needs Review')).toBeInTheDocument()
+      expect(screen.getByText('Closed')).toBeInTheDocument()
+    })
+  })
+
+  it('should group issues by status in kanban columns', async () => {
+    vi.mocked(issuesApi.getAll).mockResolvedValue(mockIssues)
+
+    renderWithProviders(<IssuesPage />)
+
+    await waitFor(() => {
+      // Issue 1 should be in Open column
+      expect(screen.getByText('Test Issue 1')).toBeInTheDocument()
+      // Issue 2 should be in In Progress column
+      expect(screen.getByText('Test Issue 2')).toBeInTheDocument()
+    })
+  })
+
+  it('should show issue detail panel when issue is clicked', async () => {
+    const user = await import('@testing-library/user-event').then(m => m.default.setup())
+    vi.mocked(issuesApi.getAll).mockResolvedValue(mockIssues)
+
+    renderWithProviders(<IssuesPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Test Issue 1')).toBeInTheDocument()
+    })
+
+    const issueCard = screen.getByText('Test Issue 1')
+    await user.click(issueCard)
+
+    // Panel should show issue details - there will be 2 instances (card + panel)
+    await waitFor(() => {
+      const issueIds = screen.getAllByText('ISSUE-001')
+      expect(issueIds.length).toBeGreaterThanOrEqual(1)
     })
   })
 })

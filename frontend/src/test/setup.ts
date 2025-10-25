@@ -20,6 +20,22 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 })
 
+// Polyfill for Radix UI pointer events (missing in jsdom)
+if (typeof Element.prototype.hasPointerCapture === 'undefined') {
+  Element.prototype.hasPointerCapture = vi.fn(() => false)
+}
+if (typeof Element.prototype.setPointerCapture === 'undefined') {
+  Element.prototype.setPointerCapture = vi.fn()
+}
+if (typeof Element.prototype.releasePointerCapture === 'undefined') {
+  Element.prototype.releasePointerCapture = vi.fn()
+}
+
+// Polyfill for scrollIntoView (missing in jsdom)
+if (typeof Element.prototype.scrollIntoView === 'undefined') {
+  Element.prototype.scrollIntoView = vi.fn()
+}
+
 // Cleanup after each test
 afterEach(() => {
   cleanup()

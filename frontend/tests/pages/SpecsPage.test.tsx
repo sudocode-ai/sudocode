@@ -9,6 +9,11 @@ import type { Spec } from '@/types/api'
 vi.mock('@/lib/api', () => ({
   specsApi: {
     getAll: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    getById: vi.fn(),
+    getFeedback: vi.fn(),
   },
 }))
 
@@ -72,7 +77,7 @@ describe('SpecsPage', () => {
     renderWithProviders(<SpecsPage />)
 
     await waitFor(() => {
-      expect(screen.getByText(/Found 2 specs/)).toBeInTheDocument()
+      expect(screen.getByText(/2 specs/)).toBeInTheDocument()
     })
   })
 
@@ -93,8 +98,8 @@ describe('SpecsPage', () => {
     renderWithProviders(<SpecsPage />)
 
     await waitFor(() => {
-      expect(screen.getByText('Priority 1')).toBeInTheDocument()
-      expect(screen.getByText('Priority 2')).toBeInTheDocument()
+      expect(screen.getByText('High')).toBeInTheDocument()
+      expect(screen.getByText('Medium')).toBeInTheDocument()
     })
   })
 
@@ -130,27 +135,20 @@ describe('SpecsPage', () => {
     renderWithProviders(<SpecsPage />)
 
     await waitFor(() => {
-      expect(screen.getByText(/Found 0 specs/)).toBeInTheDocument()
+      expect(screen.getByText(/0 specs/)).toBeInTheDocument()
     })
   })
 
   it('should handle API error gracefully', async () => {
-    const consoleError = vi
-      .spyOn(console, 'error')
-      .mockImplementation(() => {})
     vi.mocked(specsApi.getAll).mockRejectedValue(
       new Error('Failed to load specs')
     )
 
     renderWithProviders(<SpecsPage />)
 
+    // Should not crash and show empty state
     await waitFor(() => {
-      expect(consoleError).toHaveBeenCalledWith(
-        'Failed to load specs:',
-        expect.any(Error)
-      )
+      expect(screen.getByText('No specs found')).toBeInTheDocument()
     })
-
-    consoleError.mockRestore()
   })
 })

@@ -1,9 +1,17 @@
+import { useState } from 'react';
 import type { Issue } from '@sudocode/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { IssueEditor } from './IssueEditor';
+import { DeleteIssueDialog } from './DeleteIssueDialog';
 
 interface IssuePanelProps {
   issue: Issue;
   onClose?: () => void;
+  onUpdate?: (data: Partial<Issue>) => void;
+  onDelete?: () => void;
+  isUpdating?: boolean;
+  isDeleting?: boolean;
 }
 
 const priorityLabels: Record<number, string> = {
@@ -22,7 +30,47 @@ const statusLabels: Record<string, string> = {
   closed: 'Closed',
 };
 
-export function IssuePanel({ issue, onClose }: IssuePanelProps) {
+export function IssuePanel({
+  issue,
+  onClose,
+  onUpdate,
+  onDelete,
+  isUpdating = false,
+  isDeleting = false,
+}: IssuePanelProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  const handleUpdate = (data: Partial<Issue>) => {
+    onUpdate?.(data);
+    setIsEditing(false);
+  };
+
+  const handleDelete = () => {
+    onDelete?.();
+    setShowDeleteDialog(false);
+  };
+
+  if (isEditing) {
+    return (
+      <div className="h-full overflow-y-auto p-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Edit Issue</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <IssueEditor
+              issue={issue}
+              onSave={handleUpdate}
+              onCancel={() => setIsEditing(false)}
+              isLoading={isUpdating}
+            />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full overflow-y-auto p-4">
       <Card>
@@ -127,8 +175,40 @@ export function IssuePanel({ issue, onClose }: IssuePanelProps) {
               <div className="text-sm">{issue.parent_id}</div>
             </div>
           )}
+
+          {/* Actions */}
+          {(onUpdate || onDelete) && (
+            <div className="border-t pt-4 flex gap-2">
+              {onUpdate && (
+                <Button
+                  onClick={() => setIsEditing(true)}
+                  variant="default"
+                  disabled={isUpdating || isDeleting}
+                >
+                  Edit
+                </Button>
+              )}
+              {onDelete && (
+                <Button
+                  onClick={() => setShowDeleteDialog(true)}
+                  variant="destructive"
+                  disabled={isUpdating || isDeleting}
+                >
+                  Delete
+                </Button>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      <DeleteIssueDialog
+        issue={issue}
+        isOpen={showDeleteDialog}
+        onClose={() => setShowDeleteDialog(false)}
+        onConfirm={handleDelete}
+        isDeleting={isDeleting}
+      />
     </div>
   );
 }

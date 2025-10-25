@@ -31,7 +31,7 @@ interface IssueKanbanBoardProps {
   onDragEnd: (event: DragEndEvent) => void;
   onViewIssueDetails: (issue: Issue) => void;
   selectedIssue?: Issue;
-  onCreateIssue?: () => void;
+  onCreateIssue?: (status?: IssueStatus) => void;
 }
 
 function IssueKanbanBoard({
@@ -48,7 +48,9 @@ function IssueKanbanBoard({
           <KanbanHeader
             name={statusLabels[status as IssueStatus]}
             color={statusColors[status as IssueStatus]}
-            onAddIssue={onCreateIssue}
+            onAddIssue={
+              onCreateIssue ? () => onCreateIssue(status as IssueStatus) : undefined
+            }
           />
           <KanbanCards>
             {statusIssues.map((issue, index) => (

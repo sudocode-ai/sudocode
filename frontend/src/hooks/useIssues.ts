@@ -83,8 +83,12 @@ export function useIssues() {
     updateIssue: updateMutation.mutate,
     updateIssueAsync: updateMutation.mutateAsync,
     createIssue: createMutation.mutate,
+    createIssueAsync: createMutation.mutateAsync,
     deleteIssue: deleteMutation.mutate,
+    deleteIssueAsync: deleteMutation.mutateAsync,
     isUpdating: updateMutation.isPending,
+    isCreating: createMutation.isPending,
+    isDeleting: deleteMutation.isPending,
   }
 }
 

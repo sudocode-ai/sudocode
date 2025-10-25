@@ -4,6 +4,7 @@ import { ThemeProvider } from '@/contexts/ThemeContext'
 import MainLayout from '@/components/layout/MainLayout'
 import IssuesPage from '@/pages/IssuesPage'
 import SpecsPage from '@/pages/SpecsPage'
+import SpecDetailPage from '@/pages/SpecDetailPage'
 
 // Configure TanStack Query
 const queryClient = new QueryClient({
@@ -27,6 +28,7 @@ function App() {
               <Route index element={<Navigate to="/issues" replace />} />
               <Route path="issues" element={<IssuesPage />} />
               <Route path="specs" element={<SpecsPage />} />
+              <Route path="specs/:id" element={<SpecDetailPage />} />
             </Route>
           </Routes>
         </BrowserRouter>
