@@ -77,18 +77,18 @@ describe('SpecCard', () => {
   it('should have correct priority colors', () => {
     const { rerender } = render(<SpecCard spec={{ ...mockSpec, priority: 0 }} />)
     let badge = screen.getByText('Critical')
-    expect(badge).toHaveClass('bg-red-500')
+    expect(badge).toHaveClass('bg-red-600')
 
     rerender(<SpecCard spec={{ ...mockSpec, priority: 1 }} />)
     badge = screen.getByText('High')
-    expect(badge).toHaveClass('bg-orange-500')
+    expect(badge).toHaveClass('bg-orange-600')
 
     rerender(<SpecCard spec={{ ...mockSpec, priority: 2 }} />)
     badge = screen.getByText('Medium')
-    expect(badge).toHaveClass('bg-yellow-500')
+    expect(badge).toHaveClass('bg-yellow-600')
 
     rerender(<SpecCard spec={{ ...mockSpec, priority: 3 }} />)
     badge = screen.getByText('Low')
-    expect(badge).toHaveClass('bg-blue-500')
+    expect(badge).toHaveClass('bg-blue-600')
   })
 })

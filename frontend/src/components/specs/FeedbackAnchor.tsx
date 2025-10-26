@@ -26,11 +26,11 @@ export function FeedbackAnchor({ type, count = 1, onClick, className = '' }: Fee
   const getColor = () => {
     switch (type) {
       case 'comment':
-        return 'bg-blue-500 hover:bg-blue-600'
+        return 'bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800'
       case 'suggestion':
-        return 'bg-yellow-500 hover:bg-yellow-600'
+        return 'bg-yellow-600 hover:bg-yellow-700 dark:bg-yellow-700 dark:hover:bg-yellow-800'
       case 'request':
-        return 'bg-orange-500 hover:bg-orange-600'
+        return 'bg-orange-600 hover:bg-orange-700 dark:bg-orange-700 dark:hover:bg-orange-800'
     }
   }
 

@@ -2,13 +2,13 @@ import { useCallback } from 'react'
 import { Card } from '@/components/ui/card'
 import type { Spec } from '@/types/api'
 
-// Priority badge colors
+// Priority badge colors - using darker shades for better contrast with white text
 const priorityColors: Record<number, string> = {
-  0: 'bg-red-500',
-  1: 'bg-orange-500',
-  2: 'bg-yellow-500',
-  3: 'bg-blue-500',
-  4: 'bg-gray-500',
+  0: 'bg-red-600 dark:bg-red-700',
+  1: 'bg-orange-600 dark:bg-orange-700',
+  2: 'bg-yellow-600 dark:bg-yellow-700',
+  3: 'bg-blue-600 dark:bg-blue-700',
+  4: 'bg-gray-600 dark:bg-gray-700',
 }
 
 const priorityLabels: Record<number, string> = {

@@ -5,17 +5,22 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed',
+  'inline-flex items-center justify-center whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed rounded-md',
   {
     variants: {
       variant: {
-        default: 'text-primary-foreground hover:bg-primary/90 border border-foreground',
-        destructive: 'border border-destructive text-destructive hover:bg-destructive/10',
-        outline: 'border border-input hover:bg-accent hover:text-accent-foreground',
-        secondary: 'text-secondary-foreground hover:bg-secondary/80 border',
-        ghost: 'hover:text-primary-foreground/50',
-        link: 'hover:underline',
-        icon: 'bg-transparent rounded text-muted-foreground hover:text-foreground',
+        default:
+          'text-primary-foreground dark:text-white hover:bg-primary/90 border border-foreground dark:border-foreground/20',
+        destructive:
+          'border border-destructive text-destructive hover:bg-destructive/10 dark:hover:bg-destructive/20',
+        outline:
+          'border border-input text-foreground hover:bg-accent hover:text-accent-foreground dark:border-input/50 dark:hover:bg-accent/50',
+        secondary:
+          'text-secondary-foreground hover:bg-secondary/80 border dark:border-secondary/50 dark:hover:bg-secondary/60',
+        ghost:
+          'text-foreground hover:bg-accent/50 hover:text-accent-foreground dark:hover:bg-accent/30',
+        link: 'text-foreground hover:underline dark:text-foreground/90',
+        icon: 'bg-transparent rounded text-muted-foreground hover:text-foreground dark:hover:text-foreground/90',
       },
       size: {
         default: 'h-10 px-4 py-2',

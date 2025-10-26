@@ -40,7 +40,7 @@ export const KanbanBoard = ({ id, children, className }: KanbanBoardProps) => {
     <div
       className={cn(
         'flex h-full min-h-40 flex-col',
-        isOver ? 'outline-primary' : 'outline-black',
+        isOver ? 'outline-primary' : 'outline-border',
         className
       )}
       ref={setNodeRef}

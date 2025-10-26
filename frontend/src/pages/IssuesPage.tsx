@@ -5,6 +5,8 @@ import type { DragEndEvent } from '@/components/ui/kanban'
 import IssueKanbanBoard from '@/components/issues/IssueKanbanBoard'
 import IssuePanel from '@/components/issues/IssuePanel'
 import { CreateIssueDialog } from '@/components/issues/CreateIssueDialog'
+import { Button } from '@/components/ui/button'
+import { Plus } from 'lucide-react'
 
 export default function IssuesPage() {
   const {
@@ -126,9 +128,15 @@ export default function IssuesPage() {
   return (
     <div className="flex h-screen flex-col">
       {/* Header */}
-      <div className="border-b bg-background p-4">
-        <h1 className="text-2xl font-bold">Issues</h1>
-        <p className="text-sm text-muted-foreground">{issues.length} total issues</p>
+      <div className="flex items-center justify-between border-b bg-background p-4">
+        <div>
+          <h1 className="text-2xl font-bold">Issues</h1>
+          <p className="text-sm text-muted-foreground">{issues.length} total issues</p>
+        </div>
+        <Button onClick={() => handleCreateIssue()} variant="default" size="sm">
+          <Plus className="mr-2 h-4 w-4" />
+          Add Issue
+        </Button>
       </div>
 
       {/* Main content */}
@@ -140,7 +148,6 @@ export default function IssuesPage() {
             onDragEnd={handleDragEnd}
             onViewIssueDetails={handleViewIssueDetails}
             selectedIssue={selectedIssue}
-            onCreateIssue={handleCreateIssue}
           />
         </div>
 
