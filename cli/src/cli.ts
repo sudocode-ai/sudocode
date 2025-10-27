@@ -143,7 +143,7 @@ program
   .description("Initialize .sudocode directory structure")
   .option("--spec-prefix <prefix>", "ID prefix for specs", "SPEC")
   .option("--issue-prefix <prefix>", "ID prefix for issues", "ISSUE")
-  .action((options) => {
+  .action(async (options) => {
     const specPrefix = options.specPrefix || "SPEC";
     const issuePrefix = options.issuePrefix || "ISSUE";
     const dir = path.join(process.cwd(), ".sudocode");
@@ -186,10 +186,14 @@ program
         "utf8"
       );
 
+      let hasSpecsData = false;
+      let hasIssuesData = false;
       // Create empty JSONL files only if they don't exist
       const specsPath = path.join(dir, "specs.jsonl");
       if (fs.existsSync(specsPath)) {
         preserved.push("specs.jsonl");
+        const content = fs.readFileSync(specsPath, "utf8");
+        hasSpecsData = content.trim().length > 0;
       } else {
         fs.writeFileSync(specsPath, "", "utf8");
       }
@@ -197,8 +201,51 @@ program
       const issuesPath = path.join(dir, "issues.jsonl");
       if (fs.existsSync(issuesPath)) {
         preserved.push("issues.jsonl");
+        const content = fs.readFileSync(issuesPath, "utf8");
+        hasIssuesData = content.trim().length > 0;
       } else {
         fs.writeFileSync(issuesPath, "", "utf8");
+      }
+
+      if (hasSpecsData || hasIssuesData) {
+        try {
+          console.log(chalk.blue("Importing from existing JSONL files..."));
+          const { importFromJSONL } = await import("./import.js");
+          const result = await importFromJSONL(database, {
+            inputDir: dir,
+            resolveCollisions: true,
+          });
+
+          // Report import results
+          if (result.specs.added > 0 || result.specs.updated > 0) {
+            console.log(
+              chalk.gray(
+                `  Specs: ${result.specs.added} added, ${result.specs.updated} updated`
+              )
+            );
+          }
+          if (result.issues.added > 0 || result.issues.updated > 0) {
+            console.log(
+              chalk.gray(
+                `  Issues: ${result.issues.added} added, ${result.issues.updated} updated`
+              )
+            );
+          }
+          if (result.collisions.length > 0) {
+            console.log(
+              chalk.yellow(
+                `  Resolved ${result.collisions.length} ID collisions`
+              )
+            );
+          }
+        } catch (importError) {
+          // Log warning but continue with initialization
+          console.log(
+            chalk.yellow(
+              `  Warning: Failed to import JSONL data - ${importError instanceof Error ? importError.message : String(importError)}`
+            )
+          );
+        }
       }
 
       // Create .gitignore file
