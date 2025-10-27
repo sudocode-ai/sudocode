@@ -34,6 +34,8 @@ import { TableCell } from '@tiptap/extension-table-cell'
 import Image from '@tiptap/extension-image'
 import { ListKit } from '@tiptap/extension-list'
 import { TableWithControls } from './TableWithControls'
+import { EntityMention } from './extensions/EntityMention'
+import { preprocessEntityMentions } from './extensions/markdown-utils'
 import './tiptap.css'
 
 // Create lowlight instance with common languages
@@ -154,6 +156,7 @@ export function TiptapEditor({
       }),
       ListKit,
       TabHandler,
+      EntityMention,
     ],
     editable,
     content: htmlContent,
@@ -169,12 +172,15 @@ export function TiptapEditor({
       return
     }
 
+    // Preprocess markdown to convert [[ENTITY-ID]] to HTML spans
+    const preprocessedContent = preprocessEntityMentions(content)
+
     unified()
       .use(remarkParse)
       .use(remarkGfm)
-      .use(remarkRehype)
-      .use(rehypeStringify)
-      .process(content)
+      .use(remarkRehype, { allowDangerousHtml: true })
+      .use(rehypeStringify, { allowDangerousHtml: true })
+      .process(preprocessedContent)
       .then((file) => {
         setHtmlContent(String(file))
       })
@@ -204,6 +210,7 @@ export function TiptapEditor({
 
     // Convert HTML back to markdown
     const html = editor.getHTML()
+
     const turndownService = new TurndownService({
       headingStyle: 'atx',
       codeBlockStyle: 'fenced',
@@ -270,6 +277,39 @@ export function TiptapEditor({
         const postfix = '\n'
 
         return prefix + content.replace(/\n/g, '\n  ') + postfix
+      },
+    })
+
+    // Handle entity mentions - convert spans directly to [[ENTITY-ID]] format
+    // This prevents turndown from escaping the brackets
+    turndownService.addRule('entityMention', {
+      filter: (node) => {
+        return (
+          node.nodeName === 'SPAN' &&
+          node.hasAttribute('data-entity-id')
+        )
+      },
+      replacement: (content, node) => {
+        const element = node as HTMLElement
+        const entityId = element.getAttribute('data-entity-id')
+        const displayText = element.getAttribute('data-display-text')
+        const relationshipType = element.getAttribute('data-relationship-type')
+
+        if (!entityId) return content
+
+        let ref = `[[${entityId}`
+
+        if (displayText) {
+          ref += `|${displayText}`
+        }
+
+        ref += ']]'
+
+        if (relationshipType) {
+          ref += `{ ${relationshipType} }`
+        }
+
+        return ref
       },
     })
 

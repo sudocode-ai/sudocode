@@ -8,6 +8,8 @@ import remarkParse from 'remark-parse'
 import remarkGfm from 'remark-gfm'
 import remarkRehype from 'remark-rehype'
 import rehypeStringify from 'rehype-stringify'
+import { EntityMention } from './extensions/EntityMention'
+import { preprocessEntityMentions } from './extensions/markdown-utils'
 import './tiptap.css'
 
 // Create lowlight instance with common languages
@@ -61,6 +63,7 @@ export function TiptapMarkdownViewer({
           class: 'bg-muted/50 rounded-md p-4 font-mono text-sm my-4 overflow-x-auto',
         },
       }),
+      EntityMention,
     ],
     editable: false,
     content: htmlContent,
@@ -76,12 +79,15 @@ export function TiptapMarkdownViewer({
       return
     }
 
+    // Preprocess markdown to convert [[ENTITY-ID]] to HTML spans
+    const preprocessedContent = preprocessEntityMentions(content)
+
     unified()
       .use(remarkParse)
       .use(remarkGfm)
-      .use(remarkRehype)
-      .use(rehypeStringify)
-      .process(content)
+      .use(remarkRehype, { allowDangerousHtml: true })
+      .use(rehypeStringify, { allowDangerousHtml: true })
+      .process(preprocessedContent)
       .then((file) => {
         setHtmlContent(String(file))
       })
