@@ -61,7 +61,7 @@ describe("Executions Service", () => {
     const issue = createIssue(db, {
       id: issueId,
       title: "Test Issue for Execution",
-      description: "This is a test issue",
+      content: "This is a test issue",
     });
     testIssueId = issue.id;
   });

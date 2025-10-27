@@ -54,7 +54,7 @@ describe("ExecutionManager", () => {
     const issue = createIssue(db, {
       id: issueId,
       title: "Test Issue for Execution Manager",
-      description: "This is a test issue",
+      content: "This is a test issue",
     });
     testIssueId = issue.id;
   });

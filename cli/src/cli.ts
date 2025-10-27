@@ -154,11 +154,23 @@ program
       fs.mkdirSync(path.join(dir, "specs"), { recursive: true });
       fs.mkdirSync(path.join(dir, "issues"), { recursive: true });
 
-      // Initialize database
+      // Track what was preserved
+      const preserved: string[] = [];
+
+      // Initialize database only if it doesn't exist
       const dbPath = path.join(dir, "cache.db");
-      // Ensure the database directory exists before creating the database
-      fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-      const database = initDatabase({ path: dbPath });
+      const dbExists = fs.existsSync(dbPath);
+      let database: Database.Database;
+
+      if (dbExists) {
+        preserved.push("cache.db");
+        // Open existing database
+        database = initDatabase({ path: dbPath });
+      } else {
+        // Ensure the database directory exists before creating the database
+        fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+        database = initDatabase({ path: dbPath });
+      }
 
       // Create config.json (version-controlled)
       const config = {
@@ -174,9 +186,20 @@ program
         "utf8"
       );
 
-      // Create empty JSONL files
-      fs.writeFileSync(path.join(dir, "specs.jsonl"), "", "utf8");
-      fs.writeFileSync(path.join(dir, "issues.jsonl"), "", "utf8");
+      // Create empty JSONL files only if they don't exist
+      const specsPath = path.join(dir, "specs.jsonl");
+      if (fs.existsSync(specsPath)) {
+        preserved.push("specs.jsonl");
+      } else {
+        fs.writeFileSync(specsPath, "", "utf8");
+      }
+
+      const issuesPath = path.join(dir, "issues.jsonl");
+      if (fs.existsSync(issuesPath)) {
+        preserved.push("issues.jsonl");
+      } else {
+        fs.writeFileSync(issuesPath, "", "utf8");
+      }
 
       // Create .gitignore file
       const gitignoreContent = `cache.db*
@@ -191,6 +214,12 @@ specs/
       console.log(chalk.gray(`  Spec prefix: ${specPrefix}`));
       console.log(chalk.gray(`  Issue prefix: ${issuePrefix}`));
       console.log(chalk.gray(`  Database: ${dbPath}`));
+
+      if (preserved.length > 0) {
+        console.log(
+          chalk.yellow(`  Preserved existing: ${preserved.join(", ")}`)
+        );
+      }
     } catch (error) {
       console.error(chalk.red("✗ Initialization failed"));
       console.error(error instanceof Error ? error.message : String(error));

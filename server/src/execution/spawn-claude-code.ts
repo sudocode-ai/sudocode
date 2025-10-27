@@ -48,6 +48,7 @@ export function spawnClaudeCode(
     "-p", // Read prompt from stdin
     "--output-format=stream-json",
     "--include-partial-messages",
+    "--auto-approve", // Run in fully autonomous mode (no interactive prompts)
   ];
 
   if (verbose) {
