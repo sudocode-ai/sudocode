@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Plus } from 'lucide-react'
 import type { Issue, Relationship, EntityType, RelationshipType } from '@/types/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -48,6 +48,7 @@ export function IssuePanel({
   const [relationships, setRelationships] = useState<Relationship[]>([])
   const [showAddRelationship, setShowAddRelationship] = useState(false)
   const [isLoadingRelationships, setIsLoadingRelationships] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   // Fetch relationships when issue changes
   useEffect(() => {
@@ -77,6 +78,31 @@ export function IssuePanel({
 
     fetchRelationships()
   }, [issue.id])
+
+  // Handle click outside to close panel
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!panelRef.current || !onClose) return
+
+      const target = event.target as Node
+
+      // Don't close if clicking inside the panel
+      if (panelRef.current.contains(target)) return
+
+      // Don't close if clicking on an issue card (to prevent flicker when switching issues)
+      const clickedElement = target as HTMLElement
+      const issueCard = clickedElement.closest('[data-issue-id]')
+      if (issueCard) return
+
+      // Close the panel if clicking outside
+      onClose()
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [onClose])
 
   const handleUpdate = (data: Partial<Issue>) => {
     onUpdate?.(data)
@@ -134,7 +160,7 @@ export function IssuePanel({
 
   if (isEditing) {
     return (
-      <div className="h-full overflow-y-auto p-4">
+      <div className="h-full overflow-y-auto p-4" ref={panelRef}>
         <Card>
           <CardHeader>
             <CardTitle>Edit Issue</CardTitle>
@@ -153,7 +179,7 @@ export function IssuePanel({
   }
 
   return (
-    <div className="h-full overflow-y-auto p-4">
+    <div className="h-full overflow-y-auto p-4" ref={panelRef}>
       <Card>
         <CardHeader>
           <div className="flex items-start justify-between">
