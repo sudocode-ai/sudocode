@@ -20,6 +20,7 @@ import {
   getExecution,
   updateExecution,
 } from "../services/executions.js";
+import { spawnClaudeCode } from "./spawn-claude-code.js";
 
 /**
  * Represents a running execution with its process and log files
@@ -37,6 +38,7 @@ export interface StartExecutionInput {
   issue_id: string;
   agent_type: AgentType;
   work_dir?: string;
+  prompt?: string;
   before_commit?: string;
   target_branch?: string;
   worktree_path?: string;
@@ -49,11 +51,13 @@ export class ExecutionManager {
   private db: Database.Database;
   private runningExecutions: Map<string, RunningExecution>;
   private logsDir: string;
+  private testMode: boolean;
 
-  constructor(db: Database.Database, logsDir?: string) {
+  constructor(db: Database.Database, logsDir?: string, testMode?: boolean) {
     this.db = db;
     this.runningExecutions = new Map();
     this.logsDir = logsDir || path.join(os.tmpdir(), "sudocode-executions");
+    this.testMode = testMode || false;
 
     // Ensure logs directory exists
     if (!fs.existsSync(this.logsDir)) {
@@ -77,7 +81,8 @@ export class ExecutionManager {
     try {
       // Spawn the agent process
       const workDir = input.work_dir || process.cwd();
-      const proc = this.spawnAgent(execution.agent_type, workDir);
+      const prompt = input.prompt || `Work on issue ${input.issue_id}`;
+      const proc = this.spawnAgent(execution.agent_type, workDir, prompt);
 
       // Create log file for this execution
       const logFile = path.join(this.logsDir, `${execution.id}.log`);
@@ -191,19 +196,35 @@ export class ExecutionManager {
   /**
    * Spawn an agent process based on agent type
    */
-  private spawnAgent(agentType: AgentType, workDir: string): ChildProcess {
-    // For Phase 1 MVP, we'll implement a simple test agent
-    // In Phase 2, this will be replaced with proper agent implementations
+  private spawnAgent(
+    agentType: AgentType,
+    workDir: string,
+    prompt: string
+  ): ChildProcess {
+    // In test mode, use fast placeholder commands instead of real processes
+    if (this.testMode) {
+      switch (agentType) {
+        case "claude-code":
+          return spawn("echo", ["Claude Code agent running"], { cwd: workDir });
+        case "codex":
+          return spawn("echo", ["Codex agent running"], { cwd: workDir });
+        default:
+          throw new Error(`Unsupported agent type: ${agentType}`);
+      }
+    }
 
+    // Production mode: use real agent implementations
     switch (agentType) {
       case "claude-code":
-        // Placeholder: Just run a simple command for testing
-        // In real implementation, this would be:
-        // return spawn('npx', ['-y', '@anthropic-ai/claude-code@latest', ...], { cwd: workDir });
-        return spawn("echo", ["Claude Code agent running"], { cwd: workDir });
+        // Use the spawnClaudeCode utility for real Claude Code spawning
+        return spawnClaudeCode({
+          workDir,
+          prompt,
+          verbose: true,
+        });
 
       case "codex":
-        // Placeholder for codex
+        // Placeholder for codex (not implemented yet)
         return spawn("echo", ["Codex agent running"], { cwd: workDir });
 
       default:

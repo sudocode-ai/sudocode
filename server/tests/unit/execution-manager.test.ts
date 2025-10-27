@@ -60,8 +60,8 @@ describe("ExecutionManager", () => {
   });
 
   beforeEach(() => {
-    // Create a new manager for each test
-    manager = new ExecutionManager(db, logsDir);
+    // Create a new manager for each test with testMode enabled
+    manager = new ExecutionManager(db, logsDir, true);
   });
 
   after(async () => {
@@ -83,14 +83,14 @@ describe("ExecutionManager", () => {
   describe("Constructor", () => {
     it("should create logs directory if it doesn't exist", () => {
       const customLogsDir = path.join(testDir, "custom-logs");
-      const customManager = new ExecutionManager(db, customLogsDir);
+      const customManager = new ExecutionManager(db, customLogsDir, true);
 
       assert.ok(customManager);
       assert.ok(fs.existsSync(customLogsDir));
     });
 
     it("should use default logs directory if not provided", () => {
-      const defaultManager = new ExecutionManager(db);
+      const defaultManager = new ExecutionManager(db, undefined, true);
       // Just verify it doesn't throw
       assert.ok(defaultManager);
     });
