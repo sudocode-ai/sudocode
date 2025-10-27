@@ -31,9 +31,10 @@ export type KanbanBoardProps = {
   id: Status['id']
   children: ReactNode
   className?: string
+  'data-column-id'?: string
 }
 
-export const KanbanBoard = ({ id, children, className }: KanbanBoardProps) => {
+export const KanbanBoard = ({ id, children, className, 'data-column-id': dataColumnId }: KanbanBoardProps) => {
   const { isOver, setNodeRef } = useDroppable({ id })
 
   return (
@@ -44,6 +45,7 @@ export const KanbanBoard = ({ id, children, className }: KanbanBoardProps) => {
         className
       )}
       ref={setNodeRef}
+      data-column-id={dataColumnId}
     >
       {children}
     </div>
@@ -106,6 +108,7 @@ export const KanbanCard = ({
       tabIndex={tabIndex}
       onClick={onClick}
       onKeyDown={onKeyDown}
+      data-issue-id={id}
       style={{
         zIndex: isDragging ? 1000 : 1,
         transform: transform ? `translateX(${transform.x}px) translateY(${transform.y}px)` : 'none',

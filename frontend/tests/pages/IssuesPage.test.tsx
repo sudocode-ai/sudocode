@@ -127,4 +127,146 @@ describe('IssuesPage', () => {
       expect(issueIds.length).toBeGreaterThanOrEqual(1)
     })
   })
+
+  describe('Issue Sorting', () => {
+    it('should sort closed issues by most recent closed_at date', async () => {
+      const closedIssues: Issue[] = [
+        {
+          id: 'ISSUE-003',
+          uuid: 'test-uuid-3',
+          title: 'Closed Issue 1',
+          description: 'Closed first',
+          content: '',
+          status: 'closed',
+          priority: 1,
+          assignee: null,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+          closed_at: '2024-01-05', // Earlier
+          parent_id: null,
+        },
+        {
+          id: 'ISSUE-004',
+          uuid: 'test-uuid-4',
+          title: 'Closed Issue 2',
+          description: 'Closed second',
+          content: '',
+          status: 'closed',
+          priority: 0,
+          assignee: null,
+          created_at: '2024-01-02',
+          updated_at: '2024-01-02',
+          closed_at: '2024-01-10', // More recent, should be first
+          parent_id: null,
+        },
+      ]
+
+      vi.mocked(issuesApi.getAll).mockResolvedValue(closedIssues)
+
+      const { container } = renderWithProviders(<IssuesPage />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Closed Issue 1')).toBeInTheDocument()
+        expect(screen.getByText('Closed Issue 2')).toBeInTheDocument()
+      })
+
+      // Get all issue cards in the Closed column
+      const closedColumn = container.querySelector('[data-column-id="closed"]')
+      expect(closedColumn).toBeInTheDocument()
+
+      if (closedColumn) {
+        const issueCards = closedColumn.querySelectorAll('[data-issue-id]')
+        // Most recent closed issue (ISSUE-004) should be first
+        expect(issueCards[0]?.getAttribute('data-issue-id')).toBe('ISSUE-004')
+        expect(issueCards[1]?.getAttribute('data-issue-id')).toBe('ISSUE-003')
+      }
+    })
+
+    it('should sort non-closed issues by priority then created_at', async () => {
+      const openIssues: Issue[] = [
+        {
+          id: 'ISSUE-005',
+          uuid: 'test-uuid-5',
+          title: 'Low Priority Old',
+          description: 'Low priority, oldest',
+          content: '',
+          status: 'open',
+          priority: 3, // Low priority
+          assignee: null,
+          created_at: '2024-01-01', // Oldest
+          updated_at: '2024-01-01',
+          closed_at: null,
+          parent_id: null,
+        },
+        {
+          id: 'ISSUE-006',
+          uuid: 'test-uuid-6',
+          title: 'High Priority Old',
+          description: 'High priority, old',
+          content: '',
+          status: 'open',
+          priority: 1, // Higher priority
+          assignee: null,
+          created_at: '2024-01-02',
+          updated_at: '2024-01-02',
+          closed_at: null,
+          parent_id: null,
+        },
+        {
+          id: 'ISSUE-007',
+          uuid: 'test-uuid-7',
+          title: 'Critical Priority Recent',
+          description: 'Critical, newest',
+          content: '',
+          status: 'open',
+          priority: 0, // Highest priority
+          assignee: null,
+          created_at: '2024-01-10', // Most recent
+          updated_at: '2024-01-10',
+          closed_at: null,
+          parent_id: null,
+        },
+        {
+          id: 'ISSUE-008',
+          uuid: 'test-uuid-8',
+          title: 'Critical Priority Old',
+          description: 'Critical, oldest',
+          content: '',
+          status: 'open',
+          priority: 0, // Highest priority
+          assignee: null,
+          created_at: '2024-01-03', // Older than ISSUE-007
+          updated_at: '2024-01-03',
+          closed_at: null,
+          parent_id: null,
+        },
+      ]
+
+      vi.mocked(issuesApi.getAll).mockResolvedValue(openIssues)
+
+      const { container } = renderWithProviders(<IssuesPage />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Low Priority Old')).toBeInTheDocument()
+        expect(screen.getByText('High Priority Old')).toBeInTheDocument()
+        expect(screen.getByText('Critical Priority Recent')).toBeInTheDocument()
+        expect(screen.getByText('Critical Priority Old')).toBeInTheDocument()
+      })
+
+      // Get all issue cards in the Open column
+      const openColumn = container.querySelector('[data-column-id="open"]')
+      expect(openColumn).toBeInTheDocument()
+
+      if (openColumn) {
+        const issueCards = openColumn.querySelectorAll('[data-issue-id]')
+        // Should be sorted by priority (0 first), then by created_at (oldest first)
+        // Expected order: ISSUE-008 (priority 0, older), ISSUE-007 (priority 0, newer),
+        //                 ISSUE-006 (priority 1), ISSUE-005 (priority 3)
+        expect(issueCards[0]?.getAttribute('data-issue-id')).toBe('ISSUE-008')
+        expect(issueCards[1]?.getAttribute('data-issue-id')).toBe('ISSUE-007')
+        expect(issueCards[2]?.getAttribute('data-issue-id')).toBe('ISSUE-006')
+        expect(issueCards[3]?.getAttribute('data-issue-id')).toBe('ISSUE-005')
+      }
+    })
+  })
 })

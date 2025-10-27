@@ -47,6 +47,29 @@ export default function IssuesPage() {
       }
     })
 
+    // Sort each group
+    Object.keys(groups).forEach((status) => {
+      const statusKey = status as IssueStatus
+      if (statusKey === 'closed') {
+        // Sort closed issues by most recent closed_at date
+        groups[statusKey].sort((a, b) => {
+          const aDate = a.closed_at ? new Date(a.closed_at).getTime() : 0
+          const bDate = b.closed_at ? new Date(b.closed_at).getTime() : 0
+          return bDate - aDate // Descending (most recent first)
+        })
+      } else {
+        // Sort other statuses by priority (ascending), then by created_at (ascending)
+        groups[statusKey].sort((a, b) => {
+          // First compare by priority (0 is highest priority)
+          if (a.priority !== b.priority) {
+            return a.priority - b.priority
+          }
+          // If priority is the same, compare by created_at (oldest first)
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        })
+      }
+    })
+
     return groups
   }, [issues])
 

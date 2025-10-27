@@ -42,7 +42,7 @@ function IssueKanbanBoard({
   return (
     <KanbanProvider onDragEnd={onDragEnd}>
       {Object.entries(groupedIssues).map(([status, statusIssues]) => (
-        <KanbanBoard key={status} id={status as IssueStatus}>
+        <KanbanBoard key={status} id={status as IssueStatus} data-column-id={status}>
           <KanbanHeader
             name={statusLabels[status as IssueStatus]}
             color={statusColors[status as IssueStatus]}
