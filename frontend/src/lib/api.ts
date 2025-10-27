@@ -92,7 +92,7 @@ export const specsApi = {
  */
 export const relationshipsApi = {
   getForEntity: (entityId: string, entityType: 'issue' | 'spec') =>
-    get<Relationship[]>(`/relationships?entity_id=${entityId}&entity_type=${entityType}`),
+    get<Relationship[] | { outgoing: Relationship[]; incoming: Relationship[] }>(`/relationships/${entityType}/${entityId}`),
   create: (data: CreateRelationshipRequest) => post<Relationship>('/relationships', data),
   delete: (data: DeleteRelationshipRequest) => del('/relationships', data),
 }

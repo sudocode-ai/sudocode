@@ -69,7 +69,7 @@ export interface CreateRelationshipRequest {
   from_type: EntityType
   to_id: string
   to_type: EntityType
-  type: RelationshipType
+  relationship_type: RelationshipType
 }
 
 export interface DeleteRelationshipRequest {
@@ -77,7 +77,7 @@ export interface DeleteRelationshipRequest {
   from_type: EntityType
   to_id: string
   to_type: EntityType
-  type: RelationshipType
+  relationship_type: RelationshipType
 }
 
 /**

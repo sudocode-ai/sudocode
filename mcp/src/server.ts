@@ -252,7 +252,7 @@ export class SudocodeMCPServer {
           {
             name: "add_reference",
             description:
-              "Add an inline cross-reference to a spec or issue using Obsidian-style [[ID]] syntax. References are inserted at a specific location in the markdown content.",
+              "Add an inline cross-reference/mention to a spec or issue using Obsidian-style [[ID]] syntax. References are inserted at a specific location in the markdown content. Use this to add references to an issue or spec without having to modify the content directly.",
             inputSchema: {
               type: "object",
               properties: {

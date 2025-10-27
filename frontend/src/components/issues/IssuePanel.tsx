@@ -1,9 +1,13 @@
-import { useState } from 'react'
-import type { Issue } from '@sudocode/types'
+import { useState, useEffect } from 'react'
+import { Plus } from 'lucide-react'
+import type { Issue, Relationship, EntityType, RelationshipType } from '@/types/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { IssueEditor } from './IssueEditor'
 import { DeleteIssueDialog } from './DeleteIssueDialog'
+import { RelationshipList } from '@/components/relationships/RelationshipList'
+import { RelationshipForm } from '@/components/relationships/RelationshipForm'
+import { relationshipsApi } from '@/lib/api'
 
 interface IssuePanelProps {
   issue: Issue
@@ -40,6 +44,38 @@ export function IssuePanel({
 }: IssuePanelProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [relationships, setRelationships] = useState<Relationship[]>([])
+  const [showAddRelationship, setShowAddRelationship] = useState(false)
+  const [isLoadingRelationships, setIsLoadingRelationships] = useState(false)
+
+  // Fetch relationships when issue changes
+  useEffect(() => {
+    const fetchRelationships = async () => {
+      setIsLoadingRelationships(true)
+      try {
+        const data = await relationshipsApi.getForEntity(issue.id, 'issue')
+
+        // Handle both array and grouped object responses
+        let relationshipsArray: Relationship[] = []
+        if (Array.isArray(data)) {
+          relationshipsArray = data
+        } else if (data && typeof data === 'object' && 'outgoing' in data && 'incoming' in data) {
+          // Backend returned grouped object, flatten it
+          const grouped = data as { outgoing: Relationship[]; incoming: Relationship[] }
+          relationshipsArray = [...(grouped.outgoing || []), ...(grouped.incoming || [])]
+        }
+
+        setRelationships(relationshipsArray)
+      } catch (error) {
+        console.error('Failed to fetch relationships:', error)
+        setRelationships([])
+      } finally {
+        setIsLoadingRelationships(false)
+      }
+    }
+
+    fetchRelationships()
+  }, [issue.id])
 
   const handleUpdate = (data: Partial<Issue>) => {
     onUpdate?.(data)
@@ -49,6 +85,50 @@ export function IssuePanel({
   const handleDelete = () => {
     onDelete?.()
     setShowDeleteDialog(false)
+  }
+
+  const handleCreateRelationship = async (
+    toId: string,
+    toType: EntityType,
+    relationshipType: RelationshipType
+  ) => {
+    try {
+      const data = await relationshipsApi.create({
+        from_id: issue.id,
+        from_type: 'issue',
+        to_id: toId,
+        to_type: toType,
+        relationship_type: relationshipType,
+      })
+      setRelationships([...relationships, data])
+      setShowAddRelationship(false)
+    } catch (error) {
+      console.error('Failed to create relationship:', error)
+    }
+  }
+
+  const handleDeleteRelationship = async (relationship: Relationship) => {
+    try {
+      await relationshipsApi.delete({
+        from_id: relationship.from_id,
+        from_type: relationship.from_type,
+        to_id: relationship.to_id,
+        to_type: relationship.to_type,
+        relationship_type: relationship.relationship_type,
+      })
+      setRelationships(
+        relationships.filter(
+          (r) =>
+            !(
+              r.from_id === relationship.from_id &&
+              r.to_id === relationship.to_id &&
+              r.relationship_type === relationship.relationship_type
+            )
+        )
+      )
+    } catch (error) {
+      console.error('Failed to delete relationship:', error)
+    }
   }
 
   if (isEditing) {
@@ -155,6 +235,48 @@ export function IssuePanel({
               <div className="text-sm">{issue.parent_id}</div>
             </div>
           )}
+
+          {/* Relationships */}
+          <div className="border-t pt-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium">
+                Relationships {relationships.length > 0 && `(${relationships.length})`}
+              </h3>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAddRelationship(!showAddRelationship)}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add
+              </Button>
+            </div>
+
+            {showAddRelationship && (
+              <div className="mb-4">
+                <RelationshipForm
+                  fromId={issue.id}
+                  fromType="issue"
+                  onSubmit={handleCreateRelationship}
+                  onCancel={() => setShowAddRelationship(false)}
+                />
+              </div>
+            )}
+
+            {isLoadingRelationships ? (
+              <div className="text-center text-sm text-muted-foreground py-4">
+                Loading relationships...
+              </div>
+            ) : (
+              <RelationshipList
+                relationships={relationships}
+                currentEntityId={issue.id}
+                currentEntityType="issue"
+                onDelete={handleDeleteRelationship}
+                showEmpty={!showAddRelationship}
+              />
+            )}
+          </div>
 
           {/* Actions */}
           {(onUpdate || onDelete) && (
