@@ -32,7 +32,6 @@ export interface CommandContext {
 export interface SpecCreateOptions {
   priority: string;
   description?: string;
-  design?: string;
   filePath?: string;
   parent?: string;
   tags?: string;
@@ -86,12 +85,7 @@ export async function handleSpecCreate(
       }),
     };
 
-    const markdownContent = options.design || "";
-    writeMarkdownFile(
-      path.join(ctx.outputDir, filePath),
-      frontmatter,
-      markdownContent
-    );
+    writeMarkdownFile(path.join(ctx.outputDir, filePath), frontmatter, content);
 
     // Export to JSONL
     await exportToJSONL(ctx.db, { outputDir: ctx.outputDir });
@@ -241,12 +235,12 @@ export async function handleSpecShow(
             anchor.anchor_status === "valid"
               ? chalk.green
               : anchor.anchor_status === "relocated"
-              ? chalk.yellow
-              : chalk.red;
+                ? chalk.yellow
+                : chalk.red;
 
           console.log(
             `  ${chalk.cyan(fb.id)} ← ${chalk.cyan(fb.issue_id)}`,
-            statusColor(`[${fb.dismissed ? 'dismissed' : 'active'}]`),
+            statusColor(`[${fb.dismissed ? "dismissed" : "active"}]`),
             anchorStatusColor(`[${anchor.anchor_status}]`)
           );
           console.log(
@@ -275,7 +269,6 @@ export interface SpecUpdateOptions {
   title?: string;
   priority?: string;
   description?: string;
-  design?: string;
   parent?: string;
   tags?: string;
 }
@@ -318,8 +311,14 @@ export async function handleSpecUpdate(
       setTags(ctx.db, id, "spec", tags);
     }
 
-    // Update markdown file if design or title changed
-    if (options.design !== undefined || options.title || options.priority || options.parent || options.tags) {
+    // Update markdown file if description or title changed
+    if (
+      options.description !== undefined ||
+      options.title ||
+      options.priority ||
+      options.parent ||
+      options.tags
+    ) {
       const fullPath = path.join(ctx.outputDir, spec.file_path);
 
       // Read existing file to preserve content
@@ -346,7 +345,10 @@ export async function handleSpecUpdate(
         ...(currentTags.length > 0 && { tags: currentTags }),
       };
 
-      const markdownContent = options.design !== undefined ? options.design : existingContent;
+      const markdownContent =
+        options.description !== undefined
+          ? options.description
+          : existingContent;
       writeMarkdownFile(fullPath, frontmatter, markdownContent);
     }
 
@@ -359,7 +361,8 @@ export async function handleSpecUpdate(
     } else {
       console.log(chalk.green("✓ Updated spec"), chalk.cyan(id));
       if (options.title) console.log(chalk.gray(`  Title: ${updated.title}`));
-      if (options.priority) console.log(chalk.gray(`  Priority: ${updated.priority}`));
+      if (options.priority)
+        console.log(chalk.gray(`  Priority: ${updated.priority}`));
     }
   } catch (error) {
     console.error(chalk.red("✗ Failed to update spec"));

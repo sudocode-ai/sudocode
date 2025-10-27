@@ -22,9 +22,7 @@ const mockSpecs: Spec[] = [
     id: 'SPEC-001',
     uuid: 'test-uuid-1',
     title: 'Test Spec 1',
-    description: 'Test description',
     content: 'This is the content of spec 1',
-    design: '',
     priority: 1,
     created_at: '2024-01-01',
     updated_at: '2024-01-01',
@@ -35,9 +33,7 @@ const mockSpecs: Spec[] = [
     id: 'SPEC-002',
     uuid: 'test-uuid-2',
     title: 'Test Spec 2',
-    description: 'Another test',
     content: 'This is the content of spec 2',
-    design: '',
     priority: 2,
     created_at: '2024-01-02',
     updated_at: '2024-01-02',
@@ -140,9 +136,7 @@ describe('SpecsPage', () => {
   })
 
   it('should handle API error gracefully', async () => {
-    vi.mocked(specsApi.getAll).mockRejectedValue(
-      new Error('Failed to load specs')
-    )
+    vi.mocked(specsApi.getAll).mockRejectedValue(new Error('Failed to load specs'))
 
     renderWithProviders(<SpecsPage />)
 

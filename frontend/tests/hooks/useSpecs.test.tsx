@@ -184,7 +184,7 @@ describe('useSpecs', () => {
 
   it('should delete a spec', async () => {
     vi.mocked(specsApi.getAll).mockResolvedValue([])
-    vi.mocked(specsApi.delete).mockResolvedValue(undefined)
+    vi.mocked(specsApi.delete).mockResolvedValue(undefined as any)
 
     const { result } = renderHook(() => useSpecs(), { wrapper })
 

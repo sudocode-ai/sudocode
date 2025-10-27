@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { Issue, IssueStatus } from '@sudocode/types'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import {
@@ -11,6 +10,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { TiptapEditor } from '@/components/specs/TiptapEditor'
+import { Card } from '@/components/ui/card'
 
 const STATUS_OPTIONS: { value: IssueStatus; label: string }[] = [
   { value: 'open', label: 'Open' },
@@ -37,7 +38,6 @@ interface IssueEditorProps {
 
 export function IssueEditor({ issue, onSave, onCancel, isLoading = false }: IssueEditorProps) {
   const [title, setTitle] = useState(issue?.title || '')
-  const [description, setDescription] = useState(issue?.description || '')
   const [content, setContent] = useState(issue?.content || '')
   const [status, setStatus] = useState<IssueStatus>(issue?.status || 'open')
   const [priority, setPriority] = useState<number>(issue?.priority ?? 2)
@@ -47,7 +47,6 @@ export function IssueEditor({ issue, onSave, onCancel, isLoading = false }: Issu
   useEffect(() => {
     if (issue) {
       setTitle(issue.title)
-      setDescription(issue.description || '')
       setContent(issue.content || '')
       setStatus(issue.status)
       setPriority(issue.priority)
@@ -76,7 +75,6 @@ export function IssueEditor({ issue, onSave, onCancel, isLoading = false }: Issu
 
     onSave({
       title,
-      description,
       content,
       status,
       priority,
@@ -101,33 +99,23 @@ export function IssueEditor({ issue, onSave, onCancel, isLoading = false }: Issu
         {errors.title && <p className="text-sm text-destructive">{errors.title}</p>}
       </div>
 
-      {/* Description */}
-      <div className="space-y-2">
-        <Label htmlFor="description">Description</Label>
-        <Textarea
-          id="description"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Brief description..."
-          rows={3}
-          disabled={isLoading}
-        />
-        <p className="text-xs text-muted-foreground">Brief summary shown in card previews</p>
-      </div>
-
       {/* Content (Markdown) */}
       <div className="space-y-2">
-        <Label htmlFor="content">Details (Markdown)</Label>
-        <Textarea
-          id="content"
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="Full details in markdown format..."
-          rows={8}
-          className="font-mono text-sm"
-          disabled={isLoading}
-        />
-        <p className="text-xs text-muted-foreground">Full details with markdown support</p>
+        <Label htmlFor="content">Details</Label>
+        <Card className="overflow-hidden">
+          <TiptapEditor
+            content={content}
+            editable={true}
+            onSave={(markdown) => setContent(markdown)}
+            onCancel={() => {
+              // Reset to original content if needed
+              if (issue) {
+                setContent(issue.content || '')
+              }
+            }}
+            className="min-h-[300px]"
+          />
+        </Card>
       </div>
 
       {/* Status and Priority Row */}

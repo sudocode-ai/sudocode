@@ -20,8 +20,7 @@ const mockIssues: Issue[] = [
     id: 'ISSUE-001',
     uuid: 'test-uuid-1',
     title: 'Test Issue 1',
-    description: 'Test description',
-    content: '',
+    content: 'Test content',
     status: 'open',
     priority: 1,
     assignee: null,
@@ -34,8 +33,7 @@ const mockIssues: Issue[] = [
     id: 'ISSUE-002',
     uuid: 'test-uuid-2',
     title: 'Test Issue 2',
-    description: 'Another test',
-    content: '',
+    content: 'Another test',
     status: 'in_progress',
     priority: 2,
     assignee: null,
@@ -109,7 +107,7 @@ describe('IssuesPage', () => {
   })
 
   it('should show issue detail panel when issue is clicked', async () => {
-    const user = await import('@testing-library/user-event').then(m => m.default.setup())
+    const user = await import('@testing-library/user-event').then((m) => m.default.setup())
     vi.mocked(issuesApi.getAll).mockResolvedValue(mockIssues)
 
     renderWithProviders(<IssuesPage />)
@@ -135,8 +133,7 @@ describe('IssuesPage', () => {
           id: 'ISSUE-003',
           uuid: 'test-uuid-3',
           title: 'Closed Issue 1',
-          description: 'Closed first',
-          content: '',
+          content: 'Closed first',
           status: 'closed',
           priority: 1,
           assignee: null,
@@ -149,8 +146,7 @@ describe('IssuesPage', () => {
           id: 'ISSUE-004',
           uuid: 'test-uuid-4',
           title: 'Closed Issue 2',
-          description: 'Closed second',
-          content: '',
+          content: 'Closed second',
           status: 'closed',
           priority: 0,
           assignee: null,
@@ -188,8 +184,7 @@ describe('IssuesPage', () => {
           id: 'ISSUE-005',
           uuid: 'test-uuid-5',
           title: 'Low Priority Old',
-          description: 'Low priority, oldest',
-          content: '',
+          content: 'Low priority, oldest',
           status: 'open',
           priority: 3, // Low priority
           assignee: null,
@@ -202,8 +197,7 @@ describe('IssuesPage', () => {
           id: 'ISSUE-006',
           uuid: 'test-uuid-6',
           title: 'High Priority Old',
-          description: 'High priority, old',
-          content: '',
+          content: 'High priority, old',
           status: 'open',
           priority: 1, // Higher priority
           assignee: null,
@@ -216,8 +210,7 @@ describe('IssuesPage', () => {
           id: 'ISSUE-007',
           uuid: 'test-uuid-7',
           title: 'Critical Priority Recent',
-          description: 'Critical, newest',
-          content: '',
+          content: 'Critical, newest',
           status: 'open',
           priority: 0, // Highest priority
           assignee: null,
@@ -230,8 +223,7 @@ describe('IssuesPage', () => {
           id: 'ISSUE-008',
           uuid: 'test-uuid-8',
           title: 'Critical Priority Old',
-          description: 'Critical, oldest',
-          content: '',
+          content: 'Critical, oldest',
           status: 'open',
           priority: 0, // Highest priority
           assignee: null,

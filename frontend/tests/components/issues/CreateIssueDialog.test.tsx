@@ -90,8 +90,9 @@ describe('CreateIssueDialog', () => {
       />
     )
 
-    const cancelButton = screen.getByRole('button', { name: /Cancel/ })
-    await user.click(cancelButton)
+    // Get all Cancel buttons and click the last one (form's Cancel button)
+    const cancelButtons = screen.getAllByRole('button', { name: /Cancel/ })
+    await user.click(cancelButtons[cancelButtons.length - 1])
 
     expect(mockOnClose).toHaveBeenCalledTimes(1)
   })
@@ -135,7 +136,9 @@ describe('CreateIssueDialog', () => {
 
     // Verify form elements are present
     expect(screen.getByLabelText(/Title/)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Description/)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Details \(Markdown\)/)).toBeInTheDocument()
+
+    // Verify status and priority selects are present
+    expect(screen.getByLabelText(/Status/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Priority/)).toBeInTheDocument()
   })
 })

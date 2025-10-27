@@ -458,7 +458,6 @@ This spec has no frontmatter and will be deleted.
         id: "issue-001",
         uuid: "test-uuid-001",
         title: "Test Issue from JSONL",
-        description: "This issue came from JSONL",
         status: "open",
         priority: 2,
         content: "Issue content from JSONL.",
@@ -512,7 +511,6 @@ This spec has no frontmatter and will be deleted.
         id: "issue-002",
         uuid: "test-uuid-002",
         title: "Test Issue No Sync",
-        description: "This should not create markdown",
         status: "open",
         priority: 2,
         content: "Issue content.",
@@ -602,7 +600,6 @@ This is the issue content.
       const issueContent = `---
 id: issue-match-002
 title: Test Markdown Match
-description: Test description
 status: open
 priority: 2
 ---
@@ -653,7 +650,6 @@ This is the issue content.
       const issueContent = `---
 id: issue-diff-001
 title: Test Content Diff
-description: Original description
 status: open
 priority: 2
 ---
@@ -685,7 +681,6 @@ Original content.
       const updatedContent = `---
 id: issue-diff-001
 title: Test Content Diff UPDATED
-description: Updated description
 status: in_progress
 priority: 1
 ---
@@ -743,7 +738,6 @@ Updated content.
         id: "issue-osc-001",
         uuid: "test-uuid-osc-001",
         title: "Test No Oscillation",
-        description: "This should not oscillate",
         status: "open",
         priority: 2,
         content: "Issue content.",

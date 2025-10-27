@@ -243,7 +243,7 @@ describe('Issue Operations', () => {
       createIssue(db, {
         id: 'issue-001',
         title: 'Fix authentication bug',
-        description: 'OAuth is broken',
+        content: 'OAuth is broken and needs to be fixed',
         status: 'open',
         priority: 1,
         assignee: 'agent1',
@@ -258,7 +258,7 @@ describe('Issue Operations', () => {
       createIssue(db, {
         id: 'issue-003',
         title: 'Fix database connection',
-        description: 'Connection pooling issue',
+        content: 'Connection pooling issue needs investigation',
         status: 'closed',
         priority: 1,
       });
@@ -270,13 +270,13 @@ describe('Issue Operations', () => {
       expect(results[0].id).toBe('issue-001');
     });
 
-    it('should search by description', () => {
+    it('should search by content (OAuth)', () => {
       const results = searchIssues(db, 'OAuth');
       expect(results).toHaveLength(1);
       expect(results[0].id).toBe('issue-001');
     });
 
-    it('should search by content', () => {
+    it('should search by content (PostgreSQL)', () => {
       const results = searchIssues(db, 'PostgreSQL');
       expect(results).toHaveLength(1);
       expect(results[0].id).toBe('issue-002');

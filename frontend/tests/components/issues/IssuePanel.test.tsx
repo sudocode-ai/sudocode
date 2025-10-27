@@ -9,7 +9,6 @@ const mockIssue: Issue = {
   id: 'ISSUE-001',
   uuid: 'test-uuid-1',
   title: 'Test Issue',
-  description: 'Test description',
   content: 'Test content in detail',
   status: 'in_progress',
   priority: 1,
@@ -21,13 +20,15 @@ const mockIssue: Issue = {
 }
 
 describe('IssuePanel', () => {
-  it('should render issue details in view mode', () => {
+  it('should render issue details in view mode', async () => {
     renderWithProviders(<IssuePanel issue={mockIssue} />)
 
     expect(screen.getByText('Test Issue')).toBeInTheDocument()
     expect(screen.getByText('ISSUE-001')).toBeInTheDocument()
-    expect(screen.getByText('Test description')).toBeInTheDocument()
-    expect(screen.getByText('Test content in detail')).toBeInTheDocument()
+    // Content is rendered by TiptapMarkdownViewer, wait for it to appear
+    await waitFor(() => {
+      expect(screen.getByText(/Test content in detail/)).toBeInTheDocument()
+    })
     expect(screen.getByText('In Progress')).toBeInTheDocument()
     expect(screen.getByText('High')).toBeInTheDocument()
     expect(screen.getByText('john.doe')).toBeInTheDocument()
@@ -124,9 +125,9 @@ describe('IssuePanel', () => {
     const editButton = screen.getByRole('button', { name: /Edit/ })
     await user.click(editButton)
 
-    // Cancel editing
-    const cancelButton = screen.getByRole('button', { name: /Cancel/ })
-    await user.click(cancelButton)
+    // Cancel editing - get all Cancel buttons and click the last one (form's Cancel button)
+    const cancelButtons = screen.getAllByRole('button', { name: /Cancel/ })
+    await user.click(cancelButtons[cancelButtons.length - 1])
 
     // Should return to view mode
     await waitFor(() => {
@@ -192,12 +193,7 @@ describe('IssuePanel', () => {
     const onDelete = vi.fn()
 
     renderWithProviders(
-      <IssuePanel
-        issue={mockIssue}
-        onUpdate={onUpdate}
-        onDelete={onDelete}
-        isUpdating={true}
-      />
+      <IssuePanel issue={mockIssue} onUpdate={onUpdate} onDelete={onDelete} isUpdating={true} />
     )
 
     expect(screen.getByRole('button', { name: /Edit/ })).toBeDisabled()
@@ -209,12 +205,7 @@ describe('IssuePanel', () => {
     const onDelete = vi.fn()
 
     renderWithProviders(
-      <IssuePanel
-        issue={mockIssue}
-        onUpdate={onUpdate}
-        onDelete={onDelete}
-        isDeleting={true}
-      />
+      <IssuePanel issue={mockIssue} onUpdate={onUpdate} onDelete={onDelete} isDeleting={true} />
     )
 
     expect(screen.getByRole('button', { name: /Edit/ })).toBeDisabled()

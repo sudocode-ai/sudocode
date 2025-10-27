@@ -46,8 +46,7 @@ export async function handleIssueCreate(
     const issue = createIssue(ctx.db, {
       id: issueId,
       title,
-      description: options.description || "",
-      content: "",
+      content: options.description || "",
       status: "open",
       priority: parseInt(options.priority),
       assignee: options.assignee || null,
@@ -122,10 +121,10 @@ export async function handleIssueList(
           issue.status === "closed"
             ? chalk.green
             : issue.status === "in_progress"
-            ? chalk.yellow
-            : issue.status === "blocked"
-            ? chalk.red
-            : chalk.gray;
+              ? chalk.yellow
+              : issue.status === "blocked"
+                ? chalk.red
+                : chalk.gray;
 
         const assigneeStr = issue.assignee
           ? chalk.gray(`@${issue.assignee}`)
@@ -136,11 +135,7 @@ export async function handleIssueList(
           issue.title,
           assigneeStr
         );
-        console.log(
-          chalk.gray(
-            `  Priority: ${issue.priority}`
-          )
-        );
+        console.log(chalk.gray(`  Priority: ${issue.priority}`));
       }
       console.log();
     }
@@ -187,10 +182,7 @@ export async function handleIssueShow(
       if (issue.parent_id) {
         console.log(chalk.gray("Parent:"), issue.parent_id);
       }
-      console.log(
-        chalk.gray("Created:"),
-        issue.created_at
-      );
+      console.log(chalk.gray("Created:"), issue.created_at);
       console.log(chalk.gray("Updated:"), issue.updated_at);
       if (issue.closed_at) {
         console.log(chalk.gray("Closed:"), issue.closed_at);
@@ -200,10 +192,10 @@ export async function handleIssueShow(
         console.log(chalk.gray("Tags:"), tags.join(", "));
       }
 
-      if (issue.description) {
+      if (issue.content) {
         console.log();
-        console.log(chalk.bold("Description:"));
-        console.log(issue.description);
+        console.log(chalk.bold("Content:"));
+        console.log(issue.content);
       }
 
       if (issue.content) {
@@ -247,12 +239,12 @@ export async function handleIssueShow(
             anchor.anchor_status === "valid"
               ? chalk.green
               : anchor.anchor_status === "relocated"
-              ? chalk.yellow
-              : chalk.red;
+                ? chalk.yellow
+                : chalk.red;
 
           console.log(
             `  ${chalk.cyan(fb.id)} → ${chalk.cyan(fb.spec_id)}`,
-            statusColor(`[${fb.dismissed ? 'dismissed' : 'active'}]`),
+            statusColor(`[${fb.dismissed ? "dismissed" : "active"}]`),
             anchorStatusColor(`[${anchor.anchor_status}]`)
           );
           console.log(

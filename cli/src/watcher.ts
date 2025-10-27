@@ -138,7 +138,6 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
       } else {
         const issue = dbEntity as any;
         if (frontmatter.status !== issue.status) return false;
-        if (frontmatter.description !== issue.description) return false;
         if (frontmatter.priority !== issue.priority) return false;
       }
 
@@ -223,6 +222,9 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
 
             // Skip if content already matches (prevents oscillation)
             if (entityId && contentMatches(filePath, entityId, entityType)) {
+              onLog(
+                `[watch] Skipping sync for ${entityType} ${entityId} (content matches)`
+              );
               return;
             }
           } catch (error) {
@@ -273,6 +275,9 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
 
                 // Skip if content already matches (prevents oscillation)
                 if (contentMatches(mdPath, spec.id, "spec")) {
+                  onLog(
+                    `[watch] Skipping sync for spec ${spec.id} (content matches)`
+                  );
                   continue;
                 }
 
@@ -305,6 +310,9 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
 
               // Skip if content already matches (prevents unnecessary writes and oscillation)
               if (contentMatches(mdPath, issue.id, "issue")) {
+                onLog(
+                  `[watch] Skipping sync for issue ${issue.id} (content matches)`
+                );
                 continue;
               }
 

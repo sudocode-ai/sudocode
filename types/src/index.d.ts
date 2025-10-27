@@ -18,8 +18,6 @@ export interface Issue {
   title: string;
   status: IssueStatus;
   uuid: string;
-  // TODO: Remove description and use title/content primarily
-  description: string;
   content: string;
   priority: number;
   assignee: string | null;

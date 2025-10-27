@@ -9,7 +9,6 @@ const mockIssue: Issue = {
   id: 'ISSUE-001',
   uuid: 'test-uuid-1',
   title: 'Test Issue',
-  description: 'Test description',
   content: 'Test content',
   status: 'open',
   priority: 2,
@@ -25,13 +24,9 @@ describe('IssueEditor', () => {
     const onSave = vi.fn()
     const onCancel = vi.fn()
 
-    renderWithProviders(
-      <IssueEditor issue={null} onSave={onSave} onCancel={onCancel} />
-    )
+    renderWithProviders(<IssueEditor issue={null} onSave={onSave} onCancel={onCancel} />)
 
     expect(screen.getByLabelText(/Title/)).toHaveValue('')
-    expect(screen.getByLabelText(/Description/)).toHaveValue('')
-    expect(screen.getByLabelText(/Details \(Markdown\)/)).toHaveValue('')
     expect(screen.getByRole('button', { name: /Create Issue/ })).toBeInTheDocument()
   })
 
@@ -39,13 +34,9 @@ describe('IssueEditor', () => {
     const onSave = vi.fn()
     const onCancel = vi.fn()
 
-    renderWithProviders(
-      <IssueEditor issue={mockIssue} onSave={onSave} onCancel={onCancel} />
-    )
+    renderWithProviders(<IssueEditor issue={mockIssue} onSave={onSave} onCancel={onCancel} />)
 
     expect(screen.getByLabelText(/Title/)).toHaveValue('Test Issue')
-    expect(screen.getByLabelText(/Description/)).toHaveValue('Test description')
-    expect(screen.getByLabelText(/Details \(Markdown\)/)).toHaveValue('Test content')
     expect(screen.getByRole('button', { name: /Update Issue/ })).toBeInTheDocument()
   })
 
@@ -54,9 +45,7 @@ describe('IssueEditor', () => {
     const onSave = vi.fn()
     const onCancel = vi.fn()
 
-    renderWithProviders(
-      <IssueEditor issue={null} onSave={onSave} onCancel={onCancel} />
-    )
+    renderWithProviders(<IssueEditor issue={null} onSave={onSave} onCancel={onCancel} />)
 
     const submitButton = screen.getByRole('button', { name: /Create Issue/ })
     await user.click(submitButton)
@@ -72,9 +61,7 @@ describe('IssueEditor', () => {
     const onSave = vi.fn()
     const onCancel = vi.fn()
 
-    renderWithProviders(
-      <IssueEditor issue={null} onSave={onSave} onCancel={onCancel} />
-    )
+    renderWithProviders(<IssueEditor issue={null} onSave={onSave} onCancel={onCancel} />)
 
     const titleInput = screen.getByLabelText(/Title/)
     const longTitle = 'a'.repeat(201)
@@ -84,9 +71,7 @@ describe('IssueEditor', () => {
     await user.click(submitButton)
 
     await waitFor(() => {
-      expect(
-        screen.getByText('Title must be less than 200 characters')
-      ).toBeInTheDocument()
+      expect(screen.getByText('Title must be less than 200 characters')).toBeInTheDocument()
     })
     expect(onSave).not.toHaveBeenCalled()
   })
@@ -96,29 +81,23 @@ describe('IssueEditor', () => {
     const onSave = vi.fn()
     const onCancel = vi.fn()
 
-    renderWithProviders(
-      <IssueEditor issue={null} onSave={onSave} onCancel={onCancel} />
-    )
+    renderWithProviders(<IssueEditor issue={null} onSave={onSave} onCancel={onCancel} />)
 
     const titleInput = screen.getByLabelText(/Title/)
-    const descriptionInput = screen.getByLabelText(/Description/)
-    const contentInput = screen.getByLabelText(/Details \(Markdown\)/)
 
     await user.type(titleInput, 'New Issue Title')
-    await user.type(descriptionInput, 'Brief description')
-    await user.type(contentInput, 'Full content here')
 
     const submitButton = screen.getByRole('button', { name: /Create Issue/ })
     await user.click(submitButton)
 
     await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith({
-        title: 'New Issue Title',
-        description: 'Brief description',
-        content: 'Full content here',
-        status: 'open',
-        priority: 2,
-      })
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'New Issue Title',
+          status: 'open',
+          priority: 2,
+        })
+      )
     })
   })
 
@@ -127,12 +106,11 @@ describe('IssueEditor', () => {
     const onSave = vi.fn()
     const onCancel = vi.fn()
 
-    renderWithProviders(
-      <IssueEditor issue={null} onSave={onSave} onCancel={onCancel} />
-    )
+    renderWithProviders(<IssueEditor issue={null} onSave={onSave} onCancel={onCancel} />)
 
-    const cancelButton = screen.getByRole('button', { name: /Cancel/ })
-    await user.click(cancelButton)
+    // Get all Cancel buttons and click the last one (form's Cancel button)
+    const cancelButtons = screen.getAllByRole('button', { name: /Cancel/ })
+    await user.click(cancelButtons[cancelButtons.length - 1])
 
     expect(onCancel).toHaveBeenCalled()
     expect(onSave).not.toHaveBeenCalled()
@@ -143,19 +121,14 @@ describe('IssueEditor', () => {
     const onCancel = vi.fn()
 
     renderWithProviders(
-      <IssueEditor
-        issue={null}
-        onSave={onSave}
-        onCancel={onCancel}
-        isLoading={true}
-      />
+      <IssueEditor issue={null} onSave={onSave} onCancel={onCancel} isLoading={true} />
     )
 
     expect(screen.getByLabelText(/Title/)).toBeDisabled()
-    expect(screen.getByLabelText(/Description/)).toBeDisabled()
-    expect(screen.getByLabelText(/Details \(Markdown\)/)).toBeDisabled()
     expect(screen.getByRole('button', { name: /Saving\.\.\./ })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /Cancel/ })).toBeDisabled()
+    // Get all Cancel buttons and check the last one (form's Cancel button) is disabled
+    const cancelButtons = screen.getAllByRole('button', { name: /Cancel/ })
+    expect(cancelButtons[cancelButtons.length - 1]).toBeDisabled()
   })
 
   it.skip('should update status via selector (skipped due to jsdom/Radix UI portal limitations)', async () => {
@@ -163,9 +136,7 @@ describe('IssueEditor', () => {
     const onSave = vi.fn()
     const onCancel = vi.fn()
 
-    renderWithProviders(
-      <IssueEditor issue={null} onSave={onSave} onCancel={onCancel} />
-    )
+    renderWithProviders(<IssueEditor issue={null} onSave={onSave} onCancel={onCancel} />)
 
     const titleInput = screen.getByLabelText(/Title/)
     await user.type(titleInput, 'Test Issue')
@@ -195,9 +166,7 @@ describe('IssueEditor', () => {
     const onSave = vi.fn()
     const onCancel = vi.fn()
 
-    renderWithProviders(
-      <IssueEditor issue={null} onSave={onSave} onCancel={onCancel} />
-    )
+    renderWithProviders(<IssueEditor issue={null} onSave={onSave} onCancel={onCancel} />)
 
     const titleInput = screen.getByLabelText(/Title/)
     await user.type(titleInput, 'Test Issue')

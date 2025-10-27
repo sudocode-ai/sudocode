@@ -119,7 +119,6 @@ function initializeFrontmatter(
     if (!initialized.status) initialized.status = "open";
     if (!initialized.priority && initialized.priority !== 0)
       initialized.priority = 2;
-    if (!initialized.description) initialized.description = "";
   }
 
   return initialized;
@@ -465,7 +464,6 @@ async function syncIssue(
   const issueData: Partial<Issue> = {
     id,
     title: frontmatter.title || "Untitled",
-    description: frontmatter.description || "",
     content,
     status: (frontmatter.status as IssueStatus) || "open",
     priority: frontmatter.priority ?? 2,
@@ -596,7 +594,6 @@ function entityToFrontmatter(
     const result: Record<string, any> = {
       ...base,
       status: issue.status,
-      description: issue.description,
     };
 
     // Only add optional issue fields if they have values

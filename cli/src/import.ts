@@ -226,9 +226,7 @@ export function countReferences(
   for (const issue of issues) {
     const regex = new RegExp(`\\b${entityId}\\b`, "g");
     const contentMatches = issue.content.match(regex);
-    const descMatches = issue.description.match(regex);
     if (contentMatches) count += contentMatches.length;
-    if (descMatches) count += descMatches.length;
   }
 
   return count;
@@ -366,23 +364,15 @@ export function updateTextReferences(
     const regex = new RegExp(`\\b${oldId}\\b`, "g");
     let updated = false;
     let newContent = issue.content;
-    let newDescription = issue.description;
 
     if (regex.test(issue.content)) {
       newContent = issue.content.replace(regex, newId);
       updated = true;
     }
 
-    const descRegex = new RegExp(`\\b${oldId}\\b`, "g");
-    if (descRegex.test(issue.description)) {
-      newDescription = issue.description.replace(descRegex, newId);
-      updated = true;
-    }
-
     if (updated) {
       updateIssue(db, issue.id, {
         content: newContent,
-        description: newDescription,
       });
       updatedCount++;
     }
@@ -561,7 +551,6 @@ export function importIssues(
         id: issue.id,
         uuid: issue.uuid,
         title: issue.title,
-        description: issue.description,
         content: issue.content,
         status: issue.status,
         priority: issue.priority,
@@ -601,7 +590,6 @@ export function importIssues(
     if (issue) {
       updateIssue(db, issue.id, {
         title: issue.title,
-        description: issue.description,
         content: issue.content,
         status: issue.status,
         priority: issue.priority,

@@ -8,6 +8,7 @@ import { DeleteIssueDialog } from './DeleteIssueDialog'
 import { RelationshipList } from '@/components/relationships/RelationshipList'
 import { RelationshipForm } from '@/components/relationships/RelationshipForm'
 import { relationshipsApi } from '@/lib/api'
+import { TiptapMarkdownViewer } from '@/components/specs/TiptapMarkdownViewer'
 
 interface IssuePanelProps {
   issue: Issue
@@ -184,21 +185,13 @@ export function IssuePanel({
             </div>
           </div>
 
-          {/* Description */}
-          {issue.description && (
-            <div>
-              <div className="mb-1 text-sm font-medium text-muted-foreground">Description</div>
-              <div className="whitespace-pre-wrap text-sm">{issue.description}</div>
-            </div>
-          )}
-
           {/* Content */}
           {issue.content && (
             <div>
-              <div className="mb-1 text-sm font-medium text-muted-foreground">Details</div>
-              <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm">
-                {issue.content}
-              </div>
+              <div className="mb-2 text-sm font-medium text-muted-foreground">Details</div>
+              <Card>
+                <TiptapMarkdownViewer content={issue.content} className="p-4" />
+              </Card>
             </div>
           )}
 

@@ -94,7 +94,6 @@ describe("JSONL Export Integration", () => {
       // Create an issue via API
       const newIssue = {
         title: "Export Test Issue",
-        description: "Testing JSONL export",
         status: "open",
         priority: 1,
       };
@@ -119,7 +118,6 @@ describe("JSONL Export Integration", () => {
       const exportedIssue = issues.find((i) => i.id === issueId);
       assert.ok(exportedIssue, "Created issue should be in JSONL file");
       assert.strictEqual(exportedIssue.title, newIssue.title);
-      assert.strictEqual(exportedIssue.description, newIssue.description);
       assert.strictEqual(exportedIssue.status, newIssue.status);
       assert.strictEqual(exportedIssue.priority, newIssue.priority);
 
@@ -134,7 +132,6 @@ describe("JSONL Export Integration", () => {
       const parsed = parseMarkdownFile(issueMdPath, db, testDir);
       assert.strictEqual(parsed.data.id, issueId);
       assert.strictEqual(parsed.data.title, newIssue.title);
-      assert.strictEqual(parsed.data.description, newIssue.description);
       assert.strictEqual(parsed.data.status, newIssue.status);
       assert.strictEqual(parsed.data.priority, newIssue.priority);
     });
@@ -313,10 +310,7 @@ describe("JSONL Export Integration", () => {
         priority: 3,
       };
 
-      await request(app)
-        .put(`/api/specs/${specId}`)
-        .send(updates)
-        .expect(200);
+      await request(app).put(`/api/specs/${specId}`).send(updates).expect(200);
 
       // Wait for export after update
       await waitForExport();

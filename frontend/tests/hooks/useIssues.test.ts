@@ -22,8 +22,7 @@ const mockIssues: Issue[] = [
     id: 'ISSUE-001',
     uuid: 'test-uuid-1',
     title: 'Test Issue 1',
-    description: 'Test description',
-    content: '',
+    content: 'Test content',
     status: 'open',
     priority: 1,
     assignee: null,
@@ -36,8 +35,7 @@ const mockIssues: Issue[] = [
     id: 'ISSUE-002',
     uuid: 'test-uuid-2',
     title: 'Test Issue 2',
-    description: 'Another test',
-    content: '',
+    content: 'Another test',
     status: 'in_progress',
     priority: 2,
     assignee: null,
@@ -133,9 +131,7 @@ describe('useIssues', () => {
 
   it('should rollback on update error', async () => {
     vi.mocked(issuesApi.getAll).mockResolvedValue(mockIssues)
-    vi.mocked(issuesApi.update).mockRejectedValue(
-      new Error('Update failed')
-    )
+    vi.mocked(issuesApi.update).mockRejectedValue(new Error('Update failed'))
 
     const { result } = renderHook(() => useIssues(), {
       wrapper: createWrapper(),
@@ -167,8 +163,7 @@ describe('useIssues', () => {
       id: 'ISSUE-003',
       uuid: 'test-uuid-3',
       title: 'New Issue',
-      description: 'New description',
-      content: '',
+      content: 'New content',
       status: 'open',
       priority: 1,
       assignee: null,
@@ -189,7 +184,7 @@ describe('useIssues', () => {
 
     result.current.createIssue({
       title: 'New Issue',
-      description: 'New description',
+      content: 'New content',
     })
 
     await waitFor(() => {
@@ -199,7 +194,7 @@ describe('useIssues', () => {
 
   it('should delete issue', async () => {
     vi.mocked(issuesApi.getAll).mockResolvedValue(mockIssues)
-    vi.mocked(issuesApi.delete).mockResolvedValue(undefined)
+    vi.mocked(issuesApi.delete).mockResolvedValue(undefined as any)
 
     const { result } = renderHook(() => useIssues(), {
       wrapper: createWrapper(),
@@ -295,9 +290,7 @@ describe('useUpdateIssueStatus', () => {
   })
 
   it('should handle update status error with rollback', async () => {
-    vi.mocked(issuesApi.update).mockRejectedValue(
-      new Error('Update failed')
-    )
+    vi.mocked(issuesApi.update).mockRejectedValue(new Error('Update failed'))
 
     const { result } = renderHook(() => useUpdateIssueStatus(), {
       wrapper: createWrapper(),

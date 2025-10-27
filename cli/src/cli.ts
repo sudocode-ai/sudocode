@@ -212,7 +212,6 @@ spec
   .description("Create a new spec")
   .option("-p, --priority <priority>", "Priority (0-4)", "2")
   .option("-d, --description <desc>", "Description")
-  .option("--design <design>", "Design notes")
   .option("--file-path <path>", "File path for markdown")
   .option("--parent <id>", "Parent spec ID")
   .option("--tags <tags>", "Comma-separated tags")
@@ -243,7 +242,6 @@ spec
   .option("-p, --priority <priority>", "New priority")
   .option("--title <title>", "New title")
   .option("-d, --description <desc>", "New description")
-  .option("--design <design>", "New design notes")
   .option("--parent <id>", "New parent spec ID")
   .option("--tags <tags>", "New comma-separated tags")
   .action(async (id, options) => {
@@ -296,7 +294,7 @@ issue
   .option("-s, --status <status>", "Filter by status")
   .option("-a, --assignee <assignee>", "Filter by assignee")
   .option("-p, --priority <priority>", "Filter by priority")
-  .option("-g, --grep <query>", "Search by title, description, or content")
+  .option("-g, --grep <query>", "Search by title or content")
   .option("--limit <num>", "Limit results", "50")
   .action(async (options) => {
     await handleIssueList(getContext(), options);

@@ -145,10 +145,12 @@ describe('API Module', () => {
       const data = {
         issue_id: 'ISSUE-001',
         spec_id: 'SPEC-001',
-        feedback_type: 'comment' as const,
+        type: 'comment' as const,
         content: 'Test feedback',
-        agent: 'test-agent',
-        anchor: { line_number: 10 },
+        anchor: {
+          line_number: 10,
+          anchor_status: 'valid' as const,
+        },
       }
       feedbackApi.create(data)
       expect(feedbackApi.create).toHaveBeenCalledWith(data)

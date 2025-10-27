@@ -20,7 +20,6 @@ export interface UpsertSpecParams {
   title?: string; // Required for create, optional for update
   priority?: number;
   description?: string;
-  design?: string;
   parent?: string;
   tags?: string[];
 }
@@ -89,9 +88,6 @@ export async function upsertSpec(
     if (params.description) {
       args.push("--description", params.description);
     }
-    if (params.design) {
-      args.push("--design", params.design);
-    }
     if (params.parent !== undefined) {
       args.push("--parent", params.parent || "");
     }
@@ -113,9 +109,6 @@ export async function upsertSpec(
     }
     if (params.description) {
       args.push("--description", params.description);
-    }
-    if (params.design) {
-      args.push("--design", params.design);
     }
     if (params.parent) {
       args.push("--parent", params.parent);

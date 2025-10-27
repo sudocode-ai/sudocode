@@ -46,7 +46,6 @@ CREATE TABLE IF NOT EXISTS issues (
     id TEXT PRIMARY KEY,
     uuid TEXT NOT NULL UNIQUE,
     title TEXT NOT NULL CHECK(length(title) <= 500),
-    description TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'open',
     priority INTEGER NOT NULL DEFAULT 2 CHECK(priority >= 0 AND priority <= 4),

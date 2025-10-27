@@ -71,12 +71,21 @@ export function IssueCard({ issue, index, status, onViewDetails, isOpen }: Issue
         </div>
         {/* Issue ID */}
         <div className="text-xs text-muted-foreground">{issue.id}</div>
-        {/* Description Preview */}
-        {issue.description && (
+        {/* Content Preview */}
+        {issue.content && (
           <p className="line-clamp-2 break-words text-sm text-secondary-foreground">
-            {issue.description.length > 100
-              ? `${issue.description.substring(0, 100)}...`
-              : issue.description}
+            {(() => {
+              // Simple markdown stripping - remove headers, formatting, etc.
+              const plainText = issue.content
+                .replace(/^#+ /gm, '') // Remove headers
+                .replace(/\*\*(.+?)\*\*/g, '$1') // Remove bold
+                .replace(/\*(.+?)\*/g, '$1') // Remove italic
+                .replace(/\[(.+?)\]\(.+?\)/g, '$1') // Remove links
+                .replace(/`(.+?)`/g, '$1') // Remove inline code
+                .trim()
+
+              return plainText.length > 100 ? `${plainText.substring(0, 100)}...` : plainText
+            })()}
           </p>
         )}
       </div>

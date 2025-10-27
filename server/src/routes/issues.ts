@@ -99,7 +99,6 @@ export function createIssuesRouter(db: Database.Database): Router {
     try {
       const {
         title,
-        description,
         content,
         status,
         priority,
@@ -134,7 +133,6 @@ export function createIssuesRouter(db: Database.Database): Router {
       const issue = createNewIssue(db, {
         id,
         title,
-        description: description || "",
         content: content || "",
         status: status || "open",
         priority: priority !== undefined ? priority : 2,
@@ -171,7 +169,6 @@ export function createIssuesRouter(db: Database.Database): Router {
       const { id } = req.params;
       const {
         title,
-        description,
         content,
         status,
         priority,
@@ -182,7 +179,6 @@ export function createIssuesRouter(db: Database.Database): Router {
       // Validate that at least one field is provided
       if (
         title === undefined &&
-        description === undefined &&
         content === undefined &&
         status === undefined &&
         priority === undefined &&
@@ -214,7 +210,6 @@ export function createIssuesRouter(db: Database.Database): Router {
       // Build update input
       const updateInput: any = {};
       if (title !== undefined) updateInput.title = title;
-      if (description !== undefined) updateInput.description = description;
       if (content !== undefined) updateInput.content = content;
       if (status !== undefined) updateInput.status = status;
       if (priority !== undefined) updateInput.priority = priority;

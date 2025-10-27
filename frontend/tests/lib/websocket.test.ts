@@ -27,7 +27,7 @@ class MockWebSocket {
     })
   }
 
-  send(data: string) {
+  send(_data: string) {
     if (this.readyState !== MockWebSocket.OPEN) {
       throw new Error('WebSocket is not open')
     }
@@ -103,7 +103,18 @@ describe('useWebSocket', () => {
     const onMessage = vi.fn()
     const mockMessage: WebSocketMessage = {
       type: 'spec_updated',
-      data: { id: 'SPEC-001' },
+      data: {
+        id: 'SPEC-001',
+        uuid: 'test-uuid',
+        title: 'Test Spec',
+        content: 'Test content',
+        file_path: '/path/to/spec.md',
+        priority: 1,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+        parent_id: null,
+      },
+      timestamp: '2024-01-01T00:00:00Z',
     }
 
     const { result } = renderHook(() => useWebSocket('/test', { onMessage }))
@@ -288,7 +299,10 @@ describe('useWebSocket', () => {
 
     global.WebSocket = CountingWebSocket as any
 
-    const { result, rerender } = renderHook(
+    const { result, rerender } = renderHook<
+      ReturnType<typeof useWebSocket>,
+      { onMessage: (msg: WebSocketMessage) => void }
+    >(
       ({ onMessage }) => useWebSocket('/test', { onMessage }),
       { initialProps: { onMessage: vi.fn() } }
     )
@@ -317,7 +331,10 @@ describe('useWebSocket', () => {
     const firstCallback = vi.fn()
     const secondCallback = vi.fn()
 
-    const { result, rerender } = renderHook(
+    const { result, rerender } = renderHook<
+      ReturnType<typeof useWebSocket>,
+      { onMessage: (msg: WebSocketMessage) => void }
+    >(
       ({ onMessage }) => useWebSocket('/test', { onMessage }),
       { initialProps: { onMessage: firstCallback } }
     )
@@ -329,7 +346,18 @@ describe('useWebSocket', () => {
     const ws = lastWebSocketInstance!
     const mockMessage: WebSocketMessage = {
       type: 'spec_updated',
-      data: { id: 'SPEC-001' },
+      data: {
+        id: 'SPEC-001',
+        uuid: 'test-uuid',
+        title: 'Test Spec',
+        content: 'Test content',
+        file_path: '/path/to/spec.md',
+        priority: 1,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+        parent_id: null,
+      },
+      timestamp: '2024-01-01T00:00:00Z',
     }
 
     // Send a message with first callback

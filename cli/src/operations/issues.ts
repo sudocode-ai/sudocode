@@ -10,7 +10,6 @@ export interface CreateIssueInput {
   id: string;
   uuid?: string;
   title: string;
-  description?: string;
   content?: string;
   status?: IssueStatus;
   priority?: number;
@@ -23,7 +22,6 @@ export interface CreateIssueInput {
 
 export interface UpdateIssueInput {
   title?: string;
-  description?: string;
   content?: string;
   status?: IssueStatus;
   priority?: number;
@@ -64,7 +62,6 @@ export function createIssue(
     "id",
     "uuid",
     "title",
-    "description",
     "content",
     "status",
     "priority",
@@ -75,7 +72,6 @@ export function createIssue(
     "@id",
     "@uuid",
     "@title",
-    "@description",
     "@content",
     "@status",
     "@priority",
@@ -109,7 +105,6 @@ export function createIssue(
       id: input.id,
       uuid: uuid,
       title: input.title,
-      description: input.description || "",
       content: input.content || "",
       status: input.status || "open",
       priority: input.priority ?? 2,
@@ -181,10 +176,6 @@ export function updateIssue(
   if (input.title !== undefined) {
     updates.push("title = @title");
     params.title = input.title;
-  }
-  if (input.description !== undefined) {
-    updates.push("description = @description");
-    params.description = input.description;
   }
   if (input.content !== undefined) {
     updates.push("content = @content");
@@ -355,7 +346,7 @@ export function getBlockedIssues(db: Database.Database): any[] {
 }
 
 /**
- * Search issues by title, description, or content
+ * Search issues by title or content
  */
 export function searchIssues(
   db: Database.Database,
@@ -363,7 +354,7 @@ export function searchIssues(
   options: Omit<ListIssuesOptions, "offset"> = {}
 ): Issue[] {
   const conditions: string[] = [
-    "(title LIKE @query OR description LIKE @query OR content LIKE @query)",
+    "(title LIKE @query OR content LIKE @query)",
   ];
   const params: Record<string, any> = { query: `%${query}%` };
 

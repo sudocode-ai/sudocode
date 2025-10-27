@@ -9,7 +9,6 @@ const mockIssue: Issue = {
   id: 'ISSUE-001',
   uuid: 'test-uuid-1',
   title: 'Test Issue to Delete',
-  description: 'Test description',
   content: 'Test content',
   status: 'open',
   priority: 2,

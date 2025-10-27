@@ -5,7 +5,7 @@
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
-    "types": ["vitest/globals"],
+    "types": ["vitest/globals", "@testing-library/jest-dom"],
 
     /* Bundler mode */
     "moduleResolution": "bundler",
@@ -33,6 +33,6 @@
       "@/stores/*": ["./src/stores/*"]
     }
   },
-  "include": ["src"],
+  "include": ["src", "tests"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
