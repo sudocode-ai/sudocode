@@ -9,6 +9,8 @@ import {
 import { IssueCard } from './IssueCard'
 import type { Issue, IssueStatus } from '@sudocode/types'
 
+const columnOrder: IssueStatus[] = ['open', 'blocked', 'in_progress', 'needs_review', 'closed']
+
 // Status labels and colors
 const statusLabels: Record<IssueStatus, string> = {
   open: 'Open',
@@ -63,26 +65,26 @@ function IssueKanbanBoard({
 
   return (
     <KanbanProvider onDragEnd={onDragEnd} renderDragOverlay={renderDragOverlay}>
-      {Object.entries(groupedIssues).map(([status, statusIssues]) => (
-        <KanbanBoard key={status} id={status as IssueStatus} data-column-id={status}>
-          <KanbanHeader
-            name={statusLabels[status as IssueStatus]}
-            color={statusColors[status as IssueStatus]}
-          />
-          <KanbanCards>
-            {statusIssues.map((issue, index) => (
-              <IssueCard
-                key={issue.id}
-                issue={issue}
-                index={index}
-                status={status}
-                onViewDetails={onViewIssueDetails}
-                isOpen={selectedIssue?.id === issue.id}
-              />
-            ))}
-          </KanbanCards>
-        </KanbanBoard>
-      ))}
+      {columnOrder.map((status) => {
+        const statusIssues = groupedIssues[status] || []
+        return (
+          <KanbanBoard key={status} id={status} data-column-id={status}>
+            <KanbanHeader name={statusLabels[status]} color={statusColors[status]} />
+            <KanbanCards>
+              {statusIssues.map((issue, index) => (
+                <IssueCard
+                  key={issue.id}
+                  issue={issue}
+                  index={index}
+                  status={status}
+                  onViewDetails={onViewIssueDetails}
+                  isOpen={selectedIssue?.id === issue.id}
+                />
+              ))}
+            </KanbanCards>
+          </KanbanBoard>
+        )
+      })}
     </KanbanProvider>
   )
 }
