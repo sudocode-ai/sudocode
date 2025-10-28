@@ -33,6 +33,7 @@ interface IssueKanbanBoardProps {
   onDragEnd: (event: DragEndEvent) => void
   onViewIssueDetails: (issue: Issue) => void
   selectedIssue?: Issue
+  onArchiveAllClosed?: () => void
 }
 
 function IssueKanbanBoard({
@@ -40,6 +41,7 @@ function IssueKanbanBoard({
   onDragEnd,
   onViewIssueDetails,
   selectedIssue,
+  onArchiveAllClosed,
 }: IssueKanbanBoardProps) {
   const renderDragOverlay = (activeId: string | null) => {
     if (!activeId) return null
@@ -69,7 +71,11 @@ function IssueKanbanBoard({
         const statusIssues = groupedIssues[status] || []
         return (
           <KanbanBoard key={status} id={status} data-column-id={status}>
-            <KanbanHeader name={statusLabels[status]} color={statusColors[status]} />
+            <KanbanHeader
+              name={statusLabels[status]}
+              color={statusColors[status]}
+              onArchiveAll={status === 'closed' ? onArchiveAllClosed : undefined}
+            />
             <KanbanCards>
               {statusIssues.map((issue, index) => (
                 <IssueCard

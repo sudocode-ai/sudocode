@@ -16,7 +16,7 @@ import {
 } from '@dnd-kit/core'
 import { type ReactNode, type Ref, type KeyboardEvent, useState } from 'react'
 
-import { Plus } from 'lucide-react'
+import { Plus, Archive } from 'lucide-react'
 import type { ClientRect } from '@dnd-kit/core'
 import type { Transform } from '@dnd-kit/utilities'
 import { Button } from '../button'
@@ -139,6 +139,7 @@ export type KanbanHeaderProps =
       color: Status['color']
       className?: string
       onAddIssue?: () => void
+      onArchiveAll?: () => void
     }
 
 export const KanbanHeader = (props: KanbanHeaderProps) => {
@@ -165,23 +166,42 @@ export const KanbanHeader = (props: KanbanHeaderProps) => {
 
         <p className="m-0 text-sm">{props.name}</p>
       </span>
-      {props.onAddIssue && (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                className="m-0 h-0 p-0 text-foreground/50 hover:text-foreground"
-                onClick={props.onAddIssue}
-                aria-label="Add Issue"
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top">Add Issue</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      )}
+      <span className="flex items-center gap-1">
+        {props.onArchiveAll && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="m-0 h-0 p-0 text-foreground/50 hover:text-foreground"
+                  onClick={props.onArchiveAll}
+                  aria-label="Archive All"
+                >
+                  <Archive className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Archive All</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+        {props.onAddIssue && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="m-0 h-0 p-0 text-foreground/50 hover:text-foreground"
+                  onClick={props.onAddIssue}
+                  aria-label="Add Issue"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Add Issue</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+      </span>
     </Card>
   )
 }

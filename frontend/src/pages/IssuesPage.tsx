@@ -159,6 +159,13 @@ export default function IssuesPage() {
     [unarchiveIssue]
   )
 
+  const handleArchiveAllClosed = useCallback(() => {
+    const closedIssues = groupedIssues.closed || []
+    closedIssues.forEach((issue) => {
+      archiveIssue(issue.id)
+    })
+  }, [groupedIssues.closed, archiveIssue])
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -239,6 +246,7 @@ export default function IssuesPage() {
                 onDragEnd={handleDragEnd}
                 onViewIssueDetails={handleViewIssueDetails}
                 selectedIssue={selectedIssue}
+                onArchiveAllClosed={handleArchiveAllClosed}
               />
             </Panel>
 
@@ -292,6 +300,7 @@ export default function IssuesPage() {
               onDragEnd={handleDragEnd}
               onViewIssueDetails={handleViewIssueDetails}
               selectedIssue={selectedIssue}
+              onArchiveAllClosed={handleArchiveAllClosed}
             />
           </div>
         )}
