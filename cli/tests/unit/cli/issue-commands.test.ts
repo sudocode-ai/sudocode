@@ -10,6 +10,7 @@ import {
   handleIssueShow,
   handleIssueUpdate,
   handleIssueClose,
+  handleIssueDelete,
 } from "../../../src/cli/issue-commands.js";
 import type Database from "better-sqlite3";
 import * as fs from "fs";
@@ -287,6 +288,172 @@ describe("Issue CLI Commands", () => {
         expect.anything(),
         expect.anything()
       );
+    });
+  });
+
+  describe("handleIssueDelete", () => {
+    beforeEach(async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      await handleIssueCreate(ctx, "Delete Test 1", { priority: "2" });
+      await handleIssueCreate(ctx, "Delete Test 2", { priority: "2" });
+      await handleIssueCreate(ctx, "Delete Test 3", { priority: "2" });
+      consoleLogSpy.mockClear();
+    });
+
+    it("should soft delete (close) a single issue by default", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+
+      await handleIssueDelete(ctx, ["issue-001"], {});
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining("✓ Closed issue"),
+        expect.anything()
+      );
+
+      // Verify issue is closed, not deleted
+      const issue = db.prepare("SELECT * FROM issues WHERE id = ?").get("issue-001");
+      expect(issue).toBeDefined();
+      expect((issue as any).status).toBe("closed");
+    });
+
+    it("should hard delete (permanently remove) issue with --hard flag", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+
+      await handleIssueDelete(ctx, ["issue-001"], { hard: true });
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining("✓ Permanently deleted issue"),
+        expect.anything()
+      );
+
+      // Verify issue is completely removed from database
+      const issue = db.prepare("SELECT * FROM issues WHERE id = ?").get("issue-001");
+      expect(issue).toBeUndefined();
+    });
+
+    it("should delete multiple issues (soft delete)", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+
+      await handleIssueDelete(ctx, ["issue-001", "issue-002"], {});
+
+      expect(consoleLogSpy).toHaveBeenCalledTimes(2);
+      expect(consoleLogSpy).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("✓ Closed issue"),
+        expect.anything()
+      );
+      expect(consoleLogSpy).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("✓ Closed issue"),
+        expect.anything()
+      );
+
+      // Verify both issues are closed
+      const issue1 = db.prepare("SELECT status FROM issues WHERE id = ?").get("issue-001");
+      const issue2 = db.prepare("SELECT status FROM issues WHERE id = ?").get("issue-002");
+      expect((issue1 as any).status).toBe("closed");
+      expect((issue2 as any).status).toBe("closed");
+    });
+
+    it("should delete multiple issues (hard delete)", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+
+      await handleIssueDelete(ctx, ["issue-001", "issue-002"], { hard: true });
+
+      expect(consoleLogSpy).toHaveBeenCalledTimes(2);
+      expect(consoleLogSpy).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining("✓ Permanently deleted issue"),
+        expect.anything()
+      );
+      expect(consoleLogSpy).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining("✓ Permanently deleted issue"),
+        expect.anything()
+      );
+
+      // Verify both issues are removed
+      const issue1 = db.prepare("SELECT * FROM issues WHERE id = ?").get("issue-001");
+      const issue2 = db.prepare("SELECT * FROM issues WHERE id = ?").get("issue-002");
+      expect(issue1).toBeUndefined();
+      expect(issue2).toBeUndefined();
+    });
+
+    it("should handle non-existent issue gracefully", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+
+      await handleIssueDelete(ctx, ["non-existent"], {});
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("✗ Issue not found:"),
+        expect.anything()
+      );
+    });
+
+    it("should handle mixed batch delete (some exist, some don't)", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+
+      await handleIssueDelete(ctx, ["issue-001", "non-existent", "issue-002"], {});
+
+      // Should succeed for existing issues
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining("✓ Closed issue"),
+        expect.stringContaining("issue-001")
+      );
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining("✓ Closed issue"),
+        expect.stringContaining("issue-002")
+      );
+
+      // Should error for non-existent issue
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("✗ Issue not found:"),
+        expect.stringContaining("non-existent")
+      );
+    });
+
+    it("should output JSON with results for all operations", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: true };
+
+      await handleIssueDelete(ctx, ["issue-001", "non-existent", "issue-002"], {});
+
+      const output = consoleLogSpy.mock.calls[0][0];
+      const results = JSON.parse(output);
+
+      expect(results).toHaveLength(3);
+      expect(results[0]).toMatchObject({
+        id: "issue-001",
+        success: true,
+        action: "soft_delete",
+        status: "closed",
+      });
+      expect(results[1]).toMatchObject({
+        id: "non-existent",
+        success: false,
+        error: "Issue not found",
+      });
+      expect(results[2]).toMatchObject({
+        id: "issue-002",
+        success: true,
+        action: "soft_delete",
+        status: "closed",
+      });
+    });
+
+    it("should output JSON for hard delete", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: true };
+
+      await handleIssueDelete(ctx, ["issue-001"], { hard: true });
+
+      const output = consoleLogSpy.mock.calls[0][0];
+      const results = JSON.parse(output);
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({
+        id: "issue-001",
+        success: true,
+        action: "hard_delete",
+      });
     });
   });
 });
