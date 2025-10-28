@@ -259,7 +259,7 @@ export class SimpleProcessManager implements IProcessManager {
     }
 
     // If already terminated, do nothing (idempotent)
-    if (managed.exitCode !== null || managed.process.killed) {
+    if (managed.exitCode !== null) {
       return;
     }
 
@@ -269,12 +269,36 @@ export class SimpleProcessManager implements IProcessManager {
     // Try graceful shutdown first
     managed.process.kill(signal);
 
-    // Wait for graceful shutdown (2 seconds)
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Wait for process to exit (with 2 second timeout)
+    const exitPromise = new Promise<void>((resolve) => {
+      if (managed.exitCode !== null) {
+        resolve();
+      } else {
+        managed.process.once('exit', () => resolve());
+      }
+    });
+
+    const timeoutPromise = new Promise<void>((resolve) => {
+      setTimeout(resolve, 2000);
+    });
+
+    await Promise.race([exitPromise, timeoutPromise]);
 
     // Force kill if still running
-    if (!managed.process.killed && managed.exitCode === null) {
+    if (managed.exitCode === null) {
       managed.process.kill('SIGKILL');
+
+      // Wait for SIGKILL to take effect (with timeout)
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          if (managed.exitCode !== null) {
+            resolve();
+          } else {
+            managed.process.once('exit', () => resolve());
+          }
+        }),
+        new Promise<void>((resolve) => setTimeout(resolve, 1000)),
+      ]);
     }
   }
 
