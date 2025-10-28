@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { KanbanCard } from '@/components/ui/kanban'
 import type { Issue } from '@sudocode/types'
 
@@ -23,14 +24,22 @@ interface IssueCardProps {
   issue: Issue
   index: number
   status: string
-  onViewDetails: (issue: Issue) => void
+  onViewDetails?: (issue: Issue) => void
   isOpen?: boolean
 }
 
 export function IssueCard({ issue, index, status, onViewDetails, isOpen }: IssueCardProps) {
+  const navigate = useNavigate()
+
   const handleClick = useCallback(() => {
-    onViewDetails(issue)
-  }, [issue, onViewDetails])
+    // If onViewDetails is provided, use it (for backward compatibility)
+    // Otherwise, navigate to the detail page
+    if (onViewDetails) {
+      onViewDetails(issue)
+    } else {
+      navigate(`/issues/${issue.id}`)
+    }
+  }, [issue, onViewDetails, navigate])
 
   const localRef = useRef<HTMLDivElement>(null)
 

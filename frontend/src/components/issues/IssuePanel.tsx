@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Archive, ArchiveRestore } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Plus, Archive, ArchiveRestore, ExternalLink } from 'lucide-react'
 import type { Issue, Relationship, EntityType, RelationshipType, IssueStatus } from '@/types/api'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -56,6 +57,7 @@ export function IssuePanel({
   isUpdating = false,
   isDeleting = false,
 }: IssuePanelProps) {
+  const navigate = useNavigate()
   const [title, setTitle] = useState(issue.title)
   const [content, setContent] = useState(issue.content || '')
   const [status, setStatus] = useState<IssueStatus>(issue.status)
@@ -291,15 +293,27 @@ export function IssuePanel({
         <CardHeader>
           <div className="flex items-start justify-between">
             <div className="flex-1 text-sm text-muted-foreground">{issue.id}</div>
-            {onClose && (
-              <button
-                onClick={onClose}
-                className="text-muted-foreground hover:text-foreground"
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            )}
+            <div className="flex items-center gap-4">
+              {onClose && (
+                <button
+                  onClick={() => navigate(`/issues/${issue.id}`)}
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label="Open in full page"
+                  title="Open in full page"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                </button>
+              )}
+              {onClose && (
+                <button
+                  onClick={onClose}
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -459,8 +473,8 @@ export function IssuePanel({
               </div>
             )}
             <div className="ml-auto flex gap-2">
-              {(onArchive || onUnarchive) && (
-                issue.archived ? (
+              {(onArchive || onUnarchive) &&
+                (issue.archived ? (
                   <Button
                     onClick={() => onUnarchive?.(issue.id)}
                     variant="outline"
@@ -478,8 +492,7 @@ export function IssuePanel({
                     <Archive className="mr-2 h-4 w-4" />
                     Archive
                   </Button>
-                )
-              )}
+                ))}
               {onDelete && (
                 <Button
                   onClick={() => setShowDeleteDialog(true)}

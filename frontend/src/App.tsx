@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import MainLayout from '@/components/layout/MainLayout'
 import IssuesPage from '@/pages/IssuesPage'
+import IssueDetailPage from '@/pages/IssueDetailPage'
 import SpecsPage from '@/pages/SpecsPage'
 import SpecDetailPage from '@/pages/SpecDetailPage'
 import ArchivedIssuesPage from '@/pages/ArchivedIssuesPage'
@@ -30,6 +31,7 @@ function App() {
               <Route index element={<Navigate to="/issues" replace />} />
               <Route path="issues" element={<IssuesPage />} />
               <Route path="issues/archived" element={<ArchivedIssuesPage />} />
+              <Route path="issues/:id" element={<IssueDetailPage />} />
               <Route path="specs" element={<SpecsPage />} />
               <Route path="specs/archived" element={<ArchivedSpecsPage />} />
               <Route path="specs/:id" element={<SpecDetailPage />} />
