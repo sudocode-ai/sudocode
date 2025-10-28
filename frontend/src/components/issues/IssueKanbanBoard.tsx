@@ -9,7 +9,7 @@ import {
 import { IssueCard } from './IssueCard'
 import type { Issue, IssueStatus } from '@sudocode/types'
 
-const columnOrder: IssueStatus[] = ['open', 'blocked', 'in_progress', 'needs_review', 'closed']
+const columnOrder: IssueStatus[] = ['blocked', 'open', 'in_progress', 'needs_review', 'closed']
 
 // Status labels and colors
 const statusLabels: Record<IssueStatus, string> = {
@@ -21,9 +21,9 @@ const statusLabels: Record<IssueStatus, string> = {
 }
 
 const statusColors: Record<IssueStatus, string> = {
-  open: '--chart-1',
+  open: '--chart-3',
   in_progress: '--chart-2',
-  blocked: '--chart-3',
+  blocked: '--chart-1',
   needs_review: '--chart-4',
   closed: '--chart-5',
 }

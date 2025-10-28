@@ -12,6 +12,7 @@ import {
   deleteExistingFeedback,
   getAllFeedback,
 } from "../services/feedback.js";
+import { broadcastFeedbackUpdate } from "../services/websocket.js";
 
 export function createFeedbackRouter(db: Database.Database): Router {
   const router = Router();
@@ -204,6 +205,9 @@ export function createFeedbackRouter(db: Database.Database): Router {
         dismissed: dismissed || false,
       });
 
+      // Broadcast feedback creation to WebSocket clients
+      broadcastFeedbackUpdate("created", feedback);
+
       res.status(201).json({
         success: true,
         data: feedback,
@@ -303,6 +307,9 @@ export function createFeedbackRouter(db: Database.Database): Router {
       // Update feedback using CLI operation
       const feedback = updateExistingFeedback(db, id, updateInput);
 
+      // Broadcast feedback update to WebSocket clients
+      broadcastFeedbackUpdate("updated", feedback);
+
       res.json({
         success: true,
         data: feedback,
@@ -351,6 +358,9 @@ export function createFeedbackRouter(db: Database.Database): Router {
       const deleted = deleteExistingFeedback(db, id);
 
       if (deleted) {
+        // Broadcast feedback deletion to WebSocket clients
+        broadcastFeedbackUpdate("deleted", { id });
+
         res.json({
           success: true,
           data: {

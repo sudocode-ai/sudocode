@@ -16,6 +16,7 @@ import { DeleteIssueDialog } from './DeleteIssueDialog'
 import { RelationshipList } from '@/components/relationships/RelationshipList'
 import { RelationshipForm } from '@/components/relationships/RelationshipForm'
 import { relationshipsApi } from '@/lib/api'
+import { useRelationshipMutations } from '@/hooks/useRelationshipMutations'
 import { TiptapEditor } from '@/components/specs/TiptapEditor'
 
 interface IssuePanelProps {
@@ -66,6 +67,9 @@ export function IssuePanel({
   const [hasChanges, setHasChanges] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Relationship mutations with cache invalidation
+  const { createRelationshipAsync, deleteRelationshipAsync } = useRelationshipMutations()
   const onUpdateRef = useRef(onUpdate)
   const latestValuesRef = useRef({ title, content, status, priority, hasChanges })
 
@@ -234,7 +238,7 @@ export function IssuePanel({
     relationshipType: RelationshipType
   ) => {
     try {
-      const data = await relationshipsApi.create({
+      const data = await createRelationshipAsync({
         from_id: issue.id,
         from_type: 'issue',
         to_id: toId,
@@ -250,7 +254,7 @@ export function IssuePanel({
 
   const handleDeleteRelationship = async (relationship: Relationship) => {
     try {
-      await relationshipsApi.delete({
+      await deleteRelationshipAsync({
         from_id: relationship.from_id,
         from_type: relationship.from_type,
         to_id: relationship.to_id,

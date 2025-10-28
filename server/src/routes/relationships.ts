@@ -12,6 +12,7 @@ import {
   getEntityOutgoingRelationships,
   getEntityIncomingRelationships,
 } from "../services/relationships.js";
+import { broadcastRelationshipUpdate } from "../services/websocket.js";
 
 export function createRelationshipsRouter(db: Database.Database): Router {
   const router = Router();
@@ -222,6 +223,9 @@ export function createRelationshipsRouter(db: Database.Database): Router {
         metadata: metadata || null,
       });
 
+      // Broadcast relationship creation to WebSocket clients
+      broadcastRelationshipUpdate("created", relationship);
+
       res.status(201).json({
         success: true,
         data: relationship,
@@ -324,6 +328,15 @@ export function createRelationshipsRouter(db: Database.Database): Router {
       );
 
       if (deleted) {
+        // Broadcast relationship deletion to WebSocket clients
+        broadcastRelationshipUpdate("deleted", {
+          from_id,
+          from_type,
+          to_id,
+          to_type,
+          relationship_type,
+        });
+
         res.json({
           success: true,
           data: {
