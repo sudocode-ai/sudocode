@@ -4,7 +4,7 @@ import { useIssue, useIssues } from '@/hooks/useIssues'
 import IssuePanel from '@/components/issues/IssuePanel'
 import { Button } from '@/components/ui/button'
 import { DeleteIssueDialog } from '@/components/issues/DeleteIssueDialog'
-import { Archive, ArchiveRestore, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, Trash2, FileText, Code2 } from 'lucide-react'
 
 export default function IssueDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -13,6 +13,7 @@ export default function IssueDetailPage() {
   const { updateIssue, deleteIssue, archiveIssue, unarchiveIssue, isUpdating, isDeleting } =
     useIssues()
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [viewMode, setViewMode] = useState<'formatted' | 'markdown'>('formatted')
 
   const handleUpdate = (data: Parameters<typeof updateIssue>[0]['data']) => {
     if (!id) return
@@ -64,12 +65,33 @@ export default function IssueDetailPage() {
     <div className="flex h-screen flex-col">
       {/* Header */}
       <div className="flex items-center justify-between border-b bg-background p-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => navigate('/issues')}>
             ← Back to Issues
           </Button>
         </div>
         <div className="flex items-center gap-2">
+          {/* View mode toggle */}
+          <div className="mr-4 flex gap-1 rounded-md border border-border bg-muted/30 p-1">
+            <Button
+              variant={viewMode === 'formatted' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('formatted')}
+              className={`h-7 rounded-sm ${viewMode === 'formatted' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              Formatted
+            </Button>
+            <Button
+              variant={viewMode === 'markdown' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('markdown')}
+              className={`h-7 rounded-sm ${viewMode === 'markdown' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
+            >
+              <Code2 className="mr-2 h-4 w-4" />
+              Markdown
+            </Button>
+          </div>
           {issue.archived ? (
             <Button
               variant="outline"
@@ -111,6 +133,9 @@ export default function IssueDetailPage() {
           isUpdating={isUpdating}
           isDeleting={isDeleting}
           hideTopControls={true}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          showViewToggleInline={false}
         />
       </div>
 

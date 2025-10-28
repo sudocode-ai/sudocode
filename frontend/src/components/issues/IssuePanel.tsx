@@ -10,6 +10,8 @@ import {
   Signal,
   GitBranch,
   ExpandIcon,
+  FileText,
+  Code2,
 } from 'lucide-react'
 import type { Issue, Relationship, EntityType, RelationshipType, IssueStatus } from '@/types/api'
 import { Card } from '@/components/ui/card'
@@ -42,6 +44,9 @@ interface IssuePanelProps {
   isDeleting?: boolean
   showOpenDetail?: boolean
   hideTopControls?: boolean
+  viewMode?: 'formatted' | 'markdown'
+  onViewModeChange?: (mode: 'formatted' | 'markdown') => void
+  showViewToggleInline?: boolean
 }
 
 const STATUS_OPTIONS: { value: IssueStatus; label: string }[] = [
@@ -71,11 +76,26 @@ export function IssuePanel({
   isDeleting = false,
   showOpenDetail = false,
   hideTopControls = false,
+  viewMode: externalViewMode,
+  onViewModeChange,
+  showViewToggleInline = true,
 }: IssuePanelProps) {
   const navigate = useNavigate()
   const [title, setTitle] = useState(issue.title)
   const [content, setContent] = useState(issue.content || '')
   const [status, setStatus] = useState<IssueStatus>(issue.status)
+  const [internalViewMode, setInternalViewMode] = useState<'formatted' | 'markdown'>('formatted')
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Use external viewMode if provided, otherwise use internal state
+  const viewMode = externalViewMode ?? internalViewMode
+  const handleViewModeChange = (mode: 'formatted' | 'markdown') => {
+    if (onViewModeChange) {
+      onViewModeChange(mode)
+    } else {
+      setInternalViewMode(mode)
+    }
+  }
   const [priority, setPriority] = useState<number>(issue.priority)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [relationships, setRelationships] = useState<Relationship[]>([])
@@ -242,6 +262,15 @@ export function IssuePanel({
     }
   }, [])
 
+  // Auto-resize textarea to fit content in markdown mode
+  useEffect(() => {
+    if (viewMode === 'markdown' && textareaRef.current) {
+      const textarea = textareaRef.current
+      textarea.style.height = 'auto'
+      textarea.style.height = `${textarea.scrollHeight}px`
+    }
+  }, [content, viewMode])
+
   const handleTitleChange = (value: string) => {
     setTitle(value)
     setHasChanges(true)
@@ -344,6 +373,29 @@ export function IssuePanel({
             </div>
 
             <div className="flex items-center gap-4">
+              {/* View mode toggle - shown inline in panel */}
+              {showViewToggleInline && (
+                <div className="mr-4 flex gap-1 rounded-md border border-border bg-muted/30 p-1">
+                  <Button
+                    variant={viewMode === 'formatted' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => handleViewModeChange('formatted')}
+                    className={`h-7 rounded-sm ${viewMode === 'formatted' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    Formatted
+                  </Button>
+                  <Button
+                    variant={viewMode === 'markdown' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => handleViewModeChange('markdown')}
+                    className={`h-7 rounded-sm ${viewMode === 'markdown' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
+                  >
+                    <Code2 className="mr-2 h-4 w-4" />
+                    Markdown
+                  </Button>
+                </div>
+              )}
               {(onArchive || onUnarchive) && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -386,7 +438,7 @@ export function IssuePanel({
 
         {/* Content */}
         <div className={`flex-1 overflow-y-auto px-6 ${hideTopControls ? 'py-4' : 'py-3'}`}>
-          <div className="space-y-3">
+          <div className="space-y-4">
             {/* Issue ID and Title */}
             <div className="space-y-2 pb-3">
               <div className="flex items-center justify-between">
@@ -475,9 +527,10 @@ export function IssuePanel({
             {/* Relationships */}
             <div className="space-y-2">
               <div className="flex items-center gap-4">
-                <h3 className="text-sm font-medium text-muted-foreground">
-                  Relationships {relationships.length > 0 && `(${relationships.length})`}
-                </h3>
+                <div className="flex items-center gap-1">
+                  <h3 className="text-sm font-medium text-muted-foreground">Relationships</h3>
+                  <Badge variant="secondary">{relationships.length}</Badge>
+                </div>
                 <Button
                   variant="outline"
                   size="xs"
@@ -521,16 +574,45 @@ export function IssuePanel({
             {/* Content Editor */}
             <div className="space-y-2">
               <Card className="overflow-hidden">
-                <TiptapEditor
-                  content={content}
-                  editable={true}
-                  onChange={handleContentChange}
-                  onCancel={() => {
-                    setContent(issue.content || '')
-                    setHasChanges(false)
-                  }}
-                  className="min-h-[200px]"
-                />
+                {viewMode === 'formatted' ? (
+                  <TiptapEditor
+                    content={content}
+                    editable={true}
+                    onChange={handleContentChange}
+                    onCancel={() => {
+                      setContent(issue.content || '')
+                      setHasChanges(false)
+                    }}
+                    className="min-h-[200px]"
+                  />
+                ) : (
+                  <div className="flex">
+                    {/* Line numbers column */}
+                    <div className="select-none border-r border-border bg-muted/30 px-4 py-4">
+                      {(content || '\n').split('\n').map((_, index) => (
+                        <div
+                          key={index}
+                          className="text-right font-mono text-xs leading-6 text-muted-foreground"
+                        >
+                          {index + 1}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Content column */}
+                    <div className="flex-1 p-4">
+                      <textarea
+                        ref={textareaRef}
+                        value={content}
+                        onChange={(e) => handleContentChange(e.target.value)}
+                        placeholder="Write issue description in markdown..."
+                        className="w-full resize-none border-none bg-transparent font-mono text-sm leading-6 outline-none focus:ring-0"
+                        spellCheck={false}
+                        style={{ minHeight: '200px' }}
+                      />
+                    </div>
+                  </div>
+                )}
               </Card>
             </div>
 
