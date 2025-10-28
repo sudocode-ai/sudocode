@@ -210,11 +210,6 @@ export class SudocodeMCPServer {
                   type: "string",
                   description: "Spec description (optional)",
                 },
-                design: {
-                  type: "string",
-                  description:
-                    "Design notes (optional). Supports inline references to other specs/issues by ID in Obsidian internal link format (e.g. `[[ISSUE-001]]`).",
-                },
                 parent: {
                   type: "string",
                   description: "Parent spec ID (optional)",

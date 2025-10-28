@@ -5,7 +5,8 @@
   "type": "module",
   "bin": {
     "sudocode": "./node_modules/@sudocode/cli/dist/cli.js",
-    "sdc": "./node_modules/@sudocode/cli/dist/cli.js"
+    "sdc": "./node_modules/@sudocode/cli/dist/cli.js",
+    "sudocode-mcp": "./node_modules/@sudocode/mcp/dist/index.js"
   },
   "scripts": {
     "build": "echo 'Meta-package has no build step'",
@@ -33,6 +34,5 @@
     "@sudocode/types",
     "@sudocode/mcp",
     "@sudocode/server"
-  ],
-  "files": ["README.md", "node_modules"]
+  ]
 }
