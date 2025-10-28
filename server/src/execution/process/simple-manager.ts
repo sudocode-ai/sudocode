@@ -258,19 +258,44 @@ export class SimpleProcessManager implements IProcessManager {
     throw new Error('Not implemented');
   }
 
-  async sendInput(_processId: string, _input: string): Promise<void> {
-    void this._activeProcesses;
-    throw new Error('Not implemented');
+  async sendInput(processId: string, input: string): Promise<void> {
+    const managed = this._activeProcesses.get(processId);
+    if (!managed) {
+      throw new Error(`Process ${processId} not found`);
+    }
+
+    return new Promise((resolve, reject) => {
+      managed.streams.stdin.write(input, (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
   }
 
-  onOutput(_processId: string, _handler: OutputHandler): void {
-    void this._activeProcesses;
-    throw new Error('Not implemented');
+  onOutput(processId: string, handler: OutputHandler): void {
+    const managed = this._activeProcesses.get(processId);
+    if (!managed) {
+      throw new Error(`Process ${processId} not found`);
+    }
+
+    managed.streams.stdout.on('data', (data: Buffer) => {
+      handler(data, 'stdout');
+    });
+
+    managed.streams.stderr.on('data', (data: Buffer) => {
+      handler(data, 'stderr');
+    });
   }
 
-  onError(_processId: string, _handler: ErrorHandler): void {
-    void this._activeProcesses;
-    throw new Error('Not implemented');
+  onError(processId: string, handler: ErrorHandler): void {
+    const managed = this._activeProcesses.get(processId);
+    if (!managed) {
+      throw new Error(`Process ${processId} not found`);
+    }
+
+    managed.process.on('error', (error: Error) => {
+      handler(error);
+    });
   }
 
   getProcess(processId: string): ManagedProcess | null {

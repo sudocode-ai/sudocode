@@ -105,26 +105,8 @@ describe('SimpleProcessManager', () => {
       );
     });
 
-    it('sendInput throws not implemented', async () => {
-      await assert.rejects(
-        manager.sendInput('test-id', 'input'),
-        /Not implemented/
-      );
-    });
-
-    it('onOutput throws not implemented', () => {
-      assert.throws(
-        () => manager.onOutput('test-id', () => {}),
-        /Not implemented/
-      );
-    });
-
-    it('onError throws not implemented', () => {
-      assert.throws(
-        () => manager.onError('test-id', () => {}),
-        /Not implemented/
-      );
-    });
+    // sendInput, onOutput, and onError are now implemented
+    // and tested in io.test.ts
 
     // getProcess, getActiveProcesses, and getMetrics are now implemented
     // and tested in spawning.test.ts
