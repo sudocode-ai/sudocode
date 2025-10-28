@@ -104,6 +104,7 @@ export function TiptapEditor({
   const [htmlContent, setHtmlContent] = useState<string>('')
   const [hasChanges, setHasChanges] = useState(false)
   const isLoadingContentRef = useRef(false)
+  const lastContentRef = useRef<string>('')
 
   const editor = useEditor({
     extensions: [
@@ -166,6 +167,7 @@ export function TiptapEditor({
     editable,
     content: htmlContent,
     onUpdate: ({ editor }) => {
+      // Guard against updates while loading external content
       if (isLoadingContentRef.current) return
 
       setHasChanges(true)
@@ -217,7 +219,12 @@ export function TiptapEditor({
         })
 
         const markdown = turndownService.turndown(html)
-        onChange(markdown)
+
+        // Only call onChange if content actually changed
+        if (markdown !== lastContentRef.current) {
+          lastContentRef.current = markdown
+          onChange(markdown)
+        }
       }
     },
   })
@@ -257,14 +264,16 @@ export function TiptapEditor({
         editor.commands.setContent(htmlContent)
         // Reset hasChanges since we're loading external content
         setHasChanges(false)
-        // Use setTimeout to ensure the content is set before resetting the flag
+        // Update lastContentRef to the externally loaded content to prevent false positives
+        lastContentRef.current = content
+        // Keep the guard up for a bit longer to catch any delayed events
         setTimeout(() => {
           isLoadingContentRef.current = false
-        }, 0)
+        }, 100)
       }
       // Don't reset hasChanges if editor is focused - user is actively editing
     }
-  }, [htmlContent, editor])
+  }, [htmlContent, editor, content])
 
   // Update editor editable state
   useEffect(() => {

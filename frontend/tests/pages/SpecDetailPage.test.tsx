@@ -213,4 +213,247 @@ describe('SpecDetailPage', () => {
       expect(screen.getByText('Saving...')).toBeInTheDocument()
     })
   })
+
+  it('should not trigger auto-save when navigating to a different spec', async () => {
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+      },
+    })
+
+    // Setup mocks for two different specs
+    const spec1 = {
+      ...mockSpec,
+      id: 'SPEC-001',
+      title: 'Spec One',
+      content: 'Content for spec one',
+    }
+
+    const spec2 = {
+      ...mockSpec,
+      id: 'SPEC-002',
+      title: 'Spec Two',
+      content: 'Content for spec two',
+    }
+
+    // Initially show spec1
+    vi.mocked(useSpecsHook.useSpec).mockReturnValue({
+      spec: spec1,
+      isLoading: false,
+      isError: false,
+    } as any)
+
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/specs/SPEC-001']}>
+          <Routes>
+            <Route path="/specs/:id" element={<SpecDetailPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+
+    // Wait for spec1 to render
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Spec One')).toBeInTheDocument()
+    })
+
+    // Make changes to spec1
+    const titleInput = screen.getByDisplayValue('Spec One')
+    await user.clear(titleInput)
+    await user.type(titleInput, 'Modified Spec One')
+
+    // Should show unsaved changes
+    expect(screen.getByText('Unsaved changes...')).toBeInTheDocument()
+
+    // Clear the mock before navigation
+    mockUpdateSpec.mockClear()
+
+    // Navigate to spec2 (before auto-save triggers)
+    vi.mocked(useSpecsHook.useSpec).mockReturnValue({
+      spec: spec2,
+      isLoading: false,
+      isError: false,
+    } as any)
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/specs/SPEC-002']}>
+          <Routes>
+            <Route path="/specs/:id" element={<SpecDetailPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+
+    // Wait for spec2 to render
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Spec Two')).toBeInTheDocument()
+    })
+
+    // Wait for any delayed auto-save attempts
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+
+    // updateSpec should NOT have been called with spec2's ID and spec1's content
+    // If the bug exists, we'd see a call with id: 'SPEC-002' and content from spec1
+    const badCalls = mockUpdateSpec.mock.calls.filter((call) => {
+      const { id, data } = call[0]
+      return id === 'SPEC-002' && data.content?.includes('Modified Spec One')
+    })
+
+    expect(badCalls.length).toBe(0)
+  })
+
+  it('should not call updateSpec with empty content when opening a spec', async () => {
+    vi.mocked(useSpecsHook.useSpec).mockReturnValue({
+      spec: mockSpec,
+      isLoading: false,
+      isError: false,
+    } as any)
+
+    renderSpecDetailPage()
+
+    // Wait for spec to render
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Test Spec')).toBeInTheDocument()
+    })
+
+    // Wait to ensure no spurious update calls
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+
+    // updateSpec should NOT have been called with empty content
+    const emptyContentCalls = mockUpdateSpec.mock.calls.filter((call) => {
+      const { data } = call[0]
+      return data.content === '' || data.content === undefined
+    })
+
+    expect(emptyContentCalls.length).toBe(0)
+  })
+
+  it(
+    'should clear auto-save timer when navigating between specs',
+    async () => {
+      const user = userEvent.setup()
+      const queryClient = new QueryClient({
+        defaultOptions: {
+          queries: { retry: false },
+        },
+      })
+
+      const spec1 = {
+        ...mockSpec,
+        id: 'SPEC-001',
+        title: 'Spec One',
+      }
+
+      const spec2 = {
+        ...mockSpec,
+        id: 'SPEC-002',
+        title: 'Spec Two',
+      }
+
+      vi.mocked(useSpecsHook.useSpec).mockReturnValue({
+        spec: spec1,
+        isLoading: false,
+        isError: false,
+      } as any)
+
+      const { rerender } = render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/specs/SPEC-001']}>
+            <Routes>
+              <Route path="/specs/:id" element={<SpecDetailPage />} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Spec One')).toBeInTheDocument()
+      })
+
+      // Make changes
+      const titleInput = screen.getByDisplayValue('Spec One')
+      await user.clear(titleInput)
+      await user.type(titleInput, 'Modified')
+
+      // Navigate to spec2 quickly (before auto-save)
+      vi.mocked(useSpecsHook.useSpec).mockReturnValue({
+        spec: spec2,
+        isLoading: false,
+        isError: false,
+      } as any)
+
+      rerender(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/specs/SPEC-002']}>
+            <Routes>
+              <Route path="/specs/:id" element={<SpecDetailPage />} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Spec Two')).toBeInTheDocument()
+      })
+
+      // Wait past auto-save delay
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+
+      // The old timer should have been cleared, so no update should happen
+      // If it did happen, it would be caught by other tests checking for wrong ID
+      expect(mockUpdateSpec).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'SPEC-001',
+        })
+      )
+    },
+    { timeout: 10000 }
+  )
+
+  it(
+    'should save pending changes on unmount using correct spec ID',
+    async () => {
+      const user = userEvent.setup()
+
+      vi.mocked(useSpecsHook.useSpec).mockReturnValue({
+        spec: mockSpec,
+        isLoading: false,
+        isError: false,
+      } as any)
+
+      const { unmount } = renderSpecDetailPage()
+
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Test Spec')).toBeInTheDocument()
+      })
+
+      // Make changes
+      const titleInput = screen.getByDisplayValue('Test Spec')
+      await user.clear(titleInput)
+      await user.type(titleInput, 'Changed Title')
+
+      // Should show unsaved changes
+      await waitFor(() => {
+        expect(screen.getByText('Unsaved changes...')).toBeInTheDocument()
+      })
+
+      // Unmount before auto-save triggers
+      unmount()
+
+      // Allow a brief moment for the unmount effect to run
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      // Should have saved with the correct spec ID
+      expect(mockUpdateSpec).toHaveBeenCalledWith({
+        id: 'SPEC-001',
+        data: expect.objectContaining({
+          title: 'Changed Title',
+        }),
+      })
+    },
+    { timeout: 10000 }
+  )
 })

@@ -78,6 +78,17 @@ export function IssuePanel({
     latestValuesRef.current = { title, content, status, priority, hasChanges }
   }, [title, content, status, priority, hasChanges])
 
+  // Reset state when switching to a different issue (issue.id changes)
+  useEffect(() => {
+    // Clear auto-save timer when switching issues
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current)
+      autoSaveTimerRef.current = null
+    }
+    // Reset hasChanges to prevent saving old content to new issue
+    setHasChanges(false)
+  }, [issue.id])
+
   // Update form values when issue changes
   useEffect(() => {
     setTitle(issue.title)

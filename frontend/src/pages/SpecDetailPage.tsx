@@ -48,6 +48,7 @@ export default function SpecDetailPage() {
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
   const updateSpecRef = useRef(updateSpec)
   const latestValuesRef = useRef({ title, content, priority, hasChanges })
+  const currentIdRef = useRef(id)
 
   // Keep refs in sync with latest values
   useEffect(() => {
@@ -57,6 +58,21 @@ export default function SpecDetailPage() {
   useEffect(() => {
     latestValuesRef.current = { title, content, priority, hasChanges }
   }, [title, content, priority, hasChanges])
+
+  useEffect(() => {
+    currentIdRef.current = id
+  }, [id])
+
+  // Reset state when navigating to a different spec (id changes)
+  useEffect(() => {
+    // Clear auto-save timer when switching specs
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current)
+      autoSaveTimerRef.current = null
+    }
+    // Reset hasChanges to prevent saving old content to new spec
+    setHasChanges(false)
+  }, [id])
 
   // Update form values when spec changes
   useEffect(() => {
@@ -96,16 +112,17 @@ export default function SpecDetailPage() {
         clearTimeout(autoSaveTimerRef.current)
       }
     }
-  }, [title, content, priority, hasChanges, id])
+  }, [title, content, priority, hasChanges])
 
   // Save pending changes on unmount
   useEffect(() => {
     return () => {
       // On unmount, if there are unsaved changes, save them immediately
       const { hasChanges, title, content, priority } = latestValuesRef.current
-      if (hasChanges && id && updateSpecRef.current) {
+      const currentId = currentIdRef.current
+      if (hasChanges && currentId && updateSpecRef.current) {
         updateSpecRef.current({
-          id,
+          id: currentId,
           data: {
             title,
             content,
@@ -114,7 +131,7 @@ export default function SpecDetailPage() {
         })
       }
     }
-  }, [id])
+  }, [])
 
   if (isLoading) {
     return (
