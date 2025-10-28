@@ -30,3 +30,7 @@ export {
   isValidSignal,
   formatProcessError,
 } from './utils.js';
+
+// Configuration Builders
+export { buildClaudeConfig } from './builders/claude.js';
+export type { ClaudeCodeConfig } from './builders/claude.js';

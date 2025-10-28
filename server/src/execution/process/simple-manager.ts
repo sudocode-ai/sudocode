@@ -5,16 +5,20 @@
  * process for each task. This is the "simple first" approach that will later
  * be upgraded to support process pooling.
  *
+ * Supports any CLI tool/agent (Claude Code, Codex, Gemini CLI, etc.)
+ *
  * Key features:
  * - One process per task (no pooling)
  * - Event-based I/O streaming
  * - Graceful termination (SIGTERM → SIGKILL)
  * - Automatic cleanup
  * - Metrics tracking
+ * - Agent-agnostic design
  *
  * @module execution/process/simple-manager
  */
 
+import { spawn } from 'child_process';
 import type {
   ManagedProcess,
   ProcessConfig,
@@ -23,6 +27,7 @@ import type {
   ErrorHandler,
 } from './types.js';
 import type { IProcessManager } from './manager.js';
+import { generateId } from './utils.js';
 
 /**
  * Simple process manager that spawns one process per task
@@ -30,32 +35,34 @@ import type { IProcessManager } from './manager.js';
  * This implementation follows the "simple first" principle - it provides
  * a production-ready process manager without the complexity of pooling.
  *
+ * Works with any CLI tool/agent by accepting executable path and args.
+ *
  * @example
  * ```typescript
+ * // Claude Code example
  * const manager = new SimpleProcessManager({
- *   claudePath: 'claude',
- *   args: {
- *     print: true,
- *     outputFormat: 'stream-json',
- *     dangerouslySkipPermissions: true,
- *   },
+ *   executablePath: 'claude',
+ *   args: ['--print', '--output-format', 'stream-json'],
  * });
  *
  * const process = await manager.acquireProcess({
- *   claudePath: 'claude',
+ *   executablePath: 'claude',
+ *   args: ['--print', '--output-format', 'stream-json'],
  *   workDir: '/path/to/project',
- *   args: {
- *     print: true,
- *     outputFormat: 'stream-json',
- *     dangerouslySkipPermissions: true,
- *   },
  *   timeout: 300000,
+ * });
+ *
+ * // Codex example
+ * const codexProcess = await manager.acquireProcess({
+ *   executablePath: 'codex',
+ *   args: ['--mode', 'agent', '--json'],
+ *   workDir: '/path/to/project',
  * });
  * ```
  */
 export class SimpleProcessManager implements IProcessManager {
-  private readonly _activeProcesses = new Map<string, ManagedProcess>();
-  private readonly _metrics: ProcessMetrics = {
+  private _activeProcesses = new Map<string, ManagedProcess>();
+  private _metrics: ProcessMetrics = {
     totalSpawned: 0,
     currentlyActive: 0,
     totalCompleted: 0,
@@ -70,11 +77,74 @@ export class SimpleProcessManager implements IProcessManager {
    */
   constructor(private readonly _defaultConfig: Partial<ProcessConfig> = {}) {}
 
-  async acquireProcess(_config: ProcessConfig): Promise<ManagedProcess> {
-    // Will use this._defaultConfig and this._activeProcesses when implemented
-    void this._defaultConfig;
-    void this._activeProcesses;
-    throw new Error('Not implemented');
+  async acquireProcess(config: ProcessConfig): Promise<ManagedProcess> {
+    // Merge with default config
+    const mergedConfig = { ...this._defaultConfig, ...config };
+
+    // Spawn the process
+    const childProcess = this.spawnProcess(mergedConfig);
+
+    // Validate process spawned successfully
+    if (!childProcess.pid) {
+      // Suppress error event to prevent uncaughtException
+      childProcess.once('error', () => {
+        // Error is expected when process fails to spawn
+      });
+      throw new Error('Failed to spawn process: no PID assigned');
+    }
+
+    // Generate unique ID for this process
+    const id = generateId('process');
+
+    // Create managed process object
+    const managedProcess: ManagedProcess = {
+      id,
+      pid: childProcess.pid,
+      status: 'busy',
+      spawnedAt: new Date(),
+      lastActivity: new Date(),
+      exitCode: null,
+      signal: null,
+      process: childProcess,
+      streams: {
+        stdout: childProcess.stdout!,
+        stderr: childProcess.stderr!,
+        stdin: childProcess.stdin!,
+      },
+      metrics: {
+        totalDuration: 0,
+        tasksCompleted: 0,
+        successRate: 1.0,
+      },
+    };
+
+    // Track the process
+    this._activeProcesses.set(id, managedProcess);
+
+    // Update metrics
+    this._metrics.totalSpawned++;
+    this._metrics.currentlyActive++;
+
+    return managedProcess;
+  }
+
+  /**
+   * Spawn a process with the given configuration
+   *
+   * @param config - Process configuration
+   * @returns ChildProcess instance
+   */
+  private spawnProcess(config: ProcessConfig): ReturnType<typeof spawn> {
+    const childProcess = spawn(config.executablePath, config.args, {
+      cwd: config.workDir,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        ...config.env,
+      },
+    });
+
+    return childProcess;
   }
 
   async releaseProcess(_processId: string): Promise<void> {
@@ -105,19 +175,17 @@ export class SimpleProcessManager implements IProcessManager {
     throw new Error('Not implemented');
   }
 
-  getProcess(_processId: string): ManagedProcess | null {
-    void this._activeProcesses;
-    throw new Error('Not implemented');
+  getProcess(processId: string): ManagedProcess | null {
+    return this._activeProcesses.get(processId) || null;
   }
 
   getActiveProcesses(): ManagedProcess[] {
-    void this._activeProcesses;
-    throw new Error('Not implemented');
+    return Array.from(this._activeProcesses.values());
   }
 
   getMetrics(): ProcessMetrics {
-    void this._metrics;
-    throw new Error('Not implemented');
+    // Return a copy to prevent external mutation
+    return { ...this._metrics };
   }
 
   async shutdown(): Promise<void> {

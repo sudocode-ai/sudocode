@@ -2,9 +2,8 @@
  * Process Layer Types
  *
  * Core types and interfaces for the Process Layer (Layer 1) of the execution system.
- * Defines types for managing Claude Code CLI process lifecycle.
+ * Defines generic types for managing any CLI tool/agent process lifecycle.
  *
- * @see {@link https://github.com/anthropics/claude-code} Claude Code CLI
  * @module execution/process/types
  */
 
@@ -23,26 +22,18 @@ export type ProcessStatus =
   | 'completed';   // Exited normally
 
 /**
- * Configuration for spawning Claude Code processes
+ * Configuration for spawning a new process
+ * Generic interface that works with any CLI tool/agent
  */
 export interface ProcessConfig {
-  /** Path to Claude Code CLI executable */
-  claudePath: string;
+  /** Path to the executable (e.g., 'claude', 'codex', 'node') */
+  executablePath: string;
+
+  /** Command-line arguments to pass to the executable */
+  args: string[];
 
   /** Working directory for the process */
   workDir: string;
-
-  /** Claude Code CLI arguments */
-  args: {
-    /** Run in non-interactive print mode */
-    print: boolean;
-    /** Output format (stream-json recommended for parsing) */
-    outputFormat: 'stream-json' | 'json' | 'text';
-    /** Skip permission prompts */
-    dangerouslySkipPermissions: boolean;
-    /** Permission mode setting */
-    permissionMode?: string;
-  };
 
   /** Environment variables to pass to the process */
   env?: Record<string, string>;
@@ -63,7 +54,8 @@ export interface ProcessConfig {
 }
 
 /**
- * Represents a single Claude Code process instance with its lifecycle state
+ * Represents a single managed process instance with its lifecycle state
+ * Can be any CLI tool/agent (Claude Code, Codex, Gemini CLI, etc.)
  */
 export interface ManagedProcess {
   // Identity

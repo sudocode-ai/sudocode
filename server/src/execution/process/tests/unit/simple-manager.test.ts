@@ -8,7 +8,6 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
 import { SimpleProcessManager } from '../../simple-manager.js';
-import type { ProcessConfig } from '../../types.js';
 
 describe('SimpleProcessManager', () => {
   let manager: SimpleProcessManager;
@@ -25,35 +24,21 @@ describe('SimpleProcessManager', () => {
 
     it('creates an instance with default config', () => {
       const mgr = new SimpleProcessManager({
-        claudePath: 'claude',
-        args: {
-          print: true,
-          outputFormat: 'stream-json',
-          dangerouslySkipPermissions: true,
-        },
+        executablePath: 'claude',
+        args: ['--print', '--output-format', 'stream-json'],
       });
       assert.ok(mgr instanceof SimpleProcessManager);
     });
 
     it('creates an instance with partial config', () => {
       const mgr = new SimpleProcessManager({
-        claudePath: '/usr/local/bin/claude',
+        executablePath: '/usr/local/bin/claude',
       });
       assert.ok(mgr instanceof SimpleProcessManager);
     });
   });
 
   describe('interface compliance', () => {
-    const mockConfig: ProcessConfig = {
-      claudePath: 'claude',
-      workDir: '/test',
-      args: {
-        print: true,
-        outputFormat: 'stream-json',
-        dangerouslySkipPermissions: true,
-      },
-    };
-
     it('implements acquireProcess method', () => {
       assert.ok(manager.acquireProcess);
       assert.strictEqual(typeof manager.acquireProcess, 'function');
@@ -104,13 +89,7 @@ describe('SimpleProcessManager', () => {
       assert.strictEqual(typeof manager.shutdown, 'function');
     });
 
-    // Test that stub methods throw "Not implemented"
-    it('acquireProcess throws not implemented', async () => {
-      await assert.rejects(
-        manager.acquireProcess(mockConfig),
-        /Not implemented/
-      );
-    });
+    // acquireProcess is now implemented - tested in spawning.test.ts
 
     it('releaseProcess throws not implemented', async () => {
       await assert.rejects(
@@ -147,26 +126,8 @@ describe('SimpleProcessManager', () => {
       );
     });
 
-    it('getProcess throws not implemented', () => {
-      assert.throws(
-        () => manager.getProcess('test-id'),
-        /Not implemented/
-      );
-    });
-
-    it('getActiveProcesses throws not implemented', () => {
-      assert.throws(
-        () => manager.getActiveProcesses(),
-        /Not implemented/
-      );
-    });
-
-    it('getMetrics throws not implemented', () => {
-      assert.throws(
-        () => manager.getMetrics(),
-        /Not implemented/
-      );
-    });
+    // getProcess, getActiveProcesses, and getMetrics are now implemented
+    // and tested in spawning.test.ts
 
     it('shutdown throws not implemented', async () => {
       await assert.rejects(
@@ -177,20 +138,7 @@ describe('SimpleProcessManager', () => {
   });
 
   describe('method signatures', () => {
-    it('acquireProcess accepts ProcessConfig', async () => {
-      const config: ProcessConfig = {
-        claudePath: 'claude',
-        workDir: '/test',
-        args: {
-          print: true,
-          outputFormat: 'stream-json',
-          dangerouslySkipPermissions: true,
-        },
-      };
-
-      // Should accept the config without type errors
-      await assert.rejects(manager.acquireProcess(config), /Not implemented/);
-    });
+    // acquireProcess signature testing is in spawning.test.ts
 
     it('terminateProcess accepts optional signal parameter', async () => {
       await assert.rejects(manager.terminateProcess('test-id'));
