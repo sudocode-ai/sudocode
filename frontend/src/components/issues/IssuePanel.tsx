@@ -1,11 +1,20 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Archive, ArchiveRestore, ExternalLink } from 'lucide-react'
+import {
+  Plus,
+  Archive,
+  ArchiveRestore,
+  ArrowLeft,
+  Trash2,
+  CircleDot,
+  Signal,
+  GitBranch,
+  ExpandIcon,
+} from 'lucide-react'
 import type { Issue, Relationship, EntityType, RelationshipType, IssueStatus } from '@/types/api'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -19,6 +28,7 @@ import { RelationshipForm } from '@/components/relationships/RelationshipForm'
 import { relationshipsApi } from '@/lib/api'
 import { useRelationshipMutations } from '@/hooks/useRelationshipMutations'
 import { TiptapEditor } from '@/components/specs/TiptapEditor'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 interface IssuePanelProps {
   issue: Issue
@@ -29,6 +39,7 @@ interface IssuePanelProps {
   onUnarchive?: (id: string) => void
   isUpdating?: boolean
   isDeleting?: boolean
+  showOpenDetail?: boolean
 }
 
 const STATUS_OPTIONS: { value: IssueStatus; label: string }[] = [
@@ -56,6 +67,7 @@ export function IssuePanel({
   onUnarchive,
   isUpdating = false,
   isDeleting = false,
+  showOpenDetail = false,
 }: IssuePanelProps) {
   const navigate = useNavigate()
   const [title, setTitle] = useState(issue.title)
@@ -288,233 +300,245 @@ export function IssuePanel({
   }
 
   return (
-    <div className="h-full overflow-y-auto p-4" ref={panelRef}>
-      <Card>
-        <CardHeader>
-          <div className="flex items-start justify-between">
-            <div className="flex-1 text-sm text-muted-foreground">{issue.id}</div>
-            <div className="flex items-center gap-4">
-              {onClose && (
-                <button
-                  onClick={() => navigate(`/issues/${issue.id}`)}
-                  className="text-muted-foreground hover:text-foreground"
-                  aria-label="Open in full page"
-                  title="Open in full page"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                </button>
-              )}
-              {onClose && (
-                <button
-                  onClick={onClose}
-                  className="text-muted-foreground hover:text-foreground"
-                  aria-label="Close"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Title */}
-          <div className="space-y-2">
-            <Label htmlFor="title">Title</Label>
-            <Input
-              id="title"
-              value={title}
-              onChange={(e) => handleTitleChange(e.target.value)}
-              placeholder="Enter issue title..."
-              disabled={isUpdating}
-            />
-          </div>
-
-          {/* Status and Priority */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="status">Status</Label>
-              <Select
-                value={status}
-                onValueChange={(value) => handleStatusChange(value as IssueStatus)}
-                disabled={isUpdating}
+    <TooltipProvider delayDuration={300}>
+      <div className="flex h-full flex-col" ref={panelRef}>
+        {/* Top Navigation Bar */}
+        <div className="flex items-center justify-between px-6 py-3">
+          <div className="flex items-center gap-4">
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Back"
               >
-                <SelectTrigger id="status">
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="priority">Priority</Label>
-              <Select
-                value={String(priority)}
-                onValueChange={(value) => handlePriorityChange(parseInt(value))}
-                disabled={isUpdating}
-              >
-                <SelectTrigger id="priority">
-                  <SelectValue placeholder="Select priority" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PRIORITY_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Content */}
-          <div className="space-y-2">
-            <Label htmlFor="content">Details</Label>
-            <Card className="overflow-hidden">
-              <TiptapEditor
-                content={content}
-                editable={true}
-                onChange={handleContentChange}
-                onCancel={() => {
-                  setContent(issue.content || '')
-                  setHasChanges(false)
-                }}
-                className="min-h-[200px]"
-              />
-            </Card>
-          </div>
-
-          {/* Timestamps */}
-          <div className="space-y-2 border-t pt-4">
-            <div className="text-xs text-muted-foreground">
-              <span className="font-medium">Created:</span>{' '}
-              {new Date(issue.created_at).toLocaleString()}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              <span className="font-medium">Updated:</span>{' '}
-              {new Date(issue.updated_at).toLocaleString()}
-            </div>
-            {issue.closed_at && (
-              <div className="text-xs text-muted-foreground">
-                <span className="font-medium">Closed:</span>{' '}
-                {new Date(issue.closed_at).toLocaleString()}
-              </div>
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+            )}
+            {showOpenDetail && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => navigate(`/issues/${issue.id}`)}
+                    className="text-muted-foreground hover:text-foreground"
+                    aria-label="Open in full page"
+                  >
+                    <ExpandIcon className="h-4 w-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Open in full page</TooltipContent>
+              </Tooltip>
             )}
           </div>
 
-          {/* Assignee */}
-          {issue.assignee && (
-            <div>
-              <div className="mb-1 text-sm font-medium text-muted-foreground">Assignee</div>
-              <div className="text-sm">{issue.assignee}</div>
-            </div>
-          )}
-
-          {/* Parent */}
-          {issue.parent_id && (
-            <div>
-              <div className="mb-1 text-sm font-medium text-muted-foreground">Parent Issue</div>
-              <div className="text-sm">{issue.parent_id}</div>
-            </div>
-          )}
-
-          {/* Relationships */}
-          <div className="border-t pt-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-medium">
-                Relationships {relationships.length > 0 && `(${relationships.length})`}
-              </h3>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowAddRelationship(!showAddRelationship)}
-              >
-                <Plus className="mr-1 h-4 w-4" />
-                Add
-              </Button>
-            </div>
-
-            {showAddRelationship && (
-              <div className="mb-4">
-                <RelationshipForm
-                  fromId={issue.id}
-                  fromType="issue"
-                  onSubmit={handleCreateRelationship}
-                  onCancel={() => setShowAddRelationship(false)}
-                />
-              </div>
-            )}
-
-            {isLoadingRelationships ? (
-              <div className="py-4 text-center text-sm text-muted-foreground">
-                Loading relationships...
-              </div>
-            ) : (
-              <RelationshipList
-                relationships={relationships}
-                currentEntityId={issue.id}
-                currentEntityType="issue"
-                onDelete={handleDeleteRelationship}
-                showEmpty={!showAddRelationship}
-              />
-            )}
-          </div>
-
-          {/* Actions */}
-          <div className="flex items-center justify-between border-t pt-4">
-            {onUpdate && (
-              <div className="text-sm text-muted-foreground">
-                {isUpdating ? 'Saving...' : hasChanges ? 'Unsaved changes...' : 'All changes saved'}
-              </div>
-            )}
-            <div className="ml-auto flex gap-2">
-              {(onArchive || onUnarchive) &&
-                (issue.archived ? (
-                  <Button
-                    onClick={() => onUnarchive?.(issue.id)}
-                    variant="outline"
+          <div className="flex items-center gap-4">
+            {(onArchive || onUnarchive) && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() =>
+                      issue.archived ? onUnarchive?.(issue.id) : onArchive?.(issue.id)
+                    }
+                    className="text-muted-foreground hover:text-foreground"
+                    aria-label={issue.archived ? 'Unarchive' : 'Archive'}
                     disabled={isUpdating}
                   >
-                    <ArchiveRestore className="mr-2 h-4 w-4" />
-                    Unarchive
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={() => onArchive?.(issue.id)}
-                    variant="outline"
-                    disabled={isUpdating}
+                    {issue.archived ? (
+                      <ArchiveRestore className="h-4 w-4" />
+                    ) : (
+                      <Archive className="h-4 w-4" />
+                    )}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{issue.archived ? 'Unarchive' : 'Archive'}</TooltipContent>
+              </Tooltip>
+            )}
+            {onDelete && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setShowDeleteDialog(true)}
+                    className="text-muted-foreground hover:text-destructive"
+                    aria-label="Delete"
+                    disabled={isUpdating || isDeleting}
                   >
-                    <Archive className="mr-2 h-4 w-4" />
-                    Archive
-                  </Button>
-                ))}
-              {onDelete && (
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Delete issue</TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-6 py-3">
+          <div className="space-y-6">
+            {/* Issue ID and Title */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-muted-foreground">{issue.id}</div>
+                {onUpdate && (
+                  <div className="text-xs text-muted-foreground">
+                    {isUpdating
+                      ? 'Saving...'
+                      : hasChanges
+                        ? 'Unsaved changes...'
+                        : 'All changes saved'}
+                  </div>
+                )}
+              </div>
+              <Input
+                value={title}
+                onChange={(e) => handleTitleChange(e.target.value)}
+                placeholder="Issue title..."
+                disabled={isUpdating}
+                className="border-none bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
+              />
+            </div>
+
+            {/* Metadata Row */}
+            <div className="flex flex-wrap items-center gap-4">
+              {/* Status */}
+              <div className="flex items-center gap-2">
+                <CircleDot className="h-4 w-4 text-muted-foreground" />
+                <Select
+                  value={status}
+                  onValueChange={(value) => handleStatusChange(value as IssueStatus)}
+                  disabled={isUpdating}
+                >
+                  <SelectTrigger className="h-8 w-auto gap-3 rounded-md border-none bg-accent px-3 shadow-none hover:bg-accent/80">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Priority */}
+              <div className="flex items-center gap-2">
+                <Signal className="h-4 w-4 text-muted-foreground" />
+                <Select
+                  value={String(priority)}
+                  onValueChange={(value) => handlePriorityChange(parseInt(value))}
+                  disabled={isUpdating}
+                >
+                  <SelectTrigger className="h-8 w-auto gap-3 rounded-md border-none bg-accent px-3 shadow-none hover:bg-accent/80">
+                    <SelectValue placeholder="Priority" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PRIORITY_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Parent */}
+              {issue.parent_id && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <GitBranch className="h-4 w-4" />
+                  <span>{issue.parent_id}</span>
+                </div>
+              )}
+
+              {/* Timestamp */}
+              <div className="ml-auto text-xs text-muted-foreground">
+                {issue.closed_at
+                  ? `Closed at ${new Date(issue.closed_at).toLocaleString()}`
+                  : `Updated ${new Date(issue.updated_at).toLocaleString()}`}
+              </div>
+            </div>
+
+            {/* Relationships */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-4">
+                <h3 className="text-sm font-medium text-muted-foreground">
+                  Relationships {relationships.length > 0 && `(${relationships.length})`}
+                </h3>
                 <Button
-                  onClick={() => setShowDeleteDialog(true)}
-                  variant="destructive"
-                  disabled={isUpdating || isDeleting}
+                  variant="outline"
+                  size="xs"
+                  onClick={() => setShowAddRelationship(!showAddRelationship)}
+                  className="h-6"
                 >
-                  Delete
+                  <Plus className="mr-1 h-4 w-4" />
+                  Add
                 </Button>
+              </div>
+
+              {/* Add Relationship Form */}
+              {showAddRelationship && (
+                <div className="rounded-lg border p-4">
+                  <RelationshipForm
+                    fromId={issue.id}
+                    fromType="issue"
+                    onSubmit={handleCreateRelationship}
+                    onCancel={() => setShowAddRelationship(false)}
+                  />
+                </div>
+              )}
+
+              {/* Relationship List */}
+              {isLoadingRelationships ? (
+                <div className="py-4 text-center text-sm text-muted-foreground">
+                  Loading relationships...
+                </div>
+              ) : (
+                <RelationshipList
+                  relationships={relationships}
+                  currentEntityId={issue.id}
+                  currentEntityType="issue"
+                  onDelete={handleDeleteRelationship}
+                  showEmpty={false}
+                  showGroupHeaders={false}
+                />
               )}
             </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      <DeleteIssueDialog
-        issue={issue}
-        isOpen={showDeleteDialog}
-        onClose={() => setShowDeleteDialog(false)}
-        onConfirm={handleDelete}
-        isDeleting={isDeleting}
-      />
-    </div>
+            {/* Content Editor */}
+            <div className="space-y-2">
+              <Card className="overflow-hidden">
+                <TiptapEditor
+                  content={content}
+                  editable={true}
+                  onChange={handleContentChange}
+                  onCancel={() => {
+                    setContent(issue.content || '')
+                    setHasChanges(false)
+                  }}
+                  className="min-h-[200px]"
+                />
+              </Card>
+            </div>
+
+            {/* Additional Metadata */}
+            {issue.assignee && (
+              <div className="border-t pt-4">
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Assignee: </span>
+                  <span>{issue.assignee}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <DeleteIssueDialog
+          issue={issue}
+          isOpen={showDeleteDialog}
+          onClose={() => setShowDeleteDialog(false)}
+          onConfirm={handleDelete}
+          isDeleting={isDeleting}
+        />
+      </div>
+    </TooltipProvider>
   )
 }
 

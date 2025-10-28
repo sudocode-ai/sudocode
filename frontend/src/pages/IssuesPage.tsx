@@ -290,6 +290,7 @@ export default function IssuesPage() {
                 onUnarchive={handleUnarchiveIssue}
                 isUpdating={isUpdating}
                 isDeleting={isDeleting}
+                showOpenDetail={true}
               />
             </Panel>
           </PanelGroup>

@@ -46,7 +46,7 @@ describe('IssuePanel', () => {
 
     renderWithProviders(<IssuePanel issue={mockIssue} onClose={onClose} />)
 
-    expect(screen.getByLabelText('Close')).toBeInTheDocument()
+    expect(screen.getByLabelText('Back')).toBeInTheDocument()
   })
 
   it('should call onClose when close button is clicked', async () => {
@@ -55,7 +55,7 @@ describe('IssuePanel', () => {
 
     renderWithProviders(<IssuePanel issue={mockIssue} onClose={onClose} />)
 
-    const closeButton = screen.getByLabelText('Close')
+    const closeButton = screen.getByLabelText('Back')
     await user.click(closeButton)
 
     expect(onClose).toHaveBeenCalledTimes(1)
@@ -74,7 +74,7 @@ describe('IssuePanel', () => {
 
     renderWithProviders(<IssuePanel issue={mockIssue} onDelete={onDelete} />)
 
-    expect(screen.getByRole('button', { name: /Delete/ })).toBeInTheDocument()
+    expect(screen.getByLabelText('Delete')).toBeInTheDocument()
   })
 
   it('should show unsaved changes status when fields are modified', async () => {
@@ -87,7 +87,7 @@ describe('IssuePanel', () => {
     expect(screen.getByText('All changes saved')).toBeInTheDocument()
 
     // Modify the title
-    const titleInput = screen.getByLabelText(/Title/)
+    const titleInput = screen.getByPlaceholderText('Issue title...')
     await user.clear(titleInput)
     await user.type(titleInput, 'Updated Title')
 
@@ -102,7 +102,7 @@ describe('IssuePanel', () => {
     renderWithProviders(<IssuePanel issue={mockIssue} onUpdate={onUpdate} />)
 
     // Modify the title
-    const titleInput = screen.getByLabelText(/Title/)
+    const titleInput = screen.getByPlaceholderText('Issue title...')
     await user.clear(titleInput)
     await user.type(titleInput, 'Updated Title')
 
@@ -125,7 +125,7 @@ describe('IssuePanel', () => {
 
     renderWithProviders(<IssuePanel issue={mockIssue} onDelete={onDelete} />)
 
-    const deleteButton = screen.getByRole('button', { name: /Delete/ })
+    const deleteButton = screen.getByLabelText('Delete')
     await user.click(deleteButton)
 
     // Should show delete confirmation dialog
@@ -143,7 +143,7 @@ describe('IssuePanel', () => {
     renderWithProviders(<IssuePanel issue={mockIssue} onDelete={onDelete} />)
 
     // Click Delete button
-    const deleteButton = screen.getByRole('button', { name: /^Delete$/ })
+    const deleteButton = screen.getByLabelText('Delete')
     await user.click(deleteButton)
 
     // Confirm deletion in dialog
@@ -160,7 +160,7 @@ describe('IssuePanel', () => {
     renderWithProviders(<IssuePanel issue={mockIssue} onDelete={onDelete} />)
 
     // Click Delete button
-    const deleteButton = screen.getByRole('button', { name: /^Delete$/ })
+    const deleteButton = screen.getByLabelText('Delete')
     await user.click(deleteButton)
 
     // Cancel deletion in dialog
@@ -201,15 +201,14 @@ describe('IssuePanel', () => {
     expect(screen.queryByText('2024-01-01T10:00:00Z')).not.toBeInTheDocument()
     expect(screen.queryByText('2024-01-02T15:30:00Z')).not.toBeInTheDocument()
 
-    // Should have "Created:" and "Updated:" labels
-    expect(screen.getByText(/Created:/)).toBeInTheDocument()
-    expect(screen.getByText(/Updated:/)).toBeInTheDocument()
+    // Should have "Updated" timestamp
+    expect(screen.getByText(/Updated/)).toBeInTheDocument()
   })
 
   it('should not show closed_at when issue is not closed', () => {
     renderWithProviders(<IssuePanel issue={mockIssue} />)
 
-    expect(screen.queryByText(/Closed:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Closed at/)).not.toBeInTheDocument()
   })
 
   it('should show closed_at when issue is closed', () => {
@@ -221,7 +220,7 @@ describe('IssuePanel', () => {
 
     renderWithProviders(<IssuePanel issue={closedIssue} />)
 
-    expect(screen.getByText(/Closed:/)).toBeInTheDocument()
+    expect(screen.getByText(/Closed at/)).toBeInTheDocument()
   })
 
   it('should not show assignee section when assignee is undefined', () => {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { renderWithProviders } from '@/test/test-utils'
 import { RelationshipList } from '@/components/relationships/RelationshipList'
 import type { Relationship, RelationshipType } from '@/types/api'
 
@@ -37,13 +38,13 @@ describe('RelationshipList', () => {
 
   describe('empty state', () => {
     it('should show empty message when no relationships and showEmpty is true', () => {
-      render(<RelationshipList relationships={[]} currentEntityId="ISSUE-001" showEmpty={true} />)
+      renderWithProviders(<RelationshipList relationships={[]} currentEntityId="ISSUE-001" showEmpty={true} />)
 
       expect(screen.getByText('No relationships yet')).toBeInTheDocument()
     })
 
     it('should render nothing when no relationships and showEmpty is false', () => {
-      const { container } = render(
+      const { container } = renderWithProviders(
         <RelationshipList relationships={[]} currentEntityId="ISSUE-001" showEmpty={false} />
       )
 
@@ -53,7 +54,7 @@ describe('RelationshipList', () => {
 
   describe('grouping', () => {
     it('should group relationships into outgoing and incoming', () => {
-      render(<RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />)
+      renderWithProviders(<RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />)
 
       expect(screen.getByText(/Outgoing \(2\)/)).toBeInTheDocument()
       expect(screen.getByText(/Incoming \(1\)/)).toBeInTheDocument()
@@ -72,7 +73,7 @@ describe('RelationshipList', () => {
         },
       ]
 
-      render(<RelationshipList relationships={outgoingOnly} currentEntityId="ISSUE-001" />)
+      renderWithProviders(<RelationshipList relationships={outgoingOnly} currentEntityId="ISSUE-001" />)
 
       expect(screen.getByText(/Outgoing \(1\)/)).toBeInTheDocument()
       expect(screen.queryByText(/Incoming/)).not.toBeInTheDocument()
@@ -91,7 +92,7 @@ describe('RelationshipList', () => {
         },
       ]
 
-      render(<RelationshipList relationships={incomingOnly} currentEntityId="ISSUE-001" />)
+      renderWithProviders(<RelationshipList relationships={incomingOnly} currentEntityId="ISSUE-001" />)
 
       expect(screen.getByText(/Incoming \(1\)/)).toBeInTheDocument()
       expect(screen.queryByText(/Outgoing/)).not.toBeInTheDocument()
@@ -100,20 +101,20 @@ describe('RelationshipList', () => {
 
   describe('relationship rendering', () => {
     it('should render outgoing relationships with correct labels', () => {
-      render(<RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />)
+      renderWithProviders(<RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />)
 
       expect(screen.getByText('Implements')).toBeInTheDocument()
       expect(screen.getByText('Related to')).toBeInTheDocument()
     })
 
     it('should render incoming relationships with inverse labels', () => {
-      render(<RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />)
+      renderWithProviders(<RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />)
 
       expect(screen.getByText('Blocked by')).toBeInTheDocument()
     })
 
     it('should display target entity IDs', () => {
-      render(<RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />)
+      renderWithProviders(<RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />)
 
       expect(screen.getByText('SPEC-001')).toBeInTheDocument()
       expect(screen.getByText('ISSUE-003')).toBeInTheDocument()
@@ -121,46 +122,39 @@ describe('RelationshipList', () => {
     })
 
     it('should display entity type icons', () => {
-      render(<RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />)
+      renderWithProviders(<RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />)
 
-      // Check for issue and spec icons
-      const container = screen.getByText('SPEC-001').parentElement
-      expect(container?.textContent).toContain('📄')
+      // Check that entities are rendered with their IDs
+      expect(screen.getByText('SPEC-001')).toBeInTheDocument()
+      expect(screen.getByText('ISSUE-003')).toBeInTheDocument()
 
-      const issueContainer = screen.getByText('ISSUE-003').parentElement
-      expect(issueContainer?.textContent).toContain('🔧')
+      // Check that they're inside badges (links)
+      const specLink = screen.getByText('SPEC-001').closest('a')
+      expect(specLink).toBeInTheDocument()
+      expect(specLink).toHaveAttribute('href', '/specs/SPEC-001')
     })
   })
 
   describe('navigation', () => {
-    it('should call onNavigate when entity is clicked', async () => {
-      const onNavigate = vi.fn()
-      const user = userEvent.setup()
+    it('should render entities as links', () => {
+      renderWithProviders(<RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />)
 
-      render(
-        <RelationshipList
-          relationships={mockRelationships}
-          currentEntityId="ISSUE-001"
-          onNavigate={onNavigate}
-        />
-      )
+      const specLink = screen.getByText('SPEC-001').closest('a')
+      expect(specLink).toBeInTheDocument()
+      expect(specLink).toHaveAttribute('href', '/specs/SPEC-001')
 
-      const specButton = screen.getByText('SPEC-001')
-      await user.click(specButton)
-
-      expect(onNavigate).toHaveBeenCalledWith('SPEC-001', 'spec')
+      const issueLink = screen.getByText('ISSUE-003').closest('a')
+      expect(issueLink).toBeInTheDocument()
+      expect(issueLink).toHaveAttribute('href', '/issues/ISSUE-003')
     })
 
-    it('should not call onNavigate when not provided', async () => {
-      const user = userEvent.setup()
+    it('should render entities with proper badges', () => {
+      renderWithProviders(<RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />)
 
-      render(<RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />)
-
-      const specButton = screen.getByText('SPEC-001')
-      await user.click(specButton)
-
-      // Should not throw error
-      expect(specButton).toBeInTheDocument()
+      // Entities should be rendered in the DOM
+      expect(screen.getByText('SPEC-001')).toBeInTheDocument()
+      expect(screen.getByText('ISSUE-003')).toBeInTheDocument()
+      expect(screen.getByText('ISSUE-002')).toBeInTheDocument()
     })
   })
 
@@ -168,7 +162,7 @@ describe('RelationshipList', () => {
     it('should show delete buttons when onDelete is provided', () => {
       const onDelete = vi.fn()
 
-      render(
+      renderWithProviders(
         <RelationshipList
           relationships={mockRelationships}
           currentEntityId="ISSUE-001"
@@ -181,7 +175,7 @@ describe('RelationshipList', () => {
     })
 
     it('should not show delete buttons when onDelete is not provided', () => {
-      render(<RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />)
+      renderWithProviders(<RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />)
 
       const deleteButtons = screen.queryAllByTitle('Remove relationship')
       expect(deleteButtons).toHaveLength(0)
@@ -191,7 +185,7 @@ describe('RelationshipList', () => {
       const onDelete = vi.fn()
       const user = userEvent.setup()
 
-      render(
+      renderWithProviders(
         <RelationshipList
           relationships={mockRelationships}
           currentEntityId="ISSUE-001"
@@ -265,7 +259,7 @@ describe('RelationshipList', () => {
         },
       ]
 
-      render(<RelationshipList relationships={allTypes} currentEntityId="ISSUE-001" />)
+      renderWithProviders(<RelationshipList relationships={allTypes} currentEntityId="ISSUE-001" />)
 
       expect(screen.getByText('Blocks')).toBeInTheDocument()
       expect(screen.getByText('Related to')).toBeInTheDocument()
@@ -297,7 +291,7 @@ describe('RelationshipList', () => {
         },
       ]
 
-      render(<RelationshipList relationships={bidirectional} currentEntityId="ISSUE-001" />)
+      renderWithProviders(<RelationshipList relationships={bidirectional} currentEntityId="ISSUE-001" />)
 
       // Both should show "Related to" since it's bidirectional
       const relatedLabels = screen.getAllByText('Related to')

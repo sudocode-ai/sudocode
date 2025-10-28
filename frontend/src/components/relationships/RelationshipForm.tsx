@@ -109,15 +109,14 @@ export function RelationshipForm({
       </div>
 
       {/* Actions */}
-      <div className="flex gap-2 justify-end">
+      <div className="flex justify-end gap-2">
         {onCancel && (
           <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
             Cancel
           </Button>
         )}
         <Button type="submit" disabled={!toId.trim() || isSubmitting}>
-          <Plus className="h-4 w-4 mr-1" />
-          Add Relationship
+          Create
         </Button>
       </div>
     </form>
