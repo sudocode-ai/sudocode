@@ -245,10 +245,15 @@ export async function syncMarkdownToJSONL(
 
     const isNew = !existing;
 
+    // Get file modification time to use as updated_at timestamp
+    // This ensures database timestamp matches when the file was actually modified
+    const fileStat = fs.statSync(mdPath);
+    const fileModTime = new Date(fileStat.mtimeMs).toISOString();
+
     if (entityType === "spec") {
-      await syncSpec(db, entityId, data, content, references, isNew, user);
+      await syncSpec(db, entityId, data, content, references, isNew, user, fileModTime);
     } else {
-      await syncIssue(db, entityId, data, content, references, isNew, user);
+      await syncIssue(db, entityId, data, content, references, isNew, user, fileModTime);
     }
 
     // Auto-export to JSONL if enabled
@@ -381,7 +386,8 @@ async function syncSpec(
   content: string,
   references: CrossReference[],
   isNew: boolean,
-  user: string
+  user: string,
+  fileModTime?: string
 ): Promise<void> {
   // Get old content before updating (for anchor relocation)
   const oldSpec = isNew ? null : getSpec(db, id);
@@ -399,10 +405,12 @@ async function syncSpec(
   if (isNew) {
     createSpec(db, {
       ...specData,
+      updated_at: fileModTime,
     } as any);
   } else {
     updateSpec(db, id, {
       ...specData,
+      updated_at: fileModTime,
     });
 
     // Relocate feedback anchors if content changed
@@ -459,7 +467,8 @@ async function syncIssue(
   content: string,
   references: CrossReference[],
   isNew: boolean,
-  user: string
+  user: string,
+  fileModTime?: string
 ): Promise<void> {
   const issueData: Partial<Issue> = {
     id,
@@ -474,10 +483,12 @@ async function syncIssue(
   if (isNew) {
     createIssue(db, {
       ...issueData,
+      updated_at: fileModTime,
     } as any);
   } else {
     updateIssue(db, id, {
       ...issueData,
+      updated_at: fileModTime,
     });
   }
 

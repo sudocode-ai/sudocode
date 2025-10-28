@@ -237,9 +237,12 @@ describe("Sync Commands - Auto Direction Detection", () => {
     });
   });
 
-  describe("Ping-pong behavior", () => {
-    it("should ping-pong between syncs when run repeatedly", async () => {
-      // Setup: Create spec in database and markdown file
+  describe("Content stability across syncs", () => {
+    it("should set JSONL file mtime to match content timestamps", async () => {
+      // This test verifies that JSONL files get their mtime set to match
+      // the newest updated_at timestamp in their contents, which improves
+      // sync direction detection accuracy.
+
       createSpec(db, {
         id: "SPEC-001",
         title: "Test Spec",
@@ -248,55 +251,29 @@ describe("Sync Commands - Auto Direction Detection", () => {
         priority: 2,
       });
 
+      const { getSpec } = await import("../../../src/operations/specs.js");
+      const spec = getSpec(db, "SPEC-001");
+
+      // Parse timestamp with same logic as jsonl.ts (SQLite returns UTC without 'Z')
+      const timestamp = String(spec!.updated_at);
+      const hasZone = timestamp.endsWith('Z') || timestamp.includes('+') || /[+-]\d{2}:\d{2}$/.test(timestamp);
+      const utcTimestamp = hasZone ? timestamp : timestamp.replace(' ', 'T') + 'Z';
+      const specUpdatedAt = new Date(utcTimestamp).getTime();
+
+      // Export to JSONL
       await exportToJSONL(db, { outputDir: tempDir });
 
-      const mdPath = path.join(specsDir, "test.md");
-      fs.writeFileSync(
-        mdPath,
-        "---\nid: SPEC-001\ntitle: Test Spec\nfile_path: specs/test.md\n---\n\n# Content",
-        "utf8"
-      );
+      // Check that JSONL file mtime matches the spec's updated_at
+      const jsonlPath = path.join(tempDir, "specs.jsonl");
+      const jsonlStat = fs.statSync(jsonlPath);
+      const jsonlMtime = jsonlStat.mtimeMs;
 
-      const ctx = { db, outputDir: tempDir, jsonOutput: false };
-
-      // Run 1: Should detect some direction
-      consoleLogSpy.mockClear();
-      await handleSync(ctx, {});
-      const output1 = consoleLogSpy.mock.calls.flat().join(" ");
-      const direction1 = output1.includes("FROM markdown TO database")
-        ? "from-markdown"
-        : "to-markdown";
-
-      // Wait to ensure timestamp difference
-      await sleep(10);
-
-      // Run 2: Should detect opposite direction
-      consoleLogSpy.mockClear();
-      await handleSync(ctx, {});
-      const output2 = consoleLogSpy.mock.calls.flat().join(" ");
-      const direction2 = output2.includes("FROM markdown TO database")
-        ? "from-markdown"
-        : "to-markdown";
-
-      // Wait to ensure timestamp difference
-      await sleep(10);
-
-      // Run 3: Should flip again
-      consoleLogSpy.mockClear();
-      await handleSync(ctx, {});
-      const output3 = consoleLogSpy.mock.calls.flat().join(" ");
-      const direction3 = output3.includes("FROM markdown TO database")
-        ? "from-markdown"
-        : "to-markdown";
-
-      // Verify ping-pong: directions should alternate
-      // Either: from-md -> to-md -> from-md OR to-md -> from-md -> to-md
-      expect(direction1).not.toBe(direction2);
-      expect(direction2).not.toBe(direction3);
-      expect(direction1).toBe(direction3);
+      // Allow 1 second tolerance for filesystem precision
+      const timeDiff = Math.abs(jsonlMtime - specUpdatedAt);
+      expect(timeDiff).toBeLessThan(1000);
     });
 
-    it("should perform redundant writes but preserve content in ping-pong", async () => {
+    it("should preserve content across multiple sync operations", async () => {
       // Create spec with specific content
       const originalContent = "# Original Content\n\nThis should be preserved.";
       createSpec(db, {
@@ -318,17 +295,17 @@ describe("Sync Commands - Auto Direction Detection", () => {
 
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
 
-      // Run sync 3 times with delays to ensure timestamps differ
+      // Run sync multiple times to ensure content stability
       await handleSync(ctx, {});
-      await sleep(10);
+      await sleep(100);
       await handleSync(ctx, {});
-      await sleep(10);
+      await sleep(100);
       await handleSync(ctx, {});
 
       // Read final markdown content
       const finalContent = fs.readFileSync(mdPath, "utf8");
 
-      // Content should still be preserved
+      // Content should be preserved (no data loss from syncing)
       expect(finalContent).toContain(originalContent);
       expect(finalContent).toContain("Test Spec");
       expect(finalContent).toContain("SPEC-001");

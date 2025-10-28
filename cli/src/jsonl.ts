@@ -194,6 +194,32 @@ export async function writeJSONL<T extends JSONLEntity = JSONLEntity>(
   if (atomic) {
     fs.renameSync(targetPath, filePath);
   }
+
+  // Set file modification time to match the newest updated_at timestamp
+  // This ensures filesystem mtime reflects content timestamps for accurate sync direction detection
+  if (sortedEntities.length > 0) {
+    const timestamps = sortedEntities
+      .map((e) => (e as any).updated_at)
+      .filter((t) => t != null)
+      .map((t) => {
+        // Append 'Z' if not present to force UTC interpretation
+        const timestamp = String(t);
+        const hasZone =
+          timestamp.endsWith("Z") ||
+          timestamp.includes("+") ||
+          /[+-]\d{2}:\d{2}$/.test(timestamp);
+        const utcTimestamp = hasZone
+          ? timestamp
+          : timestamp.replace(" ", "T") + "Z";
+        return new Date(utcTimestamp).getTime();
+      });
+
+    if (timestamps.length > 0) {
+      const newestTimestamp = Math.max(...timestamps);
+      const mtimeDate = new Date(newestTimestamp);
+      fs.utimesSync(filePath, mtimeDate, mtimeDate);
+    }
+  }
 }
 
 /**
@@ -259,6 +285,32 @@ export function writeJSONLSync<T extends JSONLEntity = JSONLEntity>(
   // Atomic rename if requested
   if (atomic) {
     fs.renameSync(targetPath, filePath);
+  }
+
+  // Set file modification time to match the newest updated_at timestamp
+  // This ensures filesystem mtime reflects content timestamps for accurate sync direction detection
+  if (sortedEntities.length > 0) {
+    const timestamps = sortedEntities
+      .map((e) => (e as any).updated_at)
+      .filter((t) => t != null)
+      .map((t) => {
+        // Append 'Z' if not present to force UTC interpretation
+        const timestamp = String(t);
+        const hasZone =
+          timestamp.endsWith("Z") ||
+          timestamp.includes("+") ||
+          /[+-]\d{2}:\d{2}$/.test(timestamp);
+        const utcTimestamp = hasZone
+          ? timestamp
+          : timestamp.replace(" ", "T") + "Z";
+        return new Date(utcTimestamp).getTime();
+      });
+
+    if (timestamps.length > 0) {
+      const newestTimestamp = Math.max(...timestamps);
+      const mtimeDate = new Date(newestTimestamp);
+      fs.utimesSync(filePath, mtimeDate, mtimeDate);
+    }
   }
 }
 

@@ -1125,4 +1125,255 @@ Updated content.
       expect(errors.length).toBe(0);
     });
   });
+
+  describe("Timestamp Behavior (File Modification Time)", () => {
+    it("should use file modification time as database updated_at when syncing from markdown", async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create initial markdown file with known content
+      const issuePath = path.join(tempDir, "issues", "issue-timestamp-001.md");
+      const issueContent = `---
+id: issue-timestamp-001
+title: Test Timestamp
+status: open
+priority: 2
+---
+
+# Test Timestamp
+
+Initial content.
+`;
+      fs.writeFileSync(issuePath, issueContent, "utf8");
+
+      // Get file modification time BEFORE starting watcher
+      const fileStatBefore = fs.statSync(issuePath);
+      const fileTimeBefore = fileStatBefore.mtimeMs;
+
+      // Start watcher
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 100,
+        ignoreInitial: false,
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for initial sync
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Get the issue from database
+      const { getIssue } = await import("../../src/operations/issues.js");
+      const issue = getIssue(db, "issue-timestamp-001");
+
+      expect(issue).toBeDefined();
+      expect(issue).not.toBeNull();
+
+      if (issue) {
+        // Database updated_at should be very close to file modification time
+        const dbTime = new Date(issue.updated_at).getTime();
+        const timeDiff = Math.abs(dbTime - fileTimeBefore);
+
+        // Allow up to 1 second difference (for filesystem precision)
+        expect(timeDiff).toBeLessThan(1000);
+      }
+
+      expect(errors.length).toBe(0);
+    });
+
+    it(
+      "should allow multiple consecutive edits to be synced (not skipped due to timestamps)",
+      async () => {
+        const logs: string[] = [];
+        const errors: Error[] = [];
+
+        // Create initial markdown file
+        const issuePath = path.join(tempDir, "issues", "issue-multi-edit-001.md");
+        const initialContent = `---
+id: issue-multi-edit-001
+title: Multi Edit Test
+status: open
+priority: 2
+---
+
+# Multi Edit Test
+
+Version 1
+`;
+        fs.writeFileSync(issuePath, initialContent, "utf8");
+
+        // Start watcher
+        control = startWatcher({
+          db,
+          baseDir: tempDir,
+          debounceDelay: 100,
+          ignoreInitial: false,
+          onLog: (msg) => logs.push(msg),
+          onError: (err) => errors.push(err),
+        });
+
+        // Wait for initial sync
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        const { getIssue } = await import("../../src/operations/issues.js");
+
+        // First edit
+        logs.length = 0;
+        const edit1Content = initialContent.replace("Version 1", "Version 2");
+        fs.writeFileSync(issuePath, edit1Content, "utf8");
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        let issue = getIssue(db, "issue-multi-edit-001");
+        expect(issue?.content).toContain("Version 2");
+        expect(logs.some((log) => log.includes("Synced issue issue-multi-edit-001"))).toBe(true);
+
+        // Second edit (shortly after)
+        logs.length = 0;
+        const edit2Content = edit1Content.replace("Version 2", "Version 3");
+        fs.writeFileSync(issuePath, edit2Content, "utf8");
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        issue = getIssue(db, "issue-multi-edit-001");
+        expect(issue?.content).toContain("Version 3");
+        expect(logs.some((log) => log.includes("Synced issue issue-multi-edit-001"))).toBe(true);
+
+        // Third edit
+        logs.length = 0;
+        const edit3Content = edit2Content.replace("Version 3", "Version 4");
+        fs.writeFileSync(issuePath, edit3Content, "utf8");
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        issue = getIssue(db, "issue-multi-edit-001");
+        expect(issue?.content).toContain("Version 4");
+        expect(logs.some((log) => log.includes("Synced issue issue-multi-edit-001"))).toBe(true);
+
+        expect(errors.length).toBe(0);
+      },
+      { timeout: 10000 }
+    );
+
+    it("should skip sync when database is genuinely newer than file (via direct DB update)", async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create initial markdown file
+      const issuePath = path.join(tempDir, "issues", "issue-db-newer-001.md");
+      const issueContent = `---
+id: issue-db-newer-001
+title: DB Newer Test
+status: open
+priority: 2
+---
+
+# DB Newer Test
+
+Original content.
+`;
+      fs.writeFileSync(issuePath, issueContent, "utf8");
+
+      // Start watcher
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 100,
+        ignoreInitial: false,
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for initial sync
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Clear logs
+      logs.length = 0;
+
+      // Update database directly with a future timestamp (simulating server update)
+      const { updateIssue } = await import("../../src/operations/issues.js");
+      const futureTime = new Date(Date.now() + 10000).toISOString(); // 10 seconds in future
+      updateIssue(db, "issue-db-newer-001", {
+        content: "Content updated via database",
+        updated_at: futureTime,
+      });
+
+      // Now touch the markdown file (changing mtime but not content)
+      fs.utimesSync(issuePath, new Date(), new Date());
+
+      // Wait for watcher to process
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Should see "Skipping sync" message because database is newer
+      expect(
+        logs.some((log) =>
+          log.includes("Skipping sync for issue issue-db-newer-001") &&
+          log.includes("database is newer")
+        )
+      ).toBe(true);
+
+      expect(errors.length).toBe(0);
+    });
+
+    it("should preserve correct timestamps across markdown → database → JSONL sync chain", async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create markdown file
+      const specPath = path.join(tempDir, "specs", "spec-timestamp-chain.md");
+      const specContent = `---
+id: spec-timestamp-chain
+title: Timestamp Chain Test
+priority: 2
+---
+
+# Timestamp Chain Test
+
+Test content.
+`;
+      fs.writeFileSync(specPath, specContent, "utf8");
+
+      // Get file time
+      const fileStat = fs.statSync(specPath);
+      const fileTime = fileStat.mtimeMs;
+
+      // Start watcher
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 100,
+        ignoreInitial: false,
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for sync to complete
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Check database timestamp
+      const { getSpec } = await import("../../src/operations/specs.js");
+      const spec = getSpec(db, "spec-timestamp-chain");
+      expect(spec).toBeDefined();
+
+      if (spec) {
+        const dbTime = new Date(spec.updated_at).getTime();
+        const dbTimeDiff = Math.abs(dbTime - fileTime);
+        expect(dbTimeDiff).toBeLessThan(1000); // Within 1 second
+
+        // Check JSONL file contains the same timestamp
+        const jsonlPath = path.join(tempDir, "specs.jsonl");
+        const jsonlContent = fs.readFileSync(jsonlPath, "utf8");
+        const lines = jsonlContent.trim().split("\n").filter((l) => l.trim());
+        const specLine = lines.find((l) => l.includes("spec-timestamp-chain"));
+
+        expect(specLine).toBeDefined();
+        if (specLine) {
+          const jsonlSpec = JSON.parse(specLine);
+          const jsonlTime = new Date(jsonlSpec.updated_at).getTime();
+          const jsonlTimeDiff = Math.abs(jsonlTime - fileTime);
+          expect(jsonlTimeDiff).toBeLessThan(1000); // Within 1 second
+        }
+      }
+
+      expect(errors.length).toBe(0);
+    });
+  });
 });
