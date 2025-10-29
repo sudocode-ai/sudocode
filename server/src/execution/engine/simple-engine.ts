@@ -54,6 +54,9 @@ export class SimpleExecutionEngine implements IExecutionEngine {
   private completeHandlers: TaskCompleteHandler[] = [];
   private failedHandlers: TaskFailedHandler[] = [];
 
+  // Track active polling intervals for cleanup
+  private pollingIntervals = new Map<string, NodeJS.Timeout>();
+
   /**
    * Create a new SimpleExecutionEngine
    *
@@ -390,6 +393,7 @@ export class SimpleExecutionEngine implements IExecutionEngine {
       const checkInterval = setInterval(() => {
         if (process.exitCode !== null) {
           clearInterval(checkInterval);
+          this.pollingIntervals.delete(process.id);
           if (process.status === 'crashed') {
             reject(new Error(`Process crashed with exit code ${process.exitCode}`));
           } else {
@@ -398,10 +402,14 @@ export class SimpleExecutionEngine implements IExecutionEngine {
         }
       }, 10); // Poll every 10ms for responsive detection
 
+      // Track this interval for cleanup
+      this.pollingIntervals.set(process.id, checkInterval);
+
       // Set timeout if configured
       if (timeoutMs) {
         setTimeout(() => {
           clearInterval(checkInterval);
+          this.pollingIntervals.delete(process.id);
           reject(new Error('Process execution timeout'));
         }, timeoutMs);
       }
@@ -536,6 +544,13 @@ export class SimpleExecutionEngine implements IExecutionEngine {
     // Check if task is currently running
     const runningTask = this.runningTasks.get(taskId);
     if (runningTask) {
+      // Clear polling interval if exists
+      const interval = this.pollingIntervals.get(runningTask.process.id);
+      if (interval) {
+        clearInterval(interval);
+        this.pollingIntervals.delete(runningTask.process.id);
+      }
+
       // Terminate the running process
       try {
         await this._processManager.terminateProcess(runningTask.process.id);
@@ -667,6 +682,12 @@ export class SimpleExecutionEngine implements IExecutionEngine {
     // Cancel all running tasks
     const runningTaskIds = Array.from(this.runningTasks.keys());
     await Promise.all(runningTaskIds.map((id) => this.cancelTask(id)));
+
+    // Clear all polling intervals
+    for (const [processId, interval] of this.pollingIntervals.entries()) {
+      clearInterval(interval);
+      this.pollingIntervals.delete(processId);
+    }
 
     // Shutdown the process manager
     await this._processManager.shutdown();

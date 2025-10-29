@@ -62,6 +62,7 @@ import { generateId } from './utils.js';
  */
 export class SimpleProcessManager implements IProcessManager {
   private _activeProcesses = new Map<string, ManagedProcess>();
+  private _cleanupTimers = new Map<string, NodeJS.Timeout>();
   private _metrics: ProcessMetrics = {
     totalSpawned: 0,
     currentlyActive: 0,
@@ -213,9 +214,11 @@ export class SimpleProcessManager implements IProcessManager {
       }
 
       // Schedule cleanup (delete from activeProcesses after 5s delay)
-      setTimeout(() => {
+      const cleanupTimer = setTimeout(() => {
         this._activeProcesses.delete(id);
+        this._cleanupTimers.delete(id);
       }, 5000);
+      this._cleanupTimers.set(id, cleanupTimer);
     });
 
     // Error event handler
@@ -357,9 +360,16 @@ export class SimpleProcessManager implements IProcessManager {
   }
 
   async shutdown(): Promise<void> {
+    // Terminate all active processes first
     const processIds = Array.from(this._activeProcesses.keys());
     await Promise.all(
       processIds.map((id) => this.terminateProcess(id, 'SIGTERM'))
     );
+
+    // Clear all pending cleanup timers (including ones scheduled by exit handlers)
+    for (const [id, timer] of this._cleanupTimers.entries()) {
+      clearTimeout(timer);
+      this._cleanupTimers.delete(id);
+    }
   }
 }
