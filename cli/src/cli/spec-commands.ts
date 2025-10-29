@@ -32,7 +32,6 @@ export interface CommandContext {
 export interface SpecCreateOptions {
   priority: string;
   description?: string;
-  design?: string;
   filePath?: string;
   parent?: string;
   tags?: string;
@@ -65,7 +64,7 @@ export async function handleSpecCreate(
       file_path: filePath,
       content,
       priority: parseInt(options.priority),
-      parent_id: options.parent || null,
+      parent_id: options.parent || undefined,
     });
 
     // Add tags if provided
@@ -86,12 +85,7 @@ export async function handleSpecCreate(
       }),
     };
 
-    const markdownContent = options.design || "";
-    writeMarkdownFile(
-      path.join(ctx.outputDir, filePath),
-      frontmatter,
-      markdownContent
-    );
+    writeMarkdownFile(path.join(ctx.outputDir, filePath), frontmatter, content);
 
     // Export to JSONL
     await exportToJSONL(ctx.db, { outputDir: ctx.outputDir });
@@ -116,6 +110,7 @@ export async function handleSpecCreate(
 export interface SpecListOptions {
   priority?: string;
   grep?: string;
+  archived?: string;
   limit: string;
 }
 
@@ -128,10 +123,12 @@ export async function handleSpecList(
     const specs = options.grep
       ? searchSpecs(ctx.db, options.grep, {
           priority: options.priority ? parseInt(options.priority) : undefined,
+          archived: options.archived !== undefined ? options.archived === 'true' : false, // Default to excluding archived
           limit: parseInt(options.limit),
         })
       : listSpecs(ctx.db, {
           priority: options.priority ? parseInt(options.priority) : undefined,
+          archived: options.archived !== undefined ? options.archived === 'true' : false, // Default to excluding archived
           limit: parseInt(options.limit),
         });
 
@@ -241,12 +238,12 @@ export async function handleSpecShow(
             anchor.anchor_status === "valid"
               ? chalk.green
               : anchor.anchor_status === "relocated"
-              ? chalk.yellow
-              : chalk.red;
+                ? chalk.yellow
+                : chalk.red;
 
           console.log(
             `  ${chalk.cyan(fb.id)} ← ${chalk.cyan(fb.issue_id)}`,
-            statusColor(`[${fb.dismissed ? 'dismissed' : 'active'}]`),
+            statusColor(`[${fb.dismissed ? "dismissed" : "active"}]`),
             anchorStatusColor(`[${anchor.anchor_status}]`)
           );
           console.log(
@@ -275,9 +272,9 @@ export interface SpecUpdateOptions {
   title?: string;
   priority?: string;
   description?: string;
-  design?: string;
   parent?: string;
   tags?: string;
+  archived?: string;
 }
 
 export async function handleSpecUpdate(
@@ -306,7 +303,10 @@ export async function handleSpecUpdate(
       updateData.content = options.description;
     }
     if (options.parent !== undefined) {
-      updateData.parent_id = options.parent || null;
+      updateData.parent_id = options.parent || undefined;
+    }
+    if (options.archived !== undefined) {
+      updateData.archived = options.archived === 'true';
     }
 
     // Update spec in database
@@ -318,8 +318,14 @@ export async function handleSpecUpdate(
       setTags(ctx.db, id, "spec", tags);
     }
 
-    // Update markdown file if design or title changed
-    if (options.design !== undefined || options.title || options.priority || options.parent || options.tags) {
+    // Update markdown file if description or title changed
+    if (
+      options.description !== undefined ||
+      options.title ||
+      options.priority ||
+      options.parent ||
+      options.tags
+    ) {
       const fullPath = path.join(ctx.outputDir, spec.file_path);
 
       // Read existing file to preserve content
@@ -346,7 +352,10 @@ export async function handleSpecUpdate(
         ...(currentTags.length > 0 && { tags: currentTags }),
       };
 
-      const markdownContent = options.design !== undefined ? options.design : existingContent;
+      const markdownContent =
+        options.description !== undefined
+          ? options.description
+          : existingContent;
       writeMarkdownFile(fullPath, frontmatter, markdownContent);
     }
 
@@ -359,7 +368,8 @@ export async function handleSpecUpdate(
     } else {
       console.log(chalk.green("✓ Updated spec"), chalk.cyan(id));
       if (options.title) console.log(chalk.gray(`  Title: ${updated.title}`));
-      if (options.priority) console.log(chalk.gray(`  Priority: ${updated.priority}`));
+      if (options.priority)
+        console.log(chalk.gray(`  Priority: ${updated.priority}`));
     }
   } catch (error) {
     console.error(chalk.red("✗ Failed to update spec"));

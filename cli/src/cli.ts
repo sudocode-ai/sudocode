@@ -40,6 +40,7 @@ import {
   handleFeedbackStale,
   handleFeedbackRelocate,
 } from "./cli/feedback-commands.js";
+import { handleServerStart } from "./cli/server-commands.js";
 import { VERSION } from "./version.js";
 
 // Global state
@@ -142,7 +143,7 @@ program
   .description("Initialize .sudocode directory structure")
   .option("--spec-prefix <prefix>", "ID prefix for specs", "SPEC")
   .option("--issue-prefix <prefix>", "ID prefix for issues", "ISSUE")
-  .action((options) => {
+  .action(async (options) => {
     const specPrefix = options.specPrefix || "SPEC";
     const issuePrefix = options.issuePrefix || "ISSUE";
     const dir = path.join(process.cwd(), ".sudocode");
@@ -153,11 +154,23 @@ program
       fs.mkdirSync(path.join(dir, "specs"), { recursive: true });
       fs.mkdirSync(path.join(dir, "issues"), { recursive: true });
 
-      // Initialize database
+      // Track what was preserved
+      const preserved: string[] = [];
+
+      // Initialize database only if it doesn't exist
       const dbPath = path.join(dir, "cache.db");
-      // Ensure the database directory exists before creating the database
-      fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-      const database = initDatabase({ path: dbPath });
+      const dbExists = fs.existsSync(dbPath);
+      let database: Database.Database;
+
+      if (dbExists) {
+        preserved.push("cache.db");
+        // Open existing database
+        database = initDatabase({ path: dbPath });
+      } else {
+        // Ensure the database directory exists before creating the database
+        fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+        database = initDatabase({ path: dbPath });
+      }
 
       // Create config.json (version-controlled)
       const config = {
@@ -173,9 +186,67 @@ program
         "utf8"
       );
 
-      // Create empty JSONL files
-      fs.writeFileSync(path.join(dir, "specs.jsonl"), "", "utf8");
-      fs.writeFileSync(path.join(dir, "issues.jsonl"), "", "utf8");
+      let hasSpecsData = false;
+      let hasIssuesData = false;
+      // Create empty JSONL files only if they don't exist
+      const specsPath = path.join(dir, "specs.jsonl");
+      if (fs.existsSync(specsPath)) {
+        preserved.push("specs.jsonl");
+        const content = fs.readFileSync(specsPath, "utf8");
+        hasSpecsData = content.trim().length > 0;
+      } else {
+        fs.writeFileSync(specsPath, "", "utf8");
+      }
+
+      const issuesPath = path.join(dir, "issues.jsonl");
+      if (fs.existsSync(issuesPath)) {
+        preserved.push("issues.jsonl");
+        const content = fs.readFileSync(issuesPath, "utf8");
+        hasIssuesData = content.trim().length > 0;
+      } else {
+        fs.writeFileSync(issuesPath, "", "utf8");
+      }
+
+      if (hasSpecsData || hasIssuesData) {
+        try {
+          console.log(chalk.blue("Importing from existing JSONL files..."));
+          const { importFromJSONL } = await import("./import.js");
+          const result = await importFromJSONL(database, {
+            inputDir: dir,
+            resolveCollisions: true,
+          });
+
+          // Report import results
+          if (result.specs.added > 0 || result.specs.updated > 0) {
+            console.log(
+              chalk.gray(
+                `  Specs: ${result.specs.added} added, ${result.specs.updated} updated`
+              )
+            );
+          }
+          if (result.issues.added > 0 || result.issues.updated > 0) {
+            console.log(
+              chalk.gray(
+                `  Issues: ${result.issues.added} added, ${result.issues.updated} updated`
+              )
+            );
+          }
+          if (result.collisions.length > 0) {
+            console.log(
+              chalk.yellow(
+                `  Resolved ${result.collisions.length} ID collisions`
+              )
+            );
+          }
+        } catch (importError) {
+          // Log warning but continue with initialization
+          console.log(
+            chalk.yellow(
+              `  Warning: Failed to import JSONL data - ${importError instanceof Error ? importError.message : String(importError)}`
+            )
+          );
+        }
+      }
 
       // Create .gitignore file
       const gitignoreContent = `cache.db*
@@ -190,6 +261,12 @@ specs/
       console.log(chalk.gray(`  Spec prefix: ${specPrefix}`));
       console.log(chalk.gray(`  Issue prefix: ${issuePrefix}`));
       console.log(chalk.gray(`  Database: ${dbPath}`));
+
+      if (preserved.length > 0) {
+        console.log(
+          chalk.yellow(`  Preserved existing: ${preserved.join(", ")}`)
+        );
+      }
     } catch (error) {
       console.error(chalk.red("✗ Initialization failed"));
       console.error(error instanceof Error ? error.message : String(error));
@@ -211,7 +288,6 @@ spec
   .description("Create a new spec")
   .option("-p, --priority <priority>", "Priority (0-4)", "2")
   .option("-d, --description <desc>", "Description")
-  .option("--design <design>", "Design notes")
   .option("--file-path <path>", "File path for markdown")
   .option("--parent <id>", "Parent spec ID")
   .option("--tags <tags>", "Comma-separated tags")
@@ -224,6 +300,7 @@ spec
   .description("List all specs")
   .option("-p, --priority <priority>", "Filter by priority")
   .option("-g, --grep <query>", "Search by title or content")
+  .option("--archived <bool>", "Filter by archive status (true/false)")
   .option("--limit <num>", "Limit results", "50")
   .action(async (options) => {
     await handleSpecList(getContext(), options);
@@ -242,9 +319,9 @@ spec
   .option("-p, --priority <priority>", "New priority")
   .option("--title <title>", "New title")
   .option("-d, --description <desc>", "New description")
-  .option("--design <design>", "New design notes")
   .option("--parent <id>", "New parent spec ID")
   .option("--tags <tags>", "New comma-separated tags")
+  .option("--archived <bool>", "Archive status (true/false)")
   .action(async (id, options) => {
     await handleSpecUpdate(getContext(), id, options);
   });
@@ -295,7 +372,8 @@ issue
   .option("-s, --status <status>", "Filter by status")
   .option("-a, --assignee <assignee>", "Filter by assignee")
   .option("-p, --priority <priority>", "Filter by priority")
-  .option("-g, --grep <query>", "Search by title, description, or content")
+  .option("-g, --grep <query>", "Search by title or content")
+  .option("--archived <bool>", "Filter by archive status (true/false)")
   .option("--limit <num>", "Limit results", "50")
   .action(async (options) => {
     await handleIssueList(getContext(), options);
@@ -316,6 +394,7 @@ issue
   .option("-a, --assignee <assignee>", "New assignee")
   .option("--title <title>", "New title")
   .option("--description <desc>", "New description")
+  .option("--archived <bool>", "Archive status (true/false)")
   .action(async (id, options) => {
     await handleIssueUpdate(getContext(), id, options);
   });
@@ -498,6 +577,19 @@ program
   .option("-i, --input <dir>", "Input directory", ".sudocode")
   .action(async (options) => {
     await handleImport(getContext(), options);
+  });
+
+// ============================================================================
+// SERVER COMMANDS
+// ============================================================================
+
+program
+  .command("server")
+  .description("Start the sudocode local server")
+  .option("-p, --port <port>", "Port to run server on", "3000")
+  .option("-d, --detach", "Run server in background")
+  .action(async (options) => {
+    await handleServerStart(getContext(), options);
   });
 
 // Parse arguments

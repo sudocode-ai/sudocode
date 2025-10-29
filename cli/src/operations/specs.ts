@@ -13,7 +13,11 @@ export interface CreateSpecInput {
   file_path: string;
   content?: string;
   priority?: number;
-  parent_id?: string | null;
+  parent_id?: string;
+  archived?: boolean;
+  archived_at?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface UpdateSpecInput {
@@ -21,12 +25,16 @@ export interface UpdateSpecInput {
   file_path?: string;
   content?: string;
   priority?: number;
-  parent_id?: string | null;
+  parent_id?: string;
+  archived?: boolean;
+  archived_at?: string;
+  updated_at?: string;
 }
 
 export interface ListSpecsOptions {
   priority?: number;
-  parent_id?: string | null;
+  parent_id?: string;
+  archived?: boolean;
   limit?: number;
   offset?: number;
 }
@@ -45,24 +53,55 @@ export function createSpec(db: Database.Database, input: CreateSpecInput): Spec 
 
   const uuid = input.uuid || generateUUID();
 
+  // Build INSERT statement with optional timestamp fields
+  const columns = ['id', 'uuid', 'title', 'file_path', 'content', 'priority', 'parent_id', 'archived'];
+  const values = ['@id', '@uuid', '@title', '@file_path', '@content', '@priority', '@parent_id', '@archived'];
+
+  if (input.created_at) {
+    columns.push('created_at');
+    values.push('@created_at');
+  }
+  if (input.updated_at) {
+    columns.push('updated_at');
+    values.push('@updated_at');
+  }
+  if (input.archived_at !== undefined) {
+    columns.push('archived_at');
+    values.push('@archived_at');
+  }
+
   const stmt = db.prepare(`
     INSERT INTO specs (
-      id, uuid, title, file_path, content, priority, parent_id
+      ${columns.join(', ')}
     ) VALUES (
-      @id, @uuid, @title, @file_path, @content, @priority, @parent_id
+      ${values.join(', ')}
     )
   `);
 
   try {
-    stmt.run({
+    const params: Record<string, any> = {
       id: input.id,
       uuid: uuid,
       title: input.title,
       file_path: input.file_path,
       content: input.content || '',
       priority: input.priority ?? 2,
-      parent_id: input.parent_id || null,
-    });
+      parent_id: input.parent_id ?? null,
+      archived: input.archived ? 1 : 0,
+    };
+
+    // Add optional timestamp parameters
+    if (input.created_at) {
+      params.created_at = input.created_at;
+    }
+    if (input.updated_at) {
+      params.updated_at = input.updated_at;
+    }
+    if (input.archived_at !== undefined) {
+      params.archived_at = input.archived_at;
+    }
+
+    stmt.run(params);
 
     const spec = getSpec(db, input.id);
     if (!spec) {
@@ -112,8 +151,8 @@ export function updateSpec(
     throw new Error(`Spec not found: ${id}`);
   }
 
-  // Validate parent_id exists if provided (and not null)
-  if (input.parent_id !== undefined && input.parent_id !== null) {
+  // Validate parent_id exists if provided
+  if (input.parent_id) {
     const parent = getSpec(db, input.parent_id);
     if (!parent) {
       throw new Error(`Parent spec not found: ${input.parent_id}`);
@@ -143,8 +182,37 @@ export function updateSpec(
     updates.push('parent_id = @parent_id');
     params.parent_id = input.parent_id;
   }
+  if (input.archived !== undefined) {
+    updates.push('archived = @archived');
+    params.archived = input.archived ? 1 : 0;
 
-  updates.push('updated_at = CURRENT_TIMESTAMP');
+    // Handle archived_at based on archived changes
+    // Use input.archived_at if provided, otherwise auto-set based on archived
+    if (input.archived_at !== undefined) {
+      // Explicit archived_at provided - use it
+      updates.push('archived_at = @archived_at');
+      params.archived_at = input.archived_at;
+    } else if (input.archived && !existing.archived) {
+      // Archiving - set timestamp
+      updates.push('archived_at = CURRENT_TIMESTAMP');
+    } else if (!input.archived && existing.archived) {
+      // Unarchiving - clear timestamp
+      updates.push('archived_at = NULL');
+    }
+  } else if (input.archived_at !== undefined) {
+    // archived_at provided without archived change
+    updates.push('archived_at = @archived_at');
+    params.archived_at = input.archived_at;
+  }
+
+  // Handle updated_at - use provided value or set to current timestamp
+  if (input.updated_at !== undefined) {
+    updates.push('updated_at = @updated_at');
+    params.updated_at = input.updated_at;
+  } else if (updates.length > 0) {
+    // Only update timestamp if there are actual changes
+    updates.push('updated_at = CURRENT_TIMESTAMP');
+  }
 
   if (updates.length === 0) {
     return existing;
@@ -193,12 +261,12 @@ export function listSpecs(
     params.priority = options.priority;
   }
   if (options.parent_id !== undefined) {
-    if (options.parent_id === null) {
-      conditions.push('parent_id IS NULL');
-    } else {
-      conditions.push('parent_id = @parent_id');
-      params.parent_id = options.parent_id;
-    }
+    conditions.push('parent_id = @parent_id');
+    params.parent_id = options.parent_id;
+  }
+  if (options.archived !== undefined) {
+    conditions.push('archived = @archived');
+    params.archived = options.archived ? 1 : 0;
   }
 
   let query = 'SELECT * FROM specs';
@@ -236,12 +304,12 @@ export function searchSpecs(
     params.priority = options.priority;
   }
   if (options.parent_id !== undefined) {
-    if (options.parent_id === null) {
-      conditions.push('parent_id IS NULL');
-    } else {
-      conditions.push('parent_id = @parent_id');
-      params.parent_id = options.parent_id;
-    }
+    conditions.push('parent_id = @parent_id');
+    params.parent_id = options.parent_id;
+  }
+  if (options.archived !== undefined) {
+    conditions.push('archived = @archived');
+    params.archived = options.archived ? 1 : 0;
   }
 
   let sql = `SELECT * FROM specs WHERE ${conditions.join(' AND ')} ORDER BY priority DESC, created_at DESC`;

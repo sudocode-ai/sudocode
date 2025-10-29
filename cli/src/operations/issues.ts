@@ -2,37 +2,45 @@
  * CRUD operations for Issues
  */
 
-import type Database from 'better-sqlite3';
-import type { Issue, IssueStatus } from '../types.js';
-import { generateUUID } from '../id-generator.js';
+import type Database from "better-sqlite3";
+import type { Issue, IssueStatus } from "../types.js";
+import { generateUUID } from "../id-generator.js";
 
 export interface CreateIssueInput {
   id: string;
   uuid?: string;
   title: string;
-  description?: string;
   content?: string;
   status?: IssueStatus;
   priority?: number;
-  assignee?: string | null;
-  parent_id?: string | null;
+  assignee?: string;
+  parent_id?: string;
+  archived?: boolean;
+  archived_at?: string;
+  created_at?: string;
+  updated_at?: string;
+  closed_at?: string;
 }
 
 export interface UpdateIssueInput {
   title?: string;
-  description?: string;
   content?: string;
   status?: IssueStatus;
   priority?: number;
-  assignee?: string | null;
-  parent_id?: string | null;
+  assignee?: string;
+  parent_id?: string;
+  archived?: boolean;
+  archived_at?: string;
+  updated_at?: string;
+  closed_at?: string;
 }
 
 export interface ListIssuesOptions {
   status?: IssueStatus;
   priority?: number;
-  assignee?: string | null;
-  parent_id?: string | null;
+  assignee?: string;
+  parent_id?: string;
+  archived?: boolean;
   limit?: number;
   offset?: number;
 }
@@ -40,7 +48,10 @@ export interface ListIssuesOptions {
 /**
  * Create a new issue
  */
-export function createIssue(db: Database.Database, input: CreateIssueInput): Issue {
+export function createIssue(
+  db: Database.Database,
+  input: CreateIssueInput
+): Issue {
   // Validate parent_id exists if provided
   if (input.parent_id) {
     const parent = getIssue(db, input.parent_id);
@@ -51,28 +62,83 @@ export function createIssue(db: Database.Database, input: CreateIssueInput): Iss
 
   const uuid = input.uuid || generateUUID();
 
+  // Build INSERT statement with optional timestamp fields
+  const columns = [
+    "id",
+    "uuid",
+    "title",
+    "content",
+    "status",
+    "priority",
+    "assignee",
+    "parent_id",
+    "archived",
+  ];
+  const values = [
+    "@id",
+    "@uuid",
+    "@title",
+    "@content",
+    "@status",
+    "@priority",
+    "@assignee",
+    "@parent_id",
+    "@archived",
+  ];
+
+  if (input.created_at) {
+    columns.push("created_at");
+    values.push("@created_at");
+  }
+  if (input.updated_at) {
+    columns.push("updated_at");
+    values.push("@updated_at");
+  }
+  if (input.closed_at !== undefined) {
+    columns.push("closed_at");
+    values.push("@closed_at");
+  }
+  if (input.archived_at !== undefined) {
+    columns.push("archived_at");
+    values.push("@archived_at");
+  }
+
   const stmt = db.prepare(`
     INSERT INTO issues (
-      id, uuid, title, description, content, status, priority,
-      assignee, parent_id
+      ${columns.join(", ")}
     ) VALUES (
-      @id, @uuid, @title, @description, @content, @status, @priority,
-      @assignee, @parent_id
+      ${values.join(", ")}
     )
   `);
 
   try {
-    stmt.run({
+    const params: Record<string, any> = {
       id: input.id,
       uuid: uuid,
       title: input.title,
-      description: input.description || '',
-      content: input.content || '',
-      status: input.status || 'open',
+      content: input.content || "",
+      status: input.status || "open",
       priority: input.priority ?? 2,
-      assignee: input.assignee || null,
-      parent_id: input.parent_id || null,
-    });
+      assignee: input.assignee ?? null,
+      parent_id: input.parent_id ?? null,
+      archived: input.archived ? 1 : 0,
+    };
+
+    // Add optional timestamp parameters
+    if (input.created_at) {
+      params.created_at = input.created_at;
+    }
+    if (input.updated_at) {
+      params.updated_at = input.updated_at;
+    }
+    if (input.closed_at !== undefined) {
+      params.closed_at = input.closed_at;
+    }
+    if (input.archived_at !== undefined) {
+      params.archived_at = input.archived_at;
+    }
+
+    stmt.run(params);
 
     const issue = getIssue(db, input.id);
     if (!issue) {
@@ -80,7 +146,7 @@ export function createIssue(db: Database.Database, input: CreateIssueInput): Iss
     }
     return issue;
   } catch (error: any) {
-    if (error.code && error.code.startsWith('SQLITE_CONSTRAINT')) {
+    if (error.code && error.code.startsWith("SQLITE_CONSTRAINT")) {
       throw new Error(`Constraint violation: ${error.message}`);
     }
     throw error;
@@ -111,8 +177,8 @@ export function updateIssue(
     throw new Error(`Issue not found: ${id}`);
   }
 
-  // Validate parent_id exists if provided (and not null)
-  if (input.parent_id !== undefined && input.parent_id !== null) {
+  // Validate parent_id exists if provided
+  if (input.parent_id) {
     const parent = getIssue(db, input.parent_id);
     if (!parent) {
       throw new Error(`Parent issue not found: ${input.parent_id}`);
@@ -123,50 +189,85 @@ export function updateIssue(
   const params: Record<string, any> = { id };
 
   if (input.title !== undefined) {
-    updates.push('title = @title');
+    updates.push("title = @title");
     params.title = input.title;
   }
-  if (input.description !== undefined) {
-    updates.push('description = @description');
-    params.description = input.description;
-  }
   if (input.content !== undefined) {
-    updates.push('content = @content');
+    updates.push("content = @content");
     params.content = input.content;
   }
   if (input.status !== undefined) {
-    updates.push('status = @status');
+    updates.push("status = @status");
     params.status = input.status;
 
-    // Set closed_at when status becomes 'closed'
-    if (input.status === 'closed') {
-      updates.push('closed_at = CURRENT_TIMESTAMP');
-    } else if (existing.status === 'closed') {
-      // Clear closed_at when reopening
-      updates.push('closed_at = NULL');
+    // Handle closed_at based on status changes
+    // Use input.closed_at if provided, otherwise auto-set based on status
+    if (input.closed_at !== undefined) {
+      // Explicit closed_at provided - use it
+      updates.push("closed_at = @closed_at");
+      params.closed_at = input.closed_at;
+    } else if (input.status === "closed" && existing.status !== "closed") {
+      // Status changing to 'closed' - set timestamp
+      updates.push("closed_at = CURRENT_TIMESTAMP");
+    } else if (input.status !== "closed" && existing.status === "closed") {
+      // Reopening - clear timestamp
+      updates.push("closed_at = NULL");
     }
+  } else if (input.closed_at !== undefined) {
+    // closed_at provided without status change
+    updates.push("closed_at = @closed_at");
+    params.closed_at = input.closed_at;
   }
   if (input.priority !== undefined) {
-    updates.push('priority = @priority');
+    updates.push("priority = @priority");
     params.priority = input.priority;
   }
   if (input.assignee !== undefined) {
-    updates.push('assignee = @assignee');
+    updates.push("assignee = @assignee");
     params.assignee = input.assignee;
   }
   if (input.parent_id !== undefined) {
-    updates.push('parent_id = @parent_id');
+    updates.push("parent_id = @parent_id");
     params.parent_id = input.parent_id;
   }
+  if (input.archived !== undefined) {
+    updates.push("archived = @archived");
+    params.archived = input.archived ? 1 : 0;
 
-  updates.push('updated_at = CURRENT_TIMESTAMP');
+    // Handle archived_at based on archived changes
+    // Use input.archived_at if provided, otherwise auto-set based on archived
+    if (input.archived_at !== undefined) {
+      // Explicit archived_at provided - use it
+      updates.push("archived_at = @archived_at");
+      params.archived_at = input.archived_at;
+    } else if (input.archived && !existing.archived) {
+      // Archiving - set timestamp
+      updates.push("archived_at = CURRENT_TIMESTAMP");
+    } else if (!input.archived && existing.archived) {
+      // Unarchiving - clear timestamp
+      updates.push("archived_at = NULL");
+    }
+  } else if (input.archived_at !== undefined) {
+    // archived_at provided without archived change
+    updates.push("archived_at = @archived_at");
+    params.archived_at = input.archived_at;
+  }
+
+  // Handle updated_at - use provided value or set to current timestamp
+  if (input.updated_at !== undefined) {
+    updates.push("updated_at = @updated_at");
+    params.updated_at = input.updated_at;
+  } else if (updates.length > 0) {
+    // Only update timestamp if there are actual changes
+    updates.push("updated_at = CURRENT_TIMESTAMP");
+  }
 
   if (updates.length === 0) {
     return existing;
   }
 
   const stmt = db.prepare(`
-    UPDATE issues SET ${updates.join(', ')} WHERE id = @id
+    UPDATE issues SET ${updates.join(", ")} WHERE id = @id
   `);
 
   try {
@@ -177,7 +278,7 @@ export function updateIssue(
     }
     return updated;
   } catch (error: any) {
-    if (error.code && error.code.startsWith('SQLITE_CONSTRAINT')) {
+    if (error.code && error.code.startsWith("SQLITE_CONSTRAINT")) {
       throw new Error(`Constraint violation: ${error.message}`);
     }
     throw error;
@@ -197,14 +298,14 @@ export function deleteIssue(db: Database.Database, id: string): boolean {
  * Close an issue (convenience method)
  */
 export function closeIssue(db: Database.Database, id: string): Issue {
-  return updateIssue(db, id, { status: 'closed' });
+  return updateIssue(db, id, { status: "closed" });
 }
 
 /**
  * Reopen an issue (convenience method)
  */
 export function reopenIssue(db: Database.Database, id: string): Issue {
-  return updateIssue(db, id, { status: 'open' });
+  return updateIssue(db, id, { status: "open" });
 }
 
 /**
@@ -218,42 +319,38 @@ export function listIssues(
   const params: Record<string, any> = {};
 
   if (options.status !== undefined) {
-    conditions.push('status = @status');
+    conditions.push("status = @status");
     params.status = options.status;
   }
   if (options.priority !== undefined) {
-    conditions.push('priority = @priority');
+    conditions.push("priority = @priority");
     params.priority = options.priority;
   }
   if (options.assignee !== undefined) {
-    if (options.assignee === null) {
-      conditions.push('assignee IS NULL');
-    } else {
-      conditions.push('assignee = @assignee');
-      params.assignee = options.assignee;
-    }
+    conditions.push("assignee = @assignee");
+    params.assignee = options.assignee;
   }
   if (options.parent_id !== undefined) {
-    if (options.parent_id === null) {
-      conditions.push('parent_id IS NULL');
-    } else {
-      conditions.push('parent_id = @parent_id');
-      params.parent_id = options.parent_id;
-    }
+    conditions.push("parent_id = @parent_id");
+    params.parent_id = options.parent_id;
+  }
+  if (options.archived !== undefined) {
+    conditions.push("archived = @archived");
+    params.archived = options.archived ? 1 : 0;
   }
 
-  let query = 'SELECT * FROM issues';
+  let query = "SELECT * FROM issues";
   if (conditions.length > 0) {
-    query += ' WHERE ' + conditions.join(' AND ');
+    query += " WHERE " + conditions.join(" AND ");
   }
-  query += ' ORDER BY priority DESC, created_at DESC';
+  query += " ORDER BY priority DESC, created_at DESC";
 
   if (options.limit !== undefined) {
-    query += ' LIMIT @limit';
+    query += " LIMIT @limit";
     params.limit = options.limit;
   }
   if (options.offset !== undefined) {
-    query += ' OFFSET @offset';
+    query += " OFFSET @offset";
     params.offset = options.offset;
   }
 
@@ -265,7 +362,9 @@ export function listIssues(
  * Get ready issues (no blockers)
  */
 export function getReadyIssues(db: Database.Database): Issue[] {
-  const stmt = db.prepare('SELECT * FROM ready_issues ORDER BY priority DESC, created_at DESC');
+  const stmt = db.prepare(
+    "SELECT * FROM ready_issues ORDER BY priority DESC, created_at DESC"
+  );
   return stmt.all() as Issue[];
 }
 
@@ -273,53 +372,55 @@ export function getReadyIssues(db: Database.Database): Issue[] {
  * Get blocked issues
  */
 export function getBlockedIssues(db: Database.Database): any[] {
-  const stmt = db.prepare('SELECT * FROM blocked_issues ORDER BY priority DESC, created_at DESC');
+  const stmt = db.prepare(
+    "SELECT * FROM blocked_issues ORDER BY priority DESC, created_at DESC"
+  );
   return stmt.all();
 }
 
 /**
- * Search issues by title, description, or content
+ * Search issues by title or content
  */
 export function searchIssues(
   db: Database.Database,
   query: string,
-  options: Omit<ListIssuesOptions, 'offset'> = {}
+  options: Omit<ListIssuesOptions, "offset"> = {}
 ): Issue[] {
-  const conditions: string[] = ['(title LIKE @query OR description LIKE @query OR content LIKE @query)'];
+  const conditions: string[] = [
+    "(title LIKE @query OR content LIKE @query)",
+  ];
   const params: Record<string, any> = { query: `%${query}%` };
 
   if (options.status !== undefined) {
-    conditions.push('status = @status');
+    conditions.push("status = @status");
     params.status = options.status;
   }
   if (options.priority !== undefined) {
-    conditions.push('priority = @priority');
+    conditions.push("priority = @priority");
     params.priority = options.priority;
   }
   if (options.assignee !== undefined) {
-    if (options.assignee === null) {
-      conditions.push('assignee IS NULL');
-    } else {
-      conditions.push('assignee = @assignee');
-      params.assignee = options.assignee;
-    }
+    conditions.push("assignee = @assignee");
+    params.assignee = options.assignee;
   }
   if (options.parent_id !== undefined) {
-    if (options.parent_id === null) {
-      conditions.push('parent_id IS NULL');
-    } else {
-      conditions.push('parent_id = @parent_id');
-      params.parent_id = options.parent_id;
-    }
+    conditions.push("parent_id = @parent_id");
+    params.parent_id = options.parent_id;
+  }
+  if (options.archived !== undefined) {
+    conditions.push("archived = @archived");
+    params.archived = options.archived ? 1 : 0;
   }
 
-  let sql = `SELECT * FROM issues WHERE ${conditions.join(' AND ')} ORDER BY priority DESC, created_at DESC`;
+  let sql = `SELECT * FROM issues WHERE ${conditions.join(
+    " AND "
+  )} ORDER BY priority DESC, created_at DESC`;
 
   if (options.limit !== undefined) {
-    sql += ' LIMIT @limit';
+    sql += " LIMIT @limit";
     params.limit = options.limit;
   } else {
-    sql += ' LIMIT 50';
+    sql += " LIMIT 50";
   }
 
   const stmt = db.prepare(sql);

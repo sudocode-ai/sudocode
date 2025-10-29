@@ -95,7 +95,7 @@ export interface ChangeDetection {
  * Uses UUID as the source of truth for entity identity
  */
 export function detectChanges<
-  T extends { id: string; uuid: string; updated_at: string }
+  T extends { id: string; uuid: string; updated_at: string },
 >(existing: T[], incoming: T[]): ChangeDetection {
   // Map by UUID (the true identity)
   const existingByUUID = new Map(existing.map((e) => [e.uuid, e]));
@@ -143,7 +143,7 @@ function hasChanged<T extends { updated_at: string }>(
  * UUIDs are the source of truth for entity identity
  */
 export function detectCollisions<
-  T extends { id: string; uuid: string; title: string; created_at: string }
+  T extends { id: string; uuid: string; title: string; created_at: string },
 >(existing: T[], incoming: T[]): CollisionInfo[] {
   const collisions: CollisionInfo[] = [];
   const existingMap = new Map(existing.map((e) => [e.id, e]));
@@ -226,9 +226,7 @@ export function countReferences(
   for (const issue of issues) {
     const regex = new RegExp(`\\b${entityId}\\b`, "g");
     const contentMatches = issue.content.match(regex);
-    const descMatches = issue.description.match(regex);
     if (contentMatches) count += contentMatches.length;
-    if (descMatches) count += descMatches.length;
   }
 
   return count;
@@ -366,23 +364,15 @@ export function updateTextReferences(
     const regex = new RegExp(`\\b${oldId}\\b`, "g");
     let updated = false;
     let newContent = issue.content;
-    let newDescription = issue.description;
 
     if (regex.test(issue.content)) {
       newContent = issue.content.replace(regex, newId);
       updated = true;
     }
 
-    const descRegex = new RegExp(`\\b${oldId}\\b`, "g");
-    if (descRegex.test(issue.description)) {
-      newDescription = issue.description.replace(descRegex, newId);
-      updated = true;
-    }
-
     if (updated) {
       updateIssue(db, issue.id, {
         content: newContent,
-        description: newDescription,
       });
       updatedCount++;
     }
@@ -425,6 +415,10 @@ export function importSpecs(
         content: spec.content,
         priority: spec.priority,
         parent_id: spec.parent_id,
+        archived: spec.archived,
+        archived_at: spec.archived_at,
+        created_at: spec.created_at,
+        updated_at: spec.updated_at,
       });
 
       // Add tags
@@ -463,6 +457,9 @@ export function importSpecs(
         content: spec.content,
         priority: spec.priority,
         parent_id: spec.parent_id,
+        archived: spec.archived,
+        archived_at: spec.archived_at,
+        updated_at: spec.updated_at,
       });
       setTags(db, spec.id, "spec", spec.tags || []);
       updated++;
@@ -516,11 +513,11 @@ function syncIssueFeedback(
     for (const fb of feedbackJSONL) {
       createFeedback(db, {
         id: fb.id,
-        issue_id: issueId,
+        issue_id: fb.issue_id,
         spec_id: fb.spec_id,
-        feedback_type: fb.type,
+        feedback_type: fb.feedback_type,
         content: fb.content,
-        agent: "import",
+        agent: fb.agent,
         anchor: fb.anchor,
         dismissed: fb.dismissed,
       });
@@ -558,12 +555,16 @@ export function importIssues(
         id: issue.id,
         uuid: issue.uuid,
         title: issue.title,
-        description: issue.description,
         content: issue.content,
         status: issue.status,
         priority: issue.priority,
         assignee: issue.assignee,
         parent_id: issue.parent_id,
+        archived: issue.archived,
+        archived_at: issue.archived_at,
+        created_at: issue.created_at,
+        updated_at: issue.updated_at,
+        closed_at: issue.closed_at,
       });
       setTags(db, issue.id, "issue", issue.tags || []);
       syncIssueFeedback(db, issue.id, issue.feedback);
@@ -595,12 +596,15 @@ export function importIssues(
     if (issue) {
       updateIssue(db, issue.id, {
         title: issue.title,
-        description: issue.description,
         content: issue.content,
         status: issue.status,
         priority: issue.priority,
         assignee: issue.assignee,
         parent_id: issue.parent_id,
+        archived: issue.archived,
+        archived_at: issue.archived_at,
+        updated_at: issue.updated_at,
+        closed_at: issue.closed_at,
       });
       setTags(db, issue.id, "issue", issue.tags || []);
       syncIssueFeedback(db, issue.id, issue.feedback);

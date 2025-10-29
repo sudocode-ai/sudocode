@@ -214,7 +214,11 @@ describe('Issue Operations', () => {
       });
     });
 
-    it('should list all issues', () => {
+    it('should list all issues including archived when no filter provided', () => {
+      // Archive one issue
+      updateIssue(db, 'issue-001', { archived: true });
+
+      // Without archived parameter, should return ALL issues (both archived and non-archived)
       const issues = listIssues(db);
       expect(issues).toHaveLength(2);
     });
@@ -236,6 +240,24 @@ describe('Issue Operations', () => {
       expect(issues).toHaveLength(1);
       expect(issues[0].id).toBe('issue-002');
     });
+
+    it('should filter by archived status - exclude archived', () => {
+      // Archive one issue
+      updateIssue(db, 'issue-001', { archived: true });
+
+      const issues = listIssues(db, { archived: false });
+      expect(issues).toHaveLength(1);
+      expect(issues[0].id).toBe('issue-002');
+    });
+
+    it('should filter by archived status - only archived', () => {
+      // Archive one issue
+      updateIssue(db, 'issue-001', { archived: true });
+
+      const issues = listIssues(db, { archived: true });
+      expect(issues).toHaveLength(1);
+      expect(issues[0].id).toBe('issue-001');
+    });
   });
 
   describe('searchIssues', () => {
@@ -243,7 +265,7 @@ describe('Issue Operations', () => {
       createIssue(db, {
         id: 'issue-001',
         title: 'Fix authentication bug',
-        description: 'OAuth is broken',
+        content: 'OAuth is broken and needs to be fixed',
         status: 'open',
         priority: 1,
         assignee: 'agent1',
@@ -258,7 +280,7 @@ describe('Issue Operations', () => {
       createIssue(db, {
         id: 'issue-003',
         title: 'Fix database connection',
-        description: 'Connection pooling issue',
+        content: 'Connection pooling issue needs investigation',
         status: 'closed',
         priority: 1,
       });
@@ -270,13 +292,13 @@ describe('Issue Operations', () => {
       expect(results[0].id).toBe('issue-001');
     });
 
-    it('should search by description', () => {
+    it('should search by content (OAuth)', () => {
       const results = searchIssues(db, 'OAuth');
       expect(results).toHaveLength(1);
       expect(results[0].id).toBe('issue-001');
     });
 
-    it('should search by content', () => {
+    it('should search by content (PostgreSQL)', () => {
       const results = searchIssues(db, 'PostgreSQL');
       expect(results).toHaveLength(1);
       expect(results[0].id).toBe('issue-002');
@@ -313,6 +335,125 @@ describe('Issue Operations', () => {
     it('should return empty array when search matches but filters do not', () => {
       const results = searchIssues(db, 'authentication', { status: 'closed' });
       expect(results).toHaveLength(0);
+    });
+
+    it('should include all issues including archived when no filter provided', () => {
+      // Archive one issue
+      updateIssue(db, 'issue-001', { archived: true });
+
+      // Without archived parameter, should return ALL matching issues (both archived and non-archived)
+      const results = searchIssues(db, 'Fix');
+      expect(results).toHaveLength(2);
+    });
+
+    it('should exclude archived issues when filter is set to false', () => {
+      // Archive one issue
+      updateIssue(db, 'issue-001', { archived: true });
+
+      const results = searchIssues(db, 'authentication', { archived: false });
+      expect(results).toHaveLength(0);
+    });
+
+    it('should include archived issues when filter is set to true', () => {
+      // Archive one issue
+      updateIssue(db, 'issue-001', { archived: true });
+
+      const results = searchIssues(db, 'authentication', { archived: true });
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe('issue-001');
+    });
+  });
+
+  describe('Timestamp Preservation', () => {
+    it('should accept and preserve custom timestamps when creating issues', () => {
+      const customTimestamps = {
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+        closed_at: null,
+      };
+
+      const issue = createIssue(db, {
+        id: 'issue-ts-1',
+        title: 'Test Issue',
+        created_at: customTimestamps.created_at,
+        updated_at: customTimestamps.updated_at,
+        closed_at: customTimestamps.closed_at,
+      });
+
+      expect(issue.created_at).toBe(customTimestamps.created_at);
+      expect(issue.updated_at).toBe(customTimestamps.updated_at);
+      expect(issue.closed_at).toBe(customTimestamps.closed_at);
+    });
+
+    it('should preserve custom updated_at when updating issues', () => {
+      // Create an issue
+      createIssue(db, {
+        id: 'issue-ts-2',
+        title: 'Original Title',
+      });
+
+      // Update with custom timestamp
+      const customTimestamp = '2024-06-15T10:00:00Z';
+      const updated = updateIssue(db, 'issue-ts-2', {
+        title: 'Updated Title',
+        updated_at: customTimestamp,
+      });
+
+      expect(updated.title).toBe('Updated Title');
+      expect(updated.updated_at).toBe(customTimestamp);
+    });
+
+    it('should preserve custom closed_at when updating issues', () => {
+      // Create an issue
+      createIssue(db, {
+        id: 'issue-ts-3',
+        title: 'Issue to Close',
+        status: 'open',
+      });
+
+      // Close with custom timestamp
+      const customClosedAt = '2024-07-20T15:30:00Z';
+      const updated = updateIssue(db, 'issue-ts-3', {
+        status: 'closed',
+        closed_at: customClosedAt,
+      });
+
+      expect(updated.status).toBe('closed');
+      expect(updated.closed_at).toBe(customClosedAt);
+    });
+
+    it('should auto-generate timestamps when not provided', () => {
+      const issue = createIssue(db, {
+        id: 'issue-ts-4',
+        title: 'Auto Timestamp Issue',
+      });
+
+      // Should have auto-generated timestamps
+      expect(issue.created_at).toBeTruthy();
+      expect(issue.updated_at).toBeTruthy();
+      expect(typeof issue.created_at).toBe('string');
+      expect(typeof issue.updated_at).toBe('string');
+    });
+
+    it('should auto-generate updated_at when updating without providing it', () => {
+      // Create issue with a specific old timestamp
+      const oldTimestamp = '2024-01-01T00:00:00Z';
+      createIssue(db, {
+        id: 'issue-ts-5',
+        title: 'Original',
+        updated_at: oldTimestamp,
+      });
+
+      // Update without providing updated_at
+      const updated = updateIssue(db, 'issue-ts-5', {
+        title: 'Modified',
+      });
+
+      // Should have a new auto-generated timestamp (different from the old one)
+      expect(updated.updated_at).toBeTruthy();
+      expect(updated.updated_at).not.toBe(oldTimestamp);
+      // Verify it's a recent timestamp (not from 2024)
+      expect(updated.updated_at.startsWith('2025')).toBe(true);
     });
   });
 });

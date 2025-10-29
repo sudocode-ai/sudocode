@@ -3,30 +3,41 @@
  */
 export interface Spec {
   id: string;
-  uuid: string;
   title: string;
+  uuid: string;
   file_path: string;
   content: string;
   priority: number;
+  archived?: boolean;
+  archived_at?: string;
   created_at: string;
   updated_at: string;
-  parent_id: string | null;
+  parent_id?: string;
 }
+
 export interface Issue {
   id: string;
-  uuid: string;
   title: string;
-  description: string;
-  content: string;
   status: IssueStatus;
+  uuid: string;
+  content: string;
   priority: number;
-  assignee: string | null;
+  assignee?: string;
+  archived?: boolean;
+  archived_at?: string;
   created_at: string;
   updated_at: string;
-  closed_at: string | null;
-  parent_id: string | null;
+  closed_at?: string;
+  parent_id?: string;
 }
-export type IssueStatus = "open" | "in_progress" | "blocked" | "closed";
+
+export type IssueStatus =
+  | "open"
+  | "in_progress"
+  | "blocked"
+  | "needs_review"
+  | "closed";
+
 export interface Relationship {
   from_id: string;
   from_type: EntityType;
@@ -34,22 +45,25 @@ export interface Relationship {
   to_type: EntityType;
   relationship_type: RelationshipType;
   created_at: string;
-  metadata: string | null;
+  metadata?: string;
 }
+
 export type EntityType = "spec" | "issue";
+
 export type RelationshipType =
   | "blocks"
   | "related"
-  | "parent-child"
   | "discovered-from"
   | "implements"
   | "references"
   | "depends-on";
+
 export interface Tag {
   entity_id: string;
   entity_type: EntityType;
   tag: string;
 }
+
 export interface Event {
   id: number;
   entity_id: string;
@@ -63,6 +77,7 @@ export interface Event {
   git_commit_sha: string | null;
   source?: string;
 }
+
 export type EventType =
   | "created"
   | "updated"
@@ -71,6 +86,7 @@ export type EventType =
   | "relationship_removed"
   | "tag_added"
   | "tag_removed";
+
 /**
  * Issue-based spec feedback types
  */
@@ -80,12 +96,13 @@ export interface IssueFeedback {
   spec_id: string;
   feedback_type: FeedbackType;
   content: string;
-  agent: string;
-  anchor: string;
-  dismissed: boolean;
+  agent?: string;
+  anchor?: string;
+  dismissed?: boolean;
   created_at: string;
   updated_at: string;
 }
+
 /**
  * Base location anchor for tracking positions in markdown documents
  */
@@ -99,6 +116,7 @@ export interface LocationAnchor {
   context_after?: string;
   content_hash?: string;
 }
+
 /**
  * Feedback anchor with additional tracking for changes over time
  */
@@ -110,7 +128,9 @@ export interface FeedbackAnchor extends LocationAnchor {
     section_heading?: string;
   };
 }
+
 export type FeedbackType = "comment" | "suggestion" | "request";
+
 /**
  * JSONL format types
  */
@@ -118,20 +138,26 @@ export interface SpecJSONL extends Spec {
   relationships: RelationshipJSONL[];
   tags: string[];
 }
+
 export interface IssueJSONL extends Issue {
   relationships: RelationshipJSONL[];
   tags: string[];
   feedback?: FeedbackJSONL[];
 }
+
 export interface FeedbackJSONL {
   id: string;
+  issue_id: string;
   spec_id: string;
-  type: FeedbackType;
+  feedback_type: FeedbackType;
   content: string;
-  anchor: FeedbackAnchor;
-  dismissed: boolean;
+  agent?: string;
+  anchor?: FeedbackAnchor;
+  dismissed?: boolean;
   created_at: string;
+  updated_at: string;
 }
+
 export interface RelationshipJSONL {
   from: string;
   from_type: EntityType;
@@ -139,6 +165,7 @@ export interface RelationshipJSONL {
   to_type: EntityType;
   type: RelationshipType;
 }
+
 /**
  * Config metadata file structure
  */
@@ -148,4 +175,47 @@ export interface Config {
     spec: string;
     issue: string;
   };
+}
+
+/**
+ * Agent types supported for execution
+ */
+export type AgentType = "claude-code" | "codex";
+
+/**
+ * Execution status
+ */
+export type ExecutionStatus = "running" | "completed" | "failed" | "stopped";
+
+/**
+ * Represents a single agent run on an issue
+ * Tracks the full lifecycle of a coding agent execution
+ */
+export interface Execution {
+  id: string;
+  issue_id: string;
+  agent_type: AgentType;
+  status: ExecutionStatus;
+
+  // Timestamps
+  started_at: string;
+  completed_at: string | null;
+
+  // Process info
+  exit_code: number | null;
+  error_message: string | null;
+
+  // Git context (captured before/after)
+  before_commit: string | null;
+  after_commit: string | null;
+  target_branch: string | null;
+  worktree_path: string | null;
+
+  // Session tracking (for resume/fork)
+  session_id: string | null;
+  summary: string | null;
+
+  // Metadata
+  created_at: string;
+  updated_at: string;
 }

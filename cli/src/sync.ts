@@ -24,12 +24,7 @@ import { listFeedback, updateFeedback } from "./operations/feedback.js";
 import { relocateFeedbackAnchor } from "./operations/feedback-anchors.js";
 import { exportToJSONL } from "./export.js";
 import { generateSpecId, generateIssueId } from "./id-generator.js";
-import { generateUniqueFilename, findExistingSpecFile } from "./filename-generator.js";
-import type {
-  Spec,
-  Issue,
-  IssueStatus,
-} from "@sudocode/types";
+import type { Spec, Issue, IssueStatus } from "@sudocode/types";
 
 export interface SyncResult {
   success: boolean;
@@ -115,7 +110,6 @@ function initializeFrontmatter(
     initialized.updated_at = now;
   }
 
-
   // Set type-specific defaults
   if (entityType === "spec") {
     if (!initialized.priority && initialized.priority !== 0)
@@ -125,7 +119,6 @@ function initializeFrontmatter(
     if (!initialized.status) initialized.status = "open";
     if (!initialized.priority && initialized.priority !== 0)
       initialized.priority = 2;
-    if (!initialized.description) initialized.description = "";
   }
 
   return initialized;
@@ -219,7 +212,14 @@ export async function syncMarkdownToJSONL(
     if (!entityId) {
       if (autoInitialize) {
         // Auto-initialize missing fields
-        data = initializeFrontmatter(db, data, entityType, mdPath, outputDir, user);
+        data = initializeFrontmatter(
+          db,
+          data,
+          entityType,
+          mdPath,
+          outputDir,
+          user
+        );
         entityId = data.id as string;
 
         // Write back frontmatter if requested
@@ -245,10 +245,15 @@ export async function syncMarkdownToJSONL(
 
     const isNew = !existing;
 
+    // Get file modification time to use as updated_at timestamp
+    // This ensures database timestamp matches when the file was actually modified
+    const fileStat = fs.statSync(mdPath);
+    const fileModTime = new Date(fileStat.mtimeMs).toISOString();
+
     if (entityType === "spec") {
-      await syncSpec(db, entityId, data, content, references, isNew, user);
+      await syncSpec(db, entityId, data, content, references, isNew, user, fileModTime);
     } else {
-      await syncIssue(db, entityId, data, content, references, isNew, user);
+      await syncIssue(db, entityId, data, content, references, isNew, user, fileModTime);
     }
 
     // Auto-export to JSONL if enabled
@@ -381,7 +386,8 @@ async function syncSpec(
   content: string,
   references: CrossReference[],
   isNew: boolean,
-  user: string
+  user: string,
+  fileModTime?: string
 ): Promise<void> {
   // Get old content before updating (for anchor relocation)
   const oldSpec = isNew ? null : getSpec(db, id);
@@ -393,16 +399,18 @@ async function syncSpec(
     file_path: frontmatter.file_path || "",
     content,
     priority: frontmatter.priority ?? 2,
-    parent_id: frontmatter.parent_id || null,
+    parent_id: frontmatter.parent_id || undefined,
   };
 
   if (isNew) {
     createSpec(db, {
       ...specData,
+      updated_at: fileModTime,
     } as any);
   } else {
     updateSpec(db, id, {
       ...specData,
+      updated_at: fileModTime,
     });
 
     // Relocate feedback anchors if content changed
@@ -459,26 +467,28 @@ async function syncIssue(
   content: string,
   references: CrossReference[],
   isNew: boolean,
-  user: string
+  user: string,
+  fileModTime?: string
 ): Promise<void> {
   const issueData: Partial<Issue> = {
     id,
     title: frontmatter.title || "Untitled",
-    description: frontmatter.description || "",
     content,
     status: (frontmatter.status as IssueStatus) || "open",
     priority: frontmatter.priority ?? 2,
-    assignee: frontmatter.assignee || null,
-    parent_id: frontmatter.parent_id || null,
+    assignee: frontmatter.assignee || undefined,
+    parent_id: frontmatter.parent_id || undefined,
   };
 
   if (isNew) {
     createIssue(db, {
       ...issueData,
+      updated_at: fileModTime,
     } as any);
   } else {
     updateIssue(db, id, {
       ...issueData,
+      updated_at: fileModTime,
     });
   }
 
@@ -535,7 +545,7 @@ async function syncRelationships(
           to_id: ref.id,
           to_type: ref.type,
           relationship_type: relType as any,
-          metadata: ref.anchor ? JSON.stringify({ anchor: ref.anchor }) : null,
+          metadata: ref.anchor ? JSON.stringify({ anchor: ref.anchor }) : undefined,
         });
       } catch (error) {
         // Ignore errors (e.g., target not found, duplicate)
@@ -595,7 +605,6 @@ function entityToFrontmatter(
     const result: Record<string, any> = {
       ...base,
       status: issue.status,
-      description: issue.description,
     };
 
     // Only add optional issue fields if they have values

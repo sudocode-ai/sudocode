@@ -275,10 +275,15 @@ export function updateFrontmatter<T extends object = Record<string, any>>(
   const parsed = matter(originalContent);
 
   // Merge updates into existing frontmatter
-  const newData = {
+  const merged = {
     ...parsed.data,
     ...updates,
   };
+
+  // Remove keys with undefined values (allows explicit removal of fields)
+  const newData = Object.fromEntries(
+    Object.entries(merged).filter(([_, value]) => value !== undefined)
+  );
 
   return matter.stringify(parsed.content, newData);
 }

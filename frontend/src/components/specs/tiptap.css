@@ -1,0 +1,331 @@
+/* Base Tiptap Editor Styles */
+.tiptap-editor .ProseMirror,
+.tiptap-viewer .ProseMirror {
+  outline: none;
+}
+
+.tiptap-editor .ProseMirror {
+  min-height: 200px;
+}
+
+.tiptap-editor .ProseMirror > * + *,
+.tiptap-viewer .ProseMirror > * + * {
+  margin-top: 0.75em;
+}
+
+/* Typography */
+.tiptap-editor h1,
+.tiptap-viewer h1 {
+  font-size: 2em;
+  line-height: 1.2;
+}
+
+.tiptap-editor h2,
+.tiptap-viewer h2 {
+  font-size: 1.5em;
+  line-height: 1.3;
+}
+
+.tiptap-editor h3,
+.tiptap-viewer h3 {
+  font-size: 1.25em;
+  line-height: 1.4;
+}
+
+.tiptap-editor p,
+.tiptap-viewer p {
+  margin: 0.5em 0;
+}
+
+.tiptap-editor a,
+.tiptap-viewer a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+}
+
+.tiptap-editor a:hover,
+.tiptap-viewer a:hover {
+  opacity: 0.8;
+}
+
+.tiptap-editor .ProseMirror-focused,
+.tiptap-viewer .ProseMirror-focused {
+  border: none;
+  outline: none;
+}
+
+/* Lists */
+.tiptap-editor ul,
+.tiptap-viewer ul,
+.tiptap-editor ol,
+.tiptap-viewer ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.tiptap-editor ul,
+.tiptap-viewer ul {
+  list-style-type: disc;
+  list-style-position: outside;
+}
+
+.tiptap-editor ol,
+.tiptap-viewer ol {
+  list-style-type: decimal;
+  list-style-position: outside;
+}
+
+.tiptap-editor li,
+.tiptap-viewer li {
+  margin: 0.25em 0;
+  padding-left: 0.25em;
+}
+
+.tiptap-editor li p,
+.tiptap-viewer li p {
+  margin: 0;
+  display: inline;
+}
+
+/* Code Blocks - Base Styling */
+.tiptap-editor pre,
+.tiptap-viewer pre {
+  background: hsl(var(--muted) / 0.5);
+  border-radius: 0.5rem;
+  color: hsl(var(--foreground));
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  padding: 1rem;
+  margin: 1rem 0;
+  overflow-x: auto;
+}
+
+.tiptap-editor pre code,
+.tiptap-viewer pre code {
+  background: none;
+  color: inherit;
+  font-size: 0.875rem;
+  padding: 0;
+}
+
+/* Syntax Highlighting - Comments & Documentation */
+.tiptap-editor .hljs-comment,
+.tiptap-editor .hljs-quote,
+.tiptap-viewer .hljs-comment,
+.tiptap-viewer .hljs-quote {
+  color: #6a737d;
+  font-style: italic;
+}
+
+.dark .tiptap-editor .hljs-comment,
+.dark .tiptap-editor .hljs-quote,
+.dark .tiptap-viewer .hljs-comment,
+.dark .tiptap-viewer .hljs-quote {
+  color: #8b949e;
+}
+
+/* Syntax Highlighting - Keywords */
+.tiptap-editor .hljs-keyword,
+.tiptap-editor .hljs-selector-tag,
+.tiptap-editor .hljs-subst,
+.tiptap-viewer .hljs-keyword,
+.tiptap-viewer .hljs-selector-tag,
+.tiptap-viewer .hljs-subst {
+  color: #d73a49;
+  font-weight: 600;
+}
+
+.dark .tiptap-editor .hljs-keyword,
+.dark .tiptap-editor .hljs-selector-tag,
+.dark .tiptap-editor .hljs-subst,
+.dark .tiptap-viewer .hljs-keyword,
+.dark .tiptap-viewer .hljs-selector-tag,
+.dark .tiptap-viewer .hljs-subst {
+  color: #ff7b72;
+}
+
+/* Syntax Highlighting - Numbers & Literals */
+.tiptap-editor .hljs-number,
+.tiptap-editor .hljs-literal,
+.tiptap-editor .hljs-variable,
+.tiptap-editor .hljs-template-variable,
+.tiptap-editor .hljs-tag .hljs-attr,
+.tiptap-viewer .hljs-number,
+.tiptap-viewer .hljs-literal,
+.tiptap-viewer .hljs-variable,
+.tiptap-viewer .hljs-template-variable,
+.tiptap-viewer .hljs-tag .hljs-attr {
+  color: #005cc5;
+}
+
+.dark .tiptap-editor .hljs-number,
+.dark .tiptap-editor .hljs-literal,
+.dark .tiptap-editor .hljs-variable,
+.dark .tiptap-editor .hljs-template-variable,
+.dark .tiptap-editor .hljs-tag .hljs-attr,
+.dark .tiptap-viewer .hljs-number,
+.dark .tiptap-viewer .hljs-literal,
+.dark .tiptap-viewer .hljs-variable,
+.dark .tiptap-viewer .hljs-template-variable,
+.dark .tiptap-viewer .hljs-tag .hljs-attr {
+  color: #79c0ff;
+}
+
+/* Syntax Highlighting - Strings */
+.tiptap-editor .hljs-string,
+.tiptap-editor .hljs-doctag,
+.tiptap-viewer .hljs-string,
+.tiptap-viewer .hljs-doctag {
+  color: #032f62;
+}
+
+.dark .tiptap-editor .hljs-string,
+.dark .tiptap-editor .hljs-doctag,
+.dark .tiptap-viewer .hljs-string,
+.dark .tiptap-viewer .hljs-doctag {
+  color: #a5d6ff;
+}
+
+/* Syntax Highlighting - Functions & Titles */
+.tiptap-editor .hljs-title,
+.tiptap-editor .hljs-section,
+.tiptap-editor .hljs-selector-id,
+.tiptap-viewer .hljs-title,
+.tiptap-viewer .hljs-section,
+.tiptap-viewer .hljs-selector-id {
+  color: #6f42c1;
+  font-weight: 600;
+}
+
+.dark .tiptap-editor .hljs-title,
+.dark .tiptap-editor .hljs-section,
+.dark .tiptap-editor .hljs-selector-id,
+.dark .tiptap-viewer .hljs-title,
+.dark .tiptap-viewer .hljs-section,
+.dark .tiptap-viewer .hljs-selector-id {
+  color: #d2a8ff;
+}
+
+/* Syntax Highlighting - Types & Classes */
+.tiptap-editor .hljs-type,
+.tiptap-editor .hljs-class .hljs-title,
+.tiptap-viewer .hljs-type,
+.tiptap-viewer .hljs-class .hljs-title {
+  color: #22863a;
+  font-weight: 600;
+}
+
+.dark .tiptap-editor .hljs-type,
+.dark .tiptap-editor .hljs-class .hljs-title,
+.dark .tiptap-viewer .hljs-type,
+.dark .tiptap-viewer .hljs-class .hljs-title {
+  color: #7ee787;
+}
+
+/* Syntax Highlighting - Tags & Attributes */
+.tiptap-editor .hljs-tag,
+.tiptap-editor .hljs-name,
+.tiptap-editor .hljs-attribute,
+.tiptap-viewer .hljs-tag,
+.tiptap-viewer .hljs-name,
+.tiptap-viewer .hljs-attribute {
+  color: #22863a;
+}
+
+.dark .tiptap-editor .hljs-tag,
+.dark .tiptap-editor .hljs-name,
+.dark .tiptap-editor .hljs-attribute,
+.dark .tiptap-viewer .hljs-tag,
+.dark .tiptap-viewer .hljs-name,
+.dark .tiptap-viewer .hljs-attribute {
+  color: #7ee787;
+}
+
+/* Syntax Highlighting - Regular Expressions & Links */
+.tiptap-editor .hljs-regexp,
+.tiptap-editor .hljs-link,
+.tiptap-viewer .hljs-regexp,
+.tiptap-viewer .hljs-link {
+  color: #032f62;
+}
+
+.dark .tiptap-editor .hljs-regexp,
+.dark .tiptap-editor .hljs-link,
+.dark .tiptap-viewer .hljs-regexp,
+.dark .tiptap-viewer .hljs-link {
+  color: #a5d6ff;
+}
+
+/* Syntax Highlighting - Symbols & Bullets */
+.tiptap-editor .hljs-symbol,
+.tiptap-editor .hljs-bullet,
+.tiptap-viewer .hljs-symbol,
+.tiptap-viewer .hljs-bullet {
+  color: #e36209;
+}
+
+.dark .tiptap-editor .hljs-symbol,
+.dark .tiptap-editor .hljs-bullet,
+.dark .tiptap-viewer .hljs-symbol,
+.dark .tiptap-viewer .hljs-bullet {
+  color: #ffa657;
+}
+
+/* Syntax Highlighting - Built-in Functions */
+.tiptap-editor .hljs-built_in,
+.tiptap-editor .hljs-builtin-name,
+.tiptap-viewer .hljs-built_in,
+.tiptap-viewer .hljs-builtin-name {
+  color: #005cc5;
+}
+
+.dark .tiptap-editor .hljs-built_in,
+.dark .tiptap-editor .hljs-builtin-name,
+.dark .tiptap-viewer .hljs-built_in,
+.dark .tiptap-viewer .hljs-builtin-name {
+  color: #79c0ff;
+}
+
+/* Syntax Highlighting - Metadata */
+.tiptap-editor .hljs-meta,
+.tiptap-viewer .hljs-meta {
+  color: #6a737d;
+}
+
+.dark .tiptap-editor .hljs-meta,
+.dark .tiptap-viewer .hljs-meta {
+  color: #8b949e;
+}
+
+/* Syntax Highlighting - Diffs */
+.tiptap-editor .hljs-deletion,
+.tiptap-viewer .hljs-deletion {
+  background: #ffeef0;
+}
+
+.dark .tiptap-editor .hljs-deletion,
+.dark .tiptap-viewer .hljs-deletion {
+  background: #490202;
+  color: #ffdcd7;
+}
+
+.tiptap-editor .hljs-addition,
+.tiptap-viewer .hljs-addition {
+  background: #e6ffed;
+}
+
+.dark .tiptap-editor .hljs-addition,
+.dark .tiptap-viewer .hljs-addition {
+  background: #0a3a0a;
+  color: #aff5b4;
+}
+
+/* Syntax Highlighting - Emphasis */
+.tiptap-editor .hljs-emphasis,
+.tiptap-viewer .hljs-emphasis {
+  font-style: italic;
+}
+
+.tiptap-editor .hljs-strong,
+.tiptap-viewer .hljs-strong {
+  font-weight: 600;
+}

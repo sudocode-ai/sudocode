@@ -11,7 +11,7 @@ export interface CreateRelationshipInput {
   to_id: string;
   to_type: EntityType;
   relationship_type: RelationshipType;
-  metadata?: string | null;
+  metadata?: string;
 }
 
 /**
@@ -66,7 +66,7 @@ export function addRelationship(
       to_id: input.to_id,
       to_type: input.to_type,
       relationship_type: input.relationship_type,
-      metadata: input.metadata || null,
+      metadata: input.metadata ?? null,
     });
 
     const rel = getRelationship(

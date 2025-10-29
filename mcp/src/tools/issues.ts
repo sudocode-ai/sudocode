@@ -13,6 +13,7 @@ export interface ListIssuesParams {
   priority?: number;
   limit?: number;
   search?: string;
+  archived?: boolean;
 }
 
 export interface ShowIssueParams {
@@ -27,6 +28,7 @@ export interface UpsertIssueParams {
   parent?: string;
   tags?: string[];
   status?: IssueStatus;
+  archived?: boolean;
   // TODO: Reintroduce assignee later on when first-class agents are supported.
 }
 
@@ -77,6 +79,9 @@ export async function listIssues(
   if (params.search) {
     args.push("--grep", params.search);
   }
+  // Default to excluding archived unless explicitly specified
+  const archived = params.archived !== undefined ? params.archived : false;
+  args.push("--archived", archived.toString());
 
   const issues = await client.exec(args);
 
@@ -126,6 +131,9 @@ export async function upsertIssue(
     }
     if (params.description) {
       args.push("--description", params.description);
+    }
+    if (params.archived !== undefined) {
+      args.push("--archived", params.archived.toString());
     }
 
     return client.exec(args);

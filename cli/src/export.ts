@@ -2,14 +2,21 @@
  * Export SQLite data to JSONL files
  */
 
-import type Database from 'better-sqlite3';
-import type { Spec, Issue, SpecJSONL, IssueJSONL, RelationshipJSONL, FeedbackJSONL } from './types.js';
-import { listSpecs } from './operations/specs.js';
-import { listIssues } from './operations/issues.js';
-import { getOutgoingRelationships } from './operations/relationships.js';
-import { getTags } from './operations/tags.js';
-import { listFeedback } from './operations/feedback.js';
-import { writeJSONL } from './jsonl.js';
+import type Database from "better-sqlite3";
+import type {
+  Spec,
+  Issue,
+  SpecJSONL,
+  IssueJSONL,
+  RelationshipJSONL,
+  FeedbackJSONL,
+} from "./types.js";
+import { listSpecs } from "./operations/specs.js";
+import { listIssues } from "./operations/issues.js";
+import { getOutgoingRelationships } from "./operations/relationships.js";
+import { getTags } from "./operations/tags.js";
+import { listFeedback } from "./operations/feedback.js";
+import { writeJSONL } from "./jsonl.js";
 
 export interface ExportOptions {
   /**
@@ -30,12 +37,9 @@ export interface ExportOptions {
 /**
  * Convert a Spec to SpecJSONL format with embedded relationships and tags
  */
-export function specToJSONL(
-  db: Database.Database,
-  spec: Spec
-): SpecJSONL {
+export function specToJSONL(db: Database.Database, spec: Spec): SpecJSONL {
   // Get outgoing relationships
-  const relationships = getOutgoingRelationships(db, spec.id, 'spec');
+  const relationships = getOutgoingRelationships(db, spec.id, "spec");
 
   // Convert to JSONL format
   const relationshipsJSONL: RelationshipJSONL[] = relationships.map((rel) => ({
@@ -47,7 +51,7 @@ export function specToJSONL(
   }));
 
   // Get tags
-  const tags = getTags(db, spec.id, 'spec');
+  const tags = getTags(db, spec.id, "spec");
 
   return {
     ...spec,
@@ -59,12 +63,9 @@ export function specToJSONL(
 /**
  * Convert an Issue to IssueJSONL format with embedded relationships and tags
  */
-export function issueToJSONL(
-  db: Database.Database,
-  issue: Issue
-): IssueJSONL {
+export function issueToJSONL(db: Database.Database, issue: Issue): IssueJSONL {
   // Get outgoing relationships
-  const relationships = getOutgoingRelationships(db, issue.id, 'issue');
+  const relationships = getOutgoingRelationships(db, issue.id, "issue");
 
   // Convert to JSONL format
   const relationshipsJSONL: RelationshipJSONL[] = relationships.map((rel) => ({
@@ -76,18 +77,24 @@ export function issueToJSONL(
   }));
 
   // Get tags
-  const tags = getTags(db, issue.id, 'issue');
+  const tags = getTags(db, issue.id, "issue");
 
   // Get feedback provided by this issue
   const feedbackList = listFeedback(db, { issue_id: issue.id });
   const feedbackJSONL: FeedbackJSONL[] = feedbackList.map((feedback) => ({
     id: feedback.id,
+    issue_id: feedback.issue_id,
     spec_id: feedback.spec_id,
-    type: feedback.feedback_type,
+    feedback_type: feedback.feedback_type,
     content: feedback.content,
-    anchor: typeof feedback.anchor === 'string' ? JSON.parse(feedback.anchor) : feedback.anchor,
+    agent: feedback.agent,
+    anchor:
+      feedback.anchor && typeof feedback.anchor === "string"
+        ? JSON.parse(feedback.anchor)
+        : feedback.anchor,
     dismissed: feedback.dismissed,
     created_at: feedback.created_at,
+    updated_at: feedback.updated_at,
   }));
 
   return {
@@ -107,7 +114,7 @@ export function exportSpecsToJSONL(
 ): SpecJSONL[] {
   const { since } = options;
 
-  // Get all specs (or only updated ones)
+  // Get all specs (including archived)
   const specs = listSpecs(db);
 
   // Filter by timestamp if requested
@@ -128,7 +135,7 @@ export function exportIssuesToJSONL(
 ): IssueJSONL[] {
   const { since } = options;
 
-  // Get all issues (or only updated ones)
+  // Get all issues (including archived)
   const issues = listIssues(db);
 
   // Filter by timestamp if requested
@@ -148,9 +155,9 @@ export async function exportToJSONL(
   options: ExportOptions = {}
 ): Promise<{ specsCount: number; issuesCount: number }> {
   const {
-    outputDir = '.sudocode',
-    specsFile = 'specs.jsonl',
-    issuesFile = 'issues.jsonl',
+    outputDir = ".sudocode",
+    specsFile = "specs.jsonl",
+    issuesFile = "issues.jsonl",
   } = options;
 
   const specsPath = `${outputDir}/${specsFile}`;
@@ -212,7 +219,7 @@ export class ExportDebouncer {
     try {
       await exportToJSONL(this.db, this.options);
     } catch (error) {
-      console.error('Export failed:', error);
+      console.error("Export failed:", error);
       throw error;
     }
   }

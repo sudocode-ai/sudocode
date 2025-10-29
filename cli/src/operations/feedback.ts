@@ -2,8 +2,8 @@
  * CRUD operations for Issue Feedback
  */
 
-import type Database from 'better-sqlite3';
-import type { IssueFeedback, FeedbackType, FeedbackAnchor } from '../types.js';
+import type Database from "better-sqlite3";
+import type { IssueFeedback, FeedbackType, FeedbackAnchor } from "../types.js";
 
 export interface CreateFeedbackInput {
   id?: string;
@@ -11,8 +11,8 @@ export interface CreateFeedbackInput {
   spec_id: string;
   feedback_type: FeedbackType;
   content: string;
-  agent: string;
-  anchor: FeedbackAnchor;
+  agent?: string;
+  anchor?: FeedbackAnchor;
   dismissed?: boolean;
 }
 
@@ -53,24 +53,28 @@ export function generateFeedbackId(db: Database.Database): string {
   const lastFeedback = stmt.get() as { id: string } | undefined;
 
   if (!lastFeedback) {
-    return 'FB-001';
+    return "FB-001";
   }
 
   const match = lastFeedback.id.match(/^FB-(\d+)$/);
   if (!match) {
-    return 'FB-001';
+    return "FB-001";
   }
 
   const nextNum = parseInt(match[1], 10) + 1;
-  return `FB-${String(nextNum).padStart(3, '0')}`;
+  return `FB-${String(nextNum).padStart(3, "0")}`;
 }
 
 /**
  * Create a new feedback entry
  */
-export function createFeedback(db: Database.Database, input: CreateFeedbackInput): IssueFeedback {
+export function createFeedback(
+  db: Database.Database,
+  input: CreateFeedbackInput
+): IssueFeedback {
   const id = input.id || generateFeedbackId(db);
-  const anchorJson = JSON.stringify(input.anchor);
+  const anchorJson = input.anchor ? JSON.stringify(input.anchor) : null;
+  const agent = input.agent || "user";
 
   const stmt = db.prepare(`
     INSERT INTO issue_feedback (
@@ -87,7 +91,7 @@ export function createFeedback(db: Database.Database, input: CreateFeedbackInput
       spec_id: input.spec_id,
       feedback_type: input.feedback_type,
       content: input.content,
-      agent: input.agent,
+      agent: agent,
       anchor: anchorJson,
       dismissed: input.dismissed !== undefined ? (input.dismissed ? 1 : 0) : 0,
     });
@@ -98,7 +102,7 @@ export function createFeedback(db: Database.Database, input: CreateFeedbackInput
     }
     return feedback;
   } catch (error: any) {
-    if (error.code && error.code.startsWith('SQLITE_CONSTRAINT')) {
+    if (error.code && error.code.startsWith("SQLITE_CONSTRAINT")) {
       throw new Error(`Constraint violation: ${error.message}`);
     }
     throw error;
@@ -108,7 +112,10 @@ export function createFeedback(db: Database.Database, input: CreateFeedbackInput
 /**
  * Get a feedback entry by ID
  */
-export function getFeedback(db: Database.Database, id: string): IssueFeedback | null {
+export function getFeedback(
+  db: Database.Database,
+  id: string
+): IssueFeedback | null {
   const stmt = db.prepare(`
     SELECT * FROM issue_feedback WHERE id = ?
   `);
@@ -134,19 +141,19 @@ export function updateFeedback(
   const params: Record<string, any> = { id };
 
   if (input.content !== undefined) {
-    updates.push('content = @content');
+    updates.push("content = @content");
     params.content = input.content;
   }
   if (input.dismissed !== undefined) {
-    updates.push('dismissed = @dismissed');
+    updates.push("dismissed = @dismissed");
     params.dismissed = input.dismissed ? 1 : 0;
   }
   if (input.anchor !== undefined) {
-    updates.push('anchor = @anchor');
+    updates.push("anchor = @anchor");
     params.anchor = JSON.stringify(input.anchor);
   }
 
-  updates.push('updated_at = CURRENT_TIMESTAMP');
+  updates.push("updated_at = CURRENT_TIMESTAMP");
 
   if (updates.length === 1) {
     // Only updated_at changed, return existing
@@ -154,7 +161,7 @@ export function updateFeedback(
   }
 
   const stmt = db.prepare(`
-    UPDATE issue_feedback SET ${updates.join(', ')} WHERE id = @id
+    UPDATE issue_feedback SET ${updates.join(", ")} WHERE id = @id
   `);
 
   try {
@@ -165,7 +172,7 @@ export function updateFeedback(
     }
     return updated;
   } catch (error: any) {
-    if (error.code && error.code.startsWith('SQLITE_CONSTRAINT')) {
+    if (error.code && error.code.startsWith("SQLITE_CONSTRAINT")) {
       throw new Error(`Constraint violation: ${error.message}`);
     }
     throw error;
@@ -202,34 +209,34 @@ export function listFeedback(
   const params: Record<string, any> = {};
 
   if (options.issue_id !== undefined) {
-    conditions.push('issue_id = @issue_id');
+    conditions.push("issue_id = @issue_id");
     params.issue_id = options.issue_id;
   }
   if (options.spec_id !== undefined) {
-    conditions.push('spec_id = @spec_id');
+    conditions.push("spec_id = @spec_id");
     params.spec_id = options.spec_id;
   }
   if (options.feedback_type !== undefined) {
-    conditions.push('feedback_type = @feedback_type');
+    conditions.push("feedback_type = @feedback_type");
     params.feedback_type = options.feedback_type;
   }
   if (options.dismissed !== undefined) {
-    conditions.push('dismissed = @dismissed');
+    conditions.push("dismissed = @dismissed");
     params.dismissed = options.dismissed ? 1 : 0;
   }
 
-  let query = 'SELECT * FROM issue_feedback';
+  let query = "SELECT * FROM issue_feedback";
   if (conditions.length > 0) {
-    query += ' WHERE ' + conditions.join(' AND ');
+    query += " WHERE " + conditions.join(" AND ");
   }
-  query += ' ORDER BY created_at DESC';
+  query += " ORDER BY created_at DESC";
 
   if (options.limit !== undefined) {
-    query += ' LIMIT @limit';
+    query += " LIMIT @limit";
     params.limit = options.limit;
   }
   if (options.offset !== undefined) {
-    query += ' OFFSET @offset';
+    query += " OFFSET @offset";
     params.offset = options.offset;
   }
 
@@ -241,37 +248,49 @@ export function listFeedback(
 /**
  * Get all feedback for a specific issue
  */
-export function getFeedbackForIssue(db: Database.Database, issue_id: string): IssueFeedback[] {
+export function getFeedbackForIssue(
+  db: Database.Database,
+  issue_id: string
+): IssueFeedback[] {
   return listFeedback(db, { issue_id });
 }
 
 /**
  * Get all feedback for a specific spec
  */
-export function getFeedbackForSpec(db: Database.Database, spec_id: string): IssueFeedback[] {
+export function getFeedbackForSpec(
+  db: Database.Database,
+  spec_id: string
+): IssueFeedback[] {
   return listFeedback(db, { spec_id });
 }
 
 /**
  * Get active feedback for a spec (not dismissed)
  */
-export function getActiveFeedbackForSpec(db: Database.Database, spec_id: string): IssueFeedback[] {
+export function getActiveFeedbackForSpec(
+  db: Database.Database,
+  spec_id: string
+): IssueFeedback[] {
   return listFeedback(db, { spec_id, dismissed: false });
 }
 
 /**
  * Count feedback by dismissed status
  */
-export function countFeedbackByDismissed(db: Database.Database, spec_id?: string): { active: number; dismissed: number } {
-  let query = 'SELECT dismissed, COUNT(*) as count FROM issue_feedback';
+export function countFeedbackByDismissed(
+  db: Database.Database,
+  spec_id?: string
+): { active: number; dismissed: number } {
+  let query = "SELECT dismissed, COUNT(*) as count FROM issue_feedback";
   const params: Record<string, any> = {};
 
   if (spec_id) {
-    query += ' WHERE spec_id = @spec_id';
+    query += " WHERE spec_id = @spec_id";
     params.spec_id = spec_id;
   }
 
-  query += ' GROUP BY dismissed';
+  query += " GROUP BY dismissed";
 
   const stmt = db.prepare(query);
   const rows = stmt.all(params) as Array<{ dismissed: number; count: number }>;

@@ -299,20 +299,9 @@ describe("Spec CLI Commands", () => {
       const { getSpec } = await import("../../../src/operations/specs.js");
       const spec = getSpec(db, "spec-update-1");
       expect(spec?.content).toBe("Updated description");
-    });
-
-    it("should update spec design notes", async () => {
-      const ctx = { db, outputDir: tempDir, jsonOutput: false };
-      const options = {
-        design: "Updated design notes",
-      };
-
-      await handleSpecUpdate(ctx, "spec-update-1", options);
-
-      // Read the markdown file to verify design notes updated
       const markdownPath = path.join(tempDir, "specs", "update_test.md");
       const content = fs.readFileSync(markdownPath, "utf8");
-      expect(content).toContain("Updated design notes");
+      expect(content).toContain("Updated description");
     });
 
     it("should update spec tags", async () => {

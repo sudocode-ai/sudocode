@@ -9,6 +9,7 @@ import { Spec } from "../types.js";
 export interface ListSpecsParams {
   limit?: number;
   search?: string;
+  archived?: boolean;
 }
 
 export interface ShowSpecParams {
@@ -20,9 +21,9 @@ export interface UpsertSpecParams {
   title?: string; // Required for create, optional for update
   priority?: number;
   description?: string;
-  design?: string;
   parent?: string;
   tags?: string[];
+  archived?: boolean;
 }
 
 // Tool implementations
@@ -42,6 +43,9 @@ export async function listSpecs(
   if (params.search) {
     args.push("--grep", params.search);
   }
+  // Default to excluding archived unless explicitly specified
+  const archived = params.archived !== undefined ? params.archived : false;
+  args.push("--archived", archived.toString());
 
   const specs = await client.exec(args);
 
@@ -89,14 +93,14 @@ export async function upsertSpec(
     if (params.description) {
       args.push("--description", params.description);
     }
-    if (params.design) {
-      args.push("--design", params.design);
-    }
     if (params.parent !== undefined) {
       args.push("--parent", params.parent || "");
     }
     if (params.tags !== undefined) {
       args.push("--tags", params.tags.join(","));
+    }
+    if (params.archived !== undefined) {
+      args.push("--archived", params.archived.toString());
     }
 
     return client.exec(args);
@@ -113,9 +117,6 @@ export async function upsertSpec(
     }
     if (params.description) {
       args.push("--description", params.description);
-    }
-    if (params.design) {
-      args.push("--design", params.design);
     }
     if (params.parent) {
       args.push("--parent", params.parent);

@@ -1,0 +1,170 @@
+import { useMemo, useRef, useEffect } from 'react'
+import { Card } from '@/components/ui/card'
+import { FeedbackAnchor } from './FeedbackAnchor'
+import type { IssueFeedback, FeedbackAnchor as FeedbackAnchorType } from '@/types/api'
+
+interface SpecViewerProps {
+  content: string
+  showLineNumbers?: boolean
+  highlightLines?: number[]
+  feedback?: IssueFeedback[]
+  selectedLine?: number | null
+  onLineClick?: (lineNumber: number) => void
+  onTextSelect?: (text: string, lineNumber: number) => void
+  onFeedbackClick?: (feedback: IssueFeedback) => void
+  editable?: boolean
+  onChange?: (content: string) => void
+  className?: string
+}
+
+export function SpecViewer({
+  content,
+  showLineNumbers = true,
+  highlightLines = [],
+  feedback = [],
+  selectedLine,
+  onLineClick,
+  onTextSelect,
+  onFeedbackClick,
+  editable = false,
+  onChange,
+  className = '',
+}: SpecViewerProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const lines = useMemo(() => {
+    return content.split('\n')
+  }, [content])
+
+  // Map feedback to line numbers
+  const feedbackByLine = useMemo(() => {
+    const map = new Map<number, IssueFeedback[]>()
+    feedback.forEach((fb) => {
+      try {
+        const anchor: FeedbackAnchorType | null = fb.anchor ? JSON.parse(fb.anchor) : null
+        if (anchor?.line_number) {
+          const existing = map.get(anchor.line_number) || []
+          map.set(anchor.line_number, [...existing, fb])
+        }
+      } catch (error) {
+        console.error('Failed to parse feedback anchor:', error)
+      }
+    })
+    return map
+  }, [feedback])
+
+  const handleLineClick = (lineNumber: number) => {
+    onLineClick?.(lineNumber)
+  }
+
+  const handleMouseUp = (lineNumber: number) => {
+    if (!onTextSelect) return
+
+    const selection = window.getSelection()
+    const selectedText = selection?.toString().trim()
+
+    if (selectedText && selectedText.length > 0) {
+      onTextSelect(selectedText, lineNumber)
+    }
+  }
+
+  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    onChange?.(e.target.value)
+  }
+
+  // Auto-resize textarea to fit content
+  useEffect(() => {
+    if (editable && textareaRef.current) {
+      const textarea = textareaRef.current
+      textarea.style.height = 'auto'
+      textarea.style.height = `${textarea.scrollHeight}px`
+    }
+  }, [content, editable])
+
+  return (
+    <Card className={`overflow-hidden ${className}`}>
+      <div className="relative">
+        {/* Content with line numbers */}
+        <div className="flex">
+          {/* Line numbers column */}
+          {showLineNumbers && (
+            <div className="select-none border-r border-border bg-muted/30 px-4 py-4">
+              {lines.map((_, index) => (
+                <div
+                  key={index}
+                  className={`cursor-pointer text-right font-mono text-xs leading-6 text-muted-foreground transition-colors hover:bg-primary/10 ${
+                    highlightLines.includes(index + 1) ? 'font-bold text-primary' : ''
+                  } ${selectedLine === index + 1 ? 'bg-primary/20' : ''}`}
+                  data-line-number={index + 1}
+                  onClick={() => handleLineClick(index + 1)}
+                >
+                  {index + 1}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Content column */}
+          <div className="flex-1 overflow-x-auto px-4 py-4">
+            {editable ? (
+              <textarea
+                ref={textareaRef}
+                value={content}
+                onChange={handleContentChange}
+                className="w-full resize-none border-none bg-transparent font-mono text-sm leading-6 outline-none focus:ring-0"
+                spellCheck={false}
+              />
+            ) : (
+              lines.map((line, index) => {
+                const lineNumber = index + 1
+                const lineFeedback = feedbackByLine.get(lineNumber) || []
+
+                return (
+                  <div
+                    key={index}
+                    className={`group relative font-mono text-sm leading-6 ${
+                      highlightLines.includes(lineNumber) ? 'bg-primary/10' : ''
+                    } ${selectedLine === lineNumber ? 'bg-primary/20' : ''}`}
+                    data-line={lineNumber}
+                  >
+                    <div className="flex items-start gap-2">
+                      {/* Line content */}
+                      <pre
+                        className="m-0 inline flex-1 cursor-pointer whitespace-pre-wrap break-words font-mono transition-colors hover:bg-muted/30"
+                        onClick={() => handleLineClick(lineNumber)}
+                        onMouseUp={() => handleMouseUp(lineNumber)}
+                      >
+                        {line || ' '}
+                      </pre>
+
+                      {/* Feedback anchors */}
+                      {lineFeedback.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {/* Group feedback by type and show one anchor per type */}
+                          {Array.from(new Set(lineFeedback.map((f) => f.feedback_type))).map(
+                            (type) => {
+                              const feedbackOfType = lineFeedback.filter(
+                                (f) => f.feedback_type === type
+                              )
+                              return (
+                                <FeedbackAnchor
+                                  key={type}
+                                  type={type}
+                                  count={feedbackOfType.length}
+                                  onClick={() => onFeedbackClick?.(feedbackOfType[0])}
+                                />
+                              )
+                            }
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+      </div>
+    </Card>
+  )
+}

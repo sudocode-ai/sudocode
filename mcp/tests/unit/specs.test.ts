@@ -2,10 +2,10 @@
  * Unit tests for spec management tools
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import * as specTools from '../../src/tools/specs.js';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import * as specTools from "../../src/tools/specs.js";
 
-describe('Spec Tools', () => {
+describe("Spec Tools", () => {
   let mockClient: any;
 
   beforeEach(() => {
@@ -14,16 +14,21 @@ describe('Spec Tools', () => {
     };
   });
 
-  describe('listSpecs', () => {
-    it('should call exec with list command', async () => {
+  describe("listSpecs", () => {
+    it("should call exec with list command and default archived filter", async () => {
       mockClient.exec.mockResolvedValue([]);
 
       await specTools.listSpecs(mockClient);
 
-      expect(mockClient.exec).toHaveBeenCalledWith(['spec', 'list']);
+      expect(mockClient.exec).toHaveBeenCalledWith([
+        "spec",
+        "list",
+        "--archived",
+        "false",
+      ]);
     });
 
-    it('should include filter parameters', async () => {
+    it("should include filter parameters", async () => {
       mockClient.exec.mockResolvedValue([]);
 
       await specTools.listSpecs(mockClient, {
@@ -31,196 +36,255 @@ describe('Spec Tools', () => {
       });
 
       expect(mockClient.exec).toHaveBeenCalledWith([
-        'spec', 'list',
-        '--limit', '10',
+        "spec",
+        "list",
+        "--limit",
+        "10",
+        "--archived",
+        "false",
       ]);
     });
 
-    it('should include search parameter', async () => {
+    it("should include archived filter parameter", async () => {
       mockClient.exec.mockResolvedValue([]);
 
       await specTools.listSpecs(mockClient, {
-        search: 'database',
+        archived: true,
       });
 
       expect(mockClient.exec).toHaveBeenCalledWith([
-        'spec', 'list',
-        '--grep', 'database',
+        "spec",
+        "list",
+        "--archived",
+        "true",
       ]);
     });
 
-    it('should redact content field from specs', async () => {
+    it("should include search parameter", async () => {
+      mockClient.exec.mockResolvedValue([]);
+
+      await specTools.listSpecs(mockClient, {
+        search: "database",
+      });
+
+      expect(mockClient.exec).toHaveBeenCalledWith([
+        "spec",
+        "list",
+        "--grep",
+        "database",
+        "--archived",
+        "false",
+      ]);
+    });
+
+    it("should redact content field from specs", async () => {
       mockClient.exec.mockResolvedValue([
-        { id: 'sg-spec-1', title: 'API Spec', content: 'Long content...', priority: 2 },
-        { id: 'sg-spec-2', title: 'Database Spec', content: 'More content...', priority: 1 },
+        {
+          id: "sg-spec-1",
+          title: "API Spec",
+          content: "Long content...",
+          priority: 2,
+        },
+        {
+          id: "sg-spec-2",
+          title: "Database Spec",
+          content: "More content...",
+          priority: 1,
+        },
       ]);
 
       const result = await specTools.listSpecs(mockClient);
 
       // Verify content field is removed
-      expect(result[0]).not.toHaveProperty('content');
-      expect(result[1]).not.toHaveProperty('content');
+      expect(result[0]).not.toHaveProperty("content");
+      expect(result[1]).not.toHaveProperty("content");
       // Verify other fields are preserved
-      expect(result[0]).toEqual({ id: 'sg-spec-1', title: 'API Spec', priority: 2 });
-      expect(result[1]).toEqual({ id: 'sg-spec-2', title: 'Database Spec', priority: 1 });
+      expect(result[0]).toEqual({
+        id: "sg-spec-1",
+        title: "API Spec",
+        priority: 2,
+      });
+      expect(result[1]).toEqual({
+        id: "sg-spec-2",
+        title: "Database Spec",
+        priority: 1,
+      });
     });
   });
 
-  describe('showSpec', () => {
-    it('should call exec with show command and spec ID', async () => {
+  describe("showSpec", () => {
+    it("should call exec with show command and spec ID", async () => {
       mockClient.exec.mockResolvedValue({});
 
-      await specTools.showSpec(mockClient, { spec_id: 'sg-spec-1' });
+      await specTools.showSpec(mockClient, { spec_id: "sg-spec-1" });
 
-      expect(mockClient.exec).toHaveBeenCalledWith(['spec', 'show', 'sg-spec-1']);
+      expect(mockClient.exec).toHaveBeenCalledWith([
+        "spec",
+        "show",
+        "sg-spec-1",
+      ]);
     });
   });
 
-  describe('upsertSpec', () => {
-    describe('create mode (no spec_id)', () => {
-      it('should call exec with create command', async () => {
+  describe("upsertSpec", () => {
+    describe("create mode (no spec_id)", () => {
+      it("should call exec with create command", async () => {
         mockClient.exec.mockResolvedValue({});
 
-        await specTools.upsertSpec(mockClient, { title: 'New Spec' });
-
-        expect(mockClient.exec).toHaveBeenCalledWith(['spec', 'create', 'New Spec']);
-      });
-
-      it('should include all optional parameters', async () => {
-        mockClient.exec.mockResolvedValue({});
-
-        await specTools.upsertSpec(mockClient, {
-          title: 'API Spec',
-          priority: 1,
-          description: 'API specification',
-          design: 'REST API design',
-          parent: 'sg-spec-parent',
-          tags: ['api', 'v1'],
-        });
+        await specTools.upsertSpec(mockClient, { title: "New Spec" });
 
         expect(mockClient.exec).toHaveBeenCalledWith([
-          'spec', 'create', 'API Spec',
-          '--priority', '1',
-          '--description', 'API specification',
-          '--design', 'REST API design',
-          '--parent', 'sg-spec-parent',
-          '--tags', 'api,v1',
+          "spec",
+          "create",
+          "New Spec",
         ]);
       });
 
-      it('should throw error if title is missing', async () => {
+      it("should include all optional parameters", async () => {
+        mockClient.exec.mockResolvedValue({});
+
+        await specTools.upsertSpec(mockClient, {
+          title: "API Spec",
+          priority: 1,
+          description: "API specification",
+          parent: "sg-spec-parent",
+          tags: ["api", "v1"],
+        });
+
+        expect(mockClient.exec).toHaveBeenCalledWith([
+          "spec",
+          "create",
+          "API Spec",
+          "--priority",
+          "1",
+          "--description",
+          "API specification",
+          "--parent",
+          "sg-spec-parent",
+          "--tags",
+          "api,v1",
+        ]);
+      });
+
+      it("should throw error if title is missing", async () => {
         await expect(specTools.upsertSpec(mockClient, {})).rejects.toThrow(
-          'title is required when creating a new spec'
+          "title is required when creating a new spec"
         );
       });
     });
 
-    describe('update mode (spec_id provided)', () => {
-      it('should call exec with update command', async () => {
+    describe("update mode (spec_id provided)", () => {
+      it("should call exec with update command", async () => {
         mockClient.exec.mockResolvedValue({});
 
         await specTools.upsertSpec(mockClient, {
-          spec_id: 'sg-spec-1',
-          title: 'Updated Spec',
+          spec_id: "sg-spec-1",
+          title: "Updated Spec",
         });
 
         expect(mockClient.exec).toHaveBeenCalledWith([
-          'spec', 'update', 'sg-spec-1',
-          '--title', 'Updated Spec',
+          "spec",
+          "update",
+          "sg-spec-1",
+          "--title",
+          "Updated Spec",
         ]);
       });
 
-      it('should include all optional update parameters', async () => {
+      it("should include all optional update parameters", async () => {
         mockClient.exec.mockResolvedValue({});
 
         await specTools.upsertSpec(mockClient, {
-          spec_id: 'sg-spec-1',
-          title: 'Updated Spec',
+          spec_id: "sg-spec-1",
+          title: "Updated Spec",
           priority: 0,
-          description: 'Updated description',
-          design: 'Updated design notes',
-          parent: 'sg-spec-parent',
-          tags: ['updated', 'tags'],
+          description: "Updated description",
+          parent: "sg-spec-parent",
+          tags: ["updated", "tags"],
         });
 
         expect(mockClient.exec).toHaveBeenCalledWith([
-          'spec', 'update', 'sg-spec-1',
-          '--title', 'Updated Spec',
-          '--priority', '0',
-          '--description', 'Updated description',
-          '--design', 'Updated design notes',
-          '--parent', 'sg-spec-parent',
-          '--tags', 'updated,tags',
+          "spec",
+          "update",
+          "sg-spec-1",
+          "--title",
+          "Updated Spec",
+          "--priority",
+          "0",
+          "--description",
+          "Updated description",
+          "--parent",
+          "sg-spec-parent",
+          "--tags",
+          "updated,tags",
         ]);
       });
 
-      it('should handle updating only priority', async () => {
+      it("should handle updating only priority", async () => {
         mockClient.exec.mockResolvedValue({});
 
         await specTools.upsertSpec(mockClient, {
-          spec_id: 'sg-spec-1',
+          spec_id: "sg-spec-1",
           priority: 1,
         });
 
         expect(mockClient.exec).toHaveBeenCalledWith([
-          'spec', 'update', 'sg-spec-1',
-          '--priority', '1',
+          "spec",
+          "update",
+          "sg-spec-1",
+          "--priority",
+          "1",
         ]);
       });
 
-      it('should handle updating only description', async () => {
+      it("should handle updating only description", async () => {
         mockClient.exec.mockResolvedValue({});
 
         await specTools.upsertSpec(mockClient, {
-          spec_id: 'sg-spec-1',
-          description: 'New description',
+          spec_id: "sg-spec-1",
+          description: "New description",
         });
 
         expect(mockClient.exec).toHaveBeenCalledWith([
-          'spec', 'update', 'sg-spec-1',
-          '--description', 'New description',
+          "spec",
+          "update",
+          "sg-spec-1",
+          "--description",
+          "New description",
         ]);
       });
 
-      it('should handle clearing parent with empty string', async () => {
+      it("should handle clearing parent with empty string", async () => {
         mockClient.exec.mockResolvedValue({});
 
         await specTools.upsertSpec(mockClient, {
-          spec_id: 'sg-spec-1',
-          parent: '',
+          spec_id: "sg-spec-1",
+          parent: "",
         });
 
         expect(mockClient.exec).toHaveBeenCalledWith([
-          'spec', 'update', 'sg-spec-1',
-          '--parent', '',
+          "spec",
+          "update",
+          "sg-spec-1",
+          "--parent",
+          "",
         ]);
       });
 
-      it('should handle updating tags', async () => {
+      it("should handle updating tags", async () => {
         mockClient.exec.mockResolvedValue({});
 
         await specTools.upsertSpec(mockClient, {
-          spec_id: 'sg-spec-1',
-          tags: ['new', 'tag', 'list'],
+          spec_id: "sg-spec-1",
+          tags: ["new", "tag", "list"],
         });
 
         expect(mockClient.exec).toHaveBeenCalledWith([
-          'spec', 'update', 'sg-spec-1',
-          '--tags', 'new,tag,list',
-        ]);
-      });
-
-      it('should handle updating design notes', async () => {
-        mockClient.exec.mockResolvedValue({});
-
-        await specTools.upsertSpec(mockClient, {
-          spec_id: 'sg-spec-1',
-          design: 'New design content',
-        });
-
-        expect(mockClient.exec).toHaveBeenCalledWith([
-          'spec', 'update', 'sg-spec-1',
-          '--design', 'New design content',
+          "spec",
+          "update",
+          "sg-spec-1",
+          "--tags",
+          "new,tag,list",
         ]);
       });
     });

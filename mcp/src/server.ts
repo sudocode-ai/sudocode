@@ -73,6 +73,11 @@ export class SudocodeMCPServer {
                   type: "number",
                   description: "Filter by priority (0-4) (optional)",
                 },
+                archived: {
+                  type: "boolean",
+                  description:
+                    "Filter by archived status (optional, defaults to false to exclude archived)",
+                },
                 limit: {
                   type: "number",
                   description: "Max results (optional)",
@@ -104,7 +109,7 @@ export class SudocodeMCPServer {
           {
             name: "upsert_issue",
             description:
-              "Create or update an issue. If issue_id is provided, updates the issue; otherwise creates a new one. To close an issue, set status='closed'.",
+              "Create or update an issue. If issue_id is provided, updates the issue; otherwise creates a new one. To close an issue, set status='closed'. To archive an issue, set archived=true.",
             inputSchema: {
               type: "object",
               properties: {
@@ -140,6 +145,10 @@ export class SudocodeMCPServer {
                   type: "string",
                   enum: ["open", "in_progress", "blocked", "closed"],
                   description: "Issue status (optional)",
+                },
+                archived: {
+                  type: "boolean",
+                  description: "Archive status (optional)",
                 },
               },
             },
@@ -201,11 +210,6 @@ export class SudocodeMCPServer {
                   type: "string",
                   description: "Spec description (optional)",
                 },
-                design: {
-                  type: "string",
-                  description:
-                    "Design notes (optional). Supports inline references to other specs/issues by ID in Obsidian internal link format (e.g. `[[ISSUE-001]]`).",
-                },
                 parent: {
                   type: "string",
                   description: "Parent spec ID (optional)",
@@ -252,7 +256,7 @@ export class SudocodeMCPServer {
           {
             name: "add_reference",
             description:
-              "Add an inline cross-reference to a spec or issue using Obsidian-style [[ID]] syntax. References are inserted at a specific location in the markdown content.",
+              "Add an inline cross-reference/mention to a spec or issue using Obsidian-style [[ID]] syntax. References are inserted at a specific location in the markdown content. Use this to add references to an issue or spec without having to modify the content directly.",
             inputSchema: {
               type: "object",
               properties: {

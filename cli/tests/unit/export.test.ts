@@ -6,8 +6,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { initDatabase } from '../../src/db.js';
-import { createSpec } from '../../src/operations/specs.js';
-import { createIssue } from '../../src/operations/issues.js';
+import { createSpec, updateSpec } from '../../src/operations/specs.js';
+import { createIssue, updateIssue } from '../../src/operations/issues.js';
 import { addRelationship } from '../../src/operations/relationships.js';
 import { addTags } from '../../src/operations/tags.js';
 import {
@@ -164,9 +164,13 @@ describe('Export Operations', () => {
       addTags(db, 'spec-001', 'spec', ['tag1']);
     });
 
-    it('should export all specs', () => {
+    it('should export all specs including archived', () => {
+      // Archive one spec
+      updateSpec(db, 'spec-001', { archived: true });
+
       const specs = exportSpecsToJSONL(db);
 
+      // Should include both archived and non-archived specs
       expect(specs).toHaveLength(2);
 
       const ids = specs.map(s => s.id);
@@ -175,6 +179,7 @@ describe('Export Operations', () => {
 
       const spec1 = specs.find(s => s.id === 'spec-001');
       expect(spec1?.tags).toContain('tag1');
+      expect(spec1?.archived).toBe(1);
     });
 
     it('should support incremental export with since parameter', async () => {
@@ -215,13 +220,18 @@ describe('Export Operations', () => {
       addTags(db, 'issue-001', 'issue', ['bug']);
     });
 
-    it('should export all issues', () => {
+    it('should export all issues including archived', () => {
+      // Archive one issue
+      updateIssue(db, 'issue-001', { archived: true });
+
       const issues = exportIssuesToJSONL(db);
 
+      // Should include both archived and non-archived issues
       expect(issues).toHaveLength(2);
 
       const issue1 = issues.find(i => i.id === 'issue-001');
       expect(issue1?.tags).toContain('bug');
+      expect(issue1?.archived).toBe(1);
     });
   });
 

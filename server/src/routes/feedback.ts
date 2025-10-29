@@ -1,0 +1,377 @@
+/**
+ * Feedback API routes (mapped to /api/feedback)
+ */
+
+import { Router, Request, Response } from "express";
+import type Database from "better-sqlite3";
+import type { FeedbackType, FeedbackAnchor } from "@sudocode/types";
+import {
+  createNewFeedback,
+  getFeedbackById,
+  updateExistingFeedback,
+  deleteExistingFeedback,
+  getAllFeedback,
+} from "../services/feedback.js";
+import { broadcastFeedbackUpdate } from "../services/websocket.js";
+
+export function createFeedbackRouter(db: Database.Database): Router {
+  const router = Router();
+
+  /**
+   * GET /api/feedback - List all feedback with optional filters
+   * Query params: spec_id, issue_id, feedback_type, dismissed, limit, offset
+   */
+  router.get("/", (req: Request, res: Response) => {
+    try {
+      const options: any = {};
+
+      if (req.query.spec_id) {
+        options.spec_id = req.query.spec_id as string;
+      }
+      if (req.query.issue_id) {
+        options.issue_id = req.query.issue_id as string;
+      }
+      if (req.query.feedback_type) {
+        options.feedback_type = req.query.feedback_type as FeedbackType;
+      }
+      if (req.query.dismissed !== undefined) {
+        options.dismissed = req.query.dismissed === "true";
+      }
+      if (req.query.limit) {
+        options.limit = parseInt(req.query.limit as string, 10);
+      }
+      if (req.query.offset) {
+        options.offset = parseInt(req.query.offset as string, 10);
+      }
+
+      const feedback = getAllFeedback(db, options);
+
+      res.json({
+        success: true,
+        data: feedback,
+      });
+    } catch (error) {
+      console.error("Error listing feedback:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to list feedback",
+      });
+    }
+  });
+
+  /**
+   * GET /api/feedback/:id - Get a specific feedback entry
+   */
+  router.get("/:id", (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const feedback = getFeedbackById(db, id);
+
+      if (!feedback) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Feedback not found: ${id}`,
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        data: feedback,
+      });
+    } catch (error) {
+      console.error("Error getting feedback:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to get feedback",
+      });
+    }
+  });
+
+  /**
+   * POST /api/feedback - Create a new feedback entry
+   */
+  router.post("/", (req: Request, res: Response) => {
+    try {
+      const {
+        issue_id,
+        spec_id,
+        feedback_type,
+        content,
+        agent,
+        anchor,
+        dismissed,
+      } = req.body;
+
+      // Validate required fields
+      if (!issue_id || typeof issue_id !== "string") {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "issue_id is required and must be a string",
+        });
+        return;
+      }
+
+      if (!spec_id || typeof spec_id !== "string") {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "spec_id is required and must be a string",
+        });
+        return;
+      }
+
+      if (!feedback_type || typeof feedback_type !== "string") {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "feedback_type is required and must be a string",
+        });
+        return;
+      }
+
+      // Validate feedback_type
+      const validTypes = ["comment", "suggestion", "request"];
+      if (!validTypes.includes(feedback_type)) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: `Invalid feedback_type. Must be one of: ${validTypes.join(", ")}`,
+        });
+        return;
+      }
+
+      if (!content || typeof content !== "string") {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "content is required and must be a string",
+        });
+        return;
+      }
+
+      // Validate anchor if provided
+      if (anchor !== undefined && anchor !== null) {
+        if (typeof anchor !== "object") {
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: "anchor must be an object if provided",
+          });
+          return;
+        }
+
+        // Validate anchor structure if provided
+        if (anchor.anchor_status) {
+          const validAnchorStatuses = ["valid", "relocated", "stale"];
+          if (!validAnchorStatuses.includes(anchor.anchor_status)) {
+            res.status(400).json({
+              success: false,
+              data: null,
+              message: `Invalid anchor.anchor_status. Must be one of: ${validAnchorStatuses.join(", ")}`,
+            });
+            return;
+          }
+        }
+      }
+
+      // Create feedback using CLI operation
+      const feedback = createNewFeedback(db, {
+        issue_id,
+        spec_id,
+        feedback_type: feedback_type as FeedbackType,
+        content,
+        agent: agent || undefined,
+        anchor: anchor as FeedbackAnchor | undefined,
+        dismissed: dismissed || false,
+      });
+
+      // Broadcast feedback creation to WebSocket clients
+      broadcastFeedbackUpdate("created", feedback);
+
+      res.status(201).json({
+        success: true,
+        data: feedback,
+      });
+    } catch (error) {
+      console.error("Error creating feedback:", error);
+
+      // Handle specific errors
+      if (error instanceof Error) {
+        if (error.message.includes("not found")) {
+          res.status(404).json({
+            success: false,
+            data: null,
+            message: error.message,
+          });
+          return;
+        }
+
+        if (error.message.includes("Constraint violation")) {
+          res.status(409).json({
+            success: false,
+            data: null,
+            message: error.message,
+          });
+          return;
+        }
+      }
+
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to create feedback",
+      });
+    }
+  });
+
+  /**
+   * PUT /api/feedback/:id - Update an existing feedback entry
+   */
+  router.put("/:id", (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { content, dismissed, anchor } = req.body;
+
+      // Validate that at least one field is provided
+      if (
+        content === undefined &&
+        dismissed === undefined &&
+        anchor === undefined
+      ) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "At least one field must be provided for update",
+        });
+        return;
+      }
+
+      // Validate anchor if provided
+      if (anchor !== undefined) {
+        if (typeof anchor !== "object") {
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: "anchor must be an object",
+          });
+          return;
+        }
+
+        if (!anchor.anchor_status || typeof anchor.anchor_status !== "string") {
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: "anchor.anchor_status is required and must be a string",
+          });
+          return;
+        }
+
+        const validAnchorStatuses = ["valid", "relocated", "stale"];
+        if (!validAnchorStatuses.includes(anchor.anchor_status)) {
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: `Invalid anchor.anchor_status. Must be one of: ${validAnchorStatuses.join(", ")}`,
+          });
+          return;
+        }
+      }
+
+      // Build update input
+      const updateInput: any = {};
+      if (content !== undefined) updateInput.content = content;
+      if (dismissed !== undefined) updateInput.dismissed = dismissed;
+      if (anchor !== undefined) updateInput.anchor = anchor as FeedbackAnchor;
+
+      // Update feedback using CLI operation
+      const feedback = updateExistingFeedback(db, id, updateInput);
+
+      // Broadcast feedback update to WebSocket clients
+      broadcastFeedbackUpdate("updated", feedback);
+
+      res.json({
+        success: true,
+        data: feedback,
+      });
+    } catch (error) {
+      console.error("Error updating feedback:", error);
+
+      // Handle "not found" errors
+      if (error instanceof Error && error.message.includes("not found")) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: error.message,
+        });
+        return;
+      }
+
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to update feedback",
+      });
+    }
+  });
+
+  /**
+   * DELETE /api/feedback/:id - Delete a feedback entry
+   */
+  router.delete("/:id", (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      // Check if feedback exists first
+      const existingFeedback = getFeedbackById(db, id);
+      if (!existingFeedback) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Feedback not found: ${id}`,
+        });
+        return;
+      }
+
+      // Delete feedback using CLI operation
+      const deleted = deleteExistingFeedback(db, id);
+
+      if (deleted) {
+        // Broadcast feedback deletion to WebSocket clients
+        broadcastFeedbackUpdate("deleted", { id });
+
+        res.json({
+          success: true,
+          data: {
+            id,
+            deleted: true,
+          },
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          data: null,
+          message: "Failed to delete feedback",
+        });
+      }
+    } catch (error) {
+      console.error("Error deleting feedback:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to delete feedback",
+      });
+    }
+  });
+
+  return router;
+}

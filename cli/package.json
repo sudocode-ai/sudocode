@@ -5,7 +5,8 @@
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "sudocode": "./dist/cli.js"
+    "sudocode": "./dist/cli.js",
+    "sdc": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -14,7 +15,12 @@
     "test:schema": "tsc && node dist/test-schema.js",
     "clean": "rm -rf dist"
   },
-  "keywords": ["sudocode", "cli", "specs", "issues"],
+  "keywords": [
+    "sudocode",
+    "cli",
+    "specs",
+    "issues"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
@@ -24,14 +30,17 @@
     "chokidar": "^4.0.3",
     "cli-table3": "^0.6.5",
     "commander": "^14.0.1",
-    "gray-matter": "^4.0.3"
+    "gray-matter": "^4.0.3",
+    "vite": "7.1.12"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.8",
     "@types/chokidar": "^1.7.5",
     "@types/node": "^20.10.6",
     "typescript": "^5.3.3",
-    "vitest": "^1.1.0"
+    "vitest": "^3.2.4"
   },
-  "files": ["dist/**/*"]
+  "files": [
+    "dist/**/*"
+  ]
 }

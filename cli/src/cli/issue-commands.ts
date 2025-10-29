@@ -46,12 +46,11 @@ export async function handleIssueCreate(
     const issue = createIssue(ctx.db, {
       id: issueId,
       title,
-      description: options.description || "",
-      content: "",
+      content: options.description || "",
       status: "open",
       priority: parseInt(options.priority),
-      assignee: options.assignee || null,
-      parent_id: options.parent || null,
+      assignee: options.assignee || undefined,
+      parent_id: options.parent || undefined,
     });
 
     if (options.tags) {
@@ -84,6 +83,7 @@ export interface IssueListOptions {
   assignee?: string;
   priority?: string;
   grep?: string;
+  archived?: string;
   limit: string;
 }
 
@@ -98,12 +98,14 @@ export async function handleIssueList(
           status: options.status as any,
           assignee: options.assignee,
           priority: options.priority ? parseInt(options.priority) : undefined,
+          archived: options.archived !== undefined ? options.archived === 'true' : false, // Default to excluding archived
           limit: parseInt(options.limit),
         })
       : listIssues(ctx.db, {
           status: options.status as any,
           assignee: options.assignee,
           priority: options.priority ? parseInt(options.priority) : undefined,
+          archived: options.archived !== undefined ? options.archived === 'true' : false, // Default to excluding archived
           limit: parseInt(options.limit),
         });
 
@@ -122,10 +124,10 @@ export async function handleIssueList(
           issue.status === "closed"
             ? chalk.green
             : issue.status === "in_progress"
-            ? chalk.yellow
-            : issue.status === "blocked"
-            ? chalk.red
-            : chalk.gray;
+              ? chalk.yellow
+              : issue.status === "blocked"
+                ? chalk.red
+                : chalk.gray;
 
         const assigneeStr = issue.assignee
           ? chalk.gray(`@${issue.assignee}`)
@@ -136,11 +138,7 @@ export async function handleIssueList(
           issue.title,
           assigneeStr
         );
-        console.log(
-          chalk.gray(
-            `  Priority: ${issue.priority}`
-          )
-        );
+        console.log(chalk.gray(`  Priority: ${issue.priority}`));
       }
       console.log();
     }
@@ -187,10 +185,7 @@ export async function handleIssueShow(
       if (issue.parent_id) {
         console.log(chalk.gray("Parent:"), issue.parent_id);
       }
-      console.log(
-        chalk.gray("Created:"),
-        issue.created_at
-      );
+      console.log(chalk.gray("Created:"), issue.created_at);
       console.log(chalk.gray("Updated:"), issue.updated_at);
       if (issue.closed_at) {
         console.log(chalk.gray("Closed:"), issue.closed_at);
@@ -200,10 +195,10 @@ export async function handleIssueShow(
         console.log(chalk.gray("Tags:"), tags.join(", "));
       }
 
-      if (issue.description) {
+      if (issue.content) {
         console.log();
-        console.log(chalk.bold("Description:"));
-        console.log(issue.description);
+        console.log(chalk.bold("Content:"));
+        console.log(issue.content);
       }
 
       if (issue.content) {
@@ -247,12 +242,12 @@ export async function handleIssueShow(
             anchor.anchor_status === "valid"
               ? chalk.green
               : anchor.anchor_status === "relocated"
-              ? chalk.yellow
-              : chalk.red;
+                ? chalk.yellow
+                : chalk.red;
 
           console.log(
             `  ${chalk.cyan(fb.id)} → ${chalk.cyan(fb.spec_id)}`,
-            statusColor(`[${fb.dismissed ? 'dismissed' : 'active'}]`),
+            statusColor(`[${fb.dismissed ? "dismissed" : "active"}]`),
             anchorStatusColor(`[${anchor.anchor_status}]`)
           );
           console.log(
@@ -283,6 +278,7 @@ export interface IssueUpdateOptions {
   assignee?: string;
   title?: string;
   description?: string;
+  archived?: string;
 }
 
 export async function handleIssueUpdate(
@@ -297,6 +293,9 @@ export async function handleIssueUpdate(
     if (options.assignee) updates.assignee = options.assignee;
     if (options.title) updates.title = options.title;
     if (options.description) updates.description = options.description;
+    if (options.archived !== undefined) {
+      updates.archived = options.archived === 'true';
+    }
 
     const issue = updateIssue(ctx.db, id, updates);
 

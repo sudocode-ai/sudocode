@@ -2,32 +2,32 @@
  * Unit tests for import operations
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import * as fs from 'fs';
-import * as path from 'path';
-import { initDatabase } from '../../src/db.js';
-import { createSpec, getSpec } from '../../src/operations/specs.js';
-import { createIssue } from '../../src/operations/issues.js';
-import { addRelationship } from '../../src/operations/relationships.js';
-import { addTags } from '../../src/operations/tags.js';
-import { writeJSONL } from '../../src/jsonl.js';
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import * as fs from "fs";
+import * as path from "path";
+import { initDatabase } from "../../src/db.js";
+import { createSpec, getSpec } from "../../src/operations/specs.js";
+import { createIssue } from "../../src/operations/issues.js";
+import { addRelationship } from "../../src/operations/relationships.js";
+import { addTags } from "../../src/operations/tags.js";
+import { writeJSONL } from "../../src/jsonl.js";
 import {
   detectChanges,
   detectCollisions,
   countReferences,
   updateTextReferences,
   importFromJSONL,
-} from '../../src/import.js';
-import type Database from 'better-sqlite3';
-import type { SpecJSONL, IssueJSONL } from '../../src/types.js';
+} from "../../src/import.js";
+import type Database from "better-sqlite3";
+import type { SpecJSONL, IssueJSONL } from "../../src/types.js";
 
-const TEST_DIR = path.join(process.cwd(), 'test-import');
+const TEST_DIR = path.join(process.cwd(), "test-import");
 
-describe('Import Operations', () => {
+describe("Import Operations", () => {
   let db: Database.Database;
 
   beforeEach(() => {
-    db = initDatabase({ path: ':memory:' });
+    db = initDatabase({ path: ":memory:" });
 
     // Create test directory
     if (!fs.existsSync(TEST_DIR)) {
@@ -44,107 +44,177 @@ describe('Import Operations', () => {
     }
   });
 
-  describe('detectChanges', () => {
-    it('should detect added entities (using UUID matching)', () => {
+  describe("detectChanges", () => {
+    it("should detect added entities (using UUID matching)", () => {
       const existing = [
-        { id: 'spec-001', uuid: 'uuid-001', updated_at: '2025-01-01T00:00:00Z' },
+        {
+          id: "spec-001",
+          uuid: "uuid-001",
+          updated_at: "2025-01-01T00:00:00Z",
+        },
       ];
       const incoming = [
-        { id: 'spec-001', uuid: 'uuid-001', updated_at: '2025-01-01T00:00:00Z' },
-        { id: 'spec-002', uuid: 'uuid-002', updated_at: '2025-01-02T00:00:00Z' },
+        {
+          id: "spec-001",
+          uuid: "uuid-001",
+          updated_at: "2025-01-01T00:00:00Z",
+        },
+        {
+          id: "spec-002",
+          uuid: "uuid-002",
+          updated_at: "2025-01-02T00:00:00Z",
+        },
       ];
 
       const changes = detectChanges(existing, incoming);
 
-      expect(changes.added).toEqual(['spec-002']);
+      expect(changes.added).toEqual(["spec-002"]);
       expect(changes.updated).toEqual([]);
       expect(changes.deleted).toEqual([]);
     });
 
-    it('should detect updated entities (using UUID matching)', () => {
+    it("should detect updated entities (using UUID matching)", () => {
       const existing = [
-        { id: 'spec-001', uuid: 'uuid-001', updated_at: '2025-01-01T00:00:00Z' },
+        {
+          id: "spec-001",
+          uuid: "uuid-001",
+          updated_at: "2025-01-01T00:00:00Z",
+        },
       ];
       const incoming = [
-        { id: 'spec-001', uuid: 'uuid-001', updated_at: '2025-01-02T00:00:00Z' },
+        {
+          id: "spec-001",
+          uuid: "uuid-001",
+          updated_at: "2025-01-02T00:00:00Z",
+        },
       ];
 
       const changes = detectChanges(existing, incoming);
 
       expect(changes.added).toEqual([]);
-      expect(changes.updated).toEqual(['spec-001']);
+      expect(changes.updated).toEqual(["spec-001"]);
       expect(changes.deleted).toEqual([]);
     });
 
-    it('should detect deleted entities (using UUID matching)', () => {
+    it("should detect deleted entities (using UUID matching)", () => {
       const existing = [
-        { id: 'spec-001', uuid: 'uuid-001', updated_at: '2025-01-01T00:00:00Z' },
-        { id: 'spec-002', uuid: 'uuid-002', updated_at: '2025-01-01T00:00:00Z' },
+        {
+          id: "spec-001",
+          uuid: "uuid-001",
+          updated_at: "2025-01-01T00:00:00Z",
+        },
+        {
+          id: "spec-002",
+          uuid: "uuid-002",
+          updated_at: "2025-01-01T00:00:00Z",
+        },
       ];
       const incoming = [
-        { id: 'spec-001', uuid: 'uuid-001', updated_at: '2025-01-01T00:00:00Z' },
+        {
+          id: "spec-001",
+          uuid: "uuid-001",
+          updated_at: "2025-01-01T00:00:00Z",
+        },
       ];
 
       const changes = detectChanges(existing, incoming);
 
       expect(changes.added).toEqual([]);
       expect(changes.updated).toEqual([]);
-      expect(changes.deleted).toEqual(['spec-002']);
+      expect(changes.deleted).toEqual(["spec-002"]);
     });
 
-    it('should detect unchanged entities', () => {
+    it("should detect unchanged entities", () => {
       const existing = [
-        { id: 'spec-001', uuid: 'uuid-001', updated_at: '2025-01-01T00:00:00Z' },
+        {
+          id: "spec-001",
+          uuid: "uuid-001",
+          updated_at: "2025-01-01T00:00:00Z",
+        },
       ];
       const incoming = [
-        { id: 'spec-001', uuid: 'uuid-001', updated_at: '2025-01-01T00:00:00Z' },
+        {
+          id: "spec-001",
+          uuid: "uuid-001",
+          updated_at: "2025-01-01T00:00:00Z",
+        },
       ];
 
       const changes = detectChanges(existing, incoming);
 
-      expect(changes.unchanged).toEqual(['spec-001']);
+      expect(changes.unchanged).toEqual(["spec-001"]);
     });
 
-    it('should treat same UUID with different ID as update (entity was renamed)', () => {
+    it("should treat same UUID with different ID as update (entity was renamed)", () => {
       const existing = [
-        { id: 'spec-001', uuid: 'uuid-same', updated_at: '2025-01-01T00:00:00Z' },
+        {
+          id: "spec-001",
+          uuid: "uuid-same",
+          updated_at: "2025-01-01T00:00:00Z",
+        },
       ];
       const incoming = [
-        { id: 'spec-999', uuid: 'uuid-same', updated_at: '2025-01-02T00:00:00Z' },
+        {
+          id: "spec-999",
+          uuid: "uuid-same",
+          updated_at: "2025-01-02T00:00:00Z",
+        },
       ];
 
       const changes = detectChanges(existing, incoming);
 
       expect(changes.added).toEqual([]);
-      expect(changes.updated).toEqual(['spec-999']); // Returns new ID
+      expect(changes.updated).toEqual(["spec-999"]); // Returns new ID
       expect(changes.deleted).toEqual([]);
     });
   });
 
-  describe('detectCollisions', () => {
-    it('should detect ID collisions when UUIDs differ (different entities with same ID)', () => {
+  describe("detectCollisions", () => {
+    it("should detect ID collisions when UUIDs differ (different entities with same ID)", () => {
       const existing = [
-        { id: 'spec-001', uuid: 'uuid-aaa', title: 'Original Title', created_at: '2025-01-01T00:00:00Z' },
+        {
+          id: "spec-001",
+          uuid: "uuid-aaa",
+          title: "Original Title",
+          created_at: "2025-01-01T00:00:00Z",
+        },
       ];
       const incoming = [
-        { id: 'spec-001', uuid: 'uuid-bbb', title: 'Different Title', created_at: '2025-01-02T00:00:00Z' },
+        {
+          id: "spec-001",
+          uuid: "uuid-bbb",
+          title: "Different Title",
+          created_at: "2025-01-02T00:00:00Z",
+        },
       ];
 
       const collisions = detectCollisions(existing, incoming);
 
       expect(collisions).toHaveLength(1);
-      expect(collisions[0].id).toBe('spec-001');
-      expect(collisions[0].reason).toBe('Same ID but different UUID (different entities)');
-      expect(collisions[0].localContent).toBe('Original Title');
-      expect(collisions[0].incomingContent).toBe('Different Title');
+      expect(collisions[0].id).toBe("spec-001");
+      expect(collisions[0].reason).toBe(
+        "Same ID but different UUID (different entities)"
+      );
+      expect(collisions[0].localContent).toBe("Original Title");
+      expect(collisions[0].incomingContent).toBe("Different Title");
     });
 
-    it('should not detect collision when UUIDs match (same entity)', () => {
+    it("should not detect collision when UUIDs match (same entity)", () => {
       const existing = [
-        { id: 'spec-001', uuid: 'uuid-same', title: 'Original Title', created_at: '2025-01-01T00:00:00Z' },
+        {
+          id: "spec-001",
+          uuid: "uuid-same",
+          title: "Original Title",
+          created_at: "2025-01-01T00:00:00Z",
+        },
       ];
       const incoming = [
-        { id: 'spec-001', uuid: 'uuid-same', title: 'Updated Title', created_at: '2025-01-02T00:00:00Z' },
+        {
+          id: "spec-001",
+          uuid: "uuid-same",
+          title: "Updated Title",
+          created_at: "2025-01-02T00:00:00Z",
+        },
       ];
 
       const collisions = detectCollisions(existing, incoming);
@@ -152,12 +222,22 @@ describe('Import Operations', () => {
       expect(collisions).toHaveLength(0);
     });
 
-    it('should not detect collision for different IDs (even if content is same)', () => {
+    it("should not detect collision for different IDs (even if content is same)", () => {
       const existing = [
-        { id: 'spec-001', uuid: 'uuid-aaa', title: 'Same Title', created_at: '2025-01-01T00:00:00Z' },
+        {
+          id: "spec-001",
+          uuid: "uuid-aaa",
+          title: "Same Title",
+          created_at: "2025-01-01T00:00:00Z",
+        },
       ];
       const incoming = [
-        { id: 'spec-002', uuid: 'uuid-bbb', title: 'Same Title', created_at: '2025-01-01T00:00:00Z' },
+        {
+          id: "spec-002",
+          uuid: "uuid-bbb",
+          title: "Same Title",
+          created_at: "2025-01-01T00:00:00Z",
+        },
       ];
 
       const collisions = detectCollisions(existing, incoming);
@@ -166,64 +246,62 @@ describe('Import Operations', () => {
     });
   });
 
-  describe('countReferences', () => {
+  describe("countReferences", () => {
     beforeEach(() => {
       // Create specs with references
       createSpec(db, {
-        id: 'spec-001',
-        title: 'Main Spec',
-        file_path: 'main.md',
-        content: 'See spec-002 for details. Also spec-002 is important.',
+        id: "spec-001",
+        title: "Main Spec",
+        file_path: "main.md",
+        content: "See spec-002 for details. Also spec-002 is important.",
       });
 
       createSpec(db, {
-        id: 'spec-002',
-        title: 'Referenced Spec',
-        file_path: 'ref.md',
-        content: 'Content',
+        id: "spec-002",
+        title: "Referenced Spec",
+        file_path: "ref.md",
+        content: "Content",
       });
 
       // Create issue with reference
       createIssue(db, {
-        id: 'issue-001',
-        title: 'Issue',
-        description: 'Implements spec-002',
-        content: 'Based on spec-002',
+        id: "issue-001",
+        title: "Issue",
+        content: "Based on spec-002",
       });
     });
 
-    it('should count references to an entity', () => {
-      const count = countReferences(db, 'spec-002', 'spec');
+    it("should count references to an entity", () => {
+      const count = countReferences(db, "spec-002", "spec");
 
-      // 2 in spec-001 content + 1 in issue description + 1 in issue content = 4
-      expect(count).toBe(4);
+      // 2 in spec-001 content + 1 in issue content = 3
+      expect(count).toBe(3);
     });
 
-    it('should return 0 for unreferenced entity', () => {
-      const count = countReferences(db, 'spec-999', 'spec');
+    it("should return 0 for unreferenced entity", () => {
+      const count = countReferences(db, "spec-999", "spec");
       expect(count).toBe(0);
     });
   });
 
-  describe('updateTextReferences', () => {
+  describe("updateTextReferences", () => {
     beforeEach(() => {
       createSpec(db, {
-        id: 'spec-001',
-        title: 'Spec with reference',
-        file_path: 'spec.md',
-        content: 'See spec-OLD for details',
+        id: "spec-001",
+        title: "Spec with reference",
+        file_path: "spec.md",
+        content: "See spec-OLD for details",
       });
 
       createIssue(db, {
-        id: 'issue-001',
-        title: 'Issue',
-        description: 'Related to spec-OLD',
-        content: 'Implements spec-OLD feature',
+        id: "issue-001",
+        title: "Issue",
+        content: "Implements spec-OLD feature",
       });
     });
 
-    it('should update all text references', () => {
-      const count = updateTextReferences(db, 'spec-OLD', 'spec-NEW');
+    it("should update all text references", () => {
+      const count = updateTextReferences(db, "spec-OLD", "spec-NEW");
 
       expect(count).toBe(2); // 1 spec + 1 issue
 
@@ -231,33 +309,32 @@ describe('Import Operations', () => {
     });
   });
 
-  describe('importFromJSONL', () => {
-    it('should import new specs and issues', async () => {
+  describe("importFromJSONL", () => {
+    it("should import new specs and issues", async () => {
       // Create JSONL files
       const specs: SpecJSONL[] = [
         {
-          id: 'spec-001',
-          uuid: 'uuid-spec-001',
-          title: 'Test Spec',
-          file_path: 'test.md',
-          content: '# Test',
+          id: "spec-001",
+          uuid: "uuid-spec-001",
+          title: "Test Spec",
+          file_path: "test.md",
+          content: "# Test",
           priority: 2,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           parent_id: null,
           relationships: [],
-          tags: ['test'],
+          tags: ["test"],
         },
       ];
 
       const issues: IssueJSONL[] = [
         {
-          id: 'issue-001',
-          uuid: 'uuid-issue-001',
-          title: 'Test Issue',
-          description: 'Test description',
-          content: '# Details',
-          status: 'open',
+          id: "issue-001",
+          uuid: "uuid-issue-001",
+          title: "Test Issue",
+          content: "# Details",
+          status: "open",
           priority: 2,
           assignee: null,
           created_at: new Date().toISOString(),
@@ -265,13 +342,13 @@ describe('Import Operations', () => {
           closed_at: null,
           parent_id: null,
           relationships: [],
-          tags: ['test'],
+          tags: ["test"],
           feedback: [],
         },
       ];
 
-      await writeJSONL(path.join(TEST_DIR, 'specs.jsonl'), specs);
-      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), issues);
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), specs);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), issues);
 
       // Import
       const result = await importFromJSONL(db, {
@@ -283,23 +360,23 @@ describe('Import Operations', () => {
       expect(result.collisions).toHaveLength(0);
     });
 
-    it('should detect and report collisions in dry-run mode (same ID, different UUID)', async () => {
+    it("should detect and report collisions in dry-run mode (same ID, different UUID)", async () => {
       // Create existing data with UUID
       createSpec(db, {
-        id: 'spec-001',
-        uuid: 'uuid-original',
-        title: 'Original Title',
-        file_path: 'orig.md',
+        id: "spec-001",
+        uuid: "uuid-original",
+        title: "Original Title",
+        file_path: "orig.md",
       });
 
       // Create JSONL with same ID but different UUID (collision!)
       const specs: SpecJSONL[] = [
         {
-          id: 'spec-001',
-          uuid: 'uuid-different',
-          title: 'Different Title',
-          file_path: 'diff.md',
-          content: '',
+          id: "spec-001",
+          uuid: "uuid-different",
+          title: "Different Title",
+          file_path: "diff.md",
+          content: "",
           priority: 2,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -309,8 +386,8 @@ describe('Import Operations', () => {
         },
       ];
 
-      await writeJSONL(path.join(TEST_DIR, 'specs.jsonl'), specs);
-      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), []);
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), specs);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), []);
 
       // Dry run import
       const result = await importFromJSONL(db, {
@@ -319,17 +396,19 @@ describe('Import Operations', () => {
       });
 
       expect(result.collisions.length).toBeGreaterThan(0);
-      expect(result.collisions[0].reason).toBe('Same ID but different UUID (different entities)');
+      expect(result.collisions[0].reason).toBe(
+        "Same ID but different UUID (different entities)"
+      );
     });
 
-    it('should update existing entities (same UUID, different content)', async () => {
+    it("should update existing entities (same UUID, different content)", async () => {
       // Create existing data with UUID
-      const uuid = 'uuid-same';
+      const uuid = "uuid-same";
       createSpec(db, {
-        id: 'spec-001',
+        id: "spec-001",
         uuid: uuid,
-        title: 'Original',
-        file_path: 'orig.md',
+        title: "Original",
+        file_path: "orig.md",
       });
 
       // Wait to ensure different timestamp
@@ -338,11 +417,11 @@ describe('Import Operations', () => {
       // Create JSONL with updated content but same UUID
       const specs: SpecJSONL[] = [
         {
-          id: 'spec-001',
+          id: "spec-001",
           uuid: uuid,
-          title: 'Updated',
-          file_path: 'updated.md',
-          content: 'New content',
+          title: "Updated",
+          file_path: "updated.md",
+          content: "New content",
           priority: 2,
           created_at: new Date(Date.now() - 1000).toISOString(),
           updated_at: new Date().toISOString(),
@@ -352,8 +431,8 @@ describe('Import Operations', () => {
         },
       ];
 
-      await writeJSONL(path.join(TEST_DIR, 'specs.jsonl'), specs);
-      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), []);
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), specs);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), []);
 
       // Import
       const result = await importFromJSONL(db, {
@@ -363,30 +442,30 @@ describe('Import Operations', () => {
       expect(result.specs.updated).toBe(1);
     });
 
-    it('should delete entities not in JSONL (UUID not present)', async () => {
+    it("should delete entities not in JSONL (UUID not present)", async () => {
       // Create existing data with UUIDs
       createSpec(db, {
-        id: 'spec-001',
-        uuid: 'uuid-001',
-        title: 'To Delete',
-        file_path: 'delete.md',
+        id: "spec-001",
+        uuid: "uuid-001",
+        title: "To Delete",
+        file_path: "delete.md",
       });
 
       createSpec(db, {
-        id: 'spec-002',
-        uuid: 'uuid-002',
-        title: 'To Keep',
-        file_path: 'keep.md',
+        id: "spec-002",
+        uuid: "uuid-002",
+        title: "To Keep",
+        file_path: "keep.md",
       });
 
       // Create JSONL with only spec-002 (uuid-002)
       const specs: SpecJSONL[] = [
         {
-          id: 'spec-002',
-          uuid: 'uuid-002',
-          title: 'To Keep',
-          file_path: 'keep.md',
-          content: '',
+          id: "spec-002",
+          uuid: "uuid-002",
+          title: "To Keep",
+          file_path: "keep.md",
+          content: "",
           priority: 2,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -396,8 +475,8 @@ describe('Import Operations', () => {
         },
       ];
 
-      await writeJSONL(path.join(TEST_DIR, 'specs.jsonl'), specs);
-      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), []);
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), specs);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), []);
 
       // Import
       const result = await importFromJSONL(db, {
@@ -407,14 +486,14 @@ describe('Import Operations', () => {
       expect(result.specs.deleted).toBe(1);
     });
 
-    it('should resolve ID collisions by renumbering incoming entity', async () => {
+    it("should resolve ID collisions by renumbering incoming entity", async () => {
       // Create existing spec with UUID
       const localSpec = createSpec(db, {
-        id: 'spec-001',
-        uuid: 'uuid-local',
-        title: 'Local Spec',
-        file_path: 'local.md',
-        content: 'Local content',
+        id: "spec-001",
+        uuid: "uuid-local",
+        title: "Local Spec",
+        file_path: "local.md",
+        content: "Local content",
       });
 
       // Create JSONL with:
@@ -422,11 +501,11 @@ describe('Import Operations', () => {
       // 2. Incoming spec with SAME ID but different UUID (collision!)
       const specs: SpecJSONL[] = [
         {
-          id: 'spec-001',
-          uuid: 'uuid-local',  // Same UUID = same entity as existing, should be preserved
-          title: 'Local Spec',
-          file_path: 'local.md',
-          content: 'Local content',
+          id: "spec-001",
+          uuid: "uuid-local", // Same UUID = same entity as existing, should be preserved
+          title: "Local Spec",
+          file_path: "local.md",
+          content: "Local content",
           priority: 2,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -435,11 +514,11 @@ describe('Import Operations', () => {
           tags: [],
         },
         {
-          id: 'spec-001',  // Same ID as above = COLLISION!
-          uuid: 'uuid-incoming',  // Different UUID = different entity
-          title: 'Incoming Spec',
-          file_path: 'incoming.md',
-          content: 'Incoming content',
+          id: "spec-001", // Same ID as above = COLLISION!
+          uuid: "uuid-incoming", // Different UUID = different entity
+          title: "Incoming Spec",
+          file_path: "incoming.md",
+          content: "Incoming content",
           priority: 2,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -449,8 +528,8 @@ describe('Import Operations', () => {
         },
       ];
 
-      await writeJSONL(path.join(TEST_DIR, 'specs.jsonl'), specs);
-      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), []);
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), specs);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), []);
 
       // Import with collision resolution enabled
       const result = await importFromJSONL(db, {
@@ -461,48 +540,50 @@ describe('Import Operations', () => {
       // Should detect 2 collisions (one with existing, one within incoming data)
       // Both refer to the same incoming entity with uuid-incoming
       expect(result.collisions.length).toBe(2);
-      expect(result.collisions.every(c => c.resolution === 'renumber')).toBe(true);
+      expect(result.collisions.every((c) => c.resolution === "renumber")).toBe(
+        true
+      );
 
       // All collisions should have the same newId (same entity being renumbered)
       const newId = result.collisions[0].newId!;
       expect(newId).toBeDefined();
-      expect(newId).not.toBe('spec-001');
-      expect(result.collisions.every(c => c.newId === newId)).toBe(true);
+      expect(newId).not.toBe("spec-001");
+      expect(result.collisions.every((c) => c.newId === newId)).toBe(true);
 
       // Should have 1 spec updated (uuid-local) and 1 added (uuid-incoming with new ID)
       expect(result.specs.added).toBe(1);
-      expect(result.specs.updated).toBe(1);  // The first incoming spec with uuid-local
+      expect(result.specs.updated).toBe(1); // The first incoming spec with uuid-local
       expect(result.specs.deleted).toBe(0);
 
       // Verify: Local spec-001 should still exist with original UUID (unchanged)
-      const localAfter = getSpec(db, 'spec-001');
+      const localAfter = getSpec(db, "spec-001");
       expect(localAfter).not.toBeNull();
-      expect(localAfter?.uuid).toBe('uuid-local');
-      expect(localAfter?.title).toBe('Local Spec');
+      expect(localAfter?.uuid).toBe("uuid-local");
+      expect(localAfter?.title).toBe("Local Spec");
 
       // Verify: Incoming spec should be imported with new ID (use newId from earlier)
       const incomingAfter = getSpec(db, newId);
       expect(incomingAfter).not.toBeNull();
-      expect(incomingAfter?.uuid).toBe('uuid-incoming');
-      expect(incomingAfter?.title).toBe('Incoming Spec');
+      expect(incomingAfter?.uuid).toBe("uuid-incoming");
+      expect(incomingAfter?.title).toBe("Incoming Spec");
     });
 
-    it('should use timestamps to determine collision resolution (newer gets renumbered)', async () => {
+    it("should use timestamps to determine collision resolution (newer gets renumbered)", async () => {
       // Create local spec with OLDER timestamp
-      const olderTime = new Date('2025-01-01T00:00:00Z');
-      const newerTime = new Date('2025-01-02T00:00:00Z');
+      const olderTime = new Date("2025-01-01T00:00:00Z");
+      const newerTime = new Date("2025-01-02T00:00:00Z");
 
       createSpec(db, {
-        id: 'spec-001',
-        uuid: 'uuid-older',
-        title: 'Older Spec',
-        file_path: 'older.md',
+        id: "spec-001",
+        uuid: "uuid-older",
+        title: "Older Spec",
+        file_path: "older.md",
       });
 
       // Manually set created_at to older time in DB
-      db.prepare('UPDATE specs SET created_at = ? WHERE id = ?').run(
+      db.prepare("UPDATE specs SET created_at = ? WHERE id = ?").run(
         olderTime.toISOString(),
-        'spec-001'
+        "spec-001"
       );
 
       // Create JSONL with:
@@ -510,11 +591,11 @@ describe('Import Operations', () => {
       // 2. A newer spec with same ID but different UUID (collision!)
       const specs: SpecJSONL[] = [
         {
-          id: 'spec-001',
-          uuid: 'uuid-older',
-          title: 'Older Spec',
-          file_path: 'older.md',
-          content: '',
+          id: "spec-001",
+          uuid: "uuid-older",
+          title: "Older Spec",
+          file_path: "older.md",
+          content: "",
           priority: 2,
           created_at: olderTime.toISOString(),
           updated_at: olderTime.toISOString(),
@@ -523,13 +604,13 @@ describe('Import Operations', () => {
           tags: [],
         },
         {
-          id: 'spec-001',
-          uuid: 'uuid-newer',  // Different UUID = collision
-          title: 'Newer Spec',
-          file_path: 'newer.md',
-          content: '',
+          id: "spec-001",
+          uuid: "uuid-newer", // Different UUID = collision
+          title: "Newer Spec",
+          file_path: "newer.md",
+          content: "",
           priority: 2,
-          created_at: newerTime.toISOString(),  // NEWER timestamp
+          created_at: newerTime.toISOString(), // NEWER timestamp
           updated_at: newerTime.toISOString(),
           parent_id: null,
           relationships: [],
@@ -537,8 +618,8 @@ describe('Import Operations', () => {
         },
       ];
 
-      await writeJSONL(path.join(TEST_DIR, 'specs.jsonl'), specs);
-      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), []);
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), specs);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), []);
 
       // Import with collision resolution
       const result = await importFromJSONL(db, {
@@ -550,38 +631,40 @@ describe('Import Operations', () => {
       expect(result.collisions.length).toBeGreaterThan(0);
 
       // The OLDER entity should keep spec-001
-      const olderAfter = getSpec(db, 'spec-001');
+      const olderAfter = getSpec(db, "spec-001");
       expect(olderAfter).not.toBeNull();
-      expect(olderAfter?.uuid).toBe('uuid-older');
-      expect(olderAfter?.title).toBe('Older Spec');
+      expect(olderAfter?.uuid).toBe("uuid-older");
+      expect(olderAfter?.title).toBe("Older Spec");
 
       // The NEWER entity should be imported with a new ID
-      const newId = result.collisions.find(c => c.uuid === 'uuid-newer')?.newId;
+      const newId = result.collisions.find(
+        (c) => c.uuid === "uuid-newer"
+      )?.newId;
       expect(newId).toBeDefined();
-      expect(newId).not.toBe('spec-001');
+      expect(newId).not.toBe("spec-001");
 
       const newerAfter = getSpec(db, newId!);
       expect(newerAfter).not.toBeNull();
-      expect(newerAfter?.uuid).toBe('uuid-newer');
-      expect(newerAfter?.title).toBe('Newer Spec');
+      expect(newerAfter?.uuid).toBe("uuid-newer");
+      expect(newerAfter?.title).toBe("Newer Spec");
     });
 
-    it('should handle reverse case (local is newer, incoming is older)', async () => {
+    it("should handle reverse case (local is newer, incoming is older)", async () => {
       // Create local spec with NEWER timestamp
-      const olderTime = new Date('2025-01-01T00:00:00Z');
-      const newerTime = new Date('2025-01-02T00:00:00Z');
+      const olderTime = new Date("2025-01-01T00:00:00Z");
+      const newerTime = new Date("2025-01-02T00:00:00Z");
 
       createSpec(db, {
-        id: 'spec-001',
-        uuid: 'uuid-newer',
-        title: 'Newer Spec',
-        file_path: 'newer.md',
+        id: "spec-001",
+        uuid: "uuid-newer",
+        title: "Newer Spec",
+        file_path: "newer.md",
       });
 
       // Manually set created_at to newer time in DB
-      db.prepare('UPDATE specs SET created_at = ? WHERE id = ?').run(
+      db.prepare("UPDATE specs SET created_at = ? WHERE id = ?").run(
         newerTime.toISOString(),
-        'spec-001'
+        "spec-001"
       );
 
       // Create JSONL with:
@@ -589,11 +672,11 @@ describe('Import Operations', () => {
       // 2. An older spec with same ID but different UUID (collision!)
       const specs: SpecJSONL[] = [
         {
-          id: 'spec-001',
-          uuid: 'uuid-newer',
-          title: 'Newer Spec',
-          file_path: 'newer.md',
-          content: '',
+          id: "spec-001",
+          uuid: "uuid-newer",
+          title: "Newer Spec",
+          file_path: "newer.md",
+          content: "",
           priority: 2,
           created_at: newerTime.toISOString(),
           updated_at: newerTime.toISOString(),
@@ -602,13 +685,13 @@ describe('Import Operations', () => {
           tags: [],
         },
         {
-          id: 'spec-001',
-          uuid: 'uuid-older',  // Different UUID = collision
-          title: 'Older Spec',
-          file_path: 'older.md',
-          content: '',
+          id: "spec-001",
+          uuid: "uuid-older", // Different UUID = collision
+          title: "Older Spec",
+          file_path: "older.md",
+          content: "",
           priority: 2,
-          created_at: olderTime.toISOString(),  // OLDER timestamp
+          created_at: olderTime.toISOString(), // OLDER timestamp
           updated_at: olderTime.toISOString(),
           parent_id: null,
           relationships: [],
@@ -616,8 +699,8 @@ describe('Import Operations', () => {
         },
       ];
 
-      await writeJSONL(path.join(TEST_DIR, 'specs.jsonl'), specs);
-      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), []);
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), specs);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), []);
 
       // Import with collision resolution
       const result = await importFromJSONL(db, {
@@ -630,52 +713,52 @@ describe('Import Operations', () => {
 
       // Note: Due to practical constraints, the incoming entity (older)
       // still gets renumbered, even though ideally the newer one should be
-      const collision = result.collisions.find(c => c.uuid === 'uuid-older');
+      const collision = result.collisions.find((c) => c.uuid === "uuid-older");
       expect(collision).toBeDefined();
 
       // The newer entity keeps spec-001 (it was there first in DB)
-      const newerAfter = getSpec(db, 'spec-001');
+      const newerAfter = getSpec(db, "spec-001");
       expect(newerAfter).not.toBeNull();
-      expect(newerAfter?.uuid).toBe('uuid-newer');
+      expect(newerAfter?.uuid).toBe("uuid-newer");
 
       // The older entity gets imported with new ID
       const newId = collision?.newId;
       expect(newId).toBeDefined();
       const olderAfter = getSpec(db, newId!);
       expect(olderAfter).not.toBeNull();
-      expect(olderAfter?.uuid).toBe('uuid-older');
+      expect(olderAfter?.uuid).toBe("uuid-older");
     });
 
-    it('should import relationships with entity types', async () => {
+    it("should import relationships with entity types", async () => {
       // Create specs
       const specs: SpecJSONL[] = [
         {
-          id: 'spec-001',
-          uuid: 'uuid-spec-001',
-          title: 'Spec One',
-          file_path: 'spec1.md',
-          content: '',
+          id: "spec-001",
+          uuid: "uuid-spec-001",
+          title: "Spec One",
+          file_path: "spec1.md",
+          content: "",
           priority: 2,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           parent_id: null,
           relationships: [
             {
-              from: 'spec-001',
-              from_type: 'spec',
-              to: 'spec-002',
-              to_type: 'spec',
-              type: 'references',
+              from: "spec-001",
+              from_type: "spec",
+              to: "spec-002",
+              to_type: "spec",
+              type: "references",
             },
           ],
           tags: [],
         },
         {
-          id: 'spec-002',
-          uuid: 'uuid-spec-002',
-          title: 'Spec Two',
-          file_path: 'spec2.md',
-          content: '',
+          id: "spec-002",
+          uuid: "uuid-spec-002",
+          title: "Spec Two",
+          file_path: "spec2.md",
+          content: "",
           priority: 2,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -685,8 +768,8 @@ describe('Import Operations', () => {
         },
       ];
 
-      await writeJSONL(path.join(TEST_DIR, 'specs.jsonl'), specs);
-      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), []);
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), specs);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), []);
 
       // Import
       const result = await importFromJSONL(db, {
@@ -696,37 +779,39 @@ describe('Import Operations', () => {
       expect(result.specs.added).toBe(2);
 
       // Verify relationship was imported correctly
-      const { getOutgoingRelationships } = await import('../../src/operations/relationships.js');
-      const relationships = getOutgoingRelationships(db, 'spec-001', 'spec');
+      const { getOutgoingRelationships } = await import(
+        "../../src/operations/relationships.js"
+      );
+      const relationships = getOutgoingRelationships(db, "spec-001", "spec");
 
       expect(relationships).toHaveLength(1);
-      expect(relationships[0].from_id).toBe('spec-001');
-      expect(relationships[0].from_type).toBe('spec');
-      expect(relationships[0].to_id).toBe('spec-002');
-      expect(relationships[0].to_type).toBe('spec');
-      expect(relationships[0].relationship_type).toBe('references');
+      expect(relationships[0].from_id).toBe("spec-001");
+      expect(relationships[0].from_type).toBe("spec");
+      expect(relationships[0].to_id).toBe("spec-002");
+      expect(relationships[0].to_type).toBe("spec");
+      expect(relationships[0].relationship_type).toBe("references");
     });
 
-    it('should import cross-type relationships (spec to issue)', async () => {
+    it("should import cross-type relationships (spec to issue)", async () => {
       // Create spec and issue with cross-type relationship
       const specs: SpecJSONL[] = [
         {
-          id: 'spec-001',
-          uuid: 'uuid-spec-001',
-          title: 'Spec One',
-          file_path: 'spec1.md',
-          content: '',
+          id: "spec-001",
+          uuid: "uuid-spec-001",
+          title: "Spec One",
+          file_path: "spec1.md",
+          content: "",
           priority: 2,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           parent_id: null,
           relationships: [
             {
-              from: 'spec-001',
-              from_type: 'spec',
-              to: 'issue-001',
-              to_type: 'issue',
-              type: 'implements',
+              from: "spec-001",
+              from_type: "spec",
+              to: "issue-001",
+              to_type: "issue",
+              type: "implements",
             },
           ],
           tags: [],
@@ -735,12 +820,11 @@ describe('Import Operations', () => {
 
       const issues: IssueJSONL[] = [
         {
-          id: 'issue-001',
-          uuid: 'uuid-issue-001',
-          title: 'Issue One',
-          description: 'Test',
-          content: '',
-          status: 'open',
+          id: "issue-001",
+          uuid: "uuid-issue-001",
+          title: "Issue One",
+          content: "",
+          status: "open",
           priority: 2,
           assignee: null,
           created_at: new Date().toISOString(),
@@ -753,8 +837,8 @@ describe('Import Operations', () => {
         },
       ];
 
-      await writeJSONL(path.join(TEST_DIR, 'specs.jsonl'), specs);
-      await writeJSONL(path.join(TEST_DIR, 'issues.jsonl'), issues);
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), specs);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), issues);
 
       // Import
       const result = await importFromJSONL(db, {
@@ -765,15 +849,271 @@ describe('Import Operations', () => {
       expect(result.issues.added).toBe(1);
 
       // Verify cross-type relationship was imported correctly
-      const { getOutgoingRelationships } = await import('../../src/operations/relationships.js');
-      const relationships = getOutgoingRelationships(db, 'spec-001', 'spec');
+      const { getOutgoingRelationships } = await import(
+        "../../src/operations/relationships.js"
+      );
+      const relationships = getOutgoingRelationships(db, "spec-001", "spec");
 
       expect(relationships).toHaveLength(1);
-      expect(relationships[0].from_id).toBe('spec-001');
-      expect(relationships[0].from_type).toBe('spec');
-      expect(relationships[0].to_id).toBe('issue-001');
-      expect(relationships[0].to_type).toBe('issue');
-      expect(relationships[0].relationship_type).toBe('implements');
+      expect(relationships[0].from_id).toBe("spec-001");
+      expect(relationships[0].from_type).toBe("spec");
+      expect(relationships[0].to_id).toBe("issue-001");
+      expect(relationships[0].to_type).toBe("issue");
+      expect(relationships[0].relationship_type).toBe("implements");
+    });
+  });
+
+  describe("Timestamp Preservation", () => {
+    it("should preserve timestamps when importing new issues from JSONL", async () => {
+      const customTimestamps = {
+        created_at: "2024-01-15T10:30:00Z",
+        updated_at: "2024-01-20T15:45:00Z",
+        closed_at: null,
+      };
+
+      const issues: IssueJSONL[] = [
+        {
+          id: "issue-001",
+          uuid: "uuid-001",
+          title: "Test Issue",
+          content: "Test content",
+          status: "open",
+          priority: 1,
+          assignee: null,
+          parent_id: null,
+          created_at: customTimestamps.created_at,
+          updated_at: customTimestamps.updated_at,
+          closed_at: customTimestamps.closed_at,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), issues);
+
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      const { getIssue } = await import("../../src/operations/issues.js");
+      const imported = getIssue(db, "issue-001");
+
+      expect(imported).toBeTruthy();
+      expect(imported!.created_at).toBe(customTimestamps.created_at);
+      expect(imported!.updated_at).toBe(customTimestamps.updated_at);
+      expect(imported!.closed_at).toBe(customTimestamps.closed_at);
+    });
+
+    it("should preserve timestamps when importing new specs from JSONL", async () => {
+      const customTimestamps = {
+        created_at: "2024-02-10T08:00:00Z",
+        updated_at: "2024-02-15T12:00:00Z",
+      };
+
+      const specs: SpecJSONL[] = [
+        {
+          id: "spec-001",
+          uuid: "uuid-001",
+          title: "Test Spec",
+          file_path: "specs/test.md",
+          content: "Test content",
+          priority: 2,
+          parent_id: null,
+          created_at: customTimestamps.created_at,
+          updated_at: customTimestamps.updated_at,
+          relationships: [],
+          tags: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), specs);
+
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      const imported = getSpec(db, "spec-001");
+
+      expect(imported).toBeTruthy();
+      expect(imported!.created_at).toBe(customTimestamps.created_at);
+      expect(imported!.updated_at).toBe(customTimestamps.updated_at);
+    });
+
+    it("should preserve timestamps when updating existing issues from JSONL", async () => {
+      // First create an issue
+      const { createIssue, getIssue } = await import(
+        "../../src/operations/issues.js"
+      );
+      createIssue(db, {
+        id: "issue-001",
+        title: "Original Title",
+        content: "Original content",
+        status: "open",
+      });
+
+      // Now import from JSONL with specific timestamps
+      const preservedTimestamps = {
+        created_at: "2024-01-01T00:00:00Z",
+        updated_at: "2024-01-10T10:00:00Z",
+        closed_at: null,
+      };
+
+      const issues: IssueJSONL[] = [
+        {
+          id: "issue-001",
+          uuid: getIssue(db, "issue-001")!.uuid,
+          title: "Updated Title",
+          content: "Updated content",
+          status: "open",
+          priority: 1,
+          assignee: null,
+          parent_id: null,
+          created_at: preservedTimestamps.created_at,
+          updated_at: preservedTimestamps.updated_at,
+          closed_at: preservedTimestamps.closed_at,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), issues);
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      const updated = getIssue(db, "issue-001");
+
+      expect(updated!.title).toBe("Updated Title");
+      expect(updated!.updated_at).toBe(preservedTimestamps.updated_at);
+      expect(updated!.closed_at).toBe(preservedTimestamps.closed_at);
+    });
+
+    it("should preserve closed_at timestamp when importing closed issues", async () => {
+      const closedTimestamp = "2024-03-15T14:30:00Z";
+
+      const issues: IssueJSONL[] = [
+        {
+          id: "issue-001",
+          uuid: "uuid-001",
+          title: "Closed Issue",
+          content: "Content",
+          status: "closed",
+          priority: 1,
+          assignee: null,
+          parent_id: null,
+          created_at: "2024-03-01T00:00:00Z",
+          updated_at: "2024-03-15T14:30:00Z",
+          closed_at: closedTimestamp,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), issues);
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      const { getIssue } = await import("../../src/operations/issues.js");
+      const imported = getIssue(db, "issue-001");
+
+      expect(imported!.status).toBe("closed");
+      expect(imported!.closed_at).toBe(closedTimestamp);
+    });
+
+    it("should preserve updated_at when updating existing specs from JSONL", async () => {
+      // First create a spec
+      createSpec(db, {
+        id: "spec-001",
+        title: "Original Spec",
+        file_path: "specs/original.md",
+        content: "Original content",
+      });
+
+      // Now import from JSONL with specific timestamps
+      const preservedTimestamp = "2024-02-20T16:00:00Z";
+
+      const specs: SpecJSONL[] = [
+        {
+          id: "spec-001",
+          uuid: getSpec(db, "spec-001")!.uuid,
+          title: "Updated Spec",
+          file_path: "specs/updated.md",
+          content: "Updated content",
+          priority: 3,
+          parent_id: null,
+          created_at: "2024-02-01T00:00:00Z",
+          updated_at: preservedTimestamp,
+          relationships: [],
+          tags: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), specs);
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      const updated = getSpec(db, "spec-001");
+
+      expect(updated!.title).toBe("Updated Spec");
+      expect(updated!.updated_at).toBe(preservedTimestamp);
+    });
+
+    it("should not modify JSONL after import when timestamps are identical", async () => {
+      const originalTimestamps = {
+        created_at: "2024-04-01T00:00:00Z",
+        updated_at: "2024-04-05T12:00:00Z",
+        closed_at: null,
+      };
+
+      const issues: IssueJSONL[] = [
+        {
+          id: "issue-001",
+          uuid: "uuid-001",
+          title: "Stable Issue",
+          content: "Content",
+          status: "open",
+          priority: 1,
+          assignee: null,
+          parent_id: null,
+          created_at: originalTimestamps.created_at,
+          updated_at: originalTimestamps.updated_at,
+          closed_at: originalTimestamps.closed_at,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+      ];
+
+      const jsonlPath = path.join(TEST_DIR, "issues.jsonl");
+      await writeJSONL(jsonlPath, issues);
+
+      // Get original file content and modification time
+      const originalContent = fs.readFileSync(jsonlPath, "utf-8");
+      const originalMtime = fs.statSync(jsonlPath).mtime;
+
+      // Wait a bit to ensure mtime would change if file was written
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Import from JSONL
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      // Export back to JSONL
+      const { exportToJSONL } = await import("../../src/export.js");
+      await exportToJSONL(db, { outputDir: TEST_DIR });
+
+      // Check that JSONL content hasn't changed (compare parsed objects, not string equality)
+      const newContent = fs.readFileSync(jsonlPath, "utf-8");
+      const originalData = JSON.parse(originalContent);
+      const newData = JSON.parse(newContent);
+
+      // Compare key fields that matter for timestamp preservation
+      expect(newData.id).toBe(originalData.id);
+      expect(newData.title).toBe(originalData.title);
+      expect(newData.created_at).toBe(originalData.created_at);
+      expect(newData.updated_at).toBe(originalData.updated_at);
+      expect(newData.closed_at).toBe(originalData.closed_at);
+
+      // Verify timestamps are still identical in the database
+      const { getIssue } = await import("../../src/operations/issues.js");
+      const issue = getIssue(db, "issue-001");
+      expect(issue!.created_at).toBe(originalTimestamps.created_at);
+      expect(issue!.updated_at).toBe(originalTimestamps.updated_at);
+      expect(issue!.closed_at).toBe(originalTimestamps.closed_at);
     });
   });
 });

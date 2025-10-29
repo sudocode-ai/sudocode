@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS specs (
     file_path TEXT NOT NULL,
     content TEXT NOT NULL DEFAULT '',
     priority INTEGER NOT NULL DEFAULT 2 CHECK(priority >= 0 AND priority <= 4),
+    archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0, 1)),
+    archived_at DATETIME,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     parent_id TEXT,
@@ -46,11 +48,12 @@ CREATE TABLE IF NOT EXISTS issues (
     id TEXT PRIMARY KEY,
     uuid TEXT NOT NULL UNIQUE,
     title TEXT NOT NULL CHECK(length(title) <= 500),
-    description TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'open',
     priority INTEGER NOT NULL DEFAULT 2 CHECK(priority >= 0 AND priority <= 4),
     assignee TEXT,
+    archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0, 1)),
+    archived_at DATETIME,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     closed_at DATETIME,
@@ -104,8 +107,8 @@ CREATE TABLE IF NOT EXISTS issue_feedback (
     spec_id TEXT NOT NULL,
     feedback_type TEXT NOT NULL CHECK(feedback_type IN ('comment', 'suggestion', 'request')),
     content TEXT NOT NULL,
-    agent TEXT NOT NULL,
-    anchor TEXT NOT NULL,
+    agent TEXT,
+    anchor TEXT,
     dismissed INTEGER NOT NULL DEFAULT 0 CHECK(dismissed IN (0, 1)),
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -121,6 +124,7 @@ CREATE TABLE IF NOT EXISTS issue_feedback (
 export const SPECS_INDEXES = `
 CREATE INDEX IF NOT EXISTS idx_specs_priority ON specs(priority);
 CREATE INDEX IF NOT EXISTS idx_specs_parent ON specs(parent_id);
+CREATE INDEX IF NOT EXISTS idx_specs_archived ON specs(archived);
 CREATE INDEX IF NOT EXISTS idx_specs_created_at ON specs(created_at);
 CREATE INDEX IF NOT EXISTS idx_specs_updated_at ON specs(updated_at);
 `;
@@ -130,6 +134,7 @@ CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);
 CREATE INDEX IF NOT EXISTS idx_issues_priority ON issues(priority);
 CREATE INDEX IF NOT EXISTS idx_issues_assignee ON issues(assignee);
 CREATE INDEX IF NOT EXISTS idx_issues_parent ON issues(parent_id);
+CREATE INDEX IF NOT EXISTS idx_issues_archived ON issues(archived);
 CREATE INDEX IF NOT EXISTS idx_issues_created_at ON issues(created_at);
 CREATE INDEX IF NOT EXISTS idx_issues_updated_at ON issues(updated_at);
 CREATE INDEX IF NOT EXISTS idx_issues_closed_at ON issues(closed_at);
@@ -172,6 +177,7 @@ CREATE VIEW IF NOT EXISTS ready_issues AS
 SELECT i.*
 FROM issues i
 WHERE i.status = 'open'
+  AND i.archived = 0
   AND NOT EXISTS (
     SELECT 1 FROM relationships r
     JOIN issues blocker ON r.to_id = blocker.id AND r.to_type = 'issue'
@@ -192,6 +198,7 @@ FROM issues i
 JOIN relationships r ON i.id = r.from_id AND r.from_type = 'issue'
 JOIN issues blocker ON r.to_id = blocker.id AND r.to_type = 'issue'
 WHERE i.status IN ('open', 'in_progress', 'blocked')
+  AND i.archived = 0
   AND r.relationship_type = 'blocks'
   AND blocker.status IN ('open', 'in_progress', 'blocked')
 GROUP BY i.id;

@@ -52,12 +52,15 @@ describe('Issue Tools', () => {
   });
 
   describe('listIssues', () => {
-    it('should call exec with list command', async () => {
+    it('should call exec with list command and default archived filter', async () => {
       mockClient.exec.mockResolvedValue([]);
 
       await issueTools.listIssues(mockClient);
 
-      expect(mockClient.exec).toHaveBeenCalledWith(['issue', 'list']);
+      expect(mockClient.exec).toHaveBeenCalledWith([
+        'issue', 'list',
+        '--archived', 'false',
+      ]);
     });
 
     it('should include filter parameters', async () => {
@@ -74,6 +77,33 @@ describe('Issue Tools', () => {
         '--status', 'open',
         '--priority', '1',
         '--limit', '20',
+        '--archived', 'false',
+      ]);
+    });
+
+    it('should include archived filter parameter when explicitly set to false', async () => {
+      mockClient.exec.mockResolvedValue([]);
+
+      await issueTools.listIssues(mockClient, {
+        archived: false,
+      });
+
+      expect(mockClient.exec).toHaveBeenCalledWith([
+        'issue', 'list',
+        '--archived', 'false',
+      ]);
+    });
+
+    it('should include archived filter parameter when explicitly set to true', async () => {
+      mockClient.exec.mockResolvedValue([]);
+
+      await issueTools.listIssues(mockClient, {
+        archived: true,
+      });
+
+      expect(mockClient.exec).toHaveBeenCalledWith([
+        'issue', 'list',
+        '--archived', 'true',
       ]);
     });
 
@@ -87,6 +117,7 @@ describe('Issue Tools', () => {
       expect(mockClient.exec).toHaveBeenCalledWith([
         'issue', 'list',
         '--grep', 'authentication',
+        '--archived', 'false',
       ]);
     });
 
@@ -198,6 +229,34 @@ describe('Issue Tools', () => {
         expect(mockClient.exec).toHaveBeenCalledWith([
           'issue', 'update', 'sg-1',
           '--status', 'closed',
+        ]);
+      });
+
+      it('should support archiving issues', async () => {
+        mockClient.exec.mockResolvedValue({});
+
+        await issueTools.upsertIssue(mockClient, {
+          issue_id: 'sg-1',
+          archived: true,
+        });
+
+        expect(mockClient.exec).toHaveBeenCalledWith([
+          'issue', 'update', 'sg-1',
+          '--archived', 'true',
+        ]);
+      });
+
+      it('should support unarchiving issues', async () => {
+        mockClient.exec.mockResolvedValue({});
+
+        await issueTools.upsertIssue(mockClient, {
+          issue_id: 'sg-1',
+          archived: false,
+        });
+
+        expect(mockClient.exec).toHaveBeenCalledWith([
+          'issue', 'update', 'sg-1',
+          '--archived', 'false',
         ]);
       });
     });

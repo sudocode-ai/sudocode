@@ -161,6 +161,40 @@ describe('Spec Operations', () => {
       expect(updated.title).toBe('Updated Title');
     });
 
+    it('should archive a spec', () => {
+      createSpec(db, {
+        id: 'spec-001',
+        title: 'Test Spec',
+        file_path: 'test.md',
+      });
+
+      const updated = updateSpec(db, 'spec-001', {
+        archived: true,
+      });
+
+      expect(updated.archived).toBe(1);
+      expect(updated.archived_at).not.toBeNull();
+    });
+
+    it('should unarchive a spec', () => {
+      createSpec(db, {
+        id: 'spec-001',
+        title: 'Test Spec',
+        file_path: 'test.md',
+      });
+
+      // First archive it
+      updateSpec(db, 'spec-001', { archived: true });
+
+      // Then unarchive it
+      const updated = updateSpec(db, 'spec-001', {
+        archived: false,
+      });
+
+      expect(updated.archived).toBe(0);
+      expect(updated.archived_at).toBeNull();
+    });
+
     it('should throw error for non-existent spec', () => {
       expect(() => {
         updateSpec(db, 'non-existent', {
@@ -241,7 +275,11 @@ describe('Spec Operations', () => {
       });
     });
 
-    it('should list all specs', () => {
+    it('should list all specs including archived when no filter provided', () => {
+      // Archive one spec
+      updateSpec(db, 'spec-001', { archived: true });
+
+      // Without archived parameter, should return ALL specs (both archived and non-archived)
       const specs = listSpecs(db);
       expect(specs).toHaveLength(2);
     });
@@ -255,6 +293,24 @@ describe('Spec Operations', () => {
     it('should respect limit', () => {
       const specs = listSpecs(db, { limit: 1 });
       expect(specs).toHaveLength(1);
+    });
+
+    it('should filter by archived status - exclude archived', () => {
+      // Archive one spec
+      updateSpec(db, 'spec-001', { archived: true });
+
+      const specs = listSpecs(db, { archived: false });
+      expect(specs).toHaveLength(1);
+      expect(specs[0].id).toBe('spec-002');
+    });
+
+    it('should filter by archived status - only archived', () => {
+      // Archive one spec
+      updateSpec(db, 'spec-001', { archived: true });
+
+      const specs = listSpecs(db, { archived: true });
+      expect(specs).toHaveLength(1);
+      expect(specs[0].id).toBe('spec-001');
     });
   });
 
@@ -281,6 +337,23 @@ describe('Spec Operations', () => {
         content: 'How to handle database migrations',
         priority: 1,
       });
+    });
+
+    it('should exclude archived specs when filter is set to false', () => {
+      // Archive one spec
+      updateSpec(db, 'spec-001', { archived: true });
+
+      const results = searchSpecs(db, 'OAuth', { archived: false });
+      expect(results).toHaveLength(0);
+    });
+
+    it('should include archived specs when filter is set to true', () => {
+      // Archive one spec
+      updateSpec(db, 'spec-001', { archived: true });
+
+      const results = searchSpecs(db, 'OAuth', { archived: true });
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe('spec-001');
     });
 
     it('should search by title', () => {
