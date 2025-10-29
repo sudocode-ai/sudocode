@@ -2,8 +2,10 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useSpec, useSpecFeedback, useSpecs } from '@/hooks/useSpecs'
 import { useIssues } from '@/hooks/useIssues'
+import { useFeedback } from '@/hooks/useFeedback'
 import { SpecViewerTiptap } from '@/components/specs/SpecViewerTiptap'
-import { SpecFeedbackPanel } from '@/components/specs/SpecFeedbackPanel'
+import { AlignedFeedbackPanel } from '@/components/specs/AlignedFeedbackPanel'
+import { useFeedbackPositions } from '@/hooks/useFeedbackPositions'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -32,11 +34,12 @@ export default function SpecDetailPage() {
   const { feedback } = useSpecFeedback(id || '')
   const { issues } = useIssues()
   const { updateSpec, isUpdating, archiveSpec, unarchiveSpec } = useSpecs()
+  const { updateFeedback, deleteFeedback } = useFeedback(id || '')
 
   const [selectedLine, setSelectedLine] = useState<number | null>(null)
-  const [selectedText, setSelectedText] = useState<string | null>(null)
+  const [_selectedText, setSelectedText] = useState<string | null>(null) // Reserved for future text selection feature
   const [showFeedbackPanel, setShowFeedbackPanel] = useState(true)
-  const [selectedIssueId, setSelectedIssueId] = useState<string | undefined>(undefined)
+  const [_selectedIssueId, setSelectedIssueId] = useState<string | undefined>(undefined) // Reserved for feedback creation
   const [viewMode, setViewMode] = useState<'formatted' | 'source'>('formatted')
 
   // Local state for editable fields
@@ -45,11 +48,15 @@ export default function SpecDetailPage() {
   const [priority, setPriority] = useState<number>(2)
   const [hasChanges, setHasChanges] = useState(false)
 
-  // Refs for auto-save
+  // Refs for auto-save and position tracking
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
   const updateSpecRef = useRef(updateSpec)
   const latestValuesRef = useRef({ title, content, priority, hasChanges })
   const currentIdRef = useRef(id)
+  const editorContainerRef = useRef<HTMLDivElement>(null)
+
+  // Track feedback positions for aligned panel
+  const feedbackPositions = useFeedbackPositions(feedback, editorContainerRef)
 
   // Keep refs in sync with latest values
   useEffect(() => {
@@ -169,6 +176,7 @@ export default function SpecDetailPage() {
     setSelectedText(text)
     setSelectedLine(lineNumber)
     setShowFeedbackPanel(true)
+    // TODO: Future enhancement - use selectedText for pre-filling feedback with context
   }
 
   const handleFeedbackClick = (fb: IssueFeedback) => {
@@ -196,6 +204,22 @@ export default function SpecDetailPage() {
   const handlePriorityChange = (value: number) => {
     setPriority(value)
     setHasChanges(true)
+  }
+
+  const handleFeedbackDismiss = (feedbackId: string) => {
+    const fb = feedback.find((f) => f.id === feedbackId)
+    if (fb) {
+      updateFeedback({
+        id: feedbackId,
+        data: { dismissed: !fb.dismissed },
+      })
+    }
+  }
+
+  const handleFeedbackDelete = (feedbackId: string) => {
+    if (window.confirm('Are you sure you want to delete this feedback?')) {
+      deleteFeedback(feedbackId)
+    }
   }
 
   return (
@@ -233,7 +257,7 @@ export default function SpecDetailPage() {
           </div>
 
           {/* Issue selector */}
-          <Select value={selectedIssueId} onValueChange={setSelectedIssueId}>
+          <Select value={_selectedIssueId} onValueChange={setSelectedIssueId}>
             <SelectTrigger className="w-48">
               <SelectValue placeholder="Select issue..." />
             </SelectTrigger>
@@ -284,7 +308,7 @@ export default function SpecDetailPage() {
 
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-auto px-6 py-4">
+        <div ref={editorContainerRef} className="flex-1 overflow-auto px-6 py-4">
           <div className="space-y-3">
             {/* Spec ID and Title */}
             <div className="space-y-2 pb-3">
@@ -361,18 +385,15 @@ export default function SpecDetailPage() {
           </div>
         </div>
 
-        {/* Feedback Panel */}
+        {/* Aligned Feedback Panel */}
         {showFeedbackPanel && (
-          <div className="w-96 border-l">
-            <SpecFeedbackPanel
-              specId={spec.id}
-              issueId={selectedIssueId}
-              selectedLineNumber={selectedLine}
-              selectedText={selectedText}
-              onClose={() => setShowFeedbackPanel(false)}
-              onFeedbackClick={handleFeedbackClick}
-            />
-          </div>
+          <AlignedFeedbackPanel
+            feedback={feedback}
+            positions={feedbackPositions}
+            onFeedbackClick={handleFeedbackClick}
+            onDismiss={handleFeedbackDismiss}
+            onDelete={handleFeedbackDelete}
+          />
         )}
       </div>
     </div>

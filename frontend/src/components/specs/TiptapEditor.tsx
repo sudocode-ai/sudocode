@@ -35,7 +35,9 @@ import Image from '@tiptap/extension-image'
 import { ListKit } from '@tiptap/extension-list'
 import { TableWithControls } from './TableWithControls'
 import { EntityMention } from './extensions/EntityMention'
+import { FeedbackMark } from './extensions/FeedbackMark'
 import { preprocessEntityMentions } from './extensions/markdown-utils'
+import type { IssueFeedback } from '@/types/api'
 import './tiptap.css'
 
 // Create lowlight instance with common languages
@@ -86,11 +88,20 @@ interface TiptapEditorProps {
   onCancel?: () => void
   className?: string
   showToolbar?: boolean
+  feedback?: IssueFeedback[]
+  onFeedbackClick?: (feedbackId: string) => void
 }
 
 /**
  * Tiptap editor for markdown content with rich text editing capabilities.
  * Supports both read-only and editable modes with a formatting toolbar.
+ *
+ * Feedback Integration:
+ * - Accepts optional feedback array for displaying inline feedback highlights
+ * - FeedbackMark extension renders <mark> elements with data-feedback-id attributes
+ * - Click handler calls onFeedbackClick when feedback marks are clicked
+ * - Note: Actual mark application based on feedback anchors happens at the parent level
+ *   (e.g., SpecDetailPage) since it requires mapping line numbers to content positions
  */
 export function TiptapEditor({
   content,
@@ -100,6 +111,8 @@ export function TiptapEditor({
   onCancel,
   className = '',
   showToolbar = false,
+  feedback: _feedback = [], // Reserved for future use
+  onFeedbackClick,
 }: TiptapEditorProps) {
   const [htmlContent, setHtmlContent] = useState<string>('')
   const [hasChanges, setHasChanges] = useState(false)
@@ -163,6 +176,7 @@ export function TiptapEditor({
       ListKit,
       TabHandler,
       EntityMention,
+      FeedbackMark,
     ],
     editable,
     content: htmlContent,
@@ -281,6 +295,31 @@ export function TiptapEditor({
       editor.setEditable(editable)
     }
   }, [editable, editor])
+
+  // Handle clicks on feedback marks
+  useEffect(() => {
+    if (!editor || !onFeedbackClick) return
+
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+
+      // Check if the clicked element or its parent has data-feedback-id
+      const markElement = target.closest('[data-feedback-id]') as HTMLElement
+      if (markElement) {
+        const feedbackId = markElement.getAttribute('data-feedback-id')
+        if (feedbackId) {
+          onFeedbackClick(feedbackId)
+        }
+      }
+    }
+
+    const editorElement = editor.view.dom
+    editorElement.addEventListener('click', handleClick)
+
+    return () => {
+      editorElement.removeEventListener('click', handleClick)
+    }
+  }, [editor, onFeedbackClick])
 
   const handleSave = () => {
     if (!editor || !onSave) return
