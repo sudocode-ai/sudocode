@@ -178,7 +178,13 @@ describe('SpecDetailPage', () => {
     renderSpecDetailPage()
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Feedback/ })).toBeInTheDocument()
+      // Use getAllByRole to get all feedback buttons, then filter for the toggle button
+      // The toggle button has "Feedback" text but NOT "Add Feedback"
+      const feedbackButtons = screen.getAllByRole('button', { name: /Feedback/i })
+      const toggleButton = feedbackButtons.find(btn =>
+        btn.textContent?.includes('Feedback') && !btn.textContent?.includes('Add')
+      )
+      expect(toggleButton).toBeInTheDocument()
     })
   })
 

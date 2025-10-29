@@ -5,6 +5,7 @@ import { useIssues } from '@/hooks/useIssues'
 import { useFeedback } from '@/hooks/useFeedback'
 import { SpecViewerTiptap } from '@/components/specs/SpecViewerTiptap'
 import { AlignedFeedbackPanel } from '@/components/specs/AlignedFeedbackPanel'
+import { AddFeedbackDialog } from '@/components/specs/AddFeedbackDialog'
 import { useFeedbackPositions } from '@/hooks/useFeedbackPositions'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -34,7 +35,7 @@ export default function SpecDetailPage() {
   const { feedback } = useSpecFeedback(id || '')
   const { issues } = useIssues()
   const { updateSpec, isUpdating, archiveSpec, unarchiveSpec } = useSpecs()
-  const { updateFeedback, deleteFeedback } = useFeedback(id || '')
+  const { createFeedback, updateFeedback, deleteFeedback } = useFeedback(id || '')
 
   const [selectedLine, setSelectedLine] = useState<number | null>(null)
   const [_selectedText, setSelectedText] = useState<string | null>(null) // Reserved for future text selection feature
@@ -222,6 +223,25 @@ export default function SpecDetailPage() {
     }
   }
 
+  const handleCreateFeedback = async (data: {
+    type: any
+    content: string
+    anchor?: any
+  }) => {
+    if (!id || !_selectedIssueId) {
+      console.error('Cannot create feedback without spec ID and issue ID')
+      return
+    }
+
+    await createFeedback({
+      spec_id: id,
+      issue_id: _selectedIssueId,
+      feedback_type: data.type,
+      content: data.content,
+      anchor: data.anchor,
+    })
+  }
+
   return (
     <div className="flex h-screen flex-col">
       {/* Header */}
@@ -272,6 +292,14 @@ export default function SpecDetailPage() {
               )}
             </SelectContent>
           </Select>
+
+          <AddFeedbackDialog
+            issueId={_selectedIssueId}
+            lineNumber={selectedLine || undefined}
+            onSubmit={handleCreateFeedback}
+            disabled={!_selectedIssueId}
+            disabledMessage="Select an issue first to add feedback"
+          />
 
           <Button
             variant="outline"
