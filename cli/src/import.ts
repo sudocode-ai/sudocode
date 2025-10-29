@@ -95,7 +95,7 @@ export interface ChangeDetection {
  * Uses UUID as the source of truth for entity identity
  */
 export function detectChanges<
-  T extends { id: string; uuid: string; updated_at: string }
+  T extends { id: string; uuid: string; updated_at: string },
 >(existing: T[], incoming: T[]): ChangeDetection {
   // Map by UUID (the true identity)
   const existingByUUID = new Map(existing.map((e) => [e.uuid, e]));
@@ -143,7 +143,7 @@ function hasChanged<T extends { updated_at: string }>(
  * UUIDs are the source of truth for entity identity
  */
 export function detectCollisions<
-  T extends { id: string; uuid: string; title: string; created_at: string }
+  T extends { id: string; uuid: string; title: string; created_at: string },
 >(existing: T[], incoming: T[]): CollisionInfo[] {
   const collisions: CollisionInfo[] = [];
   const existingMap = new Map(existing.map((e) => [e.id, e]));
@@ -513,11 +513,11 @@ function syncIssueFeedback(
     for (const fb of feedbackJSONL) {
       createFeedback(db, {
         id: fb.id,
-        issue_id: issueId,
+        issue_id: fb.issue_id,
         spec_id: fb.spec_id,
-        feedback_type: fb.type,
+        feedback_type: fb.feedback_type,
         content: fb.content,
-        agent: "import",
+        agent: fb.agent,
         anchor: fb.anchor,
         dismissed: fb.dismissed,
       });

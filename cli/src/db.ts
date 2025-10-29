@@ -2,8 +2,9 @@
  * Database initialization and connection management
  */
 
-import Database from 'better-sqlite3';
-import * as schema from './schema.js';
+import Database from "better-sqlite3";
+import * as schema from "./schema.js";
+import { runMigrations } from "./migrations.js";
 
 export interface DatabaseOptions {
   path: string;
@@ -35,6 +36,9 @@ export function initDatabase(options: DatabaseOptions): Database.Database {
   for (const view of schema.ALL_VIEWS) {
     db.exec(view);
   }
+
+  // Run any pending migrations
+  runMigrations(db);
 
   return db;
 }

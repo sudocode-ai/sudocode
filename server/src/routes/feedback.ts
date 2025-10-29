@@ -156,42 +156,29 @@ export function createFeedbackRouter(db: Database.Database): Router {
         return;
       }
 
-      if (!agent || typeof agent !== "string") {
-        res.status(400).json({
-          success: false,
-          data: null,
-          message: "agent is required and must be a string",
-        });
-        return;
-      }
+      // Validate anchor if provided
+      if (anchor !== undefined && anchor !== null) {
+        if (typeof anchor !== "object") {
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: "anchor must be an object if provided",
+          });
+          return;
+        }
 
-      if (!anchor || typeof anchor !== "object") {
-        res.status(400).json({
-          success: false,
-          data: null,
-          message: "anchor is required and must be an object",
-        });
-        return;
-      }
-
-      // Validate anchor structure
-      if (!anchor.anchor_status || typeof anchor.anchor_status !== "string") {
-        res.status(400).json({
-          success: false,
-          data: null,
-          message: "anchor.anchor_status is required and must be a string",
-        });
-        return;
-      }
-
-      const validAnchorStatuses = ["valid", "relocated", "stale"];
-      if (!validAnchorStatuses.includes(anchor.anchor_status)) {
-        res.status(400).json({
-          success: false,
-          data: null,
-          message: `Invalid anchor.anchor_status. Must be one of: ${validAnchorStatuses.join(", ")}`,
-        });
-        return;
+        // Validate anchor structure if provided
+        if (anchor.anchor_status) {
+          const validAnchorStatuses = ["valid", "relocated", "stale"];
+          if (!validAnchorStatuses.includes(anchor.anchor_status)) {
+            res.status(400).json({
+              success: false,
+              data: null,
+              message: `Invalid anchor.anchor_status. Must be one of: ${validAnchorStatuses.join(", ")}`,
+            });
+            return;
+          }
+        }
       }
 
       // Create feedback using CLI operation
@@ -200,8 +187,8 @@ export function createFeedbackRouter(db: Database.Database): Router {
         spec_id,
         feedback_type: feedback_type as FeedbackType,
         content,
-        agent,
-        anchor: anchor as FeedbackAnchor,
+        agent: agent || undefined,
+        anchor: anchor as FeedbackAnchor | undefined,
         dismissed: dismissed || false,
       });
 

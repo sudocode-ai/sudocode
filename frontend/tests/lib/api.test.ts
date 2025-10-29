@@ -145,7 +145,7 @@ describe('API Module', () => {
       const data = {
         issue_id: 'ISSUE-001',
         spec_id: 'SPEC-001',
-        type: 'comment' as const,
+        feedback_type: 'comment' as const,
         content: 'Test feedback',
         anchor: {
           line_number: 10,

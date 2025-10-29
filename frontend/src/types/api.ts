@@ -88,14 +88,14 @@ export interface DeleteRelationshipRequest {
 export interface CreateFeedbackRequest {
   issue_id: string
   spec_id: string
-  type: FeedbackType
+  feedback_type: FeedbackType
   content: string
   anchor?: FeedbackAnchor
 }
 
 export interface UpdateFeedbackRequest {
   content?: string
-  type?: FeedbackType
+  feedback_type?: FeedbackType
   anchor?: FeedbackAnchor
   dismissed?: boolean
 }

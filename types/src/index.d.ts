@@ -96,9 +96,9 @@ export interface IssueFeedback {
   spec_id: string;
   feedback_type: FeedbackType;
   content: string;
-  agent: string;
-  anchor: string;
-  dismissed: boolean;
+  agent?: string;
+  anchor?: string;
+  dismissed?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -147,12 +147,15 @@ export interface IssueJSONL extends Issue {
 
 export interface FeedbackJSONL {
   id: string;
+  issue_id: string;
   spec_id: string;
-  type: FeedbackType;
+  feedback_type: FeedbackType;
   content: string;
-  anchor: FeedbackAnchor;
-  dismissed: boolean;
+  agent?: string;
+  anchor?: FeedbackAnchor;
+  dismissed?: boolean;
   created_at: string;
+  updated_at: string;
 }
 
 export interface RelationshipJSONL {

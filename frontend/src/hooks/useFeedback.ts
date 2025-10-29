@@ -34,7 +34,7 @@ export function useFeedback(specId: string) {
           // Prepare updated data with proper typing
           const updates: Partial<IssueFeedback> = {}
           if (data.content !== undefined) updates.content = data.content
-          if (data.type !== undefined) updates.feedback_type = data.type
+          if (data.feedback_type !== undefined) updates.feedback_type = data.feedback_type
           if (data.dismissed !== undefined) updates.dismissed = data.dismissed
 
           // Convert anchor to string if it's provided
