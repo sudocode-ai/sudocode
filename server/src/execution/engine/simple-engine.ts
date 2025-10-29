@@ -228,12 +228,15 @@ export class SimpleExecutionEngine implements IExecutionEngine {
    * @private
    */
   private trackTaskStart(task: ExecutionTask): void {
+    // Get attempt from metadata if this is a retry
+    const attempt = (task.metadata?._retryAttempt as number) || 1;
+
     // Add to running tasks
     const runningTask: RunningTask = {
       task,
       process: null as any, // Will be set in ISSUE-053 when we spawn process
       startedAt: new Date(),
-      attempt: 1,
+      attempt,
     };
     this.runningTasks.set(task.id, runningTask);
 
@@ -428,14 +431,48 @@ export class SimpleExecutionEngine implements IExecutionEngine {
   /**
    * Handle task failure
    *
-   * Creates a failed ExecutionResult and updates metrics.
-   * Will be enhanced with retry logic in ISSUE-055.
+   * Implements automatic retry logic if maxRetries is configured.
+   * Re-queues failed tasks at front of queue for priority retry.
    *
    * @param taskId - ID of failed task
    * @param error - Error that occurred
    * @private
    */
   private handleTaskFailure(_taskId: string, _error: Error): void {
+    // Get running task to check retry eligibility
+    const runningTask = this.runningTasks.get(_taskId);
+
+    if (runningTask) {
+      const task = runningTask.task;
+      const maxRetries = task.config.maxRetries;
+      const currentAttempt = runningTask.attempt;
+
+      // Check if we should retry
+      if (maxRetries !== undefined && currentAttempt <= maxRetries) {
+        // Create retry task with incremented attempt
+        const retryTask: ExecutionTask = {
+          ...task,
+          metadata: {
+            ...task.metadata,
+            _retryAttempt: currentAttempt + 1,
+          },
+        };
+
+        // Re-queue at front for priority retry
+        this.taskQueue.unshift(retryTask);
+        this.metrics.queuedTasks++;
+
+        // Release capacity so retry can start
+        this.trackTaskComplete(_taskId);
+
+        // Don't emit failure or store result yet - will retry
+        // Note: Don't call processQueue() here, it will be called by trackTaskComplete
+        return;
+      }
+    }
+
+    // No retries left or maxRetries not configured - proceed with final failure
+
     // Create a failed execution result
     const now = new Date();
     const failedResult: ExecutionResult = {

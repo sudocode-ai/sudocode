@@ -22,8 +22,13 @@ export class MockProcessManager implements IProcessManager {
   // Configuration for mock behavior
   public mockDelay = 10; // ms to simulate process execution
   public shouldFail = false; // whether to simulate process failures
+  public onAcquire?: () => void; // callback for when process is acquired
 
   async acquireProcess(config: ProcessConfig): Promise<ManagedProcess> {
+    // Call onAcquire callback if configured
+    if (this.onAcquire) {
+      this.onAcquire();
+    }
     const processId = generateId('mock-proc');
 
     const managedProcess: ManagedProcess = {
