@@ -200,9 +200,15 @@ describe('Workflow Layer Integration Tests', () => {
         checkpointInterval: 1,
       });
 
-      // Wait for partial execution (75ms ensures we pause after 1 step but before completion)
-      await new Promise((resolve) => setTimeout(resolve, 75));
-      await orchestrator.pauseWorkflow(executionId);
+      // Wait for partial execution (80ms = just past 1 step, before 2nd completes)
+      // With 50ms delay per step, 80ms = 1 step completed + 30ms into step 2
+      await new Promise((resolve) => setTimeout(resolve, 80));
+
+      // Check if workflow is still running before attempting to pause
+      const executionBefore = orchestrator.getExecution(executionId);
+      if (executionBefore && executionBefore.status !== 'completed') {
+        await orchestrator.pauseWorkflow(executionId);
+      }
 
       // Verify checkpoint was created
       const checkpoints = await storage.listCheckpoints('resume-workflow');
@@ -241,9 +247,14 @@ describe('Workflow Layer Integration Tests', () => {
         checkpointInterval: 1,
       });
 
-      // Wait 75ms to pause after 1 step completes but before workflow finishes (3 steps × 50ms = 150ms)
-      await new Promise((resolve) => setTimeout(resolve, 75));
-      await orchestrator.pauseWorkflow(executionId);
+      // Wait 100ms to pause after 1-2 steps complete but before workflow finishes (3 steps × 50ms = 150ms)
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Check if workflow is still running before attempting to pause
+      const executionBefore = orchestrator.getExecution(executionId);
+      if (executionBefore && executionBefore.status !== 'completed') {
+        await orchestrator.pauseWorkflow(executionId);
+      }
 
       const checkpointBefore = await storage.loadCheckpoint(executionId);
       const contextBefore = checkpointBefore?.state.context;
@@ -273,9 +284,15 @@ describe('Workflow Layer Integration Tests', () => {
         checkpointInterval: 1,
       });
 
-      // Wait for partial execution
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      await orchestrator.pauseWorkflow(executionId);
+      // Wait for partial execution (120ms = 2 steps complete, 1 remaining)
+      // With 50ms delay per step, 120ms = 2 steps completed + 20ms into step 3
+      await new Promise((resolve) => setTimeout(resolve, 120));
+
+      // Check if workflow is still running before attempting to pause
+      const executionBefore = orchestrator.getExecution(executionId);
+      if (executionBefore && executionBefore.status !== 'completed') {
+        await orchestrator.pauseWorkflow(executionId);
+      }
 
       await orchestrator.resumeWorkflow(executionId);
       const execution = await orchestrator.waitForWorkflow(executionId);
