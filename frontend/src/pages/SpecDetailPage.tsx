@@ -331,94 +331,96 @@ export default function SpecDetailPage() {
       </div>
 
       {/* Main content */}
-      <div ref={editorContainerRef} className="flex flex-1 overflow-auto">
-        <div className="flex-1 px-6 py-4">
-          <div className="space-y-3">
-            {/* Spec ID and Title */}
-            <div className="space-y-2 pb-3">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-sm text-muted-foreground">{spec.id}</span>
-                <div className="text-xs italic text-muted-foreground">
-                  {isUpdating
-                    ? 'Saving...'
-                    : hasChanges
-                      ? 'Unsaved changes...'
-                      : 'All changes saved'}
+      <div ref={editorContainerRef} className="flex flex-1 overflow-auto xl:justify-center">
+        <div className="flex w-full xl:max-w-[1600px]">
+          <div className="flex-1 px-6 py-4 lg:px-12 xl:px-16">
+            <div className="mx-auto max-w-4xl space-y-3">
+              {/* Spec ID and Title */}
+              <div className="space-y-2 pb-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-sm text-muted-foreground">{spec.id}</span>
+                  <div className="text-xs italic text-muted-foreground">
+                    {isUpdating
+                      ? 'Saving...'
+                      : hasChanges
+                        ? 'Unsaved changes...'
+                        : 'All changes saved'}
+                  </div>
+                </div>
+                <Input
+                  value={title}
+                  onChange={(e) => handleTitleChange(e.target.value)}
+                  disabled={isUpdating}
+                  placeholder="Spec title..."
+                  className="border-none bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
+                />
+              </div>
+
+              {/* Metadata Row */}
+              <div className="flex flex-wrap items-center gap-4">
+                {/* Priority */}
+                <div className="flex items-center gap-2">
+                  <Signal className="h-4 w-4 text-muted-foreground" />
+                  <Select
+                    value={String(priority)}
+                    onValueChange={(value) => handlePriorityChange(parseInt(value))}
+                    disabled={isUpdating}
+                  >
+                    <SelectTrigger className="h-8 w-auto gap-3 rounded-md border-none bg-accent px-3 shadow-none hover:bg-accent/80">
+                      <SelectValue placeholder="Priority" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRIORITY_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Timestamp */}
+                <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
+                  {spec.updated_at && (
+                    <div className="ml-auto flex items-center text-xs text-muted-foreground">
+                      Updated at {new Date(spec.updated_at).toLocaleString()}
+                    </div>
+                  )}
                 </div>
               </div>
-              <Input
-                value={title}
-                onChange={(e) => handleTitleChange(e.target.value)}
-                disabled={isUpdating}
-                placeholder="Spec title..."
-                className="border-none bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
-              />
+
+              {/* Content */}
+              {content !== undefined ? (
+                <SpecViewerTiptap
+                  content={content}
+                  feedback={feedback}
+                  selectedLine={selectedLine}
+                  onLineClick={handleLineClick}
+                  onTextSelect={handleTextSelect}
+                  onFeedbackClick={handleFeedbackClick}
+                  onChange={handleContentChange}
+                  viewMode={viewMode}
+                  onViewModeChange={setViewMode}
+                />
+              ) : (
+                <Card className="p-8 text-center">
+                  <p className="text-muted-foreground">No content available for this spec.</p>
+                </Card>
+              )}
             </div>
-
-            {/* Metadata Row */}
-            <div className="flex flex-wrap items-center gap-4">
-              {/* Priority */}
-              <div className="flex items-center gap-2">
-                <Signal className="h-4 w-4 text-muted-foreground" />
-                <Select
-                  value={String(priority)}
-                  onValueChange={(value) => handlePriorityChange(parseInt(value))}
-                  disabled={isUpdating}
-                >
-                  <SelectTrigger className="h-8 w-auto gap-3 rounded-md border-none bg-accent px-3 shadow-none hover:bg-accent/80">
-                    <SelectValue placeholder="Priority" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PRIORITY_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Timestamp */}
-              <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
-                {spec.updated_at && (
-                  <div className="ml-auto flex items-center text-xs text-muted-foreground">
-                    Updated at {new Date(spec.updated_at).toLocaleString()}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Content */}
-            {content !== undefined ? (
-              <SpecViewerTiptap
-                content={content}
-                feedback={feedback}
-                selectedLine={selectedLine}
-                onLineClick={handleLineClick}
-                onTextSelect={handleTextSelect}
-                onFeedbackClick={handleFeedbackClick}
-                onChange={handleContentChange}
-                viewMode={viewMode}
-                onViewModeChange={setViewMode}
-              />
-            ) : (
-              <Card className="p-8 text-center">
-                <p className="text-muted-foreground">No content available for this spec.</p>
-              </Card>
-            )}
           </div>
-        </div>
 
-        {/* Aligned Feedback Panel */}
-        {showFeedbackPanel && (
-          <AlignedFeedbackPanel
-            feedback={feedback}
-            positions={feedbackPositions}
-            onFeedbackClick={handleFeedbackClick}
-            onDismiss={handleFeedbackDismiss}
-            onDelete={handleFeedbackDelete}
-          />
-        )}
+          {/* Aligned Feedback Panel */}
+          {showFeedbackPanel && (
+            <AlignedFeedbackPanel
+              feedback={feedback}
+              positions={feedbackPositions}
+              onFeedbackClick={handleFeedbackClick}
+              onDismiss={handleFeedbackDismiss}
+              onDelete={handleFeedbackDelete}
+            />
+          )}
+        </div>
       </div>
     </div>
   )

@@ -41,64 +41,44 @@ export function AlignedFeedbackPanel({
 }: AlignedFeedbackPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null)
 
-  // Separate general comments from anchored comments
-  const { generalComments, anchoredComments } = useMemo(() => {
-    const general: IssueFeedback[] = []
-    const anchored: IssueFeedback[] = []
+  // Prepare positions for all feedback, treating general comments as position 0
+  const allFeedbackPositions = useMemo(() => {
+    const posMap = new Map<string, number>()
+    const minTopOffset = 16 // Minimum 16px from top (pt-4)
 
     feedback.forEach((fb) => {
       const anchor = parseAnchor(fb.anchor)
 
-      // A comment is "general" if it has no anchor or no line number
+      // General comments (no anchor) go to position with min offset
       if (!anchor || !anchor.line_number) {
-        general.push(fb)
+        posMap.set(fb.id, minTopOffset)
       } else {
-        anchored.push(fb)
+        // Use provided position or fallback to min offset, ensuring minimum top position
+        const pos = Math.max(positions.get(fb.id) ?? minTopOffset, minTopOffset)
+        posMap.set(fb.id, pos)
       }
     })
 
-    return { generalComments: general, anchoredComments: anchored }
-  }, [feedback])
+    return posMap
+  }, [feedback, positions])
 
   // Apply collision detection to prevent overlapping feedback cards
   // Using conservative height estimate: header (40px) + content (60px collapsed) + footer (30px) = 130px
   const collisionFreePositions = useCollisionFreePositions({
-    positions,
+    positions: allFeedbackPositions,
     cardHeight: 130, // Conservative height estimate (collapsed state)
-    minSpacing: 12, // Minimum gap between cards
+    minSpacing: 0, // Minimum gap between cards (reduced for more compact layout)
   })
 
   return (
-    <div className={`flex h-full w-80 flex-col bg-background ${className}`}>
-      {/* General comments section - sticky at top */}
-      {generalComments.length > 0 && (
-        <section className="sticky top-0 z-10 border-b bg-muted/30 p-4">
-          <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
-            <span>💭</span>
-            <span>General Comments</span>
-            <span className="text-xs font-normal text-muted-foreground">
-              ({generalComments.length})
-            </span>
-          </h3>
-          <div className="space-y-2">
-            {generalComments.map((fb) => (
-              <FeedbackCard
-                key={fb.id}
-                feedback={fb}
-                onClick={() => onFeedbackClick?.(fb)}
-                onDismiss={onDismiss ? () => onDismiss(fb.id) : undefined}
-                onDelete={onDelete ? () => onDelete(fb.id) : undefined}
-              />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Anchored comments - absolutely positioned with collision detection */}
+    <div
+      className={`flex h-full w-80 flex-col bg-background md:w-96 lg:w-[28rem] xl:w-[32rem] ${className}`}
+    >
+      {/* All feedback - absolutely positioned with collision detection */}
       <div className="relative min-h-full flex-1">
-        <div ref={panelRef} className="relative w-full">
+        <div ref={panelRef} className="relative w-full pt-4">
           {/* Feedback cards */}
-          {anchoredComments.map((fb) => {
+          {feedback.map((fb) => {
             const position = collisionFreePositions.get(fb.id)
 
             // Don't render if position is not yet calculated
@@ -107,7 +87,7 @@ export function AlignedFeedbackPanel({
             return (
               <div
                 key={fb.id}
-                className="absolute w-full px-2"
+                className="absolute w-full px-1"
                 style={{ top: `${position.actualTop}px`, zIndex: 10 }}
               >
                 <FeedbackCard
@@ -123,7 +103,7 @@ export function AlignedFeedbackPanel({
           })}
 
           {/* Spacer to ensure panel height matches content */}
-          {anchoredComments.length > 0 && (
+          {feedback.length > 0 && (
             <div
               style={{
                 height: `${Math.max(...Array.from(collisionFreePositions.values()).map((p) => p.actualTop + p.height)) + 100}px`,
