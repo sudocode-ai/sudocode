@@ -316,14 +316,14 @@ describe('useFeedbackPositions', () => {
     })
   })
 
-  it('should account for scroll offset', async () => {
+  it('should position feedback relative to editor viewport (moves with scroll)', async () => {
     const mark = document.createElement('mark')
     mark.setAttribute('data-feedback-id', 'FB-001')
     mockEditorElement.appendChild(mark)
     mockEditorElement.scrollTop = 100 // Scrolled down 100px
 
     vi.spyOn(mark, 'getBoundingClientRect').mockReturnValue({
-      top: 120, // Appears at 120 in viewport
+      top: 120, // Element appears at 120px from viewport top
       left: 0,
       right: 800,
       bottom: 140,
@@ -351,8 +351,10 @@ describe('useFeedbackPositions', () => {
     const { result } = renderHook(() => useFeedbackPositions(feedback, editorRef))
 
     await waitFor(() => {
-      // Position = (120 - 100) + 100 (scroll) = 120
-      expect(result.current.get('FB-001')).toBe(120)
+      // Position = element viewport position (120) - editor viewport position (100) = 20px
+      // This means feedback is 20px from the top of the editor's visible area
+      // As you scroll, this position changes to keep feedback aligned with visible content
+      expect(result.current.get('FB-001')).toBe(20)
     })
   })
 

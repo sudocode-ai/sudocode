@@ -103,8 +103,8 @@ describe('AlignedFeedbackPanel', () => {
     expect(screen.getByText('Anchored comment 1')).toBeInTheDocument()
     expect(screen.getByText('Anchored comment 2')).toBeInTheDocument()
 
-    // Check absolute positioning
-    const positionedDivs = container.querySelectorAll('.absolute')
+    // Check absolute positioning (select feedback card divs, not SVG)
+    const positionedDivs = container.querySelectorAll('.absolute.px-2')
     expect(positionedDivs).toHaveLength(2)
     expect(positionedDivs[0]).toHaveStyle({ top: '100px' })
     expect(positionedDivs[1]).toHaveStyle({ top: '250px' })
@@ -255,7 +255,7 @@ describe('AlignedFeedbackPanel', () => {
     expect(panel).toHaveClass('custom-class')
   })
 
-  it('should apply transition styles to anchored comments', () => {
+  it('should not apply transition styles to anchored comments for instant positioning', () => {
     const feedback: IssueFeedback[] = [
       createMockFeedback({
         id: 'FB-001',
@@ -269,10 +269,11 @@ describe('AlignedFeedbackPanel', () => {
     const positions = new Map([['FB-001', 100]])
     const { container } = render(<AlignedFeedbackPanel feedback={feedback} positions={positions} />)
 
-    const positionedDiv = container.querySelector('.absolute')
-    expect(positionedDiv).toHaveClass('transition-all')
-    expect(positionedDiv).toHaveClass('duration-200')
-    expect(positionedDiv).toHaveClass('ease-out')
+    const positionedDiv = container.querySelector('.absolute.px-2')
+    // No transition classes - feedback should update instantly
+    expect(positionedDiv).not.toHaveClass('transition-all')
+    expect(positionedDiv).not.toHaveClass('duration-75')
+    expect(positionedDiv).not.toHaveClass('ease-linear')
   })
 
   it('should count general comments correctly', () => {
@@ -305,14 +306,14 @@ describe('AlignedFeedbackPanel', () => {
       <AlignedFeedbackPanel feedback={feedback} positions={initialPositions} />
     )
 
-    let positionedDiv = container.querySelector('.absolute') as HTMLElement
+    let positionedDiv = container.querySelector('.absolute.px-2') as HTMLElement
     expect(positionedDiv).toHaveStyle({ top: '100px' })
 
     // Update position
     const updatedPositions = new Map([['FB-001', 250]])
     rerender(<AlignedFeedbackPanel feedback={feedback} positions={updatedPositions} />)
 
-    positionedDiv = container.querySelector('.absolute') as HTMLElement
+    positionedDiv = container.querySelector('.absolute.px-2') as HTMLElement
     expect(positionedDiv).toHaveStyle({ top: '250px' })
   })
 

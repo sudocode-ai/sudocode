@@ -10,6 +10,8 @@ interface FeedbackCardProps {
   onDelete?: (id: string) => void
   onClick?: () => void
   className?: string
+  maxHeight?: number // Max height in pixels before scrolling kicks in
+  isCompact?: boolean // Show compact view by default
 }
 
 /**
@@ -21,8 +23,11 @@ export function FeedbackCard({
   onDelete,
   onClick,
   className = '',
+  maxHeight = 200, // Default max height before scrolling
+  isCompact = false,
 }: FeedbackCardProps) {
   const [showActions, setShowActions] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(!isCompact)
 
   // Parse anchor from JSON string
   let anchor: FeedbackAnchor | null = null
@@ -145,7 +150,29 @@ export function FeedbackCard({
         </div>
 
         {/* Content */}
-        <div className="text-sm text-foreground">{feedback.content}</div>
+        <div
+          className="text-sm text-foreground"
+          style={{
+            maxHeight: isExpanded ? `${maxHeight}px` : '3rem', // 3rem = ~3 lines
+            overflowY: 'auto',
+            overflowX: 'hidden',
+          }}
+        >
+          {feedback.content}
+        </div>
+
+        {/* Expand/Collapse button for long content */}
+        {feedback.content.length > 100 && (
+          <button
+            className="mt-1 text-xs text-primary hover:underline"
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsExpanded(!isExpanded)
+            }}
+          >
+            {isExpanded ? 'Show less' : 'Show more'}
+          </button>
+        )}
 
         {/* Footer */}
         <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">

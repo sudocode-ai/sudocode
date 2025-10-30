@@ -43,6 +43,7 @@ export function useFeedbackPositions(
 ): Map<string, number> {
   const [positions, setPositions] = useState<Map<string, number>>(new Map())
   const updateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const rafRef = useRef<number | null>(null)
 
   useEffect(() => {
     const updatePositions = () => {
@@ -55,7 +56,6 @@ export function useFeedbackPositions(
       }
 
       const editorRect = editor.getBoundingClientRect()
-      const scrollTop = editor.scrollTop || 0
 
       feedback.forEach((fb) => {
         const anchor = parseAnchor(fb.anchor)
@@ -92,8 +92,9 @@ export function useFeedbackPositions(
         // If we found an element, calculate its position
         if (element) {
           const rect = element.getBoundingClientRect()
-          // Calculate position relative to editor's top edge plus scroll offset
-          const top = rect.top - editorRect.top + scrollTop
+          // Calculate position relative to editor's current viewport
+          // This makes feedback move with the visible content as you scroll
+          const top = rect.top - editorRect.top
           newPositions.set(fb.id, top)
         }
       })
@@ -101,13 +102,21 @@ export function useFeedbackPositions(
       setPositions(newPositions)
     }
 
-    // Debounced version for scroll/resize events
-    const debouncedUpdate = debounce(updatePositions, 100)
+    // Smooth scroll handler using requestAnimationFrame
+    const handleScroll = () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current)
+      }
+      rafRef.current = requestAnimationFrame(updatePositions)
+    }
+
+    // Debounced version only for resize (scroll uses RAF)
+    const debouncedResize = debounce(updatePositions, 100)
 
     // Setup event listeners
     const editor = editorRef.current
-    editor?.addEventListener('scroll', debouncedUpdate)
-    window.addEventListener('resize', debouncedUpdate)
+    editor?.addEventListener('scroll', handleScroll, { passive: true })
+    window.addEventListener('resize', debouncedResize)
 
     // Initial update (immediate, not debounced)
     // Delay slightly to allow DOM to render
@@ -115,10 +124,13 @@ export function useFeedbackPositions(
 
     // Cleanup
     return () => {
-      editor?.removeEventListener('scroll', debouncedUpdate)
-      window.removeEventListener('resize', debouncedUpdate)
+      editor?.removeEventListener('scroll', handleScroll)
+      window.removeEventListener('resize', debouncedResize)
       if (updateTimeoutRef.current) {
         clearTimeout(updateTimeoutRef.current)
+      }
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current)
       }
     }
   }, [feedback, editorRef])

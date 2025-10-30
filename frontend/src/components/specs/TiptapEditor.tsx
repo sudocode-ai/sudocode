@@ -43,6 +43,112 @@ import './tiptap.css'
 // Create lowlight instance with common languages
 const lowlight = createLowlight(common)
 
+/**
+ * Create a configured TurndownService instance with all custom rules
+ * Used by both onChange (autosave) and handleSave to ensure consistent markdown output
+ */
+function createConfiguredTurndownService(): TurndownService {
+  const turndownService = new TurndownService({
+    headingStyle: 'atx',
+    codeBlockStyle: 'fenced',
+    bulletListMarker: '-',
+    hr: '---',
+    emDelimiter: '_',
+    strongDelimiter: '**',
+  })
+
+  // Add GFM support (strikethrough)
+  turndownService.addRule('strikethrough', {
+    filter: ['del', 's'] as any,
+    replacement: (content) => `~~${content}~~`,
+  })
+
+  // Add table support
+  turndownService.addRule('table', {
+    filter: 'table',
+    replacement: (content) => {
+      return '\n' + content + '\n'
+    },
+  })
+
+  turndownService.addRule('tableRow', {
+    filter: 'tr',
+    replacement: (content, node) => {
+      const row = '|' + content + '\n'
+
+      // Check if this row contains header cells (th elements)
+      const headerCells = (node as HTMLElement).querySelectorAll('th')
+      if (headerCells.length > 0) {
+        // Add separator row after header row
+        const separatorRow =
+          '|' +
+          Array.from(headerCells)
+            .map(() => ' --- |')
+            .join('') +
+          '\n'
+        return row + separatorRow
+      }
+
+      return row
+    },
+  })
+
+  turndownService.addRule('tableCell', {
+    filter: ['th', 'td'],
+    replacement: (content) => {
+      return ' ' + content.trim() + ' |'
+    },
+  })
+
+  // Fix list item formatting to prevent extra newlines and spaces
+  turndownService.addRule('listItem', {
+    filter: 'li',
+    replacement: (content, node) => {
+      // Remove leading/trailing newlines from content
+      content = content.trim().replace(/\n\n/g, '\n')
+
+      const parent = node.parentNode
+      if (!parent) return content
+
+      const prefix = /ol/i.test(parent.nodeName) ? '1. ' : '- '
+      const postfix = '\n'
+
+      return prefix + content.replace(/\n/g, '\n  ') + postfix
+    },
+  })
+
+  // Handle entity mentions - convert spans directly to [[ENTITY-ID]] format
+  turndownService.addRule('entityMention', {
+    filter: (node) => {
+      return node.nodeName === 'SPAN' && node.hasAttribute('data-entity-id')
+    },
+    replacement: (content, node) => {
+      const element = node as HTMLElement
+      const entityId = element.getAttribute('data-entity-id')
+      const displayText = element.getAttribute('data-display-text')
+      const relationshipType = element.getAttribute('data-relationship-type')
+
+      if (!entityId) return content
+
+      let ref = `[[${entityId}`
+
+      if (displayText) {
+        ref += `|${displayText}`
+      }
+
+      ref += ']]'
+
+      if (relationshipType) {
+        ref += `{ ${relationshipType} }`
+      }
+
+      return ref
+    },
+  })
+
+  return turndownService
+}
+
 // Custom extension to handle Tab key for indentation
 const TabHandler = Extension.create({
   name: 'tabHandler',
@@ -223,49 +329,7 @@ export function TiptapEditor({
       // Call onChange callback if provided (for autosave)
       if (onChange) {
         const html = editor.getHTML()
-        const turndownService = new TurndownService({
-          headingStyle: 'atx',
-          codeBlockStyle: 'fenced',
-          bulletListMarker: '-',
-          hr: '---',
-          emDelimiter: '_',
-          strongDelimiter: '**',
-        })
-
-        // Add all the custom rules (copy from handleSave)
-        turndownService.addRule('strikethrough', {
-          filter: ['del', 's'] as any,
-          replacement: (content) => `~~${content}~~`,
-        })
-
-        turndownService.addRule('entityMention', {
-          filter: (node) => {
-            return node.nodeName === 'SPAN' && node.hasAttribute('data-entity-id')
-          },
-          replacement: (content, node) => {
-            const element = node as HTMLElement
-            const entityId = element.getAttribute('data-entity-id')
-            const displayText = element.getAttribute('data-display-text')
-            const relationshipType = element.getAttribute('data-relationship-type')
-
-            if (!entityId) return content
-
-            let ref = `[[${entityId}`
-
-            if (displayText) {
-              ref += `|${displayText}`
-            }
-
-            ref += ']]'
-
-            if (relationshipType) {
-              ref += `{ ${relationshipType} }`
-            }
-
-            return ref
-          },
-        })
-
+        const turndownService = createConfiguredTurndownService()
         const markdown = turndownService.turndown(html)
 
         // Only call onChange if content actually changed
@@ -362,9 +426,20 @@ export function TiptapEditor({
     const applyLineNumbers = () => {
       const lines = content.split('\n')
 
+      // Count leading empty lines to ensure correct offset
+      let leadingEmptyLines = 0
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim() === '') {
+          leadingEmptyLines++
+        } else {
+          break
+        }
+      }
+
       // Parse markdown to identify block start lines
       let inCodeBlock = false
       let inList = false
+      let firstContentBlockFound = false
       const blockLineNumbers: number[] = []
 
       for (let i = 0; i < lines.length; i++) {
@@ -379,6 +454,7 @@ export function TiptapEditor({
             continue
           } else {
             blockLineNumbers.push(i + 1)
+            firstContentBlockFound = true
             inList = false
             continue
           }
@@ -405,6 +481,7 @@ export function TiptapEditor({
         if (isBulletList || isOrderedList) {
           if (!inList) {
             blockLineNumbers.push(i + 1)
+            firstContentBlockFound = true
             inList = true
           }
           // Skip subsequent list items
@@ -414,9 +491,15 @@ export function TiptapEditor({
         // Non-list items end the list
         inList = false
 
-        if (isHeading || isBlockquote || isHorizontalRule ||
-            (i === 0 || !lines[i - 1].trim())) {
+        // Add block if it's a special element or starts a new block
+        // For the first content block, use its actual line number regardless of position
+        if (isHeading || isBlockquote || isHorizontalRule) {
           blockLineNumbers.push(i + 1)
+          firstContentBlockFound = true
+        } else if (!firstContentBlockFound || !lines[i - 1].trim()) {
+          // Regular paragraph: add if it's the first content block or preceded by empty line
+          blockLineNumbers.push(i + 1)
+          firstContentBlockFound = true
         }
       }
 
@@ -429,7 +512,7 @@ export function TiptapEditor({
       state.doc.descendants((node, pos, parent) => {
         // Only process direct children of the document (depth 0 means doc, depth 1 means top-level blocks)
         if (parent === state.doc && node.isBlock) {
-          const lineNumber = blockLineNumbers[nodeIndex] || (nodeIndex + 1)
+          const lineNumber = blockLineNumbers[nodeIndex] || nodeIndex + 1
 
           tr.setNodeMarkup(pos, undefined, {
             ...node.attrs,
@@ -510,107 +593,9 @@ export function TiptapEditor({
 
     // Convert HTML back to markdown
     const html = editor.getHTML()
-
-    const turndownService = new TurndownService({
-      headingStyle: 'atx',
-      codeBlockStyle: 'fenced',
-      bulletListMarker: '-',
-      hr: '---',
-      emDelimiter: '_',
-      strongDelimiter: '**',
-    })
-
-    // Add GFM support (tables, strikethrough, task lists)
-    turndownService.addRule('strikethrough', {
-      filter: ['del', 's'] as any,
-      replacement: (content) => `~~${content}~~`,
-    })
-
-    // Add table support
-    turndownService.addRule('table', {
-      filter: 'table',
-      replacement: (content) => {
-        return '\n' + content + '\n'
-      },
-    })
-
-    turndownService.addRule('tableRow', {
-      filter: 'tr',
-      replacement: (content, node) => {
-        const row = '|' + content + '\n'
-
-        // Check if this row contains header cells (th elements)
-        const headerCells = (node as HTMLElement).querySelectorAll('th')
-        if (headerCells.length > 0) {
-          // Add separator row after header row
-          const separatorRow =
-            '|' +
-            Array.from(headerCells)
-              .map(() => ' --- |')
-              .join('') +
-            '\n'
-          return row + separatorRow
-        }
-
-        return row
-      },
-    })
-
-    turndownService.addRule('tableCell', {
-      filter: ['th', 'td'],
-      replacement: (content) => {
-        return ' ' + content.trim() + ' |'
-      },
-    })
-
-    // Fix list item formatting to prevent extra newlines
-    turndownService.addRule('listItem', {
-      filter: 'li',
-      replacement: (content, node) => {
-        // Remove leading/trailing newlines from content
-        content = content.trim().replace(/\n\n/g, '\n')
-
-        const parent = node.parentNode
-        if (!parent) return content
-
-        const prefix = /ol/i.test(parent.nodeName) ? '1. ' : '- '
-        const postfix = '\n'
-
-        return prefix + content.replace(/\n/g, '\n  ') + postfix
-      },
-    })
-
-    // Handle entity mentions - convert spans directly to [[ENTITY-ID]] format
-    // This prevents turndown from escaping the brackets
-    turndownService.addRule('entityMention', {
-      filter: (node) => {
-        return node.nodeName === 'SPAN' && node.hasAttribute('data-entity-id')
-      },
-      replacement: (content, node) => {
-        const element = node as HTMLElement
-        const entityId = element.getAttribute('data-entity-id')
-        const displayText = element.getAttribute('data-display-text')
-        const relationshipType = element.getAttribute('data-relationship-type')
-
-        if (!entityId) return content
-
-        let ref = `[[${entityId}`
-
-        if (displayText) {
-          ref += `|${displayText}`
-        }
-
-        ref += ']]'
-
-        if (relationshipType) {
-          ref += `{ ${relationshipType} }`
-        }
-
-        return ref
-      },
-    })
-
+    const turndownService = createConfiguredTurndownService()
     const markdown = turndownService.turndown(html)
+
     onSave(markdown)
     setHasChanges(false)
   }

@@ -366,5 +366,95 @@ Final text`
       expect((blocks[5] as HTMLElement).getAttribute('data-line-number')).toBe('14')
       expect((blocks[6] as HTMLElement).getAttribute('data-line-number')).toBe('17')
     })
+
+    it('should handle leading empty lines and show correct line numbers', async () => {
+      // Markdown with leading empty lines (lines 1-2 are empty, content starts on line 3)
+      const lines = [
+        '',  // line 1
+        '',  // line 2
+        '# Heading starts on line 3',  // line 3
+        '',  // line 4
+        'Paragraph on line 5',  // line 5
+        '',  // line 6
+        '- List item 1',  // line 7
+        '- List item 2'   // line 8
+      ]
+      const markdown = lines.join('\n')
+
+      render(
+        <TiptapEditor
+          content={markdown}
+          editable={true}
+          showLineNumbers={true}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('Heading starts on line 3')).toBeInTheDocument()
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 200))
+
+      const proseMirror = document.querySelector('.ProseMirror')
+      const blocks = proseMirror!.querySelectorAll(':scope > *')
+
+      // Find the heading, paragraph, and list blocks
+      const heading = Array.from(blocks).find(b => (b as HTMLElement).tagName.toLowerCase() === 'h1') as HTMLElement
+      const paragraph = Array.from(blocks).find(b =>
+        (b as HTMLElement).tagName.toLowerCase() === 'p' &&
+        b.textContent?.includes('Paragraph on line 5')
+      ) as HTMLElement
+      const list = Array.from(blocks).find(b => (b as HTMLElement).tagName.toLowerCase() === 'ul') as HTMLElement
+
+      // Verify that the content blocks show correct source line numbers
+      expect(heading).toBeTruthy()
+      expect(heading.getAttribute('data-line-number')).toBe('3')
+
+      expect(paragraph).toBeTruthy()
+      expect(paragraph.getAttribute('data-line-number')).toBe('5')
+
+      expect(list).toBeTruthy()
+      expect(list.getAttribute('data-line-number')).toBe('7')
+    })
+
+    it('should handle document starting with paragraph after empty lines', async () => {
+      // Markdown with leading empty lines and paragraph (not heading)
+      const lines = [
+        '',  // line 1
+        '',  // line 2
+        '',  // line 3
+        'First paragraph on line 4',  // line 4
+        '',  // line 5
+        'Second paragraph on line 6'  // line 6
+      ]
+      const markdown = lines.join('\n')
+
+      render(
+        <TiptapEditor
+          content={markdown}
+          editable={true}
+          showLineNumbers={true}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('First paragraph on line 4')).toBeInTheDocument()
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 200))
+
+      const proseMirror = document.querySelector('.ProseMirror')
+      const blocks = proseMirror!.querySelectorAll(':scope > *')
+
+      // Tiptap should render: p(line 4), p(line 6)
+      expect(blocks.length).toBe(2)
+
+      // Verify each block shows the correct source line number
+      expect((blocks[0] as HTMLElement).getAttribute('data-line-number')).toBe('4')
+      expect((blocks[0] as HTMLElement).tagName.toLowerCase()).toBe('p')
+
+      expect((blocks[1] as HTMLElement).getAttribute('data-line-number')).toBe('6')
+      expect((blocks[1] as HTMLElement).tagName.toLowerCase()).toBe('p')
+    })
   })
 })
