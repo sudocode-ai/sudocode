@@ -116,7 +116,7 @@ export interface WorkflowCheckpoint {
     status: WorkflowStatus;
     currentStepIndex: number;
     context: Record<string, any>;
-    stepResults: ExecutionResult[];
+    stepResults: ResilientExecutionResult[];
     error?: string;
     startedAt: Date;
     completedAt?: Date;

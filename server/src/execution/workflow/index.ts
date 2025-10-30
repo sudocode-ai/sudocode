@@ -42,3 +42,4 @@ export {
 
 // Implementation
 export { LinearOrchestrator } from './linear-orchestrator.js';
+export { InMemoryWorkflowStorage } from './memory-storage.js';

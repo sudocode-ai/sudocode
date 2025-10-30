@@ -130,13 +130,62 @@ export class LinearOrchestrator implements IWorkflowOrchestrator {
    * @returns Promise resolving to execution ID
    */
   async resumeWorkflow(
-    _executionId: string,
-    _options?: {
+    executionId: string,
+    options?: {
       checkpointInterval?: number;
     }
   ): Promise<string> {
-    // Implementation in ISSUE-085
-    throw new Error('Not implemented yet');
+    if (!this._storage) {
+      throw new Error('Cannot resume workflow: no storage configured');
+    }
+
+    // Load checkpoint
+    const checkpoint = await this._storage.loadCheckpoint(executionId);
+    if (!checkpoint) {
+      throw new Error(`No checkpoint found for execution ${executionId}`);
+    }
+
+    // Restore execution state
+    const execution: WorkflowExecution = {
+      workflowId: checkpoint.workflowId,
+      executionId: checkpoint.executionId,
+      definition: checkpoint.definition,
+      status: 'running',
+      currentStepIndex: checkpoint.state.currentStepIndex,
+      context: { ...checkpoint.state.context },
+      stepResults: [...checkpoint.state.stepResults],
+      startedAt: checkpoint.state.startedAt,
+      resumedAt: new Date(),
+    };
+
+    this._executions.set(executionId, execution);
+
+    // Emit resume event
+    this._resumeHandlers.forEach((handler) => {
+      handler(executionId, checkpoint);
+    });
+
+    // Get workDir from workflow metadata or use default
+    const workDir = checkpoint.definition.metadata?.workDir || process.cwd();
+
+    // Continue execution from saved point
+    this._executeWorkflow(
+      checkpoint.definition,
+      execution,
+      workDir as string,
+      options?.checkpointInterval
+    ).catch((error) => {
+      execution.status = 'failed';
+      execution.completedAt = new Date();
+      execution.error = error.message;
+
+      // Emit workflow failed event
+      this._workflowFailedHandlers.forEach((handler) => {
+        handler(execution.executionId, error);
+      });
+    });
+
+    return executionId;
   }
 
   /**
@@ -369,6 +418,11 @@ export class LinearOrchestrator implements IWorkflowOrchestrator {
       // Note: Status can be changed externally via pauseWorkflow/cancelWorkflow
       if (['paused', 'cancelled'].includes(execution.status)) {
         return;
+      }
+
+      // Skip steps that have already been executed (for resumed workflows)
+      if (execution.stepResults[i] && execution.stepResults[i].success) {
+        continue;
       }
 
       // Check dependencies
