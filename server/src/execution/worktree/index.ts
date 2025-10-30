@@ -20,4 +20,16 @@ export { WorktreeError, WorktreeErrorCode } from './types.js';
 export type { IWorktreeManager } from './manager.js';
 
 // Implementation
-export { WorktreeManager, DEFAULT_WORKTREE_CONFIG } from './manager.js';
+export { WorktreeManager } from './manager.js';
+
+// Configuration
+export {
+  DEFAULT_WORKTREE_CONFIG,
+  getWorktreeConfig,
+  loadWorktreeConfig,
+  validateWorktreeConfig,
+  updateWorktreeConfig,
+  setWorktreeConfigProperty,
+  resetWorktreeConfig,
+  clearWorktreeConfigCache,
+} from './config.js';

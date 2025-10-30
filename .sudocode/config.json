@@ -3,5 +3,13 @@
   "id_prefix": {
     "spec": "SPEC",
     "issue": "ISSUE"
+  },
+  "worktree": {
+    "worktreeStoragePath": ".sudocode/worktrees",
+    "autoCreateBranches": true,
+    "autoDeleteBranches": false,
+    "enableSparseCheckout": false,
+    "branchPrefix": "sudocode",
+    "cleanupOrphanedWorktreesOnStartup": true
   }
 }

@@ -226,16 +226,3 @@ export class WorktreeManager implements IWorktreeManager {
   }
 }
 
-/**
- * Default worktree configuration
- * Used when config is not provided or invalid
- */
-export const DEFAULT_WORKTREE_CONFIG: WorktreeConfig = {
-  worktreeStoragePath: '.sudocode/worktrees',
-  autoCreateBranches: true,
-  autoDeleteBranches: false,
-  enableSparseCheckout: false,
-  sparseCheckoutPatterns: undefined,
-  branchPrefix: 'sudocode',
-  cleanupOrphanedWorktreesOnStartup: true,
-};
