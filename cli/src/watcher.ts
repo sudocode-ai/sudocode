@@ -322,7 +322,7 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
             outputDir: baseDir,
             autoExport: true,
             autoInitialize: true,
-            writeBackFrontmatter: false,
+            writeBackFrontmatter: true,
           });
 
           if (result.success) {
