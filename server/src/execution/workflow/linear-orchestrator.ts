@@ -208,6 +208,11 @@ export class LinearOrchestrator implements IWorkflowOrchestrator {
     execution.status = 'paused';
     execution.pausedAt = new Date();
 
+    // Create checkpoint when pausing
+    if (this._storage) {
+      await this._saveCheckpoint(execution);
+    }
+
     // Emit pause event
     this._pauseHandlers.forEach((handler) => {
       handler(executionId);
@@ -231,6 +236,11 @@ export class LinearOrchestrator implements IWorkflowOrchestrator {
 
     execution.status = 'cancelled';
     execution.completedAt = new Date();
+
+    // Create final checkpoint
+    if (this._storage) {
+      await this._saveCheckpoint(execution);
+    }
 
     // Emit cancel event
     this._cancelHandlers.forEach((handler) => {
@@ -296,9 +306,39 @@ export class LinearOrchestrator implements IWorkflowOrchestrator {
    * @param executionId - Execution ID to wait for
    * @returns Promise resolving to workflow execution
    */
-  async waitForWorkflow(_executionId: string): Promise<WorkflowExecution> {
-    // Implementation in ISSUE-086
-    throw new Error('Not implemented yet');
+  async waitForWorkflow(executionId: string): Promise<WorkflowExecution> {
+    const execution = this._executions.get(executionId);
+    if (!execution) {
+      throw new Error(`Workflow execution ${executionId} not found`);
+    }
+
+    // If already completed/failed/cancelled, return immediately
+    if (['completed', 'failed', 'cancelled'].includes(execution.status)) {
+      return execution;
+    }
+
+    // Wait for completion by polling
+    return new Promise((resolve, reject) => {
+      const checkInterval = setInterval(() => {
+        const current = this._executions.get(executionId);
+        if (!current) {
+          clearInterval(checkInterval);
+          reject(new Error(`Workflow execution ${executionId} not found`));
+          return;
+        }
+
+        if (['completed', 'failed', 'cancelled'].includes(current.status)) {
+          clearInterval(checkInterval);
+          resolve(current);
+        }
+      }, 100);
+
+      // Timeout after 5 minutes
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        reject(new Error(`Timeout waiting for workflow ${executionId}`));
+      }, 300000);
+    });
   }
 
   /**

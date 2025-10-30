@@ -4,11 +4,11 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { LinearOrchestrator } from '../../linear-orchestrator.js';
-import { InMemoryWorkflowStorage } from '../../memory-storage.js';
-import type { IResilientExecutor } from '../../../resilience/executor.js';
-import type { ResilientExecutionResult } from '../../../resilience/types.js';
-import type { WorkflowDefinition, WorkflowCheckpoint } from '../../types.js';
+import { LinearOrchestrator } from '../../../../src/execution/workflow/linear-orchestrator.js';
+import { InMemoryWorkflowStorage } from '../../../../src/execution/workflow/memory-storage.js';
+import type { IResilientExecutor } from '../../../../src/execution/resilience/executor.js';
+import type { ResilientExecutionResult } from '../../../../src/execution/resilience/types.js';
+import type { WorkflowDefinition, WorkflowCheckpoint } from '../../../../src/execution/workflow/types.js';
 
 /**
  * Mock Resilient Executor for testing
