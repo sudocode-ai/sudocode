@@ -18,6 +18,8 @@ import {
 } from "./operations/specs.js";
 import { listIssues, getIssue } from "./operations/issues.js";
 import { parseMarkdownFile } from "./markdown.js";
+import { listFeedback } from "./operations/feedback.js";
+import { getTags } from "./operations/tags.js";
 
 export interface WatcherOptions {
   /**
@@ -182,17 +184,73 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
           return true;
         }
 
-        // Compare key fields
+        // Compare all substantial fields
         if (jsonlEntity.title !== dbEntity.title) return true;
         if (
           (jsonlEntity.content || "").trim() !== (dbEntity.content || "").trim()
         )
           return true;
         if (jsonlEntity.priority !== dbEntity.priority) return true;
+        if (jsonlEntity.parent_id !== dbEntity.parent_id) return true;
+        if (jsonlEntity.archived !== dbEntity.archived) return true;
+        if (jsonlEntity.archived_at !== dbEntity.archived_at) return true;
 
-        if (entityType === "issue") {
+        if (entityType === "spec") {
+          const dbSpec = dbEntity as any;
+          // Compare spec-specific fields
+          if (jsonlEntity.file_path !== dbSpec.file_path) return true;
+        } else if (entityType === "issue") {
           const dbIssue = dbEntity as any;
           if (jsonlEntity.status !== dbIssue.status) return true;
+          if (jsonlEntity.assignee !== dbIssue.assignee) return true;
+          if (jsonlEntity.closed_at !== dbIssue.closed_at) return true;
+
+          // Compare feedback
+          const dbFeedback = listFeedback(db, { issue_id: entityId });
+          const jsonlFeedback = jsonlEntity.feedback || [];
+          if (jsonlFeedback.length !== dbFeedback.length) return true;
+
+          // Compare feedback content
+          for (const jf of jsonlFeedback) {
+            const dbf = dbFeedback.find((f: any) => f.id === jf.id);
+            if (!dbf) return true;
+            if (jf.content !== dbf.content) return true;
+            if (jf.feedback_type !== dbf.feedback_type) return true;
+            if (jf.spec_id !== dbf.spec_id) return true;
+            if (jf.dismissed !== dbf.dismissed) return true;
+            // Compare anchor (stringified for comparison)
+            const jfAnchor = JSON.stringify(jf.anchor || null);
+            const dbfAnchor = JSON.stringify(
+              dbf.anchor && typeof dbf.anchor === "string"
+                ? JSON.parse(dbf.anchor)
+                : dbf.anchor || null
+            );
+            if (jfAnchor !== dbfAnchor) return true;
+          }
+        }
+
+        // Compare tags
+        const dbTags = getTags(db, entityId, entityType);
+        const jsonlTags = jsonlEntity.tags || [];
+        if (jsonlTags.length !== dbTags.length) return true;
+        const dbTagsSet = new Set(dbTags);
+        if (jsonlTags.some((tag: string) => !dbTagsSet.has(tag))) return true;
+
+        // Compare relationships
+        const { getOutgoingRelationships } = require("./operations/relationships.js");
+        const dbRels = getOutgoingRelationships(db, entityId, entityType);
+        const jsonlRels = jsonlEntity.relationships || [];
+        if (jsonlRels.length !== dbRels.length) return true;
+
+        // Compare relationship content
+        for (const jr of jsonlRels) {
+          const dr = dbRels.find(
+            (r: any) =>
+              r.to_id === jr.to &&
+              r.to_type === jr.to_type &&
+              r.relationship_type === jr.type
+          );
+          if (!dr) return true;
         }
 
         // Compare updated_at timestamp - if JSONL is newer, import is needed

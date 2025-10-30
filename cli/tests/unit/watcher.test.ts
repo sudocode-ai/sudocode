@@ -1376,4 +1376,596 @@ Test content.
       expect(errors.length).toBe(0);
     });
   });
+
+  describe("Comprehensive Field Detection", () => {
+    it("should detect feedback changes in issues", async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create spec and issue in database with initial feedback
+      const { createSpec } = await import("../../src/operations/specs.js");
+      const { createIssue } = await import("../../src/operations/issues.js");
+      const { createFeedback } = await import("../../src/operations/feedback.js");
+
+      createSpec(db, {
+        id: "spec-fb-001",
+        uuid: "test-uuid-spec-fb-001",
+        title: "Test Spec for Feedback",
+        file_path: "specs/test-fb.md",
+        content: "Spec content",
+        priority: 2,
+      });
+
+      createIssue(db, {
+        id: "issue-feedback-001",
+        uuid: "test-uuid-fb-001",
+        title: "Test Feedback Detection",
+        content: "Content",
+        status: "open",
+        priority: 2,
+      });
+
+      // Add feedback to the issue
+      createFeedback(db, {
+        id: "feedback-001",
+        issue_id: "issue-feedback-001",
+        spec_id: "spec-fb-001",
+        feedback_type: "comment",
+        content: "Original feedback content",
+        agent: "test-agent",
+      });
+
+      // Export to JSONL
+      const { exportToJSONL } = await import("../../src/export.js");
+      await exportToJSONL(db, { outputDir: tempDir });
+
+      // Start watcher
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 50,
+        ignoreInitial: true,
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for watcher to be ready
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Clear logs
+      logs.length = 0;
+
+      // Modify JSONL with different feedback content
+      const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
+      const updatedIssue = {
+        id: "issue-feedback-001",
+        uuid: "test-uuid-fb-001",
+        title: "Test Feedback Detection",
+        content: "Content",
+        status: "open",
+        priority: 2,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        relationships: [],
+        tags: [],
+        feedback: [
+          {
+            id: "feedback-001",
+            issue_id: "issue-feedback-001",
+            spec_id: "spec-fb-001",
+            feedback_type: "comment",
+            content: "UPDATED feedback content", // Changed
+            agent: "test-agent",
+            dismissed: false,
+          },
+        ],
+      };
+      fs.writeFileSync(
+        issuesJsonlPath,
+        JSON.stringify(updatedIssue) + "\n",
+        "utf8"
+      );
+
+      // Wait for processing
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // Should import because feedback content changed
+      expect(logs.some((log) => log.includes("Imported JSONL changes"))).toBe(
+        true
+      );
+
+      // Verify feedback was updated in database
+      const { listFeedback } = await import("../../src/operations/feedback.js");
+      const feedbackList = listFeedback(db, { issue_id: "issue-feedback-001" });
+      expect(feedbackList.length).toBe(1);
+      expect(feedbackList[0].content).toBe("UPDATED feedback content");
+
+      expect(errors.length).toBe(0);
+    });
+
+    it("should detect new feedback added to issues", async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create spec and issue in database without feedback
+      const { createSpec } = await import("../../src/operations/specs.js");
+      const { createIssue } = await import("../../src/operations/issues.js");
+
+      createSpec(db, {
+        id: "spec-fb-002",
+        uuid: "test-uuid-spec-fb-002",
+        title: "Test Spec for New Feedback",
+        file_path: "specs/test-fb-2.md",
+        content: "Spec content",
+        priority: 2,
+      });
+
+      createIssue(db, {
+        id: "issue-feedback-002",
+        uuid: "test-uuid-fb-002",
+        title: "Test New Feedback Detection",
+        content: "Content",
+        status: "open",
+        priority: 2,
+      });
+
+      // Export to JSONL
+      const { exportToJSONL } = await import("../../src/export.js");
+      await exportToJSONL(db, { outputDir: tempDir });
+
+      // Start watcher
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 50,
+        ignoreInitial: true,
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for watcher to be ready
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Clear logs
+      logs.length = 0;
+
+      // Modify JSONL to add new feedback
+      const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
+      const updatedIssue = {
+        id: "issue-feedback-002",
+        uuid: "test-uuid-fb-002",
+        title: "Test New Feedback Detection",
+        content: "Content",
+        status: "open",
+        priority: 2,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        relationships: [],
+        tags: [],
+        feedback: [
+          {
+            id: "feedback-002",
+            issue_id: "issue-feedback-002",
+            spec_id: "spec-fb-002",
+            feedback_type: "suggestion",
+            content: "New feedback added",
+            agent: "test-agent",
+            dismissed: false,
+          },
+        ],
+      };
+      fs.writeFileSync(
+        issuesJsonlPath,
+        JSON.stringify(updatedIssue) + "\n",
+        "utf8"
+      );
+
+      // Wait for processing
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // Should import because feedback was added
+      expect(logs.some((log) => log.includes("Imported JSONL changes"))).toBe(
+        true
+      );
+
+      // Verify feedback was created in database
+      const { listFeedback } = await import("../../src/operations/feedback.js");
+      const feedbackList = listFeedback(db, { issue_id: "issue-feedback-002" });
+      expect(feedbackList.length).toBe(1);
+      expect(feedbackList[0].content).toBe("New feedback added");
+
+      expect(errors.length).toBe(0);
+    });
+
+    it("should detect relationship changes in issues", async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create issue and spec in database
+      const { createIssue } = await import("../../src/operations/issues.js");
+      const { createSpec } = await import("../../src/operations/specs.js");
+
+      createSpec(db, {
+        id: "spec-rel-001",
+        uuid: "test-uuid-spec-rel",
+        title: "Test Spec",
+        file_path: "specs/test.md",
+        content: "Spec content",
+        priority: 2,
+      });
+
+      createIssue(db, {
+        id: "issue-rel-001",
+        uuid: "test-uuid-rel-001",
+        title: "Test Relationship Detection",
+        content: "Content",
+        status: "open",
+        priority: 2,
+      });
+
+      // Export to JSONL
+      const { exportToJSONL } = await import("../../src/export.js");
+      await exportToJSONL(db, { outputDir: tempDir });
+
+      // Start watcher
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 50,
+        ignoreInitial: true,
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for watcher to be ready
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Clear logs
+      logs.length = 0;
+
+      // Modify JSONL to add relationship
+      const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
+      const updatedIssue = {
+        id: "issue-rel-001",
+        uuid: "test-uuid-rel-001",
+        title: "Test Relationship Detection",
+        content: "Content",
+        status: "open",
+        priority: 2,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        relationships: [
+          {
+            from: "issue-rel-001",
+            from_type: "issue",
+            to: "spec-rel-001",
+            to_type: "spec",
+            type: "implements",
+          },
+        ],
+        tags: [],
+        feedback: [],
+      };
+      fs.writeFileSync(
+        issuesJsonlPath,
+        JSON.stringify(updatedIssue) + "\n",
+        "utf8"
+      );
+
+      // Wait for processing
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // Should import because relationship was added
+      expect(logs.some((log) => log.includes("Imported JSONL changes"))).toBe(
+        true
+      );
+
+      // Verify relationship was created in database
+      const { getOutgoingRelationships } = await import(
+        "../../src/operations/relationships.js"
+      );
+      const rels = getOutgoingRelationships(db, "issue-rel-001", "issue");
+      expect(rels.length).toBe(1);
+      expect(rels[0].to_id).toBe("spec-rel-001");
+      expect(rels[0].relationship_type).toBe("implements");
+
+      expect(errors.length).toBe(0);
+    });
+
+    it("should detect tag changes in issues", async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create issue in database
+      const { createIssue } = await import("../../src/operations/issues.js");
+      createIssue(db, {
+        id: "issue-tag-001",
+        uuid: "test-uuid-tag-001",
+        title: "Test Tag Detection",
+        content: "Content",
+        status: "open",
+        priority: 2,
+      });
+
+      // Export to JSONL
+      const { exportToJSONL } = await import("../../src/export.js");
+      await exportToJSONL(db, { outputDir: tempDir });
+
+      // Start watcher
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 50,
+        ignoreInitial: true,
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for watcher to be ready
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Clear logs
+      logs.length = 0;
+
+      // Modify JSONL to add tags
+      const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
+      const updatedIssue = {
+        id: "issue-tag-001",
+        uuid: "test-uuid-tag-001",
+        title: "Test Tag Detection",
+        content: "Content",
+        status: "open",
+        priority: 2,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        relationships: [],
+        tags: ["bug", "urgent"],
+        feedback: [],
+      };
+      fs.writeFileSync(
+        issuesJsonlPath,
+        JSON.stringify(updatedIssue) + "\n",
+        "utf8"
+      );
+
+      // Wait for processing
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // Should import because tags were added
+      expect(logs.some((log) => log.includes("Imported JSONL changes"))).toBe(
+        true
+      );
+
+      // Verify tags were created in database
+      const { getTags } = await import("../../src/operations/tags.js");
+      const tags = getTags(db, "issue-tag-001", "issue");
+      expect(tags.length).toBe(2);
+      expect(tags).toContain("bug");
+      expect(tags).toContain("urgent");
+
+      expect(errors.length).toBe(0);
+    });
+
+    it("should detect spec file_path changes", async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create spec in database
+      const { createSpec } = await import("../../src/operations/specs.js");
+      createSpec(db, {
+        id: "spec-path-001",
+        uuid: "test-uuid-path-001",
+        title: "Test Path Detection",
+        file_path: "specs/original-path.md",
+        content: "Content",
+        priority: 2,
+      });
+
+      // Export to JSONL
+      const { exportToJSONL } = await import("../../src/export.js");
+      await exportToJSONL(db, { outputDir: tempDir });
+
+      // Start watcher
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 50,
+        ignoreInitial: true,
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for watcher to be ready
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Clear logs
+      logs.length = 0;
+
+      // Modify JSONL to change file_path
+      const specsJsonlPath = path.join(tempDir, "specs.jsonl");
+      const updatedSpec = {
+        id: "spec-path-001",
+        uuid: "test-uuid-path-001",
+        title: "Test Path Detection",
+        file_path: "specs/new-path.md", // Changed
+        content: "Content",
+        priority: 2,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        relationships: [],
+        tags: [],
+      };
+      fs.writeFileSync(
+        specsJsonlPath,
+        JSON.stringify(updatedSpec) + "\n",
+        "utf8"
+      );
+
+      // Wait for processing
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // Should import because file_path changed
+      expect(logs.some((log) => log.includes("Imported JSONL changes"))).toBe(
+        true
+      );
+
+      // Verify file_path was updated in database
+      const { getSpec } = await import("../../src/operations/specs.js");
+      const spec = getSpec(db, "spec-path-001");
+      expect(spec?.file_path).toBe("specs/new-path.md");
+
+      expect(errors.length).toBe(0);
+    });
+
+    it("should detect archived field changes", async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create issue in database
+      const { createIssue } = await import("../../src/operations/issues.js");
+      createIssue(db, {
+        id: "issue-archived-001",
+        uuid: "test-uuid-archived-001",
+        title: "Test Archived Detection",
+        content: "Content",
+        status: "closed",
+        priority: 2,
+        archived: false,
+      });
+
+      // Export to JSONL
+      const { exportToJSONL } = await import("../../src/export.js");
+      await exportToJSONL(db, { outputDir: tempDir });
+
+      // Start watcher
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 50,
+        ignoreInitial: true,
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for watcher to be ready
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Clear logs
+      logs.length = 0;
+
+      // Modify JSONL to archive the issue
+      const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
+      const archivedAt = new Date().toISOString();
+      const updatedIssue = {
+        id: "issue-archived-001",
+        uuid: "test-uuid-archived-001",
+        title: "Test Archived Detection",
+        content: "Content",
+        status: "closed",
+        priority: 2,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        archived: true, // Changed
+        archived_at: archivedAt, // Added
+        relationships: [],
+        tags: [],
+        feedback: [],
+      };
+      fs.writeFileSync(
+        issuesJsonlPath,
+        JSON.stringify(updatedIssue) + "\n",
+        "utf8"
+      );
+
+      // Wait for processing
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // Should import because archived field changed
+      expect(logs.some((log) => log.includes("Imported JSONL changes"))).toBe(
+        true
+      );
+
+      // Verify archived was updated in database
+      const { getIssue } = await import("../../src/operations/issues.js");
+      const issue = getIssue(db, "issue-archived-001");
+      expect(issue?.archived).toBeTruthy(); // SQLite stores boolean as 1
+      expect(issue?.archived_at).toBe(archivedAt);
+
+      expect(errors.length).toBe(0);
+    });
+
+    it("should detect parent_id changes", async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create two issues in database
+      const { createIssue } = await import("../../src/operations/issues.js");
+      createIssue(db, {
+        id: "issue-parent-001",
+        uuid: "test-uuid-parent-001",
+        title: "Parent Issue",
+        content: "Parent content",
+        status: "open",
+        priority: 2,
+      });
+
+      createIssue(db, {
+        id: "issue-child-001",
+        uuid: "test-uuid-child-001",
+        title: "Child Issue",
+        content: "Child content",
+        status: "open",
+        priority: 2,
+      });
+
+      // Export to JSONL
+      const { exportToJSONL } = await import("../../src/export.js");
+      await exportToJSONL(db, { outputDir: tempDir });
+
+      // Start watcher
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 50,
+        ignoreInitial: true,
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for watcher to be ready
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Clear logs
+      logs.length = 0;
+
+      // Modify JSONL to set parent_id
+      const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
+      const content = fs.readFileSync(issuesJsonlPath, "utf8");
+      const lines = content.trim().split("\n").filter((l) => l.trim());
+      const updatedLines = lines.map((line) => {
+        const issue = JSON.parse(line);
+        if (issue.id === "issue-child-001") {
+          issue.parent_id = "issue-parent-001"; // Added parent
+          issue.updated_at = new Date().toISOString(); // Update timestamp to trigger import
+        }
+        return JSON.stringify(issue);
+      });
+      fs.writeFileSync(issuesJsonlPath, updatedLines.join("\n") + "\n", "utf8");
+
+      // Wait for processing
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // Should import because parent_id changed
+      expect(logs.some((log) => log.includes("Imported JSONL changes"))).toBe(
+        true
+      );
+
+      // Verify parent_id was updated in database
+      const { getIssue } = await import("../../src/operations/issues.js");
+      const issue = getIssue(db, "issue-child-001");
+      expect(issue?.parent_id).toBe("issue-parent-001");
+
+      expect(errors.length).toBe(0);
+    });
+  });
 });
