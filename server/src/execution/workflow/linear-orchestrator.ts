@@ -15,6 +15,7 @@ import type {
   WorkflowStep,
   WorkflowExecution,
   WorkflowCheckpoint,
+  WorkflowResult,
   StepStatus,
   WorkflowStartHandler,
   WorkflowCompleteHandler,
@@ -81,15 +82,44 @@ export class LinearOrchestrator implements IWorkflowOrchestrator {
    * @returns Promise resolving to execution ID
    */
   async startWorkflow(
-    _workflow: WorkflowDefinition,
-    _workDir: string,
-    _options?: {
+    workflow: WorkflowDefinition,
+    workDir: string,
+    options?: {
       checkpointInterval?: number;
       initialContext?: Record<string, any>;
     }
   ): Promise<string> {
-    // Implementation in ISSUE-084
-    throw new Error('Not implemented yet');
+    // 1. Create execution
+    const execution: WorkflowExecution = {
+      executionId: generateId('execution'),
+      workflowId: workflow.id,
+      definition: workflow,
+      status: 'pending',
+      currentStepIndex: 0,
+      context: options?.initialContext || {},
+      stepResults: [],
+      startedAt: new Date(),
+    };
+
+    // 2. Store execution
+    this._executions.set(execution.executionId, execution);
+
+    // 3. Start execution in background (non-blocking)
+    this._executeWorkflow(workflow, execution, workDir, options?.checkpointInterval).catch(
+      (error) => {
+        execution.status = 'failed';
+        execution.completedAt = new Date();
+        execution.error = error.message;
+
+        // Emit workflow failed event
+        this._workflowFailedHandlers.forEach((handler) => {
+          handler(execution.executionId, error);
+        });
+      }
+    );
+
+    // 4. Return execution ID immediately
+    return execution.executionId;
   }
 
   /**
@@ -307,6 +337,196 @@ export class LinearOrchestrator implements IWorkflowOrchestrator {
   }
 
   /**
+   * Execute workflow (main execution loop)
+   *
+   * @param workflow - Workflow definition
+   * @param execution - Workflow execution state
+   * @param workDir - Working directory for task execution
+   * @param checkpointInterval - Optional checkpoint interval (in steps)
+   * @returns Promise that resolves when workflow completes
+   * @private
+   */
+  private async _executeWorkflow(
+    workflow: WorkflowDefinition,
+    execution: WorkflowExecution,
+    workDir: string,
+    checkpointInterval?: number
+  ): Promise<void> {
+    // 1. Set status to running
+    execution.status = 'running';
+
+    // Emit workflow start event
+    this._workflowStartHandlers.forEach((handler) => {
+      handler(execution.executionId, workflow.id);
+    });
+
+    // 2. Execute steps sequentially
+    for (let i = execution.currentStepIndex; i < workflow.steps.length; i++) {
+      const step = workflow.steps[i];
+      execution.currentStepIndex = i;
+
+      // Check if paused or cancelled
+      // Note: Status can be changed externally via pauseWorkflow/cancelWorkflow
+      if (['paused', 'cancelled'].includes(execution.status)) {
+        return;
+      }
+
+      // Check dependencies
+      if (!this._areDependenciesMet(step, execution)) {
+        const error = new Error(`Dependencies not met for step ${step.id}`);
+
+        // Emit step failed event
+        this._stepFailedHandlers.forEach((handler) => {
+          handler(execution.executionId, step.id, error);
+        });
+
+        if (!workflow.config?.continueOnStepFailure) {
+          execution.status = 'failed';
+          execution.completedAt = new Date();
+          execution.error = error.message;
+
+          // Emit workflow failed event
+          this._workflowFailedHandlers.forEach((handler) => {
+            handler(execution.executionId, error);
+          });
+          return;
+        }
+        continue;
+      }
+
+      // Check condition
+      if (!this._shouldExecuteStep(step, execution.context)) {
+        // Step condition not met, skip it
+        continue;
+      }
+
+      // Emit step start event
+      this._stepStartHandlers.forEach((handler) => {
+        handler(execution.executionId, step.id, i);
+      });
+
+      // Execute step
+      try {
+        const result = await this._executeStep(step, execution, workDir);
+
+        // Store result
+        execution.stepResults[i] = result;
+
+        // Check if step failed
+        if (!result.success) {
+          const error = new Error(result.error || `Step ${step.id} failed`);
+
+          // Emit step failed event
+          this._stepFailedHandlers.forEach((handler) => {
+            handler(execution.executionId, step.id, error);
+          });
+
+          if (!workflow.config?.continueOnStepFailure) {
+            execution.status = 'failed';
+            execution.completedAt = new Date();
+            execution.error = error.message;
+
+            // Emit workflow failed event
+            this._workflowFailedHandlers.forEach((handler) => {
+              handler(execution.executionId, error);
+            });
+            return;
+          }
+          continue;
+        }
+
+        // Apply output mapping (only for successful steps)
+        this._applyOutputMapping(step, result, execution.context);
+
+        // Emit step complete event
+        this._stepCompleteHandlers.forEach((handler) => {
+          handler(execution.executionId, step.id, result);
+        });
+
+        // Checkpoint if configured
+        if (
+          checkpointInterval &&
+          this._storage &&
+          (i + 1) % checkpointInterval === 0
+        ) {
+          await this._saveCheckpoint(execution);
+        }
+      } catch (error) {
+        // Emit step failed event
+        this._stepFailedHandlers.forEach((handler) => {
+          handler(execution.executionId, step.id, error as Error);
+        });
+
+        if (!workflow.config?.continueOnStepFailure) {
+          execution.status = 'failed';
+          execution.completedAt = new Date();
+          execution.error = (error as Error).message;
+
+          // Emit workflow failed event
+          this._workflowFailedHandlers.forEach((handler) => {
+            handler(execution.executionId, error as Error);
+          });
+          return;
+        }
+      }
+    }
+
+    // 3. Workflow completed
+    execution.status = 'completed';
+    execution.completedAt = new Date();
+
+    // 4. Emit workflow complete event
+    const result: WorkflowResult = {
+      executionId: execution.executionId,
+      success: execution.stepResults.every((r) => r.success),
+      completedSteps: execution.stepResults.filter((r) => r.success).length,
+      failedSteps: execution.stepResults.filter((r) => !r.success).length,
+      skippedSteps: 0, // TODO: Track skipped steps properly
+      outputs: execution.context,
+      duration: execution.completedAt.getTime() - execution.startedAt.getTime(),
+    };
+
+    this._workflowCompleteHandlers.forEach((handler) => {
+      handler(execution.executionId, result);
+    });
+  }
+
+  /**
+   * Save checkpoint to storage
+   *
+   * @param execution - Workflow execution to checkpoint
+   * @private
+   */
+  private async _saveCheckpoint(execution: WorkflowExecution): Promise<void> {
+    if (!this._storage) {
+      return;
+    }
+
+    const checkpoint: WorkflowCheckpoint = {
+      workflowId: execution.workflowId,
+      executionId: execution.executionId,
+      definition: execution.definition,
+      state: {
+        status: execution.status,
+        currentStepIndex: execution.currentStepIndex,
+        context: execution.context,
+        stepResults: execution.stepResults,
+        error: execution.error,
+        startedAt: execution.startedAt,
+        completedAt: execution.completedAt,
+      },
+      createdAt: new Date(),
+    };
+
+    await this._storage.saveCheckpoint(checkpoint);
+
+    // Emit checkpoint event
+    this._checkpointHandlers.forEach((handler) => {
+      handler(checkpoint);
+    });
+  }
+
+  /**
    * Execute a single workflow step
    *
    * @param step - Workflow step to execute
@@ -315,7 +535,6 @@ export class LinearOrchestrator implements IWorkflowOrchestrator {
    * @returns Promise resolving to execution result
    * @private
    */
-  // @ts-expect-error - Will be used in workflow execution (ISSUE-084)
   private async _executeStep(
     step: WorkflowStep,
     execution: WorkflowExecution,
@@ -350,7 +569,6 @@ export class LinearOrchestrator implements IWorkflowOrchestrator {
    * @param context - Workflow context to update
    * @private
    */
-  // @ts-expect-error - Will be used in workflow execution (ISSUE-084)
   private _applyOutputMapping(
     step: WorkflowStep,
     result: ResilientExecutionResult,
@@ -375,7 +593,6 @@ export class LinearOrchestrator implements IWorkflowOrchestrator {
    * @returns True if all dependencies are met, false otherwise
    * @private
    */
-  // @ts-expect-error - Will be used in workflow execution (ISSUE-084)
   private _areDependenciesMet(
     step: WorkflowStep,
     execution: WorkflowExecution
@@ -415,7 +632,6 @@ export class LinearOrchestrator implements IWorkflowOrchestrator {
    * @returns True if condition evaluates to true or no condition exists
    * @private
    */
-  // @ts-expect-error - Will be used in workflow execution (ISSUE-084)
   private _shouldExecuteStep(
     step: WorkflowStep,
     context: Record<string, any>
