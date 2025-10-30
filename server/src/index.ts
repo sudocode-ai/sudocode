@@ -14,6 +14,8 @@ import { createIssuesRouter } from "./routes/issues.js";
 import { createSpecsRouter } from "./routes/specs.js";
 import { createRelationshipsRouter } from "./routes/relationships.js";
 import { createFeedbackRouter } from "./routes/feedback.js";
+import { createExecutionStreamRoutes } from "./routes/executions-stream.js";
+import { TransportManager } from "./execution/transport/transport-manager.js";
 import { getIssueById } from "./services/issues.js";
 import { getSpecById } from "./services/specs.js";
 import {
@@ -39,9 +41,10 @@ const SUDOCODE_DIR =
   process.env.SUDOCODE_DIR || path.join(process.cwd(), ".sudocode");
 const DB_PATH = path.join(SUDOCODE_DIR, "cache.db");
 
-// Initialize database
+// Initialize database and transport manager
 let db: Database.Database;
 let watcher: ServerWatcherControl | null = null;
+let transportManager: TransportManager;
 
 try {
   console.log(`Initializing database at: ${DB_PATH}`);
@@ -54,6 +57,10 @@ try {
       "Warning: CLI tables not found. Run 'sudocode sync' to initialize the database."
     );
   }
+
+  // Initialize transport manager for SSE streaming
+  transportManager = new TransportManager();
+  console.log('Transport manager initialized');
 } catch (error) {
   console.error("Failed to initialize database:", error);
   process.exit(1);
@@ -120,6 +127,7 @@ app.use("/api/issues", createIssuesRouter(db));
 app.use("/api/specs", createSpecsRouter(db));
 app.use("/api/relationships", createRelationshipsRouter(db));
 app.use("/api/feedback", createFeedbackRouter(db));
+app.use("/api/executions", createExecutionStreamRoutes(transportManager));
 
 // Health check endpoint
 app.get("/health", (_req: Request, res: Response) => {
@@ -187,6 +195,12 @@ process.on("SIGINT", async () => {
   // Shutdown WebSocket server
   await shutdownWebSocketServer();
 
+  // Shutdown transport manager
+  if (transportManager) {
+    transportManager.shutdown();
+    console.log("Transport manager shutdown complete");
+  }
+
   // Close database
   db.close();
 
@@ -208,6 +222,12 @@ process.on("SIGTERM", async () => {
   // Shutdown WebSocket server
   await shutdownWebSocketServer();
 
+  // Shutdown transport manager
+  if (transportManager) {
+    transportManager.shutdown();
+    console.log("Transport manager shutdown complete");
+  }
+
   // Close database
   db.close();
 
@@ -219,4 +239,4 @@ process.on("SIGTERM", async () => {
 });
 
 export default app;
-export { db };
+export { db, transportManager };
