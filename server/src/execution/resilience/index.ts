@@ -23,6 +23,9 @@ export { DEFAULT_RETRY_POLICY } from './types.js';
 // Interface
 export type { IResilientExecutor } from './executor.js';
 
+// Implementation
+export { ResilientExecutor } from './resilient-executor.js';
+
 // Retry utilities
 export {
   calculateBackoff,
