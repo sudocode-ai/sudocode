@@ -33,3 +33,13 @@ export {
   createAttempt,
   calculateTotalRetryDelay,
 } from './retry.js';
+
+// Circuit breaker
+export {
+  CircuitBreakerManager,
+  createCircuitBreaker,
+  isInState,
+  getState,
+  getFailureRate,
+  getSuccessRate,
+} from './circuit-breaker.js';
