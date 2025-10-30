@@ -69,16 +69,27 @@ export function useFeedbackPositions(
           // Look for elements with line number data attribute
           element = editor.querySelector<HTMLElement>(`[data-line-number="${anchor.line_number}"]`)
 
-          // If still not found, try to calculate approximate position
-          // by finding paragraph/line elements and counting down
+          // If still not found, find the closest line number
+          // (line numbers are sparse due to frontmatter, code blocks, etc.)
           if (!element) {
-            const allLines = Array.from(
-              editor.querySelectorAll<HTMLElement>('p, h1, h2, h3, h4, h5, h6, li, pre')
-            )
+            const allLines = Array.from(editor.querySelectorAll<HTMLElement>('[data-line-number]'))
+
             if (allLines.length > 0 && anchor.line_number > 0) {
-              // Use line number as approximate index (0-based)
-              const index = Math.min(anchor.line_number - 1, allLines.length - 1)
-              element = allLines[index]
+              // Find the element with the closest line number <= target
+              let closestElement: HTMLElement | null = null
+              let closestLineNumber = 0
+
+              for (const line of allLines) {
+                const lineNumber = parseInt(line.getAttribute('data-line-number') || '0')
+                if (lineNumber > 0 && lineNumber <= anchor.line_number) {
+                  if (lineNumber > closestLineNumber) {
+                    closestLineNumber = lineNumber
+                    closestElement = line
+                  }
+                }
+              }
+
+              element = closestElement || allLines[0]
             }
           }
         }

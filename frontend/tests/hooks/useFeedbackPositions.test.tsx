@@ -177,19 +177,22 @@ describe('useFeedbackPositions', () => {
     })
   })
 
-  it('should approximate position by counting elements when line number has no match', async () => {
-    // Add multiple paragraph elements
+  it('should find closest line number when exact match not found', async () => {
+    // Add multiple paragraph elements with sparse line numbers (like in real editor)
     const p1 = document.createElement('p')
     p1.textContent = 'Line 1'
+    p1.setAttribute('data-line-number', '1')
     const p2 = document.createElement('p')
-    p2.textContent = 'Line 2'
+    p2.textContent = 'Line 5'
+    p2.setAttribute('data-line-number', '5')
     const p3 = document.createElement('p')
-    p3.textContent = 'Line 3'
+    p3.textContent = 'Line 10'
+    p3.setAttribute('data-line-number', '10')
     mockEditorElement.appendChild(p1)
     mockEditorElement.appendChild(p2)
     mockEditorElement.appendChild(p3)
 
-    // Mock offsetTop for p2 (will be found by index)
+    // Mock offsetTop for p2 (will be found as closest to line 7)
     Object.defineProperty(p2, 'offsetTop', {
       get: () => 30,
       configurable: true,
@@ -208,7 +211,7 @@ describe('useFeedbackPositions', () => {
         feedback_type: 'comment',
         content: 'Test',
         anchor: JSON.stringify({
-          line_number: 2, // Will use as index 1 (0-based)
+          line_number: 7, // Should find p2 (line 5 is closest <= 7)
           anchor_status: 'valid',
         }),
         created_at: '2024-01-01T00:00:00Z',
@@ -219,7 +222,7 @@ describe('useFeedbackPositions', () => {
     const { result } = renderHook(() => useFeedbackPositions(feedback, editorRef))
 
     await waitFor(() => {
-      expect(result.current.get('FB-003')).toBe(30) // offsetTop from element
+      expect(result.current.get('FB-003')).toBe(30) // offsetTop from p2 (line 5)
     })
   })
 
