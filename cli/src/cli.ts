@@ -179,6 +179,14 @@ program
           spec: specPrefix,
           issue: issuePrefix,
         },
+        worktree: {
+          worktreeStoragePath: ".sudocode/worktrees",
+          autoCreateBranches: true,
+          autoDeleteBranches: false,
+          enableSparseCheckout: false,
+          branchPrefix: "sudocode",
+          cleanupOrphanedWorktreesOnStartup: true,
+        },
       };
       fs.writeFileSync(
         path.join(dir, "config.json"),

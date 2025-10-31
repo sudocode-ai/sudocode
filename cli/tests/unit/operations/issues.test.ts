@@ -53,18 +53,26 @@ describe('Issue Operations', () => {
       expect(issue.assignee).toBeNull();
     });
 
-    it('should throw error on duplicate ID', () => {
+    it('should upsert on duplicate ID (idempotent import)', () => {
       createIssue(db, {
         id: 'issue-001',
         title: 'First',
       });
 
-      expect(() => {
-        createIssue(db, {
-          id: 'issue-001',
-          title: 'Duplicate',
-        });
-      }).toThrow('Constraint violation');
+      // Second call with same ID should update, not error (UPSERT behavior)
+      const updated = createIssue(db, {
+        id: 'issue-001',
+        title: 'Updated Title',
+        status: 'in_progress',
+      });
+
+      expect(updated).toBeDefined();
+      expect(updated.title).toBe('Updated Title');
+      expect(updated.status).toBe('in_progress');
+
+      // Verify only one issue exists
+      const allIssues = listIssues(db);
+      expect(allIssues.length).toBe(1);
     });
 
     it('should throw error when parent_id does not exist', () => {

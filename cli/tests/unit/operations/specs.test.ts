@@ -41,20 +41,27 @@ describe('Spec Operations', () => {
       expect(spec.priority).toBe(2);
     });
 
-    it('should throw error on duplicate ID', () => {
+    it('should upsert on duplicate ID (idempotent import)', () => {
       createSpec(db, {
         id: 'spec-001',
         title: 'First',
         file_path: 'first.md',
       });
 
-      expect(() => {
-        createSpec(db, {
-          id: 'spec-001',
-          title: 'Duplicate',
-          file_path: 'duplicate.md',
-        });
-      }).toThrow('Constraint violation');
+      // Second call with same ID should update, not error (UPSERT behavior)
+      const updated = createSpec(db, {
+        id: 'spec-001',
+        title: 'Updated Title',
+        file_path: 'updated.md',
+      });
+
+      expect(updated).toBeDefined();
+      expect(updated.title).toBe('Updated Title');
+      expect(updated.file_path).toBe('updated.md');
+
+      // Verify only one spec exists
+      const allSpecs = listSpecs(db);
+      expect(allSpecs.length).toBe(1);
     });
 
     it('should throw error when parent_id does not exist', () => {

@@ -2,8 +2,11 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useSpec, useSpecFeedback, useSpecs } from '@/hooks/useSpecs'
 import { useIssues } from '@/hooks/useIssues'
+import { useFeedback } from '@/hooks/useFeedback'
 import { SpecViewerTiptap } from '@/components/specs/SpecViewerTiptap'
-import { SpecFeedbackPanel } from '@/components/specs/SpecFeedbackPanel'
+import { AlignedFeedbackPanel } from '@/components/specs/AlignedFeedbackPanel'
+import { AddFeedbackDialog } from '@/components/specs/AddFeedbackDialog'
+import { useFeedbackPositions } from '@/hooks/useFeedbackPositions'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -14,7 +17,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { MessageSquare, Archive, ArchiveRestore, Signal, FileText, Code2 } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  MessageSquare,
+  MessageSquareOff,
+  MessageSquarePlus,
+  Archive,
+  ArchiveRestore,
+  Signal,
+  FileText,
+  Code2,
+} from 'lucide-react'
 import type { IssueFeedback } from '@/types/api'
 
 const PRIORITY_OPTIONS = [
@@ -32,11 +45,11 @@ export default function SpecDetailPage() {
   const { feedback } = useSpecFeedback(id || '')
   const { issues } = useIssues()
   const { updateSpec, isUpdating, archiveSpec, unarchiveSpec } = useSpecs()
+  const { createFeedback, updateFeedback, deleteFeedback } = useFeedback(id || '')
 
   const [selectedLine, setSelectedLine] = useState<number | null>(null)
-  const [selectedText, setSelectedText] = useState<string | null>(null)
+  const [_selectedText, setSelectedText] = useState<string | null>(null) // Reserved for future text selection feature
   const [showFeedbackPanel, setShowFeedbackPanel] = useState(true)
-  const [selectedIssueId, setSelectedIssueId] = useState<string | undefined>(undefined)
   const [viewMode, setViewMode] = useState<'formatted' | 'source'>('formatted')
 
   // Local state for editable fields
@@ -45,11 +58,15 @@ export default function SpecDetailPage() {
   const [priority, setPriority] = useState<number>(2)
   const [hasChanges, setHasChanges] = useState(false)
 
-  // Refs for auto-save
+  // Refs for auto-save and position tracking
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
   const updateSpecRef = useRef(updateSpec)
   const latestValuesRef = useRef({ title, content, priority, hasChanges })
   const currentIdRef = useRef(id)
+  const editorContainerRef = useRef<HTMLDivElement>(null)
+
+  // Track feedback positions for aligned panel
+  const feedbackPositions = useFeedbackPositions(feedback, editorContainerRef)
 
   // Keep refs in sync with latest values
   useEffect(() => {
@@ -169,6 +186,7 @@ export default function SpecDetailPage() {
     setSelectedText(text)
     setSelectedLine(lineNumber)
     setShowFeedbackPanel(true)
+    // TODO: Future enhancement - use selectedText for pre-filling feedback with context
   }
 
   const handleFeedbackClick = (fb: IssueFeedback) => {
@@ -196,6 +214,40 @@ export default function SpecDetailPage() {
   const handlePriorityChange = (value: number) => {
     setPriority(value)
     setHasChanges(true)
+  }
+
+  const handleFeedbackDismiss = (feedbackId: string) => {
+    const fb = feedback.find((f) => f.id === feedbackId)
+    if (fb) {
+      updateFeedback({
+        id: feedbackId,
+        data: { dismissed: !fb.dismissed },
+      })
+    }
+  }
+
+  const handleFeedbackDelete = (feedbackId: string) => {
+    deleteFeedback(feedbackId)
+  }
+
+  const handleCreateFeedback = async (data: {
+    issueId: string
+    type: any
+    content: string
+    anchor?: any
+  }) => {
+    if (!id) {
+      console.error('Cannot create feedback without spec ID')
+      return
+    }
+
+    await createFeedback({
+      spec_id: id,
+      issue_id: data.issueId,
+      feedback_type: data.type,
+      content: data.content,
+      anchor: data.anchor,
+    })
   }
 
   return (
@@ -232,31 +284,31 @@ export default function SpecDetailPage() {
             </div>
           </div>
 
-          {/* Issue selector */}
-          <Select value={selectedIssueId} onValueChange={setSelectedIssueId}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Select issue..." />
-            </SelectTrigger>
-            <SelectContent>
-              {issues.map((issue) => (
-                <SelectItem key={issue.id} value={issue.id}>
-                  {issue.id}: {issue.title}
-                </SelectItem>
-              ))}
-              {issues.length === 0 && (
-                <div className="px-2 py-1.5 text-sm text-muted-foreground">No issues available</div>
-              )}
-            </SelectContent>
-          </Select>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowFeedbackPanel(!showFeedbackPanel)}
-          >
-            <MessageSquare className="mr-2 h-4 w-4" />
-            Feedback {feedback.length > 0 && `(${feedback.length})`}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowFeedbackPanel(!showFeedbackPanel)}
+                >
+                  {showFeedbackPanel ? (
+                    <MessageSquareOff className="h-4 w-4" />
+                  ) : (
+                    <MessageSquare className="h-4 w-4" />
+                  )}
+                  {feedback.length > 0 && (
+                    <span className="ml-2 rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
+                      {feedback.length}
+                    </span>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{showFeedbackPanel ? 'Hide' : 'Show'} feedback</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
 
           {spec.archived ? (
             <Button
@@ -283,97 +335,111 @@ export default function SpecDetailPage() {
       </div>
 
       {/* Main content */}
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-auto px-6 py-4">
-          <div className="space-y-3">
-            {/* Spec ID and Title */}
-            <div className="space-y-2 pb-3">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-sm text-muted-foreground">{spec.id}</span>
-                <div className="text-xs italic text-muted-foreground">
-                  {isUpdating
-                    ? 'Saving...'
-                    : hasChanges
-                      ? 'Unsaved changes...'
-                      : 'All changes saved'}
+      <div ref={editorContainerRef} className="flex flex-1 overflow-auto xl:justify-center">
+        <div className="flex w-full xl:max-w-[1600px]">
+          <div className="flex-1 px-6 py-4 lg:px-12 xl:px-16">
+            <div className="mx-auto max-w-4xl space-y-3">
+              {/* Spec ID and Title */}
+              <div className="space-y-2 pb-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-sm text-muted-foreground">{spec.id}</span>
+                  <div className="text-xs italic text-muted-foreground">
+                    {isUpdating
+                      ? 'Saving...'
+                      : hasChanges
+                        ? 'Unsaved changes...'
+                        : 'All changes saved'}
+                  </div>
+                </div>
+                <Input
+                  value={title}
+                  onChange={(e) => handleTitleChange(e.target.value)}
+                  disabled={isUpdating}
+                  placeholder="Spec title..."
+                  className="border-none bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
+                />
+              </div>
+
+              {/* Metadata Row */}
+              <div className="flex flex-wrap items-center gap-4">
+                {/* Priority */}
+                <div className="flex items-center gap-2">
+                  <Signal className="h-4 w-4 text-muted-foreground" />
+                  <Select
+                    value={String(priority)}
+                    onValueChange={(value) => handlePriorityChange(parseInt(value))}
+                    disabled={isUpdating}
+                  >
+                    <SelectTrigger className="h-8 w-auto gap-3 rounded-md border-none bg-accent px-3 shadow-none hover:bg-accent/80">
+                      <SelectValue placeholder="Priority" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRIORITY_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Timestamp */}
+                <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
+                  {spec.updated_at && (
+                    <div className="ml-auto flex items-center text-xs text-muted-foreground">
+                      Updated at {new Date(spec.updated_at).toLocaleString()}
+                    </div>
+                  )}
                 </div>
               </div>
-              <Input
-                value={title}
-                onChange={(e) => handleTitleChange(e.target.value)}
-                disabled={isUpdating}
-                placeholder="Spec title..."
-                className="border-none bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
-              />
+
+              {/* Content */}
+              {content !== undefined ? (
+                <SpecViewerTiptap
+                  content={content}
+                  feedback={feedback}
+                  selectedLine={selectedLine}
+                  onLineClick={handleLineClick}
+                  onTextSelect={handleTextSelect}
+                  onFeedbackClick={handleFeedbackClick}
+                  onChange={handleContentChange}
+                  viewMode={viewMode}
+                  onViewModeChange={setViewMode}
+                />
+              ) : (
+                <Card className="p-8 text-center">
+                  <p className="text-muted-foreground">No content available for this spec.</p>
+                </Card>
+              )}
             </div>
-
-            {/* Metadata Row */}
-            <div className="flex flex-wrap items-center gap-4">
-              {/* Priority */}
-              <div className="flex items-center gap-2">
-                <Signal className="h-4 w-4 text-muted-foreground" />
-                <Select
-                  value={String(priority)}
-                  onValueChange={(value) => handlePriorityChange(parseInt(value))}
-                  disabled={isUpdating}
-                >
-                  <SelectTrigger className="h-8 w-auto gap-3 rounded-md border-none bg-accent px-3 shadow-none hover:bg-accent/80">
-                    <SelectValue placeholder="Priority" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PRIORITY_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Timestamp */}
-              <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
-                {spec.updated_at && (
-                  <div className="ml-auto flex items-center text-xs text-muted-foreground">
-                    Updated at {new Date(spec.updated_at).toLocaleString()}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Content */}
-            {content !== undefined ? (
-              <SpecViewerTiptap
-                content={content}
-                feedback={feedback}
-                selectedLine={selectedLine}
-                onLineClick={handleLineClick}
-                onTextSelect={handleTextSelect}
-                onFeedbackClick={handleFeedbackClick}
-                onChange={handleContentChange}
-                viewMode={viewMode}
-                onViewModeChange={setViewMode}
-              />
-            ) : (
-              <Card className="p-8 text-center">
-                <p className="text-muted-foreground">No content available for this spec.</p>
-              </Card>
-            )}
           </div>
-        </div>
 
-        {/* Feedback Panel */}
-        {showFeedbackPanel && (
-          <div className="w-96 border-l">
-            <SpecFeedbackPanel
-              specId={spec.id}
-              issueId={selectedIssueId}
-              selectedLineNumber={selectedLine}
-              selectedText={selectedText}
-              onClose={() => setShowFeedbackPanel(false)}
+          {/* Aligned Feedback Panel */}
+          {showFeedbackPanel && (
+            <AlignedFeedbackPanel
+              feedback={feedback}
+              positions={feedbackPositions}
               onFeedbackClick={handleFeedbackClick}
+              onDismiss={handleFeedbackDismiss}
+              onDelete={handleFeedbackDelete}
+              addFeedbackButton={
+                <div className="flex justify-center">
+                  <AddFeedbackDialog
+                    issues={issues}
+                    lineNumber={selectedLine || undefined}
+                    onSubmit={handleCreateFeedback}
+                    triggerButton={
+                      <Button variant="secondary" size="sm">
+                        <MessageSquarePlus className="mr-2 h-4 w-4" />
+                        Add Feedback
+                      </Button>
+                    }
+                  />
+                </div>
+              }
             />
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )

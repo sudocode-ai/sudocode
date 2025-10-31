@@ -167,7 +167,27 @@ export interface RelationshipJSONL {
 }
 
 /**
- * Config metadata file structure
+ * Worktree configuration for session isolation
+ */
+export interface WorktreeConfig {
+  /** Where to store worktrees (default: ".sudocode/worktrees") */
+  worktreeStoragePath: string;
+  /** Auto-create branches for new sessions (default: true) */
+  autoCreateBranches: boolean;
+  /** Auto-delete branches when session is cleaned up (default: false) */
+  autoDeleteBranches: boolean;
+  /** Use sparse-checkout for worktrees (default: false) */
+  enableSparseCheckout: boolean;
+  /** Patterns for sparse-checkout (optional) */
+  sparseCheckoutPatterns?: string[];
+  /** Branch naming prefix (default: "sudocode") */
+  branchPrefix: string;
+  /** Cleanup orphaned worktrees on server startup (default: true) */
+  cleanupOrphanedWorktreesOnStartup: boolean;
+}
+
+/**
+ * Config metadata file structure (.sudocode/config.json)
  */
 export interface Config {
   version: string;
@@ -175,6 +195,8 @@ export interface Config {
     spec: string;
     issue: string;
   };
+  /** Worktree configuration (optional) */
+  worktree?: WorktreeConfig;
 }
 
 /**
@@ -208,7 +230,8 @@ export interface Execution {
   // Git context (captured before/after)
   before_commit: string | null;
   after_commit: string | null;
-  target_branch: string | null;
+  target_branch: string;
+  branch_name: string;
   worktree_path: string | null;
 
   // Session tracking (for resume/fork)

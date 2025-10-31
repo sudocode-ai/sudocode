@@ -116,11 +116,147 @@ export const migration_002_nullable_feedback_fields: Migration = {
 };
 
 /**
+ * Migration 003: Add branch_name field to executions
+ *
+ * This migration adds the branch_name field to track which branch
+ * an execution is running on, and makes target_branch NOT NULL.
+ */
+export const migration_003_add_worktree_fields: Migration = {
+  version: 3,
+  name: "add_worktree_tracking_fields",
+  up: (db: Database.Database) => {
+    db.exec(`
+      BEGIN TRANSACTION;
+
+      -- Create new table with branch_name field
+      CREATE TABLE IF NOT EXISTS executions_new (
+        id TEXT PRIMARY KEY,
+        issue_id TEXT NOT NULL,
+        agent_type TEXT NOT NULL CHECK(agent_type IN ('claude-code', 'codex')),
+        status TEXT NOT NULL CHECK(status IN ('running', 'completed', 'failed', 'stopped')),
+
+        started_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        exit_code INTEGER,
+        error_message TEXT,
+
+        before_commit TEXT,
+        after_commit TEXT,
+        target_branch TEXT NOT NULL,
+        worktree_path TEXT,
+
+        branch_name TEXT NOT NULL,
+
+        session_id TEXT,
+        summary TEXT,
+
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+
+        FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE
+      );
+
+      -- Copy data from old table to new table
+      -- Use COALESCE to provide default values for new NOT NULL fields
+      INSERT INTO executions_new (
+        id, issue_id, agent_type, status,
+        started_at, completed_at, exit_code, error_message,
+        before_commit, after_commit, target_branch, worktree_path,
+        branch_name,
+        session_id, summary,
+        created_at, updated_at
+      )
+      SELECT
+        id, issue_id, agent_type, status,
+        started_at, completed_at, exit_code, error_message,
+        before_commit, after_commit,
+        COALESCE(target_branch, 'main') as target_branch,
+        worktree_path,
+        COALESCE(target_branch, 'main') as branch_name,
+        session_id, summary,
+        created_at, updated_at
+      FROM executions;
+
+      -- Drop old table
+      DROP TABLE executions;
+
+      -- Rename new table to original name
+      ALTER TABLE executions_new RENAME TO executions;
+
+      -- Recreate indexes
+      CREATE INDEX IF NOT EXISTS idx_executions_issue_id ON executions(issue_id);
+      CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
+      CREATE INDEX IF NOT EXISTS idx_executions_session_id ON executions(session_id);
+
+      COMMIT;
+    `);
+  },
+  down: (db: Database.Database) => {
+    // Rollback: remove branch_name field and make target_branch nullable again
+    db.exec(`
+      BEGIN TRANSACTION;
+
+      CREATE TABLE IF NOT EXISTS executions_old (
+        id TEXT PRIMARY KEY,
+        issue_id TEXT NOT NULL,
+        agent_type TEXT NOT NULL CHECK(agent_type IN ('claude-code', 'codex')),
+        status TEXT NOT NULL CHECK(status IN ('running', 'completed', 'failed', 'stopped')),
+
+        started_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        exit_code INTEGER,
+        error_message TEXT,
+
+        before_commit TEXT,
+        after_commit TEXT,
+        target_branch TEXT,
+        worktree_path TEXT,
+
+        session_id TEXT,
+        summary TEXT,
+
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+
+        FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE
+      );
+
+      -- Copy data back (dropping branch_name field)
+      INSERT INTO executions_old (
+        id, issue_id, agent_type, status,
+        started_at, completed_at, exit_code, error_message,
+        before_commit, after_commit, target_branch, worktree_path,
+        session_id, summary,
+        created_at, updated_at
+      )
+      SELECT
+        id, issue_id, agent_type, status,
+        started_at, completed_at, exit_code, error_message,
+        before_commit, after_commit, target_branch, worktree_path,
+        session_id, summary,
+        created_at, updated_at
+      FROM executions;
+
+      DROP TABLE executions;
+      ALTER TABLE executions_old RENAME TO executions;
+
+      -- Recreate original indexes
+      CREATE INDEX IF NOT EXISTS idx_executions_issue_id ON executions(issue_id);
+      CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
+      CREATE INDEX IF NOT EXISTS idx_executions_session_id ON executions(session_id);
+
+      COMMIT;
+    `);
+  },
+};
+
+/**
  * All migrations in order
  */
 const MIGRATIONS: Migration[] = [
   migration_001_remove_description,
   migration_002_nullable_feedback_fields,
+  migration_003_add_worktree_fields,
 ];
 
 /**

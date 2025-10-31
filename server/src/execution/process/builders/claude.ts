@@ -37,6 +37,12 @@ export interface ClaudeCodeConfig {
   outputFormat?: 'stream-json' | 'json' | 'text';
 
   /**
+   * Enable verbose output (required for stream-json with print mode)
+   * @default false
+   */
+  verbose?: boolean;
+
+  /**
    * Skip permission prompts
    * @default false
    */
@@ -100,6 +106,11 @@ export function buildClaudeConfig(config: ClaudeCodeConfig): ProcessConfig {
   // Add --output-format flag
   if (config.outputFormat) {
     args.push('--output-format', config.outputFormat);
+  }
+
+  // Add --verbose flag (required for stream-json with print mode)
+  if (config.verbose || (config.print && config.outputFormat === 'stream-json')) {
+    args.push('--verbose');
   }
 
   // Add --dangerously-skip-permissions flag

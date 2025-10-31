@@ -44,8 +44,8 @@ describe('Sidebar', () => {
     expect(specsLink).toHaveAttribute('href', '/specs')
   })
 
-  it('should show phase information in footer', () => {
+  it('should show settings button', () => {
     renderSidebar({ open: true })
-    expect(screen.getByText('Phase 1 MVP')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
   })
 })

@@ -236,36 +236,36 @@ describe("Feedback API", () => {
       assert.ok(response.body.message.includes("content"));
     });
 
-    it("should reject feedback without agent", async () => {
+    it("should create feedback without agent (defaults to 'user')", async () => {
       const response = await request(app)
         .post("/api/feedback")
         .send({
           issue_id: testIssueId,
           spec_id: testSpecId,
           feedback_type: "comment",
-          content: "Test",
+          content: "Test without agent",
           anchor: { anchor_status: "valid" },
         })
-        .expect(400);
+        .expect(201);
 
-      assert.strictEqual(response.body.success, false);
-      assert.ok(response.body.message.includes("agent"));
+      assert.strictEqual(response.body.success, true);
+      assert.strictEqual(response.body.data.agent, "user");
     });
 
-    it("should reject feedback without anchor", async () => {
+    it("should create feedback without anchor", async () => {
       const response = await request(app)
         .post("/api/feedback")
         .send({
           issue_id: testIssueId,
           spec_id: testSpecId,
           feedback_type: "comment",
-          content: "Test",
+          content: "Test without anchor",
           agent: "test",
         })
-        .expect(400);
+        .expect(201);
 
-      assert.strictEqual(response.body.success, false);
-      assert.ok(response.body.message.includes("anchor"));
+      assert.strictEqual(response.body.success, true);
+      assert.strictEqual(response.body.data.anchor, null);
     });
 
     it("should reject feedback with invalid anchor_status", async () => {

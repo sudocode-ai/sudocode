@@ -1,0 +1,7 @@
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"read-001","name":"Read","input":{"file_path":"/nonexistent/file.ts"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_result","tool_use_id":"read-001","content":"Error: ENOENT: no such file or directory","is_error":true}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"bash-001","name":"Bash","input":{"command":"invalid-command"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_result","tool_use_id":"bash-001","content":"bash: invalid-command: command not found","is_error":true}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"edit-001","name":"Edit","input":{"file_path":"/path/to/file.ts","old_string":"nonexistent text","new_string":"replacement"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_result","tool_use_id":"edit-001","content":"Error: String not found in file","is_error":true}]}}
+{"type":"result","usage":{"input_tokens":200,"output_tokens":80,"cache_read_input_tokens":30}}

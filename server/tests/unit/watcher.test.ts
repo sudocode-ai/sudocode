@@ -60,7 +60,7 @@ describe("File Watcher Service", () => {
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
-        debounceDelay: 500, // Shorter delay for tests
+        debounceDelay: 50, // Shorter delay for tests
       });
 
       assert.ok(watcher, "Watcher should be created");
@@ -84,11 +84,11 @@ describe("File Watcher Service", () => {
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
-        debounceDelay: 500,
+        debounceDelay: 50,
       });
 
       // Wait for watcher to initialize
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       const stats = watcher.getStats();
 
@@ -99,7 +99,7 @@ describe("File Watcher Service", () => {
     });
 
     it("should accept custom debounce delay", async () => {
-      const customDelay = 1500;
+      const customDelay = 100;
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
@@ -121,14 +121,14 @@ describe("File Watcher Service", () => {
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
-        debounceDelay: 500,
+        debounceDelay: 50,
         onFileChange: (info) => {
           changes.push(info);
         },
       });
 
       // Wait for watcher to be ready
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Create a markdown file
       const specsDir = path.join(testDir, "specs");
@@ -136,7 +136,7 @@ describe("File Watcher Service", () => {
       fs.writeFileSync(testFilePath, "---\nid: SPEC-001\n---\n\n# Test Spec\n\nThis is a test spec.");
 
       // Wait for debounce + processing
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Verify that a change was detected
       assert.ok(changes.length > 0, "Should have detected file change");
@@ -153,11 +153,11 @@ describe("File Watcher Service", () => {
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
-        debounceDelay: 500,
+        debounceDelay: 50,
       });
 
       // Wait for watcher to be ready
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Create a JSONL file
       const specsJsonlPath = path.join(testDir, "specs", "specs.jsonl");
@@ -168,8 +168,8 @@ describe("File Watcher Service", () => {
       };
       fs.writeFileSync(specsJsonlPath, JSON.stringify(testData) + "\n");
 
-      // Wait for debounce + processing (longer to ensure detection)
-      await new Promise((resolve) => setTimeout(resolve, 4000));
+      // Wait for debounce + processing
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // The callback may or may not be invoked depending on sync success
       // Just verify the watcher is still running without errors
@@ -190,11 +190,11 @@ describe("File Watcher Service", () => {
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
-        debounceDelay: 500,
+        debounceDelay: 50,
       });
 
       // Wait for watcher to start
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Stop should not throw
       await assert.doesNotReject(
@@ -209,11 +209,11 @@ describe("File Watcher Service", () => {
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
-        debounceDelay: 500,
+        debounceDelay: 50,
       });
 
       // Wait for watcher to initialize
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       const initialStats = watcher.getStats();
       assert.strictEqual(initialStats.changesPending, 0, "Should have no pending changes initially");
@@ -227,14 +227,14 @@ describe("File Watcher Service", () => {
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
-        debounceDelay: 1000, // 1 second debounce
+        debounceDelay: 100, // 100ms debounce
         onFileChange: (info) => {
           changes.push(info);
         },
       });
 
       // Wait for watcher to be ready
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Create multiple files rapidly
       const specsDir = path.join(testDir, "specs");
@@ -242,11 +242,11 @@ describe("File Watcher Service", () => {
       const file2 = path.join(specsDir, "rapid-2.md");
 
       fs.writeFileSync(file1, "---\nid: SPEC-R1\n---\n# Rapid 1");
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 50));
       fs.writeFileSync(file2, "---\nid: SPEC-R2\n---\n# Rapid 2");
 
       // Wait for debounce + processing
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Should have processed both files (debouncing prevents duplicate processing)
       assert.ok(changes.length >= 0, "Should handle multiple rapid changes");
@@ -267,7 +267,7 @@ describe("File Watcher Service", () => {
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
-        debounceDelay: 500,
+        debounceDelay: 50,
         onFileChange: (info) => {
           callbackInvoked = true;
           receivedInfo = info;
@@ -275,7 +275,7 @@ describe("File Watcher Service", () => {
       });
 
       // Wait for watcher to be ready
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Create a spec file
       const specsDir = path.join(testDir, "specs");
@@ -283,7 +283,7 @@ describe("File Watcher Service", () => {
       fs.writeFileSync(testFile, "---\nid: SPEC-CB1\n---\n# Callback Test");
 
       // Wait for debounce + processing
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       if (callbackInvoked && receivedInfo) {
         assert.ok(receivedInfo, "Callback should receive info object");

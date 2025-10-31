@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import * as path from "path";
 import * as http from "http";
 import { fileURLToPath } from "url";
+import { readFileSync } from "fs";
 import type Database from "better-sqlite3";
 
 // ES Module __dirname equivalent
@@ -14,6 +15,8 @@ import { createIssuesRouter } from "./routes/issues.js";
 import { createSpecsRouter } from "./routes/specs.js";
 import { createRelationshipsRouter } from "./routes/relationships.js";
 import { createFeedbackRouter } from "./routes/feedback.js";
+import { createExecutionStreamRoutes } from "./routes/executions-stream.js";
+import { TransportManager } from "./execution/transport/transport-manager.js";
 import { getIssueById } from "./services/issues.js";
 import { getSpecById } from "./services/specs.js";
 import {
@@ -39,9 +42,10 @@ const SUDOCODE_DIR =
   process.env.SUDOCODE_DIR || path.join(process.cwd(), ".sudocode");
 const DB_PATH = path.join(SUDOCODE_DIR, "cache.db");
 
-// Initialize database
+// Initialize database and transport manager
 let db: Database.Database;
 let watcher: ServerWatcherControl | null = null;
+let transportManager: TransportManager;
 
 try {
   console.log(`Initializing database at: ${DB_PATH}`);
@@ -54,6 +58,10 @@ try {
       "Warning: CLI tables not found. Run 'sudocode sync' to initialize the database."
     );
   }
+
+  // Initialize transport manager for SSE streaming
+  transportManager = new TransportManager();
+  console.log('Transport manager initialized');
 } catch (error) {
   console.error("Failed to initialize database:", error);
   process.exit(1);
@@ -120,6 +128,7 @@ app.use("/api/issues", createIssuesRouter(db));
 app.use("/api/specs", createSpecsRouter(db));
 app.use("/api/relationships", createRelationshipsRouter(db));
 app.use("/api/feedback", createFeedbackRouter(db));
+app.use("/api/executions", createExecutionStreamRoutes(transportManager));
 
 // Health check endpoint
 app.get("/health", (_req: Request, res: Response) => {
@@ -134,6 +143,42 @@ app.get("/health", (_req: Request, res: Response) => {
       hasCliTables: dbInfo.hasCliTables,
     },
   });
+});
+
+// Version endpoint - returns versions of all packages
+app.get("/api/version", (_req: Request, res: Response) => {
+  try {
+    // Read package.json files - going up from server/dist to project root
+    const projectRoot = path.join(__dirname, "../..");
+    const cliPackagePath = path.join(projectRoot, "cli/package.json");
+    const serverPackagePath = path.join(projectRoot, "server/package.json");
+    const frontendPackagePath = path.join(projectRoot, "frontend/package.json");
+
+    const cliPackage = JSON.parse(readFileSync(cliPackagePath, "utf-8"));
+    const serverPackage = JSON.parse(readFileSync(serverPackagePath, "utf-8"));
+    const frontendPackage = JSON.parse(readFileSync(frontendPackagePath, "utf-8"));
+
+    res.status(200).json({
+      cli: cliPackage.version,
+      server: serverPackage.version,
+      frontend: frontendPackage.version,
+    });
+  } catch (error) {
+    console.error("Failed to read version information:", error);
+    res.status(500).json({ error: "Failed to read version information" });
+  }
+});
+
+// Config endpoint - returns sudocode configuration
+app.get("/api/config", (_req: Request, res: Response) => {
+  try {
+    const configPath = path.join(SUDOCODE_DIR, "config.json");
+    const config = JSON.parse(readFileSync(configPath, "utf-8"));
+    res.status(200).json(config);
+  } catch (error) {
+    console.error("Failed to read config:", error);
+    res.status(500).json({ error: "Failed to read config" });
+  }
 });
 
 // WebSocket stats endpoint
@@ -187,6 +232,12 @@ process.on("SIGINT", async () => {
   // Shutdown WebSocket server
   await shutdownWebSocketServer();
 
+  // Shutdown transport manager
+  if (transportManager) {
+    transportManager.shutdown();
+    console.log("Transport manager shutdown complete");
+  }
+
   // Close database
   db.close();
 
@@ -208,6 +259,12 @@ process.on("SIGTERM", async () => {
   // Shutdown WebSocket server
   await shutdownWebSocketServer();
 
+  // Shutdown transport manager
+  if (transportManager) {
+    transportManager.shutdown();
+    console.log("Transport manager shutdown complete");
+  }
+
   // Close database
   db.close();
 
@@ -219,4 +276,4 @@ process.on("SIGTERM", async () => {
 });
 
 export default app;
-export { db };
+export { db, transportManager };

@@ -5,18 +5,31 @@ import { SpecList } from '@/components/specs/SpecList'
 import { SpecEditor } from '@/components/specs/SpecEditor'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Archive, Plus } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Archive, Plus, Search } from 'lucide-react'
 import type { Spec } from '@/types/api'
 
 export default function SpecsPage() {
   const { specs, isLoading } = useSpecs()
   const [showEditor, setShowEditor] = useState(false)
+  const [filterText, setFilterText] = useState('')
   const navigate = useNavigate()
 
   const handleSave = (spec: Spec) => {
     setShowEditor(false)
     navigate(`/specs/${spec.id}`)
   }
+
+  // Filter specs based on search text
+  const filteredSpecs = filterText
+    ? specs.filter((spec) => {
+        const searchText = filterText.toLowerCase()
+        return (
+          spec.title.toLowerCase().includes(searchText) ||
+          (spec.content && spec.content.toLowerCase().includes(searchText))
+        )
+      })
+    : specs
 
   if (showEditor) {
     return (
@@ -33,7 +46,17 @@ export default function SpecsPage() {
           <h1 className="text-3xl font-bold">Specs</h1>
           {!isLoading && <Badge variant="secondary">{specs.length}</Badge>}
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Filter specs..."
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              className="h-9 w-64 pl-8"
+            />
+          </div>
           <Button
             variant="ghost"
             onClick={() => navigate('/specs/archived')}
@@ -54,7 +77,7 @@ export default function SpecsPage() {
         </div>
       </div>
 
-      <SpecList specs={specs} loading={isLoading} />
+      <SpecList specs={filteredSpecs} loading={isLoading} />
     </div>
   )
 }

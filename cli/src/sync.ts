@@ -408,9 +408,18 @@ async function syncSpec(
       updated_at: fileModTime,
     } as any);
   } else {
+    // Check if content has actually changed
+    const contentChanged =
+      oldSpec?.title !== specData.title ||
+      oldSpec?.content !== specData.content ||
+      oldSpec?.priority !== specData.priority ||
+      oldSpec?.parent_id !== specData.parent_id ||
+      oldSpec?.file_path !== specData.file_path;
+
+    // Only update timestamp if content actually changed
     updateSpec(db, id, {
       ...specData,
-      updated_at: fileModTime,
+      ...(contentChanged && fileModTime ? { updated_at: fileModTime } : {}),
     });
 
     // Relocate feedback anchors if content changed
@@ -470,6 +479,8 @@ async function syncIssue(
   user: string,
   fileModTime?: string
 ): Promise<void> {
+  const oldIssue = isNew ? null : getIssue(db, id);
+
   const issueData: Partial<Issue> = {
     id,
     title: frontmatter.title || "Untitled",
@@ -486,9 +497,19 @@ async function syncIssue(
       updated_at: fileModTime,
     } as any);
   } else {
+    // Check if content has actually changed
+    const contentChanged =
+      oldIssue?.title !== issueData.title ||
+      oldIssue?.content !== issueData.content ||
+      oldIssue?.status !== issueData.status ||
+      oldIssue?.priority !== issueData.priority ||
+      oldIssue?.assignee !== issueData.assignee ||
+      oldIssue?.parent_id !== issueData.parent_id;
+
+    // Only update timestamp if content actually changed
     updateIssue(db, id, {
       ...issueData,
-      updated_at: fileModTime,
+      ...(contentChanged && fileModTime ? { updated_at: fileModTime } : {}),
     });
   }
 

@@ -12,6 +12,7 @@
     "build": "tsc",
     "start": "node dist/src/index.js",
     "test": "npm run build && NODE_ENV=test node --test dist/**/*.test.js",
+    "test:e2e": "npm run build && RUN_E2E_TESTS=true NODE_ENV=test node --test dist/tests/e2e/**/*.test.js",
     "test:verbose": "npm run build && node --test dist/**/*.test.js",
     "typecheck": "tsc --noEmit"
   },
@@ -23,15 +24,18 @@
   ],
   "author": "sudocode AI",
   "dependencies": {
+    "@ag-ui/core": "^0.0.39",
     "@sudocode/cli": "^0.1.0",
     "@sudocode/types": "^0.1.0",
     "@types/ws": "^8.18.1",
+    "async-mutex": "^0.5.0",
     "better-sqlite3": "^11.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.18.2",
     "node-fetch": "^2.7.0",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.8",

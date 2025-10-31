@@ -109,6 +109,18 @@ export function createIssue(
     ) VALUES (
       ${values.join(", ")}
     )
+    ON CONFLICT(id) DO UPDATE SET
+      uuid = excluded.uuid,
+      title = excluded.title,
+      content = excluded.content,
+      status = excluded.status,
+      priority = excluded.priority,
+      assignee = excluded.assignee,
+      parent_id = excluded.parent_id,
+      archived = excluded.archived,
+      archived_at = excluded.archived_at,
+      ${input.created_at ? 'created_at = excluded.created_at,' : ''}
+      ${input.updated_at ? 'updated_at = excluded.updated_at' : 'updated_at = CURRENT_TIMESTAMP'}
   `);
 
   try {

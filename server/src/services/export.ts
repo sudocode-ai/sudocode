@@ -89,10 +89,16 @@ export function triggerExport(db: Database.Database): void {
     clearTimeout(debouncer.timeoutId);
   }
 
-  debouncer.timeoutId = setTimeout(() => {
-    executeFullExport(db).catch((error) => {
+  debouncer.timeoutId = setTimeout(async () => {
+    try {
+      await executeFullExport(db);
+    } catch (error) {
       console.error("Export failed:", error);
-    });
+    } finally {
+      // Reset debouncer state after export completes
+      debouncer.pending = false;
+      debouncer.timeoutId = null;
+    }
   }, 2000); // 2 second debounce
 }
 

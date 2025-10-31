@@ -5,7 +5,8 @@ import type { Issue, IssueStatus } from '@/types/api'
 import IssueKanbanBoard from '@/components/issues/IssueKanbanBoard'
 import IssuePanel from '@/components/issues/IssuePanel'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { ArrowLeft, Search } from 'lucide-react'
 import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels'
 
 export default function ArchivedIssuesPage() {
@@ -22,9 +23,21 @@ export default function ArchivedIssuesPage() {
     isDeleting,
   } = useIssues(true)
   const [selectedIssue, setSelectedIssue] = useState<Issue | undefined>()
+  const [filterText, setFilterText] = useState('')
 
   // Group issues by status
   const groupedIssues = useMemo(() => {
+    // Filter issues based on search text
+    const filteredIssues = filterText
+      ? issues.filter((issue) => {
+          const searchText = filterText.toLowerCase()
+          return (
+            issue.title.toLowerCase().includes(searchText) ||
+            (issue.content && issue.content.toLowerCase().includes(searchText))
+          )
+        })
+      : issues
+
     const groups: Record<IssueStatus, Issue[]> = {
       open: [],
       in_progress: [],
@@ -33,7 +46,7 @@ export default function ArchivedIssuesPage() {
       closed: [],
     }
 
-    issues.forEach((issue) => {
+    filteredIssues.forEach((issue) => {
       const status = issue.status.toLowerCase() as IssueStatus
       if (groups[status]) {
         groups[status].push(issue)
@@ -67,7 +80,7 @@ export default function ArchivedIssuesPage() {
     })
 
     return groups
-  }, [issues])
+  }, [issues, filterText])
 
   const handleViewIssueDetails = useCallback((issue: Issue) => {
     setSelectedIssue(issue)
@@ -133,6 +146,16 @@ export default function ArchivedIssuesPage() {
             <h1 className="text-2xl font-bold">Archived Issues</h1>
             <p className="text-sm text-muted-foreground">{issues.length} archived issues</p>
           </div>
+        </div>
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="Filter issues..."
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+            className="h-9 w-64 pl-8"
+          />
         </div>
       </div>
 

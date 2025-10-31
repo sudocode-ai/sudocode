@@ -35,11 +35,119 @@ import Image from '@tiptap/extension-image'
 import { ListKit } from '@tiptap/extension-list'
 import { TableWithControls } from './TableWithControls'
 import { EntityMention } from './extensions/EntityMention'
+import { FeedbackMark } from './extensions/FeedbackMark'
 import { preprocessEntityMentions } from './extensions/markdown-utils'
+import type { IssueFeedback } from '@/types/api'
 import './tiptap.css'
 
 // Create lowlight instance with common languages
 const lowlight = createLowlight(common)
+
+/**
+ * Create a configured TurndownService instance with all custom rules
+ * Used by both onChange (autosave) and handleSave to ensure consistent markdown output
+ */
+function createConfiguredTurndownService(): TurndownService {
+  const turndownService = new TurndownService({
+    headingStyle: 'atx',
+    codeBlockStyle: 'fenced',
+    bulletListMarker: '-',
+    hr: '---',
+    emDelimiter: '_',
+    strongDelimiter: '**',
+  })
+
+  // Add GFM support (strikethrough)
+  turndownService.addRule('strikethrough', {
+    filter: ['del', 's'] as any,
+    replacement: (content) => `~~${content}~~`,
+  })
+
+  // Add table support
+  turndownService.addRule('table', {
+    filter: 'table',
+    replacement: (content) => {
+      return '\n' + content + '\n'
+    },
+  })
+
+  turndownService.addRule('tableRow', {
+    filter: 'tr',
+    replacement: (content, node) => {
+      const row = '|' + content + '\n'
+
+      // Check if this row contains header cells (th elements)
+      const headerCells = (node as HTMLElement).querySelectorAll('th')
+      if (headerCells.length > 0) {
+        // Add separator row after header row
+        const separatorRow =
+          '|' +
+          Array.from(headerCells)
+            .map(() => ' --- |')
+            .join('') +
+          '\n'
+        return row + separatorRow
+      }
+
+      return row
+    },
+  })
+
+  turndownService.addRule('tableCell', {
+    filter: ['th', 'td'],
+    replacement: (content) => {
+      return ' ' + content.trim() + ' |'
+    },
+  })
+
+  // Fix list item formatting to prevent extra newlines and spaces
+  turndownService.addRule('listItem', {
+    filter: 'li',
+    replacement: (content, node) => {
+      // Remove leading/trailing newlines from content
+      content = content.trim().replace(/\n\n/g, '\n')
+
+      const parent = node.parentNode
+      if (!parent) return content
+
+      const prefix = /ol/i.test(parent.nodeName) ? '1. ' : '- '
+      const postfix = '\n'
+
+      return prefix + content.replace(/\n/g, '\n  ') + postfix
+    },
+  })
+
+  // Handle entity mentions - convert spans directly to [[ENTITY-ID]] format
+  turndownService.addRule('entityMention', {
+    filter: (node) => {
+      return node.nodeName === 'SPAN' && node.hasAttribute('data-entity-id')
+    },
+    replacement: (content, node) => {
+      const element = node as HTMLElement
+      const entityId = element.getAttribute('data-entity-id')
+      const displayText = element.getAttribute('data-display-text')
+      const relationshipType = element.getAttribute('data-relationship-type')
+
+      if (!entityId) return content
+
+      let ref = `[[${entityId}`
+
+      if (displayText) {
+        ref += `|${displayText}`
+      }
+
+      ref += ']]'
+
+      if (relationshipType) {
+        ref += `{ ${relationshipType} }`
+      }
+
+      return ref
+    },
+  })
+
+  return turndownService
+}
 
 // Custom extension to handle Tab key for indentation
 const TabHandler = Extension.create({
@@ -78,6 +186,33 @@ const TabHandler = Extension.create({
   },
 })
 
+// Custom extension to add line numbers to block elements
+const LineNumbers = Extension.create({
+  name: 'lineNumbers',
+
+  addGlobalAttributes() {
+    return [
+      {
+        types: ['heading', 'paragraph', 'codeBlock', 'blockquote', 'orderedList', 'bulletList'],
+        attributes: {
+          lineNumber: {
+            default: null,
+            parseHTML: (element) => element.getAttribute('data-line-number'),
+            renderHTML: (attributes) => {
+              if (!attributes.lineNumber) {
+                return {}
+              }
+              return {
+                'data-line-number': attributes.lineNumber,
+              }
+            },
+          },
+        },
+      },
+    ]
+  },
+})
+
 interface TiptapEditorProps {
   content: string
   editable?: boolean
@@ -86,11 +221,23 @@ interface TiptapEditorProps {
   onCancel?: () => void
   className?: string
   showToolbar?: boolean
+  feedback?: IssueFeedback[]
+  onFeedbackClick?: (feedbackId: string) => void
+  showLineNumbers?: boolean
+  selectedLine?: number | null
+  onLineClick?: (lineNumber: number) => void
 }
 
 /**
  * Tiptap editor for markdown content with rich text editing capabilities.
  * Supports both read-only and editable modes with a formatting toolbar.
+ *
+ * Feedback Integration:
+ * - Accepts optional feedback array for displaying inline feedback highlights
+ * - FeedbackMark extension renders <mark> elements with data-feedback-id attributes
+ * - Click handler calls onFeedbackClick when feedback marks are clicked
+ * - Note: Actual mark application based on feedback anchors happens at the parent level
+ *   (e.g., SpecDetailPage) since it requires mapping line numbers to content positions
  */
 export function TiptapEditor({
   content,
@@ -100,6 +247,11 @@ export function TiptapEditor({
   onCancel,
   className = '',
   showToolbar = false,
+  feedback: _feedback = [], // Reserved for future use
+  onFeedbackClick,
+  showLineNumbers = false,
+  selectedLine,
+  onLineClick,
 }: TiptapEditorProps) {
   const [htmlContent, setHtmlContent] = useState<string>('')
   const [hasChanges, setHasChanges] = useState(false)
@@ -162,7 +314,9 @@ export function TiptapEditor({
       }),
       ListKit,
       TabHandler,
+      LineNumbers,
       EntityMention,
+      FeedbackMark,
     ],
     editable,
     content: htmlContent,
@@ -175,49 +329,7 @@ export function TiptapEditor({
       // Call onChange callback if provided (for autosave)
       if (onChange) {
         const html = editor.getHTML()
-        const turndownService = new TurndownService({
-          headingStyle: 'atx',
-          codeBlockStyle: 'fenced',
-          bulletListMarker: '-',
-          hr: '---',
-          emDelimiter: '_',
-          strongDelimiter: '**',
-        })
-
-        // Add all the custom rules (copy from handleSave)
-        turndownService.addRule('strikethrough', {
-          filter: ['del', 's'] as any,
-          replacement: (content) => `~~${content}~~`,
-        })
-
-        turndownService.addRule('entityMention', {
-          filter: (node) => {
-            return node.nodeName === 'SPAN' && node.hasAttribute('data-entity-id')
-          },
-          replacement: (content, node) => {
-            const element = node as HTMLElement
-            const entityId = element.getAttribute('data-entity-id')
-            const displayText = element.getAttribute('data-display-text')
-            const relationshipType = element.getAttribute('data-relationship-type')
-
-            if (!entityId) return content
-
-            let ref = `[[${entityId}`
-
-            if (displayText) {
-              ref += `|${displayText}`
-            }
-
-            ref += ']]'
-
-            if (relationshipType) {
-              ref += `{ ${relationshipType} }`
-            }
-
-            return ref
-          },
-        })
-
+        const turndownService = createConfiguredTurndownService()
         const markdown = turndownService.turndown(html)
 
         // Only call onChange if content actually changed
@@ -282,112 +394,208 @@ export function TiptapEditor({
     }
   }, [editable, editor])
 
+  // Handle clicks on feedback marks
+  useEffect(() => {
+    if (!editor || !onFeedbackClick) return
+
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+
+      // Check if the clicked element or its parent has data-feedback-id
+      const markElement = target.closest('[data-feedback-id]') as HTMLElement
+      if (markElement) {
+        const feedbackId = markElement.getAttribute('data-feedback-id')
+        if (feedbackId) {
+          onFeedbackClick(feedbackId)
+        }
+      }
+    }
+
+    const editorElement = editor.view.dom
+    editorElement.addEventListener('click', handleClick)
+
+    return () => {
+      editorElement.removeEventListener('click', handleClick)
+    }
+  }, [editor, onFeedbackClick])
+
+  // Calculate and set line numbers based on markdown source
+  useEffect(() => {
+    if (!editor || !showLineNumbers || !content) return
+
+    const applyLineNumbers = () => {
+      const lines = content.split('\n')
+
+      // Count leading empty lines to ensure correct offset
+      let leadingEmptyLines = 0
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim() === '') {
+          leadingEmptyLines++
+        } else {
+          break
+        }
+      }
+
+      // Parse markdown to identify block start lines
+      let inCodeBlock = false
+      let inList = false
+      let firstContentBlockFound = false
+      const blockLineNumbers: number[] = []
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]
+        const trimmedLine = line.trim()
+
+        // Track code blocks
+        if (trimmedLine.startsWith('```')) {
+          inCodeBlock = !inCodeBlock
+          if (!inCodeBlock) {
+            inList = false
+            continue
+          } else {
+            blockLineNumbers.push(i + 1)
+            firstContentBlockFound = true
+            inList = false
+            continue
+          }
+        }
+
+        if (inCodeBlock) {
+          continue
+        }
+
+        // Skip empty lines
+        if (!trimmedLine) {
+          inList = false
+          continue
+        }
+
+        // Check if this is a block-level element
+        const isHeading = /^#{1,6}\s/.test(trimmedLine)
+        const isBulletList = /^[-*+]\s/.test(trimmedLine)
+        const isOrderedList = /^\d+\.\s/.test(trimmedLine)
+        const isBlockquote = trimmedLine.startsWith('>')
+        const isHorizontalRule = /^[-*_]{3,}$/.test(trimmedLine)
+
+        // For lists, only count the first item
+        if (isBulletList || isOrderedList) {
+          if (!inList) {
+            blockLineNumbers.push(i + 1)
+            firstContentBlockFound = true
+            inList = true
+          }
+          // Skip subsequent list items
+          continue
+        }
+
+        // Non-list items end the list
+        inList = false
+
+        // Add block if it's a special element or starts a new block
+        // For the first content block, use its actual line number regardless of position
+        if (isHeading || isBlockquote || isHorizontalRule) {
+          blockLineNumbers.push(i + 1)
+          firstContentBlockFound = true
+        } else if (!firstContentBlockFound || !lines[i - 1].trim()) {
+          // Regular paragraph: add if it's the first content block or preceded by empty line
+          blockLineNumbers.push(i + 1)
+          firstContentBlockFound = true
+        }
+      }
+
+      // Apply line numbers to nodes using Tiptap transactions
+      const { state } = editor
+      const { tr } = state
+      let nodeIndex = 0
+
+      // Iterate through top-level blocks using descendants with depth check
+      state.doc.descendants((node, pos, parent) => {
+        // Only process direct children of the document (depth 0 means doc, depth 1 means top-level blocks)
+        if (parent === state.doc && node.isBlock) {
+          const lineNumber = blockLineNumbers[nodeIndex] || nodeIndex + 1
+
+          tr.setNodeMarkup(pos, undefined, {
+            ...node.attrs,
+            lineNumber: String(lineNumber),
+          })
+
+          nodeIndex++
+          // Don't descend into children of this block
+          return false
+        }
+        // Continue descending for non-block nodes
+        return true
+      })
+
+      if (tr.docChanged) {
+        editor.view.dispatch(tr)
+      }
+    }
+
+    // Use setTimeout to ensure the editor has finished rendering
+    const timeoutId = setTimeout(() => {
+      applyLineNumbers()
+    }, 100)
+
+    return () => {
+      clearTimeout(timeoutId)
+    }
+  }, [editor, showLineNumbers, content])
+
+  // Handle line number clicks
+  useEffect(() => {
+    if (!editor || !showLineNumbers) return
+
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+
+      // Check if clicking on the line number pseudo-element area
+      const blockElement = target.closest('.ProseMirror > *') as HTMLElement
+      if (!blockElement) return
+
+      // Get the line number from the data attribute
+      const lineNumber = parseInt(blockElement.getAttribute('data-line-number') || '0')
+
+      if (lineNumber > 0 && onLineClick) {
+        onLineClick(lineNumber)
+      }
+    }
+
+    const editorElement = editor.view.dom
+    editorElement.addEventListener('click', handleClick)
+
+    return () => {
+      editorElement.removeEventListener('click', handleClick)
+    }
+  }, [editor, showLineNumbers, onLineClick])
+
+  // Update selected line styling based on markdown line numbers
+  useEffect(() => {
+    if (!editor || !showLineNumbers) return
+
+    // Remove previous selection
+    const allBlocks = editor.view.dom.querySelectorAll('.ProseMirror > *')
+    allBlocks.forEach((block) => block.classList.remove('selected-line'))
+
+    // Add selection to current line by matching the line number
+    if (selectedLine && selectedLine > 0) {
+      allBlocks.forEach((block) => {
+        const blockLine = parseInt((block as HTMLElement).getAttribute('data-line-number') || '0')
+        if (blockLine === selectedLine) {
+          block.classList.add('selected-line')
+        }
+      })
+    }
+  }, [editor, showLineNumbers, selectedLine])
+
   const handleSave = () => {
     if (!editor || !onSave) return
 
     // Convert HTML back to markdown
     const html = editor.getHTML()
-
-    const turndownService = new TurndownService({
-      headingStyle: 'atx',
-      codeBlockStyle: 'fenced',
-      bulletListMarker: '-',
-      hr: '---',
-      emDelimiter: '_',
-      strongDelimiter: '**',
-    })
-
-    // Add GFM support (tables, strikethrough, task lists)
-    turndownService.addRule('strikethrough', {
-      filter: ['del', 's'] as any,
-      replacement: (content) => `~~${content}~~`,
-    })
-
-    // Add table support
-    turndownService.addRule('table', {
-      filter: 'table',
-      replacement: (content) => {
-        return '\n' + content + '\n'
-      },
-    })
-
-    turndownService.addRule('tableRow', {
-      filter: 'tr',
-      replacement: (content, node) => {
-        const row = '|' + content + '\n'
-
-        // Check if this row contains header cells (th elements)
-        const headerCells = (node as HTMLElement).querySelectorAll('th')
-        if (headerCells.length > 0) {
-          // Add separator row after header row
-          const separatorRow =
-            '|' +
-            Array.from(headerCells)
-              .map(() => ' --- |')
-              .join('') +
-            '\n'
-          return row + separatorRow
-        }
-
-        return row
-      },
-    })
-
-    turndownService.addRule('tableCell', {
-      filter: ['th', 'td'],
-      replacement: (content) => {
-        return ' ' + content.trim() + ' |'
-      },
-    })
-
-    // Fix list item formatting to prevent extra newlines
-    turndownService.addRule('listItem', {
-      filter: 'li',
-      replacement: (content, node) => {
-        // Remove leading/trailing newlines from content
-        content = content.trim().replace(/\n\n/g, '\n')
-
-        const parent = node.parentNode
-        if (!parent) return content
-
-        const prefix = /ol/i.test(parent.nodeName) ? '1. ' : '- '
-        const postfix = '\n'
-
-        return prefix + content.replace(/\n/g, '\n  ') + postfix
-      },
-    })
-
-    // Handle entity mentions - convert spans directly to [[ENTITY-ID]] format
-    // This prevents turndown from escaping the brackets
-    turndownService.addRule('entityMention', {
-      filter: (node) => {
-        return node.nodeName === 'SPAN' && node.hasAttribute('data-entity-id')
-      },
-      replacement: (content, node) => {
-        const element = node as HTMLElement
-        const entityId = element.getAttribute('data-entity-id')
-        const displayText = element.getAttribute('data-display-text')
-        const relationshipType = element.getAttribute('data-relationship-type')
-
-        if (!entityId) return content
-
-        let ref = `[[${entityId}`
-
-        if (displayText) {
-          ref += `|${displayText}`
-        }
-
-        ref += ']]'
-
-        if (relationshipType) {
-          ref += `{ ${relationshipType} }`
-        }
-
-        return ref
-      },
-    })
-
+    const turndownService = createConfiguredTurndownService()
     const markdown = turndownService.turndown(html)
+
     onSave(markdown)
     setHasChanges(false)
   }
@@ -583,7 +791,7 @@ export function TiptapEditor({
       )}
 
       {/* Editor content */}
-      <div className="p-6">
+      <div className={`p-6 ${showLineNumbers ? 'tiptap-with-line-numbers' : ''}`}>
         <EditorContent
           editor={editor}
           className="tiptap-editor prose prose-sm dark:prose-invert max-w-none"

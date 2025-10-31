@@ -1,0 +1,7 @@
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"read-001","name":"Read","input":{"file_path":"/path/to/config.ts"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_result","tool_use_id":"read-001","content":"export const config = { port: 3000 }","is_error":false}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"edit-001","name":"Edit","input":{"file_path":"/path/to/config.ts","old_string":"port: 3000","new_string":"port: 8080"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_result","tool_use_id":"edit-001","content":"File edited successfully","is_error":false}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"write-001","name":"Write","input":{"file_path":"/path/to/new-file.ts","content":"export const newConfig = { enabled: true }"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_result","tool_use_id":"write-001","content":"File written successfully","is_error":false}]}}
+{"type":"result","usage":{"input_tokens":250,"output_tokens":100,"cache_read_input_tokens":50}}

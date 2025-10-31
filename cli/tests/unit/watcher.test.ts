@@ -68,7 +68,7 @@ describe("File Watcher", () => {
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100, // Shorter delay for tests
+        debounceDelay: 50, // Shorter delay for tests
         onLog: (msg) => logs.push(msg),
         onError: (err) => console.error(err),
       });
@@ -78,7 +78,7 @@ describe("File Watcher", () => {
       expect(control.getStats).toBeDefined();
 
       // Wait for watcher to be ready
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Check that watcher is ready
       expect(logs.some((log) => log.includes("Watching"))).toBe(true);
@@ -111,15 +111,15 @@ This is a test spec.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
+        debounceDelay: 50,
         ignoreInitial: false, // Detect existing files
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
       });
 
       // Wait for watcher to start and process initial files
-      // Need to wait for: awaitWriteFinish (300ms) + debounce (100ms) + processing
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Need to wait for: awaitWriteFinish + debounce + processing
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Debug
       if (errors.length > 0) {
@@ -145,7 +145,7 @@ This is a test spec.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
+        debounceDelay: 50,
         ignoreInitial: true, // Ignore initial files
         onLog: (msg) => {
           logs.push(msg);
@@ -158,13 +158,13 @@ This is a test spec.
 
       // Wait for watcher to be ready
       let waited = 0;
-      while (!watcherReady && waited < 3000) {
+      while (!watcherReady && waited < 2000) {
         await new Promise((resolve) => setTimeout(resolve, 100));
         waited += 100;
       }
 
       // Additional buffer
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Create a new file AFTER watcher starts (so it will be detected)
       const specPath = path.join(tempDir, "specs", "test-spec-change.md");
@@ -183,8 +183,8 @@ Initial content.
       fs.writeFileSync(specPath, content, "utf8");
 
       // Wait for file to be detected
-      // awaitWriteFinish (100ms) + debounce (100ms) + processing + buffer
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      // awaitWriteFinish + debounce + processing + buffer
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       // Debug
       if (errors.length > 0) {
@@ -209,7 +209,7 @@ Initial content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 500, // Longer debounce for testing
+        debounceDelay: 200, // Debounce for testing
         ignoreInitial: true,
         onLog: (msg) => {
           logs.push(msg);
@@ -222,13 +222,13 @@ Initial content.
 
       // Wait for watcher to be ready
       let waited = 0;
-      while (!watcherReady && waited < 3000) {
+      while (!watcherReady && waited < 2000) {
         await new Promise((resolve) => setTimeout(resolve, 100));
         waited += 100;
       }
 
       // Additional buffer
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       const initialProcessed = control.getStats().changesProcessed;
 
@@ -249,12 +249,12 @@ Content version: `;
       // Write file multiple times in rapid succession (faster than debounce delay)
       for (let i = 1; i <= 5; i++) {
         fs.writeFileSync(specPath, baseContent + i, "utf8");
-        await new Promise((resolve) => setTimeout(resolve, 50)); // 50ms between writes
+        await new Promise((resolve) => setTimeout(resolve, 30)); // 30ms between writes
       }
 
       // Wait for debounce and processing
-      // awaitWriteFinish (100ms) + debounce (500ms) + processing time + buffer
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      // awaitWriteFinish + debounce (200ms) + processing time + buffer
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       // Debug
       if (errors.length > 0) {
@@ -296,14 +296,14 @@ This spec will be deleted.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
+        debounceDelay: 50,
         ignoreInitial: false, // Detect existing files
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
       });
 
       // Wait for watcher to start and process initial file
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Import getSpec to verify the spec exists
       const { getSpec } = await import("../../src/operations/specs.js");
@@ -323,7 +323,7 @@ This spec will be deleted.
 
       // Wait for deletion to be processed
       // awaitWriteFinish + debounce + processing
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Verify spec was deleted from database
       spec = getSpec(db, "spec-delete-001");
@@ -359,14 +359,14 @@ This spec has no frontmatter and will be deleted.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
+        debounceDelay: 50,
         ignoreInitial: false, // Detect existing files
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
       });
 
       // Wait for watcher to start and process initial file
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Verify spec was auto-created in database (by file path)
       const relPath = "specs/no-frontmatter-delete.md";
@@ -410,13 +410,13 @@ This spec has no frontmatter and will be deleted.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
+        debounceDelay: 50,
         onLog: (msg) => logs.push(msg),
         onError: (err) => console.error(err),
       });
 
       // Wait for watcher to be ready
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Stop watcher
       await control.stop();
@@ -440,7 +440,7 @@ This spec has no frontmatter and will be deleted.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
+        debounceDelay: 50,
         ignoreInitial: true,
         syncJSONLToMarkdown: true, // Enable reverse sync
         onLog: (msg) => logs.push(msg),
@@ -448,7 +448,7 @@ This spec has no frontmatter and will be deleted.
       });
 
       // Wait for watcher to be ready
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Write an issue directly to JSONL (simulating git pull)
       const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
@@ -469,7 +469,7 @@ This spec has no frontmatter and will be deleted.
       );
 
       // Wait for JSONL change to be detected and processed
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Verify markdown file was created
       const issueMdPath = path.join(tempDir, "issues", "issue-001.md");
@@ -497,7 +497,7 @@ This spec has no frontmatter and will be deleted.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
+        debounceDelay: 50,
         ignoreInitial: true,
         syncJSONLToMarkdown: false, // Explicitly disabled
         onLog: (msg) => logs.push(msg),
@@ -505,7 +505,7 @@ This spec has no frontmatter and will be deleted.
       });
 
       // Wait for watcher to be ready
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Write an issue directly to JSONL
       const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
@@ -526,7 +526,7 @@ This spec has no frontmatter and will be deleted.
       );
 
       // Wait for processing
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Verify markdown file was NOT created
       const issueMdPath = path.join(tempDir, "issues", "issue-002.md");
@@ -563,7 +563,7 @@ This is the issue content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
+        debounceDelay: 50,
         ignoreInitial: false,
         syncJSONLToMarkdown: true,
         onLog: (msg) => logs.push(msg),
@@ -571,7 +571,7 @@ This is the issue content.
       });
 
       // Wait for initial import
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Clear logs to track next changes
       logs.length = 0;
@@ -582,7 +582,7 @@ This is the issue content.
       fs.writeFileSync(issuesJsonlPath, jsonlContent, "utf8"); // Touch the file
 
       // Wait for processing
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Should see "All markdown files are up to date" because content matches
       expect(
@@ -620,7 +620,7 @@ This is the issue content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
+        debounceDelay: 50,
         ignoreInitial: false,
         syncJSONLToMarkdown: true,
         onLog: (msg) => logs.push(msg),
@@ -628,7 +628,7 @@ This is the issue content.
       });
 
       // Wait for initial import
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Clear logs to track next changes
       logs.length = 0;
@@ -637,7 +637,7 @@ This is the issue content.
       fs.utimesSync(issuePath, new Date(), new Date());
 
       // Wait for processing
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       expect(errors.length).toBe(0);
     });
@@ -693,7 +693,7 @@ Updated content.
       fs.writeFileSync(issuePath, updatedContent, "utf8");
 
       // Wait for processing
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Should sync because content differs
       expect(
@@ -721,7 +721,7 @@ Updated content.
         control = startWatcher({
           db,
           baseDir: tempDir,
-          debounceDelay: 100,
+          debounceDelay: 50,
           ignoreInitial: true,
           syncJSONLToMarkdown: true,
           onLog: (msg) => {
@@ -734,7 +734,7 @@ Updated content.
         });
 
         // Wait for watcher to be ready
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, 200));
 
         // Write an issue to JSONL
         const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
@@ -756,14 +756,14 @@ Updated content.
 
         // Wait for initial sync chain to complete
         // JSONL → DB → Markdown → (should stop here due to content match)
-        await new Promise((resolve) => setTimeout(resolve, 5000));
+        await new Promise((resolve) => setTimeout(resolve, 1500));
 
         // Reset sync counter
         const initialSyncCount = syncCount;
         syncCount = 0;
 
         // Wait additional time to see if oscillation occurs
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
         // Should have no additional syncs (oscillation would cause repeated syncs)
         expect(syncCount).toBe(0);
@@ -844,14 +844,14 @@ Updated content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
+        debounceDelay: 50,
         ignoreInitial: true,
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
       });
 
       // Wait for watcher to be ready
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Clear logs
       logs.length = 0;
@@ -862,7 +862,7 @@ Updated content.
       fs.writeFileSync(issuesJsonlPath, content, "utf8");
 
       // Wait for processing
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Should see skip message
       expect(
@@ -902,14 +902,14 @@ Updated content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
+        debounceDelay: 50,
         ignoreInitial: true,
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
       });
 
       // Wait for watcher to be ready
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Clear logs
       logs.length = 0;
@@ -933,7 +933,7 @@ Updated content.
       );
 
       // Wait for processing
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Should import because content differs
       expect(logs.some((log) => log.includes("Imported JSONL changes"))).toBe(
@@ -984,14 +984,14 @@ Updated content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
+        debounceDelay: 50,
         ignoreInitial: true,
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
       });
 
       // Wait for watcher to be ready
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Clear logs
       logs.length = 0;
@@ -1007,7 +1007,7 @@ Updated content.
       fs.utimesSync(mdPath, oldTime, oldTime); // Reset to old time again
 
       // Wait for processing
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Should skip because database is newer
       expect(
@@ -1161,7 +1161,7 @@ Initial content.
       });
 
       // Wait for initial sync
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Get the issue from database
       const { getIssue } = await import("../../src/operations/issues.js");
@@ -1283,7 +1283,7 @@ Original content.
       });
 
       // Wait for initial sync
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Clear logs
       logs.length = 0;
@@ -1372,6 +1372,598 @@ Test content.
           expect(jsonlTimeDiff).toBeLessThan(1000); // Within 1 second
         }
       }
+
+      expect(errors.length).toBe(0);
+    });
+  });
+
+  describe("Comprehensive Field Detection", () => {
+    it("should detect feedback changes in issues", async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create spec and issue in database with initial feedback
+      const { createSpec } = await import("../../src/operations/specs.js");
+      const { createIssue } = await import("../../src/operations/issues.js");
+      const { createFeedback } = await import("../../src/operations/feedback.js");
+
+      createSpec(db, {
+        id: "spec-fb-001",
+        uuid: "test-uuid-spec-fb-001",
+        title: "Test Spec for Feedback",
+        file_path: "specs/test-fb.md",
+        content: "Spec content",
+        priority: 2,
+      });
+
+      createIssue(db, {
+        id: "issue-feedback-001",
+        uuid: "test-uuid-fb-001",
+        title: "Test Feedback Detection",
+        content: "Content",
+        status: "open",
+        priority: 2,
+      });
+
+      // Add feedback to the issue
+      createFeedback(db, {
+        id: "feedback-001",
+        issue_id: "issue-feedback-001",
+        spec_id: "spec-fb-001",
+        feedback_type: "comment",
+        content: "Original feedback content",
+        agent: "test-agent",
+      });
+
+      // Export to JSONL
+      const { exportToJSONL } = await import("../../src/export.js");
+      await exportToJSONL(db, { outputDir: tempDir });
+
+      // Start watcher
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 50,
+        ignoreInitial: true,
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for watcher to be ready
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Clear logs
+      logs.length = 0;
+
+      // Modify JSONL with different feedback content
+      const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
+      const updatedIssue = {
+        id: "issue-feedback-001",
+        uuid: "test-uuid-fb-001",
+        title: "Test Feedback Detection",
+        content: "Content",
+        status: "open",
+        priority: 2,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        relationships: [],
+        tags: [],
+        feedback: [
+          {
+            id: "feedback-001",
+            issue_id: "issue-feedback-001",
+            spec_id: "spec-fb-001",
+            feedback_type: "comment",
+            content: "UPDATED feedback content", // Changed
+            agent: "test-agent",
+            dismissed: false,
+          },
+        ],
+      };
+      fs.writeFileSync(
+        issuesJsonlPath,
+        JSON.stringify(updatedIssue) + "\n",
+        "utf8"
+      );
+
+      // Wait for processing
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // Should import because feedback content changed
+      expect(logs.some((log) => log.includes("Imported JSONL changes"))).toBe(
+        true
+      );
+
+      // Verify feedback was updated in database
+      const { listFeedback } = await import("../../src/operations/feedback.js");
+      const feedbackList = listFeedback(db, { issue_id: "issue-feedback-001" });
+      expect(feedbackList.length).toBe(1);
+      expect(feedbackList[0].content).toBe("UPDATED feedback content");
+
+      expect(errors.length).toBe(0);
+    });
+
+    it("should detect new feedback added to issues", async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create spec and issue in database without feedback
+      const { createSpec } = await import("../../src/operations/specs.js");
+      const { createIssue } = await import("../../src/operations/issues.js");
+
+      createSpec(db, {
+        id: "spec-fb-002",
+        uuid: "test-uuid-spec-fb-002",
+        title: "Test Spec for New Feedback",
+        file_path: "specs/test-fb-2.md",
+        content: "Spec content",
+        priority: 2,
+      });
+
+      createIssue(db, {
+        id: "issue-feedback-002",
+        uuid: "test-uuid-fb-002",
+        title: "Test New Feedback Detection",
+        content: "Content",
+        status: "open",
+        priority: 2,
+      });
+
+      // Export to JSONL
+      const { exportToJSONL } = await import("../../src/export.js");
+      await exportToJSONL(db, { outputDir: tempDir });
+
+      // Start watcher
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 50,
+        ignoreInitial: true,
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for watcher to be ready
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Clear logs
+      logs.length = 0;
+
+      // Modify JSONL to add new feedback
+      const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
+      const updatedIssue = {
+        id: "issue-feedback-002",
+        uuid: "test-uuid-fb-002",
+        title: "Test New Feedback Detection",
+        content: "Content",
+        status: "open",
+        priority: 2,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        relationships: [],
+        tags: [],
+        feedback: [
+          {
+            id: "feedback-002",
+            issue_id: "issue-feedback-002",
+            spec_id: "spec-fb-002",
+            feedback_type: "suggestion",
+            content: "New feedback added",
+            agent: "test-agent",
+            dismissed: false,
+          },
+        ],
+      };
+      fs.writeFileSync(
+        issuesJsonlPath,
+        JSON.stringify(updatedIssue) + "\n",
+        "utf8"
+      );
+
+      // Wait for processing
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // Should import because feedback was added
+      expect(logs.some((log) => log.includes("Imported JSONL changes"))).toBe(
+        true
+      );
+
+      // Verify feedback was created in database
+      const { listFeedback } = await import("../../src/operations/feedback.js");
+      const feedbackList = listFeedback(db, { issue_id: "issue-feedback-002" });
+      expect(feedbackList.length).toBe(1);
+      expect(feedbackList[0].content).toBe("New feedback added");
+
+      expect(errors.length).toBe(0);
+    });
+
+    it("should detect relationship changes in issues", async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create issue and spec in database
+      const { createIssue } = await import("../../src/operations/issues.js");
+      const { createSpec } = await import("../../src/operations/specs.js");
+
+      createSpec(db, {
+        id: "spec-rel-001",
+        uuid: "test-uuid-spec-rel",
+        title: "Test Spec",
+        file_path: "specs/test.md",
+        content: "Spec content",
+        priority: 2,
+      });
+
+      createIssue(db, {
+        id: "issue-rel-001",
+        uuid: "test-uuid-rel-001",
+        title: "Test Relationship Detection",
+        content: "Content",
+        status: "open",
+        priority: 2,
+      });
+
+      // Export to JSONL
+      const { exportToJSONL } = await import("../../src/export.js");
+      await exportToJSONL(db, { outputDir: tempDir });
+
+      // Start watcher
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 50,
+        ignoreInitial: true,
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for watcher to be ready
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Clear logs
+      logs.length = 0;
+
+      // Modify JSONL to add relationship
+      const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
+      const updatedIssue = {
+        id: "issue-rel-001",
+        uuid: "test-uuid-rel-001",
+        title: "Test Relationship Detection",
+        content: "Content",
+        status: "open",
+        priority: 2,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        relationships: [
+          {
+            from: "issue-rel-001",
+            from_type: "issue",
+            to: "spec-rel-001",
+            to_type: "spec",
+            type: "implements",
+          },
+        ],
+        tags: [],
+        feedback: [],
+      };
+      fs.writeFileSync(
+        issuesJsonlPath,
+        JSON.stringify(updatedIssue) + "\n",
+        "utf8"
+      );
+
+      // Wait for processing
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // Should import because relationship was added
+      expect(logs.some((log) => log.includes("Imported JSONL changes"))).toBe(
+        true
+      );
+
+      // Verify relationship was created in database
+      const { getOutgoingRelationships } = await import(
+        "../../src/operations/relationships.js"
+      );
+      const rels = getOutgoingRelationships(db, "issue-rel-001", "issue");
+      expect(rels.length).toBe(1);
+      expect(rels[0].to_id).toBe("spec-rel-001");
+      expect(rels[0].relationship_type).toBe("implements");
+
+      expect(errors.length).toBe(0);
+    });
+
+    it("should detect tag changes in issues", async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create issue in database
+      const { createIssue } = await import("../../src/operations/issues.js");
+      createIssue(db, {
+        id: "issue-tag-001",
+        uuid: "test-uuid-tag-001",
+        title: "Test Tag Detection",
+        content: "Content",
+        status: "open",
+        priority: 2,
+      });
+
+      // Export to JSONL
+      const { exportToJSONL } = await import("../../src/export.js");
+      await exportToJSONL(db, { outputDir: tempDir });
+
+      // Start watcher
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 50,
+        ignoreInitial: true,
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for watcher to be ready
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Clear logs
+      logs.length = 0;
+
+      // Modify JSONL to add tags
+      const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
+      const updatedIssue = {
+        id: "issue-tag-001",
+        uuid: "test-uuid-tag-001",
+        title: "Test Tag Detection",
+        content: "Content",
+        status: "open",
+        priority: 2,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        relationships: [],
+        tags: ["bug", "urgent"],
+        feedback: [],
+      };
+      fs.writeFileSync(
+        issuesJsonlPath,
+        JSON.stringify(updatedIssue) + "\n",
+        "utf8"
+      );
+
+      // Wait for processing
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // Should import because tags were added
+      expect(logs.some((log) => log.includes("Imported JSONL changes"))).toBe(
+        true
+      );
+
+      // Verify tags were created in database
+      const { getTags } = await import("../../src/operations/tags.js");
+      const tags = getTags(db, "issue-tag-001", "issue");
+      expect(tags.length).toBe(2);
+      expect(tags).toContain("bug");
+      expect(tags).toContain("urgent");
+
+      expect(errors.length).toBe(0);
+    });
+
+    it("should detect spec file_path changes", async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create spec in database
+      const { createSpec } = await import("../../src/operations/specs.js");
+      createSpec(db, {
+        id: "spec-path-001",
+        uuid: "test-uuid-path-001",
+        title: "Test Path Detection",
+        file_path: "specs/original-path.md",
+        content: "Content",
+        priority: 2,
+      });
+
+      // Export to JSONL
+      const { exportToJSONL } = await import("../../src/export.js");
+      await exportToJSONL(db, { outputDir: tempDir });
+
+      // Start watcher
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 50,
+        ignoreInitial: true,
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for watcher to be ready
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Clear logs
+      logs.length = 0;
+
+      // Modify JSONL to change file_path
+      const specsJsonlPath = path.join(tempDir, "specs.jsonl");
+      const updatedSpec = {
+        id: "spec-path-001",
+        uuid: "test-uuid-path-001",
+        title: "Test Path Detection",
+        file_path: "specs/new-path.md", // Changed
+        content: "Content",
+        priority: 2,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        relationships: [],
+        tags: [],
+      };
+      fs.writeFileSync(
+        specsJsonlPath,
+        JSON.stringify(updatedSpec) + "\n",
+        "utf8"
+      );
+
+      // Wait for processing
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // Should import because file_path changed
+      expect(logs.some((log) => log.includes("Imported JSONL changes"))).toBe(
+        true
+      );
+
+      // Verify file_path was updated in database
+      const { getSpec } = await import("../../src/operations/specs.js");
+      const spec = getSpec(db, "spec-path-001");
+      expect(spec?.file_path).toBe("specs/new-path.md");
+
+      expect(errors.length).toBe(0);
+    });
+
+    it("should detect archived field changes", async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create issue in database
+      const { createIssue } = await import("../../src/operations/issues.js");
+      createIssue(db, {
+        id: "issue-archived-001",
+        uuid: "test-uuid-archived-001",
+        title: "Test Archived Detection",
+        content: "Content",
+        status: "closed",
+        priority: 2,
+        archived: false,
+      });
+
+      // Export to JSONL
+      const { exportToJSONL } = await import("../../src/export.js");
+      await exportToJSONL(db, { outputDir: tempDir });
+
+      // Start watcher
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 50,
+        ignoreInitial: true,
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for watcher to be ready
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Clear logs
+      logs.length = 0;
+
+      // Modify JSONL to archive the issue
+      const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
+      const archivedAt = new Date().toISOString();
+      const updatedIssue = {
+        id: "issue-archived-001",
+        uuid: "test-uuid-archived-001",
+        title: "Test Archived Detection",
+        content: "Content",
+        status: "closed",
+        priority: 2,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        archived: true, // Changed
+        archived_at: archivedAt, // Added
+        relationships: [],
+        tags: [],
+        feedback: [],
+      };
+      fs.writeFileSync(
+        issuesJsonlPath,
+        JSON.stringify(updatedIssue) + "\n",
+        "utf8"
+      );
+
+      // Wait for processing
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // Should import because archived field changed
+      expect(logs.some((log) => log.includes("Imported JSONL changes"))).toBe(
+        true
+      );
+
+      // Verify archived was updated in database
+      const { getIssue } = await import("../../src/operations/issues.js");
+      const issue = getIssue(db, "issue-archived-001");
+      expect(issue?.archived).toBeTruthy(); // SQLite stores boolean as 1
+      expect(issue?.archived_at).toBe(archivedAt);
+
+      expect(errors.length).toBe(0);
+    });
+
+    it("should detect parent_id changes", async () => {
+      const logs: string[] = [];
+      const errors: Error[] = [];
+
+      // Create two issues in database
+      const { createIssue } = await import("../../src/operations/issues.js");
+      createIssue(db, {
+        id: "issue-parent-001",
+        uuid: "test-uuid-parent-001",
+        title: "Parent Issue",
+        content: "Parent content",
+        status: "open",
+        priority: 2,
+      });
+
+      createIssue(db, {
+        id: "issue-child-001",
+        uuid: "test-uuid-child-001",
+        title: "Child Issue",
+        content: "Child content",
+        status: "open",
+        priority: 2,
+      });
+
+      // Export to JSONL
+      const { exportToJSONL } = await import("../../src/export.js");
+      await exportToJSONL(db, { outputDir: tempDir });
+
+      // Start watcher
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        debounceDelay: 50,
+        ignoreInitial: true,
+        onLog: (msg) => logs.push(msg),
+        onError: (err) => errors.push(err),
+      });
+
+      // Wait for watcher to be ready
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Clear logs
+      logs.length = 0;
+
+      // Modify JSONL to set parent_id
+      const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
+      const content = fs.readFileSync(issuesJsonlPath, "utf8");
+      const lines = content.trim().split("\n").filter((l) => l.trim());
+      const updatedLines = lines.map((line) => {
+        const issue = JSON.parse(line);
+        if (issue.id === "issue-child-001") {
+          issue.parent_id = "issue-parent-001"; // Added parent
+          issue.updated_at = new Date().toISOString(); // Update timestamp to trigger import
+        }
+        return JSON.stringify(issue);
+      });
+      fs.writeFileSync(issuesJsonlPath, updatedLines.join("\n") + "\n", "utf8");
+
+      // Wait for processing
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // Should import because parent_id changed
+      expect(logs.some((log) => log.includes("Imported JSONL changes"))).toBe(
+        true
+      );
+
+      // Verify parent_id was updated in database
+      const { getIssue } = await import("../../src/operations/issues.js");
+      const issue = getIssue(db, "issue-child-001");
+      expect(issue?.parent_id).toBe("issue-parent-001");
 
       expect(errors.length).toBe(0);
     });

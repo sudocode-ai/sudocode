@@ -9,6 +9,7 @@ import IssuePanel from '@/components/issues/IssuePanel'
 import { CreateIssueDialog } from '@/components/issues/CreateIssueDialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,7 +20,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Plus, Archive } from 'lucide-react'
+import { Plus, Archive, Search } from 'lucide-react'
 import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels'
 
 export default function IssuesPage() {
@@ -43,12 +44,38 @@ export default function IssuesPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [createDialogStatus, setCreateDialogStatus] = useState<IssueStatus | undefined>()
   const [showArchiveAllDialog, setShowArchiveAllDialog] = useState(false)
+  const [filterText, setFilterText] = useState('')
+
+  // Collapsed columns state with localStorage persistence
+  const [collapsedColumns, setCollapsedColumns] = useState<Set<IssueStatus>>(() => {
+    try {
+      const saved = localStorage.getItem('issuesPage.collapsedColumns')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return new Set(parsed)
+      }
+    } catch {
+      // Ignore errors
+    }
+    return new Set()
+  })
 
   // Fetch relationships for all issues
   const { data: relationshipsMap } = useIssueRelationships(issues)
 
   // Group issues by status
   const groupedIssues = useMemo(() => {
+    // Filter issues based on search text
+    const filteredIssues = filterText
+      ? issues.filter((issue) => {
+          const searchText = filterText.toLowerCase()
+          return (
+            issue.title.toLowerCase().includes(searchText) ||
+            (issue.content && issue.content.toLowerCase().includes(searchText))
+          )
+        })
+      : issues
+
     const groups: Record<IssueStatus, Issue[]> = {
       open: [],
       in_progress: [],
@@ -57,7 +84,7 @@ export default function IssuesPage() {
       closed: [],
     }
 
-    issues.forEach((issue) => {
+    filteredIssues.forEach((issue) => {
       const status = issue.status.toLowerCase() as IssueStatus
       if (
         status === 'open' &&
@@ -97,7 +124,7 @@ export default function IssuesPage() {
     })
 
     return groups
-  }, [issues, relationshipsMap])
+  }, [issues, relationshipsMap, filterText])
 
   // Handle drag-and-drop to change status
   const handleDragEnd = useCallback(
@@ -183,6 +210,24 @@ export default function IssuesPage() {
     setShowArchiveAllDialog(false)
   }, [groupedIssues.closed, archiveIssue])
 
+  const handleToggleColumnCollapse = useCallback((status: IssueStatus) => {
+    setCollapsedColumns((prev) => {
+      const next = new Set(prev)
+      if (next.has(status)) {
+        next.delete(status)
+      } else {
+        next.add(status)
+      }
+      // Persist to localStorage
+      try {
+        localStorage.setItem('issuesPage.collapsedColumns', JSON.stringify(Array.from(next)))
+      } catch {
+        // Ignore errors
+      }
+      return next
+    })
+  }, [])
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -209,7 +254,17 @@ export default function IssuesPage() {
           <h1 className="text-2xl font-bold">Issues</h1>
           <Badge variant="secondary">{issues.length}</Badge>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Filter issues..."
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              className="h-9 w-64 pl-8"
+            />
+          </div>
           <Button
             onClick={() => navigate('/issues/archived')}
             variant="ghost"
@@ -274,6 +329,8 @@ export default function IssuesPage() {
                 onViewIssueDetails={handleViewIssueDetails}
                 selectedIssue={selectedIssue}
                 onArchiveAllClosed={handleArchiveAllClosed}
+                collapsedColumns={collapsedColumns}
+                onToggleColumnCollapse={handleToggleColumnCollapse}
               />
             </Panel>
 
@@ -329,6 +386,8 @@ export default function IssuesPage() {
               onViewIssueDetails={handleViewIssueDetails}
               selectedIssue={selectedIssue}
               onArchiveAllClosed={handleArchiveAllClosed}
+              collapsedColumns={collapsedColumns}
+              onToggleColumnCollapse={handleToggleColumnCollapse}
             />
           </div>
         )}

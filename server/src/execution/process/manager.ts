@@ -93,6 +93,17 @@ export interface IProcessManager {
   sendInput(processId: string, input: string): Promise<void>;
 
   /**
+   * Close stdin stream for a process
+   *
+   * Signals EOF to the process. This is useful for programs like Claude Code
+   * in --print mode that wait for stdin to close before processing input.
+   *
+   * @param processId - ID of the process
+   * @throws Error if process is not found
+   */
+  closeInput(processId: string): void;
+
+  /**
    * Register a handler for process output (stdout/stderr)
    *
    * The handler will be called whenever the process produces output.

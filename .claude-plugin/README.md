@@ -4,6 +4,7 @@ Claude Code plugin for sudocode - a git-native spec and issue management system 
 
 This plugin provides:
 - **sudocode MCP Server** - MCP tools to interface with the sudocode CLI
+- **sudocode Skill** - Automatic workflow guidance for spec and issue management
 
 ## Installation
 
@@ -49,7 +50,25 @@ The plugin automatically starts the sudocode MCP server, exposing 9 tools:
 - `add_feedback`
 
 **Relationships:**
-- `link`
+- `link`, `add_reference`
+
+### sudocode Skill
+
+The plugin includes a Claude Code skill that automatically guides workflow:
+
+**Auto-activates when:**
+- Starting a development session (checks for ready work)
+- Planning features or architecture (suggests creating specs)
+- Tracking work items (guides issue management)
+- Providing feedback on requirements (uses anchored feedback system)
+
+**Key workflows:**
+- Session start protocol (automatic ready work check)
+- Spec creation and management
+- Issue lifecycle (create → in_progress → blocked/closed)
+- Feedback system with smart anchoring
+- Relationship management (blocks, implements, depends-on)
+
 
 ## Quick Start
 

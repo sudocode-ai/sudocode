@@ -1,20 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 import Sidebar from './Sidebar'
 
 export default function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    // Load collapsed state from localStorage
-    const saved = localStorage.getItem('sidebarCollapsed')
-    return saved ? JSON.parse(saved) : false
-  })
-
-  // Save collapsed state to localStorage
-  useEffect(() => {
-    localStorage.setItem('sidebarCollapsed', JSON.stringify(sidebarCollapsed))
-  }, [sidebarCollapsed])
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -32,9 +22,8 @@ export default function MainLayout() {
       {/* Sidebar */}
       <Sidebar
         open={sidebarOpen}
-        collapsed={sidebarCollapsed}
+        collapsed={true}
         onClose={() => setSidebarOpen(false)}
-        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
 
       {/* Main content */}

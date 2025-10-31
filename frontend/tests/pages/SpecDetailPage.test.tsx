@@ -178,7 +178,15 @@ describe('SpecDetailPage', () => {
     renderSpecDetailPage()
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Feedback/ })).toBeInTheDocument()
+      // The feedback toggle button is now icon-only with a tooltip
+      // It displays the MessageSquareOff icon when panel is shown
+      const toggleButtons = screen.getAllByRole('button')
+      // Find button with MessageSquareOff SVG or feedback count badge
+      const toggleButton = toggleButtons.find((btn) => {
+        const svg = btn.querySelector('svg.lucide-message-square-off, svg.lucide-message-square')
+        return svg !== null
+      })
+      expect(toggleButton).toBeInTheDocument()
     })
   })
 

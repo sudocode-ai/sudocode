@@ -62,6 +62,7 @@ import { generateId } from './utils.js';
  */
 export class SimpleProcessManager implements IProcessManager {
   private _activeProcesses = new Map<string, ManagedProcess>();
+  private _cleanupTimers = new Map<string, NodeJS.Timeout>();
   private _metrics: ProcessMetrics = {
     totalSpawned: 0,
     currentlyActive: 0,
@@ -171,10 +172,11 @@ export class SimpleProcessManager implements IProcessManager {
     // Set up timeout if configured
     if (config.timeout) {
       timeoutHandle = setTimeout(() => {
-        // Terminate process on timeout
+        // Terminate process on timeout using graceful termination
         if (managedProcess.status === 'busy') {
-          managedProcess.status = 'terminating';
-          childProcess.kill('SIGTERM');
+          this.terminateProcess(id).catch(() => {
+            // Ignore errors during timeout termination
+          });
         }
       }, config.timeout);
     }
@@ -211,10 +213,17 @@ export class SimpleProcessManager implements IProcessManager {
         this._metrics.averageDuration = (currentTotal + duration) / totalProcesses;
       }
 
+      // Clean up stdio streams to prevent event loop hang
+      managedProcess.streams.stdin.destroy();
+      managedProcess.streams.stdout.destroy();
+      managedProcess.streams.stderr.destroy();
+
       // Schedule cleanup (delete from activeProcesses after 5s delay)
-      setTimeout(() => {
+      const cleanupTimer = setTimeout(() => {
         this._activeProcesses.delete(id);
+        this._cleanupTimers.delete(id);
       }, 5000);
+      this._cleanupTimers.set(id, cleanupTimer);
     });
 
     // Error event handler
@@ -316,6 +325,22 @@ export class SimpleProcessManager implements IProcessManager {
     });
   }
 
+  /**
+   * Close stdin stream for a process
+   *
+   * Signals EOF to the process, useful for programs that wait for stdin to close.
+   *
+   * @param processId - ID of the process
+   */
+  closeInput(processId: string): void {
+    const managed = this._activeProcesses.get(processId);
+    if (!managed) {
+      throw new Error(`Process ${processId} not found`);
+    }
+
+    managed.streams.stdin.end();
+  }
+
   onOutput(processId: string, handler: OutputHandler): void {
     const managed = this._activeProcesses.get(processId);
     if (!managed) {
@@ -356,9 +381,16 @@ export class SimpleProcessManager implements IProcessManager {
   }
 
   async shutdown(): Promise<void> {
+    // Terminate all active processes first
     const processIds = Array.from(this._activeProcesses.keys());
     await Promise.all(
       processIds.map((id) => this.terminateProcess(id, 'SIGTERM'))
     );
+
+    // Clear all pending cleanup timers (including ones scheduled by exit handlers)
+    for (const [id, timer] of this._cleanupTimers.entries()) {
+      clearTimeout(timer);
+      this._cleanupTimers.delete(id);
+    }
   }
 }

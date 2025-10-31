@@ -1,0 +1,3 @@
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"bash-001","name":"Bash","input":{"command":"echo 'Hello World'"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_result","tool_use_id":"bash-001","content":"Hello World\n","is_error":false}]}}
+{"type":"result","usage":{"input_tokens":150,"output_tokens":50,"cache_read_input_tokens":25}}

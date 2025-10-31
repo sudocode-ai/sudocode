@@ -12,6 +12,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@ag-ui/core": "^0.0.39",
     "@codemirror/lang-json": "^6.0.1",
     "@codemirror/state": "^6.4.0",
     "@codemirror/view": "^6.23.0",
@@ -55,7 +56,7 @@
     "axios": "^1.6.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
-    "date-fns": "^3.3.0",
+    "date-fns": "^3.6.0",
     "lexical": "^0.36.0",
     "lowlight": "^3.3.0",
     "lucide-react": "^0.344.0",
@@ -77,6 +78,7 @@
     "zustand": "^4.5.0"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^14.2.0",
     "@testing-library/user-event": "^14.5.0",

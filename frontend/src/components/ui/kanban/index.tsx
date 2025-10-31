@@ -34,6 +34,7 @@ export type KanbanBoardProps = {
   children: ReactNode
   className?: string
   'data-column-id'?: string
+  collapsed?: boolean
 }
 
 export const KanbanBoard = ({
@@ -41,14 +42,16 @@ export const KanbanBoard = ({
   children,
   className,
   'data-column-id': dataColumnId,
+  collapsed = false,
 }: KanbanBoardProps) => {
   const { isOver, setNodeRef } = useDroppable({ id })
 
   return (
     <div
       className={cn(
-        'flex h-full min-h-40 flex-col',
+        'flex h-full min-h-40 flex-col transition-all',
         isOver ? 'outline-primary' : 'outline-border',
+        collapsed && 'min-w-0',
         className
       )}
       ref={setNodeRef}
@@ -125,10 +128,13 @@ export const KanbanCard = ({
 export type KanbanCardsProps = {
   children: ReactNode
   className?: string
+  collapsed?: boolean
 }
 
-export const KanbanCards = ({ children, className }: KanbanCardsProps) => (
-  <div className={cn('flex flex-1 flex-col overflow-y-auto', className)}>{children}</div>
+export const KanbanCards = ({ children, className, collapsed = false }: KanbanCardsProps) => (
+  <div className={cn('flex flex-1 flex-col overflow-y-auto', collapsed && 'hidden', className)}>
+    {children}
+  </div>
 )
 
 export type KanbanHeaderProps =
@@ -142,6 +148,8 @@ export type KanbanHeaderProps =
       count?: number
       onAddIssue?: () => void
       onArchiveAll?: () => void
+      collapsed?: boolean
+      onToggleCollapse?: () => void
     }
 
 export const KanbanHeader = (props: KanbanHeaderProps) => {
@@ -149,16 +157,44 @@ export const KanbanHeader = (props: KanbanHeaderProps) => {
     return props.children
   }
 
+  const collapsed = props.collapsed ?? false
+
+  if (collapsed) {
+    return (
+      <Card
+        className={cn(
+          'sticky top-0 z-20 flex flex-col flex-1 shrink-0 items-center justify-center border-b border-dashed p-3 cursor-pointer',
+          'bg-background hover:bg-accent transition-colors',
+          props.className
+        )}
+        style={{
+          backgroundImage: `linear-gradient(hsl(var(${props.color}) / 0.03), hsl(var(${props.color}) / 0.03))`,
+        }}
+        onClick={props.onToggleCollapse}
+      >
+        <div className="flex items-center gap-2 whitespace-nowrap" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
+          <div
+            className="h-2 w-2 rounded-full"
+            style={{ backgroundColor: `hsl(var(${props.color}))` }}
+          />
+          <p className="m-0 text-sm">{props.name}</p>
+          {props.count !== undefined && <Badge variant="secondary">{props.count}</Badge>}
+        </div>
+      </Card>
+    )
+  }
+
   return (
     <Card
       className={cn(
-        'sticky top-0 z-20 flex flex shrink-0 items-center gap-2 gap-2 border-b border-dashed p-3',
-        'bg-background',
+        'sticky top-0 z-20 flex flex shrink-0 items-center gap-2 gap-2 border-b border-dashed p-3 cursor-pointer',
+        'bg-background hover:bg-accent transition-colors',
         props.className
       )}
       style={{
         backgroundImage: `linear-gradient(hsl(var(${props.color}) / 0.03), hsl(var(${props.color}) / 0.03))`,
       }}
+      onClick={props.onToggleCollapse}
     >
       <span className="flex flex-1 items-center gap-2">
         <div
@@ -177,7 +213,10 @@ export const KanbanHeader = (props: KanbanHeaderProps) => {
                 <Button
                   variant="ghost"
                   className="m-0 h-0 p-0 text-foreground/50 hover:text-foreground"
-                  onClick={props.onArchiveAll}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    props.onArchiveAll?.()
+                  }}
                   aria-label="Archive All"
                 >
                   <Archive className="h-4 w-4" />
@@ -194,7 +233,10 @@ export const KanbanHeader = (props: KanbanHeaderProps) => {
                 <Button
                   variant="ghost"
                   className="m-0 h-0 p-0 text-foreground/50 hover:text-foreground"
-                  onClick={props.onAddIssue}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    props.onAddIssue?.()
+                  }}
                   aria-label="Add Issue"
                 >
                   <Plus className="h-4 w-4" />
@@ -269,6 +311,8 @@ export type KanbanProviderProps = {
   onDragEnd: (event: DragEndEvent) => void
   className?: string
   renderDragOverlay?: (activeId: string | null) => ReactNode
+  collapsedColumns?: Set<string>
+  totalColumns?: number
 }
 
 export const KanbanProvider = ({
@@ -276,6 +320,8 @@ export const KanbanProvider = ({
   onDragEnd,
   className,
   renderDragOverlay,
+  collapsedColumns = new Set(),
+  totalColumns = 0,
 }: KanbanProviderProps) => {
   const [activeId, setActiveId] = useState<string | null>(null)
 
@@ -284,6 +330,28 @@ export const KanbanProvider = ({
       activationConstraint: { distance: 8 },
     })
   )
+
+  // Calculate grid template columns dynamically
+  const gridTemplateColumns = (() => {
+    if (totalColumns === 0) {
+      return 'auto-cols-[minmax(200px,400px)]'
+    }
+
+    // Build the template string
+    const columns: string[] = []
+    const childArray = Array.isArray(children) ? children : [children]
+
+    childArray.forEach((child: any) => {
+      const columnId = child?.key
+      if (columnId && collapsedColumns.has(columnId)) {
+        columns.push('48px') // collapsed width (w-12)
+      } else {
+        columns.push('minmax(200px, 1fr)') // expanded columns share space equally
+      }
+    })
+
+    return columns.join(' ')
+  })()
 
   return (
     <DndContext
@@ -298,10 +366,8 @@ export const KanbanProvider = ({
       modifiers={[restrictToFirstScrollableAncestorCustom]}
     >
       <div
-        className={cn(
-          'inline-grid h-full auto-cols-[minmax(200px,400px)] grid-flow-col divide-x border-x',
-          className
-        )}
+        className={cn('inline-grid h-full grid-flow-col divide-x border-x transition-all', className)}
+        style={{ gridTemplateColumns }}
       >
         {children}
       </div>

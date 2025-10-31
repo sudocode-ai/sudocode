@@ -255,6 +255,78 @@ describe("JSONL Export Integration", () => {
         "Should have final status"
       );
     });
+
+    it("should handle multiple different issues updated rapidly", async () => {
+      // Create three different issues
+      const issue1Response = await request(app)
+        .post("/api/issues")
+        .send({
+          title: "Issue 1",
+          priority: 0,
+        })
+        .expect(201);
+
+      const issue2Response = await request(app)
+        .post("/api/issues")
+        .send({
+          title: "Issue 2",
+          priority: 0,
+        })
+        .expect(201);
+
+      const issue3Response = await request(app)
+        .post("/api/issues")
+        .send({
+          title: "Issue 3",
+          priority: 0,
+        })
+        .expect(201);
+
+      const issue1Id = issue1Response.body.data.id;
+      const issue2Id = issue2Response.body.data.id;
+      const issue3Id = issue3Response.body.data.id;
+
+      // Wait for initial export
+      await waitForExport();
+
+      // Update all three issues in rapid succession
+      await request(app)
+        .put(`/api/issues/${issue1Id}`)
+        .send({ priority: 1, status: "in_progress" })
+        .expect(200);
+
+      await request(app)
+        .put(`/api/issues/${issue2Id}`)
+        .send({ priority: 2, status: "blocked" })
+        .expect(200);
+
+      await request(app)
+        .put(`/api/issues/${issue3Id}`)
+        .send({ priority: 3, status: "closed" })
+        .expect(200);
+
+      // Wait for debounced export
+      await waitForExport();
+
+      // Verify all three issues are correctly updated in JSONL
+      const issues = readJSONL(issuesJsonlPath);
+
+      const updatedIssue1 = issues.find((i) => i.id === issue1Id);
+      const updatedIssue2 = issues.find((i) => i.id === issue2Id);
+      const updatedIssue3 = issues.find((i) => i.id === issue3Id);
+
+      assert.ok(updatedIssue1, "Issue 1 should be in JSONL");
+      assert.strictEqual(updatedIssue1.priority, 1, "Issue 1 should have priority 1");
+      assert.strictEqual(updatedIssue1.status, "in_progress", "Issue 1 should be in_progress");
+
+      assert.ok(updatedIssue2, "Issue 2 should be in JSONL");
+      assert.strictEqual(updatedIssue2.priority, 2, "Issue 2 should have priority 2");
+      assert.strictEqual(updatedIssue2.status, "blocked", "Issue 2 should be blocked");
+
+      assert.ok(updatedIssue3, "Issue 3 should be in JSONL");
+      assert.strictEqual(updatedIssue3.priority, 3, "Issue 3 should have priority 3");
+      assert.strictEqual(updatedIssue3.status, "closed", "Issue 3 should be closed");
+    });
   });
 
   describe("Spec Export", () => {

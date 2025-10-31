@@ -34,6 +34,8 @@ interface IssueKanbanBoardProps {
   onViewIssueDetails: (issue: Issue) => void
   selectedIssue?: Issue
   onArchiveAllClosed?: () => void
+  collapsedColumns?: Set<IssueStatus>
+  onToggleColumnCollapse?: (status: IssueStatus) => void
 }
 
 function IssueKanbanBoard({
@@ -42,7 +44,10 @@ function IssueKanbanBoard({
   onViewIssueDetails,
   selectedIssue,
   onArchiveAllClosed,
+  collapsedColumns = new Set(),
+  onToggleColumnCollapse,
 }: IssueKanbanBoardProps) {
+
   const renderDragOverlay = (activeId: string | null) => {
     if (!activeId) return null
 
@@ -66,18 +71,26 @@ function IssueKanbanBoard({
   }
 
   return (
-    <KanbanProvider onDragEnd={onDragEnd} renderDragOverlay={renderDragOverlay}>
+    <KanbanProvider
+      onDragEnd={onDragEnd}
+      renderDragOverlay={renderDragOverlay}
+      collapsedColumns={collapsedColumns}
+      totalColumns={columnOrder.length}
+    >
       {columnOrder.map((status) => {
         const statusIssues = groupedIssues[status] || []
+        const isCollapsed = collapsedColumns.has(status)
         return (
-          <KanbanBoard key={status} id={status} data-column-id={status}>
+          <KanbanBoard key={status} id={status} data-column-id={status} collapsed={isCollapsed}>
             <KanbanHeader
               name={statusLabels[status]}
               color={statusColors[status]}
               count={statusIssues.length}
               onArchiveAll={status === 'closed' ? onArchiveAllClosed : undefined}
+              collapsed={isCollapsed}
+              onToggleCollapse={onToggleColumnCollapse ? () => onToggleColumnCollapse(status) : undefined}
             />
-            <KanbanCards>
+            <KanbanCards collapsed={isCollapsed}>
               {statusIssues.map((issue, index) => (
                 <IssueCard
                   key={issue.id}

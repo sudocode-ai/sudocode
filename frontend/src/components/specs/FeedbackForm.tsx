@@ -9,10 +9,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { FeedbackType, FeedbackAnchor } from '@/types/api'
+import type { FeedbackType, FeedbackAnchor, Issue } from '@/types/api'
 
 interface FeedbackFormProps {
-  issueId?: string
+  issues?: Issue[]
+  selectedIssueId?: string
+  onIssueSelect?: (issueId: string) => void
+  issueId?: string // Legacy prop for backward compatibility
   lineNumber?: number
   textSnippet?: string
   onSubmit: (data: { type: FeedbackType; content: string; anchor?: FeedbackAnchor }) => void
@@ -24,7 +27,10 @@ interface FeedbackFormProps {
  * Form for adding new feedback to a spec
  */
 export function FeedbackForm({
-  issueId,
+  issues = [],
+  selectedIssueId: propSelectedIssueId,
+  onIssueSelect,
+  issueId, // Legacy prop
   lineNumber,
   textSnippet,
   onSubmit,
@@ -34,6 +40,9 @@ export function FeedbackForm({
   const [type, setType] = useState<FeedbackType>('comment')
   const [content, setContent] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Use either the new or legacy issue ID
+  const selectedIssueId = propSelectedIssueId || issueId
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -85,6 +94,25 @@ export function FeedbackForm({
         </div>
       )}
 
+      {/* Issue selector */}
+      {issues.length > 0 && onIssueSelect && (
+        <div>
+          <Label htmlFor="issue-select">Issue</Label>
+          <Select value={selectedIssueId} onValueChange={onIssueSelect}>
+            <SelectTrigger id="issue-select">
+              <SelectValue placeholder="Select an issue..." />
+            </SelectTrigger>
+            <SelectContent>
+              {issues.map((issue) => (
+                <SelectItem key={issue.id} value={issue.id}>
+                  {issue.id}: {issue.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       {/* Feedback type */}
       <div>
         <Label htmlFor="feedback-type">Type</Label>
@@ -114,16 +142,9 @@ export function FeedbackForm({
         />
       </div>
 
-      {/* Issue ID (if not provided) */}
-      {!issueId && (
-        <div className="text-sm text-muted-foreground">
-          Note: You need to link this feedback to an issue before submitting.
-        </div>
-      )}
-
       {/* Actions */}
       <div className="flex gap-2">
-        <Button type="submit" disabled={!content.trim() || !issueId || isSubmitting}>
+        <Button type="submit" disabled={!content.trim() || !selectedIssueId || isSubmitting}>
           {isSubmitting ? 'Adding...' : 'Add Feedback'}
         </Button>
         <Button type="button" variant="outline" onClick={onCancel}>

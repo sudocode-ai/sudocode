@@ -40,18 +40,20 @@ describe('Transaction Operations', () => {
             title: 'Test Issue',
           });
 
-          // This should fail (duplicate ID)
+          // This should fail (invalid parent_id foreign key)
           createIssue(db, {
-            id: 'issue-001',
-            title: 'Duplicate',
+            id: 'issue-002',
+            title: 'Child Issue',
+            parent_id: 'non-existent-parent',
           });
         });
       } catch (error) {
         // Expected error
       }
 
-      // First issue should have been rolled back
+      // Both issues should have been rolled back
       expect(getIssue(db, 'issue-001')).toBeNull();
+      expect(getIssue(db, 'issue-002')).toBeNull();
     });
 
     it('should handle nested transactions', () => {

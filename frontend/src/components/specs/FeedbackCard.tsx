@@ -1,5 +1,9 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { MessageSquare, AlertCircle, Lightbulb, Trash2, Check, X } from 'lucide-react'
+import { formatDistanceToNow } from 'date-fns'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import type { IssueFeedback, FeedbackType, FeedbackAnchor } from '@/types/api'
@@ -10,6 +14,8 @@ interface FeedbackCardProps {
   onDelete?: (id: string) => void
   onClick?: () => void
   className?: string
+  maxHeight?: number // Max height in pixels before scrolling kicks in
+  isCompact?: boolean // Show compact view by default
 }
 
 /**
@@ -21,8 +27,12 @@ export function FeedbackCard({
   onDelete,
   onClick,
   className = '',
+  maxHeight = 200, // Default max height before scrolling
+  isCompact = false,
 }: FeedbackCardProps) {
-  const [showActions, setShowActions] = useState(false)
+  const [isHovered, setIsHovered] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(!isCompact)
+  const navigate = useNavigate()
 
   // Parse anchor from JSON string
   let anchor: FeedbackAnchor | null = null
@@ -60,7 +70,7 @@ export function FeedbackCard({
     if (!anchor) return null
 
     if (anchor.line_number) {
-      return `Line ${anchor.line_number}`
+      return `L${anchor.line_number}`
     }
 
     if (anchor.section_heading) {
@@ -76,82 +86,172 @@ export function FeedbackCard({
 
   return (
     <Card
-      className={`relative cursor-pointer transition-shadow hover:shadow-md ${feedback.dismissed ? 'opacity-60' : ''} ${className}`}
-      onMouseEnter={() => setShowActions(true)}
-      onMouseLeave={() => setShowActions(false)}
+      className={`relative cursor-pointer rounded-lg border-2 bg-card shadow-sm transition-all hover:border-primary/30 hover:shadow-lg ${feedback.dismissed ? 'opacity-60' : ''} ${className}`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       onClick={onClick}
     >
       <div className="p-3">
         {/* Header */}
-        <div className="mb-2 flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <div className={`rounded-full p-1.5 ${getTypeColor(feedback.feedback_type)}`}>
-              {getIcon(feedback.feedback_type)}
-            </div>
-            <div>
-              <div className="text-xs font-medium capitalize text-muted-foreground">
-                {feedback.feedback_type}
+        <div className="mb-2">
+          {/* Row 1: Icon + Issue ID + Actions */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div
+                className={`flex-shrink-0 rounded-full p-1.5 ${getTypeColor(feedback.feedback_type)}`}
+                title={feedback.feedback_type}
+              >
+                {getIcon(feedback.feedback_type)}
               </div>
-              {anchor && getAnchorText() && (
-                <div className="text-xs text-muted-foreground">{getAnchorText()}</div>
-              )}
+              <button
+                className="text-xs font-medium text-foreground hover:text-primary hover:underline"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  navigate(`/issues/${feedback.issue_id}`)
+                }}
+              >
+                {feedback.issue_id}
+              </button>
             </div>
+
+            {/* Actions - always rendered but visibility controlled by opacity */}
+            {(onDismiss || onDelete) && (
+              <div
+                className="flex flex-shrink-0 gap-1 transition-opacity duration-150"
+                style={{ opacity: isHovered ? 1 : 0 }}
+              >
+                {!feedback.dismissed && onDismiss && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDismiss(feedback.id)
+                    }}
+                    title="Dismiss"
+                    className="h-6 w-6 p-0"
+                  >
+                    <Check className="h-3 w-3" />
+                  </Button>
+                )}
+                {feedback.dismissed && onDismiss && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDismiss(feedback.id)
+                    }}
+                    title="Restore"
+                    className="h-6 w-6 p-0"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                )}
+                {onDelete && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDelete(feedback.id)
+                    }}
+                    title="Delete"
+                    className="h-6 w-6 p-0"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Actions */}
-          {showActions && (
-            <div className="flex gap-1">
-              {!feedback.dismissed && onDismiss && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onDismiss(feedback.id)
-                  }}
-                  title="Dismiss"
-                >
-                  <Check className="h-3 w-3" />
-                </Button>
+          {/* Row 2: Anchor + Timestamp */}
+          <div className="ml-9 flex items-center gap-2 text-xs text-muted-foreground">
+            {anchor && getAnchorText() && (
+              <>
+                <span className="flex-shrink-0">{getAnchorText()}</span>
+                <span className="flex-shrink-0">•</span>
+              </>
+            )}
+            <span className="flex-shrink-0">
+              {formatDistanceToNow(
+                new Date(feedback.created_at.endsWith('Z') ? feedback.created_at : feedback.created_at + 'Z'),
+                { addSuffix: true }
               )}
-              {feedback.dismissed && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onDismiss?.(feedback.id)
-                  }}
-                  title="Restore"
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-              )}
-              {onDelete && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onDelete(feedback.id)
-                  }}
-                  title="Delete"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
-              )}
-            </div>
-          )}
+            </span>
+          </div>
         </div>
 
         {/* Content */}
-        <div className="text-sm text-foreground">{feedback.content}</div>
-
-        {/* Footer */}
-        <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-          <span>From {feedback.issue_id}</span>
-          <span>{new Date(feedback.created_at).toLocaleDateString()}</span>
+        <div
+          className="prose prose-sm dark:prose-invert text-sm text-foreground max-w-none"
+          style={{
+            maxHeight: isExpanded ? `${maxHeight}px` : '3rem', // 3rem = ~3 lines
+            overflowY: 'auto',
+            overflowX: 'hidden',
+          }}
+        >
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              // Customize rendering for compact display
+              p: ({ children }) => <p className="my-1">{children}</p>,
+              h1: ({ children }) => <h1 className="text-lg font-bold my-1">{children}</h1>,
+              h2: ({ children }) => <h2 className="text-base font-bold my-1">{children}</h2>,
+              h3: ({ children }) => <h3 className="text-sm font-bold my-1">{children}</h3>,
+              ul: ({ children }) => <ul className="my-1 pl-4">{children}</ul>,
+              ol: ({ children }) => <ol className="my-1 pl-4">{children}</ol>,
+              li: ({ children }) => <li className="my-0.5">{children}</li>,
+              code: ({ children, className }) => {
+                const isInline = !className
+                return isInline ? (
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                    {children}
+                  </code>
+                ) : (
+                  <code className={`block rounded bg-muted p-2 font-mono text-xs my-1 ${className || ''}`}>
+                    {children}
+                  </code>
+                )
+              },
+              pre: ({ children }) => <pre className="my-1">{children}</pre>,
+              blockquote: ({ children }) => (
+                <blockquote className="border-l-2 border-muted-foreground/30 pl-2 my-1 italic">
+                  {children}
+                </blockquote>
+              ),
+              a: ({ href, children }) => (
+                <a
+                  href={href}
+                  className="text-primary underline hover:text-primary/80"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {children}
+                </a>
+              ),
+              strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+              em: ({ children }) => <em className="italic">{children}</em>,
+            }}
+          >
+            {feedback.content}
+          </ReactMarkdown>
         </div>
+
+        {/* Expand/Collapse button for long content */}
+        {feedback.content.length > 100 && (
+          <button
+            className="mt-1 text-xs text-primary hover:underline"
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsExpanded(!isExpanded)
+            }}
+          >
+            {isExpanded ? 'Show less' : 'Show more'}
+          </button>
+        )}
       </div>
     </Card>
   )
