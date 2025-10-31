@@ -12,6 +12,7 @@ import {
   ExpandIcon,
   FileText,
   Code2,
+  Play,
 } from 'lucide-react'
 import type { Issue, Relationship, EntityType, RelationshipType, IssueStatus } from '@/types/api'
 import { Card } from '@/components/ui/card'
@@ -28,7 +29,10 @@ import {
 import { DeleteIssueDialog } from './DeleteIssueDialog'
 import { RelationshipList } from '@/components/relationships/RelationshipList'
 import { RelationshipForm } from '@/components/relationships/RelationshipForm'
-import { relationshipsApi } from '@/lib/api'
+import { relationshipsApi, executionsApi } from '@/lib/api'
+import { ExecutionConfigDialog } from '@/components/executions/ExecutionConfigDialog'
+import { ExecutionHistory } from '@/components/executions/ExecutionHistory'
+import type { ExecutionConfig } from '@/types/execution'
 import { useRelationshipMutations } from '@/hooks/useRelationshipMutations'
 import { TiptapEditor } from '@/components/specs/TiptapEditor'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -98,6 +102,7 @@ export function IssuePanel({
   }
   const [priority, setPriority] = useState<number>(issue.priority)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showExecutionConfigDialog, setShowExecutionConfigDialog] = useState(false)
   const [relationships, setRelationships] = useState<Relationship[]>([])
   const [showAddRelationship, setShowAddRelationship] = useState(false)
   const [isLoadingRelationships, setIsLoadingRelationships] = useState(false)
@@ -340,6 +345,21 @@ export function IssuePanel({
     }
   }
 
+  const handleStartExecution = async (config: ExecutionConfig, prompt: string) => {
+    try {
+      const execution = await executionsApi.create(issue.id, {
+        config,
+        prompt,
+      })
+      setShowExecutionConfigDialog(false)
+      // Navigate to execution view
+      navigate(`/executions/${execution.id}`)
+    } catch (error) {
+      console.error('Failed to create execution:', error)
+      // TODO: Show error toast/alert to user
+    }
+  }
+
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-full flex-col" ref={panelRef}>
@@ -373,6 +393,23 @@ export function IssuePanel({
             </div>
 
             <div className="flex items-center gap-4">
+              {/* Run Agent Button */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    onClick={() => setShowExecutionConfigDialog(true)}
+                    disabled={issue.archived || isUpdating}
+                    variant="default"
+                    size="sm"
+                    className="gap-2"
+                  >
+                    <Play className="h-4 w-4" />
+                    Run Agent
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Configure and start agent execution</TooltipContent>
+              </Tooltip>
+
               {/* View mode toggle - shown inline in panel */}
               {showViewToggleInline && (
                 <div className="mr-4 flex gap-1 rounded-md border border-border bg-muted/30 p-1">
@@ -571,6 +608,9 @@ export function IssuePanel({
               )}
             </div>
 
+            {/* Execution History */}
+            <ExecutionHistory issueId={issue.id} />
+
             {/* Content Editor */}
             <div className="space-y-2">
               <Card className="overflow-hidden">
@@ -586,31 +626,16 @@ export function IssuePanel({
                     className="min-h-[200px]"
                   />
                 ) : (
-                  <div className="flex">
-                    {/* Line numbers column */}
-                    <div className="select-none border-r border-border bg-muted/30 px-4 py-4">
-                      {(content || '\n').split('\n').map((_, index) => (
-                        <div
-                          key={index}
-                          className="text-right font-mono text-xs leading-6 text-muted-foreground"
-                        >
-                          {index + 1}
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Content column */}
-                    <div className="flex-1 p-4">
-                      <textarea
-                        ref={textareaRef}
-                        value={content}
-                        onChange={(e) => handleContentChange(e.target.value)}
-                        placeholder="Write issue description in markdown..."
-                        className="w-full resize-none border-none bg-transparent font-mono text-sm leading-6 outline-none focus:ring-0"
-                        spellCheck={false}
-                        style={{ minHeight: '200px' }}
-                      />
-                    </div>
+                  <div className="p-4">
+                    <textarea
+                      ref={textareaRef}
+                      value={content}
+                      onChange={(e) => handleContentChange(e.target.value)}
+                      placeholder="Write issue description in markdown..."
+                      className="w-full resize-none border-none bg-transparent font-mono text-sm leading-6 outline-none focus:ring-0"
+                      spellCheck={false}
+                      style={{ minHeight: '200px' }}
+                    />
                   </div>
                 )}
               </Card>
@@ -634,6 +659,13 @@ export function IssuePanel({
           onClose={() => setShowDeleteDialog(false)}
           onConfirm={handleDelete}
           isDeleting={isDeleting}
+        />
+
+        <ExecutionConfigDialog
+          issueId={issue.id}
+          open={showExecutionConfigDialog}
+          onStart={handleStartExecution}
+          onCancel={() => setShowExecutionConfigDialog(false)}
         />
       </div>
     </TooltipProvider>
