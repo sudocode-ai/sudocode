@@ -429,7 +429,7 @@ export default function SpecDetailPage() {
                     lineNumber={selectedLine || undefined}
                     onSubmit={handleCreateFeedback}
                     triggerButton={
-                      <Button variant="default" size="sm">
+                      <Button variant="secondary" size="sm">
                         <MessageSquarePlus className="mr-2 h-4 w-4" />
                         Add Feedback
                       </Button>

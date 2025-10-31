@@ -4,9 +4,15 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { BrowserRouter } from 'react-router-dom'
 import { userEvent } from '@testing-library/user-event'
 import { AlignedFeedbackPanel } from '@/components/specs/AlignedFeedbackPanel'
 import type { IssueFeedback } from '@/types/api'
+
+// Wrapper component to provide router context
+const Wrapper = ({ children }: { children: React.ReactNode }) => (
+  <BrowserRouter>{children}</BrowserRouter>
+)
 
 describe('AlignedFeedbackPanel', () => {
   const createMockFeedback = (overrides: Partial<IssueFeedback> = {}): IssueFeedback => ({
@@ -22,7 +28,11 @@ describe('AlignedFeedbackPanel', () => {
 
   it('should render empty state when no feedback provided', () => {
     const positions = new Map<string, number>()
-    const { container } = render(<AlignedFeedbackPanel feedback={[]} positions={positions} />)
+    const { container } = render(
+      <Wrapper>
+        <AlignedFeedbackPanel feedback={[]} positions={positions} />
+      </Wrapper>
+    )
 
     // Should render empty panel without any feedback cards
     expect(container.querySelectorAll('.absolute.px-1')).toHaveLength(0)
@@ -47,7 +57,9 @@ describe('AlignedFeedbackPanel', () => {
 
     const positions = new Map<string, number>()
     const { container } = render(
-      <AlignedFeedbackPanel feedback={generalFeedback} positions={positions} />
+      <Wrapper>
+        <AlignedFeedbackPanel feedback={generalFeedback} positions={positions} />
+      </Wrapper>
     )
 
     expect(screen.getByText('General comment 1')).toBeInTheDocument()
@@ -72,7 +84,9 @@ describe('AlignedFeedbackPanel', () => {
 
     const positions = new Map([['FB-001', 100]])
     const { container } = render(
-      <AlignedFeedbackPanel feedback={anchoredFeedback} positions={positions} />
+      <Wrapper>
+        <AlignedFeedbackPanel feedback={anchoredFeedback} positions={positions} />
+      </Wrapper>
     )
 
     expect(screen.getByText('Anchored feedback')).toBeInTheDocument()
@@ -108,7 +122,9 @@ describe('AlignedFeedbackPanel', () => {
     ])
 
     const { container } = render(
-      <AlignedFeedbackPanel feedback={anchoredFeedback} positions={positions} />
+      <Wrapper>
+        <AlignedFeedbackPanel feedback={anchoredFeedback} positions={positions} />
+      </Wrapper>
     )
 
     expect(screen.getByText('Anchored comment 1')).toBeInTheDocument()
@@ -142,7 +158,11 @@ describe('AlignedFeedbackPanel', () => {
     // Only provide position for FB-001
     const positions = new Map([['FB-001', 100]])
 
-    render(<AlignedFeedbackPanel feedback={anchoredFeedback} positions={positions} />)
+    render(
+      <Wrapper>
+        <AlignedFeedbackPanel feedback={anchoredFeedback} positions={positions} />
+      </Wrapper>
+    )
 
     expect(screen.getByText('Should render')).toBeInTheDocument()
     expect(screen.queryByText('Should not render')).not.toBeInTheDocument()
@@ -167,7 +187,9 @@ describe('AlignedFeedbackPanel', () => {
     const positions = new Map([['FB-002', 150]])
 
     const { container } = render(
-      <AlignedFeedbackPanel feedback={mixedFeedback} positions={positions} />
+      <Wrapper>
+        <AlignedFeedbackPanel feedback={mixedFeedback} positions={positions} />
+      </Wrapper>
     )
 
     // Both general and anchored comments should be rendered inline
@@ -189,16 +211,20 @@ describe('AlignedFeedbackPanel', () => {
     ]
 
     const positions = new Map<string, number>()
-    render(
-      <AlignedFeedbackPanel
-        feedback={feedback}
-        positions={positions}
-        onFeedbackClick={onFeedbackClick}
-      />
+    const { container } = render(
+      <Wrapper>
+        <AlignedFeedbackPanel
+          feedback={feedback}
+          positions={positions}
+          onFeedbackClick={onFeedbackClick}
+        />
+      </Wrapper>
     )
 
-    const feedbackElement = screen.getByText('Clickable feedback')
-    await user.click(feedbackElement)
+    // Click on the card itself, not the text (which might be on the issue button)
+    const feedbackCard = container.querySelector('.rounded-lg')
+    expect(feedbackCard).not.toBeNull()
+    await user.click(feedbackCard!)
 
     expect(onFeedbackClick).toHaveBeenCalledWith(feedback[0])
   })
@@ -213,7 +239,11 @@ describe('AlignedFeedbackPanel', () => {
     ]
 
     const positions = new Map<string, number>()
-    render(<AlignedFeedbackPanel feedback={feedback} positions={positions} onDismiss={onDismiss} />)
+    render(
+      <Wrapper>
+        <AlignedFeedbackPanel feedback={feedback} positions={positions} onDismiss={onDismiss} />
+      </Wrapper>
+    )
 
     // The FeedbackCard should be rendered with dismiss functionality
     expect(screen.getByText('Test feedback')).toBeInTheDocument()
@@ -231,7 +261,11 @@ describe('AlignedFeedbackPanel', () => {
     ]
 
     const positions = new Map<string, number>()
-    render(<AlignedFeedbackPanel feedback={feedback} positions={positions} onDelete={onDelete} />)
+    render(
+      <Wrapper>
+        <AlignedFeedbackPanel feedback={feedback} positions={positions} onDelete={onDelete} />
+      </Wrapper>
+    )
 
     expect(screen.getByText('Test feedback')).toBeInTheDocument()
   })
@@ -246,7 +280,11 @@ describe('AlignedFeedbackPanel', () => {
     ]
 
     const positions = new Map<string, number>()
-    const { container } = render(<AlignedFeedbackPanel feedback={feedback} positions={positions} />)
+    const { container } = render(
+      <Wrapper>
+        <AlignedFeedbackPanel feedback={feedback} positions={positions} />
+      </Wrapper>
+    )
 
     // Should treat as general comment and render inline at top
     expect(screen.getByText('Invalid anchor')).toBeInTheDocument()
@@ -258,10 +296,14 @@ describe('AlignedFeedbackPanel', () => {
   it('should apply custom className', () => {
     const positions = new Map<string, number>()
     const { container } = render(
-      <AlignedFeedbackPanel feedback={[]} positions={positions} className="custom-class" />
+      <Wrapper>
+        <AlignedFeedbackPanel feedback={[]} positions={positions} className="custom-class" />
+      </Wrapper>
     )
 
-    const panel = container.firstChild as HTMLElement
+    // Look for the element with the custom class
+    const panel = container.querySelector('.custom-class')
+    expect(panel).not.toBeNull()
     expect(panel).toHaveClass('custom-class')
   })
 
@@ -277,7 +319,11 @@ describe('AlignedFeedbackPanel', () => {
     ]
 
     const positions = new Map([['FB-001', 100]])
-    const { container } = render(<AlignedFeedbackPanel feedback={feedback} positions={positions} />)
+    const { container } = render(
+      <Wrapper>
+        <AlignedFeedbackPanel feedback={feedback} positions={positions} />
+      </Wrapper>
+    )
 
     const positionedDiv = container.querySelector('.absolute.px-1')
     // No transition classes - feedback should update instantly
@@ -296,7 +342,9 @@ describe('AlignedFeedbackPanel', () => {
 
     const positions = new Map<string, number>()
     const { container } = render(
-      <AlignedFeedbackPanel feedback={generalFeedback} positions={positions} />
+      <Wrapper>
+        <AlignedFeedbackPanel feedback={generalFeedback} positions={positions} />
+      </Wrapper>
     )
 
     // Should render all 3 feedback cards
@@ -318,7 +366,9 @@ describe('AlignedFeedbackPanel', () => {
 
     const initialPositions = new Map([['FB-001', 100]])
     const { container, rerender } = render(
-      <AlignedFeedbackPanel feedback={feedback} positions={initialPositions} />
+      <Wrapper>
+        <AlignedFeedbackPanel feedback={feedback} positions={initialPositions} />
+      </Wrapper>
     )
 
     let positionedDiv = container.querySelector('.absolute.px-1') as HTMLElement
@@ -326,7 +376,11 @@ describe('AlignedFeedbackPanel', () => {
 
     // Update position
     const updatedPositions = new Map([['FB-001', 250]])
-    rerender(<AlignedFeedbackPanel feedback={feedback} positions={updatedPositions} />)
+    rerender(
+      <Wrapper>
+        <AlignedFeedbackPanel feedback={feedback} positions={updatedPositions} />
+      </Wrapper>
+    )
 
     positionedDiv = container.querySelector('.absolute.px-1') as HTMLElement
     expect(positionedDiv).not.toBeNull()
@@ -343,7 +397,9 @@ describe('AlignedFeedbackPanel', () => {
 
     const positions = new Map<string, number>()
     const { container, rerender } = render(
-      <AlignedFeedbackPanel feedback={initialFeedback} positions={positions} />
+      <Wrapper>
+        <AlignedFeedbackPanel feedback={initialFeedback} positions={positions} />
+      </Wrapper>
     )
 
     expect(screen.getByText('Initial feedback')).toBeInTheDocument()
@@ -360,7 +416,11 @@ describe('AlignedFeedbackPanel', () => {
       }),
     ]
 
-    rerender(<AlignedFeedbackPanel feedback={updatedFeedback} positions={positions} />)
+    rerender(
+      <Wrapper>
+        <AlignedFeedbackPanel feedback={updatedFeedback} positions={positions} />
+      </Wrapper>
+    )
 
     expect(screen.getByText('Initial feedback')).toBeInTheDocument()
     expect(screen.getByText('New feedback')).toBeInTheDocument()
