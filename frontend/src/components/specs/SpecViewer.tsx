@@ -83,87 +83,94 @@ export function SpecViewer({
   return (
     <Card className={`overflow-hidden ${className}`}>
       <div className="relative">
-        {/* Content with line numbers */}
-        <div className="flex">
-          {/* Line numbers column */}
-          {showLineNumbers && (
-            <div className="select-none border-r border-border bg-muted/30 px-4 py-4">
-              {lines.map((_, index) => (
-                <div
-                  key={index}
-                  className={`cursor-pointer text-right font-mono text-xs leading-6 text-muted-foreground transition-colors hover:bg-primary/10 ${
-                    highlightLines.includes(index + 1) ? 'font-bold text-primary' : ''
-                  } ${selectedLine === index + 1 ? 'bg-primary/20' : ''}`}
-                  data-line-number={index + 1}
-                  onClick={() => handleLineClick(index + 1)}
-                >
-                  {index + 1}
-                </div>
-              ))}
-            </div>
-          )}
+        {editable ? (
+          /* Editable mode: Simple textarea without line numbers */
+          <div className="px-4 py-4">
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={handleContentChange}
+              className="w-full resize-none border-none bg-transparent font-mono text-sm leading-6 outline-none focus:ring-0"
+              spellCheck={false}
+            />
+          </div>
+        ) : (
+          /* Read-only mode: Grid with line numbers and content */
+          <div
+            className={`grid overflow-x-auto ${
+              showLineNumbers ? 'grid-cols-[auto_1fr]' : 'grid-cols-1'
+            }`}
+          >
+            {lines.flatMap((line, index) => {
+              const lineNumber = index + 1
+              const lineFeedback = feedbackByLine.get(lineNumber) || []
 
-          {/* Content column */}
-          <div className="flex-1 overflow-x-auto px-4 py-4">
-            {editable ? (
-              <textarea
-                ref={textareaRef}
-                value={content}
-                onChange={handleContentChange}
-                className="w-full resize-none border-none bg-transparent font-mono text-sm leading-6 outline-none focus:ring-0"
-                spellCheck={false}
-              />
-            ) : (
-              lines.map((line, index) => {
-                const lineNumber = index + 1
-                const lineFeedback = feedbackByLine.get(lineNumber) || []
+              const cells = []
 
-                return (
+              // Line number cell
+              if (showLineNumbers) {
+                cells.push(
                   <div
-                    key={index}
-                    className={`group relative font-mono text-sm leading-6 ${
-                      highlightLines.includes(lineNumber) ? 'bg-primary/10' : ''
+                    key={`line-${index}`}
+                    className={`select-none border-r border-border bg-muted/30 px-4 py-1 text-right font-mono text-xs leading-6 text-muted-foreground transition-colors hover:bg-primary/10 ${
+                      highlightLines.includes(lineNumber) ? 'font-bold text-primary' : ''
                     } ${selectedLine === lineNumber ? 'bg-primary/20' : ''}`}
-                    data-line={lineNumber}
+                    data-line-number={lineNumber}
+                    onClick={() => handleLineClick(lineNumber)}
                   >
-                    <div className="flex items-start gap-2">
-                      {/* Line content */}
-                      <pre
-                        className="m-0 inline flex-1 cursor-pointer whitespace-pre-wrap break-words font-mono transition-colors hover:bg-muted/30"
-                        onClick={() => handleLineClick(lineNumber)}
-                        onMouseUp={() => handleMouseUp(lineNumber)}
-                      >
-                        {line || ' '}
-                      </pre>
-
-                      {/* Feedback anchors */}
-                      {lineFeedback.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {/* Group feedback by type and show one anchor per type */}
-                          {Array.from(new Set(lineFeedback.map((f) => f.feedback_type))).map(
-                            (type) => {
-                              const feedbackOfType = lineFeedback.filter(
-                                (f) => f.feedback_type === type
-                              )
-                              return (
-                                <FeedbackAnchor
-                                  key={type}
-                                  type={type}
-                                  count={feedbackOfType.length}
-                                  onClick={() => onFeedbackClick?.(feedbackOfType[0])}
-                                />
-                              )
-                            }
-                          )}
-                        </div>
-                      )}
-                    </div>
+                    {lineNumber}
                   </div>
                 )
-              })
-            )}
+              }
+
+              // Content cell
+              cells.push(
+                <div
+                  key={`content-${index}`}
+                  className={`group relative px-4 py-1 font-mono text-sm leading-6 ${
+                    highlightLines.includes(lineNumber) ? 'bg-primary/10' : ''
+                  } ${selectedLine === lineNumber ? 'bg-primary/20' : ''}`}
+                  data-line={lineNumber}
+                >
+                  <div className="flex items-start gap-2">
+                    {/* Line content */}
+                    <pre
+                      className="m-0 inline flex-1 cursor-pointer whitespace-pre-wrap break-words font-mono transition-colors hover:bg-muted/30"
+                      onClick={() => handleLineClick(lineNumber)}
+                      onMouseUp={() => handleMouseUp(lineNumber)}
+                    >
+                      {line || ' '}
+                    </pre>
+
+                    {/* Feedback anchors */}
+                    {lineFeedback.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {/* Group feedback by type and show one anchor per type */}
+                        {Array.from(new Set(lineFeedback.map((f) => f.feedback_type))).map(
+                          (type) => {
+                            const feedbackOfType = lineFeedback.filter(
+                              (f) => f.feedback_type === type
+                            )
+                            return (
+                              <FeedbackAnchor
+                                key={type}
+                                type={type}
+                                count={feedbackOfType.length}
+                                onClick={() => onFeedbackClick?.(feedbackOfType[0])}
+                              />
+                            )
+                          }
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+
+              return cells
+            })}
           </div>
-        </div>
+        )}
       </div>
     </Card>
   )

@@ -4,16 +4,26 @@ import userEvent from '@testing-library/user-event'
 import { SpecViewer } from '@/components/specs/SpecViewer'
 
 describe('SpecViewer', () => {
-  const sampleContent = `# Header\nThis is line 1\nThis is line 2\nThis is line 3`
+  const sampleContent = `# Header
+
+This is paragraph 1.
+
+This is paragraph 2.`
 
   it('should render content with line numbers by default', () => {
     render(<SpecViewer content={sampleContent} />)
 
-    // Check that line numbers are rendered
+    // Check that all line numbers are rendered sequentially
+    // Line 1: # Header
+    // Line 2: (empty)
+    // Line 3: This is paragraph 1.
+    // Line 4: (empty)
+    // Line 5: This is paragraph 2.
     expect(screen.getByText('1')).toBeInTheDocument()
     expect(screen.getByText('2')).toBeInTheDocument()
     expect(screen.getByText('3')).toBeInTheDocument()
     expect(screen.getByText('4')).toBeInTheDocument()
+    expect(screen.getByText('5')).toBeInTheDocument()
   })
 
   it('should render content without line numbers when disabled', () => {
@@ -30,14 +40,13 @@ describe('SpecViewer', () => {
     render(<SpecViewer content={sampleContent} />)
 
     expect(screen.getByText('# Header')).toBeInTheDocument()
-    expect(screen.getByText('This is line 1')).toBeInTheDocument()
-    expect(screen.getByText('This is line 2')).toBeInTheDocument()
-    expect(screen.getByText('This is line 3')).toBeInTheDocument()
+    expect(screen.getByText('This is paragraph 1.')).toBeInTheDocument()
+    expect(screen.getByText('This is paragraph 2.')).toBeInTheDocument()
   })
 
   it('should highlight specified lines', () => {
     const { container } = render(
-      <SpecViewer content={sampleContent} highlightLines={[2, 3]} />
+      <SpecViewer content={sampleContent} highlightLines={[1, 3]} />
     )
 
     const highlightedElements = container.querySelectorAll('.bg-primary\\/10')
@@ -47,7 +56,7 @@ describe('SpecViewer', () => {
   it('should handle empty content', () => {
     render(<SpecViewer content="" />)
 
-    // Should render at least one line number
+    // Empty content should still show line 1
     expect(screen.getByText('1')).toBeInTheDocument()
   })
 
