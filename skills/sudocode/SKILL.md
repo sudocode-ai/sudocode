@@ -17,6 +17,55 @@ Spec-driven development and issue management system. Work persists across sessio
 **Create issues when:** Concrete actionable work, can be completed and closed, implements a spec, is a bug/task
 **Create specs when:** Documenting user intent and requirements, architecture decisions, API designs, feature specifications
 
+## Working with the System
+
+### Two Ways to Modify Specs/Issues
+
+**Option 1: MCP Tools** (Recommended for structured operations)
+- Use `upsert_issue`, `upsert_spec`, `link`, `add_feedback` tools
+- Automatically syncs to markdown/sqlite/jsonl
+- Validates relationships and IDs
+
+**Option 2: Direct Markdown Editing** (For content-heavy edits)
+- Edit markdown files in `.sudocode/specs/` or `.sudocode/issues/`
+- Frontmatter contains metadata (id, title, status, relationships, tags)
+- Content after frontmatter is the body
+- System auto-syncs bidirectionally
+
+**When to use each:**
+- **MCP tools:** Status changes, creating entities, adding relationships, adding feedback
+- **Direct editing:** Writing detailed content, refactoring descriptions, bulk editing
+
+### Obsidian-Style Mentions
+
+**Link specs and issues inline using `[[ID]]` syntax:**
+
+```markdown
+Basic reference:
+Implement OAuth per [[SPEC-015]]
+
+With display text:
+See [[SPEC-015|authentication spec]] for details
+
+With relationship type:
+Must complete [[ISSUE-042]]{ blocks } first
+
+Formats supported:
+- [[SPEC-001]] - basic reference (creates "references" relationship)
+- [[ISSUE-042]] or [[@ISSUE-042]] - with @ prefix
+- [[SPEC-001|Custom Text]] - with display text
+- [[SPEC-001]]{ blocks } - declares relationship type
+- [[SPEC-001|Text]]{ blocks } - both display and relationship
+```
+
+**Relationship types in mentions:** `blocks`, `implements`, `depends-on`, `discovered-from`
+
+**Why use inline mentions:**
+- Bidirectionally links entities without separate `link` tool call
+- Colocate with informational context
+- Automatically creates relationships during sync
+- Makes content more readable
+
 ## Quick Reference
 
 ### Session Start (Always Do This)
