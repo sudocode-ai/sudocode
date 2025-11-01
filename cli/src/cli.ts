@@ -42,6 +42,8 @@ import {
 } from "./cli/feedback-commands.js";
 import { handleServerStart } from "./cli/server-commands.js";
 import { handleInit } from "./cli/init-commands.js";
+import { handleUpdate, handleUpdateCheck } from "./cli/update-commands.js";
+import { getUpdateNotification } from "./update-checker.js";
 import { VERSION } from "./version.js";
 
 // Global state
@@ -469,5 +471,39 @@ program
     await handleServerStart(getContext(), options);
   });
 
+// ============================================================================
+// UPDATE COMMANDS
+// ============================================================================
+
+program
+  .command("update")
+  .description("Update sudocode to the latest version")
+  .option("--check", "Check for updates without installing")
+  .action(async (options) => {
+    if (options.check) {
+      await handleUpdateCheck();
+    } else {
+      await handleUpdate();
+    }
+  });
+
 // Parse arguments
 program.parse();
+
+// Check for updates (non-blocking)
+// Skip for update and server commands (server handles it explicitly)
+const isUpdateCommand = process.argv.includes("update");
+const isServerCommand = process.argv.includes("server");
+if (!isUpdateCommand && !isServerCommand) {
+  getUpdateNotification()
+    .then((notification) => {
+      if (notification) {
+        console.log();
+        console.log(chalk.yellow(notification));
+        console.log();
+      }
+    })
+    .catch(() => {
+      // Silently ignore update check failures
+    });
+}

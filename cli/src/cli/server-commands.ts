@@ -6,6 +6,7 @@ import { spawn } from "child_process";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import chalk from "chalk";
+import { getUpdateNotification } from "../update-checker.js";
 
 export interface CommandContext {
   db: any;
@@ -25,6 +26,18 @@ export async function handleServerStart(
   ctx: CommandContext,
   options: ServerStartOptions
 ): Promise<void> {
+  // Check for updates before starting server
+  try {
+    const updateNotification = await getUpdateNotification();
+    if (updateNotification) {
+      console.log();
+      console.log(chalk.yellow(updateNotification));
+      console.log();
+    }
+  } catch {
+    // Silently ignore update check failures
+  }
+
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
 
