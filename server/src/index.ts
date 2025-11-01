@@ -318,8 +318,21 @@ const actualPort = await startServer(startPort, MAX_PORT_ATTEMPTS);
 // Initialize WebSocket server AFTER successfully binding to a port
 initWebSocketServer(server, "/ws");
 
-console.log(`sudocode local server running on http://localhost:${actualPort}`);
-console.log(`WebSocket server available at ws://localhost:${actualPort}/ws`);
+// Format URLs as clickable links with color
+const httpUrl = `http://localhost:${actualPort}`;
+const wsUrl = `ws://localhost:${actualPort}/ws`;
+
+// ANSI escape codes for green color and clickable links
+const green = "\u001b[32m";
+const bold = "\u001b[1m";
+const reset = "\u001b[0m";
+const makeClickable = (url: string, text: string) =>
+  `\u001b]8;;${url}\u001b\\${text}\u001b]8;;\u001b\\`;
+
+console.log(`WebSocket server available at: ${makeClickable(wsUrl, wsUrl)}`);
+console.log(
+  `${bold}${green}sudocode local server running on: ${makeClickable(httpUrl, httpUrl)}${reset}`
+);
 
 // Graceful shutdown
 process.on("SIGINT", async () => {

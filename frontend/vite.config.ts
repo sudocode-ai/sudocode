@@ -7,8 +7,8 @@ export default defineConfig(({ mode }) => {
   // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
   const env = loadEnv(mode, process.cwd(), '')
 
-  // Get ports from env - backend defaults to 3002, frontend to 3001
-  const BACKEND_PORT = env.BACKEND_PORT || env.PORT || '3002'
+  // Get ports from env - backend defaults to 3000, frontend to 3001
+  const BACKEND_PORT = env.BACKEND_PORT || env.PORT || '3000'
   const FRONTEND_PORT = env.FRONTEND_PORT || '3001'
 
   return {
