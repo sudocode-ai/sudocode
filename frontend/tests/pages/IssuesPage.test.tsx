@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import { renderWithProviders } from '@/test/test-utils'
 import IssuesPage from '@/pages/IssuesPage'
-import { issuesApi, relationshipsApi } from '@/lib/api'
-import type { Issue, Relationship } from '@/types/api'
+import { issuesApi } from '@/lib/api'
+import type { Issue } from '@/types/api'
 
 // Mock the API
 vi.mock('@/lib/api', () => ({
@@ -267,13 +267,13 @@ describe('IssuesPage', () => {
     })
   })
 
-  describe('Blocking Relationships', () => {
-    it('should group open issues with blocked relationships in blocked column', async () => {
+  describe('Blocked Status', () => {
+    it('should group issues by their backend-managed status', async () => {
       const issuesWithBlocked: Issue[] = [
         {
           id: 'ISSUE-009',
           uuid: 'test-uuid-9',
-          title: 'Open Issue Without Block',
+          title: 'Open Issue',
           content: 'Normal open issue',
           status: 'open',
           priority: 1,
@@ -286,9 +286,9 @@ describe('IssuesPage', () => {
         {
           id: 'ISSUE-010',
           uuid: 'test-uuid-10',
-          title: 'Open Issue With Block',
-          content: 'Blocked by another issue',
-          status: 'open',
+          title: 'Blocked Issue',
+          content: 'Status set to blocked by backend',
+          status: 'blocked', // Backend automatically sets this based on relationships
           priority: 1,
           assignee: undefined,
           created_at: '2024-01-02',
@@ -299,8 +299,8 @@ describe('IssuesPage', () => {
         {
           id: 'ISSUE-011',
           uuid: 'test-uuid-11',
-          title: 'Blocking Issue',
-          content: 'Blocks ISSUE-010',
+          title: 'In Progress Issue',
+          content: 'Currently being worked on',
           status: 'in_progress',
           priority: 0,
           assignee: undefined,
@@ -311,60 +311,45 @@ describe('IssuesPage', () => {
         },
       ]
 
-      const mockRelationships: Relationship[] = [
-        {
-          from_id: 'ISSUE-011',
-          from_type: 'issue',
-          to_id: 'ISSUE-010',
-          to_type: 'issue',
-          relationship_type: 'blocks',
-          created_at: '2024-01-03',
-        },
-      ]
-
       vi.mocked(issuesApi.getAll).mockResolvedValue(issuesWithBlocked)
-      vi.mocked(relationshipsApi.getForEntity).mockImplementation((entityId) => {
-        if (entityId === 'ISSUE-010') {
-          return Promise.resolve(mockRelationships)
-        }
-        return Promise.resolve([])
-      })
 
       const { container } = renderWithProviders(<IssuesPage />)
 
       await waitFor(() => {
-        expect(screen.getByText('Open Issue Without Block')).toBeInTheDocument()
-        expect(screen.getByText('Open Issue With Block')).toBeInTheDocument()
-        expect(screen.getByText('Blocking Issue')).toBeInTheDocument()
+        expect(screen.getByText('Open Issue')).toBeInTheDocument()
+        expect(screen.getByText('Blocked Issue')).toBeInTheDocument()
+        expect(screen.getByText('In Progress Issue')).toBeInTheDocument()
       })
 
-      // Wait for relationships to be fetched and issue grouping to update
-      await waitFor(
-        () => {
-          const blockedColumn = container.querySelector('[data-column-id="blocked"]')
-          expect(blockedColumn).toBeInTheDocument()
+      // Verify blocked column contains the blocked issue
+      const blockedColumn = container.querySelector('[data-column-id="blocked"]')
+      expect(blockedColumn).toBeInTheDocument()
 
-          if (blockedColumn) {
-            const issueCards = blockedColumn.querySelectorAll('[data-issue-id]')
-            const issueIds = Array.from(issueCards).map((card) => card.getAttribute('data-issue-id'))
-            // ISSUE-010 should be in the blocked column even though its status is "open"
-            expect(issueIds).toContain('ISSUE-010')
-          }
-        },
-        { timeout: 3000 }
-      )
+      if (blockedColumn) {
+        const issueCards = blockedColumn.querySelectorAll('[data-issue-id]')
+        const issueIds = Array.from(issueCards).map((card) => card.getAttribute('data-issue-id'))
+        expect(issueIds).toContain('ISSUE-010')
+      }
 
-      // Get the open column
+      // Verify open column contains the open issue
       const openColumn = container.querySelector('[data-column-id="open"]')
       expect(openColumn).toBeInTheDocument()
 
-      // ISSUE-009 should be in the open column (no blocking relationships)
       if (openColumn) {
         const issueCards = openColumn.querySelectorAll('[data-issue-id]')
         const issueIds = Array.from(issueCards).map((card) => card.getAttribute('data-issue-id'))
         expect(issueIds).toContain('ISSUE-009')
-        // ISSUE-010 should NOT be in the open column
-        expect(issueIds).not.toContain('ISSUE-010')
+        expect(issueIds).not.toContain('ISSUE-010') // Should be in blocked column
+      }
+
+      // Verify in_progress column contains the in_progress issue
+      const inProgressColumn = container.querySelector('[data-column-id="in_progress"]')
+      expect(inProgressColumn).toBeInTheDocument()
+
+      if (inProgressColumn) {
+        const issueCards = inProgressColumn.querySelectorAll('[data-issue-id]')
+        const issueIds = Array.from(issueCards).map((card) => card.getAttribute('data-issue-id'))
+        expect(issueIds).toContain('ISSUE-011')
       }
     })
   })

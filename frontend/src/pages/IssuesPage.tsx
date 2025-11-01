@@ -1,7 +1,6 @@
 import { useMemo, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useIssues, useUpdateIssueStatus } from '@/hooks/useIssues'
-import { useIssueRelationships, hasBlockingRelationships } from '@/hooks/useIssueRelationships'
 import type { Issue, IssueStatus } from '@/types/api'
 import type { DragEndEvent } from '@/components/ui/kanban'
 import IssueKanbanBoard from '@/components/issues/IssueKanbanBoard'
@@ -60,9 +59,6 @@ export default function IssuesPage() {
     return new Set()
   })
 
-  // Fetch relationships for all issues
-  const { data: relationshipsMap } = useIssueRelationships(issues)
-
   // Group issues by status
   const groupedIssues = useMemo(() => {
     // Filter issues based on search text
@@ -84,15 +80,10 @@ export default function IssuesPage() {
       closed: [],
     }
 
+    // Trust the issue status from the backend (now automatically managed)
     filteredIssues.forEach((issue) => {
       const status = issue.status.toLowerCase() as IssueStatus
-      if (
-        status === 'open' &&
-        relationshipsMap &&
-        hasBlockingRelationships(issue.id, relationshipsMap)
-      ) {
-        groups.blocked.push(issue)
-      } else if (groups[status]) {
+      if (groups[status]) {
         groups[status].push(issue)
       } else {
         // Default to open if status is unknown
@@ -124,7 +115,7 @@ export default function IssuesPage() {
     })
 
     return groups
-  }, [issues, relationshipsMap, filterText])
+  }, [issues, filterText])
 
   // Handle drag-and-drop to change status
   const handleDragEnd = useCallback(
