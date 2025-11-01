@@ -104,7 +104,7 @@ describe("Relationships API", () => {
       assert.strictEqual(response.body.data.relationship_type, "implements");
     });
 
-    it("should reject duplicate relationship", async () => {
+    it("should return existing relationship when adding duplicate (idempotent)", async () => {
       const relationship = {
         from_id: testIssueId,
         from_type: "issue",
@@ -116,10 +116,14 @@ describe("Relationships API", () => {
       const response = await request(app)
         .post("/api/relationships")
         .send(relationship)
-        .expect(409);
+        .expect(201)
+        .expect("Content-Type", /json/);
 
-      assert.strictEqual(response.body.success, false);
-      assert.ok(response.body.message.includes("already exists"));
+      assert.strictEqual(response.body.success, true);
+      assert.ok(response.body.data);
+      assert.strictEqual(response.body.data.from_id, testIssueId);
+      assert.strictEqual(response.body.data.to_id, testSpecId);
+      assert.strictEqual(response.body.data.relationship_type, "implements");
     });
 
     it("should reject relationship without from_id", async () => {
@@ -337,6 +341,70 @@ describe("Relationships API", () => {
       assert.strictEqual(response.body.data.deleted, true);
       assert.strictEqual(response.body.data.from_id, testIssueId);
       assert.strictEqual(response.body.data.to_id, testSpecId);
+    });
+
+    it("should trigger JSONL export after deleting relationship", async () => {
+      // Create a new issue and spec for this test
+      const issueResponse = await request(app)
+        .post("/api/issues")
+        .send({ title: "Delete Export Test Issue", description: "Test", status: "open" });
+      const issueId = issueResponse.body.data.id;
+
+      const specResponse = await request(app)
+        .post("/api/specs")
+        .send({ title: "Delete Export Test Spec", content: "# Test" });
+      const specId = specResponse.body.data.id;
+
+      // Create relationship
+      await request(app)
+        .post("/api/relationships")
+        .send({
+          from_id: issueId,
+          from_type: "issue",
+          to_id: specId,
+          to_type: "spec",
+          relationship_type: "implements",
+        })
+        .expect(201);
+
+      // Wait for initial export
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+
+      // Delete the relationship
+      await request(app)
+        .delete("/api/relationships")
+        .send({
+          from_id: issueId,
+          from_type: "issue",
+          to_id: specId,
+          to_type: "spec",
+          relationship_type: "implements",
+        })
+        .expect(200);
+
+      // Wait for debounced export after deletion
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+
+      // Check that JSONL files exist and relationship is removed
+      const issuesJsonlPath = path.join(testDir, "issues.jsonl");
+      assert.ok(fs.existsSync(issuesJsonlPath), "issues.jsonl should exist");
+
+      const issuesContent = fs.readFileSync(issuesJsonlPath, "utf-8");
+      const issueLines = issuesContent.trim().split("\n");
+      const exportedIssue = issueLines
+        .map((line) => JSON.parse(line))
+        .find((issue) => issue.id === issueId);
+
+      assert.ok(exportedIssue, "Issue should be in JSONL");
+      assert.ok(
+        Array.isArray(exportedIssue.relationships),
+        "Issue should have relationships array"
+      );
+      assert.strictEqual(
+        exportedIssue.relationships.length,
+        0,
+        "Issue should have no relationships after deletion"
+      );
     });
 
     it("should return 404 when deleting non-existent relationship", async () => {

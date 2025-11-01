@@ -13,6 +13,7 @@ import {
   getEntityIncomingRelationships,
 } from "../services/relationships.js";
 import { broadcastRelationshipUpdate } from "../services/websocket.js";
+import { triggerExport } from "../services/export.js";
 
 export function createRelationshipsRouter(db: Database.Database): Router {
   const router = Router();
@@ -226,6 +227,9 @@ export function createRelationshipsRouter(db: Database.Database): Router {
       // Broadcast relationship creation to WebSocket clients
       broadcastRelationshipUpdate("created", relationship);
 
+      // Trigger export to sync JSONL files
+      triggerExport(db);
+
       res.status(201).json({
         success: true,
         data: relationship,
@@ -336,6 +340,9 @@ export function createRelationshipsRouter(db: Database.Database): Router {
           to_type,
           relationship_type,
         });
+
+        // Trigger export to sync JSONL files
+        triggerExport(db);
 
         res.json({
           success: true,
