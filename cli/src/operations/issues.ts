@@ -200,15 +200,15 @@ export function updateIssue(
   const updates: string[] = [];
   const params: Record<string, any> = { id };
 
-  if (input.title !== undefined) {
+  if (input.title !== undefined && input.title !== existing.title) {
     updates.push("title = @title");
     params.title = input.title;
   }
-  if (input.content !== undefined) {
+  if (input.content !== undefined && input.content !== existing.content) {
     updates.push("content = @content");
     params.content = input.content;
   }
-  if (input.status !== undefined) {
+  if (input.status !== undefined && input.status !== existing.status) {
     updates.push("status = @status");
     params.status = input.status;
 
@@ -225,24 +225,24 @@ export function updateIssue(
       // Reopening - clear timestamp
       updates.push("closed_at = NULL");
     }
-  } else if (input.closed_at !== undefined) {
+  } else if (input.closed_at !== undefined && input.closed_at !== existing.closed_at) {
     // closed_at provided without status change
     updates.push("closed_at = @closed_at");
     params.closed_at = input.closed_at;
   }
-  if (input.priority !== undefined) {
+  if (input.priority !== undefined && input.priority !== existing.priority) {
     updates.push("priority = @priority");
     params.priority = input.priority;
   }
-  if (input.assignee !== undefined) {
+  if (input.assignee !== undefined && input.assignee !== existing.assignee) {
     updates.push("assignee = @assignee");
     params.assignee = input.assignee;
   }
-  if (input.parent_id !== undefined) {
+  if (input.parent_id !== undefined && input.parent_id !== existing.parent_id) {
     updates.push("parent_id = @parent_id");
     params.parent_id = input.parent_id;
   }
-  if (input.archived !== undefined) {
+  if (input.archived !== undefined && (input.archived ? 1 : 0) !== existing.archived) {
     updates.push("archived = @archived");
     params.archived = input.archived ? 1 : 0;
 
@@ -259,7 +259,7 @@ export function updateIssue(
       // Unarchiving - clear timestamp
       updates.push("archived_at = NULL");
     }
-  } else if (input.archived_at !== undefined) {
+  } else if (input.archived_at !== undefined && input.archived_at !== existing.archived_at) {
     // archived_at provided without archived change
     updates.push("archived_at = @archived_at");
     params.archived_at = input.archived_at;

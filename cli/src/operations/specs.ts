@@ -2,9 +2,9 @@
  * CRUD operations for Specs
  */
 
-import type Database from 'better-sqlite3';
-import type { Spec } from '../types.js';
-import { generateUUID } from '../id-generator.js';
+import type Database from "better-sqlite3";
+import type { Spec } from "../types.js";
+import { generateUUID } from "../id-generator.js";
 
 export interface CreateSpecInput {
   id: string;
@@ -42,7 +42,10 @@ export interface ListSpecsOptions {
 /**
  * Create a new spec
  */
-export function createSpec(db: Database.Database, input: CreateSpecInput): Spec {
+export function createSpec(
+  db: Database.Database,
+  input: CreateSpecInput
+): Spec {
   // Validate parent_id exists if provided
   if (input.parent_id) {
     const parent = getSpec(db, input.parent_id);
@@ -54,27 +57,45 @@ export function createSpec(db: Database.Database, input: CreateSpecInput): Spec 
   const uuid = input.uuid || generateUUID();
 
   // Build INSERT statement with optional timestamp fields
-  const columns = ['id', 'uuid', 'title', 'file_path', 'content', 'priority', 'parent_id', 'archived'];
-  const values = ['@id', '@uuid', '@title', '@file_path', '@content', '@priority', '@parent_id', '@archived'];
+  const columns = [
+    "id",
+    "uuid",
+    "title",
+    "file_path",
+    "content",
+    "priority",
+    "parent_id",
+    "archived",
+  ];
+  const values = [
+    "@id",
+    "@uuid",
+    "@title",
+    "@file_path",
+    "@content",
+    "@priority",
+    "@parent_id",
+    "@archived",
+  ];
 
   if (input.created_at) {
-    columns.push('created_at');
-    values.push('@created_at');
+    columns.push("created_at");
+    values.push("@created_at");
   }
   if (input.updated_at) {
-    columns.push('updated_at');
-    values.push('@updated_at');
+    columns.push("updated_at");
+    values.push("@updated_at");
   }
   if (input.archived_at !== undefined) {
-    columns.push('archived_at');
-    values.push('@archived_at');
+    columns.push("archived_at");
+    values.push("@archived_at");
   }
 
   const stmt = db.prepare(`
     INSERT INTO specs (
-      ${columns.join(', ')}
+      ${columns.join(", ")}
     ) VALUES (
-      ${values.join(', ')}
+      ${values.join(", ")}
     )
     ON CONFLICT(id) DO UPDATE SET
       uuid = excluded.uuid,
@@ -85,8 +106,8 @@ export function createSpec(db: Database.Database, input: CreateSpecInput): Spec 
       parent_id = excluded.parent_id,
       archived = excluded.archived,
       archived_at = excluded.archived_at,
-      ${input.created_at ? 'created_at = excluded.created_at,' : ''}
-      ${input.updated_at ? 'updated_at = excluded.updated_at' : 'updated_at = CURRENT_TIMESTAMP'}
+      ${input.created_at ? "created_at = excluded.created_at," : ""}
+      ${input.updated_at ? "updated_at = excluded.updated_at" : "updated_at = CURRENT_TIMESTAMP"}
   `);
 
   try {
@@ -95,7 +116,7 @@ export function createSpec(db: Database.Database, input: CreateSpecInput): Spec 
       uuid: uuid,
       title: input.title,
       file_path: input.file_path,
-      content: input.content || '',
+      content: input.content || "",
       priority: input.priority ?? 2,
       parent_id: input.parent_id ?? null,
       archived: input.archived ? 1 : 0,
@@ -120,7 +141,7 @@ export function createSpec(db: Database.Database, input: CreateSpecInput): Spec 
     }
     return spec;
   } catch (error: any) {
-    if (error.code && error.code.startsWith('SQLITE_CONSTRAINT')) {
+    if (error.code && error.code.startsWith("SQLITE_CONSTRAINT")) {
       throw new Error(`Constraint violation: ${error.message}`);
     }
     throw error;
@@ -141,7 +162,10 @@ export function getSpec(db: Database.Database, id: string): Spec | null {
 /**
  * Get a spec by file path
  */
-export function getSpecByFilePath(db: Database.Database, filePath: string): Spec | null {
+export function getSpecByFilePath(
+  db: Database.Database,
+  filePath: string
+): Spec | null {
   const stmt = db.prepare(`
     SELECT * FROM specs WHERE file_path = ?
   `);
@@ -173,56 +197,59 @@ export function updateSpec(
   const updates: string[] = [];
   const params: Record<string, any> = { id };
 
-  if (input.title !== undefined) {
-    updates.push('title = @title');
+  if (input.title !== undefined && input.title !== existing.title) {
+    updates.push("title = @title");
     params.title = input.title;
   }
-  if (input.file_path !== undefined) {
-    updates.push('file_path = @file_path');
+  if (input.file_path !== undefined && input.file_path !== existing.file_path) {
+    updates.push("file_path = @file_path");
     params.file_path = input.file_path;
   }
-  if (input.content !== undefined) {
-    updates.push('content = @content');
+  if (input.content !== undefined && input.content !== existing.content) {
+    updates.push("content = @content");
     params.content = input.content;
   }
-  if (input.priority !== undefined) {
-    updates.push('priority = @priority');
+  if (input.priority !== undefined && input.priority !== existing.priority) {
+    updates.push("priority = @priority");
     params.priority = input.priority;
   }
-  if (input.parent_id !== undefined) {
-    updates.push('parent_id = @parent_id');
+  if (input.parent_id !== undefined && input.parent_id !== existing.parent_id) {
+    updates.push("parent_id = @parent_id");
     params.parent_id = input.parent_id;
   }
-  if (input.archived !== undefined) {
-    updates.push('archived = @archived');
+  if (input.archived !== undefined && input.archived !== existing.archived) {
+    updates.push("archived = @archived");
     params.archived = input.archived ? 1 : 0;
 
     // Handle archived_at based on archived changes
     // Use input.archived_at if provided, otherwise auto-set based on archived
     if (input.archived_at !== undefined) {
       // Explicit archived_at provided - use it
-      updates.push('archived_at = @archived_at');
+      updates.push("archived_at = @archived_at");
       params.archived_at = input.archived_at;
     } else if (input.archived && !existing.archived) {
       // Archiving - set timestamp
-      updates.push('archived_at = CURRENT_TIMESTAMP');
+      updates.push("archived_at = CURRENT_TIMESTAMP");
     } else if (!input.archived && existing.archived) {
       // Unarchiving - clear timestamp
-      updates.push('archived_at = NULL');
+      updates.push("archived_at = NULL");
     }
-  } else if (input.archived_at !== undefined) {
+  } else if (
+    input.archived_at !== undefined &&
+    input.archived_at !== existing.archived_at
+  ) {
     // archived_at provided without archived change
-    updates.push('archived_at = @archived_at');
+    updates.push("archived_at = @archived_at");
     params.archived_at = input.archived_at;
   }
 
   // Handle updated_at - use provided value or set to current timestamp
   if (input.updated_at !== undefined) {
-    updates.push('updated_at = @updated_at');
+    updates.push("updated_at = @updated_at");
     params.updated_at = input.updated_at;
   } else if (updates.length > 0) {
     // Only update timestamp if there are actual changes
-    updates.push('updated_at = CURRENT_TIMESTAMP');
+    updates.push("updated_at = CURRENT_TIMESTAMP");
   }
 
   if (updates.length === 0) {
@@ -230,7 +257,7 @@ export function updateSpec(
   }
 
   const stmt = db.prepare(`
-    UPDATE specs SET ${updates.join(', ')} WHERE id = @id
+    UPDATE specs SET ${updates.join(", ")} WHERE id = @id
   `);
 
   try {
@@ -241,7 +268,7 @@ export function updateSpec(
     }
     return updated;
   } catch (error: any) {
-    if (error.code && error.code.startsWith('SQLITE_CONSTRAINT')) {
+    if (error.code && error.code.startsWith("SQLITE_CONSTRAINT")) {
       throw new Error(`Constraint violation: ${error.message}`);
     }
     throw error;
@@ -268,30 +295,30 @@ export function listSpecs(
   const params: Record<string, any> = {};
 
   if (options.priority !== undefined) {
-    conditions.push('priority = @priority');
+    conditions.push("priority = @priority");
     params.priority = options.priority;
   }
   if (options.parent_id !== undefined) {
-    conditions.push('parent_id = @parent_id');
+    conditions.push("parent_id = @parent_id");
     params.parent_id = options.parent_id;
   }
   if (options.archived !== undefined) {
-    conditions.push('archived = @archived');
+    conditions.push("archived = @archived");
     params.archived = options.archived ? 1 : 0;
   }
 
-  let query = 'SELECT * FROM specs';
+  let query = "SELECT * FROM specs";
   if (conditions.length > 0) {
-    query += ' WHERE ' + conditions.join(' AND ');
+    query += " WHERE " + conditions.join(" AND ");
   }
-  query += ' ORDER BY priority DESC, created_at DESC';
+  query += " ORDER BY priority DESC, created_at DESC";
 
   if (options.limit !== undefined) {
-    query += ' LIMIT @limit';
+    query += " LIMIT @limit";
     params.limit = options.limit;
   }
   if (options.offset !== undefined) {
-    query += ' OFFSET @offset';
+    query += " OFFSET @offset";
     params.offset = options.offset;
   }
 
@@ -305,31 +332,31 @@ export function listSpecs(
 export function searchSpecs(
   db: Database.Database,
   query: string,
-  options: Omit<ListSpecsOptions, 'offset'> = {}
+  options: Omit<ListSpecsOptions, "offset"> = {}
 ): Spec[] {
-  const conditions: string[] = ['(title LIKE @query OR content LIKE @query)'];
+  const conditions: string[] = ["(title LIKE @query OR content LIKE @query)"];
   const params: Record<string, any> = { query: `%${query}%` };
 
   if (options.priority !== undefined) {
-    conditions.push('priority = @priority');
+    conditions.push("priority = @priority");
     params.priority = options.priority;
   }
   if (options.parent_id !== undefined) {
-    conditions.push('parent_id = @parent_id');
+    conditions.push("parent_id = @parent_id");
     params.parent_id = options.parent_id;
   }
   if (options.archived !== undefined) {
-    conditions.push('archived = @archived');
+    conditions.push("archived = @archived");
     params.archived = options.archived ? 1 : 0;
   }
 
-  let sql = `SELECT * FROM specs WHERE ${conditions.join(' AND ')} ORDER BY priority DESC, created_at DESC`;
+  let sql = `SELECT * FROM specs WHERE ${conditions.join(" AND ")} ORDER BY priority DESC, created_at DESC`;
 
   if (options.limit !== undefined) {
-    sql += ' LIMIT @limit';
+    sql += " LIMIT @limit";
     params.limit = options.limit;
   } else {
-    sql += ' LIMIT 50';
+    sql += " LIMIT 50";
   }
 
   const stmt = db.prepare(sql);

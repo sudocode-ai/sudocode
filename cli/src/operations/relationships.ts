@@ -46,9 +46,7 @@ export function addRelationship(
   );
 
   if (existing) {
-    throw new Error(
-      `Relationship already exists: ${input.from_id} (${input.from_type}) --[${input.relationship_type}]--> ${input.to_id} (${input.to_type})`
-    );
+    return existing;
   }
 
   const stmt = db.prepare(`
