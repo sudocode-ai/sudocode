@@ -29,6 +29,14 @@ describe('SpecEditor', () => {
       },
     })
     vi.clearAllMocks()
+    // Mock localStorage to default to markdown mode for tests
+    Storage.prototype.getItem = vi.fn((key) => {
+      if (key === 'sudocode:specEditor:viewMode') {
+        return JSON.stringify('markdown')
+      }
+      return null
+    })
+    Storage.prototype.setItem = vi.fn()
   })
 
   const wrapper = ({ children }: { children: React.ReactNode }) => (

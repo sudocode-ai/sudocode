@@ -1,8 +1,12 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useSpecs } from '@/hooks/useSpecs'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { TiptapEditor } from '@/components/specs/TiptapEditor'
+import { FileText, Code2 } from 'lucide-react'
 import type { Spec, CreateSpecRequest } from '@/types/api'
+
+const VIEW_MODE_STORAGE_KEY = 'sudocode:specEditor:viewMode'
 
 interface SpecEditorProps {
   spec?: Spec
@@ -17,6 +21,25 @@ export function SpecEditor({ spec, onSave, onCancel }: SpecEditorProps) {
   const [content, setContent] = useState(spec?.content || '')
   const [priority, setPriority] = useState(spec?.priority ?? 3)
   const [error, setError] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<'formatted' | 'markdown'>(() => {
+    const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY)
+    return stored !== null ? JSON.parse(stored) : 'formatted'
+  })
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Save view mode preference to localStorage
+  useEffect(() => {
+    localStorage.setItem(VIEW_MODE_STORAGE_KEY, JSON.stringify(viewMode))
+  }, [viewMode])
+
+  // Auto-resize textarea to fit content in markdown mode
+  useEffect(() => {
+    if (viewMode === 'markdown' && textareaRef.current) {
+      const textarea = textareaRef.current
+      textarea.style.height = 'auto'
+      textarea.style.height = `${textarea.scrollHeight}px`
+    }
+  }, [content, viewMode])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -80,17 +103,66 @@ export function SpecEditor({ spec, onSave, onCancel }: SpecEditorProps) {
 
           {/* Content */}
           <div>
-            <label htmlFor="content" className="mb-2 block text-sm font-medium">
-              Content
-            </label>
-            <textarea
-              id="content"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm"
-              placeholder="Spec content (markdown supported)"
-              rows={12}
-            />
+            <div className="mb-2 flex items-center justify-between">
+              <label htmlFor="content" className="text-sm font-medium">
+                Content
+              </label>
+              {/* View mode toggle */}
+              <div className="flex gap-1 rounded-md border border-border bg-muted/30 p-1">
+                <Button
+                  variant={viewMode === 'formatted' ? 'outline' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('formatted')}
+                  className={`h-7 rounded-sm ${viewMode === 'formatted' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
+                  type="button"
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  Formatted
+                </Button>
+                <Button
+                  variant={viewMode === 'markdown' ? 'outline' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('markdown')}
+                  className={`h-7 rounded-sm ${viewMode === 'markdown' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
+                  type="button"
+                >
+                  <Code2 className="mr-2 h-4 w-4" />
+                  Markdown
+                </Button>
+              </div>
+            </div>
+            <Card className="overflow-hidden rounded-md border">
+              {viewMode === 'formatted' ? (
+                <TiptapEditor
+                  content={content}
+                  editable={true}
+                  onChange={(markdown) => setContent(markdown)}
+                  onSave={(markdown) => setContent(markdown)}
+                  onCancel={() => {
+                    // Reset to original content if needed
+                    if (spec) {
+                      setContent(spec.content || '')
+                    }
+                  }}
+                  className="min-h-[300px]"
+                  placeholder="Spec content (markdown supported)..."
+                />
+              ) : (
+                <div className="p-4">
+                  <textarea
+                    ref={textareaRef}
+                    id="content"
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                    className="w-full resize-none border-none bg-transparent font-mono text-sm leading-6 outline-none focus:ring-0"
+                    placeholder="Spec content (markdown supported)..."
+                    spellCheck={false}
+                    style={{ minHeight: '300px' }}
+                    disabled={isCreating}
+                  />
+                </div>
+              )}
+            </Card>
           </div>
 
           {/* Priority */}
