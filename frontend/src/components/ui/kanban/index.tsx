@@ -15,7 +15,7 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
-import { type ReactNode, type Ref, type KeyboardEvent, useState } from 'react'
+import { type ReactNode, type Ref, type KeyboardEvent, useState, useRef, useEffect } from 'react'
 
 import { Plus, Archive } from 'lucide-react'
 import type { ClientRect } from '@dnd-kit/core'
@@ -94,6 +94,22 @@ export const KanbanCard = ({
     data: { index, parent },
   })
 
+  // Track if dragging occurred to prevent onClick from firing after drag
+  const wasDraggingRef = useRef(false)
+
+  // Update drag state when isDragging changes
+  useEffect(() => {
+    if (isDragging) {
+      wasDraggingRef.current = true
+    } else if (wasDraggingRef.current) {
+      // Reset after a short delay to allow onClick to check the flag first
+      const timeout = setTimeout(() => {
+        wasDraggingRef.current = false
+      }, 100)
+      return () => clearTimeout(timeout)
+    }
+  }, [isDragging])
+
   // Combine DnD ref and forwarded ref
   const combinedRef = (node: HTMLDivElement | null) => {
     setNodeRef(node)
@@ -102,6 +118,16 @@ export const KanbanCard = ({
     } else if (forwardedRef && typeof forwardedRef === 'object') {
       ;(forwardedRef as React.MutableRefObject<HTMLDivElement | null>).current = node
     }
+  }
+
+  const handleClick = (e: React.MouseEvent) => {
+    // Prevent onClick if drag just occurred
+    if (wasDraggingRef.current) {
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
+    onClick?.()
   }
 
   return (
@@ -116,7 +142,7 @@ export const KanbanCard = ({
       {...attributes}
       ref={combinedRef}
       tabIndex={tabIndex}
-      onClick={onClick}
+      onClick={handleClick}
       onKeyDown={onKeyDown}
       data-issue-id={id}
     >
@@ -163,16 +189,19 @@ export const KanbanHeader = (props: KanbanHeaderProps) => {
     return (
       <Card
         className={cn(
-          'sticky top-0 z-20 flex flex-col flex-1 shrink-0 items-center justify-center border-b border-dashed p-3 cursor-pointer',
-          'bg-background hover:bg-accent transition-colors',
+          'sticky top-0 z-20 flex flex-col flex-1 shrink-0 items-center justify-center border-b border-dashed p-3',
+          'bg-background',
           props.className
         )}
         style={{
           backgroundImage: `linear-gradient(hsl(var(${props.color}) / 0.03), hsl(var(${props.color}) / 0.03))`,
         }}
-        onClick={props.onToggleCollapse}
       >
-        <div className="flex items-center gap-2 whitespace-nowrap" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
+        <div
+          className="flex items-center gap-2 whitespace-nowrap cursor-pointer hover:opacity-80 transition-opacity"
+          style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+          onClick={props.onToggleCollapse}
+        >
           <div
             className="h-2 w-2 rounded-full"
             style={{ backgroundColor: `hsl(var(${props.color}))` }}
@@ -187,16 +216,18 @@ export const KanbanHeader = (props: KanbanHeaderProps) => {
   return (
     <Card
       className={cn(
-        'sticky top-0 z-20 flex flex shrink-0 items-center gap-2 gap-2 border-b border-dashed p-3 cursor-pointer',
-        'bg-background hover:bg-accent transition-colors',
+        'sticky top-0 z-20 flex flex shrink-0 items-center gap-2 gap-2 border-b border-dashed p-3',
+        'bg-background',
         props.className
       )}
       style={{
         backgroundImage: `linear-gradient(hsl(var(${props.color}) / 0.03), hsl(var(${props.color}) / 0.03))`,
       }}
-      onClick={props.onToggleCollapse}
     >
-      <span className="flex flex-1 items-center gap-2">
+      <span
+        className="flex flex-1 items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+        onClick={props.onToggleCollapse}
+      >
         <div
           className="h-2 w-2 rounded-full"
           style={{ backgroundColor: `hsl(var(${props.color}))` }}
