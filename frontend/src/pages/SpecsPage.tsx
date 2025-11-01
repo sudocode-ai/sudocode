@@ -102,11 +102,12 @@ export default function SpecsPage() {
   }
 
   return (
-    <div className="flex-1 p-8">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="flex h-screen flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b bg-background p-4">
         <div className="flex items-center gap-2">
-          <h1 className="text-3xl font-bold">Specs</h1>
-          {!isLoading && <Badge variant="secondary">{specs.length}</Badge>}
+          <h1 className="text-2xl font-bold">Specs</h1>
+          <Badge variant="secondary">{specs.length}</Badge>
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
@@ -120,11 +121,12 @@ export default function SpecsPage() {
             />
           </div>
           <Button
-            variant="ghost"
             onClick={() => navigate('/specs/archived')}
+            variant="ghost"
+            size="sm"
             className="gap-1 text-muted-foreground hover:text-foreground"
           >
-            <Archive className="mr-2 h-4 w-4" />
+            <Archive className="h-4 w-4" />
             Archived
           </Button>
           <Button
@@ -134,25 +136,30 @@ export default function SpecsPage() {
             className="text-primary-foreground hover:bg-primary/90"
           >
             <Plus className="mr-2 h-4 w-4" />
-            New Spec
+            Create Spec
           </Button>
         </div>
       </div>
 
-      <div className="mb-4 flex justify-end">
-        <Select value={sortOption} onValueChange={handleSortChange}>
-          <SelectTrigger className="h-9 w-[180px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="priority">Priority</SelectItem>
-            <SelectItem value="newest">Newest</SelectItem>
-            <SelectItem value="last-updated">Last Updated</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      {/* Main content */}
+      <div className="flex flex-1 flex-col overflow-hidden px-8 py-4">
+        <div className="mb-4 flex justify-end">
+          <Select value={sortOption} onValueChange={handleSortChange}>
+            <SelectTrigger className="h-9 w-[180px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="priority">Priority</SelectItem>
+              <SelectItem value="newest">Newest</SelectItem>
+              <SelectItem value="last-updated">Last Updated</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
-      <SpecList specs={filteredAndSortedSpecs} loading={isLoading} />
+        <div className="flex-1 overflow-auto">
+          <SpecList specs={filteredAndSortedSpecs} loading={isLoading} />
+        </div>
+      </div>
     </div>
   )
 }
