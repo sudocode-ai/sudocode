@@ -14,6 +14,8 @@ import {
   FileText,
   Code2,
   Play,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import type { Issue, Relationship, EntityType, RelationshipType, IssueStatus } from '@/types/api'
 import { Card } from '@/components/ui/card'
@@ -39,6 +41,7 @@ import { TiptapEditor } from '@/components/specs/TiptapEditor'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 const VIEW_MODE_STORAGE_KEY = 'sudocode:details:viewMode'
+const DESCRIPTION_COLLAPSED_STORAGE_KEY = 'sudocode:issue:descriptionCollapsed'
 
 interface IssuePanelProps {
   issue: Issue
@@ -95,6 +98,10 @@ export function IssuePanel({
     const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY)
     return stored !== null ? JSON.parse(stored) : 'formatted'
   })
+  const [isDescriptionCollapsed, setIsDescriptionCollapsed] = useState<boolean>(() => {
+    const stored = localStorage.getItem(DESCRIPTION_COLLAPSED_STORAGE_KEY)
+    return stored !== null ? JSON.parse(stored) : false
+  })
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Use external viewMode if provided, otherwise use internal state
@@ -148,6 +155,11 @@ export function IssuePanel({
       localStorage.setItem(VIEW_MODE_STORAGE_KEY, JSON.stringify(internalViewMode))
     }
   }, [internalViewMode, externalViewMode])
+
+  // Save description collapsed state to localStorage
+  useEffect(() => {
+    localStorage.setItem(DESCRIPTION_COLLAPSED_STORAGE_KEY, JSON.stringify(isDescriptionCollapsed))
+  }, [isDescriptionCollapsed])
 
   // Update form values when issue changes
   useEffect(() => {
@@ -607,33 +619,87 @@ export function IssuePanel({
 
             {/* Content Editor */}
             <div className="space-y-2">
-              <Card className="overflow-hidden rounded-md border">
-                {viewMode === 'formatted' ? (
-                  <TiptapEditor
-                    content={content}
-                    editable={true}
-                    onChange={handleContentChange}
-                    onCancel={() => {
-                      setContent(issue.content || '')
-                      setHasChanges(false)
-                    }}
-                    className="min-h-[200px]"
-                    placeholder="Issue description..."
-                  />
-                ) : (
-                  <div className="p-4">
-                    <textarea
-                      ref={textareaRef}
-                      value={content}
-                      onChange={(e) => handleContentChange(e.target.value)}
-                      placeholder="Issue description in markdown..."
-                      className="w-full resize-none border-none bg-transparent font-mono text-sm leading-6 outline-none focus:ring-0"
-                      spellCheck={false}
-                      style={{ minHeight: '200px' }}
-                    />
-                  </div>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-muted-foreground">Description</h3>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => setIsDescriptionCollapsed(!isDescriptionCollapsed)}
+                  className="h-6 gap-1 text-muted-foreground"
+                >
+                  {isDescriptionCollapsed ? (
+                    <>
+                      <ChevronDown className="h-4 w-4" />
+                      Expand
+                    </>
+                  ) : (
+                    <>
+                      <ChevronUp className="h-4 w-4" />
+                      Collapse
+                    </>
+                  )}
+                </Button>
+              </div>
+              <div className="relative">
+                <div
+                  className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                    isDescriptionCollapsed ? 'max-h-[200px] cursor-pointer 2xl:max-h-[300px]' : ''
+                  }`}
+                  onClick={() => {
+                    if (isDescriptionCollapsed) {
+                      setIsDescriptionCollapsed(false)
+                    }
+                  }}
+                >
+                  <Card className="overflow-hidden rounded-md border">
+                    {viewMode === 'formatted' ? (
+                      <TiptapEditor
+                        content={content}
+                        editable={!isDescriptionCollapsed}
+                        onChange={handleContentChange}
+                        onCancel={() => {
+                          setContent(issue.content || '')
+                          setHasChanges(false)
+                        }}
+                        className="min-h-[200px]"
+                        placeholder="Issue description..."
+                      />
+                    ) : (
+                      <div className="p-4">
+                        <textarea
+                          ref={textareaRef}
+                          value={content}
+                          onChange={(e) => handleContentChange(e.target.value)}
+                          placeholder="Issue description in markdown..."
+                          className="w-full resize-none border-none bg-transparent font-mono text-sm leading-6 outline-none focus:ring-0"
+                          spellCheck={false}
+                          disabled={isDescriptionCollapsed}
+                          style={{ minHeight: '200px' }}
+                        />
+                      </div>
+                    )}
+                  </Card>
+                </div>
+                {isDescriptionCollapsed && (
+                  <>
+                    <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-background to-transparent" />
+                    <div className="absolute bottom-2 left-1/2 -translate-x-1/2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setIsDescriptionCollapsed(false)
+                        }}
+                        className="gap-1 shadow-sm"
+                      >
+                        <ChevronDown className="h-4 w-4" />
+                        Expand
+                      </Button>
+                    </div>
+                  </>
                 )}
-              </Card>
+              </div>
             </div>
 
             {/* Additional Metadata */}
