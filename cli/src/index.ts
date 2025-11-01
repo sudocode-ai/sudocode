@@ -3,7 +3,6 @@
  */
 
 export * from "@sudocode/types";
-export * from "./schema.js";
 export * from "./db.js";
 export * from "./operations/index.js";
 export * from "./operations/transactions.js";

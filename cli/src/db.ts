@@ -3,7 +3,7 @@
  */
 
 import Database from "better-sqlite3";
-import * as schema from "./schema.js";
+import * as schema from "@sudocode/types/schema";
 import { runMigrations } from "./migrations.js";
 
 export interface DatabaseOptions {

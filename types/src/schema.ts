@@ -1,5 +1,6 @@
 /**
  * SQLite schema definition for sudocode
+ * Shared between CLI and server packages
  */
 
 export const SCHEMA_VERSION = "1.0";
@@ -320,6 +321,8 @@ export const ALL_TABLES = [
   EVENTS_TABLE,
   ISSUE_FEEDBACK_TABLE,
   EXECUTIONS_TABLE,
+  PROMPT_TEMPLATES_TABLE,
+  EXECUTION_LOGS_TABLE,
 ];
 
 export const ALL_INDEXES = [
@@ -330,6 +333,8 @@ export const ALL_INDEXES = [
   EVENTS_INDEXES,
   ISSUE_FEEDBACK_INDEXES,
   EXECUTIONS_INDEXES,
+  PROMPT_TEMPLATES_INDEXES,
+  EXECUTION_LOGS_INDEXES,
 ];
 
 export const ALL_VIEWS = [READY_ISSUES_VIEW, BLOCKED_ISSUES_VIEW];

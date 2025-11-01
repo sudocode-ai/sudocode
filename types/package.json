@@ -8,10 +8,20 @@
     ".": {
       "types": "./src/index.d.ts",
       "default": "./src/index.d.ts"
+    },
+    "./schema": {
+      "types": "./dist/schema.d.ts",
+      "default": "./dist/schema.js"
     }
+  },
+  "scripts": {
+    "build": "tsc"
   },
   "keywords": ["sudocode", "types", "typescript"],
   "author": "sudocode AI",
   "license": "MIT",
-  "files": ["src/index.d.ts"]
+  "files": ["src/index.d.ts", "dist"],
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
 }

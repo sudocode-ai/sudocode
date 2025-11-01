@@ -1,85 +1,19 @@
 /**
  * Database service for sudocode server
- * Extends CLI schema with server-specific tables
+ * Uses shared schema from @sudocode/types
  */
 
 import Database from "better-sqlite3";
 import * as path from "path";
 import * as fs from "fs";
-
-/**
- * Server-specific table schemas
- */
-
-export const EXECUTIONS_TABLE = `
-CREATE TABLE IF NOT EXISTS executions (
-    id TEXT PRIMARY KEY,
-    issue_id TEXT NOT NULL,
-
-    -- Execution mode and configuration (SPEC-011 fields - nullable for legacy)
-    mode TEXT CHECK(mode IN ('worktree', 'local')),
-    prompt TEXT,
-    config TEXT,
-
-    -- Process information (legacy + new)
-    agent_type TEXT CHECK(agent_type IN ('claude-code', 'codex')),
-    session_id TEXT,
-    workflow_execution_id TEXT,
-
-    -- Git/branch information
-    target_branch TEXT NOT NULL,
-    branch_name TEXT NOT NULL,
-    before_commit TEXT,
-    after_commit TEXT,
-    worktree_path TEXT,
-
-    -- Status (unified - supports both old and new statuses)
-    status TEXT NOT NULL CHECK(status IN (
-        'preparing', 'pending', 'running', 'paused',
-        'completed', 'failed', 'cancelled', 'stopped'
-    )),
-
-    -- Timing (Unix timestamps)
-    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    started_at INTEGER,
-    completed_at INTEGER,
-    cancelled_at INTEGER,
-
-    -- Results and metadata
-    exit_code INTEGER,
-    error_message TEXT,
-    error TEXT,
-    model TEXT,
-    summary TEXT,
-    files_changed TEXT,
-
-    -- Relationships (SPEC-011)
-    parent_execution_id TEXT,
-
-    -- Multi-step workflow support (future extension)
-    step_type TEXT,
-    step_index INTEGER,
-    step_config TEXT,
-
-    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
-    FOREIGN KEY (parent_execution_id) REFERENCES executions(id) ON DELETE SET NULL
-);
-`;
-
-/**
- * Indexes for server tables
- */
-export const SERVER_INDEXES = `
-CREATE INDEX IF NOT EXISTS idx_executions_issue_id ON executions(issue_id);
-CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
-CREATE INDEX IF NOT EXISTS idx_executions_session_id ON executions(session_id);
-CREATE INDEX IF NOT EXISTS idx_executions_parent ON executions(parent_execution_id);
-CREATE INDEX IF NOT EXISTS idx_executions_created_at ON executions(created_at);
-CREATE INDEX IF NOT EXISTS idx_executions_workflow ON executions(workflow_execution_id);
-CREATE INDEX IF NOT EXISTS idx_executions_workflow_step ON executions(workflow_execution_id, step_index);
-CREATE INDEX IF NOT EXISTS idx_executions_step_type ON executions(step_type);
-`;
+import {
+  EXECUTIONS_TABLE,
+  EXECUTIONS_INDEXES,
+  PROMPT_TEMPLATES_TABLE,
+  PROMPT_TEMPLATES_INDEXES,
+  EXECUTION_LOGS_TABLE,
+  EXECUTION_LOGS_INDEXES,
+} from "@sudocode/types/schema";
 
 /**
  * Database configuration
@@ -120,9 +54,13 @@ export function initDatabase(config: DatabaseConfig): Database.Database {
 
   // Create server-specific tables
   db.exec(EXECUTIONS_TABLE);
+  db.exec(PROMPT_TEMPLATES_TABLE);
+  db.exec(EXECUTION_LOGS_TABLE);
 
   // Create indexes
-  db.exec(SERVER_INDEXES);
+  db.exec(EXECUTIONS_INDEXES);
+  db.exec(PROMPT_TEMPLATES_INDEXES);
+  db.exec(EXECUTION_LOGS_INDEXES);
 
   return db;
 }

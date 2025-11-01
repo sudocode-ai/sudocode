@@ -9,7 +9,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import type Database from 'better-sqlite3';
 import { initDatabase as initCliDatabase } from '@sudocode/cli/dist/db.js';
-import { EXECUTIONS_TABLE, SERVER_INDEXES } from '../../../src/services/db.js';
+import { EXECUTIONS_TABLE, EXECUTIONS_INDEXES } from '@sudocode/types/schema';
 import { ExecutionLifecycleService } from '../../../src/services/execution-lifecycle.js';
 import { getExecution, updateExecution } from '../../../src/services/executions.js';
 import { generateIssueId } from '@sudocode/cli/dist/id-generator.js';
@@ -52,7 +52,7 @@ describe('Worktree Integration Tests', () => {
     // Initialize test database
     db = initCliDatabase({ path: testDbPath });
     db.exec(EXECUTIONS_TABLE);
-    db.exec(SERVER_INDEXES);
+    db.exec(EXECUTIONS_INDEXES);
 
     // Initialize git repository
     setupGitRepository(gitRepoPath);

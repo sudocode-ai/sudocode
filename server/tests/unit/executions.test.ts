@@ -6,7 +6,7 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert";
 import type Database from "better-sqlite3";
 import { initDatabase as initCliDatabase } from "@sudocode/cli/dist/db.js";
-import { EXECUTIONS_TABLE, SERVER_INDEXES } from "../../src/services/db.js";
+import { EXECUTIONS_TABLE, EXECUTIONS_INDEXES } from "@sudocode/types/schema";
 import {
   createExecution,
   getExecution,
@@ -54,7 +54,7 @@ describe("Executions Service", () => {
 
     // Then add server-specific tables (executions)
     db.exec(EXECUTIONS_TABLE);
-    db.exec(SERVER_INDEXES);
+    db.exec(EXECUTIONS_INDEXES);
 
     // Create a test issue to use in execution tests
     const issueId = generateIssueId(db, testDir);
