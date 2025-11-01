@@ -7,23 +7,31 @@
  * @module services/execution-service
  */
 
-import type Database from 'better-sqlite3';
-import type { Execution } from '@sudocode/types';
-import { PromptTemplateEngine } from './prompt-template-engine.js';
-import { ExecutionLifecycleService } from './execution-lifecycle.js';
+import type Database from "better-sqlite3";
+import type { Execution } from "@sudocode/types";
+import { PromptTemplateEngine } from "./prompt-template-engine.js";
+import { ExecutionLifecycleService } from "./execution-lifecycle.js";
 import {
   createExecution,
   getExecution,
   updateExecution,
-} from './executions.js';
-import { getDefaultTemplate, getTemplateById } from './prompt-templates.js';
-import { randomUUID } from 'crypto';
+} from "./executions.js";
+import { getDefaultTemplate, getTemplateById } from "./prompt-templates.js";
+import { randomUUID } from "crypto";
+import { SimpleProcessManager } from "../execution/process/simple-manager.js";
+import { SimpleExecutionEngine } from "../execution/engine/simple-engine.js";
+import { ResilientExecutor } from "../execution/resilience/resilient-executor.js";
+import { LinearOrchestrator } from "../execution/workflow/linear-orchestrator.js";
+import type { WorkflowDefinition } from "../execution/workflow/types.js";
+import { createAgUiSystem } from "../execution/output/ag-ui-integration.js";
+import type { AgUiEventAdapter } from "../execution/output/ag-ui-adapter.js";
+import type { TransportManager } from "../execution/transport/transport-manager.js";
 
 /**
  * Configuration for creating an execution
  */
 export interface ExecutionConfig {
-  mode?: 'worktree' | 'local';
+  mode?: "worktree" | "local";
   model?: string;
   timeout?: number;
   baseBranch?: string;
@@ -75,6 +83,8 @@ export class ExecutionService {
   private templateEngine: PromptTemplateEngine;
   private lifecycleService: ExecutionLifecycleService;
   private repoPath: string;
+  private transportManager?: TransportManager;
+  private activeOrchestrators = new Map<string, LinearOrchestrator>();
 
   /**
    * Create a new ExecutionService
@@ -82,17 +92,20 @@ export class ExecutionService {
    * @param db - Database instance
    * @param repoPath - Path to the git repository
    * @param lifecycleService - Optional execution lifecycle service (creates one if not provided)
+   * @param transportManager - Optional transport manager for SSE streaming
    */
   constructor(
     db: Database.Database,
     repoPath: string,
-    lifecycleService?: ExecutionLifecycleService
+    lifecycleService?: ExecutionLifecycleService,
+    transportManager?: TransportManager
   ) {
     this.db = db;
     this.repoPath = repoPath;
     this.templateEngine = new PromptTemplateEngine();
     this.lifecycleService =
       lifecycleService || new ExecutionLifecycleService(db, repoPath);
+    this.transportManager = transportManager;
   }
 
   /**
@@ -114,7 +127,7 @@ export class ExecutionService {
   ): Promise<ExecutionPrepareResult> {
     // 1. Load issue
     const issue = this.db
-      .prepare('SELECT * FROM issues WHERE id = ?')
+      .prepare("SELECT * FROM issues WHERE id = ?")
       .get(issueId) as
       | { id: string; title: string; content: string }
       | undefined;
@@ -160,9 +173,9 @@ export class ExecutionService {
       }
       template = customTemplate.template;
     } else {
-      const defaultTemplate = getDefaultTemplate(this.db, 'issue');
+      const defaultTemplate = getDefaultTemplate(this.db, "issue");
       if (!defaultTemplate) {
-        throw new Error('Default issue template not found');
+        throw new Error("Default issue template not found");
       }
       template = defaultTemplate.template;
     }
@@ -172,9 +185,9 @@ export class ExecutionService {
 
     // 6. Get default config
     const defaultConfig: ExecutionConfig = {
-      mode: 'worktree',
-      model: 'claude-sonnet-4',
-      baseBranch: 'main',
+      mode: "worktree",
+      model: "claude-sonnet-4",
+      baseBranch: "main",
       checkpointInterval: 1,
       continueOnStepFailure: false,
       captureFileChanges: true,
@@ -187,7 +200,7 @@ export class ExecutionService {
     const errors: string[] = [];
 
     if (!renderedPrompt.trim()) {
-      errors.push('Rendered prompt is empty');
+      errors.push("Rendered prompt is empty");
     }
 
     return {
@@ -223,11 +236,11 @@ export class ExecutionService {
   ): Promise<Execution> {
     // 1. Validate
     if (!prompt.trim()) {
-      throw new Error('Prompt cannot be empty');
+      throw new Error("Prompt cannot be empty");
     }
 
     const issue = this.db
-      .prepare('SELECT * FROM issues WHERE id = ?')
+      .prepare("SELECT * FROM issues WHERE id = ?")
       .get(issueId) as { id: string; title: string } | undefined;
 
     if (!issue) {
@@ -235,50 +248,131 @@ export class ExecutionService {
     }
 
     // 2. Determine execution mode and create execution with worktree
-    const mode = config.mode || 'worktree';
+    const mode = config.mode || "worktree";
     let execution: Execution;
+    let workDir: string;
 
-    if (mode === 'worktree') {
+    if (mode === "worktree") {
       // Create execution with isolated worktree
-      const result =
-        await this.lifecycleService.createExecutionWithWorktree({
-          issueId,
-          issueTitle: issue.title,
-          agentType: 'claude-code',
-          targetBranch: config.baseBranch || 'main',
-          repoPath: this.repoPath,
-        });
+      const result = await this.lifecycleService.createExecutionWithWorktree({
+        issueId,
+        issueTitle: issue.title,
+        agentType: "claude-code",
+        targetBranch: config.baseBranch || "main",
+        repoPath: this.repoPath,
+      });
 
       execution = result.execution;
-      // workDir will be result.worktreePath for workflow execution (TODO)
-
-      // Update execution with SPEC-011 fields
-      execution = updateExecution(this.db, execution.id, {
-        // Store mode, prompt, and config in execution record
-        // Note: These fields are nullable in schema for backward compatibility
-      });
+      workDir = result.worktreePath;
     } else {
       // Local mode - create execution without worktree
       const executionId = randomUUID();
       execution = createExecution(this.db, {
         id: executionId,
         issue_id: issueId,
-        agent_type: 'claude-code',
-        target_branch: config.baseBranch || 'main',
-        branch_name: config.baseBranch || 'main',
+        agent_type: "claude-code",
+        target_branch: config.baseBranch || "main",
+        branch_name: config.baseBranch || "main",
       });
-      // workDir will be this.repoPath for workflow execution (TODO)
+      workDir = this.repoPath;
     }
 
-    // TODO: Implement actual workflow execution with LinearOrchestrator
-    // For now, execution is created but workflow is not started
-    // Future implementation will:
-    // 1. Build WorkflowDefinition with prompt and config
-    // 2. Create ResilientExecutor with execution engine
-    // 3. Create LinearOrchestrator with executor and AG-UI adapter
-    // 4. Set up event handlers to update execution status
-    // 5. Start workflow with orchestrator.startWorkflow()
-    // 6. Store workflow execution ID for monitoring
+    // 3. Build WorkflowDefinition
+    const workflow: WorkflowDefinition = {
+      id: `workflow-${execution.id}`,
+      steps: [
+        {
+          id: "execute-issue",
+          taskType: "issue",
+          prompt,
+          taskConfig: {
+            model: config.model || "claude-sonnet-4",
+            timeout: config.timeout,
+            captureFileChanges: config.captureFileChanges ?? true,
+            captureToolCalls: config.captureToolCalls ?? true,
+          },
+        },
+      ],
+      config: {
+        checkpointInterval: config.checkpointInterval ?? 1,
+        continueOnStepFailure: config.continueOnStepFailure ?? false,
+        timeout: config.timeout,
+      },
+      metadata: {
+        workDir,
+        issueId,
+        executionId: execution.id,
+      },
+    };
+
+    // 4. Create execution engine stack
+    const processManager = new SimpleProcessManager({
+      executablePath: "claude",
+      args: [
+        "--print",
+        "--output-format",
+        "stream-json",
+        "--dangerously-skip-permissions",
+      ],
+    });
+
+    const engine = new SimpleExecutionEngine(processManager, {
+      maxConcurrent: 1, // One task at a time for issue execution
+    });
+
+    const executor = new ResilientExecutor(engine);
+
+    // 5. Create AG-UI adapter if transport manager is available
+    let agUiAdapter: AgUiEventAdapter | undefined;
+    if (this.transportManager) {
+      const agUiSystem = createAgUiSystem(execution.id);
+      agUiAdapter = agUiSystem.adapter;
+      // Connect adapter to transport for SSE streaming
+      this.transportManager.connectAdapter(agUiAdapter, execution.id);
+    }
+
+    // 6. Create LinearOrchestrator
+    const orchestrator = new LinearOrchestrator(
+      executor,
+      undefined, // No storage/checkpointing for now
+      agUiAdapter,
+      this.lifecycleService
+    );
+
+    // 7. Register event handlers to update execution status in database
+    orchestrator.onWorkflowStart(() => {
+      updateExecution(this.db, execution.id, {
+        status: "running",
+      });
+    });
+
+    orchestrator.onWorkflowComplete(() => {
+      updateExecution(this.db, execution.id, {
+        status: "completed",
+        completed_at: Math.floor(Date.now() / 1000),
+      });
+      // Remove orchestrator from active map
+      this.activeOrchestrators.delete(execution.id);
+    });
+
+    orchestrator.onWorkflowFailed((_executionId, error) => {
+      updateExecution(this.db, execution.id, {
+        status: "failed",
+        completed_at: Math.floor(Date.now() / 1000),
+        error_message: error.message,
+      });
+      // Remove orchestrator from active map
+      this.activeOrchestrators.delete(execution.id);
+    });
+
+    // 8. Start workflow execution (non-blocking)
+    orchestrator.startWorkflow(workflow, workDir, {
+      checkpointInterval: config.checkpointInterval,
+      executionId: execution.id,
+    });
+
+    // 9. Store orchestrator for later cancellation
+    this.activeOrchestrators.set(execution.id, orchestrator);
 
     return execution;
   }
@@ -295,7 +389,7 @@ export class ExecutionService {
    */
   async createFollowUp(
     executionId: string,
-    _feedback: string
+    feedback: string
   ): Promise<Execution> {
     // 1. Get previous execution
     const prevExecution = getExecution(this.db, executionId);
@@ -309,26 +403,120 @@ export class ExecutionService {
       );
     }
 
-    // 2. Verify worktree still exists
-    // TODO: Add worktree validation
+    // 2. Prepare execution to get rendered prompt
+    const prepareResult = await this.prepareExecution(prevExecution.issue_id);
 
-    // 3. TODO: Prepare execution and append feedback to prompt
-    // prepareResult = await this.prepareExecution(prevExecution.issue_id);
-    // followUpPrompt = prepareResult.renderedPrompt + _feedback section
+    // 3. Append feedback to prompt
+    const followUpPrompt = `${prepareResult.renderedPrompt}
+
+## Follow-up Feedback
+${feedback}
+
+Please continue working on this issue, taking into account the feedback above.`;
 
     // 4. Create new execution record that references previous execution
     const newExecutionId = randomUUID();
     const newExecution = createExecution(this.db, {
       id: newExecutionId,
       issue_id: prevExecution.issue_id,
-      agent_type: 'claude-code',
+      agent_type: "claude-code",
       target_branch: prevExecution.target_branch,
       branch_name: prevExecution.branch_name,
       worktree_path: prevExecution.worktree_path, // Reuse same worktree
     });
 
-    // TODO: Build and start workflow (same as createExecution)
-    // Workflow execution will be added in future implementation
+    // 5. Build WorkflowDefinition
+    const workflow: WorkflowDefinition = {
+      id: `workflow-${newExecution.id}`,
+      steps: [
+        {
+          id: "execute-followup",
+          taskType: "issue",
+          prompt: followUpPrompt,
+          taskConfig: {
+            model: "claude-sonnet-4",
+            captureFileChanges: true,
+            captureToolCalls: true,
+          },
+        },
+      ],
+      config: {
+        checkpointInterval: 1,
+        continueOnStepFailure: false,
+      },
+      metadata: {
+        workDir: prevExecution.worktree_path,
+        issueId: prevExecution.issue_id,
+        executionId: newExecution.id,
+        followUpOf: executionId,
+      },
+    };
+
+    // 6. Create execution engine stack
+    const processManager = new SimpleProcessManager({
+      executablePath: "claude",
+      args: [
+        "--print",
+        "--output-format",
+        "stream-json",
+        "--dangerously-skip-permissions",
+      ],
+    });
+
+    const engine = new SimpleExecutionEngine(processManager, {
+      maxConcurrent: 1,
+    });
+
+    const executor = new ResilientExecutor(engine);
+
+    // 7. Create AG-UI adapter if transport manager is available
+    let agUiAdapter: AgUiEventAdapter | undefined;
+    if (this.transportManager) {
+      const agUiSystem = createAgUiSystem(newExecution.id);
+      agUiAdapter = agUiSystem.adapter;
+      this.transportManager.connectAdapter(agUiAdapter, newExecution.id);
+    }
+
+    // 8. Create LinearOrchestrator
+    const orchestrator = new LinearOrchestrator(
+      executor,
+      undefined,
+      agUiAdapter,
+      this.lifecycleService
+    );
+
+    // 9. Register event handlers
+    orchestrator.onWorkflowStart(() => {
+      updateExecution(this.db, newExecution.id, {
+        status: "running",
+      });
+    });
+
+    orchestrator.onWorkflowComplete(() => {
+      updateExecution(this.db, newExecution.id, {
+        status: "completed",
+        completed_at: Math.floor(Date.now() / 1000),
+      });
+      this.activeOrchestrators.delete(newExecution.id);
+    });
+
+    orchestrator.onWorkflowFailed((_execId, error) => {
+      updateExecution(this.db, newExecution.id, {
+        status: "failed",
+        completed_at: Math.floor(Date.now() / 1000),
+        error_message: error.message,
+      });
+      this.activeOrchestrators.delete(newExecution.id);
+    });
+
+    // 10. Start workflow execution (non-blocking)
+    orchestrator.startWorkflow(workflow, prevExecution.worktree_path, {
+      checkpointInterval: 1,
+      executionId: newExecution.id,
+    });
+
+    // 11. Store orchestrator for later cancellation
+    this.activeOrchestrators.set(newExecution.id, orchestrator);
 
     return newExecution;
   }
@@ -347,18 +535,23 @@ export class ExecutionService {
       throw new Error(`Execution ${executionId} not found`);
     }
 
-    if (execution.status !== 'running') {
-      throw new Error(
-        `Cannot cancel execution in ${execution.status} state`
-      );
+    if (execution.status !== "running") {
+      throw new Error(`Cannot cancel execution in ${execution.status} state`);
     }
 
-    // TODO: Cancel workflow via orchestrator
-    // For now, just update status (using 'stopped' as 'cancelled' not in type)
-    updateExecution(this.db, executionId, {
-      status: 'stopped',
-      completed_at: Math.floor(Date.now() / 1000),
-    });
+    // Get orchestrator from active map
+    const orchestrator = this.activeOrchestrators.get(executionId);
+    if (orchestrator) {
+      // Cancel via orchestrator (this will trigger cleanup and DB update via event handlers)
+      await orchestrator.cancelWorkflow(executionId);
+    } else {
+      // Orchestrator not found (execution may have already completed)
+      // Just update status in database
+      updateExecution(this.db, executionId, {
+        status: "stopped",
+        completed_at: Math.floor(Date.now() / 1000),
+      });
+    }
   }
 
   /**
@@ -405,5 +598,4 @@ export class ExecutionService {
   getExecution(executionId: string): Execution | null {
     return getExecution(this.db, executionId);
   }
-
 }
