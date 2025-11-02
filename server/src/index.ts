@@ -239,8 +239,8 @@ app.get("/ws/stats", (_req: Request, res: Response) => {
   res.status(200).json(stats);
 });
 
-// Serve static frontend
-const frontendPath = path.join(REPO_ROOT, "frontend/dist");
+// Serve static frontend from sudocode installation directory
+const frontendPath = path.join(__dirname, "../../frontend/dist");
 console.log(`[server] Serving static frontend from: ${frontendPath}`);
 
 // Serve static files
