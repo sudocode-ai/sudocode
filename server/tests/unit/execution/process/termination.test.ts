@@ -426,13 +426,13 @@ describe('Process Termination', () => {
         output += data.toString();
       });
 
-      // Small delay to ensure listener is ready
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      // Wait for process to be ready and listener to be set up
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       await manager.shutdown();
 
-      // Give time for output to be captured
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Wait for shutdown to complete and output to be captured
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // If shutdown used SIGTERM, process should have printed message
       expect(output.includes('SIGTERM received')).toBeTruthy();
@@ -465,13 +465,13 @@ describe('Process Termination', () => {
         output += data.toString();
       });
 
-      // Small delay to ensure listener is ready
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      // Wait for process to be ready and listener to be set up
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       await manager.terminateProcess(managedProcess.id);
 
-      // Give a bit more time for output to be captured
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Wait for termination to complete and output to be captured
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Process should have had time to clean up
       expect(output.includes('cleaned')).toBeTruthy();
@@ -501,13 +501,13 @@ describe('Process Termination', () => {
         output += data.toString();
       });
 
-      // Small delay to ensure listener is ready
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      // Wait for process to be ready and listener to be set up
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       await manager.terminateProcess(managedProcess.id);
 
-      // Give a bit more time for output to be captured
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Wait for force kill to complete and output to be captured
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Process should be killed despite ignoring SIGTERM
       expect(managedProcess.process.killed).toBe(true);

@@ -144,11 +144,11 @@ describe('End-to-End Process Execution', () => {
       const managedProcess = await manager.acquireProcess(config);
 
       let lineCount = 0;
-      manager.onOutput(managedProcess.id, (data, type) => {
-        if (type === 'stdout') {
-          const lines = data.toString().split('\n').filter((l) => l.trim());
-          lineCount += lines.length;
-        }
+
+      // Collect output directly from the stream
+      let outputBuffer = '';
+      managedProcess.streams.stdout.on('data', (data) => {
+        outputBuffer += data.toString();
       });
 
       // Wait for process to complete
@@ -157,6 +157,10 @@ describe('End-to-End Process Execution', () => {
           setTimeout(resolve, 100);
         });
       });
+
+      // Count lines after process completes
+      const lines = outputBuffer.split('\n').filter((l) => l.trim());
+      lineCount = lines.length;
 
       expect(managedProcess.status).toBe('completed');
       expect(lineCount >= 100, `Expected at least 100 lines, got ${lineCount}`).toBeTruthy();

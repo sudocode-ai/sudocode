@@ -287,10 +287,15 @@ describe('Process Monitoring and Metrics', () => {
         workDir: process.cwd(),
       };
 
-      await manager.acquireProcess(config);
+      const managedProcess = await manager.acquireProcess(config);
 
-      // Wait for process to exit
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Wait for process to exit and metrics to update
+      await new Promise<void>((resolve) => {
+        managedProcess.process.once('exit', () => {
+          // Give the manager time to update metrics
+          setTimeout(resolve, 100);
+        });
+      });
 
       const metrics = manager.getMetrics();
       expect(metrics.totalCompleted).toBe(1);

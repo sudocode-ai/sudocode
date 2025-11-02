@@ -391,7 +391,7 @@ describe("Workflow Layer Integration Tests", () => {
 
   describe("Workflow Control", () => {
     it("should pause and resume workflow", async () => {
-      mockExecutor = new MockResilientExecutor(50);
+      mockExecutor = new MockResilientExecutor(200); // Increase delay to ensure we can pause
       orchestrator = new LinearOrchestrator(mockExecutor as any, storage);
 
       const workflow: WorkflowDefinition = {
@@ -406,7 +406,8 @@ describe("Workflow Layer Integration Tests", () => {
       const executionId = randomUUID();
       await orchestrator.startWorkflow(workflow, "/test", { executionId });
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Wait for workflow to start running before pausing
+      await new Promise((resolve) => setTimeout(resolve, 50));
       await orchestrator.pauseWorkflow(executionId);
 
       let execution = orchestrator.getExecution(executionId);
@@ -597,7 +598,7 @@ describe("Workflow Layer Integration Tests", () => {
     });
 
     it("should emit cancel event", async () => {
-      mockExecutor = new MockResilientExecutor(50);
+      mockExecutor = new MockResilientExecutor(200); // Increase delay to ensure workflow is running
       orchestrator = new LinearOrchestrator(mockExecutor as any, storage);
 
       let cancelEmitted = false;
@@ -617,8 +618,12 @@ describe("Workflow Layer Integration Tests", () => {
       const executionId = randomUUID();
       await orchestrator.startWorkflow(workflow, "/test", { executionId });
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Wait for workflow to actually start before canceling
+      await new Promise((resolve) => setTimeout(resolve, 50));
       await orchestrator.cancelWorkflow(executionId);
+
+      // Give a bit more time for event to be emitted
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
       expect(cancelEmitted).toBe(true);
     });

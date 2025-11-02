@@ -102,18 +102,21 @@ describe('Process I/O Communication', () => {
         output += data.toString();
       });
 
+      // Wait for stdin to be ready before sending input
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       // Send multiple inputs with small delays
       await manager.sendInput(managedProcess.id, 'first\n');
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 100));
       await manager.sendInput(managedProcess.id, 'second\n');
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 100));
       await manager.sendInput(managedProcess.id, 'third\n');
 
       // Wait for process to exit with timeout
       await Promise.race([
         new Promise<void>((resolve) => {
           managedProcess.process.once('exit', () => {
-            setTimeout(resolve, 50);
+            setTimeout(resolve, 100);
           });
         }),
         new Promise<void>((resolve) => setTimeout(resolve, 6000)), // Safety timeout
