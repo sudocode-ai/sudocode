@@ -260,6 +260,9 @@ export class ExecutionService {
         agentType: "claude-code",
         targetBranch: config.baseBranch || "main",
         repoPath: this.repoPath,
+        mode: mode,
+        prompt: prompt,
+        config: JSON.stringify(config),
       });
 
       execution = result.execution;
@@ -271,6 +274,9 @@ export class ExecutionService {
         id: executionId,
         issue_id: issueId,
         agent_type: "claude-code",
+        mode: mode,
+        prompt: prompt,
+        config: JSON.stringify(config),
         target_branch: config.baseBranch || "main",
         branch_name: config.baseBranch || "main",
       });
@@ -341,26 +347,69 @@ export class ExecutionService {
 
     // 7. Register event handlers to update execution status in database
     orchestrator.onWorkflowStart(() => {
-      updateExecution(this.db, execution.id, {
-        status: "running",
-      });
+      try {
+        updateExecution(this.db, execution.id, {
+          status: "running",
+        });
+      } catch (error) {
+        console.error(
+          "[ExecutionService] Failed to update execution status to running",
+          {
+            executionId: execution.id,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+      }
     });
 
     orchestrator.onWorkflowComplete(() => {
-      updateExecution(this.db, execution.id, {
-        status: "completed",
-        completed_at: Math.floor(Date.now() / 1000),
+      console.log("[ExecutionService] Workflow completed successfully", {
+        executionId: execution.id,
       });
+      try {
+        updateExecution(this.db, execution.id, {
+          status: "completed",
+          completed_at: Math.floor(Date.now() / 1000),
+        });
+      } catch (error) {
+        console.error(
+          "[ExecutionService] Failed to update execution status to completed",
+          {
+            executionId: execution.id,
+            error: error instanceof Error ? error.message : String(error),
+            note: "Execution may have been deleted (e.g., due to CASCADE DELETE from issue deletion)",
+          }
+        );
+      }
       // Remove orchestrator from active map
       this.activeOrchestrators.delete(execution.id);
     });
 
     orchestrator.onWorkflowFailed((_executionId, error) => {
-      updateExecution(this.db, execution.id, {
-        status: "failed",
-        completed_at: Math.floor(Date.now() / 1000),
-        error_message: error.message,
+      console.error("[ExecutionService] Workflow failed", {
+        executionId: execution.id,
+        error: error.message,
+        stack: error.stack,
       });
+      try {
+        updateExecution(this.db, execution.id, {
+          status: "failed",
+          completed_at: Math.floor(Date.now() / 1000),
+          error_message: error.message,
+        });
+      } catch (updateError) {
+        console.error(
+          "[ExecutionService] Failed to update execution status to failed",
+          {
+            executionId: execution.id,
+            error:
+              updateError instanceof Error
+                ? updateError.message
+                : String(updateError),
+            note: "Execution may have been deleted (e.g., due to CASCADE DELETE from issue deletion)",
+          }
+        );
+      }
       // Remove orchestrator from active map
       this.activeOrchestrators.delete(execution.id);
     });
@@ -509,25 +558,58 @@ Please continue working on this issue, taking into account the feedback above.`;
 
     // 9. Register event handlers
     orchestrator.onWorkflowStart(() => {
-      updateExecution(this.db, newExecution.id, {
-        status: "running",
-      });
+      try {
+        updateExecution(this.db, newExecution.id, {
+          status: "running",
+        });
+      } catch (error) {
+        console.error(
+          "[ExecutionService] Failed to update follow-up execution status to running",
+          {
+            executionId: newExecution.id,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+      }
     });
 
     orchestrator.onWorkflowComplete(() => {
-      updateExecution(this.db, newExecution.id, {
-        status: "completed",
-        completed_at: Math.floor(Date.now() / 1000),
-      });
+      try {
+        updateExecution(this.db, newExecution.id, {
+          status: "completed",
+          completed_at: Math.floor(Date.now() / 1000),
+        });
+      } catch (error) {
+        console.error(
+          "[ExecutionService] Failed to update follow-up execution status to completed",
+          {
+            executionId: newExecution.id,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+      }
       this.activeOrchestrators.delete(newExecution.id);
     });
 
     orchestrator.onWorkflowFailed((_execId, error) => {
-      updateExecution(this.db, newExecution.id, {
-        status: "failed",
-        completed_at: Math.floor(Date.now() / 1000),
-        error_message: error.message,
-      });
+      try {
+        updateExecution(this.db, newExecution.id, {
+          status: "failed",
+          completed_at: Math.floor(Date.now() / 1000),
+          error_message: error.message,
+        });
+      } catch (updateError) {
+        console.error(
+          "[ExecutionService] Failed to update follow-up execution status to failed",
+          {
+            executionId: newExecution.id,
+            error:
+              updateError instanceof Error
+                ? updateError.message
+                : String(updateError),
+          }
+        );
+      }
       this.activeOrchestrators.delete(newExecution.id);
     });
 

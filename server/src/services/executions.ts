@@ -13,6 +13,9 @@ export interface CreateExecutionInput {
   id?: string;                 // Optional, auto-generated if not provided
   issue_id: string;
   agent_type: AgentType;
+  mode?: string;               // Execution mode ('worktree' | 'local')
+  prompt?: string;             // Rendered prompt
+  config?: string;             // JSON string of execution configuration
   before_commit?: string;
   target_branch: string;      // Required for worktree integration
   branch_name: string;         // Required for worktree integration
@@ -49,6 +52,9 @@ export function createExecution(
       id,
       issue_id,
       agent_type,
+      mode,
+      prompt,
+      config,
       status,
       started_at,
       before_commit,
@@ -57,13 +63,16 @@ export function createExecution(
       worktree_path,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
     id,
     input.issue_id,
     input.agent_type,
+    input.mode || null,
+    input.prompt || null,
+    input.config || null,
     "running" as ExecutionStatus,
     now,
     input.before_commit || null,

@@ -219,6 +219,11 @@ export interface Execution {
   agent_type: AgentType;
   status: ExecutionStatus;
 
+  // Execution mode and configuration
+  mode?: string | null;
+  prompt?: string | null;
+  config?: string | null; // JSON string of execution configuration
+
   // Timestamps
   started_at: string;
   completed_at: string | null;

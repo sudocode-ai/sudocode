@@ -7,13 +7,16 @@
  * @module services/execution-lifecycle
  */
 
-import path from 'path';
-import type Database from 'better-sqlite3';
-import type { AgentType, Execution } from '@sudocode/types';
-import { WorktreeManager, type IWorktreeManager } from '../execution/worktree/manager.js';
-import { getWorktreeConfig } from '../execution/worktree/config.js';
-import { createExecution, getExecution } from './executions.js';
-import { randomUUID } from 'crypto';
+import path from "path";
+import type Database from "better-sqlite3";
+import type { AgentType, Execution } from "@sudocode/types";
+import {
+  WorktreeManager,
+  type IWorktreeManager,
+} from "../execution/worktree/manager.js";
+import { getWorktreeConfig } from "../execution/worktree/config.js";
+import { createExecution, getExecution } from "./executions.js";
+import { randomUUID } from "crypto";
 
 /**
  * Parameters for creating an execution with worktree
@@ -24,6 +27,9 @@ export interface CreateExecutionWithWorktreeParams {
   agentType: AgentType;
   targetBranch: string;
   repoPath: string;
+  mode?: string;
+  prompt?: string;
+  config?: string; // JSON string of execution configuration
 }
 
 /**
@@ -158,6 +164,9 @@ export class ExecutionLifecycleService {
         id: executionId,
         issue_id: issueId,
         agent_type: agentType,
+        mode: params.mode,
+        prompt: params.prompt,
+        config: params.config,
         target_branch: targetBranch,
         branch_name: branchName,
         worktree_path: worktreePath,
@@ -188,10 +197,43 @@ export class ExecutionLifecycleService {
   }
 
   /**
+   * Check if an execution should be cleaned up based on its config
+   *
+   * @param executionId - ID of execution to check
+   * @returns true if should cleanup, false otherwise
+   */
+  shouldCleanupExecution(executionId: string): boolean {
+    const execution = getExecution(this.db, executionId);
+
+    if (!execution) {
+      return false;
+    }
+
+    // Check if cleanupMode is set to 'manual'
+    if (execution.config) {
+      try {
+        const config = JSON.parse(execution.config);
+        if (config.cleanupMode === "manual") {
+          return false;
+        }
+      } catch (error) {
+        console.error(
+          `Failed to parse execution config for ${executionId}:`,
+          error
+        );
+        // Default to cleanup on parse error
+      }
+    }
+
+    return true;
+  }
+
+  /**
    * Clean up an execution and its associated worktree
    *
    * Removes the worktree from filesystem and git metadata.
    * Branch deletion is controlled by autoDeleteBranches config.
+   * Respects the cleanupMode configuration from execution config.
    *
    * IMPORTANT: The worktree_path is NEVER cleared from the database.
    * This allows follow-up executions to find and reuse the same worktree path.
@@ -201,6 +243,11 @@ export class ExecutionLifecycleService {
    * @throws Error if cleanup fails
    */
   async cleanupExecution(executionId: string): Promise<void> {
+    // Check if we should cleanup based on config
+    if (!this.shouldCleanupExecution(executionId)) {
+      return;
+    }
+
     // Get execution from database
     const execution = getExecution(this.db, executionId);
 
@@ -273,11 +320,12 @@ export class ExecutionLifecycleService {
             );
           }
         } else if (
-          execution.status === 'completed' ||
-          execution.status === 'failed' ||
-          execution.status === 'stopped'
+          execution.status === "completed" ||
+          execution.status === "failed" ||
+          execution.status === "stopped"
         ) {
           // Execution is finished but worktree still exists - cleanup
+          // TODO: Check if the execution was configured to keep the worktree.
           console.log(
             `Cleaning up worktree for finished execution ${executionId} (status: ${execution.status})`
           );
@@ -318,13 +366,13 @@ export function sanitizeForBranchName(str: string): string {
     str
       .toLowerCase()
       // Replace spaces and slashes with hyphens
-      .replace(/[\s/]+/g, '-')
+      .replace(/[\s/]+/g, "-")
       // Remove special characters (keep alphanumeric, hyphens, underscores)
-      .replace(/[^a-z0-9\-_]/g, '')
+      .replace(/[^a-z0-9\-_]/g, "")
       // Remove consecutive hyphens
-      .replace(/-+/g, '-')
+      .replace(/-+/g, "-")
       // Remove leading/trailing hyphens
-      .replace(/^-+|-+$/g, '')
+      .replace(/^-+|-+$/g, "")
       // Limit length
       .substring(0, 50)
   );

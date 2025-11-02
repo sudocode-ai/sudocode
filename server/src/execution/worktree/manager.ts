@@ -4,6 +4,23 @@
  * Manages git worktrees for session isolation.
  * Based on design from SPEC-010 and vibe-kanban implementation.
  *
+ * WORKTREE ISOLATION:
+ * ===================
+ * Each worktree created by this manager is completely isolated from the main
+ * repository. This prevents race conditions and unexpected modifications during
+ * concurrent executions.
+ *
+ * Isolation is achieved through:
+ * 1. Local database (.sudocode/cache.db) in each worktree
+ * 2. Synced JSONL files with latest state (including uncommitted changes)
+ * 3. Claude config (.claude/config.json) that forces MCP to use local database
+ *
+ * Key Benefit: Multiple executions can run concurrently without interfering
+ * with each other or the main repository. All MCP/CLI operations in a worktree
+ * stay contained within that worktree.
+ *
+ * See setupWorktreeEnvironment() method for detailed implementation.
+ *
  * @module execution/worktree/manager
  */
 
@@ -17,6 +34,9 @@ import type {
 } from "./types.js";
 import { WorktreeError, WorktreeErrorCode } from "./types.js";
 import { GitCli, type IGitCli } from "./git-cli.js";
+import { initDatabase } from "@sudocode/cli/dist/db.js";
+import { importFromJSONL } from "@sudocode/cli/dist/import.js";
+import { execSync } from "child_process";
 
 /**
  * IWorktreeManager - Interface for worktree management
@@ -191,6 +211,12 @@ export class WorktreeManager implements IWorktreeManager {
           WorktreeErrorCode.REPOSITORY_ERROR
         );
       }
+
+      // 6. Setup isolated worktree environment
+      // This is critical for preventing the worktree from modifying the main repository.
+      // It creates a local database, syncs JSONL files, and configures Claude to use
+      // the local environment. See setupWorktreeEnvironment() for detailed explanation.
+      await this.setupWorktreeEnvironment(repoPath, worktreePath);
     } catch (error) {
       if (error instanceof WorktreeError) {
         throw error;
@@ -200,6 +226,111 @@ export class WorktreeManager implements IWorktreeManager {
         WorktreeErrorCode.REPOSITORY_ERROR,
         error as Error
       );
+    }
+  }
+
+  /**
+   * Setup isolated environment for worktree
+   *
+   * WORKTREE ISOLATION ARCHITECTURE:
+   * ================================
+   * Problem: Previously, MCP/CLI tools running in worktrees would search upward
+   * and find the main repository's database, causing race conditions and
+   * unexpected modifications to the main repo during execution.
+   *
+   * Solution: Each worktree gets its own isolated environment:
+   * - Local database (.sudocode/cache.db in worktree)
+   * - Synced JSONL files with latest state (including uncommitted changes)
+   * - Claude config that forces MCP to use the local database
+   *
+   * Benefits:
+   * - Worktree operations never affect main repository
+   * - Multiple executions can run concurrently without conflicts
+   * - Worktree gets consistent state (newly created issues are available)
+   * - Easy to inspect/debug worktree state after execution
+   *
+   * Flow:
+   * 1. Git creates worktree → checks out files from committed git tree
+   * 2. This method runs → copies latest JSONL (including uncommitted changes)
+   * 3. Initializes local DB from JSONL → worktree has complete state
+   * 4. Creates .claude/config.json → MCP uses local DB via env vars
+   * 5. Claude runs → all MCP operations stay in worktree
+   * 6. (Future) Merge worktree changes back to main after execution
+   *
+   * @param repoPath - Path to the main git repository
+   * @param worktreePath - Path to the worktree directory
+   */
+  private async setupWorktreeEnvironment(
+    repoPath: string,
+    worktreePath: string
+  ): Promise<void> {
+    const mainSudocodeDir = path.join(repoPath, ".sudocode");
+    const worktreeSudocodeDir = path.join(worktreePath, ".sudocode");
+    // Ensure .sudocode directory exists in worktree
+    if (!fs.existsSync(worktreeSudocodeDir)) {
+      fs.mkdirSync(worktreeSudocodeDir, { recursive: true });
+    }
+
+    // STEP 1: Copy uncommitted JSONL files from main repo to worktree
+    // ================================================================
+    // Why: Git worktree checkout only gets committed files from git history.
+    // If the user created new issues/specs before starting the execution,
+    // those changes are in the main repo's JSONL files but not committed.
+    // We need to copy them so the worktree has the complete, up-to-date state.
+    //
+    // Example: User creates ISSUE-144, starts execution immediately.
+    // - Git tree: has 138 issues (old state)
+    // - Main JSONL: has 140 issues (includes ISSUE-144, uncommitted)
+    // - Without this copy: worktree would only have 138 issues, ISSUE-144 missing!
+    // - With this copy: worktree gets all 140 issues, execution can reference ISSUE-144
+    const jsonlFiles = ["issues.jsonl", "specs.jsonl"];
+    for (const file of jsonlFiles) {
+      const mainFile = path.join(mainSudocodeDir, file);
+      const worktreeFile = path.join(worktreeSudocodeDir, file);
+      if (fs.existsSync(mainFile)) {
+        fs.copyFileSync(mainFile, worktreeFile);
+      }
+    }
+
+    // STEP 2: Copy config.json
+    // ========================
+    // Copy sudocode configuration to maintain consistency
+    const mainConfig = path.join(mainSudocodeDir, "config.json");
+    const worktreeConfig = path.join(worktreeSudocodeDir, "config.json");
+    if (fs.existsSync(mainConfig)) {
+      fs.copyFileSync(mainConfig, worktreeConfig);
+    }
+
+    // STEP 3: Initialize local database in worktree
+    // ==============================================
+    // Create a brand new SQLite database in the worktree and import the JSONL
+    // files we just copied. This gives the worktree its own isolated database
+    // with the complete current state.
+    //
+    // Important: This database is completely separate from the main repo's DB.
+    // All MCP/CLI operations in the worktree will use THIS database, not the main one.
+
+    const worktreeDbPath = path.join(worktreeSudocodeDir, "cache.db");
+
+    // Initialize database with CLI's initDatabase (creates all tables)
+    const db = initDatabase({ path: worktreeDbPath, verbose: false });
+
+    try {
+      await importFromJSONL(db, {
+        inputDir: worktreeSudocodeDir,
+      });
+
+      // Verify database was created
+      if (!fs.existsSync(worktreeDbPath)) {
+        console.error(
+          "[WorktreeManager] ERROR: Database file was not created!"
+        );
+      }
+    } catch (error) {
+      console.error("[WorktreeManager] Failed to initialize database", error);
+      throw error;
+    } finally {
+      db.close();
     }
   }
 
@@ -414,6 +545,9 @@ export class WorktreeManager implements IWorktreeManager {
           );
         }
 
+        // Setup isolated worktree environment (see setupWorktreeEnvironment for details)
+        await this.setupWorktreeEnvironment(repoPath, worktreePath);
+
         return; // Success!
       } catch (error) {
         lastError = error as Error;
@@ -458,7 +592,6 @@ export class WorktreeManager implements IWorktreeManager {
       }
 
       // Try to use git to find the common git directory
-      const { execSync } = await import("child_process");
       const gitCommonDir = execSync("git rev-parse --git-common-dir", {
         cwd: worktreePath,
         encoding: "utf8",

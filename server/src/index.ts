@@ -353,6 +353,17 @@ console.log(
   `${bold}${green}sudocode local server running on: ${makeClickable(httpUrl, httpUrl)}${reset}`
 );
 
+// Error handlers for debugging
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught exception:", error);
+  console.error("Stack trace:", error.stack);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled rejection at:", promise);
+  console.error("Reason:", reason);
+});
+
 // Graceful shutdown
 process.on("SIGINT", async () => {
   console.log("\nShutting down server...");

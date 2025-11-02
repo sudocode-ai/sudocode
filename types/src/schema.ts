@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS issue_feedback (
 export const EXECUTIONS_TABLE = `
 CREATE TABLE IF NOT EXISTS executions (
     id TEXT PRIMARY KEY,
-    issue_id TEXT NOT NULL,
+    issue_id TEXT,
 
     -- Execution mode and configuration (SPEC-011 fields - nullable for legacy)
     mode TEXT CHECK(mode IN ('worktree', 'local')),
@@ -169,7 +169,7 @@ CREATE TABLE IF NOT EXISTS executions (
     step_index INTEGER,
     step_config TEXT,
 
-    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
+    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL,
     FOREIGN KEY (parent_execution_id) REFERENCES executions(id) ON DELETE SET NULL
 );
 `;
