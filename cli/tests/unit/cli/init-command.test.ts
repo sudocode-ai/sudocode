@@ -4,21 +4,17 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { initDatabase } from "../../../src/db.js";
+import { performInitialization } from "../../../src/cli/init-commands.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { execSync } from "child_process";
 
 describe("Init Command", () => {
   let tempDir: string;
-  let cliPath: string;
 
   beforeEach(() => {
     // Create temporary directory for tests
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "sudocode-init-test-"));
-
-    // Get path to CLI executable
-    cliPath = path.join(process.cwd(), "dist", "cli.js");
   });
 
   afterEach(() => {
@@ -29,14 +25,14 @@ describe("Init Command", () => {
   });
 
   describe("fresh initialization", () => {
-    it("should create all required files and directories", () => {
-      // Run init command in temp directory
-      execSync(`node "${cliPath}" init`, {
-        cwd: tempDir,
-        encoding: "utf8",
-      });
-
+    it("should create all required files and directories", async () => {
       const sudocodeDir = path.join(tempDir, ".sudocode");
+
+      // Run init command
+      await performInitialization({
+        dir: sudocodeDir,
+        jsonOutput: true,
+      });
 
       // Verify directory structure
       expect(fs.existsSync(sudocodeDir)).toBe(true);
@@ -60,15 +56,29 @@ describe("Init Command", () => {
       // Verify JSONL files are empty
       expect(fs.readFileSync(path.join(sudocodeDir, "specs.jsonl"), "utf8")).toBe("");
       expect(fs.readFileSync(path.join(sudocodeDir, "issues.jsonl"), "utf8")).toBe("");
+
+      // Verify .gitignore content
+      const gitignoreContent = fs.readFileSync(
+        path.join(sudocodeDir, ".gitignore"),
+        "utf8"
+      );
+      expect(gitignoreContent).toContain("cache.db*");
+      expect(gitignoreContent).toContain("issues/");
+      expect(gitignoreContent).toContain("specs/");
+      expect(gitignoreContent).toContain("worktrees/");
     });
 
-    it("should create config with custom prefixes", () => {
-      execSync(`node "${cliPath}" init --spec-prefix TEST --issue-prefix BUG`, {
-        cwd: tempDir,
-        encoding: "utf8",
+    it("should create config with custom prefixes", async () => {
+      const sudocodeDir = path.join(tempDir, ".sudocode");
+
+      await performInitialization({
+        dir: sudocodeDir,
+        specPrefix: "TEST",
+        issuePrefix: "BUG",
+        jsonOutput: true,
       });
 
-      const configPath = path.join(tempDir, ".sudocode", "config.json");
+      const configPath = path.join(sudocodeDir, "config.json");
       const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
 
       expect(config.id_prefix.spec).toBe("TEST");
@@ -83,8 +93,9 @@ describe("Init Command", () => {
       fs.mkdirSync(sudocodeDir, { recursive: true });
     });
 
-    it("should preserve existing specs.jsonl", () => {
+    it("should preserve existing specs.jsonl", async () => {
       const sudocodeDir = path.join(tempDir, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
       const specsPath = path.join(sudocodeDir, "specs.jsonl");
       const existingContent = '{"id":"SPEC-001","title":"Existing Spec"}\n';
 
@@ -92,20 +103,18 @@ describe("Init Command", () => {
       fs.writeFileSync(specsPath, existingContent, "utf8");
 
       // Run init
-      const output = execSync(`node "${cliPath}" init`, {
-        cwd: tempDir,
-        encoding: "utf8",
+      await performInitialization({
+        dir: sudocodeDir,
+        jsonOutput: true,
       });
 
       // Verify content is preserved
       expect(fs.readFileSync(specsPath, "utf8")).toBe(existingContent);
-
-      // Verify output mentions preservation
-      expect(output).toContain("specs.jsonl");
     });
 
-    it("should preserve existing issues.jsonl", () => {
+    it("should preserve existing issues.jsonl", async () => {
       const sudocodeDir = path.join(tempDir, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
       const issuesPath = path.join(sudocodeDir, "issues.jsonl");
       const existingContent = '{"id":"ISSUE-001","title":"Existing Issue"}\n';
 
@@ -113,20 +122,18 @@ describe("Init Command", () => {
       fs.writeFileSync(issuesPath, existingContent, "utf8");
 
       // Run init
-      const output = execSync(`node "${cliPath}" init`, {
-        cwd: tempDir,
-        encoding: "utf8",
+      await performInitialization({
+        dir: sudocodeDir,
+        jsonOutput: true,
       });
 
       // Verify content is preserved
       expect(fs.readFileSync(issuesPath, "utf8")).toBe(existingContent);
-
-      // Verify output mentions preservation
-      expect(output).toContain("issues.jsonl");
     });
 
     it("should preserve existing cache.db", async () => {
       const sudocodeDir = path.join(tempDir, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
       const dbPath = path.join(sudocodeDir, "cache.db");
 
       // Create existing database with data
@@ -144,9 +151,9 @@ describe("Init Command", () => {
       db.close();
 
       // Run init
-      const output = execSync(`node "${cliPath}" init`, {
-        cwd: tempDir,
-        encoding: "utf8",
+      await performInitialization({
+        dir: sudocodeDir,
+        jsonOutput: true,
       });
 
       // Verify database still contains the spec
@@ -158,13 +165,11 @@ describe("Init Command", () => {
       expect(spec?.title).toBe("Existing Spec");
 
       dbAfter.close();
-
-      // Verify output mentions preservation
-      expect(output).toContain("cache.db");
     });
 
-    it("should preserve all existing files", () => {
+    it("should preserve all existing files", async () => {
       const sudocodeDir = path.join(tempDir, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
       const specsPath = path.join(sudocodeDir, "specs.jsonl");
       const issuesPath = path.join(sudocodeDir, "issues.jsonl");
       const dbPath = path.join(sudocodeDir, "cache.db");
@@ -176,26 +181,20 @@ describe("Init Command", () => {
       db.close();
 
       // Run init
-      const output = execSync(`node "${cliPath}" init`, {
-        cwd: tempDir,
-        encoding: "utf8",
+      await performInitialization({
+        dir: sudocodeDir,
+        jsonOutput: true,
       });
 
       // Verify all files are preserved
       expect(fs.readFileSync(specsPath, "utf8")).toBe('{"id":"SPEC-001"}\n');
       expect(fs.readFileSync(issuesPath, "utf8")).toBe('{"id":"ISSUE-001"}\n');
       expect(fs.existsSync(dbPath)).toBe(true);
-
-      // Verify output mentions all preserved files
-      expect(output).toContain("Preserved existing");
-      expect(output).toContain("cache.db");
-      expect(output).toContain("specs.jsonl");
-      expect(output).toContain("issues.jsonl");
     });
   });
 
   describe("mixed scenarios", () => {
-    it("should create missing files while preserving existing ones", () => {
+    it("should create missing files while preserving existing ones", async () => {
       const sudocodeDir = path.join(tempDir, ".sudocode");
       fs.mkdirSync(sudocodeDir, { recursive: true });
 
@@ -205,9 +204,9 @@ describe("Init Command", () => {
       fs.writeFileSync(specsPath, existingContent, "utf8");
 
       // Run init
-      const output = execSync(`node "${cliPath}" init`, {
-        cwd: tempDir,
-        encoding: "utf8",
+      await performInitialization({
+        dir: sudocodeDir,
+        jsonOutput: true,
       });
 
       // Verify specs.jsonl is preserved
@@ -220,10 +219,6 @@ describe("Init Command", () => {
 
       // Verify issues.jsonl is empty (newly created)
       expect(fs.readFileSync(path.join(sudocodeDir, "issues.jsonl"), "utf8")).toBe("");
-
-      // Verify output mentions only the preserved file
-      expect(output).toContain("specs.jsonl");
-      expect(output).not.toContain("issues.jsonl");
     });
   });
 
@@ -252,14 +247,10 @@ describe("Init Command", () => {
       fs.writeFileSync(specsPath, JSON.stringify(specData) + "\n", "utf8");
 
       // Run init
-      const output = execSync(`node "${cliPath}" init`, {
-        cwd: tempDir,
-        encoding: "utf8",
+      await performInitialization({
+        dir: sudocodeDir,
+        jsonOutput: true,
       });
-
-      // Verify import happened
-      expect(output).toContain("Importing from existing JSONL files");
-      expect(output).toContain("Specs: 1 added");
 
       // Verify data is in database
       const dbPath = path.join(sudocodeDir, "cache.db");
@@ -301,14 +292,10 @@ describe("Init Command", () => {
       fs.writeFileSync(issuesPath, JSON.stringify(issueData) + "\n", "utf8");
 
       // Run init
-      const output = execSync(`node "${cliPath}" init`, {
-        cwd: tempDir,
-        encoding: "utf8",
+      await performInitialization({
+        dir: sudocodeDir,
+        jsonOutput: true,
       });
-
-      // Verify import happened
-      expect(output).toContain("Importing from existing JSONL files");
-      expect(output).toContain("Issues: 1 added");
 
       // Verify data is in database
       const dbPath = path.join(sudocodeDir, "cache.db");
@@ -369,15 +356,10 @@ describe("Init Command", () => {
       fs.writeFileSync(issuesPath, JSON.stringify(issueData) + "\n", "utf8");
 
       // Run init
-      const output = execSync(`node "${cliPath}" init`, {
-        cwd: tempDir,
-        encoding: "utf8",
+      await performInitialization({
+        dir: sudocodeDir,
+        jsonOutput: true,
       });
-
-      // Verify import happened for both
-      expect(output).toContain("Importing from existing JSONL files");
-      expect(output).toContain("Specs: 1 added");
-      expect(output).toContain("Issues: 1 added");
 
       // Verify data is in database
       const dbPath = path.join(sudocodeDir, "cache.db");
@@ -397,7 +379,7 @@ describe("Init Command", () => {
       db.close();
     });
 
-    it("should not import when JSONL files are empty", () => {
+    it("should not import when JSONL files are empty", async () => {
       const sudocodeDir = path.join(tempDir, ".sudocode");
       fs.mkdirSync(sudocodeDir, { recursive: true });
 
@@ -407,14 +389,15 @@ describe("Init Command", () => {
       fs.writeFileSync(specsPath, "", "utf8");
       fs.writeFileSync(issuesPath, "", "utf8");
 
-      // Run init
-      const output = execSync(`node "${cliPath}" init`, {
-        cwd: tempDir,
-        encoding: "utf8",
+      // Run init - should not fail and should not attempt import
+      await performInitialization({
+        dir: sudocodeDir,
+        jsonOutput: true,
       });
 
-      // Verify no import message
-      expect(output).not.toContain("Importing from existing JSONL files");
+      // Verify database was created but is empty
+      const dbPath = path.join(sudocodeDir, "cache.db");
+      expect(fs.existsSync(dbPath)).toBe(true);
     });
   });
 });

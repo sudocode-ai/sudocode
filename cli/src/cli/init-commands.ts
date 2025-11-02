@@ -161,6 +161,7 @@ export async function performInitialization(
   const gitignoreContent = `cache.db*
 issues/
 specs/
+worktrees/
 `;
   fs.writeFileSync(path.join(dir, ".gitignore"), gitignoreContent, "utf8");
 
