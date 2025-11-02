@@ -47,6 +47,10 @@ const SUDOCODE_DIR =
   process.env.SUDOCODE_DIR || path.join(process.cwd(), ".sudocode");
 const DB_PATH = path.join(SUDOCODE_DIR, "cache.db");
 
+// Derive repo root from SUDOCODE_DIR (which is <repo>/.sudocode)
+// This ensures consistency across database and execution paths
+const REPO_ROOT = path.dirname(SUDOCODE_DIR);
+
 // Initialize database and transport manager
 let db!: Database.Database;
 let watcher: ServerWatcherControl | null = null;
@@ -71,14 +75,14 @@ async function initialize() {
     console.log("Transport manager initialized");
 
     // Cleanup orphaned worktrees on startup (if configured)
-    const worktreeConfig = getWorktreeConfig(process.cwd());
+    const worktreeConfig = getWorktreeConfig(REPO_ROOT);
     if (worktreeConfig.cleanupOrphanedWorktreesOnStartup) {
       try {
         console.log("Cleaning up orphaned worktrees...");
         const worktreeManager = new WorktreeManager(worktreeConfig);
         const lifecycleService = new ExecutionLifecycleService(
           db,
-          process.cwd(),
+          REPO_ROOT,
           worktreeManager
         );
         await lifecycleService.cleanupOrphanedWorktrees();
@@ -159,7 +163,7 @@ app.use("/api/specs", createSpecsRouter(db));
 app.use("/api/relationships", createRelationshipsRouter(db));
 app.use("/api/feedback", createFeedbackRouter(db));
 // Mount execution routes (must be before stream routes to avoid conflicts)
-app.use("/api", createExecutionsRouter(db, process.cwd(), transportManager));
+app.use("/api", createExecutionsRouter(db, REPO_ROOT, transportManager));
 app.use("/api/executions", createExecutionStreamRoutes(transportManager));
 
 // Health check endpoint
