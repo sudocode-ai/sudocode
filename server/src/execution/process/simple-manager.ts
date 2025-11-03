@@ -18,16 +18,16 @@
  * @module execution/process/simple-manager
  */
 
-import { spawn } from 'child_process';
+import { spawn } from "child_process";
 import type {
   ManagedProcess,
   ProcessConfig,
   ProcessMetrics,
   OutputHandler,
   ErrorHandler,
-} from './types.js';
-import type { IProcessManager } from './manager.js';
-import { generateId } from './utils.js';
+} from "./types.js";
+import type { IProcessManager } from "./manager.js";
+import { generateId } from "./utils.js";
 
 /**
  * Simple process manager that spawns one process per task
@@ -88,20 +88,20 @@ export class SimpleProcessManager implements IProcessManager {
     // Validate process spawned successfully
     if (!childProcess.pid) {
       // Suppress error event to prevent uncaughtException
-      childProcess.once('error', () => {
+      childProcess.once("error", () => {
         // Error is expected when process fails to spawn
       });
-      throw new Error('Failed to spawn process: no PID assigned');
+      throw new Error("Failed to spawn process: no PID assigned");
     }
 
     // Generate unique ID for this process
-    const id = generateId('process');
+    const id = generateId("process");
 
     // Create managed process object
     const managedProcess: ManagedProcess = {
       id,
       pid: childProcess.pid,
-      status: 'busy',
+      status: "busy",
       spawnedAt: new Date(),
       lastActivity: new Date(),
       exitCode: null,
@@ -141,7 +141,7 @@ export class SimpleProcessManager implements IProcessManager {
   private spawnProcess(config: ProcessConfig): ReturnType<typeof spawn> {
     const childProcess = spawn(config.executablePath, config.args, {
       cwd: config.workDir,
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,
         ...config.env,
@@ -173,7 +173,7 @@ export class SimpleProcessManager implements IProcessManager {
     if (config.timeout) {
       timeoutHandle = setTimeout(() => {
         // Terminate process on timeout using graceful termination
-        if (managedProcess.status === 'busy') {
+        if (managedProcess.status === "busy") {
           this.terminateProcess(id).catch(() => {
             // Ignore errors during timeout termination
           });
@@ -182,7 +182,7 @@ export class SimpleProcessManager implements IProcessManager {
     }
 
     // Exit event handler
-    childProcess.once('exit', (code, signal) => {
+    childProcess.once("exit", (code, signal) => {
       // Clear timeout
       if (timeoutHandle) {
         clearTimeout(timeoutHandle);
@@ -191,7 +191,7 @@ export class SimpleProcessManager implements IProcessManager {
       // Update process state
       managedProcess.exitCode = code;
       managedProcess.signal = signal;
-      managedProcess.status = code === 0 ? 'completed' : 'crashed';
+      managedProcess.status = code === 0 ? "completed" : "crashed";
 
       // Calculate duration
       const duration = Date.now() - managedProcess.spawnedAt.getTime();
@@ -209,8 +209,10 @@ export class SimpleProcessManager implements IProcessManager {
       const totalProcesses =
         this._metrics.totalCompleted + this._metrics.totalFailed;
       if (totalProcesses > 0) {
-        const currentTotal = this._metrics.averageDuration * (totalProcesses - 1);
-        this._metrics.averageDuration = (currentTotal + duration) / totalProcesses;
+        const currentTotal =
+          this._metrics.averageDuration * (totalProcesses - 1);
+        this._metrics.averageDuration =
+          (currentTotal + duration) / totalProcesses;
       }
 
       // Clean up stdio streams to prevent event loop hang
@@ -227,7 +229,7 @@ export class SimpleProcessManager implements IProcessManager {
     });
 
     // Error event handler
-    childProcess.once('error', (error) => {
+    childProcess.once("error", (error) => {
       void error; // Error is logged but not used here
 
       // Clear timeout
@@ -236,7 +238,7 @@ export class SimpleProcessManager implements IProcessManager {
       }
 
       // Update process state
-      managedProcess.status = 'crashed';
+      managedProcess.status = "crashed";
 
       // Update global metrics
       this._metrics.currentlyActive--;
@@ -244,12 +246,12 @@ export class SimpleProcessManager implements IProcessManager {
     });
 
     // stdout data handler - track activity
-    childProcess.stdout?.on('data', () => {
+    childProcess.stdout?.on("data", () => {
       managedProcess.lastActivity = new Date();
     });
 
     // stderr data handler - track activity
-    childProcess.stderr?.on('data', () => {
+    childProcess.stderr?.on("data", () => {
       managedProcess.lastActivity = new Date();
     });
   }
@@ -260,7 +262,7 @@ export class SimpleProcessManager implements IProcessManager {
 
   async terminateProcess(
     processId: string,
-    signal: NodeJS.Signals = 'SIGTERM'
+    signal: NodeJS.Signals = "SIGTERM"
   ): Promise<void> {
     const managed = this._activeProcesses.get(processId);
     if (!managed) {
@@ -273,7 +275,7 @@ export class SimpleProcessManager implements IProcessManager {
     }
 
     // Update status to terminating
-    managed.status = 'terminating';
+    managed.status = "terminating";
 
     // Try graceful shutdown first
     managed.process.kill(signal);
@@ -283,7 +285,7 @@ export class SimpleProcessManager implements IProcessManager {
       if (managed.exitCode !== null) {
         resolve();
       } else {
-        managed.process.once('exit', () => resolve());
+        managed.process.once("exit", () => resolve());
       }
     });
 
@@ -295,7 +297,7 @@ export class SimpleProcessManager implements IProcessManager {
 
     // Force kill if still running
     if (managed.exitCode === null) {
-      managed.process.kill('SIGKILL');
+      managed.process.kill("SIGKILL");
 
       // Wait for SIGKILL to take effect (with timeout)
       await Promise.race([
@@ -303,7 +305,7 @@ export class SimpleProcessManager implements IProcessManager {
           if (managed.exitCode !== null) {
             resolve();
           } else {
-            managed.process.once('exit', () => resolve());
+            managed.process.once("exit", () => resolve());
           }
         }),
         new Promise<void>((resolve) => setTimeout(resolve, 1000)),
@@ -347,12 +349,12 @@ export class SimpleProcessManager implements IProcessManager {
       throw new Error(`Process ${processId} not found`);
     }
 
-    managed.streams.stdout.on('data', (data: Buffer) => {
-      handler(data, 'stdout');
+    managed.streams.stdout.on("data", (data: Buffer) => {
+      handler(data, "stdout");
     });
 
-    managed.streams.stderr.on('data', (data: Buffer) => {
-      handler(data, 'stderr');
+    managed.streams.stderr.on("data", (data: Buffer) => {
+      handler(data, "stderr");
     });
   }
 
@@ -362,7 +364,7 @@ export class SimpleProcessManager implements IProcessManager {
       throw new Error(`Process ${processId} not found`);
     }
 
-    managed.process.on('error', (error: Error) => {
+    managed.process.on("error", (error: Error) => {
       handler(error);
     });
   }
@@ -384,7 +386,7 @@ export class SimpleProcessManager implements IProcessManager {
     // Terminate all active processes first
     const processIds = Array.from(this._activeProcesses.keys());
     await Promise.all(
-      processIds.map((id) => this.terminateProcess(id, 'SIGTERM'))
+      processIds.map((id) => this.terminateProcess(id, "SIGTERM"))
     );
 
     // Clear all pending cleanup timers (including ones scheduled by exit handlers)

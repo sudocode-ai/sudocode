@@ -105,7 +105,9 @@ export const specsApi = {
  */
 export const relationshipsApi = {
   getForEntity: (entityId: string, entityType: 'issue' | 'spec') =>
-    get<Relationship[] | { outgoing: Relationship[]; incoming: Relationship[] }>(`/relationships/${entityType}/${entityId}`),
+    get<Relationship[] | { outgoing: Relationship[]; incoming: Relationship[] }>(
+      `/relationships/${entityType}/${entityId}`
+    ),
   create: (data: CreateRelationshipRequest) => post<Relationship>('/relationships', data),
   delete: (data: DeleteRelationshipRequest) => del('/relationships', data),
 }
@@ -147,7 +149,8 @@ export const executionsApi = {
   cancel: (executionId: string) => del(`/executions/${executionId}`),
 
   // Check if worktree exists for execution
-  worktreeExists: (executionId: string) => get<{ exists: boolean }>(`/executions/${executionId}/worktree`),
+  worktreeExists: (executionId: string) =>
+    get<{ exists: boolean }>(`/executions/${executionId}/worktree`),
 
   // Delete worktree for execution
   deleteWorktree: (executionId: string) => del(`/executions/${executionId}/worktree`),

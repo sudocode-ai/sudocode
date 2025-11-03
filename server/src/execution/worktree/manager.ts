@@ -263,11 +263,32 @@ export class WorktreeManager implements IWorktreeManager {
     repoPath: string,
     worktreePath: string
   ): Promise<void> {
+    console.debug(
+      "[WorktreeManager] Setting up isolated worktree environment",
+      {
+        repoPath,
+        worktreePath,
+      }
+    );
+
     const mainSudocodeDir = path.join(repoPath, ".sudocode");
     const worktreeSudocodeDir = path.join(worktreePath, ".sudocode");
+
+    console.debug("[WorktreeManager] Directory paths", {
+      mainSudocodeDir,
+      worktreeSudocodeDir,
+    });
+
     // Ensure .sudocode directory exists in worktree
     if (!fs.existsSync(worktreeSudocodeDir)) {
       fs.mkdirSync(worktreeSudocodeDir, { recursive: true });
+      console.debug(
+        `[WorktreeManager] Created .sudocode directory in worktree: ${worktreeSudocodeDir}`
+      );
+    } else {
+      console.debug(
+        `[WorktreeManager] .sudocode directory already exists in worktree`
+      );
     }
 
     // STEP 1: Copy uncommitted JSONL files from main repo to worktree
@@ -286,8 +307,28 @@ export class WorktreeManager implements IWorktreeManager {
     for (const file of jsonlFiles) {
       const mainFile = path.join(mainSudocodeDir, file);
       const worktreeFile = path.join(worktreeSudocodeDir, file);
+
+      console.debug(`[WorktreeManager] Processing ${file}`, {
+        mainFile,
+        worktreeFile,
+        mainFileExists: fs.existsSync(mainFile),
+      });
+
       if (fs.existsSync(mainFile)) {
+        const mainStats = fs.statSync(mainFile);
         fs.copyFileSync(mainFile, worktreeFile);
+        const worktreeStats = fs.statSync(worktreeFile);
+        console.debug(
+          `[WorktreeManager] Synced ${file} from main repo to worktree`,
+          {
+            mainFileSize: mainStats.size,
+            worktreeFileSize: worktreeStats.size,
+          }
+        );
+      } else {
+        console.debug(
+          `[WorktreeManager] Main file does not exist: ${mainFile}`
+        );
       }
     }
 
@@ -298,6 +339,11 @@ export class WorktreeManager implements IWorktreeManager {
     const worktreeConfig = path.join(worktreeSudocodeDir, "config.json");
     if (fs.existsSync(mainConfig)) {
       fs.copyFileSync(mainConfig, worktreeConfig);
+      console.debug(
+        `[WorktreeManager] Copied config.json from main repo to worktree`
+      );
+    } else {
+      console.debug(`[WorktreeManager] No config.json to copy from main repo`);
     }
 
     // STEP 3: Initialize local database in worktree
@@ -318,9 +364,18 @@ export class WorktreeManager implements IWorktreeManager {
       await importFromJSONL(db, {
         inputDir: worktreeSudocodeDir,
       });
+      console.debug(
+        `[WorktreeManager] Successfully initialized local database in worktree at ${worktreeDbPath}`
+      );
 
       // Verify database was created
-      if (!fs.existsSync(worktreeDbPath)) {
+      if (fs.existsSync(worktreeDbPath)) {
+        const dbStats = fs.statSync(worktreeDbPath);
+        console.debug("[WorktreeManager] Database file created", {
+          path: worktreeDbPath,
+          size: dbStats.size,
+        });
+      } else {
         console.error(
           "[WorktreeManager] ERROR: Database file was not created!"
         );
@@ -331,6 +386,7 @@ export class WorktreeManager implements IWorktreeManager {
     } finally {
       db.close();
     }
+    console.debug("[WorktreeManager] Worktree environment setup complete");
   }
 
   async ensureWorktreeExists(

@@ -99,7 +99,7 @@ export function ExecutionConfigDialog({
             {hasErrors && (
               <div className="rounded-lg border border-destructive bg-destructive/10 p-3">
                 <div className="flex items-start gap-2">
-                  <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
+                  <AlertCircle className="mt-0.5 h-5 w-5 text-destructive" />
                   <div className="flex-1 space-y-1">
                     <p className="text-sm font-medium text-destructive">Errors</p>
                     {prepareResult.errors!.map((error, i) => (
@@ -116,7 +116,7 @@ export function ExecutionConfigDialog({
             {hasWarnings && (
               <div className="rounded-lg border border-yellow-500 bg-yellow-500/10 p-3">
                 <div className="flex items-start gap-2">
-                  <Info className="h-5 w-5 text-yellow-600 mt-0.5" />
+                  <Info className="mt-0.5 h-5 w-5 text-yellow-600" />
                   <div className="flex-1 space-y-1">
                     <p className="text-sm font-medium text-yellow-600">Warnings</p>
                     {prepareResult.warnings!.map((warning, i) => (
@@ -130,22 +130,21 @@ export function ExecutionConfigDialog({
             )}
 
             {/* Related Context */}
-            {prepareResult && (
-              (prepareResult.relatedSpecs?.length ?? 0) > 0 ||
-              (prepareResult.relatedFeedback?.length ?? 0) > 0
-            ) && (
-              <div className="rounded-lg border bg-muted/50 p-3">
-                <p className="text-sm font-medium mb-2">Context Included</p>
-                <div className="space-y-1 text-sm text-muted-foreground">
-                  {(prepareResult.relatedSpecs?.length ?? 0) > 0 && (
-                    <p>• {prepareResult.relatedSpecs.length} related spec(s)</p>
-                  )}
-                  {(prepareResult.relatedFeedback?.length ?? 0) > 0 && (
-                    <p>• {prepareResult.relatedFeedback.length} feedback item(s)</p>
-                  )}
+            {prepareResult &&
+              ((prepareResult.relatedSpecs?.length ?? 0) > 0 ||
+                (prepareResult.relatedFeedback?.length ?? 0) > 0) && (
+                <div className="rounded-lg border bg-muted/50 p-3">
+                  <p className="mb-2 text-sm font-medium">Context Included</p>
+                  <div className="space-y-1 text-sm text-muted-foreground">
+                    {(prepareResult.relatedSpecs?.length ?? 0) > 0 && (
+                      <p>• {prepareResult.relatedSpecs.length} related spec(s)</p>
+                    )}
+                    {(prepareResult.relatedFeedback?.length ?? 0) > 0 && (
+                      <p>• {prepareResult.relatedFeedback.length} feedback item(s)</p>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
             {/* Execution Mode */}
             <div className="space-y-2">
@@ -239,7 +238,7 @@ export function ExecutionConfigDialog({
 
             {/* Advanced Options */}
             {showAdvanced && (
-              <div className="space-y-4 pl-4 border-l-2 border-muted">
+              <div className="space-y-4 border-l-2 border-muted pl-4">
                 <div className="space-y-2">
                   <Label htmlFor="timeout">Timeout (ms)</Label>
                   <input
@@ -248,7 +247,9 @@ export function ExecutionConfigDialog({
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     value={config.timeout ?? ''}
                     onChange={(e) =>
-                      updateConfig({ timeout: e.target.value ? parseInt(e.target.value) : undefined })
+                      updateConfig({
+                        timeout: e.target.value ? parseInt(e.target.value) : undefined,
+                      })
                     }
                     placeholder="No timeout"
                   />
@@ -262,7 +263,9 @@ export function ExecutionConfigDialog({
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     value={config.maxTokens ?? ''}
                     onChange={(e) =>
-                      updateConfig({ maxTokens: e.target.value ? parseInt(e.target.value) : undefined })
+                      updateConfig({
+                        maxTokens: e.target.value ? parseInt(e.target.value) : undefined,
+                      })
                     }
                     placeholder="Model default"
                   />
@@ -279,7 +282,9 @@ export function ExecutionConfigDialog({
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     value={config.temperature ?? ''}
                     onChange={(e) =>
-                      updateConfig({ temperature: e.target.value ? parseFloat(e.target.value) : undefined })
+                      updateConfig({
+                        temperature: e.target.value ? parseFloat(e.target.value) : undefined,
+                      })
                     }
                     placeholder="Model default"
                   />

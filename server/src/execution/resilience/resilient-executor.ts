@@ -7,9 +7,9 @@
  * @module execution/resilience/resilient-executor
  */
 
-import type { IExecutionEngine } from '../engine/engine.js';
-import type { ExecutionTask, ExecutionResult } from '../engine/types.js';
-import type { IResilientExecutor } from './executor.js';
+import type { IExecutionEngine } from "../engine/engine.js";
+import type { ExecutionTask, ExecutionResult } from "../engine/types.js";
+import type { IResilientExecutor } from "./executor.js";
 import type {
   RetryPolicy,
   CircuitBreaker,
@@ -18,16 +18,16 @@ import type {
   ExecutionAttempt,
   RetryAttemptHandler,
   CircuitOpenHandler,
-} from './types.js';
+} from "./types.js";
 
-import { CircuitBreakerManager } from './circuit-breaker.js';
+import { CircuitBreakerManager } from "./circuit-breaker.js";
 import {
   calculateBackoff,
   isRetryableResult,
   sleep,
   createAttempt,
-} from './retry.js';
-import { DEFAULT_RETRY_POLICY } from './types.js';
+} from "./retry.js";
+import { DEFAULT_RETRY_POLICY } from "./types.js";
 
 /**
  * ResilientExecutor - Main implementation of resilient task execution
@@ -100,7 +100,11 @@ export class ResilientExecutor implements IResilientExecutor {
     });
 
     // Attempt execution with retries
-    for (let attemptNumber = 1; attemptNumber <= retryPolicy.maxAttempts; attemptNumber++) {
+    for (
+      let attemptNumber = 1;
+      attemptNumber <= retryPolicy.maxAttempts;
+      attemptNumber++
+    ) {
       // Check circuit breaker before execution
       if (!this._circuitManager.canExecute(circuitBreakerName)) {
         // Call circuit open handlers
@@ -111,10 +115,10 @@ export class ResilientExecutor implements IResilientExecutor {
         // Return result indicating circuit breaker triggered
         const circuitOpenResult: ResilientExecutionResult = {
           taskId: task.id,
-          executionId: 'circuit-breaker-open',
+          executionId: "circuit-breaker-open",
           success: false,
           exitCode: -1,
-          output: '',
+          output: "",
           error: `Circuit breaker is open for ${circuitBreakerName}`,
           startedAt: new Date(),
           completedAt: new Date(),
@@ -122,7 +126,9 @@ export class ResilientExecutor implements IResilientExecutor {
           attempts: [],
           totalAttempts: 0,
           finalAttempt: createAttempt(0, false, {
-            error: new Error(`Circuit breaker is open for ${circuitBreakerName}`),
+            error: new Error(
+              `Circuit breaker is open for ${circuitBreakerName}`
+            ),
           }),
           circuitBreakerTriggered: true,
         };
@@ -160,10 +166,11 @@ export class ResilientExecutor implements IResilientExecutor {
 
         // Execution completed but failed - check if retryable
         const isRetryable = isRetryableResult(result, retryPolicy);
-        const willRetry = isRetryable && attemptNumber < retryPolicy.maxAttempts;
+        const willRetry =
+          isRetryable && attemptNumber < retryPolicy.maxAttempts;
 
         const failureAttempt = createAttempt(attemptNumber, false, {
-          error: new Error(result.error || 'Task failed'),
+          error: new Error(result.error || "Task failed"),
           exitCode: result.exitCode,
           duration: attemptDuration,
           willRetry,
@@ -193,7 +200,7 @@ export class ResilientExecutor implements IResilientExecutor {
         attempts.push(failureAttempt);
         this._circuitManager.recordFailure(
           circuitBreakerName,
-          new Error(result.error || 'Task failed')
+          new Error(result.error || "Task failed")
         );
 
         // Update metrics for failed retries
@@ -211,7 +218,8 @@ export class ResilientExecutor implements IResilientExecutor {
         const isRetryable = retryPolicy.retryableErrors.some((pattern) =>
           err.message.includes(pattern)
         );
-        const willRetry = isRetryable && attemptNumber < retryPolicy.maxAttempts;
+        const willRetry =
+          isRetryable && attemptNumber < retryPolicy.maxAttempts;
 
         const errorAttempt = createAttempt(attemptNumber, false, {
           error: err,
@@ -254,7 +262,7 @@ export class ResilientExecutor implements IResilientExecutor {
     }
 
     // Should never reach here, but TypeScript needs it
-    throw new Error('Unexpected state: exceeded max attempts without return');
+    throw new Error("Unexpected state: exceeded max attempts without return");
   }
 
   /**

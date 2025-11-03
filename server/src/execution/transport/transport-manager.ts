@@ -7,7 +7,7 @@
  * @module execution/transport/transport-manager
  */
 
-import type { AgUiEventAdapter } from '../output/ag-ui-adapter.js';
+import type { AgUiEventAdapter } from "../output/ag-ui-adapter.js";
 import type {
   RunStartedEvent,
   RunFinishedEvent,
@@ -21,8 +21,8 @@ import type {
   StateDeltaEvent,
   StateSnapshotEvent,
   CustomEvent,
-} from '@ag-ui/core';
-import { SseTransport } from './sse-transport.js';
+} from "@ag-ui/core";
+import { SseTransport } from "./sse-transport.js";
 
 /**
  * Union type for all AG-UI events

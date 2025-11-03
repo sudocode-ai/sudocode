@@ -461,6 +461,11 @@ export function useAgUiStream(options: UseAgUiStreamOptions): UseAgUiStreamRetur
     }
 
     const url = endpoint || `/api/executions/${executionId}/stream`
+    console.debug('[SSE]. Connecting to SSE stream', {
+      executionId,
+      url,
+      timestamp: new Date().toISOString(),
+    })
     setConnectionStatus('connecting')
     setError(null)
 
@@ -470,6 +475,10 @@ export function useAgUiStream(options: UseAgUiStreamOptions): UseAgUiStreamRetur
 
       // Connection established
       eventSource.onopen = () => {
+        console.debug('[SSE]. SSE connection established', {
+          executionId,
+          timestamp: new Date().toISOString(),
+        })
         setConnectionStatus('connected')
       }
 
@@ -487,6 +496,7 @@ export function useAgUiStream(options: UseAgUiStreamOptions): UseAgUiStreamRetur
         setError(new Error('SSE connection error'))
 
         if (reconnectOnError && reconnectTimeoutRef.current === null) {
+          console.debug('[SSE] Reconnecting in 3 seconds...')
           reconnectTimeoutRef.current = setTimeout(() => {
             reconnectTimeoutRef.current = null
             disconnect()
