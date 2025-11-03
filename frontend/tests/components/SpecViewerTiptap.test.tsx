@@ -49,7 +49,9 @@ describe('SpecViewerTiptap', () => {
       {
         id: 'fb1',
         issue_id: 'ISSUE-001',
+        issue_uuid: 'uuid-issue-001',
         spec_id: 'SPEC-001',
+        spec_uuid: 'uuid-spec-001',
         feedback_type: 'comment' as const,
         content: 'Test feedback',
         agent: 'Test Agent',

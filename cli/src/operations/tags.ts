@@ -2,8 +2,8 @@
  * Operations for Tags
  */
 
-import type Database from 'better-sqlite3';
-import type { Tag, EntityType } from '../types.js';
+import type Database from "better-sqlite3";
+import type { Tag, EntityType } from "../types.js";
 
 /**
  * Add a tag to an entity
@@ -14,19 +14,31 @@ export function addTag(
   entity_type: EntityType,
   tag: string
 ): Tag {
+  // Get entity UUID
+  const table = entity_type === "spec" ? "specs" : "issues";
+  const entity = db
+    .prepare(`SELECT uuid FROM ${table} WHERE id = ?`)
+    .get(entity_id) as { uuid: string } | undefined;
+
+  if (!entity) {
+    throw new Error(
+      `${entity_type === "spec" ? "Spec" : "Issue"} not found: ${entity_id}`
+    );
+  }
+
   const stmt = db.prepare(`
-    INSERT INTO tags (entity_id, entity_type, tag)
-    VALUES (@entity_id, @entity_type, @tag)
+    INSERT INTO tags (entity_id, entity_uuid, entity_type, tag)
+    VALUES (@entity_id, @entity_uuid, @entity_type, @tag)
   `);
 
   try {
-    stmt.run({ entity_id, entity_type, tag });
+    stmt.run({ entity_id, entity_uuid: entity.uuid, entity_type, tag });
 
-    return { entity_id, entity_type, tag };
+    return { entity_id, entity_uuid: entity.uuid, entity_type, tag };
   } catch (error: any) {
-    if (error.code && error.code.startsWith('SQLITE_CONSTRAINT')) {
+    if (error.code && error.code.startsWith("SQLITE_CONSTRAINT")) {
       // Tag already exists, return it
-      return { entity_id, entity_type, tag };
+      return { entity_id, entity_uuid: entity.uuid, entity_type, tag };
     }
     throw error;
   }
@@ -94,15 +106,15 @@ export function getEntitiesByTag(
   tag: string,
   entity_type?: EntityType
 ): Tag[] {
-  let query = 'SELECT * FROM tags WHERE tag = @tag';
+  let query = "SELECT * FROM tags WHERE tag = @tag";
   const params: Record<string, any> = { tag };
 
   if (entity_type !== undefined) {
-    query += ' AND entity_type = @entity_type';
+    query += " AND entity_type = @entity_type";
     params.entity_type = entity_type;
   }
 
-  query += ' ORDER BY entity_id';
+  query += " ORDER BY entity_id";
 
   const stmt = db.prepare(query);
   return stmt.all(params) as Tag[];
@@ -149,15 +161,15 @@ export function getAllTags(
   db: Database.Database,
   entity_type?: EntityType
 ): string[] {
-  let query = 'SELECT DISTINCT tag FROM tags';
+  let query = "SELECT DISTINCT tag FROM tags";
   const params: Record<string, any> = {};
 
   if (entity_type !== undefined) {
-    query += ' WHERE entity_type = @entity_type';
+    query += " WHERE entity_type = @entity_type";
     params.entity_type = entity_type;
   }
 
-  query += ' ORDER BY tag';
+  query += " ORDER BY tag";
 
   const stmt = db.prepare(query);
   const rows = stmt.all(params) as Array<{ tag: string }>;

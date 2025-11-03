@@ -139,9 +139,7 @@ export async function performInitialization(
         }
         if (result.collisions.length > 0) {
           console.log(
-            chalk.yellow(
-              `  Resolved ${result.collisions.length} ID collisions`
-            )
+            chalk.yellow(`  Resolved ${result.collisions.length} ID collisions`)
           );
         }
       }
@@ -161,8 +159,7 @@ export async function performInitialization(
   const gitignoreContent = `cache.db*
 issues/
 specs/
-worktrees/
-`;
+worktrees/`;
   fs.writeFileSync(path.join(dir, ".gitignore"), gitignoreContent, "utf8");
 
   database.close();

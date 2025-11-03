@@ -46,12 +46,14 @@ export function createSpec(
   db: Database.Database,
   input: CreateSpecInput
 ): Spec {
-  // Validate parent_id exists if provided
+  // Validate parent_id exists if provided and get parent_uuid
+  let parent_uuid: string | null = null;
   if (input.parent_id) {
     const parent = getSpec(db, input.parent_id);
     if (!parent) {
       throw new Error(`Parent spec not found: ${input.parent_id}`);
     }
+    parent_uuid = parent.uuid;
   }
 
   const uuid = input.uuid || generateUUID();
@@ -65,6 +67,7 @@ export function createSpec(
     "content",
     "priority",
     "parent_id",
+    "parent_uuid",
     "archived",
   ];
   const values = [
@@ -75,6 +78,7 @@ export function createSpec(
     "@content",
     "@priority",
     "@parent_id",
+    "@parent_uuid",
     "@archived",
   ];
 
@@ -104,6 +108,7 @@ export function createSpec(
       content = excluded.content,
       priority = excluded.priority,
       parent_id = excluded.parent_id,
+      parent_uuid = excluded.parent_uuid,
       archived = excluded.archived,
       archived_at = excluded.archived_at,
       ${input.created_at ? "created_at = excluded.created_at," : ""}
@@ -119,6 +124,7 @@ export function createSpec(
       content: input.content || "",
       priority: input.priority ?? 2,
       parent_id: input.parent_id ?? null,
+      parent_uuid: parent_uuid,
       archived: input.archived ? 1 : 0,
     };
 

@@ -40,7 +40,9 @@ CREATE TABLE IF NOT EXISTS specs (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     parent_id TEXT,
-    FOREIGN KEY (parent_id) REFERENCES specs(id) ON DELETE SET NULL
+    parent_uuid TEXT,
+    FOREIGN KEY (parent_id) REFERENCES specs(id) ON DELETE SET NULL,
+    FOREIGN KEY (parent_uuid) REFERENCES specs(uuid) ON DELETE SET NULL
 );
 `;
 
@@ -59,15 +61,19 @@ CREATE TABLE IF NOT EXISTS issues (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     closed_at DATETIME,
     parent_id TEXT,
-    FOREIGN KEY (parent_id) REFERENCES issues(id) ON DELETE SET NULL
+    parent_uuid TEXT,
+    FOREIGN KEY (parent_id) REFERENCES issues(id) ON DELETE SET NULL,
+    FOREIGN KEY (parent_uuid) REFERENCES issues(uuid) ON DELETE SET NULL
 );
 `;
 
 export const RELATIONSHIPS_TABLE = `
 CREATE TABLE IF NOT EXISTS relationships (
     from_id TEXT NOT NULL,
+    from_uuid TEXT NOT NULL,
     from_type TEXT NOT NULL,
     to_id TEXT NOT NULL,
+    to_uuid TEXT NOT NULL,
     to_type TEXT NOT NULL,
     relationship_type TEXT NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -79,6 +85,7 @@ CREATE TABLE IF NOT EXISTS relationships (
 export const TAGS_TABLE = `
 CREATE TABLE IF NOT EXISTS tags (
     entity_id TEXT NOT NULL,
+    entity_uuid TEXT NOT NULL,
     entity_type TEXT NOT NULL,
     tag TEXT NOT NULL,
     PRIMARY KEY (entity_id, entity_type, tag)
@@ -89,6 +96,7 @@ export const EVENTS_TABLE = `
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_id TEXT NOT NULL,
+    entity_uuid TEXT NOT NULL,
     entity_type TEXT NOT NULL,
     event_type TEXT NOT NULL,
     actor TEXT NOT NULL,
@@ -105,7 +113,9 @@ export const ISSUE_FEEDBACK_TABLE = `
 CREATE TABLE IF NOT EXISTS issue_feedback (
     id TEXT PRIMARY KEY,
     issue_id TEXT NOT NULL,
+    issue_uuid TEXT NOT NULL,
     spec_id TEXT NOT NULL,
+    spec_uuid TEXT NOT NULL,
     feedback_type TEXT NOT NULL CHECK(feedback_type IN ('comment', 'suggestion', 'request')),
     content TEXT NOT NULL,
     agent TEXT,
@@ -114,7 +124,9 @@ CREATE TABLE IF NOT EXISTS issue_feedback (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
-    FOREIGN KEY (spec_id) REFERENCES specs(id) ON DELETE CASCADE
+    FOREIGN KEY (issue_uuid) REFERENCES issues(uuid) ON DELETE CASCADE,
+    FOREIGN KEY (spec_id) REFERENCES specs(id) ON DELETE CASCADE,
+    FOREIGN KEY (spec_uuid) REFERENCES specs(uuid) ON DELETE CASCADE
 );
 `;
 
@@ -122,6 +134,7 @@ export const EXECUTIONS_TABLE = `
 CREATE TABLE IF NOT EXISTS executions (
     id TEXT PRIMARY KEY,
     issue_id TEXT,
+    issue_uuid TEXT,
 
     -- Execution mode and configuration (SPEC-011 fields - nullable for legacy)
     mode TEXT CHECK(mode IN ('worktree', 'local')),
@@ -170,6 +183,7 @@ CREATE TABLE IF NOT EXISTS executions (
     step_config TEXT,
 
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL,
+    FOREIGN KEY (issue_uuid) REFERENCES issues(uuid) ON DELETE SET NULL,
     FOREIGN KEY (parent_execution_id) REFERENCES executions(id) ON DELETE SET NULL
 );
 `;
@@ -207,18 +221,22 @@ CREATE TABLE IF NOT EXISTS execution_logs (
  */
 
 export const SPECS_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_specs_uuid ON specs(uuid);
 CREATE INDEX IF NOT EXISTS idx_specs_priority ON specs(priority);
-CREATE INDEX IF NOT EXISTS idx_specs_parent ON specs(parent_id);
+CREATE INDEX IF NOT EXISTS idx_specs_parent_id ON specs(parent_id);
+CREATE INDEX IF NOT EXISTS idx_specs_parent_uuid ON specs(parent_uuid);
 CREATE INDEX IF NOT EXISTS idx_specs_archived ON specs(archived);
 CREATE INDEX IF NOT EXISTS idx_specs_created_at ON specs(created_at);
 CREATE INDEX IF NOT EXISTS idx_specs_updated_at ON specs(updated_at);
 `;
 
 export const ISSUES_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_issues_uuid ON issues(uuid);
 CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);
 CREATE INDEX IF NOT EXISTS idx_issues_priority ON issues(priority);
 CREATE INDEX IF NOT EXISTS idx_issues_assignee ON issues(assignee);
-CREATE INDEX IF NOT EXISTS idx_issues_parent ON issues(parent_id);
+CREATE INDEX IF NOT EXISTS idx_issues_parent_id ON issues(parent_id);
+CREATE INDEX IF NOT EXISTS idx_issues_parent_uuid ON issues(parent_uuid);
 CREATE INDEX IF NOT EXISTS idx_issues_archived ON issues(archived);
 CREATE INDEX IF NOT EXISTS idx_issues_created_at ON issues(created_at);
 CREATE INDEX IF NOT EXISTS idx_issues_updated_at ON issues(updated_at);
@@ -226,19 +244,23 @@ CREATE INDEX IF NOT EXISTS idx_issues_closed_at ON issues(closed_at);
 `;
 
 export const RELATIONSHIPS_INDEXES = `
-CREATE INDEX IF NOT EXISTS idx_rel_from ON relationships(from_id, from_type);
-CREATE INDEX IF NOT EXISTS idx_rel_to ON relationships(to_id, to_type);
+CREATE INDEX IF NOT EXISTS idx_rel_from_id ON relationships(from_id, from_type);
+CREATE INDEX IF NOT EXISTS idx_rel_from_uuid ON relationships(from_uuid, from_type);
+CREATE INDEX IF NOT EXISTS idx_rel_to_id ON relationships(to_id, to_type);
+CREATE INDEX IF NOT EXISTS idx_rel_to_uuid ON relationships(to_uuid, to_type);
 CREATE INDEX IF NOT EXISTS idx_rel_type ON relationships(relationship_type);
 CREATE INDEX IF NOT EXISTS idx_rel_created_at ON relationships(created_at);
 `;
 
 export const TAGS_INDEXES = `
-CREATE INDEX IF NOT EXISTS idx_tags_entity ON tags(entity_id, entity_type);
+CREATE INDEX IF NOT EXISTS idx_tags_entity_id ON tags(entity_id, entity_type);
+CREATE INDEX IF NOT EXISTS idx_tags_entity_uuid ON tags(entity_uuid, entity_type);
 CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
 `;
 
 export const EVENTS_INDEXES = `
-CREATE INDEX IF NOT EXISTS idx_events_entity ON events(entity_id, entity_type);
+CREATE INDEX IF NOT EXISTS idx_events_entity_id ON events(entity_id, entity_type);
+CREATE INDEX IF NOT EXISTS idx_events_entity_uuid ON events(entity_uuid, entity_type);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
 CREATE INDEX IF NOT EXISTS idx_events_actor ON events(actor);
 CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
@@ -246,8 +268,10 @@ CREATE INDEX IF NOT EXISTS idx_events_git_commit ON events(git_commit_sha);
 `;
 
 export const ISSUE_FEEDBACK_INDEXES = `
-CREATE INDEX IF NOT EXISTS idx_feedback_issue ON issue_feedback(issue_id);
-CREATE INDEX IF NOT EXISTS idx_feedback_spec ON issue_feedback(spec_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_issue_id ON issue_feedback(issue_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_issue_uuid ON issue_feedback(issue_uuid);
+CREATE INDEX IF NOT EXISTS idx_feedback_spec_id ON issue_feedback(spec_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_spec_uuid ON issue_feedback(spec_uuid);
 CREATE INDEX IF NOT EXISTS idx_feedback_dismissed ON issue_feedback(dismissed);
 CREATE INDEX IF NOT EXISTS idx_feedback_type ON issue_feedback(feedback_type);
 CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON issue_feedback(created_at);
@@ -255,6 +279,7 @@ CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON issue_feedback(created_at)
 
 export const EXECUTIONS_INDEXES = `
 CREATE INDEX IF NOT EXISTS idx_executions_issue_id ON executions(issue_id);
+CREATE INDEX IF NOT EXISTS idx_executions_issue_uuid ON executions(issue_uuid);
 CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
 CREATE INDEX IF NOT EXISTS idx_executions_session_id ON executions(session_id);
 CREATE INDEX IF NOT EXISTS idx_executions_parent ON executions(parent_execution_id);

@@ -13,6 +13,7 @@ export interface Spec {
   created_at: string;
   updated_at: string;
   parent_id?: string;
+  parent_uuid?: string;
 }
 
 export interface Issue {
@@ -29,6 +30,7 @@ export interface Issue {
   updated_at: string;
   closed_at?: string;
   parent_id?: string;
+  parent_uuid?: string;
 }
 
 export type IssueStatus =
@@ -40,8 +42,10 @@ export type IssueStatus =
 
 export interface Relationship {
   from_id: string;
+  from_uuid: string;
   from_type: EntityType;
   to_id: string;
+  to_uuid: string;
   to_type: EntityType;
   relationship_type: RelationshipType;
   created_at: string;
@@ -60,6 +64,7 @@ export type RelationshipType =
 
 export interface Tag {
   entity_id: string;
+  entity_uuid: string;
   entity_type: EntityType;
   tag: string;
 }
@@ -67,6 +72,7 @@ export interface Tag {
 export interface Event {
   id: number;
   entity_id: string;
+  entity_uuid: string;
   entity_type: EntityType;
   event_type: EventType;
   actor: string;
@@ -93,7 +99,9 @@ export type EventType =
 export interface IssueFeedback {
   id: string;
   issue_id: string;
+  issue_uuid: string;
   spec_id: string;
+  spec_uuid: string;
   feedback_type: FeedbackType;
   content: string;
   agent?: string;
@@ -215,7 +223,8 @@ export type ExecutionStatus = "running" | "completed" | "failed" | "stopped";
  */
 export interface Execution {
   id: string;
-  issue_id: string;
+  issue_id: string | null;
+  issue_uuid: string | null;
   agent_type: AgentType;
   status: ExecutionStatus;
 

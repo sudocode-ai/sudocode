@@ -53,12 +53,14 @@ export function createIssue(
   db: Database.Database,
   input: CreateIssueInput
 ): Issue {
-  // Validate parent_id exists if provided
+  // Validate parent_id exists if provided and get parent_uuid
+  let parent_uuid: string | null = null;
   if (input.parent_id) {
     const parent = getIssue(db, input.parent_id);
     if (!parent) {
       throw new Error(`Parent issue not found: ${input.parent_id}`);
     }
+    parent_uuid = parent.uuid;
   }
 
   const uuid = input.uuid || generateUUID();
@@ -73,6 +75,7 @@ export function createIssue(
     "priority",
     "assignee",
     "parent_id",
+    "parent_uuid",
     "archived",
   ];
   const values = [
@@ -84,6 +87,7 @@ export function createIssue(
     "@priority",
     "@assignee",
     "@parent_id",
+    "@parent_uuid",
     "@archived",
   ];
 
@@ -118,10 +122,11 @@ export function createIssue(
       priority = excluded.priority,
       assignee = excluded.assignee,
       parent_id = excluded.parent_id,
+      parent_uuid = excluded.parent_uuid,
       archived = excluded.archived,
       archived_at = excluded.archived_at,
-      ${input.created_at ? 'created_at = excluded.created_at,' : ''}
-      ${input.updated_at ? 'updated_at = excluded.updated_at' : 'updated_at = CURRENT_TIMESTAMP'}
+      ${input.created_at ? "created_at = excluded.created_at," : ""}
+      ${input.updated_at ? "updated_at = excluded.updated_at" : "updated_at = CURRENT_TIMESTAMP"}
   `);
 
   try {
@@ -134,6 +139,7 @@ export function createIssue(
       priority: input.priority ?? 2,
       assignee: input.assignee ?? null,
       parent_id: input.parent_id ?? null,
+      parent_uuid: parent_uuid,
       archived: input.archived ? 1 : 0,
     };
 
@@ -226,7 +232,10 @@ export function updateIssue(
       // Reopening - clear timestamp
       updates.push("closed_at = NULL");
     }
-  } else if (input.closed_at !== undefined && input.closed_at !== existing.closed_at) {
+  } else if (
+    input.closed_at !== undefined &&
+    input.closed_at !== existing.closed_at
+  ) {
     // closed_at provided without status change
     updates.push("closed_at = @closed_at");
     params.closed_at = input.closed_at;
@@ -243,7 +252,10 @@ export function updateIssue(
     updates.push("parent_id = @parent_id");
     params.parent_id = input.parent_id;
   }
-  if (input.archived !== undefined && (input.archived ? 1 : 0) !== (existing.archived as unknown as number)) {
+  if (
+    input.archived !== undefined &&
+    (input.archived ? 1 : 0) !== (existing.archived as unknown as number)
+  ) {
     updates.push("archived = @archived");
     params.archived = input.archived ? 1 : 0;
 
@@ -260,7 +272,10 @@ export function updateIssue(
       // Unarchiving - clear timestamp
       updates.push("archived_at = NULL");
     }
-  } else if (input.archived_at !== undefined && input.archived_at !== existing.archived_at) {
+  } else if (
+    input.archived_at !== undefined &&
+    input.archived_at !== existing.archived_at
+  ) {
     // archived_at provided without archived change
     updates.push("archived_at = @archived_at");
     params.archived_at = input.archived_at;
@@ -291,7 +306,7 @@ export function updateIssue(
     }
 
     // If status changed to 'closed', update any dependent blocked issues
-    if (input.status === 'closed' && existing.status !== 'closed') {
+    if (input.status === "closed" && existing.status !== "closed") {
       updateDependentBlockedIssues(db, id);
     }
 
@@ -317,8 +332,8 @@ function updateDependentBlockedIssues(
   const dependentRelationships = getIncomingRelationships(
     db,
     closedIssueId,
-    'issue',
-    'blocks'
+    "issue",
+    "blocks"
   );
 
   for (const rel of dependentRelationships) {
@@ -326,7 +341,7 @@ function updateDependentBlockedIssues(
     const blockedIssue = getIssue(db, blockedIssueId);
 
     // Only update if the issue is currently marked as 'blocked'
-    if (!blockedIssue || blockedIssue.status !== 'blocked') {
+    if (!blockedIssue || blockedIssue.status !== "blocked") {
       continue;
     }
 
@@ -361,7 +376,7 @@ function hasOpenBlockers(
       AND r.from_type = 'issue'
       AND r.relationship_type = 'blocks'
       AND blocker.status IN ('open', 'in_progress', 'blocked')
-      ${excludeBlockerId ? 'AND blocker.id != ?' : ''}
+      ${excludeBlockerId ? "AND blocker.id != ?" : ""}
   `);
 
   const params = excludeBlockerId ? [issueId, excludeBlockerId] : [issueId];
@@ -470,9 +485,7 @@ export function searchIssues(
   query: string,
   options: Omit<ListIssuesOptions, "offset"> = {}
 ): Issue[] {
-  const conditions: string[] = [
-    "(title LIKE @query OR content LIKE @query)",
-  ];
+  const conditions: string[] = ["(title LIKE @query OR content LIKE @query)"];
   const params: Record<string, any> = { query: `%${query}%` };
 
   if (options.status !== undefined) {

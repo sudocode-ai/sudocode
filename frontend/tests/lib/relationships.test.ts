@@ -68,8 +68,10 @@ describe('relationships utilities', () => {
     const mockRelationships: Relationship[] = [
       {
         from_id: 'ISSUE-001',
+        from_uuid: 'uuid-issue-001',
         from_type: 'issue',
         to_id: 'SPEC-001',
+        to_uuid: 'uuid-spec-001',
         to_type: 'spec',
         relationship_type: 'implements' as RelationshipType,
         created_at: '2024-01-01T00:00:00Z',
@@ -77,8 +79,10 @@ describe('relationships utilities', () => {
       },
       {
         from_id: 'ISSUE-002',
+        from_uuid: 'uuid-issue-002',
         from_type: 'issue',
         to_id: 'ISSUE-001',
+        to_uuid: 'uuid-issue-001',
         to_type: 'issue',
         relationship_type: 'blocks' as RelationshipType,
         created_at: '2024-01-01T00:00:00Z',
@@ -86,8 +90,10 @@ describe('relationships utilities', () => {
       },
       {
         from_id: 'ISSUE-001',
+        from_uuid: 'uuid-issue-001',
         from_type: 'issue',
         to_id: 'ISSUE-003',
+        to_uuid: 'uuid-issue-003',
         to_type: 'issue',
         relationship_type: 'related' as RelationshipType,
         created_at: '2024-01-01T00:00:00Z',

@@ -76,11 +76,22 @@ export function createFeedback(
   const anchorJson = input.anchor ? JSON.stringify(input.anchor) : null;
   const agent = input.agent || "user";
 
+  // Get issue_uuid and spec_uuid
+  const issue = db.prepare(`SELECT uuid FROM issues WHERE id = ?`).get(input.issue_id) as { uuid: string } | undefined;
+  if (!issue) {
+    throw new Error(`Issue not found: ${input.issue_id}`);
+  }
+
+  const spec = db.prepare(`SELECT uuid FROM specs WHERE id = ?`).get(input.spec_id) as { uuid: string } | undefined;
+  if (!spec) {
+    throw new Error(`Spec not found: ${input.spec_id}`);
+  }
+
   const stmt = db.prepare(`
     INSERT INTO issue_feedback (
-      id, issue_id, spec_id, feedback_type, content, agent, anchor, dismissed
+      id, issue_id, issue_uuid, spec_id, spec_uuid, feedback_type, content, agent, anchor, dismissed
     ) VALUES (
-      @id, @issue_id, @spec_id, @feedback_type, @content, @agent, @anchor, @dismissed
+      @id, @issue_id, @issue_uuid, @spec_id, @spec_uuid, @feedback_type, @content, @agent, @anchor, @dismissed
     )
   `);
 
@@ -88,7 +99,9 @@ export function createFeedback(
     stmt.run({
       id,
       issue_id: input.issue_id,
+      issue_uuid: issue.uuid,
       spec_id: input.spec_id,
+      spec_uuid: spec.uuid,
       feedback_type: input.feedback_type,
       content: input.content,
       agent: agent,

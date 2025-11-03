@@ -474,10 +474,15 @@ export class ExecutionService {
       }
     }
 
-    // 2. Prepare execution to get rendered prompt
+    // 2. Validate that previous execution has an issue_id
+    if (!prevExecution.issue_id) {
+      throw new Error("Previous execution must have an issue_id for follow-up");
+    }
+
+    // 3. Prepare execution to get rendered prompt
     const prepareResult = await this.prepareExecution(prevExecution.issue_id);
 
-    // 3. Append feedback to prompt
+    // 4. Append feedback to prompt
     const followUpPrompt = `${prepareResult.renderedPrompt}
 
 ## Follow-up Feedback
@@ -485,7 +490,7 @@ ${feedback}
 
 Please continue working on this issue, taking into account the feedback above.`;
 
-    // 4. Create new execution record that references previous execution
+    // 5. Create new execution record that references previous execution
     const newExecutionId = randomUUID();
     const newExecution = createExecution(this.db, {
       id: newExecutionId,

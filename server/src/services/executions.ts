@@ -10,16 +10,16 @@ import { randomUUID } from "crypto";
  * Input for creating a new execution
  */
 export interface CreateExecutionInput {
-  id?: string;                 // Optional, auto-generated if not provided
-  issue_id: string;
+  id?: string; // Optional, auto-generated if not provided
+  issue_id: string | null; // Optional, can be null for executions not tied to an issue
   agent_type: AgentType;
-  mode?: string;               // Execution mode ('worktree' | 'local')
-  prompt?: string;             // Rendered prompt
-  config?: string;             // JSON string of execution configuration
+  mode?: string; // Execution mode ('worktree' | 'local')
+  prompt?: string; // Rendered prompt
+  config?: string; // JSON string of execution configuration
   before_commit?: string;
-  target_branch: string;      // Required for worktree integration
-  branch_name: string;         // Required for worktree integration
-  worktree_path?: string;      // Optional, set after worktree creation
+  target_branch: string; // Required for worktree integration
+  branch_name: string; // Required for worktree integration
+  worktree_path?: string; // Optional, set after worktree creation
 }
 
 /**
@@ -47,10 +47,22 @@ export function createExecution(
   const id = input.id || randomUUID();
   const now = Math.floor(Date.now() / 1000);
 
+  // Get issue_uuid if issue_id is provided
+  let issue_uuid: string | null = null;
+  if (input.issue_id) {
+    const issue = db
+      .prepare(`SELECT uuid FROM issues WHERE id = ?`)
+      .get(input.issue_id) as { uuid: string } | undefined;
+    if (issue) {
+      issue_uuid = issue.uuid;
+    }
+  }
+
   const stmt = db.prepare(`
     INSERT INTO executions (
       id,
       issue_id,
+      issue_uuid,
       agent_type,
       mode,
       prompt,
@@ -63,12 +75,13 @@ export function createExecution(
       worktree_path,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
     id,
     input.issue_id,
+    issue_uuid,
     input.agent_type,
     input.mode || null,
     input.prompt || null,
@@ -213,10 +226,7 @@ export function updateExecution(
 /**
  * Delete an execution
  */
-export function deleteExecution(
-  db: Database.Database,
-  id: string
-): boolean {
+export function deleteExecution(db: Database.Database, id: string): boolean {
   const stmt = db.prepare(`
     DELETE FROM executions WHERE id = ?
   `);

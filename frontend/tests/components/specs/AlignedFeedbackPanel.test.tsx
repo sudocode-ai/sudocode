@@ -18,7 +18,9 @@ describe('AlignedFeedbackPanel', () => {
   const createMockFeedback = (overrides: Partial<IssueFeedback> = {}): IssueFeedback => ({
     id: 'FB-001',
     issue_id: 'ISSUE-001',
+    issue_uuid: 'uuid-issue-001',
     spec_id: 'SPEC-001',
+    spec_uuid: 'uuid-spec-001',
     feedback_type: 'comment',
     content: 'Test feedback',
     created_at: '2024-01-01T00:00:00Z',

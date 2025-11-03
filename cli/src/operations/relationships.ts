@@ -2,9 +2,9 @@
  * Operations for Relationships
  */
 
-import type Database from 'better-sqlite3';
-import type { Relationship, EntityType, RelationshipType } from '../types.js';
-import { getIssue } from './issues.js';
+import type Database from "better-sqlite3";
+import type { Relationship, EntityType, RelationshipType } from "../types.js";
+import { getIssue } from "./issues.js";
 
 export interface CreateRelationshipInput {
   from_id: string;
@@ -22,18 +22,26 @@ export function addRelationship(
   db: Database.Database,
   input: CreateRelationshipInput
 ): Relationship {
-  // Check if from_id exists
-  const fromTable = input.from_type === 'spec' ? 'specs' : 'issues';
-  const fromExists = db.prepare(`SELECT 1 FROM ${fromTable} WHERE id = ?`).get(input.from_id);
-  if (!fromExists) {
-    throw new Error(`${input.from_type === 'spec' ? 'Spec' : 'Issue'} not found: ${input.from_id}`);
+  // Check if from_id exists and get from_uuid
+  const fromTable = input.from_type === "spec" ? "specs" : "issues";
+  const fromEntity = db
+    .prepare(`SELECT id, uuid FROM ${fromTable} WHERE id = ?`)
+    .get(input.from_id) as { id: string; uuid: string } | undefined;
+  if (!fromEntity) {
+    throw new Error(
+      `${input.from_type === "spec" ? "Spec" : "Issue"} not found: ${input.from_id}`
+    );
   }
 
-  // Check if to_id exists
-  const toTable = input.to_type === 'spec' ? 'specs' : 'issues';
-  const toExists = db.prepare(`SELECT 1 FROM ${toTable} WHERE id = ?`).get(input.to_id);
-  if (!toExists) {
-    throw new Error(`${input.to_type === 'spec' ? 'Spec' : 'Issue'} not found: ${input.to_id}`);
+  // Check if to_id exists and get to_uuid
+  const toTable = input.to_type === "spec" ? "specs" : "issues";
+  const toEntity = db
+    .prepare(`SELECT id, uuid FROM ${toTable} WHERE id = ?`)
+    .get(input.to_id) as { id: string; uuid: string } | undefined;
+  if (!toEntity) {
+    throw new Error(
+      `${input.to_type === "spec" ? "Spec" : "Issue"} not found: ${input.to_id}`
+    );
   }
 
   // Check if relationship already exists
@@ -52,17 +60,19 @@ export function addRelationship(
 
   const stmt = db.prepare(`
     INSERT INTO relationships (
-      from_id, from_type, to_id, to_type, relationship_type, metadata
+      from_id, from_uuid, from_type, to_id, to_uuid, to_type, relationship_type, metadata
     ) VALUES (
-      @from_id, @from_type, @to_id, @to_type, @relationship_type, @metadata
+      @from_id, @from_uuid, @from_type, @to_id, @to_uuid, @to_type, @relationship_type, @metadata
     )
   `);
 
   try {
     stmt.run({
       from_id: input.from_id,
+      from_uuid: fromEntity.uuid,
       from_type: input.from_type,
       to_id: input.to_id,
+      to_uuid: toEntity.uuid,
       to_type: input.to_type,
       relationship_type: input.relationship_type,
       metadata: input.metadata ?? null,
@@ -78,17 +88,21 @@ export function addRelationship(
     );
 
     if (!rel) {
-      throw new Error('Failed to create relationship');
+      throw new Error("Failed to create relationship");
     }
 
     // Auto-update blocked status when adding a 'blocks' relationship
-    if (input.relationship_type === 'blocks' && input.from_type === 'issue' && input.to_type === 'issue') {
+    if (
+      input.relationship_type === "blocks" &&
+      input.from_type === "issue" &&
+      input.to_type === "issue"
+    ) {
       autoUpdateBlockedStatusOnAdd(db, input.from_id, input.to_id);
     }
 
     return rel;
   } catch (error: any) {
-    if (error.code && error.code.startsWith('SQLITE_CONSTRAINT')) {
+    if (error.code && error.code.startsWith("SQLITE_CONSTRAINT")) {
       throw new Error(
         `Relationship already exists: ${input.from_id} (${input.from_type}) --[${input.relationship_type}]--> ${input.to_id} (${input.to_type})`
       );
@@ -108,11 +122,14 @@ function autoUpdateBlockedStatusOnAdd(
   const blockerIssue = getIssue(db, blockerIssueId);
 
   // Only set to 'blocked' if the blocker is not closed
-  if (blockerIssue && blockerIssue.status !== 'closed') {
+  if (blockerIssue && blockerIssue.status !== "closed") {
     const blockedIssue = getIssue(db, blockedIssueId);
 
     // Only update if currently open or in_progress (don't override other statuses)
-    if (blockedIssue && (blockedIssue.status === 'open' || blockedIssue.status === 'in_progress')) {
+    if (
+      blockedIssue &&
+      (blockedIssue.status === "open" || blockedIssue.status === "in_progress")
+    ) {
       const updateStmt = db.prepare(`
         UPDATE issues
         SET status = 'blocked', updated_at = CURRENT_TIMESTAMP
@@ -141,7 +158,11 @@ export function getRelationship(
       AND relationship_type = ?
   `);
 
-  return (stmt.get(from_id, from_type, to_id, to_type, relationship_type) as Relationship | undefined) ?? null;
+  return (
+    (stmt.get(from_id, from_type, to_id, to_type, relationship_type) as
+      | Relationship
+      | undefined) ?? null
+  );
 }
 
 /**
@@ -162,11 +183,22 @@ export function removeRelationship(
       AND relationship_type = ?
   `);
 
-  const result = stmt.run(from_id, from_type, to_id, to_type, relationship_type);
+  const result = stmt.run(
+    from_id,
+    from_type,
+    to_id,
+    to_type,
+    relationship_type
+  );
   const removed = result.changes > 0;
 
   // Auto-update blocked status when removing a 'blocks' relationship
-  if (removed && relationship_type === 'blocks' && from_type === 'issue' && to_type === 'issue') {
+  if (
+    removed &&
+    relationship_type === "blocks" &&
+    from_type === "issue" &&
+    to_type === "issue"
+  ) {
     autoUpdateBlockedStatusOnRemove(db, from_id);
   }
 
@@ -183,7 +215,7 @@ function autoUpdateBlockedStatusOnRemove(
   const blockedIssue = getIssue(db, blockedIssueId);
 
   // Only unblock if currently blocked
-  if (blockedIssue && blockedIssue.status === 'blocked') {
+  if (blockedIssue && blockedIssue.status === "blocked") {
     // Check if there are any other open blockers
     const hasOtherBlockers = hasOpenBlockers(db, blockedIssueId);
 
@@ -202,10 +234,7 @@ function autoUpdateBlockedStatusOnRemove(
 /**
  * Check if an issue has any open blockers
  */
-function hasOpenBlockers(
-  db: Database.Database,
-  issueId: string
-): boolean {
+function hasOpenBlockers(db: Database.Database, issueId: string): boolean {
   const stmt = db.prepare(`
     SELECT COUNT(*) as count
     FROM relationships r
@@ -240,11 +269,11 @@ export function getOutgoingRelationships(
   };
 
   if (relationship_type !== undefined) {
-    query += ' AND relationship_type = @relationship_type';
+    query += " AND relationship_type = @relationship_type";
     params.relationship_type = relationship_type;
   }
 
-  query += ' ORDER BY created_at DESC';
+  query += " ORDER BY created_at DESC";
 
   const stmt = db.prepare(query);
   return stmt.all(params) as Relationship[];
@@ -270,11 +299,11 @@ export function getIncomingRelationships(
   };
 
   if (relationship_type !== undefined) {
-    query += ' AND relationship_type = @relationship_type';
+    query += " AND relationship_type = @relationship_type";
     params.relationship_type = relationship_type;
   }
 
-  query += ' ORDER BY created_at DESC';
+  query += " ORDER BY created_at DESC";
 
   const stmt = db.prepare(query);
   return stmt.all(params) as Relationship[];
@@ -288,7 +317,7 @@ export function getDependencies(
   entity_id: string,
   entity_type: EntityType
 ): Relationship[] {
-  return getOutgoingRelationships(db, entity_id, entity_type, 'blocks');
+  return getOutgoingRelationships(db, entity_id, entity_type, "blocks");
 }
 
 /**
@@ -299,7 +328,7 @@ export function getDependents(
   entity_id: string,
   entity_type: EntityType
 ): Relationship[] {
-  return getIncomingRelationships(db, entity_id, entity_type, 'blocks');
+  return getIncomingRelationships(db, entity_id, entity_type, "blocks");
 }
 
 /**
@@ -327,7 +356,14 @@ export function relationshipExists(
   to_type: EntityType,
   relationship_type: RelationshipType
 ): boolean {
-  const rel = getRelationship(db, from_id, from_type, to_id, to_type, relationship_type);
+  const rel = getRelationship(
+    db,
+    from_id,
+    from_type,
+    to_id,
+    to_type,
+    relationship_type
+  );
   return rel !== null;
 }
 
