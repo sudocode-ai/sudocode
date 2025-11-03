@@ -498,7 +498,9 @@ Please continue working on this issue, taking into account the feedback above.`;
       agent_type: "claude-code",
       target_branch: prevExecution.target_branch,
       branch_name: prevExecution.branch_name,
+      // TODO: Handle case where worktree has been deleted.
       worktree_path: prevExecution.worktree_path, // Reuse same worktree
+      config: prevExecution.config || undefined, // Preserve config (including cleanupMode) from previous execution
     });
 
     // 5. Build WorkflowDefinition
