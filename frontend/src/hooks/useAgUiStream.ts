@@ -452,6 +452,7 @@ export function useAgUiStream(options: UseAgUiStreamOptions): UseAgUiStreamRetur
   const connect = useCallback(() => {
     // Don't reconnect if we've intentionally disconnected after completion
     if (shouldStayDisconnected.current) {
+      console.debug('[SSE] Skipping connection - execution already completed')
       return
     }
 
@@ -620,9 +621,19 @@ export function useAgUiStream(options: UseAgUiStreamOptions): UseAgUiStreamRetur
 
     // Cleanup on unmount
     return () => {
-      disconnect()
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
+
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close()
+        eventSourceRef.current = null
+        setConnectionStatus('disconnected')
+      }
     }
-  }, [autoConnect, connect, disconnect])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoConnect, executionId])
 
   return {
     connectionStatus,
