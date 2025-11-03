@@ -10,10 +10,10 @@ import {
   Loader2,
   XCircle,
   CheckCircle2,
-  Clock,
   AlertCircle,
   MessageSquarePlus,
   X,
+  Trash2,
 } from 'lucide-react'
 
 export interface ExecutionViewProps {
@@ -40,6 +40,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
   const [error, setError] = useState<string | null>(null)
   const [showFollowUp, setShowFollowUp] = useState(false)
   const [cancelling, setCancelling] = useState(false)
+  const [deletingWorktree, setDeletingWorktree] = useState(false)
 
   // Load execution metadata
   useEffect(() => {
@@ -97,19 +98,34 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
     }
   }
 
+  // Handle delete worktree action
+  const handleDeleteWorktree = async () => {
+    if (!execution || !execution.worktreePath) return
+
+    const confirmed = window.confirm(
+      'Are you sure you want to delete the worktree? This action cannot be undone.\n\n' +
+        `Worktree path: ${execution.worktreePath}`
+    )
+
+    if (!confirmed) return
+
+    setDeletingWorktree(true)
+    try {
+      await executionsApi.deleteWorktree(executionId)
+      // Reload execution to reflect changes
+      const data = await executionsApi.getById(executionId)
+      setExecution(data)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete worktree')
+    } finally {
+      setDeletingWorktree(false)
+    }
+  }
+
   // Render status badge
   const renderStatusBadge = (status: Execution['status']) => {
     switch (status) {
-      case 'preparing':
-      case 'pending':
-        return (
-          <Badge variant="secondary" className="flex items-center gap-1">
-            <Clock className="h-3 w-3" />
-            {status.charAt(0).toUpperCase() + status.slice(1)}
-          </Badge>
-        )
       case 'running':
-      case 'paused':
         return (
           <Badge variant="default" className="flex items-center gap-1">
             <Loader2 className="h-3 w-3 animate-spin" />
@@ -130,11 +146,11 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
             Failed
           </Badge>
         )
-      case 'cancelled':
+      case 'stopped':
         return (
           <Badge variant="outline" className="flex items-center gap-1">
             <X className="h-3 w-3" />
-            Cancelled
+            Stopped
           </Badge>
         )
       default:
@@ -164,25 +180,30 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
     return (
       <Card className="p-6">
         <div className="flex items-start gap-2 text-destructive">
-          <XCircle className="h-5 w-5 mt-0.5" />
+          <XCircle className="mt-0.5 h-5 w-5" />
           <div>
             <h4 className="font-semibold">Error Loading Execution</h4>
-            <p className="text-sm mt-1">{error || 'Execution not found'}</p>
+            <p className="mt-1 text-sm">{error || 'Execution not found'}</p>
           </div>
         </div>
       </Card>
     )
   }
 
-  const canCancel = execution.status === 'running' || execution.status === 'pending'
-  const canFollowUp = execution.status === 'completed' || execution.status === 'failed'
+  const canCancel = execution.status === 'running'
+  const canFollowUp =
+    execution.status === 'completed' ||
+    execution.status === 'failed' ||
+    execution.status === 'stopped'
+  // TODO: Check if the worktree is still present before allowing deletion.
+  const canDeleteWorktree = execution.worktreePath && execution.status !== 'running'
 
   return (
     <div className="space-y-4">
       {/* Execution Header */}
       <Card className="p-6">
         <div className="flex items-start justify-between">
-          <div className="space-y-3 flex-1">
+          <div className="flex-1 space-y-3">
             {/* Title and Status */}
             <div className="flex items-center gap-3">
               <h2 className="text-xl font-semibold">Execution</h2>
@@ -254,12 +275,12 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
 
             {/* Error message */}
             {execution.error && (
-              <div className="rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm">
+              <div className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm">
                 <div className="flex items-start gap-2">
-                  <XCircle className="h-4 w-4 text-destructive mt-0.5" />
+                  <XCircle className="mt-0.5 h-4 w-4 text-destructive" />
                   <div>
                     <h5 className="font-medium text-destructive">Execution Error</h5>
-                    <p className="text-destructive/90 mt-1">{execution.error}</p>
+                    <p className="mt-1 text-destructive/90">{execution.error}</p>
                   </div>
                 </div>
               </div>
@@ -267,35 +288,46 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-2 ml-4">
+          <div className="ml-4 flex gap-2">
             {canCancel && (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleCancel}
-                disabled={cancelling}
-              >
+              <Button variant="destructive" size="sm" onClick={handleCancel} disabled={cancelling}>
                 {cancelling ? (
                   <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Cancelling...
                   </>
                 ) : (
                   <>
-                    <X className="h-4 w-4 mr-2" />
+                    <X className="mr-2 h-4 w-4" />
                     Cancel
                   </>
                 )}
               </Button>
             )}
             {canFollowUp && (
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => setShowFollowUp(true)}
-              >
-                <MessageSquarePlus className="h-4 w-4 mr-2" />
+              <Button variant="default" size="sm" onClick={() => setShowFollowUp(true)}>
+                <MessageSquarePlus className="mr-2 h-4 w-4" />
                 Follow Up
+              </Button>
+            )}
+            {canDeleteWorktree && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDeleteWorktree}
+                disabled={deletingWorktree}
+              >
+                {deletingWorktree ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete Worktree
+                  </>
+                )}
               </Button>
             )}
           </div>
@@ -304,7 +336,6 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
 
       {/* Real-time Execution Monitor */}
       {(execution.status === 'running' ||
-        execution.status === 'pending' ||
         execution.status === 'completed' ||
         execution.status === 'failed') && (
         <ExecutionMonitor

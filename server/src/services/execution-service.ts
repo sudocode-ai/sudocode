@@ -677,6 +677,44 @@ Please continue working on this issue, taking into account the feedback above.`;
   }
 
   /**
+   * Delete worktree for an execution
+   *
+   * Manually deletes the worktree for a specific execution, regardless of
+   * cleanupMode configuration. This allows users to manually cleanup worktrees
+   * when they're configured for manual cleanup.
+   *
+   * @param executionId - ID of execution whose worktree to delete
+   * @throws Error if execution not found or has no worktree
+   */
+  async deleteWorktree(executionId: string): Promise<void> {
+    const execution = getExecution(this.db, executionId);
+    if (!execution) {
+      throw new Error(`Execution ${executionId} not found`);
+    }
+
+    if (!execution.worktree_path) {
+      throw new Error(`Execution ${executionId} has no worktree to delete`);
+    }
+
+    // Check if execution is still running
+    // TODO: Cancel the execution regardless of status.
+    if (execution.status === "running") {
+      throw new Error(
+        `Cannot delete worktree for ${execution.status} execution. Cancel the execution first.`
+      );
+    }
+
+    // Get worktree manager from lifecycle service
+    const worktreeManager = (this.lifecycleService as any).worktreeManager;
+
+    // Clean up the worktree
+    await worktreeManager.cleanupWorktree(
+      execution.worktree_path,
+      this.repoPath
+    );
+  }
+
+  /**
    * Shutdown execution service - cancel all active executions
    *
    * This is called during server shutdown to gracefully terminate

@@ -141,10 +141,13 @@ export const executionsApi = {
 
   // Create follow-up execution
   createFollowUp: (executionId: string, request: CreateFollowUpRequest) =>
-    post<Execution>(`/executions/${executionId}/followup`, request),
+    post<Execution>(`/executions/${executionId}/follow-up`, request),
 
   // Cancel execution
   cancel: (executionId: string) => del(`/executions/${executionId}`),
+
+  // Delete worktree for execution
+  deleteWorktree: (executionId: string) => del(`/executions/${executionId}/worktree`),
 }
 
 export default api

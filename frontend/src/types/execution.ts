@@ -15,14 +15,10 @@ export type ExecutionMode =
  * Execution status - lifecycle state
  */
 export type ExecutionStatus =
-  | 'preparing' // Template being prepared
-  | 'pending' // Created, not yet started
   | 'running' // Agent executing
-  | 'paused' // Execution paused (awaiting follow-up)
   | 'completed' // Successfully finished
   | 'failed' // Execution failed
-  | 'cancelled' // User cancelled
-
+  | 'stopped' // User stopped
 /**
  * Cleanup mode - when to cleanup worktree
  */

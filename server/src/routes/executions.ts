@@ -256,5 +256,50 @@ export function createExecutionsRouter(
     }
   );
 
+  /**
+   * DELETE /api/executions/:executionId/worktree
+   *
+   * Delete the worktree for an execution
+   */
+  router.delete(
+    "/executions/:executionId/worktree",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+
+        await service.deleteWorktree(executionId);
+
+        res.json({
+          success: true,
+          data: { executionId },
+          message: "Worktree deleted successfully",
+        });
+      } catch (error) {
+        console.error("Error deleting worktree:", error);
+
+        // Handle specific error cases
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        let statusCode = 500;
+
+        if (errorMessage.includes("not found")) {
+          statusCode = 404;
+        } else if (
+          errorMessage.includes("has no worktree") ||
+          errorMessage.includes("Cannot delete worktree")
+        ) {
+          statusCode = 400;
+        }
+
+        res.status(statusCode).json({
+          success: false,
+          data: null,
+          error_data: errorMessage,
+          message: "Failed to delete worktree",
+        });
+      }
+    }
+  );
+
   return router;
 }

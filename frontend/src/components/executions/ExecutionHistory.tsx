@@ -1,13 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  Clock,
-  PauseCircle,
-  StopCircle,
-} from 'lucide-react'
+import { CheckCircle2, XCircle, Loader2, Clock, StopCircle } from 'lucide-react'
 import { executionsApi } from '@/lib/api'
 import type { Execution, ExecutionStatus } from '@/types/execution'
 import { Badge } from '@/components/ui/badge'
@@ -19,27 +12,16 @@ interface ExecutionHistoryProps {
 
 const STATUS_CONFIG: Record<
   ExecutionStatus,
-  { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: React.ReactNode }
+  {
+    label: string
+    variant: 'default' | 'secondary' | 'destructive' | 'outline'
+    icon: React.ReactNode
+  }
 > = {
-  preparing: {
-    label: 'Preparing',
-    variant: 'secondary',
-    icon: <Clock className="h-3 w-3" />,
-  },
-  pending: {
-    label: 'Pending',
-    variant: 'secondary',
-    icon: <Clock className="h-3 w-3" />,
-  },
   running: {
     label: 'Running',
     variant: 'default',
     icon: <Loader2 className="h-3 w-3 animate-spin" />,
-  },
-  paused: {
-    label: 'Paused',
-    variant: 'outline',
-    icon: <PauseCircle className="h-3 w-3" />,
   },
   completed: {
     label: 'Completed',
@@ -51,8 +33,8 @@ const STATUS_CONFIG: Record<
     variant: 'destructive',
     icon: <XCircle className="h-3 w-3" />,
   },
-  cancelled: {
-    label: 'Cancelled',
+  stopped: {
+    label: 'Stopped',
     variant: 'secondary',
     icon: <StopCircle className="h-3 w-3" />,
   },
@@ -113,9 +95,7 @@ export function ExecutionHistory({ issueId }: ExecutionHistoryProps) {
     return (
       <div className="space-y-2">
         <h3 className="text-sm font-medium text-muted-foreground">Execution History</h3>
-        <div className="py-4 text-center text-sm text-muted-foreground">
-          Loading executions...
-        </div>
+        <div className="py-4 text-center text-sm text-muted-foreground">Loading executions...</div>
       </div>
     )
   }
@@ -154,7 +134,11 @@ export function ExecutionHistory({ issueId }: ExecutionHistoryProps) {
 
       <div className="space-y-2">
         {executions.map((execution) => {
-          const statusConfig = STATUS_CONFIG[execution.status]
+          const statusConfig = STATUS_CONFIG[execution.status] || {
+            label: execution.status,
+            variant: 'outline' as const,
+            icon: <Clock className="h-3 w-3" />,
+          }
           const timestamp = execution.completedAt || execution.startedAt || execution.createdAt
 
           return (
@@ -166,7 +150,7 @@ export function ExecutionHistory({ issueId }: ExecutionHistoryProps) {
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 space-y-1">
                   <div className="flex items-center gap-2">
-                    <code className="text-xs font-mono text-muted-foreground">
+                    <code className="font-mono text-xs text-muted-foreground">
                       {truncateId(execution.id)}
                     </code>
                     <Badge variant={statusConfig.variant} className="gap-1">
@@ -184,7 +168,7 @@ export function ExecutionHistory({ issueId }: ExecutionHistoryProps) {
                   </div>
 
                   {execution.error && (
-                    <div className="text-xs text-destructive line-clamp-1">
+                    <div className="line-clamp-1 text-xs text-destructive">
                       Error: {execution.error}
                     </div>
                   )}
