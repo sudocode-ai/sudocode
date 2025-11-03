@@ -19,10 +19,28 @@
     "sudocode",
     "cli",
     "specs",
-    "issues"
+    "issues",
+    "ai-assisted-development",
+    "git-native",
+    "project-management"
   ],
-  "author": "",
+  "author": "sudocode AI",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sudocode-ai/sudocode.git",
+    "directory": "cli"
+  },
+  "homepage": "https://sudocode.ai",
+  "bugs": {
+    "url": "https://github.com/sudocode-ai/sudocode/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "@sudocode/types": "^0.1.0",
     "better-sqlite3": "^11.8.1",

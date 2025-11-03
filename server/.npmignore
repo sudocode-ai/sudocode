@@ -1,0 +1,38 @@
+# Source files (we only publish dist/)
+src/
+
+# Source control
+.git
+.gitignore
+
+# Tests
+tests/
+*.test.ts
+*.test.js
+*.spec.ts
+*.spec.js
+
+# Build tools
+tsconfig.json
+tsconfig.*.json
+
+# Development
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.env
+.env.*
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test databases
+*.db
+*.db-journal

@@ -20,6 +20,18 @@
   "keywords": ["sudocode", "types", "typescript"],
   "author": "sudocode AI",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sudocode-ai/sudocode.git",
+    "directory": "types"
+  },
+  "homepage": "https://sudocode.ai",
+  "bugs": {
+    "url": "https://github.com/sudocode-ai/sudocode/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": ["src/index.d.ts", "dist"],
   "devDependencies": {
     "typescript": "^5.0.0"

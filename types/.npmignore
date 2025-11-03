@@ -1,0 +1,29 @@
+# Source control
+.git
+.gitignore
+
+# Tests
+tests/
+*.test.ts
+*.test.d.ts
+*.spec.ts
+*.spec.d.ts
+
+# Build tools
+tsconfig.json
+tsconfig.*.json
+
+# Development
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db

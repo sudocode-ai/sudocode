@@ -1,0 +1,45 @@
+# Source files (we only publish dist/)
+src/
+public/
+
+# Source control
+.git
+.gitignore
+
+# Tests
+tests/
+*.test.ts
+*.test.tsx
+*.test.js
+*.spec.ts
+*.spec.tsx
+*.spec.js
+
+# Build tools
+tsconfig.json
+tsconfig.*.json
+vite.config.ts
+postcss.config.js
+tailwind.config.js
+
+# Development
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.env
+.env.*
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# ESLint and Prettier
+.eslintrc.*
+.prettierrc.*
+.prettierignore
