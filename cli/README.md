@@ -70,7 +70,7 @@ Initialize `.sudocode/` directory structure with database, JSONL files, and conf
 - `.sudocode/cache.db` - SQLite database (gitignored)
 - `.sudocode/specs.jsonl` - Spec storage (versioned)
 - `.sudocode/issues.jsonl` - Issue storage (versioned)
-- `.sudocode/meta.json` - Metadata config (versioned)
+- `.sudocode/config.json` - Metadata config (versioned)
 - `.sudocode/.gitignore` - Ignores cache and markdown files
 
 ### Spec Management

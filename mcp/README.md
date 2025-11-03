@@ -18,6 +18,18 @@ npm install -g sudocode-mcp
 
 ## Configuration
 
+**IMPORTANT**: Before using this MCP server, sudocode MUST be initialized in your project directory (`sudocode init`)
+
+### First-time setup:
+1. Navigate to your project root directory
+2. Run: \`sudocode init\`
+3. This creates the \`.sudocode/\` directory with necessary database files
+4. Verify setup: Check that \`.sudocode/cache.db\` exists
+
+**Without initialization, all MCP tools will fail with errors.**
+
+If you see errors about missing database or .sudocode directory, run \`sudocode init\` first.
+
 ### Claude Code
 
 Add to your Claude Code configuration:
