@@ -2,6 +2,7 @@ import { render, RenderOptions } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/contexts/ThemeContext'
+import { WebSocketProvider } from '@/contexts/WebSocketContext'
 
 /**
  * Custom render function that includes all providers
@@ -22,9 +23,11 @@ export function renderWithProviders(
   function Wrapper({ children }: { children: React.ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-          <BrowserRouter>{children}</BrowserRouter>
-        </ThemeProvider>
+        <WebSocketProvider>
+          <ThemeProvider>
+            <BrowserRouter>{children}</BrowserRouter>
+          </ThemeProvider>
+        </WebSocketProvider>
       </QueryClientProvider>
     )
   }

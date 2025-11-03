@@ -17,6 +17,18 @@ vi.mock('@/lib/api', () => ({
   },
 }))
 
+// Mock WebSocket context
+vi.mock('@/contexts/WebSocketContext', () => ({
+  useWebSocketContext: () => ({
+    connected: false,
+    subscribe: vi.fn(),
+    unsubscribe: vi.fn(),
+    addMessageHandler: vi.fn(),
+    removeMessageHandler: vi.fn(),
+    lastMessage: null,
+  }),
+}))
+
 const mockIssues: Issue[] = [
   {
     id: 'ISSUE-001',

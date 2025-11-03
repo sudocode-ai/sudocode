@@ -20,6 +20,23 @@ vi.mock('@/lib/api', () => ({
   },
 }))
 
+// Mock WebSocket - must mock before importing WebSocketProvider in test-utils
+vi.mock('@/contexts/WebSocketContext', async () => {
+  const actual = await vi.importActual('@/contexts/WebSocketContext')
+  return {
+    ...actual,
+    WebSocketProvider: ({ children }: { children: React.ReactNode }) => children,
+    useWebSocketContext: () => ({
+      connected: false,
+      subscribe: vi.fn(),
+      unsubscribe: vi.fn(),
+      addMessageHandler: vi.fn(),
+      removeMessageHandler: vi.fn(),
+      lastMessage: null,
+    }),
+  }
+})
+
 const mockIssues: Issue[] = [
   {
     id: 'ISSUE-001',

@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useEffect } from 'react'
+import { useEffect, useCallback } from 'react'
 import { specsApi } from '@/lib/api'
-import { useWebSocket } from '@/lib/websocket'
+import { useWebSocketContext } from '@/contexts/WebSocketContext'
 import type { Spec, WebSocketMessage } from '@/types/api'
 
 /**
@@ -9,32 +9,39 @@ import type { Spec, WebSocketMessage } from '@/types/api'
  */
 export function useSpecs(archived?: boolean) {
   const queryClient = useQueryClient()
+  const { connected, subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
 
   const query = useQuery({
     queryKey: archived !== undefined ? ['specs', { archived }] : ['specs'],
     queryFn: () => specsApi.getAll(archived),
   })
 
-  // WebSocket for live updates
-  const { connected, subscribe } = useWebSocket('', {
-    onMessage: (message: WebSocketMessage) => {
-      if (
-        message.type === 'spec_created' ||
-        message.type === 'spec_updated' ||
-        message.type === 'spec_deleted'
-      ) {
-        // Invalidate specs query to refetch
-        queryClient.invalidateQueries({ queryKey: ['specs'] })
-      }
-    },
-  })
+  // Message handler for WebSocket updates
+  const handleMessage = useCallback((message: WebSocketMessage) => {
+    if (
+      message.type === 'spec_created' ||
+      message.type === 'spec_updated' ||
+      message.type === 'spec_deleted'
+    ) {
+      // Invalidate specs query to refetch
+      queryClient.invalidateQueries({ queryKey: ['specs'] })
+    }
+  }, [queryClient])
 
-  // Subscribe to all spec updates when connected
+  // Register message handler and subscribe to spec updates
   useEffect(() => {
+    const handlerId = 'useSpecs'
+    addMessageHandler(handlerId, handleMessage)
+
     if (connected) {
       subscribe('spec')
     }
-  }, [connected, subscribe])
+
+    return () => {
+      removeMessageHandler(handlerId)
+      unsubscribe('spec')
+    }
+  }, [connected, subscribe, unsubscribe, addMessageHandler, removeMessageHandler, handleMessage])
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Spec> }) => specsApi.update(id, data),
@@ -103,6 +110,7 @@ export function useSpecs(archived?: boolean) {
  */
 export function useSpec(id: string) {
   const queryClient = useQueryClient()
+  const { connected, subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
 
   const query = useQuery({
     queryKey: ['specs', id],
@@ -110,20 +118,28 @@ export function useSpec(id: string) {
     enabled: !!id,
   })
 
-  // WebSocket for live updates to this specific spec
-  const { connected, subscribe } = useWebSocket('', {
-    onMessage: (message: WebSocketMessage) => {
-      if (message.type === 'spec_updated' && (message.data as Spec).id === id) {
-        queryClient.invalidateQueries({ queryKey: ['specs', id] })
-      }
-    },
-  })
+  // Message handler for WebSocket updates to this specific spec
+  const handleMessage = useCallback((message: WebSocketMessage) => {
+    if (message.type === 'spec_updated' && (message.data as Spec).id === id) {
+      queryClient.invalidateQueries({ queryKey: ['specs', id] })
+    }
+  }, [id, queryClient])
 
   useEffect(() => {
-    if (connected && id) {
+    if (!id) return
+
+    const handlerId = `useSpec-${id}`
+    addMessageHandler(handlerId, handleMessage)
+
+    if (connected) {
       subscribe('spec', id)
     }
-  }, [connected, id, subscribe])
+
+    return () => {
+      removeMessageHandler(handlerId)
+      unsubscribe('spec', id)
+    }
+  }, [connected, id, subscribe, unsubscribe, addMessageHandler, removeMessageHandler, handleMessage])
 
   return {
     spec: query.data,
@@ -138,6 +154,7 @@ export function useSpec(id: string) {
  */
 export function useSpecFeedback(specId: string) {
   const queryClient = useQueryClient()
+  const { connected, subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
 
   const query = useQuery({
     queryKey: ['feedback', specId],
@@ -145,25 +162,33 @@ export function useSpecFeedback(specId: string) {
     enabled: !!specId,
   })
 
-  // WebSocket for live feedback updates
-  const { connected, subscribe } = useWebSocket('', {
-    onMessage: (message: WebSocketMessage) => {
-      if (
-        message.type === 'feedback_created' ||
-        message.type === 'feedback_updated' ||
-        message.type === 'feedback_deleted'
-      ) {
-        queryClient.invalidateQueries({ queryKey: ['feedback', specId] })
-      }
-    },
-  })
+  // Message handler for feedback updates
+  const handleMessage = useCallback((message: WebSocketMessage) => {
+    if (
+      message.type === 'feedback_created' ||
+      message.type === 'feedback_updated' ||
+      message.type === 'feedback_deleted'
+    ) {
+      queryClient.invalidateQueries({ queryKey: ['feedback', specId] })
+    }
+  }, [specId, queryClient])
 
   // Subscribe to all updates (including feedback) when connected
   useEffect(() => {
-    if (connected && specId) {
+    if (!specId) return
+
+    const handlerId = `useSpecFeedback-${specId}`
+    addMessageHandler(handlerId, handleMessage)
+
+    if (connected) {
       subscribe('all')
     }
-  }, [connected, specId, subscribe])
+
+    return () => {
+      removeMessageHandler(handlerId)
+      unsubscribe('all')
+    }
+  }, [connected, specId, subscribe, unsubscribe, addMessageHandler, removeMessageHandler, handleMessage])
 
   return {
     feedback: query.data ?? [],

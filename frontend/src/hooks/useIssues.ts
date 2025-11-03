@@ -1,37 +1,44 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useEffect } from 'react'
+import { useEffect, useCallback } from 'react'
 import { issuesApi } from '@/lib/api'
-import { useWebSocket } from '@/lib/websocket'
+import { useWebSocketContext } from '@/contexts/WebSocketContext'
 import type { Issue, IssueStatus, WebSocketMessage } from '@/types/api'
 
 export function useIssues(archived?: boolean) {
   const queryClient = useQueryClient()
+  const { connected, subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
 
   const query = useQuery({
     queryKey: archived !== undefined ? ['issues', { archived }] : ['issues'],
     queryFn: () => issuesApi.getAll(archived),
   })
 
-  // WebSocket for live updates
-  const { connected, subscribe } = useWebSocket('', {
-    onMessage: (message: WebSocketMessage) => {
-      if (
-        message.type === 'issue_created' ||
-        message.type === 'issue_updated' ||
-        message.type === 'issue_deleted'
-      ) {
-        // Invalidate issues query to refetch
-        queryClient.invalidateQueries({ queryKey: ['issues'] })
-      }
-    },
-  })
+  // Message handler for WebSocket updates
+  const handleMessage = useCallback((message: WebSocketMessage) => {
+    if (
+      message.type === 'issue_created' ||
+      message.type === 'issue_updated' ||
+      message.type === 'issue_deleted'
+    ) {
+      // Invalidate issues query to refetch
+      queryClient.invalidateQueries({ queryKey: ['issues'] })
+    }
+  }, [queryClient])
 
-  // Subscribe to all issue updates when connected
+  // Register message handler and subscribe to issue updates
   useEffect(() => {
+    const handlerId = 'useIssues'
+    addMessageHandler(handlerId, handleMessage)
+
     if (connected) {
       subscribe('issue')
     }
-  }, [connected, subscribe])
+
+    return () => {
+      removeMessageHandler(handlerId)
+      unsubscribe('issue')
+    }
+  }, [connected, subscribe, unsubscribe, addMessageHandler, removeMessageHandler, handleMessage])
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<Issue> }) => issuesApi.update(id, data),

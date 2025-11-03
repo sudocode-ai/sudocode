@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect } from 'react'
+import { useEffect, useCallback } from 'react'
 import { relationshipsApi } from '@/lib/api'
-import { useWebSocket } from '@/lib/websocket'
+import { useWebSocketContext } from '@/contexts/WebSocketContext'
 import type { Issue, Relationship, WebSocketMessage } from '@/types/api'
 
 /**
@@ -10,6 +10,7 @@ import type { Issue, Relationship, WebSocketMessage } from '@/types/api'
  */
 export function useIssueRelationships(issues: Issue[]) {
   const queryClient = useQueryClient()
+  const { connected, subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
 
   const query = useQuery({
     queryKey: ['issue-relationships', issues.map((i) => i.id).sort()],
@@ -46,22 +47,28 @@ export function useIssueRelationships(issues: Issue[]) {
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
 
-  // WebSocket for live relationship updates
-  const { connected, subscribe } = useWebSocket('', {
-    onMessage: (message: WebSocketMessage) => {
-      if (message.type === 'relationship_created' || message.type === 'relationship_deleted') {
-        // Invalidate relationship queries to refetch
-        queryClient.invalidateQueries({ queryKey: ['issue-relationships'] })
-      }
-    },
-  })
+  // Message handler for relationship updates
+  const handleMessage = useCallback((message: WebSocketMessage) => {
+    if (message.type === 'relationship_created' || message.type === 'relationship_deleted') {
+      // Invalidate relationship queries to refetch
+      queryClient.invalidateQueries({ queryKey: ['issue-relationships'] })
+    }
+  }, [queryClient])
 
   // Subscribe to all relationship updates when connected
   useEffect(() => {
+    const handlerId = 'useIssueRelationships'
+    addMessageHandler(handlerId, handleMessage)
+
     if (connected) {
       subscribe('all')
     }
-  }, [connected, subscribe])
+
+    return () => {
+      removeMessageHandler(handlerId)
+      unsubscribe('all')
+    }
+  }, [connected, subscribe, unsubscribe, addMessageHandler, removeMessageHandler, handleMessage])
 
   return query
 }

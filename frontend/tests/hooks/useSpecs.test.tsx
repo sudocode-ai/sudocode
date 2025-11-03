@@ -18,13 +18,15 @@ vi.mock('@/lib/api', () => ({
   },
 }))
 
-// Mock WebSocket hook
-vi.mock('@/lib/websocket', () => ({
-  useWebSocket: () => ({
+// Mock WebSocket context
+vi.mock('@/contexts/WebSocketContext', () => ({
+  useWebSocketContext: () => ({
     connected: false,
     subscribe: vi.fn(),
-    send: vi.fn(),
-    disconnect: vi.fn(),
+    unsubscribe: vi.fn(),
+    addMessageHandler: vi.fn(),
+    removeMessageHandler: vi.fn(),
+    lastMessage: null,
   }),
 }))
 
