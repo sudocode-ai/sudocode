@@ -213,7 +213,7 @@ export class ExecutionLifecycleService {
     if (execution.config) {
       try {
         const config = JSON.parse(execution.config);
-        if (config.cleanupMode === "manual") {
+        if (config.cleanupMode === "manual" || config.cleanupMode === "never") {
           return false;
         }
       } catch (error) {
@@ -324,8 +324,15 @@ export class ExecutionLifecycleService {
           execution.status === "failed" ||
           execution.status === "stopped"
         ) {
-          // Execution is finished but worktree still exists - cleanup
-          // TODO: Check if the execution was configured to keep the worktree.
+          // Execution is finished but worktree still exists
+          // Check if we should cleanup based on execution config
+          if (!this.shouldCleanupExecution(executionId)) {
+            console.log(
+              `Skipping cleanup for finished execution ${executionId} (manual cleanup mode)`
+            );
+            continue;
+          }
+
           console.log(
             `Cleaning up worktree for finished execution ${executionId} (status: ${execution.status})`
           );
