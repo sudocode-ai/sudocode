@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import * as path from "path";
 import * as http from "http";
 import { fileURLToPath } from "url";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import type Database from "better-sqlite3";
 
 // ES Module __dirname equivalent
@@ -240,8 +240,15 @@ app.get("/ws/stats", (_req: Request, res: Response) => {
   res.status(200).json(stats);
 });
 
-// Serve static frontend from sudocode installation directory
-const frontendPath = path.join(__dirname, "../../../frontend/dist");
+// Serve static frontend
+// In development: ../../../frontend/dist (workspace)
+// In production: ./public (bundled with server package in dist/public)
+const isDev =
+  process.env.NODE_ENV !== "production" &&
+  existsSync(path.join(__dirname, "../../../frontend/dist"));
+const frontendPath = isDev
+  ? path.join(__dirname, "../../../frontend/dist")
+  : path.join(__dirname, "public");
 console.log(`[server] Serving static frontend from: ${frontendPath}`);
 
 // Serve static files

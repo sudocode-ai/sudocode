@@ -5,15 +5,17 @@
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "sudocode-server": "./dist/cli.js"
+    "sudocode-server": "dist/cli.js"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && chmod +x dist/cli.js",
-    "start": "node dist/src/index.js",
+    "build": "node build.js",
+    "build:dev": "tsc && chmod +x dist/cli.js",
+    "start": "node dist/index.js",
     "test": "NODE_ENV=test vitest",
     "test:e2e": "RUN_E2E_TESTS=true NODE_ENV=test vitest --run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
   },
   "keywords": [
     "sudocode",
@@ -25,7 +27,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sudocode-ai/sudocode.git",
+    "url": "git+https://github.com/sudocode-ai/sudocode.git",
     "directory": "server"
   },
   "homepage": "https://sudocode.ai",
@@ -60,6 +62,7 @@
     "@types/express": "^4.17.21",
     "@types/node": "^20.11.19",
     "@types/supertest": "^6.0.3",
+    "esbuild": "^0.24.2",
     "supertest": "^7.1.4",
     "tsx": "^4.7.1",
     "typescript": "^5.3.3",

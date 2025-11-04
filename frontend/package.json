@@ -7,7 +7,7 @@
   "author": "sudocode AI",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sudocode-ai/sudocode.git",
+    "url": "git+https://github.com/sudocode-ai/sudocode.git",
     "directory": "frontend"
   },
   "homepage": "https://sudocode.ai",
