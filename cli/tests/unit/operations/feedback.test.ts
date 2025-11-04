@@ -109,7 +109,6 @@ describe("Feedback Operations", () => {
         content: "Token rotation policy not specified",
         agent: "claude-code",
         anchor,
-        status: "open",
       });
 
       expect(feedback.id).toMatch(/^FB-\d{3}$/);
@@ -120,7 +119,8 @@ describe("Feedback Operations", () => {
       expect(feedback.agent).toBe("claude-code");
       expect(feedback.dismissed).toBe(false);
 
-      const parsedAnchor = JSON.parse(feedback.anchor);
+      expect(feedback.anchor).toBeDefined();
+      const parsedAnchor = JSON.parse(feedback.anchor!);
       expect(parsedAnchor.section_heading).toBe("Authentication");
       expect(parsedAnchor.line_number).toBe(45);
       expect(parsedAnchor.anchor_status).toBe("valid");
@@ -275,7 +275,8 @@ describe("Feedback Operations", () => {
         anchor: newAnchor,
       });
 
-      const parsedAnchor = JSON.parse(updated.anchor);
+      expect(updated.anchor).toBeDefined();
+      const parsedAnchor = JSON.parse(updated.anchor!);
       expect(parsedAnchor.line_number).toBe(15);
       expect(parsedAnchor.anchor_status).toBe("relocated");
       expect(parsedAnchor.original_location.line_number).toBe(10);
@@ -657,8 +658,9 @@ describe("Feedback Operations", () => {
 
       const retrieved = getFeedback(db, created.id);
       expect(retrieved).not.toBeNull();
+      expect(retrieved!.anchor).toBeDefined();
 
-      const parsedAnchor = JSON.parse(retrieved!.anchor);
+      const parsedAnchor = JSON.parse(retrieved!.anchor!);
       expect(parsedAnchor).toEqual(anchor);
     });
   });

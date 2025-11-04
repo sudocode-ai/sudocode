@@ -138,7 +138,7 @@ describe("ExecutionService", () => {
       if (execution.status === "running") {
         updateExecution(db, execution.id, {
           status: "stopped",
-          completed_at: Math.floor(Date.now() / 1000),
+          completed_at: new Date().toISOString(),
         });
       }
     }

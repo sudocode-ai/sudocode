@@ -124,13 +124,6 @@ describe("WorktreeManager", () => {
   let manager: WorktreeManager;
   let mockGit: MockGitCli;
   let config: WorktreeConfig;
-  let originalExistsSync: typeof fs.existsSync;
-  let originalMkdirSync: typeof fs.mkdirSync;
-  let originalRmSync: typeof fs.rmSync;
-  let originalRealpathSync: typeof fs.realpathSync;
-  let originalStatSync: typeof fs.statSync;
-  let originalCopyFileSync: typeof fs.copyFileSync;
-  let originalWriteFileSync: typeof fs.writeFileSync;
 
   beforeEach(() => {
     config = {
@@ -145,17 +138,8 @@ describe("WorktreeManager", () => {
 
     mockGit = new MockGitCli();
 
-    // Store original fs functions
-    originalExistsSync = fs.existsSync;
-    originalMkdirSync = fs.mkdirSync;
-    originalRmSync = fs.rmSync;
-    originalRealpathSync = fs.realpathSync;
-    originalStatSync = fs.statSync;
-    originalCopyFileSync = fs.copyFileSync;
-    originalWriteFileSync = fs.writeFileSync;
-
     // Mock fs functions for setupWorktreeEnvironment
-    (fs.existsSync as any) = (path: string) => {
+    vi.spyOn(fs, "existsSync").mockImplementation((path: any) => {
       // Worktree directories exist
       if (path.includes("/worktree")) return true;
       // JSONL files don't exist in worktree initially
@@ -166,26 +150,20 @@ describe("WorktreeManager", () => {
       // Config exists in main repo
       if (path.includes("/repo/.sudocode/config.json")) return true;
       return true;
-    };
-    (fs.mkdirSync as any) = () => {};
-    (fs.rmSync as any) = () => {};
-    (fs.realpathSync as any) = (path: string) => path;
-    (fs.statSync as any) = () => ({ size: 1000 });
-    (fs.copyFileSync as any) = () => {};
-    (fs.writeFileSync as any) = () => {};
+    });
+    vi.spyOn(fs, "mkdirSync").mockImplementation(() => undefined as any);
+    vi.spyOn(fs, "rmSync").mockImplementation(() => {});
+    vi.spyOn(fs, "realpathSync").mockImplementation((path: any) => path);
+    vi.spyOn(fs, "statSync").mockImplementation(() => ({ size: 1000 }) as any);
+    vi.spyOn(fs, "copyFileSync").mockImplementation(() => {});
+    vi.spyOn(fs, "writeFileSync").mockImplementation(() => {});
 
     manager = new WorktreeManager(config, mockGit);
   });
 
   afterEach(() => {
-    // Restore original fs functions
-    fs.existsSync = originalExistsSync;
-    fs.mkdirSync = originalMkdirSync;
-    fs.rmSync = originalRmSync;
-    fs.realpathSync = originalRealpathSync;
-    fs.statSync = originalStatSync;
-    fs.copyFileSync = originalCopyFileSync;
-    fs.writeFileSync = originalWriteFileSync;
+    // Restore all mocks
+    vi.restoreAllMocks();
   });
 
   describe("createWorktree", () => {
@@ -283,10 +261,10 @@ describe("WorktreeManager", () => {
 
     it("should throw error if worktree path does not exist after creation", async () => {
       let callCount = 0;
-      (fs.existsSync as any) = () => {
+      vi.spyOn(fs, "existsSync").mockImplementation(() => {
         callCount++;
         return callCount === 1;
-      };
+      });
 
       const params: WorktreeCreateParams = {
         repoPath: "/repo",
@@ -322,7 +300,7 @@ describe("WorktreeManager", () => {
     });
 
     it("should return false when worktree path does not exist", async () => {
-      (fs.existsSync as any) = () => false;
+      vi.spyOn(fs, "existsSync").mockReturnValue(false);
 
       const isValid = await manager.isWorktreeValid(
         "/repo",

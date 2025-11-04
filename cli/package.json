@@ -5,8 +5,8 @@
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "sudocode": "./dist/cli.js",
-    "sdc": "./dist/cli.js"
+    "sudocode": "dist/cli.js",
+    "sdc": "dist/cli.js"
   },
   "scripts": {
     "build": "node build.js",
@@ -29,7 +29,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sudocode-ai/sudocode.git",
+    "url": "git+https://github.com/sudocode-ai/sudocode.git",
     "directory": "cli"
   },
   "homepage": "https://sudocode.ai",
