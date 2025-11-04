@@ -4,7 +4,7 @@
 
 import { Router, Request, Response } from "express";
 import type Database from "better-sqlite3";
-import type { FeedbackType, FeedbackAnchor } from "@sudocode/types";
+import type { FeedbackType, FeedbackAnchor } from "@sudocode-ai/types";
 import {
   createNewFeedback,
   getFeedbackById,

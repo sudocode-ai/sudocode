@@ -13,7 +13,7 @@ import {
   EXECUTIONS_INDEXES,
   PROMPT_TEMPLATES_TABLE,
   PROMPT_TEMPLATES_INDEXES,
-} from "@sudocode/types/schema";
+} from "@sudocode-ai/types/schema";
 import { ExecutionService } from "../../../src/services/execution-service.js";
 import { ExecutionLifecycleService } from "../../../src/services/execution-lifecycle.js";
 import { initializeDefaultTemplates } from "../../../src/services/prompt-templates.js";

@@ -17,7 +17,7 @@ export type {
   FeedbackAnchor,
   FeedbackType,
   IssueFeedback as Feedback,
-} from "@sudocode/types";
+} from "@sudocode-ai/types";
 
 // ============================================================================
 // MCP-SPECIFIC TYPES
@@ -65,7 +65,11 @@ export interface SudocodeClientConfig {
 // ============================================================================
 
 export class SudocodeError extends Error {
-  constructor(message: string, public exitCode: number, public stderr: string) {
+  constructor(
+    message: string,
+    public exitCode: number,
+    public stderr: string
+  ) {
     super(message);
     this.name = "SudocodeError";
   }

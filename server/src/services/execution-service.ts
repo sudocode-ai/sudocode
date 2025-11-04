@@ -8,7 +8,7 @@
  */
 
 import type Database from "better-sqlite3";
-import type { Execution } from "@sudocode/types";
+import type { Execution } from "@sudocode-ai/types";
 import { PromptTemplateEngine } from "./prompt-template-engine.js";
 import { ExecutionLifecycleService } from "./execution-lifecycle.js";
 import {

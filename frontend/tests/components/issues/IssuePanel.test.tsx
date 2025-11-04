@@ -3,7 +3,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithProviders } from '@/test/test-utils'
 import { IssuePanel } from '@/components/issues/IssuePanel'
-import type { Issue } from '@sudocode/types'
+import type { Issue } from '@sudocode-ai/types'
 
 const mockIssue: Issue = {
   id: 'ISSUE-001',

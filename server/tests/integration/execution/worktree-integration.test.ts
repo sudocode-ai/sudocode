@@ -5,22 +5,28 @@
  * database integration, and configuration-driven behavior.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import type Database from 'better-sqlite3';
-import { initDatabase as initCliDatabase } from '@sudocode/cli/dist/db.js';
-import { EXECUTIONS_TABLE, EXECUTIONS_INDEXES } from '@sudocode/types/schema';
-import { ExecutionLifecycleService } from '../../../src/services/execution-lifecycle.js';
-import { getExecution, updateExecution } from '../../../src/services/executions.js';
-import { generateIssueId } from '@sudocode/cli/dist/id-generator.js';
-import { createIssue } from '@sudocode/cli/dist/operations/index.js';
-import { WorktreeManager } from '../../../src/execution/worktree/manager.js';
-import type { WorktreeConfig } from '../../../src/execution/worktree/types.js';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-import { execSync } from 'child_process';
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import type Database from "better-sqlite3";
+import { initDatabase as initCliDatabase } from "@sudocode/cli/dist/db.js";
+import {
+  EXECUTIONS_TABLE,
+  EXECUTIONS_INDEXES,
+} from "@sudocode-ai/types/schema";
+import { ExecutionLifecycleService } from "../../../src/services/execution-lifecycle.js";
+import {
+  getExecution,
+  updateExecution,
+} from "../../../src/services/executions.js";
+import { generateIssueId } from "@sudocode/cli/dist/id-generator.js";
+import { createIssue } from "@sudocode/cli/dist/operations/index.js";
+import { WorktreeManager } from "../../../src/execution/worktree/manager.js";
+import type { WorktreeConfig } from "../../../src/execution/worktree/types.js";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
+import { execSync } from "child_process";
 
-describe('Worktree Integration Tests', () => {
+describe("Worktree Integration Tests", () => {
   let db: Database.Database;
   let testDbPath: string;
   let testDir: string;
@@ -29,21 +35,21 @@ describe('Worktree Integration Tests', () => {
   beforeAll(() => {
     // Create temporary directory for tests
     testDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'sudocode-worktree-integration-')
+      path.join(os.tmpdir(), "sudocode-worktree-integration-")
     );
-    testDbPath = path.join(testDir, 'cache.db');
-    gitRepoPath = path.join(testDir, 'test-repo');
+    testDbPath = path.join(testDir, "cache.db");
+    gitRepoPath = path.join(testDir, "test-repo");
 
     // Set SUDOCODE_DIR environment variable
     process.env.SUDOCODE_DIR = testDir;
 
     // Create config.json for ID generation
-    const configPath = path.join(testDir, 'config.json');
+    const configPath = path.join(testDir, "config.json");
     const config = {
-      version: '1.0.0',
+      version: "1.0.0",
       id_prefix: {
-        spec: 'SPEC',
-        issue: 'ISSUE',
+        spec: "SPEC",
+        issue: "ISSUE",
       },
     };
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
@@ -76,7 +82,7 @@ describe('Worktree Integration Tests', () => {
 
     // Kill any git processes still running in the test directory
     try {
-      execSync(`pkill -f "${testDir}" || true`, { stdio: 'ignore' });
+      execSync(`pkill -f "${testDir}" || true`, { stdio: "ignore" });
     } catch (e) {
       // Ignore errors
     }
@@ -90,34 +96,38 @@ describe('Worktree Integration Tests', () => {
     delete process.env.SUDOCODE_DIR;
   });
 
-  describe('E2E Execution with Worktree', () => {
-    it('should create execution with worktree and cleanup after completion', async () => {
+  describe("E2E Execution with Worktree", () => {
+    it("should create execution with worktree and cleanup after completion", async () => {
       const config: WorktreeConfig = {
-        worktreeStoragePath: '.sudocode/worktrees',
+        worktreeStoragePath: ".sudocode/worktrees",
         autoCreateBranches: true,
         autoDeleteBranches: false,
         enableSparseCheckout: false,
         sparseCheckoutPatterns: undefined,
-        branchPrefix: 'sudocode',
+        branchPrefix: "sudocode",
         cleanupOrphanedWorktreesOnStartup: true,
       };
 
       const worktreeManager = new WorktreeManager(config);
-      const service = new ExecutionLifecycleService(db, gitRepoPath, worktreeManager);
+      const service = new ExecutionLifecycleService(
+        db,
+        gitRepoPath,
+        worktreeManager
+      );
 
       // Create execution with worktree
-      const testIssueId = createTestIssue('E2E Test Issue 1');
+      const testIssueId = createTestIssue("E2E Test Issue 1");
       const result = await service.createExecutionWithWorktree({
         issueId: testIssueId,
-        issueTitle: 'Test Issue',
-        agentType: 'claude-code',
-        targetBranch: 'main',
+        issueTitle: "Test Issue",
+        agentType: "claude-code",
+        targetBranch: "main",
         repoPath: gitRepoPath,
       });
 
       // Verify execution was created
       expect(result.execution).toBeTruthy();
-      expect(result.execution.status).toBe('running');
+      expect(result.execution.status).toBe("running");
       expect(result.worktreePath).toBeTruthy();
       expect(result.branchName).toBeTruthy();
 
@@ -125,7 +135,10 @@ describe('Worktree Integration Tests', () => {
       expect(fs.existsSync(result.worktreePath)).toBeTruthy();
 
       // Verify worktree is registered in git
-      const isValid = await worktreeManager.isWorktreeValid(gitRepoPath, result.worktreePath);
+      const isValid = await worktreeManager.isWorktreeValid(
+        gitRepoPath,
+        result.worktreePath
+      );
       expect(isValid).toBe(true);
 
       // Verify branch was created
@@ -133,7 +146,7 @@ describe('Worktree Integration Tests', () => {
       expect(branches.includes(result.branchName)).toBeTruthy();
 
       // Mark execution as completed
-      updateExecution(db, result.execution.id, { status: 'completed' });
+      updateExecution(db, result.execution.id, { status: "completed" });
 
       // Cleanup worktree
       await service.cleanupExecution(result.execution.id);
@@ -146,30 +159,34 @@ describe('Worktree Integration Tests', () => {
       expect(execution?.worktree_path).toBe(result.worktreePath);
     });
 
-    it('should work with existing branch when autoCreateBranches is false', async () => {
+    it("should work with existing branch when autoCreateBranches is false", async () => {
       const config: WorktreeConfig = {
-        worktreeStoragePath: '.sudocode/worktrees',
+        worktreeStoragePath: ".sudocode/worktrees",
         autoCreateBranches: false,
         autoDeleteBranches: false,
         enableSparseCheckout: false,
         sparseCheckoutPatterns: undefined,
-        branchPrefix: 'sudocode',
+        branchPrefix: "sudocode",
         cleanupOrphanedWorktreesOnStartup: true,
       };
 
       // Create a branch manually
-      const testBranchName = 'test-existing-branch';
+      const testBranchName = "test-existing-branch";
       execSync(`git branch ${testBranchName}`, { cwd: gitRepoPath });
 
       const worktreeManager = new WorktreeManager(config);
-      const service = new ExecutionLifecycleService(db, gitRepoPath, worktreeManager);
+      const service = new ExecutionLifecycleService(
+        db,
+        gitRepoPath,
+        worktreeManager
+      );
 
-      const testIssueId = createTestIssue('Test Issue for Existing Branch');
+      const testIssueId = createTestIssue("Test Issue for Existing Branch");
 
       const result = await service.createExecutionWithWorktree({
         issueId: testIssueId,
-        issueTitle: 'Test Issue',
-        agentType: 'claude-code',
+        issueTitle: "Test Issue",
+        agentType: "claude-code",
         targetBranch: testBranchName,
         repoPath: gitRepoPath,
       });
@@ -185,28 +202,32 @@ describe('Worktree Integration Tests', () => {
     });
   });
 
-  describe('Cleanup on Failure', () => {
-    it('should cleanup worktree when execution fails', async () => {
+  describe("Cleanup on Failure", () => {
+    it("should cleanup worktree when execution fails", async () => {
       const config: WorktreeConfig = {
-        worktreeStoragePath: '.sudocode/worktrees',
+        worktreeStoragePath: ".sudocode/worktrees",
         autoCreateBranches: true,
         autoDeleteBranches: true,
         enableSparseCheckout: false,
         sparseCheckoutPatterns: undefined,
-        branchPrefix: 'sudocode',
+        branchPrefix: "sudocode",
         cleanupOrphanedWorktreesOnStartup: true,
       };
 
       const worktreeManager = new WorktreeManager(config);
-      const service = new ExecutionLifecycleService(db, gitRepoPath, worktreeManager);
+      const service = new ExecutionLifecycleService(
+        db,
+        gitRepoPath,
+        worktreeManager
+      );
 
-      const testIssueId = createTestIssue('Cleanup on Failure Test');
+      const testIssueId = createTestIssue("Cleanup on Failure Test");
 
       const result = await service.createExecutionWithWorktree({
         issueId: testIssueId,
-        issueTitle: 'Test Issue',
-        agentType: 'claude-code',
-        targetBranch: 'main',
+        issueTitle: "Test Issue",
+        agentType: "claude-code",
+        targetBranch: "main",
         repoPath: gitRepoPath,
       });
 
@@ -217,7 +238,7 @@ describe('Worktree Integration Tests', () => {
       expect(fs.existsSync(worktreePath)).toBeTruthy();
 
       // Mark execution as failed
-      updateExecution(db, result.execution.id, { status: 'failed' });
+      updateExecution(db, result.execution.id, { status: "failed" });
 
       // Cleanup worktree
       await service.cleanupExecution(result.execution.id);
@@ -235,28 +256,32 @@ describe('Worktree Integration Tests', () => {
     });
   });
 
-  describe('Cleanup on Cancellation', () => {
-    it('should cleanup worktree when execution is stopped', async () => {
+  describe("Cleanup on Cancellation", () => {
+    it("should cleanup worktree when execution is stopped", async () => {
       const config: WorktreeConfig = {
-        worktreeStoragePath: '.sudocode/worktrees',
+        worktreeStoragePath: ".sudocode/worktrees",
         autoCreateBranches: true,
         autoDeleteBranches: false,
         enableSparseCheckout: false,
         sparseCheckoutPatterns: undefined,
-        branchPrefix: 'sudocode',
+        branchPrefix: "sudocode",
         cleanupOrphanedWorktreesOnStartup: true,
       };
 
       const worktreeManager = new WorktreeManager(config);
-      const service = new ExecutionLifecycleService(db, gitRepoPath, worktreeManager);
+      const service = new ExecutionLifecycleService(
+        db,
+        gitRepoPath,
+        worktreeManager
+      );
 
-      const testIssueId = createTestIssue('Cleanup on Cancellation Test');
+      const testIssueId = createTestIssue("Cleanup on Cancellation Test");
 
       const result = await service.createExecutionWithWorktree({
         issueId: testIssueId,
-        issueTitle: 'Test Issue',
-        agentType: 'claude-code',
-        targetBranch: 'main',
+        issueTitle: "Test Issue",
+        agentType: "claude-code",
+        targetBranch: "main",
         repoPath: gitRepoPath,
       });
 
@@ -267,7 +292,7 @@ describe('Worktree Integration Tests', () => {
       expect(fs.existsSync(worktreePath)).toBeTruthy();
 
       // Mark execution as stopped (cancelled)
-      updateExecution(db, result.execution.id, { status: 'stopped' });
+      updateExecution(db, result.execution.id, { status: "stopped" });
 
       // Cleanup worktree
       await service.cleanupExecution(result.execution.id);
@@ -284,37 +309,41 @@ describe('Worktree Integration Tests', () => {
     });
   });
 
-  describe('Startup Orphaned Cleanup', () => {
-    it('should cleanup orphaned worktrees on startup', async () => {
+  describe("Startup Orphaned Cleanup", () => {
+    it("should cleanup orphaned worktrees on startup", async () => {
       const config: WorktreeConfig = {
-        worktreeStoragePath: '.sudocode/worktrees',
+        worktreeStoragePath: ".sudocode/worktrees",
         autoCreateBranches: true,
         autoDeleteBranches: true,
         enableSparseCheckout: false,
         sparseCheckoutPatterns: undefined,
-        branchPrefix: 'sudocode',
+        branchPrefix: "sudocode",
         cleanupOrphanedWorktreesOnStartup: true,
       };
 
       const worktreeManager = new WorktreeManager(config);
-      const service = new ExecutionLifecycleService(db, gitRepoPath, worktreeManager);
+      const service = new ExecutionLifecycleService(
+        db,
+        gitRepoPath,
+        worktreeManager
+      );
 
       // Create multiple executions with worktrees
-      const testIssueId1 = createTestIssue('Orphaned Cleanup Test Issue 1');
+      const testIssueId1 = createTestIssue("Orphaned Cleanup Test Issue 1");
       const result1 = await service.createExecutionWithWorktree({
         issueId: testIssueId1,
-        issueTitle: 'Test Issue 1',
-        agentType: 'claude-code',
-        targetBranch: 'main',
+        issueTitle: "Test Issue 1",
+        agentType: "claude-code",
+        targetBranch: "main",
         repoPath: gitRepoPath,
       });
 
-      const testIssueId2 = createTestIssue('Orphaned Cleanup Test Issue 2');
+      const testIssueId2 = createTestIssue("Orphaned Cleanup Test Issue 2");
       const result2 = await service.createExecutionWithWorktree({
         issueId: testIssueId2,
-        issueTitle: 'Test Issue 2',
-        agentType: 'claude-code',
-        targetBranch: 'main',
+        issueTitle: "Test Issue 2",
+        agentType: "claude-code",
+        targetBranch: "main",
         repoPath: gitRepoPath,
       });
 
@@ -323,8 +352,8 @@ describe('Worktree Integration Tests', () => {
       expect(fs.existsSync(result2.worktreePath)).toBeTruthy();
 
       // Mark executions as completed in DB without cleaning up worktrees
-      updateExecution(db, result1.execution.id, { status: 'completed' });
-      updateExecution(db, result2.execution.id, { status: 'failed' });
+      updateExecution(db, result1.execution.id, { status: "completed" });
+      updateExecution(db, result2.execution.id, { status: "failed" });
 
       // Run orphaned cleanup
       await service.cleanupOrphanedWorktrees();
@@ -340,30 +369,38 @@ describe('Worktree Integration Tests', () => {
       expect(exec2?.worktree_path).toBe(result2.worktreePath);
     });
 
-    it('should cleanup worktrees without execution records', async () => {
+    it("should cleanup worktrees without execution records", async () => {
       const config: WorktreeConfig = {
-        worktreeStoragePath: '.sudocode/worktrees',
+        worktreeStoragePath: ".sudocode/worktrees",
         autoCreateBranches: true,
         autoDeleteBranches: true,
         enableSparseCheckout: false,
         sparseCheckoutPatterns: undefined,
-        branchPrefix: 'sudocode',
+        branchPrefix: "sudocode",
         cleanupOrphanedWorktreesOnStartup: true,
       };
 
       const worktreeManager = new WorktreeManager(config);
-      const service = new ExecutionLifecycleService(db, gitRepoPath, worktreeManager);
+      const service = new ExecutionLifecycleService(
+        db,
+        gitRepoPath,
+        worktreeManager
+      );
 
       // Create a worktree manually without execution record
-      const orphanedId = 'orphaned-execution-id';
-      const orphanedPath = path.join(gitRepoPath, config.worktreeStoragePath, orphanedId);
+      const orphanedId = "orphaned-execution-id";
+      const orphanedPath = path.join(
+        gitRepoPath,
+        config.worktreeStoragePath,
+        orphanedId
+      );
       const orphanedBranch = `${config.branchPrefix}/orphaned`;
 
       await worktreeManager.createWorktree({
         repoPath: gitRepoPath,
         branchName: orphanedBranch,
         worktreePath: orphanedPath,
-        baseBranch: 'main',
+        baseBranch: "main",
         createBranch: true,
       });
 
@@ -377,32 +414,36 @@ describe('Worktree Integration Tests', () => {
       expect(!fs.existsSync(orphanedPath)).toBeTruthy();
     });
 
-    it('should not cleanup worktrees for running executions', async () => {
+    it("should not cleanup worktrees for running executions", async () => {
       const config: WorktreeConfig = {
-        worktreeStoragePath: '.sudocode/worktrees',
+        worktreeStoragePath: ".sudocode/worktrees",
         autoCreateBranches: true,
         autoDeleteBranches: false,
         enableSparseCheckout: false,
         sparseCheckoutPatterns: undefined,
-        branchPrefix: 'sudocode',
+        branchPrefix: "sudocode",
         cleanupOrphanedWorktreesOnStartup: true,
       };
 
       const worktreeManager = new WorktreeManager(config);
-      const service = new ExecutionLifecycleService(db, gitRepoPath, worktreeManager);
+      const service = new ExecutionLifecycleService(
+        db,
+        gitRepoPath,
+        worktreeManager
+      );
 
-            const testIssueId = createTestIssue('Running Execution Test');
+      const testIssueId = createTestIssue("Running Execution Test");
 
       const result = await service.createExecutionWithWorktree({
         issueId: testIssueId,
-        issueTitle: 'Test Issue',
-        agentType: 'claude-code',
-        targetBranch: 'main',
+        issueTitle: "Test Issue",
+        agentType: "claude-code",
+        targetBranch: "main",
         repoPath: gitRepoPath,
       });
 
       // Execution is still running
-      expect(result.execution.status).toBe('running');
+      expect(result.execution.status).toBe("running");
 
       // Run orphaned cleanup
       await service.cleanupOrphanedWorktrees();
@@ -418,29 +459,33 @@ describe('Worktree Integration Tests', () => {
     });
   });
 
-  describe('Configuration-Driven Behavior', () => {
-    it('should respect autoCreateBranches config', async () => {
+  describe("Configuration-Driven Behavior", () => {
+    it("should respect autoCreateBranches config", async () => {
       // Test with autoCreateBranches: true
       const configWithAuto: WorktreeConfig = {
-        worktreeStoragePath: '.sudocode/worktrees',
+        worktreeStoragePath: ".sudocode/worktrees",
         autoCreateBranches: true,
         autoDeleteBranches: false,
         enableSparseCheckout: false,
         sparseCheckoutPatterns: undefined,
-        branchPrefix: 'sudocode',
+        branchPrefix: "sudocode",
         cleanupOrphanedWorktreesOnStartup: true,
       };
 
       const worktreeManager = new WorktreeManager(configWithAuto);
-      const service = new ExecutionLifecycleService(db, gitRepoPath, worktreeManager);
+      const service = new ExecutionLifecycleService(
+        db,
+        gitRepoPath,
+        worktreeManager
+      );
 
-            const testIssueId = createTestIssue('AutoCreateBranches Test');
+      const testIssueId = createTestIssue("AutoCreateBranches Test");
 
       const result = await service.createExecutionWithWorktree({
         issueId: testIssueId,
-        issueTitle: 'Test Issue',
-        agentType: 'claude-code',
-        targetBranch: 'main',
+        issueTitle: "Test Issue",
+        agentType: "claude-code",
+        targetBranch: "main",
         repoPath: gitRepoPath,
       });
 
@@ -453,28 +498,32 @@ describe('Worktree Integration Tests', () => {
       execSync(`git branch -D ${result.branchName}`, { cwd: gitRepoPath });
     });
 
-    it('should respect autoDeleteBranches config', async () => {
+    it("should respect autoDeleteBranches config", async () => {
       // Test with autoDeleteBranches: true
       const configWithAutoDelete: WorktreeConfig = {
-        worktreeStoragePath: '.sudocode/worktrees',
+        worktreeStoragePath: ".sudocode/worktrees",
         autoCreateBranches: true,
         autoDeleteBranches: true,
         enableSparseCheckout: false,
         sparseCheckoutPatterns: undefined,
-        branchPrefix: 'sudocode',
+        branchPrefix: "sudocode",
         cleanupOrphanedWorktreesOnStartup: true,
       };
 
       const worktreeManager = new WorktreeManager(configWithAutoDelete);
-      const service = new ExecutionLifecycleService(db, gitRepoPath, worktreeManager);
+      const service = new ExecutionLifecycleService(
+        db,
+        gitRepoPath,
+        worktreeManager
+      );
 
-            const testIssueId = createTestIssue('AutoDeleteBranches Test');
+      const testIssueId = createTestIssue("AutoDeleteBranches Test");
 
       const result = await service.createExecutionWithWorktree({
         issueId: testIssueId,
-        issueTitle: 'Test Issue',
-        agentType: 'claude-code',
-        targetBranch: 'main',
+        issueTitle: "Test Issue",
+        agentType: "claude-code",
+        targetBranch: "main",
         repoPath: gitRepoPath,
       });
 
@@ -488,68 +537,83 @@ describe('Worktree Integration Tests', () => {
       expect(!branches.includes(branchName)).toBeTruthy();
     });
 
-    it('should respect sparseCheckout config', async () => {
+    it("should respect sparseCheckout config", async () => {
       const configWithSparse: WorktreeConfig = {
-        worktreeStoragePath: '.sudocode/worktrees',
+        worktreeStoragePath: ".sudocode/worktrees",
         autoCreateBranches: true,
         autoDeleteBranches: true,
         enableSparseCheckout: true,
-        sparseCheckoutPatterns: ['src'],  // Only directories, not files
-        branchPrefix: 'sudocode',
+        sparseCheckoutPatterns: ["src"], // Only directories, not files
+        branchPrefix: "sudocode",
         cleanupOrphanedWorktreesOnStartup: true,
       };
 
       const worktreeManager = new WorktreeManager(configWithSparse);
-      const service = new ExecutionLifecycleService(db, gitRepoPath, worktreeManager);
+      const service = new ExecutionLifecycleService(
+        db,
+        gitRepoPath,
+        worktreeManager
+      );
 
-      const testIssueId = createTestIssue('Integration Test 1');
+      const testIssueId = createTestIssue("Integration Test 1");
 
       const result = await service.createExecutionWithWorktree({
         issueId: testIssueId,
-        issueTitle: 'Test Issue',
-        agentType: 'claude-code',
-        targetBranch: 'main',
+        issueTitle: "Test Issue",
+        agentType: "claude-code",
+        targetBranch: "main",
         repoPath: gitRepoPath,
       });
 
       // Verify sparse-checkout is configured
       // In a worktree, sparse-checkout is stored in: <main-repo>/.git/worktrees/<worktree-name>/info/sparse-checkout
       const worktreeName = path.basename(result.worktreePath);
-      const sparseCheckoutFile = path.join(gitRepoPath, '.git', 'worktrees', worktreeName, 'info', 'sparse-checkout');
+      const sparseCheckoutFile = path.join(
+        gitRepoPath,
+        ".git",
+        "worktrees",
+        worktreeName,
+        "info",
+        "sparse-checkout"
+      );
       expect(fs.existsSync(sparseCheckoutFile)).toBeTruthy();
 
       // Verify sparse checkout patterns
-      const content = fs.readFileSync(sparseCheckoutFile, 'utf-8');
-      expect(content.includes('src')).toBeTruthy();
+      const content = fs.readFileSync(sparseCheckoutFile, "utf-8");
+      expect(content.includes("src")).toBeTruthy();
 
       // Cleanup
       await service.cleanupExecution(result.execution.id);
     });
   });
 
-  describe('Race Condition Handling', () => {
-    it('should prevent duplicate executions for same issue', async () => {
+  describe("Race Condition Handling", () => {
+    it("should prevent duplicate executions for same issue", async () => {
       const config: WorktreeConfig = {
-        worktreeStoragePath: '.sudocode/worktrees',
+        worktreeStoragePath: ".sudocode/worktrees",
         autoCreateBranches: true,
         autoDeleteBranches: true,
         enableSparseCheckout: false,
         sparseCheckoutPatterns: undefined,
-        branchPrefix: 'sudocode',
+        branchPrefix: "sudocode",
         cleanupOrphanedWorktreesOnStartup: true,
       };
 
       const worktreeManager = new WorktreeManager(config);
-      const service = new ExecutionLifecycleService(db, gitRepoPath, worktreeManager);
+      const service = new ExecutionLifecycleService(
+        db,
+        gitRepoPath,
+        worktreeManager
+      );
 
-      const testIssueId = createTestIssue('Race Condition Test');
+      const testIssueId = createTestIssue("Race Condition Test");
 
       // Create first execution
       const result1 = await service.createExecutionWithWorktree({
         issueId: testIssueId,
-        issueTitle: 'Test Issue',
-        agentType: 'claude-code',
-        targetBranch: 'main',
+        issueTitle: "Test Issue",
+        agentType: "claude-code",
+        targetBranch: "main",
         repoPath: gitRepoPath,
       });
 
@@ -557,55 +621,59 @@ describe('Worktree Integration Tests', () => {
       await expect(
         service.createExecutionWithWorktree({
           issueId: testIssueId,
-          issueTitle: 'Test Issue',
-          agentType: 'claude-code',
-          targetBranch: 'main',
+          issueTitle: "Test Issue",
+          agentType: "claude-code",
+          targetBranch: "main",
           repoPath: gitRepoPath,
         })
-      ).rejects.toThrow('Active execution already exists');
+      ).rejects.toThrow("Active execution already exists");
 
       // Cleanup
       await service.cleanupExecution(result1.execution.id);
     });
 
-    it('should handle concurrent executions for different issues', async () => {
+    it("should handle concurrent executions for different issues", async () => {
       const config: WorktreeConfig = {
-        worktreeStoragePath: '.sudocode/worktrees',
+        worktreeStoragePath: ".sudocode/worktrees",
         autoCreateBranches: true,
         autoDeleteBranches: true,
         enableSparseCheckout: false,
         sparseCheckoutPatterns: undefined,
-        branchPrefix: 'sudocode',
+        branchPrefix: "sudocode",
         cleanupOrphanedWorktreesOnStartup: true,
       };
 
       const worktreeManager = new WorktreeManager(config);
-      const service = new ExecutionLifecycleService(db, gitRepoPath, worktreeManager);
+      const service = new ExecutionLifecycleService(
+        db,
+        gitRepoPath,
+        worktreeManager
+      );
 
-      const testIssueId = createTestIssue('Concurrent Execution Test 1');
+      const testIssueId = createTestIssue("Concurrent Execution Test 1");
 
       // Create second test issue
       const issueId2 = generateIssueId(db, testDir);
       const issue2 = createIssue(db, {
         id: issueId2,
-        title: 'Second Test Issue',
-        content: 'This is another test issue',
+        title: "Second Test Issue",
+        content: "This is another test issue",
       });
 
       // Create executions concurrently
       const [result1, result2] = await Promise.all([
         service.createExecutionWithWorktree({
           issueId: testIssueId,
-          issueTitle: 'Test Issue 1',
-          agentType: 'claude-code',
-          targetBranch: 'main',
+          issueTitle: "Test Issue 1",
+          agentType: "claude-code",
+          targetBranch: "main",
           repoPath: gitRepoPath,
         }),
         service.createExecutionWithWorktree({
           issueId: issue2.id,
-          issueTitle: 'Test Issue 2',
-          agentType: 'claude-code',
-          targetBranch: 'main',
+          issueTitle: "Test Issue 2",
+          agentType: "claude-code",
+          targetBranch: "main",
           repoPath: gitRepoPath,
         }),
       ]);
@@ -626,81 +694,95 @@ describe('Worktree Integration Tests', () => {
     });
   });
 
-  describe('Error Recovery', () => {
-    it('should not create execution if repository is invalid', async () => {
+  describe("Error Recovery", () => {
+    it("should not create execution if repository is invalid", async () => {
       const config: WorktreeConfig = {
-        worktreeStoragePath: '.sudocode/worktrees',
+        worktreeStoragePath: ".sudocode/worktrees",
         autoCreateBranches: true,
         autoDeleteBranches: false,
         enableSparseCheckout: false,
         sparseCheckoutPatterns: undefined,
-        branchPrefix: 'sudocode',
+        branchPrefix: "sudocode",
         cleanupOrphanedWorktreesOnStartup: true,
       };
 
       const worktreeManager = new WorktreeManager(config);
-      const service = new ExecutionLifecycleService(db, gitRepoPath, worktreeManager);
+      const service = new ExecutionLifecycleService(
+        db,
+        gitRepoPath,
+        worktreeManager
+      );
 
-      const testIssueId = createTestIssue('Invalid Repo Test');
+      const testIssueId = createTestIssue("Invalid Repo Test");
 
       // Try to create execution with invalid repo path
-      const invalidRepoPath = path.join(testDir, 'non-existent-repo');
+      const invalidRepoPath = path.join(testDir, "non-existent-repo");
 
       await expect(
         service.createExecutionWithWorktree({
           issueId: testIssueId,
-          issueTitle: 'Test Issue',
-          agentType: 'claude-code',
-          targetBranch: 'main',
+          issueTitle: "Test Issue",
+          agentType: "claude-code",
+          targetBranch: "main",
           repoPath: invalidRepoPath,
         })
-      ).rejects.toThrow('Not a git repository');
+      ).rejects.toThrow("Not a git repository");
 
       // Verify no execution was created
-      const executions = db.prepare('SELECT * FROM executions WHERE issue_id = ?').all(testIssueId);
+      const executions = db
+        .prepare("SELECT * FROM executions WHERE issue_id = ?")
+        .all(testIssueId);
       expect(executions.length).toBe(0);
     });
 
-    it('should not create execution if target branch does not exist', async () => {
+    it("should not create execution if target branch does not exist", async () => {
       const config: WorktreeConfig = {
-        worktreeStoragePath: '.sudocode/worktrees',
+        worktreeStoragePath: ".sudocode/worktrees",
         autoCreateBranches: true,
         autoDeleteBranches: false,
         enableSparseCheckout: false,
         sparseCheckoutPatterns: undefined,
-        branchPrefix: 'sudocode',
+        branchPrefix: "sudocode",
         cleanupOrphanedWorktreesOnStartup: true,
       };
 
       const worktreeManager = new WorktreeManager(config);
-      const service = new ExecutionLifecycleService(db, gitRepoPath, worktreeManager);
+      const service = new ExecutionLifecycleService(
+        db,
+        gitRepoPath,
+        worktreeManager
+      );
 
-      const testIssueId = createTestIssue('Non-Existent Branch Test');
+      const testIssueId = createTestIssue("Non-Existent Branch Test");
 
       await expect(
         service.createExecutionWithWorktree({
           issueId: testIssueId,
-          issueTitle: 'Test Issue',
-          agentType: 'claude-code',
-          targetBranch: 'non-existent-branch',
+          issueTitle: "Test Issue",
+          agentType: "claude-code",
+          targetBranch: "non-existent-branch",
           repoPath: gitRepoPath,
         })
-      ).rejects.toThrow('Target branch does not exist');
+      ).rejects.toThrow("Target branch does not exist");
     });
 
-    it('should cleanup worktree if execution creation fails after worktree created', async () => {
+    it("should cleanup worktree if execution creation fails after worktree created", async () => {
       const config: WorktreeConfig = {
-        worktreeStoragePath: '.sudocode/worktrees',
+        worktreeStoragePath: ".sudocode/worktrees",
         autoCreateBranches: true,
         autoDeleteBranches: true,
         enableSparseCheckout: false,
         sparseCheckoutPatterns: undefined,
-        branchPrefix: 'sudocode',
+        branchPrefix: "sudocode",
         cleanupOrphanedWorktreesOnStartup: true,
       };
 
       const worktreeManager = new WorktreeManager(config);
-      const service = new ExecutionLifecycleService(db, gitRepoPath, worktreeManager);
+      const service = new ExecutionLifecycleService(
+        db,
+        gitRepoPath,
+        worktreeManager
+      );
 
       // This test is difficult to trigger without mocking, but we can verify
       // the cleanup logic by checking that worktrees are cleaned up when
@@ -708,13 +790,13 @@ describe('Worktree Integration Tests', () => {
 
       // The service already has validation that prevents this scenario,
       // so we'll verify that the validation works correctly
-      const testIssueId = createTestIssue('Integration Test 2');
+      const testIssueId = createTestIssue("Integration Test 2");
 
       const result = await service.createExecutionWithWorktree({
         issueId: testIssueId,
-        issueTitle: 'Test Issue',
-        agentType: 'claude-code',
-        targetBranch: 'main',
+        issueTitle: "Test Issue",
+        agentType: "claude-code",
+        targetBranch: "main",
         repoPath: gitRepoPath,
       });
 
@@ -738,30 +820,30 @@ function setupGitRepository(repoPath: string): void {
   fs.mkdirSync(repoPath, { recursive: true });
 
   // Initialize git repository
-  execSync('git init', { cwd: repoPath });
+  execSync("git init", { cwd: repoPath });
   execSync('git config user.email "test@example.com"', { cwd: repoPath });
   execSync('git config user.name "Test User"', { cwd: repoPath });
 
   // Create initial commit
-  const readmePath = path.join(repoPath, 'README.md');
-  fs.writeFileSync(readmePath, '# Test Repository\n');
-  execSync('git add README.md', { cwd: repoPath });
+  const readmePath = path.join(repoPath, "README.md");
+  fs.writeFileSync(readmePath, "# Test Repository\n");
+  execSync("git add README.md", { cwd: repoPath });
   execSync('git commit -m "Initial commit"', { cwd: repoPath });
 
   // Create some test files and directories
-  const srcDir = path.join(repoPath, 'src');
+  const srcDir = path.join(repoPath, "src");
   fs.mkdirSync(srcDir);
-  fs.writeFileSync(path.join(srcDir, 'index.ts'), 'export {};\n');
+  fs.writeFileSync(path.join(srcDir, "index.ts"), "export {};\n");
 
   const packageJson = {
-    name: 'test-repo',
-    version: '1.0.0',
+    name: "test-repo",
+    version: "1.0.0",
   };
   fs.writeFileSync(
-    path.join(repoPath, 'package.json'),
+    path.join(repoPath, "package.json"),
     JSON.stringify(packageJson, null, 2)
   );
 
-  execSync('git add .', { cwd: repoPath });
+  execSync("git add .", { cwd: repoPath });
   execSync('git commit -m "Add test files"', { cwd: repoPath });
 }

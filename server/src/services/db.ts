@@ -1,6 +1,6 @@
 /**
  * Database service for sudocode server
- * Uses shared schema from @sudocode/types
+ * Uses shared schema from @sudocode-ai/types
  */
 
 import Database from "better-sqlite3";
@@ -13,7 +13,7 @@ import {
   PROMPT_TEMPLATES_INDEXES,
   EXECUTION_LOGS_TABLE,
   EXECUTION_LOGS_INDEXES,
-} from "@sudocode/types/schema";
+} from "@sudocode-ai/types/schema";
 import { initializeDefaultTemplates } from "./prompt-templates.js";
 
 /**

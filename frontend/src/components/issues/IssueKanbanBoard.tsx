@@ -7,7 +7,7 @@ import {
   KanbanProvider,
 } from '@/components/ui/kanban'
 import { IssueCard } from './IssueCard'
-import type { Issue, IssueStatus } from '@sudocode/types'
+import type { Issue, IssueStatus } from '@sudocode-ai/types'
 
 const columnOrder: IssueStatus[] = ['blocked', 'open', 'in_progress', 'needs_review', 'closed']
 
@@ -47,7 +47,6 @@ function IssueKanbanBoard({
   collapsedColumns = new Set(),
   onToggleColumnCollapse,
 }: IssueKanbanBoardProps) {
-
   const renderDragOverlay = (activeId: string | null) => {
     if (!activeId) return null
 
@@ -88,7 +87,9 @@ function IssueKanbanBoard({
               count={statusIssues.length}
               onArchiveAll={status === 'closed' ? onArchiveAllClosed : undefined}
               collapsed={isCollapsed}
-              onToggleCollapse={onToggleColumnCollapse ? () => onToggleColumnCollapse(status) : undefined}
+              onToggleCollapse={
+                onToggleColumnCollapse ? () => onToggleColumnCollapse(status) : undefined
+              }
             />
             <KanbanCards collapsed={isCollapsed}>
               {statusIssues.map((issue, index) => (

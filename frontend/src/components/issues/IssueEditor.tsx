@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import type { Issue, IssueStatus } from '@sudocode/types'
+import type { Issue, IssueStatus } from '@sudocode-ai/types'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'

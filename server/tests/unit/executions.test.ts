@@ -2,10 +2,13 @@
  * Tests for Executions database operations
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type Database from "better-sqlite3";
 import { initDatabase as initCliDatabase } from "@sudocode/cli/dist/db.js";
-import { EXECUTIONS_TABLE, EXECUTIONS_INDEXES } from "@sudocode/types/schema";
+import {
+  EXECUTIONS_TABLE,
+  EXECUTIONS_INDEXES,
+} from "@sudocode-ai/types/schema";
 import {
   createExecution,
   getExecution,

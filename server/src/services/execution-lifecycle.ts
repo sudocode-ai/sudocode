@@ -9,7 +9,7 @@
 
 import path from "path";
 import type Database from "better-sqlite3";
-import type { AgentType, Execution } from "@sudocode/types";
+import type { AgentType, Execution } from "@sudocode-ai/types";
 import {
   WorktreeManager,
   type IWorktreeManager,

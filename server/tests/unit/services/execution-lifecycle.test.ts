@@ -2,10 +2,13 @@
  * Tests for ExecutionLifecycleService
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type Database from "better-sqlite3";
 import { initDatabase as initCliDatabase } from "@sudocode/cli/dist/db.js";
-import { EXECUTIONS_TABLE, EXECUTIONS_INDEXES } from "@sudocode/types/schema";
+import {
+  EXECUTIONS_TABLE,
+  EXECUTIONS_INDEXES,
+} from "@sudocode-ai/types/schema";
 import {
   ExecutionLifecycleService,
   sanitizeForBranchName,
@@ -108,7 +111,9 @@ describe("ExecutionLifecycleService", () => {
 
       // Verify branch name format
       expect(result.branchName.startsWith("sudocode/")).toBeTruthy();
-      expect(result.branchName.includes("test-issue-for-lifecycle")).toBeTruthy();
+      expect(
+        result.branchName.includes("test-issue-for-lifecycle")
+      ).toBeTruthy();
 
       // Verify worktree path format
       expect(result.worktreePath.includes(".sudocode/worktrees")).toBeTruthy();
@@ -172,7 +177,9 @@ describe("ExecutionLifecycleService", () => {
       });
 
       // Branch name should be sanitized
-      expect(result.branchName.includes("fix-bug-auth-login-issues")).toBeTruthy();
+      expect(
+        result.branchName.includes("fix-bug-auth-login-issues")
+      ).toBeTruthy();
       expect(!result.branchName.includes(":")).toBeTruthy();
       expect(!result.branchName.includes("!")).toBeTruthy();
 
@@ -213,8 +220,8 @@ describe("ExecutionLifecycleService", () => {
 
       // Verify worktree cleanup was called
       expect(mockWorktreeManager.cleanupWorktreeCalls.length).toBe(1);
-      expect(
-        mockWorktreeManager.cleanupWorktreeCalls[0].worktreePath).toBe(result.worktreePath
+      expect(mockWorktreeManager.cleanupWorktreeCalls[0].worktreePath).toBe(
+        result.worktreePath
       );
 
       // Verify execution worktree_path is still set (for follow-up executions)
@@ -306,7 +313,8 @@ describe("ExecutionLifecycleService", () => {
       expect(
         mockWorktreeManager.cleanupWorktreeCalls[0].worktreePath.includes(
           "orphaned-exec-id"
-        )).toBeTruthy();
+        )
+      ).toBeTruthy();
     });
 
     it("should cleanup worktrees for completed executions", async () => {
@@ -348,8 +356,8 @@ describe("ExecutionLifecycleService", () => {
 
       // Verify cleanup was called
       expect(mockWorktreeManager.cleanupWorktreeCalls.length).toBe(1);
-      expect(
-        mockWorktreeManager.cleanupWorktreeCalls[0].worktreePath).toBe(result.worktreePath
+      expect(mockWorktreeManager.cleanupWorktreeCalls[0].worktreePath).toBe(
+        result.worktreePath
       );
     });
 
@@ -397,9 +405,7 @@ describe("ExecutionLifecycleService", () => {
 
   describe("sanitizeForBranchName", () => {
     it("should convert to lowercase", () => {
-      expect(
-        sanitizeForBranchName("UPPERCASE Text")).toBe("uppercase-text"
-      );
+      expect(sanitizeForBranchName("UPPERCASE Text")).toBe("uppercase-text");
     });
 
     it("should replace spaces with hyphens", () => {
@@ -407,8 +413,8 @@ describe("ExecutionLifecycleService", () => {
     });
 
     it("should replace slashes with hyphens", () => {
-      expect(
-        sanitizeForBranchName("feature/auth/login")).toBe("feature-auth-login"
+      expect(sanitizeForBranchName("feature/auth/login")).toBe(
+        "feature-auth-login"
       );
     });
 
@@ -417,9 +423,7 @@ describe("ExecutionLifecycleService", () => {
     });
 
     it("should remove consecutive hyphens", () => {
-      expect(
-        sanitizeForBranchName("fix   bug---here")).toBe("fix-bug-here"
-      );
+      expect(sanitizeForBranchName("fix   bug---here")).toBe("fix-bug-here");
     });
 
     it("should remove leading/trailing hyphens", () => {

@@ -8,7 +8,7 @@ import type {
   RelationshipType,
   FeedbackType,
   FeedbackAnchor,
-} from '@sudocode/types'
+} from '@sudocode-ai/types'
 
 /**
  * API Response wrapper
@@ -127,7 +127,7 @@ export interface WebSocketSubscribeMessage {
 }
 
 /**
- * Re-export types from @sudocode/types
+ * Re-export types from @sudocode-ai/types
  */
 export type {
   Issue,

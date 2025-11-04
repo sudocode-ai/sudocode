@@ -2,11 +2,11 @@
  * Execution system types
  */
 
-import type { ExecutionStatus, AgentType, Execution } from '@sudocode/types'
+import type { ExecutionStatus, AgentType, Execution } from '@sudocode-ai/types'
 
-// TODO: Remove this re-export and fully migrate to @sudocode/types
+// TODO: Remove this re-export and fully migrate to @sudocode-ai/types
 /**
- * Re-export types from @sudocode/types
+ * Re-export types from @sudocode-ai/types
  */
 export type { ExecutionStatus, AgentType, Execution }
 
@@ -28,7 +28,7 @@ export type CleanupMode =
 /**
  * Execution configuration - user-configurable settings
  * NOTE: This is frontend-specific configuration that gets serialized to JSON
- * and stored in the execution.config field (from @sudocode/types)
+ * and stored in the execution.config field (from @sudocode-ai/types)
  */
 export interface ExecutionConfig {
   // Agent settings

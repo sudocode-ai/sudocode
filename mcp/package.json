@@ -55,7 +55,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
     "@sudocode/cli": "^0.1.0",
-    "@sudocode/types": "^0.1.0",
+    "@sudocode-ai/types": "^0.1.0",
     "vite": "7.1.12"
   },
   "devDependencies": {

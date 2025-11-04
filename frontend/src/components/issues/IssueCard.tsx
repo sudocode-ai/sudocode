@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { KanbanCard } from '@/components/ui/kanban'
-import type { Issue } from '@sudocode/types'
+import type { Issue } from '@sudocode-ai/types'
 
 // Priority badge colors - using darker shades for better contrast with white text
 const priorityColors: Record<number, string> = {

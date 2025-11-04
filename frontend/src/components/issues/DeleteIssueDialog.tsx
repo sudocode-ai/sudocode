@@ -8,7 +8,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import type { Issue } from '@sudocode/types'
+import type { Issue } from '@sudocode-ai/types'
 
 interface DeleteIssueDialogProps {
   issue: Issue | null

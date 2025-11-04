@@ -13,7 +13,7 @@ import {
   type UpdateSpecInput,
   type ListSpecsOptions,
 } from "@sudocode/cli/dist/operations/index.js";
-import type { Spec } from "@sudocode/types";
+import type { Spec } from "@sudocode-ai/types";
 
 /**
  * Get all specs with optional filtering
@@ -28,10 +28,7 @@ export function getAllSpecs(
 /**
  * Get a single spec by ID
  */
-export function getSpecById(
-  db: Database.Database,
-  id: string
-): Spec | null {
+export function getSpecById(db: Database.Database, id: string): Spec | null {
   return getSpec(db, id);
 }
 
@@ -59,9 +56,6 @@ export function updateExistingSpec(
 /**
  * Delete a spec
  */
-export function deleteExistingSpec(
-  db: Database.Database,
-  id: string
-): boolean {
+export function deleteExistingSpec(db: Database.Database, id: string): boolean {
   return deleteSpec(db, id);
 }

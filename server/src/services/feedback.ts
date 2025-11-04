@@ -4,7 +4,7 @@
  */
 
 import type Database from "better-sqlite3";
-import type { IssueFeedback } from "@sudocode/types";
+import type { IssueFeedback } from "@sudocode-ai/types";
 import {
   createFeedback,
   getFeedback,

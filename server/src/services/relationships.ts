@@ -4,7 +4,11 @@
  */
 
 import type Database from "better-sqlite3";
-import type { Relationship, EntityType, RelationshipType } from "@sudocode/types";
+import type {
+  Relationship,
+  EntityType,
+  RelationshipType,
+} from "@sudocode-ai/types";
 import {
   addRelationship,
   getRelationship,
@@ -36,7 +40,14 @@ export function getSpecificRelationship(
   to_type: EntityType,
   relationship_type: RelationshipType
 ): Relationship | null {
-  return getRelationship(db, from_id, from_type, to_id, to_type, relationship_type);
+  return getRelationship(
+    db,
+    from_id,
+    from_type,
+    to_id,
+    to_type,
+    relationship_type
+  );
 }
 
 /**
@@ -50,7 +61,14 @@ export function deleteRelationship(
   to_type: EntityType,
   relationship_type: RelationshipType
 ): boolean {
-  return removeRelationship(db, from_id, from_type, to_id, to_type, relationship_type);
+  return removeRelationship(
+    db,
+    from_id,
+    from_type,
+    to_id,
+    to_type,
+    relationship_type
+  );
 }
 
 /**
@@ -62,7 +80,12 @@ export function getEntityOutgoingRelationships(
   entity_type: EntityType,
   relationship_type?: RelationshipType
 ): Relationship[] {
-  return getOutgoingRelationships(db, entity_id, entity_type, relationship_type);
+  return getOutgoingRelationships(
+    db,
+    entity_id,
+    entity_type,
+    relationship_type
+  );
 }
 
 /**
@@ -74,7 +97,12 @@ export function getEntityIncomingRelationships(
   entity_type: EntityType,
   relationship_type?: RelationshipType
 ): Relationship[] {
-  return getIncomingRelationships(db, entity_id, entity_type, relationship_type);
+  return getIncomingRelationships(
+    db,
+    entity_id,
+    entity_type,
+    relationship_type
+  );
 }
 
 /**

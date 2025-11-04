@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { IssueEditor } from './IssueEditor'
-import type { Issue, IssueStatus } from '@sudocode/types'
+import type { Issue, IssueStatus } from '@sudocode-ai/types'
 
 interface CreateIssueDialogProps {
   isOpen: boolean

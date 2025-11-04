@@ -3,7 +3,7 @@
  */
 
 import type Database from "better-sqlite3";
-import type { Execution, AgentType, ExecutionStatus } from "@sudocode/types";
+import type { Execution, AgentType, ExecutionStatus } from "@sudocode-ai/types";
 import { randomUUID } from "crypto";
 
 /**

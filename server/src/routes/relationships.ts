@@ -4,7 +4,7 @@
 
 import { Router, Request, Response } from "express";
 import type Database from "better-sqlite3";
-import type { EntityType, RelationshipType } from "@sudocode/types";
+import type { EntityType, RelationshipType } from "@sudocode-ai/types";
 import {
   createRelationship,
   deleteRelationship,
@@ -147,8 +147,14 @@ export function createRelationshipsRouter(db: Database.Database): Router {
    */
   router.post("/", (req: Request, res: Response) => {
     try {
-      const { from_id, from_type, to_id, to_type, relationship_type, metadata } =
-        req.body;
+      const {
+        from_id,
+        from_type,
+        to_id,
+        to_type,
+        relationship_type,
+        metadata,
+      } = req.body;
 
       // Validate required fields
       if (!from_id || typeof from_id !== "string") {
