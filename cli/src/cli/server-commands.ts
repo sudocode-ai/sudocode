@@ -3,8 +3,6 @@
  */
 
 import { spawn } from "child_process";
-import * as path from "path";
-import { fileURLToPath } from "url";
 import chalk from "chalk";
 import { getUpdateNotification } from "../update-checker.js";
 
@@ -17,6 +15,25 @@ export interface CommandContext {
 export interface ServerStartOptions {
   port?: string;
   detach?: boolean;
+}
+
+/**
+ * Check if @sudocode-ai/local-server is installed and available
+ * Uses 'npx --no @sudocode-ai/local-server --version' to check without installing
+ */
+async function isServerInstalled(): Promise<boolean> {
+  const { execSync } = await import("child_process");
+
+  try {
+    // Use npx with --no flag to check if package exists without installing
+    execSync("npx --no @sudocode-ai/local-server --version", {
+      stdio: "ignore",
+      timeout: 5000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -38,15 +55,25 @@ export async function handleServerStart(
     // Silently ignore update check failures
   }
 
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
+  // Check if server is installed first
+  const serverInstalled = await isServerInstalled();
 
-  // Find the server package - it should be a sibling workspace
-  // TODO: Improve this to handle various installation scenarios
-  const serverPath = path.resolve(
-    __dirname,
-    "../../../server/dist/src/index.js"
-  );
+  if (!serverInstalled) {
+    console.error(chalk.red("✗ @sudocode-ai/local-server is not installed"));
+    console.log();
+    console.log(chalk.yellow("Please install the server package first:"));
+    console.log();
+    console.log(chalk.blue("  Global installation (recommended):"));
+    console.log(chalk.gray("    npm install -g @sudocode-ai/local-server"));
+    console.log();
+    console.log(chalk.blue("  Or local installation:"));
+    console.log(chalk.gray("    npm install @sudocode-ai/local-server"));
+    console.log();
+    console.log(chalk.blue("  Or run directly without installing:"));
+    console.log(chalk.gray("    npx @sudocode-ai/local-server"));
+    console.log();
+    process.exit(1);
+  }
 
   // Set up environment variables
   const env = {
@@ -60,12 +87,19 @@ export async function handleServerStart(
     console.log(chalk.gray(`Port: ${options.port}`));
   }
 
-  // Start the server process
-  const serverProcess = spawn("node", [serverPath], {
-    detached: options.detach || false,
-    stdio: options.detach ? "ignore" : "inherit",
-    env,
-  });
+  if (process.env.DEBUG) {
+    console.log(chalk.gray("Using npx @sudocode-ai/local-server"));
+  }
+
+  const serverProcess = spawn(
+    "npx",
+    ["--no", "@sudocode-ai/local-server"], // --no prevents auto-install
+    {
+      detached: options.detach || false,
+      stdio: options.detach ? "ignore" : "inherit",
+      env,
+    }
+  );
 
   if (options.detach) {
     serverProcess.unref();

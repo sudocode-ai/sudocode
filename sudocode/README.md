@@ -118,7 +118,7 @@ Sudocode includes an MCP server for seamless AI assistant integration. To use wi
 
 Restart Claude Code to apply changes.
 
-For full MCP documentation, see [@sudocode/mcp](https://github.com/sudocode-ai/sudocode/tree/main/mcp).
+For full MCP documentation, see [@sudocode-ai/mcp](https://github.com/sudocode-ai/sudocode/tree/main/mcp).
 
 ## Example Workflow
 

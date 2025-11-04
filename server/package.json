@@ -1,5 +1,5 @@
 {
-  "name": "@sudocode/server",
+  "name": "@sudocode-ai/local-server",
   "version": "0.1.0",
   "description": "Local backend server for sudocode - provides REST API and WebSocket endpoints",
   "main": "dist/index.js",
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/cli.js",
     "start": "node dist/src/index.js",
     "test": "NODE_ENV=test vitest",
     "test:e2e": "RUN_E2E_TESTS=true NODE_ENV=test vitest --run",

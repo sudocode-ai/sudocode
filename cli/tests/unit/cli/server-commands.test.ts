@@ -15,6 +15,7 @@ vi.mock("child_process", () => ({
     kill: vi.fn(),
     on: vi.fn(),
   })),
+  execSync: vi.fn(() => "0.1.0"), // Mock execSync for server installation check
 }));
 
 // Mock update checker
@@ -53,6 +54,9 @@ describe("Server Commands", () => {
       );
       getUpdateNotificationMock.mockResolvedValue(null);
 
+      const execSyncMock = vi.mocked(childProcess.execSync);
+      execSyncMock.mockReturnValue("0.1.0" as any);
+
       await handleServerStart(mockContext, { detach: true });
 
       expect(getUpdateNotificationMock).toHaveBeenCalledOnce();
@@ -64,6 +68,9 @@ describe("Server Commands", () => {
         updateChecker.getUpdateNotification
       );
       getUpdateNotificationMock.mockResolvedValue(notification);
+
+      const execSyncMock = vi.mocked(childProcess.execSync);
+      execSyncMock.mockReturnValue("0.1.0" as any);
 
       await handleServerStart(mockContext, { detach: true });
 
@@ -79,6 +86,9 @@ describe("Server Commands", () => {
       );
       getUpdateNotificationMock.mockResolvedValue(null);
 
+      const execSyncMock = vi.mocked(childProcess.execSync);
+      execSyncMock.mockReturnValue("0.1.0" as any);
+
       await handleServerStart(mockContext, { detach: true });
 
       // Should still call console.log for server startup messages
@@ -90,19 +100,30 @@ describe("Server Commands", () => {
       expect(allLogs).not.toContain("Update available");
     });
 
-    it("should start server in detached mode", async () => {
+    it("should use npx when server is installed", async () => {
       const getUpdateNotificationMock = vi.mocked(
         updateChecker.getUpdateNotification
       );
       getUpdateNotificationMock.mockResolvedValue(null);
 
       const spawnMock = vi.mocked(childProcess.spawn);
+      const execSyncMock = vi.mocked(childProcess.execSync);
+
+      // Mock server as installed
+      execSyncMock.mockReturnValue("0.1.0" as any);
 
       await handleServerStart(mockContext, { detach: true, port: "3001" });
 
+      // Should check if server is installed
+      expect(execSyncMock).toHaveBeenCalledWith(
+        "npx --no @sudocode-ai/local-server --version",
+        expect.objectContaining({ stdio: "ignore" })
+      );
+
+      // Should spawn npx
       expect(spawnMock).toHaveBeenCalledWith(
-        "node",
-        [expect.stringContaining("server/dist/src/index.js")],
+        "npx",
+        ["--no", "@sudocode-ai/local-server"],
         expect.objectContaining({
           detached: true,
           stdio: "ignore",
@@ -114,24 +135,33 @@ describe("Server Commands", () => {
       );
     });
 
-    it("should start server in attached mode", async () => {
+    it("should error when server is not installed", async () => {
       const getUpdateNotificationMock = vi.mocked(
         updateChecker.getUpdateNotification
       );
       getUpdateNotificationMock.mockResolvedValue(null);
 
-      const spawnMock = vi.mocked(childProcess.spawn);
+      const execSyncMock = vi.mocked(childProcess.execSync);
+      const processExitSpy = vi
+        .spyOn(process, "exit")
+        .mockImplementation(() => {
+          throw new Error("process.exit called");
+        });
 
-      await handleServerStart(mockContext, { detach: false });
+      // Mock server as not installed
+      execSyncMock.mockImplementation(() => {
+        throw new Error("Package not found");
+      });
 
-      expect(spawnMock).toHaveBeenCalledWith(
-        "node",
-        [expect.stringContaining("server/dist/src/index.js")],
-        expect.objectContaining({
-          detached: false,
-          stdio: "inherit",
-        })
+      await expect(
+        handleServerStart(mockContext, { detach: true })
+      ).rejects.toThrow("process.exit called");
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("@sudocode-ai/local-server is not installed")
       );
+
+      processExitSpy.mockRestore();
     });
 
     it("should use default port if not specified", async () => {
@@ -141,6 +171,8 @@ describe("Server Commands", () => {
       getUpdateNotificationMock.mockResolvedValue(null);
 
       const spawnMock = vi.mocked(childProcess.spawn);
+      const execSyncMock = vi.mocked(childProcess.execSync);
+      execSyncMock.mockReturnValue("0.1.0" as any);
 
       await handleServerStart(mockContext, { detach: true });
 
@@ -156,6 +188,8 @@ describe("Server Commands", () => {
       getUpdateNotificationMock.mockResolvedValue(null);
 
       const spawnMock = vi.mocked(childProcess.spawn);
+      const execSyncMock = vi.mocked(childProcess.execSync);
+      execSyncMock.mockReturnValue("0.1.0" as any);
 
       await handleServerStart(mockContext, { detach: true });
 
@@ -169,9 +203,10 @@ describe("Server Commands", () => {
         updateChecker.getUpdateNotification
       );
       // Simulate update check failure
-      getUpdateNotificationMock.mockRejectedValue(
-        new Error("Network error")
-      );
+      getUpdateNotificationMock.mockRejectedValue(new Error("Network error"));
+
+      const execSyncMock = vi.mocked(childProcess.execSync);
+      execSyncMock.mockReturnValue("0.1.0" as any);
 
       // Should not throw
       await expect(

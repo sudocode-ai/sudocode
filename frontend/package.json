@@ -1,5 +1,5 @@
 {
-  "name": "@sudocode/ui",
+  "name": "@sudocode-ai/local-ui",
   "version": "0.1.0",
   "description": "React frontend application for sudocode - UI for spec and issue management",
   "type": "module",
