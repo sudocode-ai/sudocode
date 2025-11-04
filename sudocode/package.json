@@ -1,20 +1,8 @@
 {
   "name": "sudocode",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Git-native spec and issue management for AI-assisted software development - meta-package",
   "type": "module",
-  "bin": {
-    "sudocode": "node_modules/@sudocode-ai/cli/dist/cli.js",
-    "sdc": "node_modules/@sudocode-ai/cli/dist/cli.js",
-    "sudocode-mcp": "node_modules/@sudocode-ai/mcp/dist/index.js",
-    "sudocode-server": "node_modules/@sudocode-ai/local-server/dist/cli.js"
-  },
-  "scripts": {
-    "build": "node ../scripts/sync-dependencies.js --quiet && node build.js",
-    "clean": "rm -rf node_modules",
-    "prepack": "npm run build",
-    "postinstall": "echo 'sudocode installed successfully!'"
-  },
   "keywords": [
     "sudocode",
     "project-management",
@@ -23,36 +11,12 @@
     "mcp",
     "cli"
   ],
-  "author": "",
-  "license": "MIT",
+  "author": "sudocode AI",
+  "license": "Apache-2.0",
   "dependencies": {
-    "better-sqlite3": "^11.8.1",
-    "chalk": "^5.6.2",
-    "chokidar": "^4.0.3",
-    "cli-table3": "^0.6.5",
-    "commander": "^14.0.1",
-    "gray-matter": "^4.0.3",
-    "vite": "7.1.12",
-    "@modelcontextprotocol/sdk": "^1.0.4",
-    "@ag-ui/core": "^0.0.39",
-    "@types/ws": "^8.18.1",
-    "async-mutex": "^0.5.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.18.2",
-    "glob": "^11.0.3",
-    "node-fetch": "^2.7.0",
-    "ws": "^8.18.3",
-    "zod": "^3.22.4",
-    "@sudocode-ai/types": "^0.1.1",
-    "@sudocode-ai/cli": "^0.1.1",
-    "@sudocode-ai/mcp": "^0.1.1",
-    "@sudocode-ai/local-server": "^0.1.1"
-  },
-  "bundleDependencies": [
-    "@sudocode-ai/cli",
-    "@sudocode-ai/local-server",
-    "@sudocode-ai/mcp",
-    "@sudocode-ai/types"
-  ]
+    "@sudocode-ai/types": "^0.1.2",
+    "@sudocode-ai/cli": "^0.1.2",
+    "@sudocode-ai/mcp": "^0.1.2",
+    "@sudocode-ai/local-server": "^0.1.2"
+  }
 }

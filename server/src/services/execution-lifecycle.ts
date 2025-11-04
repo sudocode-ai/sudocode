@@ -288,6 +288,12 @@ export class ExecutionLifecycleService {
     const config = this.worktreeManager.getConfig();
 
     try {
+      // Check if this is a valid git repository first
+      const isValidRepo = await this.worktreeManager.isValidRepo(repoPath);
+      if (!isValidRepo) {
+        return;
+      }
+
       // List all worktrees from git
       const worktrees = await this.worktreeManager.listWorktrees(repoPath);
 

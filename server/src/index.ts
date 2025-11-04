@@ -90,13 +90,14 @@ async function initialize() {
     const worktreeConfig = getWorktreeConfig(REPO_ROOT);
     if (worktreeConfig.cleanupOrphanedWorktreesOnStartup) {
       try {
-        console.log("Cleaning up orphaned worktrees...");
+        // TODO: Log if there are worktrees to cleanup
         const worktreeManager = new WorktreeManager(worktreeConfig);
         const lifecycleService = new ExecutionLifecycleService(
           db,
           REPO_ROOT,
           worktreeManager
         );
+        console.log("Cleaning up orphaned worktrees...");
         await lifecycleService.cleanupOrphanedWorktrees();
         console.log("Orphaned worktree cleanup complete");
       } catch (error) {

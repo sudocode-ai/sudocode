@@ -154,6 +154,35 @@ for pkg in "${PACKAGES[@]}"; do
     continue
   fi
 
+  # For @sudocode packages, update @sudocode-ai/* dependencies
+  if [[ "$name" == @sudocode/* ]]; then
+    echo "  Updating @sudocode-ai dependencies in $name..."
+    node -e "
+      const fs = require('fs');
+      const pkg = JSON.parse(fs.readFileSync('$PKG_FILE', 'utf8'));
+      let updated = false;
+      if (pkg.dependencies) {
+        for (const dep of Object.keys(pkg.dependencies)) {
+          if (dep.startsWith('@sudocode-ai/')) {
+            pkg.dependencies[dep] = '^$VERSION';
+            updated = true;
+          }
+        }
+      }
+      if (pkg.devDependencies) {
+        for (const dep of Object.keys(pkg.devDependencies)) {
+          if (dep.startsWith('@sudocode-ai/')) {
+            pkg.devDependencies[dep] = '^$VERSION';
+            updated = true;
+          }
+        }
+      }
+      if (updated) {
+        fs.writeFileSync('$PKG_FILE', JSON.stringify(pkg, null, 2) + '\n');
+      }
+    "
+  fi
+
   # Update @sudocode-ai/types reference
   if grep -q '"@sudocode-ai/types"' "$PKG_FILE"; then
     echo "  Updating @sudocode-ai/types in $name..."

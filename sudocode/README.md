@@ -216,7 +216,8 @@ The JSONL files are designed to be merged in git like code - each line is a comp
 You can also install packages individually:
 
 ```bash
-npm install -g @sudocode-ai/cli       # CLI only
-npm install -g @sudocode-ai/mcp       # MCP server only
-npm install @sudocode-ai/types        # Types only (for development)
+npm install -g @sudocode-ai/cli             # CLI only
+npm install -g @sudocode-ai/mcp             # MCP server only
+npm install -g @sudocode-ai/local-server    # Under construction!
+npm install @sudocode-ai/types              # Types only (for development)
 ```

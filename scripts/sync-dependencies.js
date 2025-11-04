@@ -92,10 +92,7 @@ const metaPackagePath = join(rootDir, "sudocode", "package.json");
 const metaPackageJson = readPackageJson(metaPackagePath);
 
 // Update dependencies
-metaPackageJson.dependencies = allDependencies;
-
-// Update bundleDependencies (only bundle workspace packages)
-metaPackageJson.bundleDependencies = BUNDLED_PACKAGES.map((p) => p.name).sort();
+metaPackageJson.dependencies = BUNDLED_PACKAGES.map((p) => p.name).sort();
 
 // Write back to file
 writePackageJson(metaPackagePath, metaPackageJson);
