@@ -24,7 +24,7 @@ import { listFeedback, updateFeedback } from "./operations/feedback.js";
 import { relocateFeedbackAnchor } from "./operations/feedback-anchors.js";
 import { exportToJSONL } from "./export.js";
 import { generateSpecId, generateIssueId } from "./id-generator.js";
-import type { Spec, Issue, IssueStatus } from "@sudocode/types";
+import type { Spec, Issue, IssueStatus } from "@sudocode-ai/types";
 
 export interface SyncResult {
   success: boolean;
@@ -251,9 +251,27 @@ export async function syncMarkdownToJSONL(
     const fileModTime = new Date(fileStat.mtimeMs).toISOString();
 
     if (entityType === "spec") {
-      await syncSpec(db, entityId, data, content, references, isNew, user, fileModTime);
+      await syncSpec(
+        db,
+        entityId,
+        data,
+        content,
+        references,
+        isNew,
+        user,
+        fileModTime
+      );
     } else {
-      await syncIssue(db, entityId, data, content, references, isNew, user, fileModTime);
+      await syncIssue(
+        db,
+        entityId,
+        data,
+        content,
+        references,
+        isNew,
+        user,
+        fileModTime
+      );
     }
 
     // Auto-export to JSONL if enabled
@@ -566,7 +584,9 @@ async function syncRelationships(
           to_id: ref.id,
           to_type: ref.type,
           relationship_type: relType as any,
-          metadata: ref.anchor ? JSON.stringify({ anchor: ref.anchor }) : undefined,
+          metadata: ref.anchor
+            ? JSON.stringify({ anchor: ref.anchor })
+            : undefined,
         });
       } catch (error) {
         // Ignore errors (e.g., target not found, duplicate)

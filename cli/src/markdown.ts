@@ -9,7 +9,7 @@ import { getSpec } from "./operations/specs.js";
 import { getIssue } from "./operations/issues.js";
 import { getConfig } from "./id-generator.js";
 import { createFeedbackAnchor } from "./operations/feedback-anchors.js";
-import type { LocationAnchor, Config } from "@sudocode/types";
+import type { LocationAnchor, Config } from "@sudocode-ai/types";
 
 export interface ParsedMarkdown<T extends object = Record<string, any>> {
   /**
@@ -415,8 +415,8 @@ export function parseFeedbackSection(content: string): FeedbackMarkdownData[] {
           locationMatch?.[3] === "✓"
             ? "valid"
             : locationMatch?.[3] === "⚠"
-            ? "relocated"
-            : "stale",
+              ? "relocated"
+              : "stale",
       },
       status: status.trim(),
       content: content.trim(),
@@ -453,8 +453,8 @@ export function formatFeedbackForIssue(
       fb.location.status === "valid"
         ? "✓"
         : fb.location.status === "relocated"
-        ? "⚠"
-        : "✗";
+          ? "⚠"
+          : "✗";
 
     // Format location
     let locationStr = "";

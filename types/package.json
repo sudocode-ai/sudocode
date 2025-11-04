@@ -1,5 +1,5 @@
 {
-  "name": "@sudocode/types",
+  "name": "@sudocode-ai/types",
   "version": "0.1.0",
   "description": "TypeScript type definitions for sudocode",
   "types": "src/index.d.ts",
@@ -17,12 +17,16 @@
   "scripts": {
     "build": "tsc"
   },
-  "keywords": ["sudocode", "types", "typescript"],
+  "keywords": [
+    "sudocode",
+    "types",
+    "typescript"
+  ],
   "author": "sudocode AI",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sudocode-ai/sudocode.git",
+    "url": "git+https://github.com/sudocode-ai/sudocode.git",
     "directory": "types"
   },
   "homepage": "https://sudocode.ai",
@@ -32,7 +36,10 @@
   "publishConfig": {
     "access": "public"
   },
-  "files": ["src/index.d.ts", "dist"],
+  "files": [
+    "src/index.d.ts",
+    "dist"
+  ],
   "devDependencies": {
     "typescript": "^5.0.0"
   }

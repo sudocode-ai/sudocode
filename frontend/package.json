@@ -14,9 +14,6 @@
   "bugs": {
     "url": "https://github.com/sudocode-ai/sudocode/issues"
   },
-  "publishConfig": {
-    "access": "public"
-  },
   "keywords": [
     "sudocode",
     "ui",

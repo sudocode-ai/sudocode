@@ -6,7 +6,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
 import type Database from "better-sqlite3";
-import type { Config } from "@sudocode/types";
+import type { Config } from "@sudocode-ai/types";
 import { VERSION } from "./version.js";
 
 /**

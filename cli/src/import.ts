@@ -3,7 +3,7 @@
  */
 
 import type Database from "better-sqlite3";
-import type { SpecJSONL, IssueJSONL } from "@sudocode/types";
+import type { SpecJSONL, IssueJSONL } from "@sudocode-ai/types";
 import { readJSONL } from "./jsonl.js";
 import {
   listSpecs,
