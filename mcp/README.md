@@ -139,8 +139,13 @@ Once configured in Claude Code, you can ask Claude to:
 git clone https://github.com/sudocode-ai/sudocode.git
 cd sudocode/mcp
 npm install
-npm run build
+npm run build  # Uses esbuild for bundled & minified output
 ```
+
+The build process:
+- Bundles and minifies `src/index.ts` → `dist/index.js` (18 KB)
+- Generates TypeScript declarations
+- Sets executable permissions automatically
 
 ### Running Tests
 
@@ -148,6 +153,15 @@ npm run build
 npm test              # Run all tests in watch mode
 npm test -- --run     # Run once
 npm run test:unit     # Unit tests only
+```
+
+### Build Scripts
+
+```bash
+npm run build         # Production build (esbuild - bundled & minified)
+npm run build:dev     # Development build (tsc - preserves structure)
+npm run dev           # Watch mode for development
+npm run clean         # Remove build output
 ```
 
 ### Project Structure

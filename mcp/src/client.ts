@@ -54,7 +54,7 @@ export class SudocodeClient {
           "..",
           "..",
           "node_modules",
-          "@sudocode",
+          "@sudocode-ai",
           "cli",
           "dist",
           "cli.js"
@@ -64,7 +64,7 @@ export class SudocodeClient {
           currentDir,
           "..",
           "node_modules",
-          "@sudocode",
+          "@sudocode-ai",
           "cli",
           "dist",
           "cli.js"
