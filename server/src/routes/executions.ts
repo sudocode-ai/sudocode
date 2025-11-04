@@ -7,6 +7,7 @@
 import { Router, Request, Response } from "express";
 import type Database from "better-sqlite3";
 import { ExecutionService } from "../services/execution-service.js";
+import { ExecutionLogsStore } from "../services/execution-logs-store.js";
 import type { TransportManager } from "../execution/transport/transport-manager.js";
 
 /**
@@ -15,18 +16,22 @@ import type { TransportManager } from "../execution/transport/transport-manager.
  * @param db - Database instance
  * @param repoPath - Path to git repository
  * @param transportManager - Optional transport manager for SSE streaming
+ * @param executionService - Optional execution service instance
+ * @param logsStore - Optional execution logs store instance
  * @returns Express router with execution endpoints
  */
 export function createExecutionsRouter(
   db: Database.Database,
   repoPath: string,
   transportManager?: TransportManager,
-  executionService?: ExecutionService
+  executionService?: ExecutionService,
+  logsStore?: ExecutionLogsStore
 ): Router {
   const router = Router();
   const service =
     executionService ||
     new ExecutionService(db, repoPath, undefined, transportManager);
+  const store = logsStore || new ExecutionLogsStore(db);
 
   /**
    * POST /api/issues/:issueId/executions/prepare
@@ -137,6 +142,61 @@ export function createExecutionsRouter(
         data: null,
         error_data: error instanceof Error ? error.message : String(error),
         message: "Failed to get execution",
+      });
+    }
+  });
+
+  /**
+   * GET /api/executions/:executionId/logs
+   *
+   * Get raw execution logs for historical replay
+   */
+  router.get("/executions/:executionId/logs", (req: Request, res: Response) => {
+    try {
+      const { executionId } = req.params;
+
+      // Verify execution exists
+      const execution = service.getExecution(executionId);
+      if (!execution) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Execution not found: ${executionId}`,
+        });
+        return;
+      }
+
+      // Fetch raw logs and metadata
+      const logs = store.getRawLogs(executionId);
+      const metadata = store.getLogMetadata(executionId);
+
+      res.json({
+        success: true,
+        data: {
+          executionId,
+          logs,
+          metadata: metadata
+            ? {
+                lineCount: metadata.line_count,
+                byteSize: metadata.byte_size,
+                createdAt: metadata.created_at,
+                updatedAt: metadata.updated_at,
+              }
+            : {
+                lineCount: 0,
+                byteSize: 0,
+                createdAt: execution.created_at,
+                updatedAt: execution.updated_at,
+              },
+        },
+      });
+    } catch (error) {
+      console.error("[GET /executions/:id/logs] Error:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to fetch execution logs",
       });
     }
   });
