@@ -58,8 +58,12 @@ PACKAGES=(
   "cli:@sudocode-ai/cli:$VERSION"
   "mcp:@sudocode-ai/mcp:$VERSION"
   "server:@sudocode-ai/local-server:$VERSION"
+  "frontend:@sudocode-ai/local-ui:$VERSION"
   "sudocode:sudocode:$META_VERSION"
 )
+
+# Note: frontend (@sudocode-ai/local-ui) is NOT bundled in the meta-package
+# It's included in the server package as static files (dist/public)
 
 echo "Changes to be made:"
 echo ""
@@ -119,12 +123,25 @@ echo ""
 for pkg in "${PACKAGES[@]}"; do
   IFS=':' read -r dir name target_version <<< "$pkg"
 
-  # Skip meta-package as it will be handled by sync-dependencies.js
+  PKG_FILE="$dir/package.json"
+
+  # For meta-package, update all @sudocode-ai/* dependencies
   if [ "$name" = "sudocode" ]; then
+    echo "  Updating @sudocode-ai dependencies in meta-package..."
+    node -e "
+      const fs = require('fs');
+      const pkg = JSON.parse(fs.readFileSync('$PKG_FILE', 'utf8'));
+      if (pkg.dependencies) {
+        for (const dep of Object.keys(pkg.dependencies)) {
+          if (dep.startsWith('@sudocode-ai/')) {
+            pkg.dependencies[dep] = '^$VERSION';
+          }
+        }
+      }
+      fs.writeFileSync('$PKG_FILE', JSON.stringify(pkg, null, 2) + '\n');
+    "
     continue
   fi
-
-  PKG_FILE="$dir/package.json"
 
   # Update @sudocode-ai/types reference
   if grep -q '"@sudocode-ai/types"' "$PKG_FILE"; then
