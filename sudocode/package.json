@@ -3,6 +3,12 @@
   "version": "1.1.2",
   "description": "Git-native spec and issue management for AI-assisted software development - meta-package",
   "type": "module",
+  "bin": {
+    "sudocode": "node_modules/@sudocode-ai/cli/dist/cli.js",
+    "sdc": "node_modules/@sudocode-ai/cli/dist/cli.js",
+    "sudocode-mcp": "node_modules/@sudocode-ai/mcp/dist/index.js",
+    "sudocode-server": "node_modules/@sudocode-ai/local-server/dist/cli.js"
+ },
   "keywords": [
     "sudocode",
     "project-management",

@@ -242,13 +242,13 @@ app.get("/ws/stats", (_req: Request, res: Response) => {
 });
 
 // Serve static frontend
-// In development: ../../../frontend/dist (workspace)
+// In development: ../../frontend/dist (workspace)
 // In production: ./public (bundled with server package in dist/public)
 const isDev =
   process.env.NODE_ENV !== "production" &&
-  existsSync(path.join(__dirname, "../../../frontend/dist"));
+  existsSync(path.join(__dirname, "../../frontend/dist"));
 const frontendPath = isDev
-  ? path.join(__dirname, "../../../frontend/dist")
+  ? path.join(__dirname, "../../frontend/dist")
   : path.join(__dirname, "public");
 console.log(`[server] Serving static frontend from: ${frontendPath}`);
 
