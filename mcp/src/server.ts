@@ -19,11 +19,14 @@ import * as relationshipTools from "./tools/relationships.js";
 import * as feedbackTools from "./tools/feedback.js";
 import * as referenceTools from "./tools/references.js";
 import { SudocodeClientConfig } from "./types.js";
+import { existsSync } from "fs";
+import { join } from "path";
 
 export class SudocodeMCPServer {
   private server: Server;
   private client: SudocodeClient;
   private config: SudocodeClientConfig;
+  private isInitialized: boolean = false;
 
   constructor(config?: SudocodeClientConfig) {
     this.config = config || {};
@@ -358,6 +361,19 @@ export class SudocodeMCPServer {
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
 
+      if (!this.isInitialized) {
+        const workingDir = this.client["workingDir"] || process.cwd();
+        return {
+          content: [
+            {
+              type: "text",
+              text: `⚠️  sudocode is not initialized in this directory.\n\nWorking directory: ${workingDir}\n\nPlease run 'sudocode init' in your project root first.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
       try {
         let result: any;
 
@@ -515,35 +531,121 @@ sudocode is a git-native spec and issue management system designed for AI-assist
   }
 
   /**
-   * Initialize database by syncing from markdown files
-   * This ensures gitignored files (.sudocode/cache.db, JSONL) are created
+   * Check for .sudocode directory and required files
+   * Returns initialization status and handles auto-import if needed
    */
-  private async initializeDatabase() {
-    // Skip sync if disabled via config (default: true)
-    if (this.config.syncOnStartup === false) {
-      console.error("Skipping initial sync (disabled via --no-sync)");
-      return;
+  private async checkForInit(): Promise<{
+    initialized: boolean;
+    sudocodeExists: boolean;
+    message?: string;
+  }> {
+    const workingDir = this.client["workingDir"] || process.cwd();
+    const sudocodeDir = join(workingDir, ".sudocode");
+    const cacheDbPath = join(sudocodeDir, "cache.db");
+    const issuesPath = join(sudocodeDir, "issues.jsonl");
+    const specsPath = join(sudocodeDir, "specs.jsonl");
+
+    // Check if .sudocode directory exists
+    if (!existsSync(sudocodeDir)) {
+      return {
+        initialized: false,
+        sudocodeExists: false,
+        message: "No .sudocode directory found",
+      };
     }
 
-    try {
-      console.error("Initializing sudocode database...");
-      // TODO: Determine if sync or import is more appropriate here.
-      await this.client.exec(["import"]);
-      console.error("Database initialized successfully");
-    } catch (error) {
-      // Log error but don't fail startup - database may not exist yet
-      console.error(
-        `Warning: Failed to initialize database: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-      console.error("The server will still start, but may have stale data");
+    // .sudocode exists, check for cache.db
+    if (!existsSync(cacheDbPath)) {
+      // Try to auto-import from JSONL files if they exist
+      if (existsSync(issuesPath) || existsSync(specsPath)) {
+        try {
+          console.error(
+            "Found .sudocode directory but no cache.db, running import..."
+          );
+          await this.client.exec(["import"]);
+          console.error("✓ Successfully imported data to cache.db");
+          return {
+            initialized: true,
+            sudocodeExists: true,
+            message: "Auto-imported from JSONL files",
+          };
+        } catch (error) {
+          return {
+            initialized: false,
+            sudocodeExists: true,
+            message: `Failed to import: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          };
+        }
+      } else {
+        try {
+          console.error(
+            "Found .sudocode directory but no issues.jsonl or specs.jsonl, running init..."
+          );
+          await this.client.exec(["init"]);
+          console.error("✓ Successfully initialized sudocode");
+          await this.client.exec(["import"]);
+          return {
+            initialized: true,
+            sudocodeExists: true,
+            message: "Initialized sudocode",
+          };
+        } catch (error) {
+          return {
+            initialized: false,
+            sudocodeExists: true,
+            message: `Failed to initialize: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          };
+        }
+      }
+    }
+
+    return {
+      initialized: true,
+      sudocodeExists: true,
+    };
+  }
+
+  /**
+   * Check if sudocode is initialized in the working directory
+   * This provides early warning to users without blocking server startup
+   */
+  private async checkInitialization() {
+    const initStatus = await this.checkForInit();
+    const workingDir = this.client["workingDir"] || process.cwd();
+
+    if (initStatus.initialized) {
+      this.isInitialized = true;
+      console.error("✓ sudocode initialized successfully");
+      if (initStatus.message) {
+        console.error(`  ${initStatus.message}`);
+      }
+    } else {
+      this.isInitialized = false;
+      console.error("");
+      console.error("⚠️  WARNING: sudocode is not initialized");
+      console.error(`   Working directory: ${workingDir}`);
+      console.error("");
+
+      if (!initStatus.sudocodeExists) {
+        console.error("   No .sudocode directory found.");
+        console.error("   To initialize, run:");
+        console.error("   $ sudocode init");
+      } else {
+        console.error(`   Issue: ${initStatus.message}`);
+        console.error("   The .sudocode directory exists but is incomplete.");
+        console.error("   Try running:");
+        console.error("   $ sudocode import");
+      }
     }
   }
 
   async run() {
-    // Initialize database before starting server
-    await this.initializeDatabase();
+    // Check if sudocode is initialized (non-blocking warning)
+    await this.checkInitialization();
 
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
