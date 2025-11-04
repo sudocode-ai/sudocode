@@ -1,0 +1,148 @@
+name: Publish to NPM
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'NPM dist-tag (latest, beta, alpha, etc.)'
+        required: true
+        default: 'latest'
+        type: choice
+        options:
+          - latest
+          - beta
+          - alpha
+          - next
+      skip-tests:
+        description: 'Skip tests before publishing'
+        required: false
+        default: false
+        type: boolean
+
+  # Automatically publish on new tags matching v*.*.*
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Required for npm provenance
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        if: ${{ !inputs.skip-tests }}
+        run: npm test
+
+      - name: Build all packages
+        run: npm run build
+
+      - name: Determine dist-tag
+        id: dist-tag
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Extract version from tag (e.g., v1.2.3 -> 1.2.3)
+            VERSION="${GITHUB_REF#refs/tags/v}"
+
+            # Check if it's a prerelease (contains alpha, beta, rc, etc.)
+            if [[ "$VERSION" =~ (alpha|beta|rc|next) ]]; then
+              echo "tag=next" >> $GITHUB_OUTPUT
+            else
+              echo "tag=latest" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check for already published versions
+        id: check-versions
+        run: |
+          echo "Checking for already published versions..."
+
+          PACKAGES=(
+            "types:@sudocode-ai/types"
+            "cli:@sudocode-ai/cli"
+            "mcp:@sudocode-ai/mcp"
+            "server:@sudocode-ai/local-server"
+            "sudocode:sudocode"
+          )
+
+          SKIP=""
+
+          for pkg in "${PACKAGES[@]}"; do
+            IFS=':' read -r dir name <<< "$pkg"
+            VERSION=$(node -p "require('./$dir/package.json').version")
+
+            if npm view "$name@$VERSION" version > /dev/null 2>&1; then
+              echo "⚠ $name@$VERSION already published - will skip"
+              SKIP="${SKIP}${name},"
+            else
+              echo "✓ $name@$VERSION not yet published"
+            fi
+          done
+
+          echo "skip=${SKIP}" >> $GITHUB_OUTPUT
+
+      - name: Publish @sudocode-ai/types
+        if: ${{ !contains(steps.check-versions.outputs.skip, '@sudocode-ai/types') }}
+        working-directory: ./types
+        run: npm publish --access public --tag ${{ steps.dist-tag.outputs.tag }} --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @sudocode-ai/cli
+        if: ${{ !contains(steps.check-versions.outputs.skip, '@sudocode-ai/cli') }}
+        working-directory: ./cli
+        run: npm publish --access public --tag ${{ steps.dist-tag.outputs.tag }} --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @sudocode-ai/mcp
+        if: ${{ !contains(steps.check-versions.outputs.skip, '@sudocode-ai/mcp') }}
+        working-directory: ./mcp
+        run: npm publish --access public --tag ${{ steps.dist-tag.outputs.tag }} --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @sudocode-ai/local-server
+        if: ${{ !contains(steps.check-versions.outputs.skip, '@sudocode-ai/local-server') }}
+        working-directory: ./server
+        run: npm publish --access public --tag ${{ steps.dist-tag.outputs.tag }} --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish sudocode (meta-package)
+        if: ${{ !contains(steps.check-versions.outputs.skip, 'sudocode') }}
+        working-directory: ./sudocode
+        run: npm publish --access public --tag ${{ steps.dist-tag.outputs.tag }} --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create summary
+        run: |
+          echo "## 📦 Published Packages" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Successfully published the following packages with tag \`${{ steps.dist-tag.outputs.tag }}\`:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- @sudocode-ai/types@$(node -p "require('./types/package.json').version")" >> $GITHUB_STEP_SUMMARY
+          echo "- @sudocode-ai/cli@$(node -p "require('./cli/package.json').version")" >> $GITHUB_STEP_SUMMARY
+          echo "- @sudocode-ai/mcp@$(node -p "require('./mcp/package.json').version")" >> $GITHUB_STEP_SUMMARY
+          echo "- @sudocode-ai/local-server@$(node -p "require('./server/package.json').version")" >> $GITHUB_STEP_SUMMARY
+          echo "- sudocode@$(node -p "require('./sudocode/package.json').version")" >> $GITHUB_STEP_SUMMARY

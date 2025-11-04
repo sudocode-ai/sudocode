@@ -27,7 +27,10 @@
     "dev": "npm run dev --workspaces --if-present",
     "dev:server": "SUDOCODE_DIR=$(pwd)/.sudocode npm run dev --workspace=server",
     "dev:frontend": "npm run dev --workspace=frontend",
-    "start:server": "SUDOCODE_DIR=$(pwd)/.sudocode npm start --workspace=server"
+    "start:server": "SUDOCODE_DIR=$(pwd)/.sudocode npm start --workspace=server",
+    "version": "./scripts/version.sh",
+    "publish": "./scripts/publish.sh",
+    "publish:dry-run": "./scripts/publish.sh --dry-run --skip-tests"
   },
   "author": "sudocode AI",
   "license": "Apache-2.0",
