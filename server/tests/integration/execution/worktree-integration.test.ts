@@ -67,9 +67,10 @@ describe("Worktree Integration Tests", () => {
    * Helper function to create a unique issue for each test
    */
   function createTestIssue(title: string): string {
-    const issueId = generateIssueId(db, testDir);
+    const { id: issueId, uuid: issueUuid } = generateIssueId(db, testDir);
     const issue = createIssue(db, {
       id: issueId,
+      uuid: issueUuid,
       title,
       content: `Test issue for: ${title}`,
     });
@@ -653,9 +654,10 @@ describe("Worktree Integration Tests", () => {
       const testIssueId = createTestIssue("Concurrent Execution Test 1");
 
       // Create second test issue
-      const issueId2 = generateIssueId(db, testDir);
+      const { id: issueId2, uuid: issueUuid2 } = generateIssueId(db, testDir);
       const issue2 = createIssue(db, {
         id: issueId2,
+        uuid: issueUuid2,
         title: "Second Test Issue",
         content: "This is another test issue",
       });

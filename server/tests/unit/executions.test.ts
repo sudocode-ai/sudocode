@@ -59,9 +59,10 @@ describe("Executions Service", () => {
     db.exec(EXECUTIONS_INDEXES);
 
     // Create a test issue to use in execution tests
-    const issueId = generateIssueId(db, testDir);
+    const { id: issueId, uuid: issueUuid } = generateIssueId(db, testDir);
     const issue = createIssue(db, {
       id: issueId,
+      uuid: issueUuid,
       title: "Test Issue for Execution",
       content: "This is a test issue",
     });

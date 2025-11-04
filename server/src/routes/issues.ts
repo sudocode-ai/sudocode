@@ -126,11 +126,12 @@ export function createIssuesRouter(db: Database.Database): Router {
 
       // Generate new issue ID
       const outputDir = getSudocodeDir();
-      const id = generateIssueId(db, outputDir);
+      const { id, uuid } = generateIssueId(db, outputDir);
 
       // Create issue using CLI operation
       const issue = createNewIssue(db, {
         id,
+        uuid,
         title,
         content: content || "",
         status: status || "open",
