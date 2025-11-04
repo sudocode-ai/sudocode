@@ -11,7 +11,7 @@ import {
   updateExistingIssue,
   deleteExistingIssue,
 } from "../services/issues.js";
-import { generateIssueId } from "@sudocode/cli/dist/id-generator.js";
+import { generateIssueId } from "@sudocode-ai/cli/dist/id-generator.js";
 import { broadcastIssueUpdate } from "../services/websocket.js";
 import { getSudocodeDir } from "../utils/sudocode-dir.js";
 import { triggerExport, syncEntityToMarkdown } from "../services/export.js";
@@ -37,9 +37,10 @@ export function createIssuesRouter(db: Database.Database): Router {
         options.assignee = req.query.assignee as string;
       }
       // Default to excluding archived unless explicitly specified
-      options.archived = req.query.archived !== undefined
-        ? req.query.archived === "true"
-        : false;
+      options.archived =
+        req.query.archived !== undefined
+          ? req.query.archived === "true"
+          : false;
       if (req.query.limit) {
         options.limit = parseInt(req.query.limit as string, 10);
       }
@@ -101,14 +102,8 @@ export function createIssuesRouter(db: Database.Database): Router {
    */
   router.post("/", (req: Request, res: Response) => {
     try {
-      const {
-        title,
-        content,
-        status,
-        priority,
-        assignee,
-        parent_id,
-      } = req.body;
+      const { title, content, status, priority, assignee, parent_id } =
+        req.body;
 
       // Validate required fields
       if (!title || typeof title !== "string") {

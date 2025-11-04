@@ -41,7 +41,7 @@
   "dependencies": {
     "@ag-ui/core": "^0.0.39",
     "@copilotkit/runtime": "^1.10.6",
-    "@sudocode/cli": "^0.1.0",
+    "@sudocode-ai/cli": "^0.1.0",
     "@sudocode-ai/types": "^0.1.0",
     "@types/ws": "^8.18.1",
     "async-mutex": "^0.5.0",

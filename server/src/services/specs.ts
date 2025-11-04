@@ -12,7 +12,7 @@ import {
   type CreateSpecInput,
   type UpdateSpecInput,
   type ListSpecsOptions,
-} from "@sudocode/cli/dist/operations/index.js";
+} from "@sudocode-ai/cli/dist/operations/index.js";
 import type { Spec } from "@sudocode-ai/types";
 
 /**

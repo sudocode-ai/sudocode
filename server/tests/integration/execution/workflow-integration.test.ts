@@ -10,7 +10,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type Database from "better-sqlite3";
-import { initDatabase as initCliDatabase } from "@sudocode/cli/dist/db.js";
+import { initDatabase as initCliDatabase } from "@sudocode-ai/cli/dist/db.js";
 import {
   EXECUTIONS_TABLE,
   EXECUTIONS_INDEXES,
@@ -20,8 +20,8 @@ import { ExecutionService } from "../../../src/services/execution-service.js";
 import { ExecutionLifecycleService } from "../../../src/services/execution-lifecycle.js";
 import { TransportManager } from "../../../src/execution/transport/transport-manager.js";
 import { WorktreeManager } from "../../../src/execution/worktree/manager.js";
-import { generateIssueId } from "@sudocode/cli/dist/id-generator.js";
-import { createIssue } from "@sudocode/cli/dist/operations/index.js";
+import { generateIssueId } from "@sudocode-ai/cli/dist/id-generator.js";
+import { createIssue } from "@sudocode-ai/cli/dist/operations/index.js";
 import { getExecution } from "../../../src/services/executions.js";
 import * as fs from "fs";
 import * as path from "path";

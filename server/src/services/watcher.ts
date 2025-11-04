@@ -7,7 +7,7 @@ import type Database from "better-sqlite3";
 import {
   startWatcher as startCliWatcher,
   type WatcherStats,
-} from "@sudocode/cli/dist/watcher.js";
+} from "@sudocode-ai/cli/dist/watcher.js";
 
 export interface ServerWatcherOptions {
   /**

@@ -17,7 +17,7 @@ import {
   getIncomingRelationships,
   getAllRelationships,
   type CreateRelationshipInput,
-} from "@sudocode/cli/dist/operations/relationships.js";
+} from "@sudocode-ai/cli/dist/operations/relationships.js";
 
 /**
  * Create a new relationship between entities

@@ -2,11 +2,11 @@
  * Tests for Feedback API routes
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import express from "express";
 import type Database from "better-sqlite3";
-import { initDatabase } from "@sudocode/cli/dist/db.js";
+import { initDatabase } from "@sudocode-ai/cli/dist/db.js";
 import { createFeedbackRouter } from "../../src/routes/feedback.js";
 import { createIssuesRouter } from "../../src/routes/issues.js";
 import { createSpecsRouter } from "../../src/routes/specs.js";
@@ -216,7 +216,9 @@ describe("Feedback API", () => {
         .expect(400);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.message.includes("Invalid feedback_type")).toBeTruthy();
+      expect(
+        response.body.message.includes("Invalid feedback_type")
+      ).toBeTruthy();
     });
 
     it("should reject feedback without content", async () => {
@@ -281,7 +283,9 @@ describe("Feedback API", () => {
         .expect(400);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.message.includes("Invalid anchor.anchor_status")).toBeTruthy();
+      expect(
+        response.body.message.includes("Invalid anchor.anchor_status")
+      ).toBeTruthy();
     });
   });
 
@@ -387,7 +391,9 @@ describe("Feedback API", () => {
         .expect(400);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.message.includes("Invalid anchor.anchor_status")).toBeTruthy();
+      expect(
+        response.body.message.includes("Invalid anchor.anchor_status")
+      ).toBeTruthy();
     });
   });
 
@@ -526,7 +532,9 @@ describe("Feedback API", () => {
       // Get all feedback and verify we have different types
       const response = await request(app).get("/api/feedback").expect(200);
 
-      const types = new Set(response.body.data.map((fb: any) => fb.feedback_type));
+      const types = new Set(
+        response.body.data.map((fb: any) => fb.feedback_type)
+      );
       expect(types.has("comment")).toBeTruthy();
       expect(types.has("suggestion")).toBeTruthy();
       expect(types.has("request")).toBeTruthy();

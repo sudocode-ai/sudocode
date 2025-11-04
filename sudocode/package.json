@@ -4,8 +4,8 @@
   "description": "Git-native spec and issue management for AI-assisted software development - meta-package",
   "type": "module",
   "bin": {
-    "sudocode": "./node_modules/@sudocode/cli/dist/cli.js",
-    "sdc": "./node_modules/@sudocode/cli/dist/cli.js",
+    "sudocode": "./node_modules/@sudocode-ai/cli/dist/cli.js",
+    "sdc": "./node_modules/@sudocode-ai/cli/dist/cli.js",
     "sudocode-mcp": "./node_modules/@sudocode/mcp/dist/index.js"
   },
   "scripts": {
@@ -24,13 +24,13 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@sudocode/cli": "^0.1.0",
+    "@sudocode-ai/cli": "^0.1.0",
     "@sudocode-ai/types": "^0.1.0",
     "@sudocode/mcp": "^0.1.0",
     "@sudocode/server": "^0.1.0"
   },
   "bundleDependencies": [
-    "@sudocode/cli",
+    "@sudocode-ai/cli",
     "@sudocode-ai/types",
     "@sudocode/mcp",
     "@sudocode/server"

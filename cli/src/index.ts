@@ -2,7 +2,7 @@
  * Main entry point for sudocode
  */
 
-export * from "@sudocode/types";
+export * from "@sudocode-ai/types";
 export * from "./db.js";
 export * from "./operations/index.js";
 export * from "./operations/transactions.js";

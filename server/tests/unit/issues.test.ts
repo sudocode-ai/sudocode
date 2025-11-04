@@ -2,11 +2,11 @@
  * Tests for Issues API routes
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import express from "express";
 import type Database from "better-sqlite3";
-import { initDatabase } from "@sudocode/cli/dist/db.js";
+import { initDatabase } from "@sudocode-ai/cli/dist/db.js";
 import { createIssuesRouter } from "../../src/routes/issues.js";
 import { cleanupExport } from "../../src/services/export.js";
 import * as fs from "fs";

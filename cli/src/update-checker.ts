@@ -8,7 +8,7 @@ import * as path from "path";
 import * as os from "os";
 import { VERSION } from "./version.js";
 
-const PACKAGE_NAME = "@sudocode/cli";
+const PACKAGE_NAME = "@sudocode-ai/cli";
 const CACHE_DIR = path.join(os.tmpdir(), "sudocode-cli");
 const CACHE_FILE = path.join(CACHE_DIR, "update-cache.json");
 const CACHE_DURATION = 1000 * 60 * 60 * 24; // 24 hours

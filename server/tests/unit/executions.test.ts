@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type Database from "better-sqlite3";
-import { initDatabase as initCliDatabase } from "@sudocode/cli/dist/db.js";
+import { initDatabase as initCliDatabase } from "@sudocode-ai/cli/dist/db.js";
 import {
   EXECUTIONS_TABLE,
   EXECUTIONS_INDEXES,
@@ -17,8 +17,8 @@ import {
   deleteExecution,
   getAllExecutions,
 } from "../../src/services/executions.js";
-import { generateIssueId } from "@sudocode/cli/dist/id-generator.js";
-import { createIssue } from "@sudocode/cli/dist/operations/index.js";
+import { generateIssueId } from "@sudocode-ai/cli/dist/id-generator.js";
+import { createIssue } from "@sudocode-ai/cli/dist/operations/index.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";

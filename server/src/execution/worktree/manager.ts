@@ -33,8 +33,8 @@ import type {
 } from "./types.js";
 import { WorktreeError, WorktreeErrorCode } from "./types.js";
 import { GitCli, type IGitCli } from "./git-cli.js";
-import { initDatabase } from "@sudocode/cli/dist/db.js";
-import { importFromJSONL } from "@sudocode/cli/dist/import.js";
+import { initDatabase } from "@sudocode-ai/cli/dist/db.js";
+import { importFromJSONL } from "@sudocode-ai/cli/dist/import.js";
 import { execSync } from "child_process";
 
 /**

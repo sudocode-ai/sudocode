@@ -17,7 +17,7 @@ import {
   type CreateFeedbackInput,
   type UpdateFeedbackInput,
   type ListFeedbackOptions,
-} from "@sudocode/cli/dist/operations/feedback.js";
+} from "@sudocode-ai/cli/dist/operations/feedback.js";
 
 /**
  * Create a new feedback entry

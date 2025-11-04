@@ -2,11 +2,11 @@
  * Tests for Relationships API routes
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import express from "express";
 import type Database from "better-sqlite3";
-import { initDatabase } from "@sudocode/cli/dist/db.js";
+import { initDatabase } from "@sudocode-ai/cli/dist/db.js";
 import { createRelationshipsRouter } from "../../src/routes/relationships.js";
 import { createIssuesRouter } from "../../src/routes/issues.js";
 import { createSpecsRouter } from "../../src/routes/specs.js";
@@ -25,7 +25,9 @@ describe("Relationships API", () => {
 
   beforeAll(async () => {
     // Create a unique temporary directory in system temp
-    testDir = fs.mkdtempSync(path.join(os.tmpdir(), "sudocode-test-relationships-"));
+    testDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "sudocode-test-relationships-")
+    );
     testDbPath = path.join(testDir, "cache.db");
 
     // Set SUDOCODE_DIR environment variable
@@ -184,7 +186,9 @@ describe("Relationships API", () => {
         .expect(400);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.message.includes("Invalid relationship_type")).toBeTruthy();
+      expect(
+        response.body.message.includes("Invalid relationship_type")
+      ).toBeTruthy();
     });
 
     it("should reject relationship with non-existent from_id", async () => {
@@ -254,7 +258,9 @@ describe("Relationships API", () => {
         .expect(400);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.message.includes("Invalid entity_type")).toBeTruthy();
+      expect(
+        response.body.message.includes("Invalid entity_type")
+      ).toBeTruthy();
     });
   });
 
@@ -274,7 +280,9 @@ describe("Relationships API", () => {
 
     it("should filter by relationship_type", async () => {
       const response = await request(app)
-        .get(`/api/relationships/issue/${testIssueId}/outgoing?relationship_type=implements`)
+        .get(
+          `/api/relationships/issue/${testIssueId}/outgoing?relationship_type=implements`
+        )
         .expect(200);
 
       expect(response.body.success).toBe(true);
@@ -286,7 +294,9 @@ describe("Relationships API", () => {
 
     it("should return empty array when filtering for non-existent type", async () => {
       const response = await request(app)
-        .get(`/api/relationships/issue/${testIssueId}/outgoing?relationship_type=blocks`)
+        .get(
+          `/api/relationships/issue/${testIssueId}/outgoing?relationship_type=blocks`
+        )
         .expect(200);
 
       expect(response.body.success).toBe(true);
@@ -310,7 +320,9 @@ describe("Relationships API", () => {
 
     it("should filter by relationship_type", async () => {
       const response = await request(app)
-        .get(`/api/relationships/spec/${testSpecId}/incoming?relationship_type=implements`)
+        .get(
+          `/api/relationships/spec/${testSpecId}/incoming?relationship_type=implements`
+        )
         .expect(200);
 
       expect(response.body.success).toBe(true);
@@ -346,7 +358,11 @@ describe("Relationships API", () => {
       // Create a new issue and spec for this test
       const issueResponse = await request(app)
         .post("/api/issues")
-        .send({ title: "Delete Export Test Issue", description: "Test", status: "open" });
+        .send({
+          title: "Delete Export Test Issue",
+          description: "Test",
+          status: "open",
+        });
       const issueId = issueResponse.body.data.id;
 
       const specResponse = await request(app)

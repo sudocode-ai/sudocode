@@ -3,15 +3,15 @@
  * Verifies that database updates trigger exports to JSONL files
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import express from "express";
 import type Database from "better-sqlite3";
-import { initDatabase } from "@sudocode/cli/dist/db.js";
+import { initDatabase } from "@sudocode-ai/cli/dist/db.js";
 import { createIssuesRouter } from "../../src/routes/issues.js";
 import { createSpecsRouter } from "../../src/routes/specs.js";
 import { cleanupExport } from "../../src/services/export.js";
-import { parseMarkdownFile } from "@sudocode/cli/dist/markdown.js";
+import { parseMarkdownFile } from "@sudocode-ai/cli/dist/markdown.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -112,10 +112,16 @@ describe("JSONL Export Integration", () => {
       expect(fs.existsSync(issuesJsonlPath)).toBeTruthy();
 
       const issues = readJSONL(issuesJsonlPath);
-      expect(issues.length > 0, "issues.jsonl should not be empty").toBeTruthy();
+      expect(
+        issues.length > 0,
+        "issues.jsonl should not be empty"
+      ).toBeTruthy();
 
       const exportedIssue = issues.find((i) => i.id === issueId);
-      expect(exportedIssue, "Created issue should be in JSONL file").toBeTruthy();
+      expect(
+        exportedIssue,
+        "Created issue should be in JSONL file"
+      ).toBeTruthy();
       expect(exportedIssue.title).toBe(newIssue.title);
       expect(exportedIssue.status).toBe(newIssue.status);
       expect(exportedIssue.priority).toBe(newIssue.priority);
@@ -164,7 +170,10 @@ describe("JSONL Export Integration", () => {
       const issues = readJSONL(issuesJsonlPath);
       const updatedIssue = issues.find((i) => i.id === issueId);
 
-      expect(updatedIssue, "Updated issue should be in JSONL file").toBeTruthy();
+      expect(
+        updatedIssue,
+        "Updated issue should be in JSONL file"
+      ).toBeTruthy();
       expect(updatedIssue.status).toBe(updates.status);
       expect(updatedIssue.priority).toBe(updates.priority);
       expect(updatedIssue.title).toBe("Issue to Update"); // Original title preserved
@@ -239,9 +248,7 @@ describe("JSONL Export Integration", () => {
 
       expect(finalIssue, "Issue should be in JSONL").toBeTruthy();
       expect(finalIssue.priority, "Should have final priority").toBe(2);
-      expect(
-        finalIssue.status, "Should have final status").toBe("in_progress"
-      );
+      expect(finalIssue.status, "Should have final status").toBe("in_progress");
     });
 
     it("should handle multiple different issues updated rapidly", async () => {
@@ -305,7 +312,9 @@ describe("JSONL Export Integration", () => {
 
       expect(updatedIssue1, "Issue 1 should be in JSONL").toBeTruthy();
       expect(updatedIssue1.priority, "Issue 1 should have priority 1").toBe(1);
-      expect(updatedIssue1.status, "Issue 1 should be in_progress").toBe("in_progress");
+      expect(updatedIssue1.status, "Issue 1 should be in_progress").toBe(
+        "in_progress"
+      );
 
       expect(updatedIssue2, "Issue 2 should be in JSONL").toBeTruthy();
       expect(updatedIssue2.priority, "Issue 2 should have priority 2").toBe(2);

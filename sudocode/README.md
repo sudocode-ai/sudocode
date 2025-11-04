@@ -90,7 +90,7 @@ sudocode sync                                    # Sync JSONL with database
 sudocode sync --watch                            # Auto-sync on changes
 ```
 
-For full command documentation, see [@sudocode/cli](https://github.com/sudocode-ai/sudocode/tree/main/cli).
+For full command documentation, see [@sudocode-ai/cli](https://github.com/sudocode-ai/sudocode/tree/main/cli).
 
 ## MCP Integration
 

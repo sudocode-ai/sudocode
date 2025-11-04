@@ -11,7 +11,7 @@ import {
   updateExistingSpec,
   deleteExistingSpec,
 } from "../services/specs.js";
-import { generateSpecId } from "@sudocode/cli/dist/id-generator.js";
+import { generateSpecId } from "@sudocode-ai/cli/dist/id-generator.js";
 import { broadcastSpecUpdate } from "../services/websocket.js";
 import { getSudocodeDir } from "../utils/sudocode-dir.js";
 import { triggerExport, syncEntityToMarkdown } from "../services/export.js";
@@ -32,9 +32,10 @@ export function createSpecsRouter(db: Database.Database): Router {
         options.priority = parseInt(req.query.priority as string, 10);
       }
       // Default to excluding archived unless explicitly specified
-      options.archived = req.query.archived !== undefined
-        ? req.query.archived === "true"
-        : false;
+      options.archived =
+        req.query.archived !== undefined
+          ? req.query.archived === "true"
+          : false;
       if (req.query.limit) {
         options.limit = parseInt(req.query.limit as string, 10);
       }

@@ -1,5 +1,5 @@
 {
-  "name": "@sudocode/cli",
+  "name": "@sudocode-ai/cli",
   "version": "0.1.0",
   "description": "Git-native spec and issue management CLI for AI-assisted software development",
   "main": "dist/index.js",
@@ -9,7 +9,8 @@
     "sdc": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "node build.js",
+    "build:dev": "tsc",
     "dev": "tsc --watch",
     "test": "vitest",
     "test:schema": "tsc && node dist/test-schema.js",
@@ -42,7 +43,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@sudocode/types": "^0.1.0",
+    "@sudocode-ai/types": "^0.1.0",
     "better-sqlite3": "^11.8.1",
     "chalk": "^5.6.2",
     "chokidar": "^4.0.3",
@@ -55,10 +56,13 @@
     "@types/better-sqlite3": "^7.6.8",
     "@types/chokidar": "^1.7.5",
     "@types/node": "^20.10.6",
+    "esbuild": "^0.24.2",
     "typescript": "^5.3.3",
     "vitest": "^3.2.4"
   },
   "files": [
-    "dist/**/*"
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "!dist/**/*.map"
   ]
 }

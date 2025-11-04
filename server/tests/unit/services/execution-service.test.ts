@@ -7,7 +7,7 @@
 
 import { describe, it, afterEach, expect, beforeAll, afterAll } from "vitest";
 import type Database from "better-sqlite3";
-import { initDatabase as initCliDatabase } from "@sudocode/cli/dist/db.js";
+import { initDatabase as initCliDatabase } from "@sudocode-ai/cli/dist/db.js";
 import {
   EXECUTIONS_TABLE,
   EXECUTIONS_INDEXES,
@@ -21,12 +21,12 @@ import { updateExecution } from "../../../src/services/executions.js";
 import {
   generateIssueId,
   generateSpecId,
-} from "@sudocode/cli/dist/id-generator.js";
+} from "@sudocode-ai/cli/dist/id-generator.js";
 import {
   createIssue,
   createSpec,
   addRelationship,
-} from "@sudocode/cli/dist/operations/index.js";
+} from "@sudocode-ai/cli/dist/operations/index.js";
 import type { IWorktreeManager } from "../../../src/execution/worktree/manager.js";
 import type {
   WorktreeConfig,

@@ -7,13 +7,13 @@ import fs from "fs";
 
 // Mock CLI module imports that setupWorktreeEnvironment uses
 // These need to be mocked before importing WorktreeManager
-vi.mock("@sudocode/cli/dist/db.js", () => ({
+vi.mock("@sudocode-ai/cli/dist/db.js", () => ({
   initDatabase: vi.fn(() => ({
     close: vi.fn(), // Mock the close method that setupWorktreeEnvironment calls
   })),
 }));
 
-vi.mock("@sudocode/cli/dist/import.js", () => ({
+vi.mock("@sudocode-ai/cli/dist/import.js", () => ({
   importFromJSONL: vi.fn().mockResolvedValue(undefined),
 }));
 

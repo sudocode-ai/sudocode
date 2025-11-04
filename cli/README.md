@@ -1,4 +1,4 @@
-# @sudocode/cli
+# @sudocode-ai/cli
 
 Command-line interface for [sudocode](https://github.com/sudocode-ai/sudocode) - Git-native spec and issue management for AI-assisted software development.
 
@@ -21,7 +21,7 @@ The sudocode CLI provides a complete toolkit for managing specifications and iss
 ## Installation
 
 ```bash
-npm install -g @sudocode/cli
+npm install -g @sudocode-ai/cli
 ```
 
 Or install the meta-package that includes the CLI:

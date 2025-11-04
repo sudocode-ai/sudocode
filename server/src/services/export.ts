@@ -3,8 +3,8 @@
  */
 
 import type Database from "better-sqlite3";
-import { exportToJSONL } from "@sudocode/cli/dist/export.js";
-import { syncJSONLToMarkdown } from "@sudocode/cli/dist/sync.js";
+import { exportToJSONL } from "@sudocode-ai/cli/dist/export.js";
+import { syncJSONLToMarkdown } from "@sudocode-ai/cli/dist/sync.js";
 import { getSudocodeDir } from "../utils/sudocode-dir.js";
 import * as path from "path";
 

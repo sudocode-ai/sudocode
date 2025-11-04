@@ -38,15 +38,15 @@ export class SudocodeClient {
   }
 
   /**
-   * Find the CLI by looking in node_modules/@sudocode/cli
-   * Since we added @sudocode/cli as a dependency, it should be there
+   * Find the CLI by looking in node_modules/@sudocode-ai/cli
+   * Since we added @sudocode-ai/cli as a dependency, it should be there
    */
   private findCliPath(): { path: string; args: string[] } {
     try {
       const currentFile = fileURLToPath(import.meta.url);
       const currentDir = dirname(currentFile);
 
-      // Look for @sudocode/cli in various possible locations
+      // Look for @sudocode-ai/cli in various possible locations
       const possiblePaths = [
         // Workspace root node_modules (development)
         join(

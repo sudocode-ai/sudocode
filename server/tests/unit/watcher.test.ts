@@ -2,9 +2,9 @@
  * Tests for File Watcher Service
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type Database from "better-sqlite3";
-import { initDatabase } from "@sudocode/cli/dist/db.js";
+import { initDatabase } from "@sudocode-ai/cli/dist/db.js";
 import { startServerWatcher } from "../../src/services/watcher.js";
 import * as fs from "fs";
 import * as path from "path";
@@ -63,17 +63,32 @@ describe("File Watcher Service", () => {
       });
 
       expect(watcher, "Watcher should be created").toBeTruthy();
-      expect(typeof watcher.stop === "function", "Watcher should have stop method").toBeTruthy();
-      expect(typeof watcher.getStats === "function", "Watcher should have getStats method").toBeTruthy();
+      expect(
+        typeof watcher.stop === "function",
+        "Watcher should have stop method"
+      ).toBeTruthy();
+      expect(
+        typeof watcher.getStats === "function",
+        "Watcher should have getStats method"
+      ).toBeTruthy();
 
       // Wait for watcher to initialize
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       const stats = watcher.getStats();
       expect(stats, "Stats should be available").toBeTruthy();
-      expect(typeof stats.filesWatched, "Stats should include filesWatched").toBe("number");
-      expect(typeof stats.changesPending, "Stats should include changesPending").toBe("number");
-      expect(typeof stats.changesProcessed, "Stats should include changesProcessed").toBe("number");
+      expect(
+        typeof stats.filesWatched,
+        "Stats should include filesWatched"
+      ).toBe("number");
+      expect(
+        typeof stats.changesPending,
+        "Stats should include changesPending"
+      ).toBe("number");
+      expect(
+        typeof stats.changesProcessed,
+        "Stats should include changesProcessed"
+      ).toBe("number");
       expect(typeof stats.errors, "Stats should include errors").toBe("number");
 
       await watcher.stop();
@@ -92,7 +107,10 @@ describe("File Watcher Service", () => {
       const stats = watcher.getStats();
 
       // Verify watcher is watching files
-      expect(stats.filesWatched >= 0, "Watcher should be tracking files").toBeTruthy();
+      expect(
+        stats.filesWatched >= 0,
+        "Watcher should be tracking files"
+      ).toBeTruthy();
 
       await watcher.stop();
     });
@@ -107,7 +125,10 @@ describe("File Watcher Service", () => {
 
       // The debounce delay is internal to the CLI watcher,
       // but we can verify the watcher was created with our options
-      expect(watcher, "Watcher should be created with custom debounce").toBeTruthy();
+      expect(
+        watcher,
+        "Watcher should be created with custom debounce"
+      ).toBeTruthy();
 
       await watcher.stop();
     });
@@ -132,13 +153,19 @@ describe("File Watcher Service", () => {
       // Create a markdown file
       const specsDir = path.join(testDir, "specs");
       const testFilePath = path.join(specsDir, "test-spec.md");
-      fs.writeFileSync(testFilePath, "---\nid: SPEC-001\n---\n\n# Test Spec\n\nThis is a test spec.");
+      fs.writeFileSync(
+        testFilePath,
+        "---\nid: SPEC-001\n---\n\n# Test Spec\n\nThis is a test spec."
+      );
 
       // Wait for debounce + processing
       await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Verify that a change was detected
-      expect(changes.length > 0, "Should have detected file change").toBeTruthy();
+      expect(
+        changes.length > 0,
+        "Should have detected file change"
+      ).toBeTruthy();
 
       await watcher.stop();
 
@@ -173,7 +200,10 @@ describe("File Watcher Service", () => {
       // The callback may or may not be invoked depending on sync success
       // Just verify the watcher is still running without errors
       const stats = watcher.getStats();
-      expect(stats.errors === 0, "Watcher should have no errors after JSONL change").toBeTruthy();
+      expect(
+        stats.errors === 0,
+        "Watcher should have no errors after JSONL change"
+      ).toBeTruthy();
 
       await watcher.stop();
 
@@ -210,7 +240,10 @@ describe("File Watcher Service", () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       const initialStats = watcher.getStats();
-      expect(initialStats.changesPending, "Should have no pending changes initially").toBe(0);
+      expect(
+        initialStats.changesPending,
+        "Should have no pending changes initially"
+      ).toBe(0);
 
       await watcher.stop();
     });
@@ -243,7 +276,10 @@ describe("File Watcher Service", () => {
       await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Should have processed both files (debouncing prevents duplicate processing)
-      expect(changes.length >= 0, "Should handle multiple rapid changes").toBeTruthy();
+      expect(
+        changes.length >= 0,
+        "Should handle multiple rapid changes"
+      ).toBeTruthy();
 
       await watcher.stop();
 
@@ -280,12 +316,15 @@ describe("File Watcher Service", () => {
       await new Promise((resolve) => setTimeout(resolve, 800));
 
       if (callbackInvoked && receivedInfo) {
-        expect(receivedInfo, "Callback should receive info object").toBeTruthy();
+        expect(
+          receivedInfo,
+          "Callback should receive info object"
+        ).toBeTruthy();
         // The callback might have entity info if sync was successful
         expect(
           receivedInfo.filePath !== undefined ||
-          receivedInfo.entityType !== undefined ||
-          receivedInfo.event !== undefined,
+            receivedInfo.entityType !== undefined ||
+            receivedInfo.event !== undefined,
           "Info object should have relevant properties"
         ).toBeTruthy();
       }

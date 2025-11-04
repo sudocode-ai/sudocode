@@ -7,7 +7,7 @@ import { execSync } from "child_process";
 import { checkForUpdates } from "../update-checker.js";
 import { VERSION } from "../version.js";
 
-const PACKAGE_NAME = "@sudocode/cli";
+const PACKAGE_NAME = "@sudocode-ai/cli";
 
 /**
  * Handle update check command

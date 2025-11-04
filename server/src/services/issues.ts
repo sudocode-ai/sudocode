@@ -12,7 +12,7 @@ import {
   type CreateIssueInput,
   type UpdateIssueInput,
   type ListIssuesOptions,
-} from "@sudocode/cli/dist/operations/index.js";
+} from "@sudocode-ai/cli/dist/operations/index.js";
 import type { Issue } from "@sudocode-ai/types";
 
 /**
