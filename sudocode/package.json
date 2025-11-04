@@ -44,10 +44,10 @@
     "node-fetch": "^2.7.0",
     "ws": "^8.18.3",
     "zod": "^3.22.4",
-    "@sudocode-ai/types": "^0.1.0",
-    "@sudocode-ai/cli": "^0.1.0",
-    "@sudocode-ai/mcp": "^0.1.0",
-    "@sudocode-ai/local-server": "^0.1.0"
+    "@sudocode-ai/types": "^0.1.1",
+    "@sudocode-ai/cli": "^0.1.1",
+    "@sudocode-ai/mcp": "^0.1.1",
+    "@sudocode-ai/local-server": "^0.1.1"
   },
   "bundleDependencies": [
     "@sudocode-ai/cli",
