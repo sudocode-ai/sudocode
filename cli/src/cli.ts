@@ -43,6 +43,12 @@ import {
 import { handleServerStart } from "./cli/server-commands.js";
 import { handleInit } from "./cli/init-commands.js";
 import { handleUpdate, handleUpdateCheck } from "./cli/update-commands.js";
+import {
+  handleResolveConflicts,
+  handleMergeDriver,
+  handleInitMergeDriver,
+  handleRemoveMergeDriver,
+} from "./cli/merge-commands.js";
 import { getUpdateNotification } from "./update-checker.js";
 import { VERSION } from "./version.js";
 
@@ -484,6 +490,48 @@ program
     } else {
       await handleUpdate();
     }
+  });
+
+// ============================================================================
+// MERGE CONFLICT RESOLUTION COMMANDS
+// ============================================================================
+
+program
+  .command("resolve-conflicts")
+  .description("Automatically resolve merge conflicts in JSONL files")
+  .option("--dry-run", "Show what would be done without making changes")
+  .option("--verbose", "Show detailed resolution information")
+  .action(async (options) => {
+    initDB();
+    await handleResolveConflicts(getContext(), options);
+  });
+
+program
+  .command("merge-driver")
+  .description("Git merge driver for JSONL files (called automatically by git)")
+  .requiredOption("--base <path>", "Base/ancestor version file path")
+  .requiredOption("--ours <path>", "Our version file path (HEAD)")
+  .requiredOption("--theirs <path>", "Their version file path (incoming branch)")
+  .option("--marker-size <size>", "Conflict marker size (provided by git)", parseInt)
+  .action(async (options) => {
+    // Don't call initDB - this runs during git merge, might not have db access
+    await handleMergeDriver(options);
+  });
+
+program
+  .command("init-merge-driver")
+  .description("Configure git to use sudocode for automatic JSONL merge resolution")
+  .option("--global", "Install globally (all repos) instead of just current repo")
+  .action(async (options) => {
+    await handleInitMergeDriver(options);
+  });
+
+program
+  .command("remove-merge-driver")
+  .description("Remove sudocode merge driver configuration from git")
+  .option("--global", "Remove from global config instead of just current repo")
+  .action(async (options) => {
+    await handleRemoveMergeDriver(options);
   });
 
 // Parse arguments

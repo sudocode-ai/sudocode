@@ -308,7 +308,7 @@ describe("Control and Monitoring Methods", () => {
       let cancelEmitted = false;
       let emittedExecutionId: string | undefined;
 
-      mockExecutor = new MockResilientExecutor(50);
+      mockExecutor = new MockResilientExecutor(100);
       orchestrator = new LinearOrchestrator(mockExecutor as any, storage);
 
       orchestrator.onCancel((executionId) => {
@@ -321,13 +321,14 @@ describe("Control and Monitoring Methods", () => {
         steps: [
           { id: "step-1", taskType: "issue", prompt: "Step 1" },
           { id: "step-2", taskType: "issue", prompt: "Step 2" },
+          { id: "step-3", taskType: "issue", prompt: "Step 3" },
         ],
       };
 
       const executionId = randomUUID();
       await orchestrator.startWorkflow(workflow, "/test", { executionId });
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 150));
       await orchestrator.cancelWorkflow(executionId);
 
       expect(cancelEmitted).toBe(true);

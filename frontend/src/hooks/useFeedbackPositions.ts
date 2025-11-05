@@ -94,6 +94,22 @@ export function useFeedbackPositions(
           }
         }
 
+        // If still not found and we have text snippet, search by text content
+        if (!element && anchor.text_snippet) {
+          const cleanSnippet = anchor.text_snippet.replace(/\.\.\./g, '').trim()
+
+          if (cleanSnippet) {
+            // Search all elements with data-line-number for matching text
+            const allLines = Array.from(editor.querySelectorAll<HTMLElement>('[data-line-number]'))
+            for (const line of allLines) {
+              if (line.textContent?.includes(cleanSnippet)) {
+                element = line
+                break // Use first match
+              }
+            }
+          }
+        }
+
         // If we found an element, calculate its position
         if (element) {
           // Get position relative to the document (offsetTop) rather than viewport

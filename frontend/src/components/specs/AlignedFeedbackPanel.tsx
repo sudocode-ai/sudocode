@@ -217,7 +217,7 @@ export function AlignedFeedbackPanel({
                   onClick={() => onFeedbackClick?.(fb)}
                   onDismiss={onDismiss ? () => onDismiss(fb.id) : undefined}
                   onDelete={onDelete ? () => onDelete(fb.id) : undefined}
-                  maxHeight={200} // Max height before scrolling
+                  maxHeight={800} // Max height before scrolling
                   isCompact={false}
                 />
               </div>

@@ -1,6 +1,6 @@
 ---
 name: sudocode
-description: Use when starting development sessions with issues and specs, planning multi-component features, breaking down complex work, tracking work across sessions, managing dependencies, or providing implementation feedback - spec and issue management with hierarchical organization and dependency graphs
+description: Use when viewing, creating, or modifying sudocode specs or issues (show_spec, show_issue, upsert_spec, upsert_issue, list_issues, list_specs), planning features, breaking down work, creating dependency graphs, or providing implementation feedback - spec and issue management with hierarchical organization and relationships
 ---
 
 # sudocode: Spec & Issue Management
@@ -53,9 +53,9 @@ Must complete [[i-7x9m]]{ blocks } first
 Formats supported:
 - [[s-14sh]] - basic reference (creates "references" relationship)
 - [[i-x7k9]] or [[@i-x7k9]] - with @ prefix
-- [[s-14sh|Custom Text]] - with display text
-- [[s-14sh]]{ blocks } - declares relationship type
-- [[s-14sh|Text]]{ blocks } - both display and relationship
+- [[s-3s542|Custom Text]] - with display text
+- [[s-x4d6df]]{ blocks } - declares relationship type
+- [[s-24gfs3|Text]]{ blocks } - both display and relationship
 ```
 
 **Relationship types in mentions:** `blocks`, `implements`, `depends-on`, `discovered-from`

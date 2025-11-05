@@ -41,16 +41,34 @@ export function SpecViewer({
     feedback.forEach((fb) => {
       try {
         const anchor: FeedbackAnchorType | null = fb.anchor ? JSON.parse(fb.anchor) : null
+
         if (anchor?.line_number) {
           const existing = map.get(anchor.line_number) || []
           map.set(anchor.line_number, [...existing, fb])
+        } else if (anchor?.text_snippet) {
+          // Handle text-based anchors by searching for the text in content
+          const cleanSnippet = anchor.text_snippet.replace(/\.\.\./g, '').trim()
+
+          if (cleanSnippet) {
+            const contentLines = content.split('\n')
+            let found = false
+            for (let i = 0; i < contentLines.length; i++) {
+              if (contentLines[i].includes(cleanSnippet)) {
+                const lineNumber = i + 1
+                const existing = map.get(lineNumber) || []
+                map.set(lineNumber, [...existing, fb])
+                found = true
+                break // Only match first occurrence
+              }
+            }
+          }
         }
       } catch (error) {
         console.error('Failed to parse feedback anchor:', error)
       }
     })
     return map
-  }, [feedback])
+  }, [feedback, content])
 
   const handleLineClick = (lineNumber: number) => {
     onLineClick?.(lineNumber)

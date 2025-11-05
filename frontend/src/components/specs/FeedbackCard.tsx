@@ -27,7 +27,7 @@ export function FeedbackCard({
   onDelete,
   onClick,
   className = '',
-  maxHeight = 200, // Default max height before scrolling
+  maxHeight = 500, // Default max height before scrolling
   isCompact = false,
 }: FeedbackCardProps) {
   const [isHovered, setIsHovered] = useState(false)
@@ -176,7 +176,11 @@ export function FeedbackCard({
             )}
             <span className="flex-shrink-0">
               {formatDistanceToNow(
-                new Date(feedback.created_at.endsWith('Z') ? feedback.created_at : feedback.created_at + 'Z'),
+                new Date(
+                  feedback.created_at.endsWith('Z')
+                    ? feedback.created_at
+                    : feedback.created_at + 'Z'
+                ),
                 { addSuffix: true }
               )}
             </span>
@@ -185,7 +189,7 @@ export function FeedbackCard({
 
         {/* Content */}
         <div
-          className="prose prose-sm dark:prose-invert text-sm text-foreground max-w-none"
+          className="prose prose-sm dark:prose-invert max-w-none text-sm text-foreground"
           style={{
             maxHeight: isExpanded ? `${maxHeight}px` : '3rem', // 3rem = ~3 lines
             overflowY: 'auto',
@@ -197,27 +201,27 @@ export function FeedbackCard({
             components={{
               // Customize rendering for compact display
               p: ({ children }) => <p className="my-1">{children}</p>,
-              h1: ({ children }) => <h1 className="text-lg font-bold my-1">{children}</h1>,
-              h2: ({ children }) => <h2 className="text-base font-bold my-1">{children}</h2>,
-              h3: ({ children }) => <h3 className="text-sm font-bold my-1">{children}</h3>,
+              h1: ({ children }) => <h1 className="my-1 text-lg font-bold">{children}</h1>,
+              h2: ({ children }) => <h2 className="my-1 text-base font-bold">{children}</h2>,
+              h3: ({ children }) => <h3 className="my-1 text-sm font-bold">{children}</h3>,
               ul: ({ children }) => <ul className="my-1 pl-4">{children}</ul>,
               ol: ({ children }) => <ol className="my-1 pl-4">{children}</ol>,
               li: ({ children }) => <li className="my-0.5">{children}</li>,
               code: ({ children, className }) => {
                 const isInline = !className
                 return isInline ? (
-                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                    {children}
-                  </code>
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{children}</code>
                 ) : (
-                  <code className={`block rounded bg-muted p-2 font-mono text-xs my-1 ${className || ''}`}>
+                  <code
+                    className={`my-1 block rounded bg-muted p-2 font-mono text-xs ${className || ''}`}
+                  >
                     {children}
                   </code>
                 )
               },
               pre: ({ children }) => <pre className="my-1">{children}</pre>,
               blockquote: ({ children }) => (
-                <blockquote className="border-l-2 border-muted-foreground/30 pl-2 my-1 italic">
+                <blockquote className="my-1 border-l-2 border-muted-foreground/30 pl-2 italic">
                   {children}
                 </blockquote>
               ),
