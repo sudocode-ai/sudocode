@@ -47,6 +47,7 @@ import {
   handleResolveConflicts,
   handleMergeDriver,
   handleInitMergeDriver,
+  handleRemoveMergeDriver,
 } from "./cli/merge-commands.js";
 import { getUpdateNotification } from "./update-checker.js";
 import { VERSION } from "./version.js";
@@ -519,6 +520,14 @@ program
   .option("--global", "Install globally (all repos) instead of just current repo")
   .action(async (options) => {
     await handleInitMergeDriver(options);
+  });
+
+program
+  .command("remove-merge-driver")
+  .description("Remove sudocode merge driver configuration from git")
+  .option("--global", "Remove from global config instead of just current repo")
+  .action(async (options) => {
+    await handleRemoveMergeDriver(options);
   });
 
 // Parse arguments

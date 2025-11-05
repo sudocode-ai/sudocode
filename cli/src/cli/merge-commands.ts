@@ -38,6 +38,10 @@ export interface InitMergeDriverOptions {
   global?: boolean;
 }
 
+export interface RemoveMergeDriverOptions {
+  global?: boolean;
+}
+
 interface ResolveFileResult {
   stats: {
     totalInput: number;
@@ -224,19 +228,9 @@ function printResolveResults(
 export async function handleMergeDriver(
   options: MergeDriverOptions
 ): Promise<void> {
+  const logPath = path.join(process.cwd(), ".sudocode", "merge-driver.log");
+
   try {
-    // Log merge attempt for debugging
-    const logDir = path.join(process.cwd(), ".sudocode");
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
-    }
-
-    const logPath = path.join(logDir, "merge-driver.log");
-    fs.appendFileSync(
-      logPath,
-      `[${new Date().toISOString()}] Merging: ${options.ours}\n`
-    );
-
     // Read all three versions
     const baseEntities = fs.existsSync(options.base)
       ? await readJSONL(options.base, { skipErrors: true })
@@ -256,20 +250,23 @@ export async function handleMergeDriver(
     // Write result to output (ours file)
     await writeJSONL(options.ours, merged);
 
-    // Log success
-    fs.appendFileSync(
-      logPath,
-      `  ✓ Success: ${baseEntities.length} (base) + ${ourEntities.length} (ours) + ${theirEntities.length} (theirs) → ${merged.length} (merged)\n`
-    );
-
     // Exit 0 = success, git will use this result
+    // Note: We don't log successful merges to avoid cluttering the repo
     process.exit(0);
   } catch (error) {
-    // Log failure
-    const logPath = path.join(process.cwd(), ".sudocode", "merge-driver.log");
+    // Only log on failure for debugging
+    const logDir = path.dirname(logPath);
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+
     fs.appendFileSync(
       logPath,
-      `  ✗ Failed: ${error instanceof Error ? error.message : String(error)}\n`
+      `[${new Date().toISOString()}] Merge failed for: ${options.ours}\n` +
+        `  Error: ${error instanceof Error ? error.message : String(error)}\n` +
+        `  Base: ${options.base}\n` +
+        `  Ours: ${options.ours}\n` +
+        `  Theirs: ${options.theirs}\n\n`
     );
 
     // Exit 1 = failure, git will leave conflict markers
@@ -339,11 +336,20 @@ export async function handleInitMergeDriver(
       console.log(chalk.green("✓ Created .gitattributes with merge driver"));
     }
 
-    console.log(
-      chalk.cyan(
-        "\nℹ  Remember to commit .gitattributes to share with your team!"
-      )
-    );
+    // Add merge-driver.log to .gitignore
+    const gitignorePath = path.join(process.cwd(), ".gitignore");
+    const ignoreEntry = ".sudocode/merge-driver.log";
+
+    if (fs.existsSync(gitignorePath)) {
+      const content = fs.readFileSync(gitignorePath, "utf8");
+      if (!content.includes(ignoreEntry)) {
+        fs.appendFileSync(gitignorePath, `\n${ignoreEntry}\n`);
+        console.log(chalk.green("✓ Added merge-driver.log to .gitignore"));
+      }
+    } else {
+      fs.writeFileSync(gitignorePath, `${ignoreEntry}\n`);
+      console.log(chalk.green("✓ Created .gitignore with merge-driver.log"));
+    }
   }
 
   // Test the setup
@@ -359,6 +365,107 @@ export async function handleInitMergeDriver(
 }
 
 /**
+ * Handle remove merge driver command
+ */
+export async function handleRemoveMergeDriver(
+  options: RemoveMergeDriverOptions
+): Promise<void> {
+  const configFile = options.global
+    ? path.join(os.homedir(), ".gitconfig")
+    : path.join(process.cwd(), ".git", "config");
+
+  // Check if .git exists (not in global mode)
+  if (!options.global && !fs.existsSync(path.join(process.cwd(), ".git"))) {
+    console.error(chalk.red("Error: Not in a git repository"));
+    console.error("Run this command from a git repository, or use --global");
+    process.exit(1);
+  }
+
+  let removed = false;
+
+  // Remove from git config
+  if (fs.existsSync(configFile)) {
+    const content = fs.readFileSync(configFile, "utf8");
+
+    if (content.includes('[merge "sudocode-jsonl"]')) {
+      // Remove the merge driver section
+      const lines = content.split("\n");
+      const filtered: string[] = [];
+      let inSection = false;
+
+      for (const line of lines) {
+        if (line.trim() === '[merge "sudocode-jsonl"]') {
+          inSection = true;
+          continue;
+        }
+
+        // Check if we've hit the next section
+        if (inSection && line.startsWith("[") && !line.includes("sudocode")) {
+          inSection = false;
+        }
+
+        if (!inSection) {
+          filtered.push(line);
+        }
+      }
+
+      fs.writeFileSync(configFile, filtered.join("\n"));
+      console.log(chalk.green(`✓ Removed merge driver from ${configFile}`));
+      removed = true;
+    } else {
+      console.log(chalk.yellow("Merge driver not found in git config"));
+    }
+  } else {
+    console.log(chalk.yellow("Git config file not found"));
+  }
+
+  // Remove from .gitattributes (only for local, not global)
+  if (!options.global) {
+    const gitattributesPath = path.join(process.cwd(), ".gitattributes");
+
+    if (fs.existsSync(gitattributesPath)) {
+      const content = fs.readFileSync(gitattributesPath, "utf8");
+
+      if (content.includes("merge=sudocode-jsonl")) {
+        const lines = content
+          .split("\n")
+          .filter((line) => !line.includes("merge=sudocode-jsonl"));
+
+        // Remove file if it's now empty, otherwise update it
+        if (lines.every((line) => !line.trim())) {
+          fs.unlinkSync(gitattributesPath);
+          console.log(
+            chalk.green(
+              "✓ Removed .gitattributes (was only used for merge driver)"
+            )
+          );
+        } else {
+          fs.writeFileSync(gitattributesPath, lines.join("\n"));
+          console.log(
+            chalk.green("✓ Removed merge driver from .gitattributes")
+          );
+        }
+        removed = true;
+      } else {
+        console.log(chalk.yellow("Merge driver not found in .gitattributes"));
+      }
+    }
+  }
+
+  if (removed) {
+    console.log(
+      chalk.cyan(
+        "\n✓ Merge driver removed. Git will now use default conflict handling for JSONL files."
+      )
+    );
+  } else {
+    console.log(
+      chalk.yellow("\nNo merge driver configuration found to remove.")
+    );
+  }
+}
+
+/**
  * Test merge driver setup
  */
 async function testMergeDriver(): Promise<{
@@ -366,9 +473,7 @@ async function testMergeDriver(): Promise<{
   error?: string;
 }> {
   // Create temp files for testing
-  const tmpDir = fs.mkdtempSync(
-    path.join(os.tmpdir(), "sudocode-merge-test-")
-  );
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sudocode-merge-test-"));
 
   // Save original process.exit
   const originalExit = process.exit;
