@@ -112,7 +112,9 @@ describe("SudocodeClient", () => {
       expect(options).toEqual(
         expect.objectContaining({
           cwd: expect.any(String),
-          env: process.env,
+          env: expect.objectContaining({
+            SUDOCODE_DISABLE_UPDATE_CHECK: "true",
+          }),
         })
       );
       expect(result).toEqual({ result: "success" });
@@ -198,6 +200,33 @@ describe("SudocodeClient", () => {
       const lastCall = mockSpawn.mock.calls[mockSpawn.mock.calls.length - 1];
       expect(lastCall[1]).toContain("--db");
       expect(lastCall[1]).toContain("/custom/cache.db");
+    });
+
+    it("should set SUDOCODE_DISABLE_UPDATE_CHECK environment variable", async () => {
+      const client = new SudocodeClient();
+
+      // Mock version check
+      const versionProcess = new EventEmitter() as any;
+      versionProcess.stdout = new EventEmitter();
+      versionProcess.stderr = new EventEmitter();
+      mockSpawn.mockReturnValueOnce(versionProcess);
+      setImmediate(() => {
+        versionProcess.stdout.emit("data", "0.1.0\n");
+        versionProcess.emit("close", 0);
+      });
+
+      // Mock actual command
+      mockSpawn.mockReturnValueOnce(mockProcess);
+      setImmediate(() => {
+        mockProcess.stdout.emit("data", "{}");
+        mockProcess.emit("close", 0);
+      });
+
+      await client.exec(["stats"]);
+
+      const lastCall = mockSpawn.mock.calls[mockSpawn.mock.calls.length - 1];
+      const [_, __, options] = lastCall;
+      expect(options.env.SUDOCODE_DISABLE_UPDATE_CHECK).toBe("true");
     });
 
     it("should parse JSON output correctly", async () => {
@@ -421,6 +450,22 @@ describe("SudocodeClient", () => {
       });
 
       await expect(client.checkVersion()).rejects.toThrow(SudocodeError);
+    });
+
+    it("should set SUDOCODE_DISABLE_UPDATE_CHECK when checking version", async () => {
+      const client = new SudocodeClient();
+
+      mockSpawn.mockReturnValueOnce(mockProcess);
+      setImmediate(() => {
+        mockProcess.stdout.emit("data", "0.1.0\n");
+        mockProcess.emit("close", 0);
+      });
+
+      await client.checkVersion();
+
+      const lastCall = mockSpawn.mock.calls[mockSpawn.mock.calls.length - 1];
+      const [_, __, options] = lastCall;
+      expect(options.env.SUDOCODE_DISABLE_UPDATE_CHECK).toBe("true");
     });
   });
 });

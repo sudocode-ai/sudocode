@@ -114,7 +114,10 @@ export class SudocodeClient {
     return new Promise((resolve, reject) => {
       const proc = spawn(this.cliPath, cmdArgs, {
         cwd: this.workingDir,
-        env: process.env,
+        env: {
+          ...process.env,
+          SUDOCODE_DISABLE_UPDATE_CHECK: "true",
+        },
       });
 
       let stdout = "";
@@ -192,6 +195,10 @@ export class SudocodeClient {
     try {
       const proc = spawn(this.cliPath, [...this.cliArgs, "--version"], {
         cwd: this.workingDir,
+        env: {
+          ...process.env,
+          SUDOCODE_DISABLE_UPDATE_CHECK: "true",
+        },
       });
 
       let stdout = "";

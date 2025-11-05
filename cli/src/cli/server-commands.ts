@@ -44,15 +44,18 @@ export async function handleServerStart(
   options: ServerStartOptions
 ): Promise<void> {
   // Check for updates before starting server
-  try {
-    const updateNotification = await getUpdateNotification();
-    if (updateNotification) {
-      console.log();
-      console.log(chalk.yellow(updateNotification));
-      console.log();
+  // Skip if SUDOCODE_DISABLE_UPDATE_CHECK environment variable is set
+  if (process.env.SUDOCODE_DISABLE_UPDATE_CHECK !== "true") {
+    try {
+      const updateNotification = await getUpdateNotification();
+      if (updateNotification) {
+        console.log();
+        console.log(chalk.yellow(updateNotification));
+        console.log();
+      }
+    } catch {
+      // Silently ignore update check failures
     }
-  } catch {
-    // Silently ignore update check failures
   }
 
   // Check if server is installed first
