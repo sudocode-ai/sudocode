@@ -51,13 +51,11 @@ export function SpecViewer({
 
           if (cleanSnippet) {
             const contentLines = content.split('\n')
-            let found = false
             for (let i = 0; i < contentLines.length; i++) {
               if (contentLines[i].includes(cleanSnippet)) {
                 const lineNumber = i + 1
                 const existing = map.get(lineNumber) || []
                 map.set(lineNumber, [...existing, fb])
-                found = true
                 break // Only match first occurrence
               }
             }
