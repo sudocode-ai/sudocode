@@ -395,7 +395,10 @@ const makeClickable = (url: string, text: string) =>
 
 console.log(`WebSocket server available at: ${makeClickable(wsUrl, wsUrl)}`);
 console.log(
-  `${bold}${green}sudocode local server running on: ${makeClickable(httpUrl, httpUrl)}${reset}`
+  `${bold}${green}sudocode local server running on: ${makeClickable(
+    httpUrl,
+    httpUrl
+  )}${reset}`
 );
 
 // Error handlers for debugging
