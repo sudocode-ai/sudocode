@@ -6,8 +6,6 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   generateSpecId,
   generateIssueId,
-  getConfig,
-  updateConfig,
   getAdaptiveHashLength,
   hashUUIDToBase36,
   isLegacyID,
@@ -16,7 +14,6 @@ import {
 import { initDatabase } from "../../src/db.js";
 import { createSpec } from "../../src/operations/specs.js";
 import { createIssue } from "../../src/operations/issues.js";
-import { VERSION } from "../../src/version.js";
 import type Database from "better-sqlite3";
 import * as fs from "fs";
 import * as path from "path";
@@ -73,9 +70,15 @@ describe("ID Generator", () => {
       expect(id3).toMatch(/^s-[0-9a-z]{4,8}$/);
 
       // Check that UUIDs are valid
-      expect(uuid1).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-      expect(uuid2).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-      expect(uuid3).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+      expect(uuid1).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+      );
+      expect(uuid2).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+      );
+      expect(uuid3).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+      );
     });
 
     it("should generate hash IDs regardless of config prefix", () => {
@@ -133,7 +136,9 @@ describe("ID Generator", () => {
         generated.add(id);
 
         // Also verify UUID is unique
-        expect(uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+        expect(uuid).toMatch(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+        );
       }
 
       expect(generated.size).toBe(10);
@@ -147,7 +152,6 @@ describe("ID Generator", () => {
         id: id1,
         uuid: uuid1,
         title: "Test 1",
-        description: "",
         content: "",
         status: "open",
       });
@@ -157,7 +161,6 @@ describe("ID Generator", () => {
         id: id2,
         uuid: uuid2,
         title: "Test 2",
-        description: "",
         content: "",
         status: "open",
       });
@@ -170,9 +173,15 @@ describe("ID Generator", () => {
       expect(id3).toMatch(/^i-[0-9a-z]{4,8}$/);
 
       // Check that UUIDs are valid
-      expect(uuid1).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-      expect(uuid2).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-      expect(uuid3).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+      expect(uuid1).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+      );
+      expect(uuid2).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+      );
+      expect(uuid3).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+      );
     });
 
     it("should generate hash IDs regardless of config prefix", () => {
@@ -218,7 +227,6 @@ describe("ID Generator", () => {
         id: issueId,
         uuid: issueUuid,
         title: "Issue 1",
-        description: "",
         content: "",
         status: "open",
       });
@@ -233,63 +241,6 @@ describe("ID Generator", () => {
       const { id: nextIssueId } = generateIssueId(db, tempDir);
       expect(nextSpecId).toMatch(/^s-[0-9a-z]{4,8}$/);
       expect(nextIssueId).toMatch(/^i-[0-9a-z]{4,8}$/);
-    });
-  });
-
-  describe("getConfig", () => {
-    it("should create default config.json with hash-based prefixes", () => {
-      const config = getConfig(tempDir);
-
-      expect(config.version).toBe(VERSION);
-      expect(config.id_prefix.spec).toBe("s");
-      expect(config.id_prefix.issue).toBe("i");
-    });
-
-    it("should read existing config.json", () => {
-      const existingConfig = {
-        version: "1.0.0",
-        id_prefix: {
-          spec: "test",
-          issue: "test",
-        },
-      };
-      fs.writeFileSync(
-        path.join(tempDir, "config.json"),
-        JSON.stringify(existingConfig, null, 2)
-      );
-
-      const config = getConfig(tempDir);
-      expect(config.id_prefix.spec).toBe("test");
-      expect(config.id_prefix.issue).toBe("test");
-    });
-  });
-
-  describe("updateConfig", () => {
-    it("should update config fields", () => {
-      getConfig(tempDir); // Create initial config.json
-
-      updateConfig(tempDir, {
-        id_prefix: {
-          spec: "updated",
-          issue: "updated",
-        },
-      });
-
-      const config = getConfig(tempDir);
-      expect(config.id_prefix.spec).toBe("updated");
-      expect(config.id_prefix.issue).toBe("updated");
-    });
-
-    it("should preserve unmodified fields", () => {
-      getConfig(tempDir); // Create initial config.json
-
-      updateConfig(tempDir, {
-        version: "2.0.0",
-      });
-
-      const config = getConfig(tempDir);
-      expect(config.version).toBe("2.0.0");
-      expect(config.id_prefix.spec).toBe("s"); // Unchanged from default
     });
   });
 

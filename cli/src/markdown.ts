@@ -7,9 +7,8 @@ import * as fs from "fs";
 import type Database from "better-sqlite3";
 import { getSpec } from "./operations/specs.js";
 import { getIssue } from "./operations/issues.js";
-import { getConfig } from "./id-generator.js";
 import { createFeedbackAnchor } from "./operations/feedback-anchors.js";
-import type { LocationAnchor, Config } from "@sudocode-ai/types";
+import type { LocationAnchor } from "@sudocode-ai/types";
 
 export interface ParsedMarkdown<T extends object = Record<string, any>> {
   /**
@@ -75,18 +74,8 @@ export function parseMarkdown<T extends object = Record<string, any>>(
 ): ParsedMarkdown<T> {
   const parsed = matter(content);
 
-  // Load metadata if outputDir is provided
-  let config: Config | undefined;
-  if (outputDir && db) {
-    try {
-      config = getConfig(outputDir);
-    } catch (error) {
-      // Ignore - will fall back to default heuristics
-    }
-  }
-
   // Extract cross-references from content
-  const references = extractCrossReferences(parsed.content, db, config);
+  const references = extractCrossReferences(parsed.content, db);
 
   return {
     data: parsed.data as T,
@@ -140,34 +129,32 @@ function feedbackAnchorToLocationAnchor(
 /**
  * Extract cross-references from markdown content
  * Supports formats:
- * - [[entity-001]] - entity reference (type determined by database lookup)
- * - [[@entity-042]] - entity reference with @ prefix (for clarity)
- * - [[entity-001|Display Text]] - with custom display text
- * - [[entity-001]]{ blocks } - with relationship type (shorthand)
- * - [[entity-001]]{ type: blocks } - with relationship type (explicit)
- * - [[entity-001|Display]]{ blocks } - combination of display text and type
+ * - [[i-x7k9]] or [[s-14sh]] - hash-based entity reference
+ * - [[@i-x7k9]] - entity reference with @ prefix (for clarity)
+ * - [[i-x7k9|Display Text]] - with custom display text
+ * - [[i-x7k9]]{ blocks } - with relationship type (shorthand)
+ * - [[i-x7k9]]{ type: blocks } - with relationship type (explicit)
+ * - [[i-x7k9|Display]]{ blocks } - combination of display text and type
  *
  * If db is provided, validates references against the database and determines entity type.
  * Only returns references to entities that actually exist.
  *
- * If metadata is provided (but no db), uses configured ID prefixes for type detection.
+ * If db is not provided, determines entity type from hash-based ID prefix (i- or s-).
  */
 export function extractCrossReferences(
   content: string,
-  db?: Database.Database,
-  config?: Config
+  db?: Database.Database
 ): CrossReference[] {
   const references: CrossReference[] = [];
 
   // Pattern: [[optional-@][entity-id][|display-text]]optional-metadata
-  // Matches:
-  // - [[entity-001]]
-  // - [[entity-001|Display Text]]
-  // - [[entity-001]]{ blocks }
-  // - [[entity-001]]{ type: depends-on }
-  // - [[entity-001|Auth Flow]]{ implements }
+  // Supports hash-based IDs only:
+  // - [[i-x7k9]] or [[s-14sh]]
+  // - [[i-x7k9|Display Text]]
+  // - [[i-x7k9]]{ blocks }
+  // - [[i-x7k9]]{ type: depends-on }
   const refPattern =
-    /\[\[(@)?([a-z]+-\d+)(?:\|([^\]]+))?\]\](?:\{\s*(?:type:\s*)?([a-z-]+)\s*\})?/gi;
+    /\[\[(@)?([is]-[0-9a-z]{4,8})(?:\|([^\]]+))?\]\](?:\{\s*(?:type:\s*)?([a-z-]+)\s*\})?/gi;
 
   let match: RegExpExecArray | null;
 
@@ -222,22 +209,9 @@ export function extractCrossReferences(
         });
       }
     } else {
-      let type: "spec" | "issue";
-      if (config) {
-        const specPrefix = config.id_prefix.spec.toLowerCase();
-        const issuePrefix = config.id_prefix.issue.toLowerCase();
-        if (hasAt || id.toLowerCase().startsWith(issuePrefix + "-")) {
-          type = "issue";
-        } else if (id.toLowerCase().startsWith(specPrefix + "-")) {
-          type = "spec";
-        } else {
-          // TODO: Check the actual entity ID.
-          // TODO: No issue resolved - skip the reference.
-          type = "spec";
-        }
-      } else {
-        type = hasAt || id.startsWith("issue-") ? "issue" : "spec";
-      }
+      // Determine type from hash-based ID prefix
+      // Hash IDs always use i- for issues, s- for specs
+      const type: "spec" | "issue" = id.startsWith("i-") ? "issue" : "spec";
 
       references.push({
         match: match[0],

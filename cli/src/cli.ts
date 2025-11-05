@@ -144,13 +144,8 @@ program
 program
   .command("init")
   .description("Initialize .sudocode directory structure")
-  .option("--spec-prefix <prefix>", "ID prefix for specs", "SPEC")
-  .option("--issue-prefix <prefix>", "ID prefix for issues", "ISSUE")
   .action(async (options) => {
-    await handleInit({
-      specPrefix: options.specPrefix,
-      issuePrefix: options.issuePrefix,
-    });
+    await handleInit({});
   });
 
 // ============================================================================

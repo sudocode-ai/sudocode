@@ -1,9 +1,5 @@
 {
   "version": "0.1.0",
-  "id_prefix": {
-    "spec": "SPEC",
-    "issue": "ISSUE"
-  },
   "worktree": {
     "worktreeStoragePath": ".sudocode/worktrees",
     "autoCreateBranches": true,

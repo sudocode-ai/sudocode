@@ -29,13 +29,7 @@ describe("Reference CLI Commands", () => {
     fs.mkdirSync(path.join(tempDir, "issues"), { recursive: true });
 
     // Create config.json
-    const config = {
-      version: "1.0.0",
-      id_prefix: {
-        spec: "SPEC",
-        issue: "ISSUE",
-      },
-    };
+    const config = {};
     fs.writeFileSync(
       path.join(tempDir, "config.json"),
       JSON.stringify(config, null, 2)
@@ -334,63 +328,6 @@ Task content here.`
       const { getSpec } = await import("../../../src/operations/specs.js");
       const spec = getSpec(db, "SPEC-001");
       expect(spec?.content).toContain("[[ISSUE-001]]");
-    });
-
-    it("should work with custom ID prefixes", async () => {
-      // Create entities with custom prefixes
-      const { createSpec } = await import("../../../src/operations/specs.js");
-      const { createIssue } = await import("../../../src/operations/issues.js");
-      const { writeMarkdownFile } = await import("../../../src/markdown.js");
-
-      createSpec(db, {
-        id: "CUSTOM-001",
-        title: "Custom Spec",
-        file_path: "specs/custom-spec.md",
-        content: "Test content here.",
-        priority: 2,
-      });
-
-      const customSpecPath = path.join(tempDir, "specs", "custom-spec.md");
-      writeMarkdownFile(
-        customSpecPath,
-        {
-          id: "CUSTOM-001",
-          title: "Custom Spec",
-          priority: 2,
-        },
-        "Test content here."
-      );
-
-      createIssue(db, {
-        id: "TICKET-001",
-        title: "Custom Issue",
-        content: "Issue content.",
-        priority: 2,
-        status: "open",
-      });
-
-      const customIssuePath = path.join(tempDir, "issues", "TICKET-001.md");
-      writeMarkdownFile(
-        customIssuePath,
-        {
-          id: "TICKET-001",
-          title: "Custom Issue",
-          status: "open",
-          priority: 2,
-        },
-        "Issue content."
-      );
-
-      const ctx = { db, outputDir: tempDir, jsonOutput: false };
-
-      // Should correctly identify entity types by checking existence
-      await handleAddReference(ctx, "CUSTOM-001", "TICKET-001", {
-        text: "Test content",
-        format: "inline",
-      });
-
-      const content = fs.readFileSync(customSpecPath, "utf8");
-      expect(content).toContain("[[TICKET-001]]");
     });
   });
 });

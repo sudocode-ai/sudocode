@@ -16,7 +16,7 @@ sudocode <command> [subcommand] [options] [arguments]
 
 ```bash
 # Initialize sudocode in current directory
-sudocode init [--prefix <prefix>]
+sudocode init
 
 # Creates:
 # - .sudocode/ directory
@@ -26,9 +26,6 @@ sudocode init [--prefix <prefix>]
 # - specs/ directory (for markdown files)
 # - issues/ directory (for markdown files)
 ```
-
-**Options:**
-- `--prefix`: Custom prefix for IDs (default: repo name or "sudocode")
 
 **Behavior:**
 - Fails if .sudocode already exists
@@ -485,7 +482,6 @@ program
 program
   .command('init')
   .description('Initialize sudocode in current directory')
-  .option('--prefix <prefix>', 'Custom prefix for IDs')
   .action(initCommand);
 
 program
