@@ -520,6 +520,8 @@ function syncIssueFeedback(
         agent: fb.agent,
         anchor: fb.anchor,
         dismissed: fb.dismissed,
+        created_at: fb.created_at,
+        updated_at: fb.updated_at,
       });
     }
   }

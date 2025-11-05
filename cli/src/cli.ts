@@ -480,9 +480,13 @@ program
   .command("update")
   .description("Update sudocode to the latest version")
   .option("--check", "Check for updates without installing")
+  .option("--dismiss", "Dismiss update notifications for 30 days")
   .action(async (options) => {
     if (options.check) {
       await handleUpdateCheck();
+    } else if (options.dismiss) {
+      const { handleUpdateDismiss } = await import("./cli/update-commands.js");
+      await handleUpdateDismiss();
     } else {
       await handleUpdate();
     }
@@ -536,16 +540,23 @@ program.parse();
 // Check for updates (non-blocking)
 // Skip for update and server commands (server handles it explicitly)
 // Also skip when --json flag is present (to avoid interfering with JSON output)
+// Skip if SUDOCODE_DISABLE_UPDATE_CHECK environment variable is set
 const isUpdateCommand = process.argv.includes("update");
 const isServerCommand = process.argv.includes("server");
 const isJsonOutput = process.argv.includes("--json");
-if (!isUpdateCommand && !isServerCommand && !isJsonOutput) {
+const isUpdateCheckDisabled =
+  process.env.SUDOCODE_DISABLE_UPDATE_CHECK === "true";
+if (
+  !isUpdateCommand &&
+  !isServerCommand &&
+  !isJsonOutput &&
+  !isUpdateCheckDisabled
+) {
   getUpdateNotification()
     .then((notification) => {
       if (notification) {
-        console.log();
-        console.log(chalk.yellow(notification));
-        console.log();
+        // Display in gray/dim to be less intrusive
+        console.error(chalk.gray(notification));
       }
     })
     .catch(() => {

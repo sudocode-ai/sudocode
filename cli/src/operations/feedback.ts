@@ -14,6 +14,8 @@ export interface CreateFeedbackInput {
   agent?: string;
   anchor?: FeedbackAnchor;
   dismissed?: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface UpdateFeedbackInput {
@@ -87,16 +89,27 @@ export function createFeedback(
     throw new Error(`Spec not found: ${input.spec_id}`);
   }
 
-  const stmt = db.prepare(`
-    INSERT INTO issue_feedback (
-      id, issue_id, issue_uuid, spec_id, spec_uuid, feedback_type, content, agent, anchor, dismissed
-    ) VALUES (
-      @id, @issue_id, @issue_uuid, @spec_id, @spec_uuid, @feedback_type, @content, @agent, @anchor, @dismissed
-    )
-  `);
+  // Build SQL statement - include timestamps only if provided
+  const hasTimestamps = input.created_at !== undefined || input.updated_at !== undefined;
+
+  const stmt = hasTimestamps
+    ? db.prepare(`
+        INSERT INTO issue_feedback (
+          id, issue_id, issue_uuid, spec_id, spec_uuid, feedback_type, content, agent, anchor, dismissed, created_at, updated_at
+        ) VALUES (
+          @id, @issue_id, @issue_uuid, @spec_id, @spec_uuid, @feedback_type, @content, @agent, @anchor, @dismissed, @created_at, @updated_at
+        )
+      `)
+    : db.prepare(`
+        INSERT INTO issue_feedback (
+          id, issue_id, issue_uuid, spec_id, spec_uuid, feedback_type, content, agent, anchor, dismissed
+        ) VALUES (
+          @id, @issue_id, @issue_uuid, @spec_id, @spec_uuid, @feedback_type, @content, @agent, @anchor, @dismissed
+        )
+      `);
 
   try {
-    stmt.run({
+    const params: any = {
       id,
       issue_id: input.issue_id,
       issue_uuid: issue.uuid,
@@ -107,7 +120,14 @@ export function createFeedback(
       agent: agent,
       anchor: anchorJson,
       dismissed: input.dismissed !== undefined ? (input.dismissed ? 1 : 0) : 0,
-    });
+    };
+
+    if (hasTimestamps) {
+      params.created_at = input.created_at;
+      params.updated_at = input.updated_at;
+    }
+
+    stmt.run(params);
 
     const feedback = getFeedback(db, id);
     if (!feedback) {

@@ -10,10 +10,12 @@ import {
   checkForUpdates,
   getUpdateNotification,
   clearUpdateCache,
+  dismissUpdate,
 } from "../../src/update-checker.js";
 
 const CACHE_DIR = path.join(os.tmpdir(), "sudocode-cli");
 const CACHE_FILE = path.join(CACHE_DIR, "update-cache.json");
+const DISMISS_FILE = path.join(CACHE_DIR, "update-dismissed.json");
 
 describe("Update Checker", () => {
   beforeEach(() => {
@@ -110,6 +112,7 @@ describe("Update Checker", () => {
       expect(notification).not.toBeNull();
       expect(notification).toContain("99.0.0");
       expect(notification).toContain("Update available");
+      expect(notification).toContain("sudocode update");
     });
 
     it("should not notify if current version is newer", async () => {
@@ -142,6 +145,53 @@ describe("Update Checker", () => {
 
     it("should handle missing cache file gracefully", () => {
       expect(() => clearUpdateCache()).not.toThrow();
+    });
+  });
+
+  describe("dismissUpdate", () => {
+    it("should create dismiss file", () => {
+      dismissUpdate("2.0.0");
+      expect(fs.existsSync(DISMISS_FILE)).toBe(true);
+    });
+
+    it("should store version and timestamp", () => {
+      dismissUpdate("2.0.0");
+      const content = fs.readFileSync(DISMISS_FILE, "utf-8");
+      const dismissInfo = JSON.parse(content);
+
+      expect(dismissInfo.version).toBe("2.0.0");
+      expect(dismissInfo.timestamp).toBeGreaterThan(0);
+    });
+
+    it("should suppress notifications for dismissed version", async () => {
+      // Mock fetch to return newer version
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ version: "99.0.0" }),
+      } as Response);
+
+      // Dismiss the update
+      dismissUpdate("99.0.0");
+
+      // Should return null even though update is available
+      const notification = await getUpdateNotification();
+      expect(notification).toBeNull();
+    });
+
+    it("should show notification when different version is available", async () => {
+      // Dismiss version 2.0.0
+      dismissUpdate("2.0.0");
+
+      // Mock fetch to return version 3.0.0
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ version: "3.0.0" }),
+      } as Response);
+
+      // Should show notification for different version
+      const notification = await getUpdateNotification();
+      expect(notification).not.toBeNull();
+      expect(notification).toContain("3.0.0");
     });
   });
 });

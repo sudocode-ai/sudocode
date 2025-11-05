@@ -11,7 +11,9 @@ import { VERSION } from "./version.js";
 const PACKAGE_NAME = "@sudocode-ai/cli";
 const CACHE_DIR = path.join(os.tmpdir(), "sudocode-cli");
 const CACHE_FILE = path.join(CACHE_DIR, "update-cache.json");
+const DISMISS_FILE = path.join(CACHE_DIR, "update-dismissed.json");
 const CACHE_DURATION = 1000 * 60 * 60 * 24; // 24 hours
+const DISMISS_DURATION = 1000 * 60 * 60 * 24 * 30; // 30 days
 
 interface UpdateCache {
   timestamp: number;
@@ -26,6 +28,11 @@ interface UpdateInfo {
 
 interface NpmRegistryResponse {
   version?: string;
+}
+
+interface DismissInfo {
+  timestamp: number;
+  version: string;
 }
 
 /**
@@ -161,16 +168,64 @@ export async function getUpdateNotification(): Promise<string | null> {
     return null;
   }
 
-  return `
-╭─────────────────────────────────────────────────╮
-│                                                 │
-│  Update available: ${info.current} → ${info.latest}                │
-│                                                 │
-│  Run: npm install -g ${PACKAGE_NAME}          │
-│  Or:  sudocode update                          │
-│                                                 │
-╰─────────────────────────────────────────────────╯
-  `.trim();
+  // Check if update notification is dismissed
+  if (isDismissed(info.latest)) {
+    return null;
+  }
+
+  // Compact single-line notification
+  return `Update available: ${info.current} → ${info.latest} (run 'sudocode update' or 'sudocode update --dismiss')`;
+}
+
+/**
+ * Check if update notifications are dismissed
+ */
+function isDismissed(version: string): boolean {
+  try {
+    if (!fs.existsSync(DISMISS_FILE)) {
+      return false;
+    }
+
+    const content = fs.readFileSync(DISMISS_FILE, "utf-8");
+    const dismissInfo: DismissInfo = JSON.parse(content);
+
+    // Check if dismissed version matches
+    if (dismissInfo.version !== version) {
+      return false;
+    }
+
+    // Check if dismiss is still valid
+    const now = Date.now();
+    if (now - dismissInfo.timestamp > DISMISS_DURATION) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Dismiss update notifications for a version
+ */
+export function dismissUpdate(version: string): void {
+  try {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+
+    const dismissInfo: DismissInfo = {
+      timestamp: Date.now(),
+      version,
+    };
+
+    fs.writeFileSync(
+      DISMISS_FILE,
+      JSON.stringify(dismissInfo, null, 2),
+      "utf-8"
+    );
+  } catch {
+    // Silently fail
+  }
 }
 
 /**
@@ -180,6 +235,9 @@ export function clearUpdateCache(): void {
   try {
     if (fs.existsSync(CACHE_FILE)) {
       fs.unlinkSync(CACHE_FILE);
+    }
+    if (fs.existsSync(DISMISS_FILE)) {
+      fs.unlinkSync(DISMISS_FILE);
     }
   } catch {
     // Silently fail

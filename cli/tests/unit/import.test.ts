@@ -1116,4 +1116,137 @@ describe("Import Operations", () => {
       expect(issue!.closed_at).toBe(originalTimestamps.closed_at);
     });
   });
+
+  describe("Feedback timestamp preservation", () => {
+    it("should preserve feedback timestamps during import/export cycle", async () => {
+      // Create a spec and issue
+      createSpec(db, {
+        id: "SPEC-001",
+        uuid: "spec-uuid-001",
+        title: "Test Spec",
+        content: "Test content",
+        file_path: "test.md",
+        priority: 2,
+        created_at: "2025-01-01 10:00:00",
+        updated_at: "2025-01-01 10:00:00",
+      });
+
+      createIssue(db, {
+        id: "ISSUE-001",
+        uuid: "issue-uuid-001",
+        title: "Test Issue",
+        content: "Test issue content",
+        status: "open",
+        priority: 2,
+        created_at: "2025-01-01 10:00:00",
+        updated_at: "2025-01-01 10:00:00",
+      });
+
+      // Create feedback with specific timestamps
+      const originalTimestamps = {
+        created_at: "2025-01-01 12:00:00",
+        updated_at: "2025-01-01 12:30:00",
+      };
+
+      const { createFeedback, getFeedback } = await import(
+        "../../src/operations/feedback.js"
+      );
+      const { exportToJSONL } = await import("../../src/export.js");
+
+      createFeedback(db, {
+        id: "FB-001",
+        issue_id: "ISSUE-001",
+        spec_id: "SPEC-001",
+        feedback_type: "comment",
+        content: "Test feedback",
+        agent: "test-agent",
+        dismissed: false,
+        created_at: originalTimestamps.created_at,
+        updated_at: originalTimestamps.updated_at,
+      });
+
+      // Verify feedback was created with correct timestamps
+      const feedbackAfterCreate = getFeedback(db, "FB-001");
+      expect(feedbackAfterCreate).toBeTruthy();
+      expect(feedbackAfterCreate?.created_at).toBe(originalTimestamps.created_at);
+      expect(feedbackAfterCreate?.updated_at).toBe(originalTimestamps.updated_at);
+
+      // Export to JSONL
+      await exportToJSONL(db, { outputDir: TEST_DIR });
+
+      // Close and reopen database (simulate fresh start)
+      const { initDatabase } = await import("../../src/db.js");
+      db.close();
+      db = initDatabase({ path: ":memory:" });
+
+      // Import from JSONL
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      // Verify timestamps are preserved after import
+      const feedbackAfterImport = getFeedback(db, "FB-001");
+      expect(feedbackAfterImport).toBeTruthy();
+      expect(feedbackAfterImport?.created_at).toBe(originalTimestamps.created_at);
+      expect(feedbackAfterImport?.updated_at).toBe(originalTimestamps.updated_at);
+    });
+
+    it("should preserve feedback timestamps during re-import (sync scenario)", async () => {
+      // Create a spec and issue
+      createSpec(db, {
+        id: "SPEC-002",
+        uuid: "spec-uuid-002",
+        title: "Test Spec 2",
+        content: "Test content 2",
+        file_path: "test2.md",
+        priority: 2,
+        created_at: "2025-01-01 10:00:00",
+        updated_at: "2025-01-01 10:00:00",
+      });
+
+      createIssue(db, {
+        id: "ISSUE-002",
+        uuid: "issue-uuid-002",
+        title: "Test Issue 2",
+        content: "Test issue content 2",
+        status: "open",
+        priority: 2,
+        created_at: "2025-01-01 10:00:00",
+        updated_at: "2025-01-01 10:00:00",
+      });
+
+      // Create feedback with specific timestamps
+      const originalTimestamps = {
+        created_at: "2025-01-01 12:00:00",
+        updated_at: "2025-01-01 12:30:00",
+      };
+
+      const { createFeedback, getFeedback } = await import(
+        "../../src/operations/feedback.js"
+      );
+      const { exportToJSONL } = await import("../../src/export.js");
+
+      createFeedback(db, {
+        id: "FB-002",
+        issue_id: "ISSUE-002",
+        spec_id: "SPEC-002",
+        feedback_type: "comment",
+        content: "Test feedback 2",
+        agent: "test-agent",
+        dismissed: false,
+        created_at: originalTimestamps.created_at,
+        updated_at: originalTimestamps.updated_at,
+      });
+
+      // Export to JSONL
+      await exportToJSONL(db, { outputDir: TEST_DIR });
+
+      // Import again (simulating a sync operation)
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      // Verify timestamps are still preserved after re-import
+      const feedbackAfterReimport = getFeedback(db, "FB-002");
+      expect(feedbackAfterReimport).toBeTruthy();
+      expect(feedbackAfterReimport?.created_at).toBe(originalTimestamps.created_at);
+      expect(feedbackAfterReimport?.updated_at).toBe(originalTimestamps.updated_at);
+    });
+  });
 });

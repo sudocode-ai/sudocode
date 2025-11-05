@@ -4,8 +4,7 @@
 
 import chalk from "chalk";
 import { execSync } from "child_process";
-import { checkForUpdates } from "../update-checker.js";
-import { VERSION } from "../version.js";
+import { checkForUpdates, dismissUpdate } from "../update-checker.js";
 
 const PACKAGE_NAME = "@sudocode-ai/cli";
 
@@ -86,4 +85,30 @@ export async function handleUpdate(): Promise<void> {
 
     process.exit(1);
   }
+}
+
+/**
+ * Handle update dismiss command
+ */
+export async function handleUpdateDismiss(): Promise<void> {
+  const info = await checkForUpdates();
+
+  if (!info) {
+    console.log(chalk.yellow("Unable to check for updates"));
+    return;
+  }
+
+  if (!info.updateAvailable) {
+    console.log(chalk.green("✓ Already on latest version:"), info.current);
+    console.log("No update notifications to dismiss");
+    return;
+  }
+
+  dismissUpdate(info.latest);
+  console.log(chalk.green("✓ Update notifications dismissed for 30 days"));
+  console.log();
+  console.log(
+    `You won't be notified about version ${info.latest} for the next 30 days`
+  );
+  console.log("To update now, run:", chalk.cyan("sudocode update"));
 }
