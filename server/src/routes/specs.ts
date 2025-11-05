@@ -120,7 +120,7 @@ export function createSpecsRouter(db: Database.Database): Router {
 
       // Generate new spec ID
       const outputDir = getSudocodeDir();
-      const id = generateSpecId(db, outputDir);
+      const { id, uuid } = generateSpecId(db, outputDir);
 
       // Generate file path for the spec
       const file_path = path.join(outputDir, "specs", `${id}.md`);
@@ -128,6 +128,7 @@ export function createSpecsRouter(db: Database.Database): Router {
       // Create spec using CLI operation
       const spec = createNewSpec(db, {
         id,
+        uuid,
         title,
         file_path,
         content: content || "",

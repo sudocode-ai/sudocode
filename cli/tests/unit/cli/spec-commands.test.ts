@@ -80,9 +80,10 @@ describe("Spec CLI Commands", () => {
       const { createSpec } = await import("../../../src/operations/specs.js");
       const { getSpec } = await import("../../../src/operations/specs.js");
 
-      const specId = generateSpecId(db, tempDir);
+      const { id: specId, uuid: specUuid } = generateSpecId(db, tempDir);
       const spec = createSpec(db, {
         id: specId,
+        uuid: specUuid,
         title: "Test Spec",
         file_path: path.join(tempDir, "specs", "test.md"),
         content: "",
@@ -91,6 +92,7 @@ describe("Spec CLI Commands", () => {
 
       expect(spec).toBeDefined();
       expect(spec.id).toBe(specId);
+      expect(spec.uuid).toBe(specUuid);
       expect(spec.title).toBe("Test Spec");
 
       const retrieved = getSpec(db, specId);
@@ -105,16 +107,20 @@ describe("Spec CLI Commands", () => {
       const { createSpec } = await import("../../../src/operations/specs.js");
       const { generateSpecId } = await import("../../../src/id-generator.js");
 
+      const { id: spec1Id, uuid: spec1Uuid } = generateSpecId(db, tempDir);
       createSpec(db, {
-        id: generateSpecId(db, tempDir),
+        id: spec1Id,
+        uuid: spec1Uuid,
         title: "Spec 1",
         file_path: path.join(tempDir, "specs", "spec1.md"),
         content: "",
         priority: 1,
       });
 
+      const { id: spec2Id, uuid: spec2Uuid } = generateSpecId(db, tempDir);
       createSpec(db, {
-        id: generateSpecId(db, tempDir),
+        id: spec2Id,
+        uuid: spec2Uuid,
         title: "Spec 2",
         file_path: path.join(tempDir, "specs", "spec2.md"),
         content: "",

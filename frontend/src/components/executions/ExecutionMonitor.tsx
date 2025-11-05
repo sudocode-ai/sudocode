@@ -1,22 +1,32 @@
 /**
  * ExecutionMonitor Component
  *
- * Displays real-time execution status using the AG-UI event stream.
+ * Displays execution status using either:
+ * - Real-time SSE streaming for active executions (running, pending, preparing, paused)
+ * - Historical logs API for completed executions (completed, failed, cancelled, stopped)
+ *
  * Shows execution progress, metrics, messages, and tool calls.
  */
 
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useAgUiStream } from '@/hooks/useAgUiStream'
+import { useExecutionLogs } from '@/hooks/useExecutionLogs'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { AgentTrajectory } from './AgentTrajectory'
 import { AlertCircle, CheckCircle2, Loader2, XCircle } from 'lucide-react'
+import type { Execution } from '@/types/execution'
 
 export interface ExecutionMonitorProps {
   /**
    * Execution ID to monitor
    */
   executionId: string
+
+  /**
+   * Execution metadata (optional, for status detection)
+   */
+  execution?: Execution
 
   /**
    * Callback when execution completes successfully
@@ -39,19 +49,47 @@ export interface ExecutionMonitorProps {
  *
  * @example
  * ```tsx
+ * // Active execution (SSE streaming)
  * <ExecutionMonitor
  *   executionId="exec-123"
+ *   execution={{ status: 'running', ... }}
  *   onComplete={() => console.log('Done!')}
  *   onError={(err) => console.error(err)}
+ * />
+ *
+ * // Historical execution (logs API)
+ * <ExecutionMonitor
+ *   executionId="exec-456"
+ *   execution={{ status: 'completed', ... }}
  * />
  * ```
  */
 export function ExecutionMonitor({
   executionId,
+  execution: executionProp,
   onComplete,
   onError,
   className = '',
 }: ExecutionMonitorProps) {
+  // Determine if execution is active or completed
+  // Active: preparing, pending, running, paused
+  // Completed: completed, failed, cancelled, stopped
+  const isActive = useMemo(() => {
+    if (!executionProp) return true // Default to active if no execution prop
+    const activeStatuses = ['preparing', 'pending', 'running', 'paused']
+    return activeStatuses.includes(executionProp.status)
+  }, [executionProp])
+
+  // Use SSE streaming for active executions
+  const sseStream = useAgUiStream({
+    executionId,
+    autoConnect: isActive,
+  })
+
+  // Use logs API for completed executions
+  const logsResult = useExecutionLogs(executionId)
+
+  // Select the appropriate data source
   const {
     connectionStatus,
     execution,
@@ -60,10 +98,76 @@ export function ExecutionMonitor({
     state,
     error,
     isConnected,
-  } = useAgUiStream({
-    executionId,
-    autoConnect: true,
-  })
+  } = useMemo(() => {
+    if (isActive) {
+      // Use SSE stream for active executions
+      return {
+        connectionStatus: sseStream.connectionStatus,
+        execution: sseStream.execution,
+        messages: sseStream.messages,
+        toolCalls: sseStream.toolCalls,
+        state: sseStream.state,
+        error: sseStream.error,
+        isConnected: sseStream.isConnected,
+      }
+    } else {
+      // Use logs API for completed executions
+      // Transform events to messages/toolCalls format
+      const messages = new Map()
+      const toolCalls = new Map()
+      const state: any = {}
+
+      // Process events from logs
+      if (logsResult.events) {
+        logsResult.events.forEach((event: any) => {
+          // Handle different event types
+          if (event.type === 'TEXT_MESSAGE_CONTENT' || event.name === 'TEXT_MESSAGE_CONTENT') {
+            const content = event.value || event
+            messages.set(messages.size, {
+              id: messages.size,
+              content: content.content || content.text,
+              timestamp: event.timestamp || Date.now(),
+            })
+          } else if (event.type === 'TOOL_CALL_START' || event.name === 'TOOL_CALL_START') {
+            const value = event.value || event
+            toolCalls.set(value.toolCallId, {
+              id: value.toolCallId,
+              name: value.name,
+              status: 'running',
+              timestamp: event.timestamp || Date.now(),
+            })
+          } else if (event.type === 'TOOL_CALL_RESULT' || event.name === 'TOOL_CALL_RESULT') {
+            const value = event.value || event
+            const existing = toolCalls.get(value.toolCallId)
+            if (existing) {
+              toolCalls.set(value.toolCallId, {
+                ...existing,
+                status: 'completed',
+                result: value.result,
+              })
+            }
+          }
+        })
+      }
+
+      return {
+        connectionStatus: logsResult.loading ? 'connecting' : logsResult.error ? 'error' : 'connected',
+        execution: {
+          status: executionProp?.status || 'completed',
+          runId: executionId,
+          currentStep: undefined,
+          error: logsResult.error?.message,
+          startTime: undefined,
+          endTime: undefined,
+        },
+        messages,
+        toolCalls,
+        state,
+        error: logsResult.error,
+        isConnected: false, // Not live for historical
+      }
+    }
+  }, [isActive, sseStream, logsResult, executionId, executionProp])
 
   // Trigger callbacks when execution status changes
   useEffect(() => {

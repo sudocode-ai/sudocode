@@ -21,16 +21,18 @@ describe("Query CLI Commands", () => {
   let consoleLogSpy: any;
   let consoleErrorSpy: any;
   let processExitSpy: any;
+  let createdIssueIds: string[] = [];
 
   beforeEach(() => {
     db = initDatabase({ path: ":memory:" });
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "sudocode-test-"));
+    createdIssueIds = [];
 
     const config = {
       version: "1.0.0",
       id_prefix: {
-        spec: "spec",
-        issue: "issue",
+        spec: "s",
+        issue: "i",
       },
     };
     fs.writeFileSync(
@@ -54,6 +56,25 @@ describe("Query CLI Commands", () => {
     consoleErrorSpy.mockRestore();
     processExitSpy.mockRestore();
   });
+
+  // Helper to extract issue ID from console output
+  const extractIssueId = (spy: any): string => {
+    const output = spy.mock.calls.flat().join(" ");
+    const match = output.match(/\bi-[0-9a-z]{4,8}\b/);
+    if (!match) {
+      throw new Error(`Could not find issue ID in output: ${output}`);
+    }
+    return match[0];
+  };
+
+  // Helper to create issue and track its ID
+  const createAndTrackIssue = async (ctx: any, title: string, options: any = {}) => {
+    await handleIssueCreate(ctx, title, options);
+    const issueId = extractIssueId(consoleLogSpy);
+    createdIssueIds.push(issueId);
+    consoleLogSpy.mockClear();
+    return issueId;
+  };
 
   describe("handleReady", () => {
     it("should show message when no ready issues exist", async () => {
@@ -86,12 +107,12 @@ describe("Query CLI Commands", () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
 
       // Create issues
-      await handleIssueCreate(ctx, "Blocking Issue", { priority: "2" });
-      await handleIssueCreate(ctx, "Blocked Issue", { priority: "2" });
-      await handleIssueCreate(ctx, "Ready Issue", { priority: "2" });
+      const blockingId = await createAndTrackIssue(ctx, "Blocking Issue", { priority: "2" });
+      const blockedId = await createAndTrackIssue(ctx, "Blocked Issue", { priority: "2" });
+      await createAndTrackIssue(ctx, "Ready Issue", { priority: "2" });
 
       // Create blocking relationship
-      await handleLink(ctx, "issue-002", "issue-001", { type: "blocks" });
+      await handleLink(ctx, blockedId, blockingId, { type: "blocks" });
 
       consoleLogSpy.mockClear();
 
@@ -109,11 +130,11 @@ describe("Query CLI Commands", () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
 
       // Create an open issue
-      await handleIssueCreate(ctx, "Open Issue", { priority: "2" });
+      await createAndTrackIssue(ctx, "Open Issue", { priority: "2" });
 
       // Create a closed issue
-      await handleIssueCreate(ctx, "Closed Issue", { priority: "2" });
-      db.prepare("UPDATE issues SET status = 'closed' WHERE id = 'issue-002'").run();
+      const closedId = await createAndTrackIssue(ctx, "Closed Issue", { priority: "2" });
+      db.prepare("UPDATE issues SET status = 'closed' WHERE id = ?").run(closedId);
 
       consoleLogSpy.mockClear();
 
@@ -129,11 +150,11 @@ describe("Query CLI Commands", () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
 
       // Create an open issue
-      await handleIssueCreate(ctx, "Active Issue", { priority: "2" });
+      await createAndTrackIssue(ctx, "Active Issue", { priority: "2" });
 
       // Create an archived issue
-      await handleIssueCreate(ctx, "Archived Issue", { priority: "2" });
-      db.prepare("UPDATE issues SET archived = 1 WHERE id = 'issue-002'").run();
+      const archivedId = await createAndTrackIssue(ctx, "Archived Issue", { priority: "2" });
+      db.prepare("UPDATE issues SET archived = 1 WHERE id = ?").run(archivedId);
 
       consoleLogSpy.mockClear();
 
@@ -230,13 +251,13 @@ describe("Query CLI Commands", () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
 
       // Create issues
-      await handleIssueCreate(ctx, "Blocking Issue", { priority: "2" });
-      await handleIssueCreate(ctx, "Blocked Issue 1", { priority: "2" });
-      await handleIssueCreate(ctx, "Blocked Issue 2", { priority: "2" });
+      const blockingId = await createAndTrackIssue(ctx, "Blocking Issue", { priority: "2" });
+      const blockedId1 = await createAndTrackIssue(ctx, "Blocked Issue 1", { priority: "2" });
+      const blockedId2 = await createAndTrackIssue(ctx, "Blocked Issue 2", { priority: "2" });
 
       // Create blocking relationships
-      await handleLink(ctx, "issue-002", "issue-001", { type: "blocks" });
-      await handleLink(ctx, "issue-003", "issue-001", { type: "blocks" });
+      await handleLink(ctx, blockedId1, blockingId, { type: "blocks" });
+      await handleLink(ctx, blockedId2, blockingId, { type: "blocks" });
 
       consoleLogSpy.mockClear();
 
@@ -252,11 +273,11 @@ describe("Query CLI Commands", () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
 
       // Create issues with blocking relationship
-      await handleIssueCreate(ctx, "Blocking Issue", { priority: "2" });
-      await handleIssueCreate(ctx, "Blocked Issue", { priority: "2" });
-      await handleIssueCreate(ctx, "Ready Issue", { priority: "2" });
+      const blockingId = await createAndTrackIssue(ctx, "Blocking Issue", { priority: "2" });
+      const blockedId = await createAndTrackIssue(ctx, "Blocked Issue", { priority: "2" });
+      await createAndTrackIssue(ctx, "Ready Issue", { priority: "2" });
 
-      await handleLink(ctx, "issue-002", "issue-001", { type: "blocks" });
+      await handleLink(ctx, blockedId, blockingId, { type: "blocks" });
 
       consoleLogSpy.mockClear();
 
@@ -272,13 +293,13 @@ describe("Query CLI Commands", () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
 
       // Create issues with blocking relationship
-      await handleIssueCreate(ctx, "Blocking Issue", { priority: "2" });
-      await handleIssueCreate(ctx, "Previously Blocked Issue", { priority: "2" });
+      const blockingId = await createAndTrackIssue(ctx, "Blocking Issue", { priority: "2" });
+      const blockedId = await createAndTrackIssue(ctx, "Previously Blocked Issue", { priority: "2" });
 
-      await handleLink(ctx, "issue-002", "issue-001", { type: "blocks" });
+      await handleLink(ctx, blockedId, blockingId, { type: "blocks" });
 
       // Close the blocking issue
-      db.prepare("UPDATE issues SET status = 'closed' WHERE id = 'issue-001'").run();
+      db.prepare("UPDATE issues SET status = 'closed' WHERE id = ?").run(blockingId);
 
       consoleLogSpy.mockClear();
 
@@ -293,17 +314,17 @@ describe("Query CLI Commands", () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
 
       // Create blocker
-      await handleIssueCreate(ctx, "Blocker", { priority: "2" });
+      const blockerId = await createAndTrackIssue(ctx, "Blocker", { priority: "2" });
 
       // Create blocked issues with different priorities
-      await handleIssueCreate(ctx, "Low Priority Blocked", { priority: "3" });
-      await handleIssueCreate(ctx, "High Priority Blocked", { priority: "1" });
-      await handleIssueCreate(ctx, "Medium Priority Blocked", { priority: "2" });
+      const lowPriorityId = await createAndTrackIssue(ctx, "Low Priority Blocked", { priority: "3" });
+      const highPriorityId = await createAndTrackIssue(ctx, "High Priority Blocked", { priority: "1" });
+      const mediumPriorityId = await createAndTrackIssue(ctx, "Medium Priority Blocked", { priority: "2" });
 
       // Create blocking relationships
-      await handleLink(ctx, "issue-002", "issue-001", { type: "blocks" });
-      await handleLink(ctx, "issue-003", "issue-001", { type: "blocks" });
-      await handleLink(ctx, "issue-004", "issue-001", { type: "blocks" });
+      await handleLink(ctx, lowPriorityId, blockerId, { type: "blocks" });
+      await handleLink(ctx, highPriorityId, blockerId, { type: "blocks" });
+      await handleLink(ctx, mediumPriorityId, blockerId, { type: "blocks" });
 
       consoleLogSpy.mockClear();
 
@@ -326,9 +347,9 @@ describe("Query CLI Commands", () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: true };
 
       // Create issues with blocking relationship
-      await handleIssueCreate(ctx, "Blocker", { priority: "2" });
-      await handleIssueCreate(ctx, "Blocked", { priority: "2" });
-      await handleLink(ctx, "issue-002", "issue-001", { type: "blocks" });
+      const blockerId = await createAndTrackIssue(ctx, "Blocker", { priority: "2" });
+      const blockedId = await createAndTrackIssue(ctx, "Blocked", { priority: "2" });
+      await handleLink(ctx, blockedId, blockerId, { type: "blocks" });
 
       consoleLogSpy.mockClear();
 

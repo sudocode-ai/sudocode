@@ -103,7 +103,7 @@ export class SudocodeMCPServer {
               properties: {
                 issue_id: {
                   type: "string",
-                  description: 'Issue ID (e.g., "ISSUE-001")',
+                  description: 'Issue ID (e.g., "i-x7k9")',
                 },
               },
               required: ["issue_id"],
@@ -129,7 +129,7 @@ export class SudocodeMCPServer {
                 description: {
                   type: "string",
                   description:
-                    "Issue descriptions. Supports inline references to other specs/issues by ID in Obsidian internal link format (e.g. `[[SPEC-002]]`).",
+                    "Issue descriptions. Supports inline references to other specs/issues by ID in Obsidian internal link format (e.g. `[[i-x7k9]]`).",
                 },
                 priority: {
                   type: "number",
@@ -184,7 +184,7 @@ export class SudocodeMCPServer {
               properties: {
                 spec_id: {
                   type: "string",
-                  description: 'Spec ID (e.g., "SPEC-001")',
+                  description: 'Spec ID (e.g., "s-14sh")',
                 },
               },
               required: ["spec_id"],
@@ -192,7 +192,8 @@ export class SudocodeMCPServer {
           },
           {
             name: "upsert_spec",
-            description: "Create a new spec (update not yet supported in CLI)",
+            description:
+              "Create or update a spec. If spec_id is provided, updates the spec; otherwise creates a new one with a hash-based ID (e.g., s-14sh).",
             inputSchema: {
               type: "object",
               properties: {
@@ -269,7 +270,7 @@ export class SudocodeMCPServer {
                 },
                 reference_id: {
                   type: "string",
-                  description: "ID to reference (e.g., ISSUE-001, SPEC-002)",
+                  description: "ID to reference (e.g., i-x7k9, s-14sh)",
                 },
                 display_text: {
                   type: "string",
@@ -491,12 +492,13 @@ sudocode is a git-native spec and issue management system designed for AI-assist
 **Specs**: Technical specifications stored as markdown files
 - Types: architecture, api, database, feature, research
 - Status: draft → review → approved → deprecated
-- Each spec has a unique ID (e.g., SPEC-001) and file path
+- Each spec has a unique hash-based ID (e.g., s-14sh) and file path
 
 **Issues**: Work items tracked in the database
 - Types: bug, feature, task, epic, chore
 - Status: open → in_progress → blocked → closed
 - Can reference and implement specs
+- Each issue has a unique hash-based ID (e.g., i-x7k9)
 
 **Feedback**: Issues can provide anchored feedback on specs
 - Anchors track specific lines/sections in spec markdown

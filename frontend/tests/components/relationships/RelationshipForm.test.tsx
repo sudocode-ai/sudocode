@@ -57,7 +57,7 @@ describe('RelationshipForm', () => {
 
       render(<RelationshipForm onSubmit={onSubmit} />)
 
-      const input = screen.getByPlaceholderText('ISSUE-001')
+      const input = screen.getByPlaceholderText('i-x7k9')
       expect(input).toBeInTheDocument()
     })
 
@@ -68,7 +68,7 @@ describe('RelationshipForm', () => {
       render(<RelationshipForm onSubmit={onSubmit} />)
 
       // Initially should show issue placeholder
-      expect(screen.getByPlaceholderText('ISSUE-001')).toBeInTheDocument()
+      expect(screen.getByPlaceholderText('i-x7k9')).toBeInTheDocument()
 
       // Click the entity type select
       const selectTrigger = screen.getAllByRole('combobox')[0]
@@ -80,7 +80,7 @@ describe('RelationshipForm', () => {
 
       // Should now show spec placeholder
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('SPEC-001')).toBeInTheDocument()
+        expect(screen.getByPlaceholderText('s-14sh')).toBeInTheDocument()
       })
     })
   })
@@ -124,7 +124,7 @@ describe('RelationshipForm', () => {
       render(<RelationshipForm onSubmit={onSubmit} />)
 
       // Fill in the target ID
-      const input = screen.getByPlaceholderText('ISSUE-001')
+      const input = screen.getByPlaceholderText('i-x7k9')
       await user.type(input, 'ISSUE-002')
 
       // Submit the form
@@ -142,7 +142,7 @@ describe('RelationshipForm', () => {
 
       render(<RelationshipForm onSubmit={onSubmit} />)
 
-      const input = screen.getByPlaceholderText('ISSUE-001')
+      const input = screen.getByPlaceholderText('i-x7k9')
       await user.type(input, '  ISSUE-002  ')
 
       const submitButton = screen.getByRole('button', { name: /Create/i })
@@ -160,7 +160,7 @@ describe('RelationshipForm', () => {
       render(<RelationshipForm onSubmit={onSubmit} />)
 
       // Fill in the form
-      const input = screen.getByPlaceholderText('ISSUE-001')
+      const input = screen.getByPlaceholderText('i-x7k9')
       await user.type(input, 'ISSUE-002')
 
       // Submit
@@ -190,7 +190,7 @@ describe('RelationshipForm', () => {
 
       render(<RelationshipForm onSubmit={onSubmit} />)
 
-      const input = screen.getByPlaceholderText('ISSUE-001')
+      const input = screen.getByPlaceholderText('i-x7k9')
       await user.type(input, 'ISSUE-002')
 
       const submitButton = screen.getByRole('button', { name: /Create/i })
@@ -203,7 +203,7 @@ describe('RelationshipForm', () => {
 
       render(<RelationshipForm onSubmit={onSubmit} />)
 
-      const input = screen.getByPlaceholderText('ISSUE-001')
+      const input = screen.getByPlaceholderText('i-x7k9')
       await user.type(input, '   ')
 
       // Button should still be enabled (input has value)
@@ -220,7 +220,7 @@ describe('RelationshipForm', () => {
 
       render(<RelationshipForm onSubmit={onSubmit} />)
 
-      const input = screen.getByPlaceholderText('ISSUE-001')
+      const input = screen.getByPlaceholderText('i-x7k9')
       await user.type(input, 'ISSUE-002')
 
       const submitButton = screen.getByRole('button', { name: /Create/i })
@@ -261,7 +261,7 @@ describe('RelationshipForm', () => {
 
       render(<RelationshipForm onSubmit={onSubmit} onCancel={onCancel} />)
 
-      const input = screen.getByPlaceholderText('ISSUE-001')
+      const input = screen.getByPlaceholderText('i-x7k9')
       await user.type(input, 'ISSUE-002')
 
       const submitButton = screen.getByRole('button', { name: /Create/i })
@@ -291,7 +291,7 @@ describe('RelationshipForm', () => {
       await user.click(specOption)
 
       // Fill in target ID
-      const input = screen.getByPlaceholderText('SPEC-001')
+      const input = screen.getByPlaceholderText('s-14sh')
       await user.type(input, 'SPEC-042')
 
       // Change relationship type to implements
@@ -316,7 +316,7 @@ describe('RelationshipForm', () => {
       render(<RelationshipForm onSubmit={onSubmit} />)
 
       // First submission
-      const input = screen.getByPlaceholderText('ISSUE-001')
+      const input = screen.getByPlaceholderText('i-x7k9')
       await user.type(input, 'ISSUE-002')
 
       const submitButton = screen.getByRole('button', { name: /Create/i })

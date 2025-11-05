@@ -368,7 +368,7 @@ describe('ExecutionView', () => {
     })
   })
 
-  it('should not display ExecutionMonitor for preparing status', async () => {
+  it('should display ExecutionMonitor for preparing status', async () => {
     vi.mocked(executionsApi.getById).mockResolvedValue({
       ...mockExecution,
       status: 'preparing',
@@ -382,7 +382,8 @@ describe('ExecutionView', () => {
       expect(screen.getByText('Preparing')).toBeInTheDocument()
     })
 
-    expect(screen.queryByTestId('execution-monitor')).not.toBeInTheDocument()
+    // ExecutionMonitor should be displayed for 'preparing' status (active execution)
+    expect(screen.getByTestId('execution-monitor')).toBeInTheDocument()
   })
 
   it('should handle cancel error gracefully', async () => {

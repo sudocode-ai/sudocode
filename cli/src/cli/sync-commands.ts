@@ -41,8 +41,6 @@ export async function handleSync(
 
     try {
       await performInitialization({
-        specPrefix: "SPEC",
-        issuePrefix: "ISSUE",
         dir: ctx.outputDir,
         jsonOutput: ctx.jsonOutput,
       });

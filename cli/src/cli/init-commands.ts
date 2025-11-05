@@ -10,8 +10,6 @@ import type Database from "better-sqlite3";
 import { VERSION } from "../version.js";
 
 export interface InitOptions {
-  specPrefix?: string;
-  issuePrefix?: string;
   dir?: string;
   jsonOutput?: boolean;
 }
@@ -39,8 +37,6 @@ export function isInitialized(dir: string): boolean {
 export async function performInitialization(
   options: InitOptions = {}
 ): Promise<void> {
-  const specPrefix = options.specPrefix || "SPEC";
-  const issuePrefix = options.issuePrefix || "ISSUE";
   const dir = options.dir || path.join(process.cwd(), ".sudocode");
   const jsonOutput = options.jsonOutput || false;
 
@@ -70,10 +66,6 @@ export async function performInitialization(
   // Create config.json (version-controlled)
   const config = {
     version: VERSION,
-    id_prefix: {
-      spec: specPrefix,
-      issue: issuePrefix,
-    },
     worktree: {
       worktreeStoragePath: ".sudocode/worktrees",
       autoCreateBranches: true,
@@ -166,8 +158,6 @@ worktrees/`;
 
   if (!jsonOutput) {
     console.log(chalk.green("✓ Initialized sudocode in"), chalk.cyan(dir));
-    console.log(chalk.gray(`  Spec prefix: ${specPrefix}`));
-    console.log(chalk.gray(`  Issue prefix: ${issuePrefix}`));
     console.log(chalk.gray(`  Database: ${dbPath}`));
 
     if (preserved.length > 0) {

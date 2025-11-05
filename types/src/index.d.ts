@@ -198,11 +198,8 @@ export interface WorktreeConfig {
  * Config metadata file structure (.sudocode/config.json)
  */
 export interface Config {
+  // TODO: Deprecate version field.
   version: string;
-  id_prefix: {
-    spec: string;
-    issue: string;
-  };
   /** Worktree configuration (optional) */
   worktree?: WorktreeConfig;
 }

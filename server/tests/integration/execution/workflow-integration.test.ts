@@ -231,9 +231,10 @@ describe("Workflow Integration Tests", { skip: SKIP_E2E }, () => {
    * Helper function to create a unique issue for each test
    */
   function createTestIssue(title: string, content?: string): string {
-    const issueId = generateIssueId(db, testDir);
+    const { id: issueId, uuid: issueUuid } = generateIssueId(db, testDir);
     const issue = createIssue(db, {
       id: issueId,
+      uuid: issueUuid,
       title,
       content: content || `Test issue for: ${title}`,
     });

@@ -81,17 +81,21 @@ describe("ExecutionService", () => {
     initializeDefaultTemplates(db);
 
     // Create test issue
-    testIssueId = generateIssueId(db, testDir);
+    const { id: issueId, uuid: issueUuid } = generateIssueId(db, testDir);
+    testIssueId = issueId;
     createIssue(db, {
-      id: testIssueId,
+      id: issueId,
+      uuid: issueUuid,
       title: "Implement user authentication",
       content: "Add OAuth2 authentication with JWT tokens",
     });
 
     // Create test spec
-    testSpecId = generateSpecId(db, testDir);
+    const { id: specId, uuid: specUuid } = generateSpecId(db, testDir);
+    testSpecId = specId;
     createSpec(db, {
-      id: testSpecId,
+      id: specId,
+      uuid: specUuid,
       title: "Authentication System Design",
       content: "OAuth2 with JWT tokens",
       file_path: path.join(testDir, "specs", "auth.md"),
@@ -184,9 +188,10 @@ describe("ExecutionService", () => {
 
     it("should handle issue without related specs", async () => {
       // Create issue without relationships
-      const isolatedIssueId = generateIssueId(db, testDir);
+      const { id: isolatedIssueId, uuid: isolatedIssueUuid } = generateIssueId(db, testDir);
       createIssue(db, {
         id: isolatedIssueId,
+        uuid: isolatedIssueUuid,
         title: "Fix bug",
         content: "Fix the bug",
       });
@@ -210,9 +215,10 @@ describe("ExecutionService", () => {
 
     it("should render template even with empty issue content", async () => {
       // Create issue with empty content
-      const emptyIssueId = generateIssueId(db, testDir);
+      const { id: emptyIssueId, uuid: emptyIssueUuid } = generateIssueId(db, testDir);
       createIssue(db, {
         id: emptyIssueId,
+        uuid: emptyIssueUuid,
         title: "",
         content: "",
       });
@@ -480,9 +486,10 @@ describe("ExecutionService", () => {
       ).toBeTruthy();
 
       // Issue without related specs should not show section
-      const isolatedIssueId = generateIssueId(db, testDir);
+      const { id: isolatedIssueId, uuid: isolatedIssueUuid } = generateIssueId(db, testDir);
       createIssue(db, {
         id: isolatedIssueId,
+        uuid: isolatedIssueUuid,
         title: "Isolated issue",
         content: "No related specs",
       });
@@ -495,9 +502,10 @@ describe("ExecutionService", () => {
 
     it("should handle loops in template", async () => {
       // Create multiple related specs
-      const spec2Id = generateSpecId(db, testDir);
+      const { id: spec2Id, uuid: spec2Uuid } = generateSpecId(db, testDir);
       createSpec(db, {
         id: spec2Id,
+        uuid: spec2Uuid,
         title: "Database Design",
         content: "User table schema",
         file_path: path.join(testDir, "specs", "db.md"),

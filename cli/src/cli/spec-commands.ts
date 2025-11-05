@@ -43,8 +43,8 @@ export async function handleSpecCreate(
   options: SpecCreateOptions
 ): Promise<void> {
   try {
-    // Generate spec ID
-    const specId = generateSpecId(ctx.db, ctx.outputDir);
+    // Generate spec ID and UUID
+    const { id: specId, uuid: specUUID } = generateSpecId(ctx.db, ctx.outputDir);
 
     // Ensure specs directory exists
     const specsDir = path.join(ctx.outputDir, "specs");
@@ -60,6 +60,7 @@ export async function handleSpecCreate(
     const content = options.description || "";
     const spec = createSpec(ctx.db, {
       id: specId,
+      uuid: specUUID,
       title,
       file_path: filePath,
       content,

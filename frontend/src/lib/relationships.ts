@@ -61,7 +61,7 @@ export function groupRelationships(
 }
 
 /**
- * Format entity ID for display (e.g., "ISSUE-001" or "SPEC-001")
+ * Format entity ID for display (e.g., "i-x7k9" or "s-14sh")
  */
 export function formatEntityId(id: string, _type: EntityType): string {
   return id

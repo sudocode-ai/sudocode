@@ -144,13 +144,8 @@ program
 program
   .command("init")
   .description("Initialize .sudocode directory structure")
-  .option("--spec-prefix <prefix>", "ID prefix for specs", "SPEC")
-  .option("--issue-prefix <prefix>", "ID prefix for issues", "ISSUE")
   .action(async (options) => {
-    await handleInit({
-      specPrefix: options.specPrefix,
-      issuePrefix: options.issuePrefix,
-    });
+    await handleInit({});
   });
 
 // ============================================================================
@@ -492,9 +487,11 @@ program.parse();
 
 // Check for updates (non-blocking)
 // Skip for update and server commands (server handles it explicitly)
+// Also skip when --json flag is present (to avoid interfering with JSON output)
 const isUpdateCommand = process.argv.includes("update");
 const isServerCommand = process.argv.includes("server");
-if (!isUpdateCommand && !isServerCommand) {
+const isJsonOutput = process.argv.includes("--json");
+if (!isUpdateCommand && !isServerCommand && !isJsonOutput) {
   getUpdateNotification()
     .then((notification) => {
       if (notification) {

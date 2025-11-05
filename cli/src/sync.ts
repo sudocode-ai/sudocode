@@ -85,12 +85,14 @@ function initializeFrontmatter(
   const now = new Date().toISOString();
   const initialized = { ...data };
 
-  // Generate ID if missing
+  // Generate ID and UUID if missing
   if (!initialized.id) {
-    initialized.id =
+    const generated =
       entityType === "spec"
         ? generateSpecId(db, outputDir)
         : generateIssueId(db, outputDir);
+    initialized.id = generated.id;
+    initialized.uuid = generated.uuid;
   }
 
   // Extract title from content if missing

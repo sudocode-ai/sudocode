@@ -431,14 +431,11 @@ Sudocode is a git-native spec and issue management system designed for AI-assist
 ### Initialization
 
 #### 22. `init`
-**Description**: Initialize Sudocode in current directory
+**Description**: Initialize sudocode in current directory
 
-**Parameters**:
-- `prefix` (string, default: "sudocode"): ID prefix for specs/issues
+**Returns**: `{ success: boolean, path: string }`
 
-**Returns**: `{ success: boolean, path: string, prefix: string }`
-
-**CLI Command**: `sudocode init --json [--prefix]`
+**CLI Command**: `sudocode init`
 
 ---
 

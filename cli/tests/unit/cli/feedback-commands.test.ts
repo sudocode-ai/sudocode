@@ -191,6 +191,34 @@ This is the second section.
       const output = consoleLogSpy.mock.calls[0][0];
       expect(() => JSON.parse(output)).not.toThrow();
     });
+
+    it('should export to JSONL after adding feedback', async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const options = {
+        line: '7',
+        type: 'comment',
+        content: 'Feedback that should be exported',
+      };
+
+      await handleFeedbackAdd(ctx, 'issue-001', 'spec-001', options);
+
+      // Check that JSONL file was created and contains the feedback
+      const jsonlPath = path.join(tempDir, 'issues.jsonl');
+      expect(fs.existsSync(jsonlPath)).toBe(true);
+
+      const jsonlContent = fs.readFileSync(jsonlPath, 'utf8');
+      const issues = jsonlContent
+        .trim()
+        .split('\n')
+        .filter((line) => line.trim())
+        .map((line) => JSON.parse(line));
+
+      const issueWithFeedback = issues.find((i: any) => i.id === 'issue-001');
+      expect(issueWithFeedback).toBeDefined();
+      expect(issueWithFeedback.feedback).toBeDefined();
+      expect(issueWithFeedback.feedback.length).toBe(1);
+      expect(issueWithFeedback.feedback[0].content).toBe('Feedback that should be exported');
+    });
   });
 
   describe('handleFeedbackList', () => {
@@ -385,6 +413,31 @@ This is the second section.
       const feedback = getFeedback(db, 'FB-001');
       expect(feedback?.dismissed).toBe(true);
     });
+
+    it('should export to JSONL after dismissing feedback', async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const options = {};
+
+      await handleFeedbackDismiss(ctx, 'FB-001', options);
+
+      // Check that JSONL file contains the dismissed feedback
+      const jsonlPath = path.join(tempDir, 'issues.jsonl');
+      expect(fs.existsSync(jsonlPath)).toBe(true);
+
+      const jsonlContent = fs.readFileSync(jsonlPath, 'utf8');
+      const issues = jsonlContent
+        .trim()
+        .split('\n')
+        .filter((line) => line.trim())
+        .map((line) => JSON.parse(line));
+
+      const issueWithFeedback = issues.find((i: any) => i.id === 'issue-001');
+      expect(issueWithFeedback).toBeDefined();
+      expect(issueWithFeedback.feedback).toBeDefined();
+      expect(issueWithFeedback.feedback.length).toBe(1);
+      expect(issueWithFeedback.feedback[0].id).toBe('FB-001');
+      expect(issueWithFeedback.feedback[0].dismissed).toBe(true);
+    });
   });
 
   describe('handleFeedbackStale', () => {
@@ -559,6 +612,34 @@ This is the second section.
       const anchor = typeof parsed.anchor === 'string' ? JSON.parse(parsed.anchor) : parsed.anchor;
       expect(anchor.line_number).toBe(12);
       expect(anchor.anchor_status).toBe('relocated');
+    });
+
+    it('should export to JSONL after relocating feedback', async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const feedbackId = 'FB-001';
+
+      await handleFeedbackRelocate(ctx, feedbackId, { line: '14' });
+
+      // Check that JSONL file contains the relocated feedback
+      const jsonlPath = path.join(tempDir, 'issues.jsonl');
+      expect(fs.existsSync(jsonlPath)).toBe(true);
+
+      const jsonlContent = fs.readFileSync(jsonlPath, 'utf8');
+      const issues = jsonlContent
+        .trim()
+        .split('\n')
+        .filter((line) => line.trim())
+        .map((line) => JSON.parse(line));
+
+      const issueWithFeedback = issues.find((i: any) => i.id === 'issue-001');
+      expect(issueWithFeedback).toBeDefined();
+      expect(issueWithFeedback.feedback).toBeDefined();
+      expect(issueWithFeedback.feedback.length).toBeGreaterThan(0);
+
+      const relocatedFeedback = issueWithFeedback.feedback.find((f: any) => f.id === feedbackId);
+      expect(relocatedFeedback).toBeDefined();
+      expect(relocatedFeedback.anchor.line_number).toBe(14);
+      expect(relocatedFeedback.anchor.anchor_status).toBe('relocated');
     });
   });
 });

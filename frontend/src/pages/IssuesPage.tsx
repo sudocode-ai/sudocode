@@ -10,6 +10,13 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -21,6 +28,10 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Plus, Archive, Search } from 'lucide-react'
 import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels'
+
+type SortOption = 'priority' | 'newest' | 'last-updated'
+
+const SORT_STORAGE_KEY = 'sudocode:issues:sortOption'
 
 export default function IssuesPage() {
   const navigate = useNavigate()
@@ -44,6 +55,18 @@ export default function IssuesPage() {
   const [createDialogStatus, setCreateDialogStatus] = useState<IssueStatus | undefined>()
   const [showArchiveAllDialog, setShowArchiveAllDialog] = useState(false)
   const [filterText, setFilterText] = useState('')
+  const [sortOption, setSortOption] = useState<SortOption>(() => {
+    // Initialize from localStorage if available
+    try {
+      const stored = localStorage.getItem(SORT_STORAGE_KEY)
+      if (stored && ['priority', 'newest', 'last-updated'].includes(stored)) {
+        return stored as SortOption
+      }
+    } catch (error) {
+      console.error('Failed to load sort preference from localStorage:', error)
+    }
+    return 'priority'
+  })
 
   // Collapsed columns state with localStorage persistence
   const [collapsedColumns, setCollapsedColumns] = useState<Set<IssueStatus>>(() => {
@@ -58,6 +81,17 @@ export default function IssuesPage() {
     }
     return new Set()
   })
+
+  // Save sort preference to localStorage when it changes
+  const handleSortChange = useCallback((value: string) => {
+    const newSortOption = value as SortOption
+    setSortOption(newSortOption)
+    try {
+      localStorage.setItem(SORT_STORAGE_KEY, newSortOption)
+    } catch (error) {
+      console.error('Failed to save sort preference to localStorage:', error)
+    }
+  }, [])
 
   // Group issues by status
   const groupedIssues = useMemo(() => {
@@ -91,31 +125,35 @@ export default function IssuesPage() {
       }
     })
 
-    // Sort each group
+    // Sort each group based on the selected sort option
     Object.keys(groups).forEach((status) => {
       const statusKey = status as IssueStatus
-      if (statusKey === 'closed') {
-        // Sort closed issues by most recent closed_at date
-        groups[statusKey].sort((a, b) => {
-          const aDate = a.closed_at ? new Date(a.closed_at).getTime() : 0
-          const bDate = b.closed_at ? new Date(b.closed_at).getTime() : 0
-          return bDate - aDate // Descending (most recent first)
-        })
-      } else {
-        // Sort other statuses by priority (ascending), then by created_at (ascending)
-        groups[statusKey].sort((a, b) => {
-          // First compare by priority (0 is highest priority)
-          if (a.priority !== b.priority) {
-            return a.priority - b.priority
-          }
-          // If priority is the same, compare by created_at (oldest first)
-          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        })
-      }
+
+      groups[statusKey].sort((a, b) => {
+        switch (sortOption) {
+          case 'priority':
+            // Sort by priority (low to high, 0 is P0) then by created_at descending (newest first)
+            if (a.priority !== b.priority) {
+              return a.priority - b.priority
+            }
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+
+          case 'newest':
+            // Sort by created_at descending
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+
+          case 'last-updated':
+            // Sort by updated_at descending
+            return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+
+          default:
+            return 0
+        }
+      })
     })
 
     return groups
-  }, [issues, filterText])
+  }, [issues, filterText, sortOption])
 
   // Handle drag-and-drop to change status
   const handleDragEnd = useCallback(
@@ -256,6 +294,16 @@ export default function IssuesPage() {
               className="h-9 w-64 pl-8"
             />
           </div>
+          <Select value={sortOption} onValueChange={handleSortChange}>
+            <SelectTrigger className="h-9 w-[100px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="priority">Priority</SelectItem>
+              <SelectItem value="newest">Newest</SelectItem>
+              <SelectItem value="last-updated">Updated</SelectItem>
+            </SelectContent>
+          </Select>
           <Button
             onClick={() => navigate('/issues/archived')}
             variant="ghost"

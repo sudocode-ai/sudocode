@@ -8,13 +8,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { ExecutionMonitor } from '@/components/executions/ExecutionMonitor'
 import * as useAgUiStreamModule from '@/hooks/useAgUiStream'
+import * as useExecutionLogsModule from '@/hooks/useExecutionLogs'
 
-// Mock the useAgUiStream hook
+// Mock the hooks
 const mockUseAgUiStream = vi.spyOn(useAgUiStreamModule, 'useAgUiStream')
+const mockUseExecutionLogs = vi.spyOn(useExecutionLogsModule, 'useExecutionLogs')
 
 describe('ExecutionMonitor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+
+    // Default mock for useExecutionLogs (prevent actual fetch calls)
+    mockUseExecutionLogs.mockReturnValue({
+      events: [],
+      loading: false,
+      error: null,
+      metadata: null,
+    })
   })
 
   describe('Loading State', () => {
@@ -175,7 +185,8 @@ describe('ExecutionMonitor', () => {
     it('should display messages from stream', () => {
       const messages = new Map()
       messages.set('msg-1', {
-        messageId: 'msg-1', timestamp: Date.now(),
+        messageId: 'msg-1',
+        timestamp: Date.now(),
         role: 'assistant',
         content: 'Hello, this is a test message!',
         complete: true,
@@ -213,7 +224,8 @@ describe('ExecutionMonitor', () => {
     it('should show spinner for incomplete messages', () => {
       const messages = new Map()
       messages.set('msg-1', {
-        messageId: 'msg-1', timestamp: Date.now(),
+        messageId: 'msg-1',
+        timestamp: Date.now(),
         role: 'assistant',
         content: 'Streaming message...',
         complete: false,
@@ -357,7 +369,8 @@ describe('ExecutionMonitor', () => {
 
       const messages = new Map()
       messages.set('msg-1', {
-        messageId: 'msg-1', timestamp: Date.now(),
+        messageId: 'msg-1',
+        timestamp: Date.now(),
         role: 'assistant',
         content: 'Test',
         complete: true,
@@ -497,9 +510,7 @@ describe('ExecutionMonitor', () => {
       const onError = vi.fn()
       const testError = new Error('Test error')
 
-      const { rerender } = render(
-        <ExecutionMonitor executionId="test-exec-1" onError={onError} />
-      )
+      const { rerender } = render(<ExecutionMonitor executionId="test-exec-1" onError={onError} />)
 
       // Initial state - running
       mockUseAgUiStream.mockReturnValue({
@@ -582,6 +593,213 @@ describe('ExecutionMonitor', () => {
 
       expect(screen.getByText('No execution activity yet')).toBeInTheDocument()
       expect(screen.getByText('Waiting for events...')).toBeInTheDocument()
+    })
+  })
+
+  describe('Historical Execution Mode', () => {
+    beforeEach(() => {
+      // Mock useExecutionLogs to return empty initially
+      mockUseExecutionLogs.mockReturnValue({
+        events: [],
+        loading: false,
+        error: null,
+        metadata: null,
+      })
+    })
+
+    it('should use SSE stream for active execution (running)', () => {
+      mockUseAgUiStream.mockReturnValue({
+        connectionStatus: 'connected',
+        execution: {
+          runId: 'run-123',
+          threadId: 'thread-456',
+          status: 'running',
+          currentStep: null,
+          error: null,
+          startTime: Date.now(),
+          endTime: null,
+        },
+        messages: new Map(),
+        toolCalls: new Map(),
+        state: {},
+        error: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        reconnect: vi.fn(),
+        isConnected: true,
+      })
+
+      render(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running' } as any} />
+      )
+
+      // Verify SSE hook was called with autoConnect=true
+      expect(mockUseAgUiStream).toHaveBeenCalledWith({
+        executionId: 'test-exec-1',
+        autoConnect: true,
+      })
+
+      // Verify logs hook was called
+      expect(mockUseExecutionLogs).toHaveBeenCalledWith('test-exec-1')
+
+      // Should show "Live" badge for SSE
+      expect(screen.getByText('Live')).toBeInTheDocument()
+    })
+
+    it('should use logs API for completed execution', () => {
+      mockUseAgUiStream.mockReturnValue({
+        connectionStatus: 'idle',
+        execution: {
+          runId: null,
+          threadId: null,
+          status: 'idle',
+          currentStep: null,
+          error: null,
+          startTime: null,
+          endTime: null,
+        },
+        messages: new Map(),
+        toolCalls: new Map(),
+        state: {},
+        error: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        reconnect: vi.fn(),
+        isConnected: false,
+      })
+
+      mockUseExecutionLogs.mockReturnValue({
+        events: [],
+        loading: false,
+        error: null,
+        metadata: {
+          lineCount: 10,
+          byteSize: 5000,
+          createdAt: '2025-01-01T00:00:00Z',
+          updatedAt: '2025-01-01T00:10:00Z',
+        },
+      })
+
+      render(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
+      )
+
+      // Verify SSE hook was called with autoConnect=false
+      expect(mockUseAgUiStream).toHaveBeenCalledWith({
+        executionId: 'test-exec-1',
+        autoConnect: false,
+      })
+
+      // Verify logs hook was called
+      expect(mockUseExecutionLogs).toHaveBeenCalledWith('test-exec-1')
+
+      // Should NOT show "Live" badge for historical
+      expect(screen.queryByText('Live')).not.toBeInTheDocument()
+
+      // Should show completed status
+      expect(screen.getByText('Completed')).toBeInTheDocument()
+    })
+
+    it('should display loading state for historical execution', () => {
+      mockUseAgUiStream.mockReturnValue({
+        connectionStatus: 'idle',
+        execution: {
+          runId: null,
+          threadId: null,
+          status: 'idle',
+          currentStep: null,
+          error: null,
+          startTime: null,
+          endTime: null,
+        },
+        messages: new Map(),
+        toolCalls: new Map(),
+        state: {},
+        error: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        reconnect: vi.fn(),
+        isConnected: false,
+      })
+
+      mockUseExecutionLogs.mockReturnValue({
+        events: [],
+        loading: true,
+        error: null,
+        metadata: null,
+      })
+
+      render(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
+      )
+
+      // Should show connecting badge when loading (getAllByText since it appears multiple times)
+      const connectingElements = screen.getAllByText(/connecting/i)
+      expect(connectingElements.length).toBeGreaterThan(0)
+    })
+
+    it('should display error state for historical execution', () => {
+      mockUseAgUiStream.mockReturnValue({
+        connectionStatus: 'idle',
+        execution: {
+          runId: null,
+          threadId: null,
+          status: 'idle',
+          currentStep: null,
+          error: null,
+          startTime: null,
+          endTime: null,
+        },
+        messages: new Map(),
+        toolCalls: new Map(),
+        state: {},
+        error: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        reconnect: vi.fn(),
+        isConnected: false,
+      })
+
+      mockUseExecutionLogs.mockReturnValue({
+        events: [],
+        loading: false,
+        error: new Error('Failed to load execution logs'),
+        metadata: null,
+      })
+
+      render(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
+      )
+
+      // Should show error badge
+      const errorBadges = screen.getAllByText('Error')
+      expect(errorBadges.length).toBeGreaterThan(0)
+
+      // Should show error message
+      expect(screen.getByText('Failed to load execution logs')).toBeInTheDocument()
+    })
+
+    it('should handle transition from active to completed', () => {
+      const { rerender } = render(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running' } as any} />
+      )
+
+      // Initially should use SSE (active)
+      expect(mockUseAgUiStream).toHaveBeenCalledWith({
+        executionId: 'test-exec-1',
+        autoConnect: true,
+      })
+
+      // Update to completed
+      rerender(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
+      )
+
+      // Should now use logs API (autoConnect=false for SSE)
+      expect(mockUseAgUiStream).toHaveBeenCalledWith({
+        executionId: 'test-exec-1',
+        autoConnect: false,
+      })
     })
   })
 })

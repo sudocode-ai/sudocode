@@ -11,3 +11,5 @@ export * from "./export.js";
 export * from "./import.js";
 export * from "./markdown.js";
 export * from "./sync.js";
+export * from "./id-generator.js";
+export * from "./config.js";

@@ -78,7 +78,7 @@ export function RelationshipForm({
           </Select>
           <Input
             id="target-id"
-            placeholder={toType === 'issue' ? 'ISSUE-001' : 'SPEC-001'}
+            placeholder={toType === 'issue' ? 'i-x7k9' : 's-14sh'}
             value={toId}
             onChange={(e) => setToId(e.target.value)}
             className="flex-1"

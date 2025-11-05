@@ -42,20 +42,20 @@ Spec-driven development and issue management system. Work persists across sessio
 
 ```markdown
 Basic reference:
-Implement OAuth per [[SPEC-015]]
+Implement OAuth per [[s-8h2k]]
 
 With display text:
-See [[SPEC-015|authentication spec]] for details
+See [[s-8h2k|authentication spec]] for details
 
 With relationship type:
-Must complete [[ISSUE-042]]{ blocks } first
+Must complete [[i-7x9m]]{ blocks } first
 
 Formats supported:
-- [[SPEC-001]] - basic reference (creates "references" relationship)
-- [[ISSUE-042]] or [[@ISSUE-042]] - with @ prefix
-- [[SPEC-001|Custom Text]] - with display text
-- [[SPEC-001]]{ blocks } - declares relationship type
-- [[SPEC-001|Text]]{ blocks } - both display and relationship
+- [[s-14sh]] - basic reference (creates "references" relationship)
+- [[i-x7k9]] or [[@i-x7k9]] - with @ prefix
+- [[s-14sh|Custom Text]] - with display text
+- [[s-14sh]]{ blocks } - declares relationship type
+- [[s-14sh|Text]]{ blocks } - both display and relationship
 ```
 
 **Relationship types in mentions:** `blocks`, `implements`, `depends-on`, `discovered-from`
@@ -123,24 +123,24 @@ in_progress → needs_review → closed
 
 **Create hierarchy:**
 ```
-SPEC-001: Auth System (parent)
-├── SPEC-002: OAuth (child)
-├── SPEC-003: Sessions (child)
-└── SPEC-004: Permissions (child)
+s-2a7c: Auth System (parent)
+├── s-8h2k: OAuth (child)
+├── s-9j3m: Sessions (child)
+└── s-4k8p: Permissions (child)
 
-ISSUE-001: Implement auth (parent epic, implements SPEC-001)
-├── ISSUE-002: OAuth flow (child, implements SPEC-002)
-├── ISSUE-003: Session storage (child, implements SPEC-003)
-└── ISSUE-004: Permissions (child, implements SPEC-004)
+i-5n7q: Implement auth (parent epic, implements s-2a7c)
+├── i-7x9m: OAuth flow (child, implements s-8h2k)
+├── i-3p6k: Session storage (child, implements s-9j3m)
+└── i-8w2n: Permissions (child, implements s-4k8p)
 ```
 
 **Add execution order:**
 ```
-link: ISSUE-002 blocks ISSUE-003 (OAuth before sessions)
-link: ISSUE-003 blocks ISSUE-004 (sessions before permissions)
+link: i-7x9m blocks i-3p6k (OAuth before sessions)
+link: i-3p6k blocks i-8w2n (sessions before permissions)
 ```
 
-**Result:** `ready` shows ISSUE-002 → close it → `ready` shows ISSUE-003 → etc.
+**Result:** `ready` shows i-7x9m → close it → `ready` shows i-3p6k → etc.
 
 ## Dependency Graphs
 

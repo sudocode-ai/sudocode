@@ -26,6 +26,7 @@ import type { WorkflowDefinition } from "../execution/workflow/types.js";
 import { createAgUiSystem } from "../execution/output/ag-ui-integration.js";
 import type { AgUiEventAdapter } from "../execution/output/ag-ui-adapter.js";
 import type { TransportManager } from "../execution/transport/transport-manager.js";
+import { ExecutionLogsStore } from "./execution-logs-store.js";
 
 /**
  * Configuration for creating an execution
@@ -84,6 +85,7 @@ export class ExecutionService {
   private lifecycleService: ExecutionLifecycleService;
   private repoPath: string;
   private transportManager?: TransportManager;
+  private logsStore: ExecutionLogsStore;
   private activeOrchestrators = new Map<string, LinearOrchestrator>();
 
   /**
@@ -93,12 +95,14 @@ export class ExecutionService {
    * @param repoPath - Path to the git repository
    * @param lifecycleService - Optional execution lifecycle service (creates one if not provided)
    * @param transportManager - Optional transport manager for SSE streaming
+   * @param logsStore - Optional execution logs store (creates one if not provided)
    */
   constructor(
     db: Database.Database,
     repoPath: string,
     lifecycleService?: ExecutionLifecycleService,
-    transportManager?: TransportManager
+    transportManager?: TransportManager,
+    logsStore?: ExecutionLogsStore
   ) {
     this.db = db;
     this.repoPath = repoPath;
@@ -106,6 +110,7 @@ export class ExecutionService {
     this.lifecycleService =
       lifecycleService || new ExecutionLifecycleService(db, repoPath);
     this.transportManager = transportManager;
+    this.logsStore = logsStore || new ExecutionLogsStore(db);
   }
 
   /**
@@ -283,6 +288,20 @@ export class ExecutionService {
       workDir = this.repoPath;
     }
 
+    // Initialize empty logs for this execution
+    try {
+      this.logsStore.initializeLogs(execution.id);
+    } catch (error) {
+      console.error(
+        "[ExecutionService] Failed to initialize logs (non-critical):",
+        {
+          executionId: execution.id,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+      // Don't fail execution creation - logs are nice-to-have
+    }
+
     // 3. Build WorkflowDefinition
     const workflow: WorkflowDefinition = {
       id: `workflow-${execution.id}`,
@@ -356,6 +375,21 @@ export class ExecutionService {
               lineBuffer = lineBuffer.slice(newlineIndex + 1);
 
               if (line.trim()) {
+                // 1. Persist raw log immediately (before processing)
+                try {
+                  this.logsStore.appendRawLog(execution.id, line);
+                } catch (err) {
+                  console.error(
+                    "[ExecutionService] Failed to persist raw log (non-critical):",
+                    {
+                      executionId: execution.id,
+                      error: err instanceof Error ? err.message : String(err),
+                    }
+                  );
+                  // Don't crash execution - logs are nice-to-have
+                }
+
+                // 2. Process through AG-UI pipeline for live clients
                 agUiSystem.processor.processLine(line).catch((err) => {
                   console.error(
                     "[ExecutionService] Error processing output line:",
@@ -539,6 +573,20 @@ Please continue working on this issue, taking into account the feedback above.`;
       config: prevExecution.config || undefined, // Preserve config (including cleanupMode) from previous execution
     });
 
+    // Initialize empty logs for this execution
+    try {
+      this.logsStore.initializeLogs(newExecution.id);
+    } catch (error) {
+      console.error(
+        "[ExecutionService] Failed to initialize logs (non-critical):",
+        {
+          executionId: newExecution.id,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+      // Don't fail execution creation - logs are nice-to-have
+    }
+
     // 5. Build WorkflowDefinition
     const workflow: WorkflowDefinition = {
       id: `workflow-${newExecution.id}`,
@@ -609,6 +657,21 @@ Please continue working on this issue, taking into account the feedback above.`;
               lineBuffer = lineBuffer.slice(newlineIndex + 1);
 
               if (line.trim()) {
+                // 1. Persist raw log immediately (before processing)
+                try {
+                  this.logsStore.appendRawLog(newExecution.id, line);
+                } catch (err) {
+                  console.error(
+                    "[ExecutionService] Failed to persist raw log (non-critical):",
+                    {
+                      executionId: newExecution.id,
+                      error: err instanceof Error ? err.message : String(err),
+                    }
+                  );
+                  // Don't crash execution - logs are nice-to-have
+                }
+
+                // 2. Process through AG-UI pipeline for live clients
                 agUiSystem.processor.processLine(line).catch((err) => {
                   console.error(
                     "[ExecutionService] Error processing output line:",

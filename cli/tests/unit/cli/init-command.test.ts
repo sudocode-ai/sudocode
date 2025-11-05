@@ -50,8 +50,7 @@ describe("Init Command", () => {
       const config = JSON.parse(
         fs.readFileSync(path.join(sudocodeDir, "config.json"), "utf8")
       );
-      expect(config.id_prefix.spec).toBe("SPEC");
-      expect(config.id_prefix.issue).toBe("ISSUE");
+      expect(config.version).toBeDefined();
 
       // Verify JSONL files are empty
       expect(fs.readFileSync(path.join(sudocodeDir, "specs.jsonl"), "utf8")).toBe("");
@@ -68,22 +67,6 @@ describe("Init Command", () => {
       expect(gitignoreContent).toContain("worktrees/");
     });
 
-    it("should create config with custom prefixes", async () => {
-      const sudocodeDir = path.join(tempDir, ".sudocode");
-
-      await performInitialization({
-        dir: sudocodeDir,
-        specPrefix: "TEST",
-        issuePrefix: "BUG",
-        jsonOutput: true,
-      });
-
-      const configPath = path.join(sudocodeDir, "config.json");
-      const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-
-      expect(config.id_prefix.spec).toBe("TEST");
-      expect(config.id_prefix.issue).toBe("BUG");
-    });
   });
 
   describe("preserving existing files", () => {

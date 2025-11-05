@@ -273,11 +273,11 @@ describe('IssuesPage', () => {
 
       if (openColumn) {
         const issueCards = openColumn.querySelectorAll('[data-issue-id]')
-        // Should be sorted by priority (0 first), then by created_at (oldest first)
-        // Expected order: ISSUE-008 (priority 0, older), ISSUE-007 (priority 0, newer),
+        // Should be sorted by priority (0 first), then by created_at (newest first)
+        // Expected order: ISSUE-007 (priority 0, newer), ISSUE-008 (priority 0, older),
         //                 ISSUE-006 (priority 1), ISSUE-005 (priority 3)
-        expect(issueCards[0]?.getAttribute('data-issue-id')).toBe('ISSUE-008')
-        expect(issueCards[1]?.getAttribute('data-issue-id')).toBe('ISSUE-007')
+        expect(issueCards[0]?.getAttribute('data-issue-id')).toBe('ISSUE-007')
+        expect(issueCards[1]?.getAttribute('data-issue-id')).toBe('ISSUE-008')
         expect(issueCards[2]?.getAttribute('data-issue-id')).toBe('ISSUE-006')
         expect(issueCards[3]?.getAttribute('data-issue-id')).toBe('ISSUE-005')
       }

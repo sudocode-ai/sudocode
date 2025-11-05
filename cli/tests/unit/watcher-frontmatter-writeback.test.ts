@@ -94,8 +94,8 @@ The watcher should auto-generate an ID and write it back.
     // Check that frontmatter was added
     expect(updatedContent.startsWith("---")).toBe(true);
 
-    // Check that an ID was generated
-    expect(updatedContent).toMatch(/id:\s*SPEC-\d{3}/);
+    // Check that an ID was generated (hash-based format)
+    expect(updatedContent).toMatch(/id:\s*s-[0-9a-z]{4,8}/);
 
     // Check that title was extracted
     expect(updatedContent).toContain("title:");
@@ -110,7 +110,7 @@ The watcher should auto-generate an ID and write it back.
     const { getSpecByFilePath } = await import("../../src/operations/specs.js");
     const spec = getSpecByFilePath(db, "specs/new-spec-without-fm.md");
     expect(spec).not.toBeNull();
-    expect(spec?.id).toMatch(/SPEC-\d{3}/);
+    expect(spec?.id).toMatch(/s-[0-9a-z]{4,8}/);
 
     // No errors should occur
     expect(errors.length).toBe(0);

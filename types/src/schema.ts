@@ -208,8 +208,9 @@ CREATE TABLE IF NOT EXISTS prompt_templates (
 export const EXECUTION_LOGS_TABLE = `
 CREATE TABLE IF NOT EXISTS execution_logs (
     execution_id TEXT PRIMARY KEY,
-    logs TEXT NOT NULL DEFAULT '',
+    raw_logs TEXT NOT NULL DEFAULT '',
     byte_size INTEGER NOT NULL DEFAULT 0,
+    line_count INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE
@@ -297,6 +298,7 @@ CREATE INDEX IF NOT EXISTS idx_templates_default ON prompt_templates(is_default)
 export const EXECUTION_LOGS_INDEXES = `
 CREATE INDEX IF NOT EXISTS idx_execution_logs_updated_at ON execution_logs(updated_at);
 CREATE INDEX IF NOT EXISTS idx_execution_logs_byte_size ON execution_logs(byte_size);
+CREATE INDEX IF NOT EXISTS idx_execution_logs_line_count ON execution_logs(line_count);
 `;
 
 /**

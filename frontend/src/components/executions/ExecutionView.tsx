@@ -389,12 +389,18 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
         </div>
       </Card>
 
-      {/* Real-time Execution Monitor */}
+      {/* Execution Monitor - uses SSE for active, logs API for completed */}
       {(execution.status === 'running' ||
+        execution.status === 'preparing' ||
+        execution.status === 'pending' ||
+        execution.status === 'paused' ||
         execution.status === 'completed' ||
-        execution.status === 'failed') && (
+        execution.status === 'failed' ||
+        execution.status === 'cancelled' ||
+        execution.status === 'stopped') && (
         <ExecutionMonitor
           executionId={executionId}
+          execution={execution}
           onComplete={handleExecutionComplete}
           onError={handleExecutionError}
         />

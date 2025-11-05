@@ -41,10 +41,12 @@ export async function handleIssueCreate(
   options: IssueCreateOptions
 ): Promise<void> {
   try {
-    const issueId = generateIssueId(ctx.db, ctx.outputDir);
+    // Generate issue ID and UUID
+    const { id: issueId, uuid: issueUUID } = generateIssueId(ctx.db, ctx.outputDir);
 
     const issue = createIssue(ctx.db, {
       id: issueId,
+      uuid: issueUUID,
       title,
       content: options.description || "",
       status: "open",
@@ -292,7 +294,7 @@ export async function handleIssueUpdate(
     if (options.priority) updates.priority = parseInt(options.priority);
     if (options.assignee) updates.assignee = options.assignee;
     if (options.title) updates.title = options.title;
-    if (options.description) updates.description = options.description;
+    if (options.description) updates.content = options.description;
     if (options.archived !== undefined) {
       updates.archived = options.archived === 'true';
     }

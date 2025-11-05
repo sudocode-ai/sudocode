@@ -2,10 +2,11 @@
  * Preprocesses markdown to convert [[ENTITY-ID]] mentions to HTML that Tiptap can parse
  *
  * Supports multiple reference patterns:
- * - [[ISSUE-001]] - basic reference
- * - [[ISSUE-001|OAuth]] - with display text
- * - [[ISSUE-001]]{ implements } - with relationship metadata
- * - [[ISSUE-001|OAuth]]{ implements } - with both
+ * - [[i-x7k9]] - basic reference (hash format)
+ * - [[i-x7k9|OAuth]] - with display text
+ * - [[i-x7k9]]{ implements } - with relationship metadata
+ * - [[i-x7k9|OAuth]]{ implements } - with both
+ * - [[ISSUE-001]] - legacy format still supported
  *
  * Converts to HTML spans that Tiptap can parse into EntityMention nodes.
  *
@@ -16,13 +17,16 @@ export function preprocessEntityMentions(markdown: string): string {
   // Match [[ENTITY-ID|displayText]]{ relationshipType } patterns
   // Uses negative lookbehind to skip escaped brackets (\[\[)
   // Captures:
-  // 1. entityId (required): ISSUE-001, SPEC-002, etc.
+  // 1. entityId (required): i-x7k9, s-14sh (hash format) or ISSUE-001, SPEC-002 (legacy format)
   // 2. displayText (optional): text after |
   // 3. relationshipType (optional): text inside { }
   return markdown.replace(
-    /(?<!\\)\[\[([A-Z]+-\d+)(?:\|([^\]]+))?\]\](?:\{\s*([^}]+)\s*\})?/g,
+    /(?<!\\)\[\[((?:[is]-[0-9a-z]{4,8})|(?:[A-Z]+-\d+))(?:\|([^\]]+))?\]\](?:\{\s*([^}]+)\s*\})?/g,
     (_match, entityId, displayText, relationshipType) => {
-      const entityType = entityId.startsWith('ISSUE-') ? 'issue' : 'spec'
+      // Determine entity type from ID format
+      // Hash format: i-xxxx for issues, s-xxxx for specs
+      // Legacy format: ISSUE-xxx for issues, SPEC-xxx for specs
+      const entityType = (entityId.startsWith('ISSUE-') || entityId.startsWith('i-')) ? 'issue' : 'spec'
 
       // Trim whitespace from captured groups
       const trimmedDisplayText = displayText?.trim()
@@ -61,10 +65,11 @@ function escapeHtml(text: string): string {
  * Postprocesses HTML to convert entity mention HTML back to [[ENTITY-ID]] format
  *
  * Reconstructs the original reference format including display text and relationship type:
- * - [[ISSUE-001]] - basic reference
- * - [[ISSUE-001|OAuth]] - with display text
- * - [[ISSUE-001]]{ implements } - with relationship metadata
- * - [[ISSUE-001|OAuth]]{ implements } - with both
+ * - [[i-x7k9]] - basic reference (hash format)
+ * - [[i-x7k9|OAuth]] - with display text
+ * - [[i-x7k9]]{ implements } - with relationship metadata
+ * - [[i-x7k9|OAuth]]{ implements } - with both
+ * - [[ISSUE-001]] - legacy format still supported
  *
  * This is used when exporting from Tiptap back to markdown.
  *

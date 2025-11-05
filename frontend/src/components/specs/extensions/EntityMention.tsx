@@ -127,7 +127,10 @@ export const EntityMention = Node.create<EntityMentionOptions>({
       setEntityMention:
         (entityId: string) =>
         ({ commands }) => {
-          const entityType = entityId.startsWith('ISSUE-') ? 'issue' : 'spec'
+          // Determine entity type from ID format
+          // Hash format: i-xxxx for issues, s-xxxx for specs
+          // Legacy format: ISSUE-xxx for issues, SPEC-xxx for specs
+          const entityType = (entityId.startsWith('ISSUE-') || entityId.startsWith('i-')) ? 'issue' : 'spec'
           return commands.insertContent({
             type: this.name,
             attrs: {
