@@ -47,12 +47,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build all packages
+        run: npm run build
+
       - name: Run tests
         if: ${{ !inputs.skip-tests }}
         run: npm test
-
-      - name: Build all packages
-        run: npm run build
 
       - name: Determine dist-tag
         id: dist-tag
