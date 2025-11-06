@@ -199,6 +199,14 @@ export function ExecutionHistory({ issueId }: ExecutionHistoryProps) {
                     <span className="capitalize">{execution.mode}</span>
                     <span>•</span>
                     <span>{formatTimestamp(timestamp)}</span>
+                    {execution.session_id && (
+                      <>
+                        <span>•</span>
+                        <span className="font-mono" title={execution.session_id}>
+                          Session: {truncateId(execution.session_id)}
+                        </span>
+                      </>
+                    )}
                   </div>
 
                   {execution.error && (

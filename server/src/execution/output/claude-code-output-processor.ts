@@ -64,6 +64,7 @@ export class ClaudeCodeOutputProcessor implements IOutputProcessor {
   private _errorHandlers: ErrorHandler[] = [];
   private _messageHandlers: MessageHandler[] = [];
   private _usageHandlers: UsageHandler[] = [];
+  private _sessionHandlers: import("./types.js").SessionHandler[] = [];
 
   // Processing state
   private _lineNumber = 0;
@@ -139,6 +140,9 @@ export class ClaudeCodeOutputProcessor implements IOutputProcessor {
           break;
         case "error":
           this._handleError(message);
+          break;
+        case "system":
+          this._handleSystem(message);
           break;
         case "unknown":
           // Already tracked in metrics, no special handling needed
@@ -251,6 +255,15 @@ export class ClaudeCodeOutputProcessor implements IOutputProcessor {
    */
   onUsage(handler: import("./types.js").UsageHandler): void {
     this._usageHandlers.push(handler);
+  }
+
+  /**
+   * Register a callback for session ID detection
+   *
+   * @param handler - Function to call when a session ID is detected
+   */
+  onSession(handler: import("./types.js").SessionHandler): void {
+    this._sessionHandlers.push(handler);
   }
 
   // ============================================================================
@@ -594,6 +607,29 @@ export class ClaudeCodeOutputProcessor implements IOutputProcessor {
   }
 
   /**
+   * Handle system message from Claude Code
+   *
+   * Detects session ID from system.init messages and emits onSession event.
+   *
+   * @param message - Parsed system message
+   */
+  private _handleSystem(message: OutputMessage): void {
+    if (message.type !== "system") return;
+
+    // Check if this is a system init message with session_id
+    if (message.subtype === "init" && message.sessionId) {
+      // Emit session event to all registered handlers
+      for (const handler of this._sessionHandlers) {
+        try {
+          handler(message.sessionId);
+        } catch (error) {
+          console.error("Session handler error:", error);
+        }
+      }
+    }
+  }
+
+  /**
    * Detect file change from a tool call
    *
    * Analyzes tool calls to file operation tools (Read/Write/Edit) and
@@ -659,6 +695,11 @@ export class ClaudeCodeOutputProcessor implements IOutputProcessor {
     // Check for explicit type field
     if (data.type === "error") {
       return "error";
+    }
+
+    // Check for system message (contains session_id)
+    if (data.type === "system") {
+      return "system";
     }
 
     // Check for result message (contains usage information)
@@ -751,6 +792,16 @@ export class ClaudeCodeOutputProcessor implements IOutputProcessor {
           type: "error",
           message: data.error?.message || data.message || "Unknown error",
           details: data.error || data,
+          timestamp,
+          metadata: { raw: data, source: "claude-code" },
+        };
+      }
+
+      case "system": {
+        return {
+          type: "system",
+          subtype: data.subtype,
+          sessionId: data.session_id,
           timestamp,
           metadata: { raw: data, source: "claude-code" },
         };

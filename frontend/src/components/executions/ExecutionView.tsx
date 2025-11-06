@@ -283,6 +283,12 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                 <span className="text-muted-foreground">Model:</span>
                 <span className="ml-2">{execution.model}</span>
               </div>
+              {execution.session_id && (
+                <div>
+                  <span className="text-muted-foreground">Session ID:</span>
+                  <span className="ml-2 font-mono text-xs">{execution.session_id}</span>
+                </div>
+              )}
               {execution.target_branch && (
                 <div>
                   <span className="text-muted-foreground">Base Branch:</span>

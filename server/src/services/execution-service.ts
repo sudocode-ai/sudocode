@@ -356,6 +356,27 @@ export class ExecutionService {
       // Connect adapter to transport for SSE streaming
       this.transportManager.connectAdapter(agUiAdapter, execution.id);
 
+      // Register session handler to capture session_id and store in database
+      agUiSystem.processor.onSession((sessionId: string) => {
+        console.log(
+          `[ExecutionService] Session ID detected: ${sessionId} for execution ${execution.id}`
+        );
+        try {
+          updateExecution(this.db, execution.id, {
+            session_id: sessionId,
+          });
+        } catch (error) {
+          console.error(
+            "[ExecutionService] Failed to update session_id (non-critical):",
+            {
+              executionId: execution.id,
+              sessionId,
+              error: error instanceof Error ? error.message : String(error),
+            }
+          );
+        }
+      });
+
       // Connect processor to execution engine for real-time output parsing
       // Buffer for incomplete lines (stream-json can split mid-line)
       let lineBuffer = "";
@@ -637,6 +658,27 @@ Please continue working on this issue, taking into account the feedback above.`;
       const agUiSystem = createAgUiSystem(newExecution.id);
       agUiAdapter = agUiSystem.adapter;
       this.transportManager.connectAdapter(agUiAdapter, newExecution.id);
+
+      // Register session handler to capture session_id and store in database
+      agUiSystem.processor.onSession((sessionId: string) => {
+        console.log(
+          `[ExecutionService] Session ID detected: ${sessionId} for follow-up execution ${newExecution.id}`
+        );
+        try {
+          updateExecution(this.db, newExecution.id, {
+            session_id: sessionId,
+          });
+        } catch (error) {
+          console.error(
+            "[ExecutionService] Failed to update session_id (non-critical):",
+            {
+              executionId: newExecution.id,
+              sessionId,
+              error: error instanceof Error ? error.message : String(error),
+            }
+          );
+        }
+      });
 
       // Connect processor to execution engine for real-time output parsing
       // Buffer for incomplete lines (stream-json can split mid-line)

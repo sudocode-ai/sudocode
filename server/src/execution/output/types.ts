@@ -22,6 +22,7 @@ export type MessageType =
   | "tool_result"
   | "usage"
   | "error"
+  | "system"
   | "unknown";
 
 /**
@@ -93,6 +94,14 @@ export type OutputMessage =
       details?: any;
       timestamp: Date;
       /** Agent-specific metadata (e.g., error codes, stack traces) */
+      metadata?: Record<string, any>;
+    }
+  | {
+      type: "system";
+      subtype?: string;
+      sessionId?: string;
+      timestamp: Date;
+      /** Agent-specific metadata (e.g., version, capabilities) */
       metadata?: Record<string, any>;
     }
   | {
@@ -367,6 +376,11 @@ export type MessageHandler = (message: OutputMessage) => void;
 export type UsageHandler = (usage: UsageMetrics) => void;
 
 /**
+ * SessionHandler - Callback invoked when a session ID is detected
+ */
+export type SessionHandler = (sessionId: string) => void;
+
+/**
  * IOutputProcessor - Interface for output processing implementations
  *
  * Defines the contract for parsing coding agent output in real-time,
@@ -448,6 +462,13 @@ export interface IOutputProcessor {
    * @param handler - Function to call when usage metrics are updated
    */
   onUsage(handler: UsageHandler): void;
+
+  /**
+   * Register a callback for session ID detection
+   *
+   * @param handler - Function to call when a session ID is detected
+   */
+  onSession(handler: SessionHandler): void;
 }
 
 // ============================================================================
