@@ -101,7 +101,7 @@ export function SpecViewer({
       <div className="relative">
         {editable ? (
           /* Editable mode: Simple textarea without line numbers */
-          <div className="px-4 py-4">
+          <div className="pl-2 pr-4 py-4">
             <textarea
               ref={textareaRef}
               value={content}
@@ -128,7 +128,7 @@ export function SpecViewer({
                 cells.push(
                   <div
                     key={`line-${index}`}
-                    className={`select-none border-r border-border bg-muted/30 px-4 py-1 text-right font-mono text-xs leading-6 text-muted-foreground transition-colors hover:bg-primary/10 ${
+                    className={`select-none border-r border-border bg-muted/30 pl-1 pr-2 py-1 text-right font-mono text-[10px] leading-6 text-muted-foreground transition-colors hover:bg-primary/10 ${
                       highlightLines.includes(lineNumber) ? 'font-bold text-primary' : ''
                     } ${selectedLine === lineNumber ? 'bg-primary/20' : ''}`}
                     data-line-number={lineNumber}
@@ -143,7 +143,7 @@ export function SpecViewer({
               cells.push(
                 <div
                   key={`content-${index}`}
-                  className={`group relative px-4 py-1 font-mono text-sm leading-6 ${
+                  className={`group relative pl-2 pr-4 py-1 font-mono text-sm leading-6 ${
                     highlightLines.includes(lineNumber) ? 'bg-primary/10' : ''
                   } ${selectedLine === lineNumber ? 'bg-primary/20' : ''}`}
                   data-line={lineNumber}

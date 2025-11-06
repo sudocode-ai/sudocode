@@ -355,15 +355,15 @@ export default function SpecDetailPage() {
   return (
     <div className="flex h-screen flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b bg-background p-4">
-        <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between border-b bg-background p-2 sm:p-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           <Button variant="ghost" size="sm" onClick={() => navigate('/specs')}>
-            ← Back to Specs
+            ← <span className="hidden sm:inline">Back to Specs</span>
           </Button>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           {/* View mode toggle */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             <div className="inline-flex rounded-md border border-border bg-muted/30 p-1">
               <Button
                 variant={viewMode === 'formatted' ? 'outline' : 'ghost'}
@@ -371,8 +371,8 @@ export default function SpecDetailPage() {
                 onClick={() => setViewMode('formatted')}
                 className={`h-7 rounded-sm ${viewMode === 'formatted' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
               >
-                <FileText className="mr-2 h-4 w-4" />
-                Formatted
+                <FileText className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Formatted</span>
               </Button>
               <Button
                 variant={viewMode === 'source' ? 'outline' : 'ghost'}
@@ -380,8 +380,8 @@ export default function SpecDetailPage() {
                 onClick={() => setViewMode('source')}
                 className={`h-7 rounded-sm ${viewMode === 'source' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
               >
-                <Code2 className="mr-2 h-4 w-4" />
-                Markdown
+                <Code2 className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Markdown</span>
               </Button>
             </div>
           </div>
@@ -419,8 +419,8 @@ export default function SpecDetailPage() {
               onClick={() => unarchiveSpec(spec.id)}
               disabled={isUpdating}
             >
-              <ArchiveRestore className="mr-2 h-4 w-4" />
-              Unarchive
+              <ArchiveRestore className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Unarchive</span>
             </Button>
           ) : (
             <Button
@@ -429,8 +429,8 @@ export default function SpecDetailPage() {
               onClick={() => archiveSpec(spec.id)}
               disabled={isUpdating}
             >
-              <Archive className="mr-2 h-4 w-4" />
-              Archive
+              <Archive className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Archive</span>
             </Button>
           )}
         </div>
@@ -438,9 +438,9 @@ export default function SpecDetailPage() {
 
       {/* Main content */}
       <div ref={editorContainerRef} className="flex flex-1 overflow-auto xl:justify-center">
-        <div className="flex w-full xl:max-w-[1600px]">
-          <div className="flex-1 px-6 py-4 lg:px-12 xl:px-16">
-            <div className="mx-auto max-w-4xl space-y-3">
+        <div className="flex w-full 2xl:max-w-[128rem]">
+          <div className="flex-1 px-3 py-4 sm:px-6 lg:px-12 xl:px-16">
+            <div className="mx-auto max-w-full space-y-3">
               {/* Spec ID and Title */}
               <div className="space-y-2 pb-3">
                 <div className="flex items-center justify-between">
@@ -489,7 +489,13 @@ export default function SpecDetailPage() {
                 <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
                   {spec.updated_at && (
                     <div className="ml-auto flex items-center text-xs text-muted-foreground">
-                      Updated {formatDistanceToNow(new Date(spec.updated_at.endsWith('Z') ? spec.updated_at : spec.updated_at + 'Z'), { addSuffix: true })}
+                      Updated{' '}
+                      {formatDistanceToNow(
+                        new Date(
+                          spec.updated_at.endsWith('Z') ? spec.updated_at : spec.updated_at + 'Z'
+                        ),
+                        { addSuffix: true }
+                      )}
                     </div>
                   )}
                 </div>

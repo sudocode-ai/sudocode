@@ -333,14 +333,14 @@
 /* Line Numbers from Markdown Source */
 .tiptap-with-line-numbers {
   position: relative !important;
-  padding-left: 1.5rem !important;
+  padding-left: 0.75rem !important;
   padding-right: 1.5rem !important;
   padding-top: 1.5rem !important;
   padding-bottom: 1.5rem !important;
 }
 
 .tiptap-with-line-numbers .ProseMirror {
-  padding-left: 5rem !important;
+  padding-left: 3.5rem !important;
 }
 
 /* Make blocks positioned so ::before is positioned relative to them */
@@ -358,11 +358,11 @@
   height: 100% !important;
   min-height: 1em !important;
   text-align: right !important;
-  padding-right: 1rem !important;
+  padding-right: 0.5rem !important;
   padding-top: 0.25rem !important;
   color: hsl(var(--muted-foreground)) !important;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
-  font-size: 0.875rem !important;
+  font-size: 0.75rem !important;
   line-height: 1.5 !important;
   user-select: none !important;
   cursor: pointer !important;

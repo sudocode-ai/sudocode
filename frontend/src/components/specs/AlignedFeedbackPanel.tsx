@@ -190,7 +190,7 @@ export function AlignedFeedbackPanel({
 
   return (
     <div
-      className={`flex h-full w-80 flex-col bg-background md:w-96 lg:w-[28rem] xl:w-[32rem] ${className}`}
+      className={`flex h-full w-64 flex-col bg-background pr-4 sm:w-80 md:w-96 lg:w-[28rem] xl:w-[30rem] 2xl:w-[40rem] ${className}`}
     >
       {/* Relationships Section */}
       {currentEntityId && (

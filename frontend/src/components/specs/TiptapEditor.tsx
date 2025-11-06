@@ -574,7 +574,7 @@ export function TiptapEditor({
     <div className={className}>
       {/* Toolbar - only show in editable mode */}
       {editable && showToolbar && (
-        <div className="flex flex-wrap items-center gap-1 border-b border-border bg-muted/30 px-4 py-2">
+        <div className="flex flex-wrap items-center gap-1 border-b border-border bg-muted/30 pl-2 pr-4 py-2">
           <Button
             variant="ghost"
             size="sm"
@@ -727,7 +727,7 @@ export function TiptapEditor({
       )}
 
       {/* Editor content */}
-      <div className={`p-6 ${showLineNumbers ? 'tiptap-with-line-numbers' : ''}`}>
+      <div className={`pl-3 pr-6 py-6 ${showLineNumbers ? 'tiptap-with-line-numbers' : ''}`}>
         <EditorContent
           editor={editor}
           className="tiptap-editor prose prose-sm dark:prose-invert max-w-none"
