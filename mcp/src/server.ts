@@ -55,7 +55,7 @@ export class SudocodeMCPServer {
           {
             name: "ready",
             description:
-              "Find issues ready to work on (no blockers) and gets project status.",
+              "Shows you the current project state: what issues are ready to work on (no blockers), what's in progress, and what's blocked. Essential for understanding context before making any decisions about what to work on next.",
             inputSchema: {
               type: "object",
               properties: {},
@@ -63,33 +63,37 @@ export class SudocodeMCPServer {
           },
           {
             name: "list_issues",
-            description: "List all issues with optional filters",
+            description:
+              "Search and filter issues. Use this when you need to find specific issues by status, priority, keyword, or when exploring what work exists in the project.",
             inputSchema: {
               type: "object",
               properties: {
                 status: {
                   type: "string",
                   enum: ["open", "in_progress", "blocked", "closed"],
-                  description: "Filter by status (optional)",
+                  description:
+                    "Filter by workflow status: 'open' (not started), 'in_progress' (currently working), 'blocked' (waiting on dependencies), 'closed' (completed)",
                 },
                 priority: {
                   type: "number",
-                  description: "Filter by priority (0-4) (optional)",
+                  description:
+                    "Filter by priority level where 0=highest priority and 4=lowest priority",
                 },
                 archived: {
                   type: "boolean",
                   description:
-                    "Filter by archived status (optional, defaults to false to exclude archived)",
+                    "Include archived issues. Defaults to false (excludes archived issues from results)",
                 },
                 limit: {
                   type: "number",
-                  description: "Max results (optional)",
+                  description:
+                    "Maximum number of results to return. Defaults to 50.",
                   default: 50,
                 },
                 search: {
                   type: "string",
                   description:
-                    "Search issues by title or description (optional)",
+                    "Search text - matches against issue titles and descriptions (case-insensitive)",
                 },
               },
             },
@@ -97,13 +101,13 @@ export class SudocodeMCPServer {
           {
             name: "show_issue",
             description:
-              "Show detailed issue information including relationships and feedback",
+              "Get full details about a specific issue. Use this to understand what the issue implements (which specs), what blocks it (dependencies), its current status, and related work. Essential for understanding context before starting implementation.",
             inputSchema: {
               type: "object",
               properties: {
                 issue_id: {
                   type: "string",
-                  description: 'Issue ID (e.g., "i-x7k9")',
+                  description: 'Issue ID with format "i-xxxx" (e.g., "i-x7k9")',
                 },
               },
               required: ["issue_id"],
@@ -112,65 +116,72 @@ export class SudocodeMCPServer {
           {
             name: "upsert_issue",
             description:
-              "Create or update an issue. If issue_id is provided, updates the issue; otherwise creates a new one. To close an issue, set status='closed'. To archive an issue, set archived=true.",
+              "Create or update an issue (agent's actionable work item). **Issues implement specs** - use 'link' with type='implements' to connect issue to spec. **Before closing:** provide feedback on the spec using 'add_feedback' if this issue implements a spec. If issue_id is provided, updates the issue; otherwise creates a new one. To close an issue, set status='closed'. To archive an issue, set archived=true.",
             inputSchema: {
               type: "object",
               properties: {
                 issue_id: {
                   type: "string",
                   description:
-                    "Issue ID (optional - if provided, updates the issue; if not, creates new)",
+                    'Issue ID in format "i-xxxx". Omit to create new issue (auto-generates ID). Provide to update existing issue.',
                 },
                 title: {
                   type: "string",
                   description:
-                    "Issue title (required for create, optional for update)",
+                    "Concise issue title describing the work (e.g., 'Implement OAuth login flow'). Required when creating, optional when updating.",
                 },
                 description: {
                   type: "string",
                   description:
-                    "Issue descriptions. Supports inline references to other specs/issues by ID in Obsidian internal link format (e.g. `[[i-x7k9]]`).",
+                    "Detailed description of the work to be done. Supports markdown and inline references using [[id]] syntax (e.g., 'Implement [[s-abc123]] requirements' or 'Blocked by [[i-xyz789]]').",
                 },
                 priority: {
                   type: "number",
-                  description: "Priority (0-4, 0=highest) (optional)",
+                  description:
+                    "Priority level: 0 (highest/urgent) to 4 (lowest/nice-to-have). Use 0-1 for critical work, 2 for normal, 3-4 for backlog.",
                 },
                 parent: {
                   type: "string",
-                  description: "Parent issue ID (optional)",
+                  description:
+                    "Parent issue ID for hierarchical organization (e.g., 'i-abc123'). Use to break epics into subtasks or organize related work.",
                 },
                 tags: {
                   type: "array",
                   items: { type: "string" },
-                  description: "Tags (optional)",
+                  description:
+                    "Array of tag strings for categorization (e.g., ['backend', 'authentication', 'security']). Useful for filtering and organization.",
                 },
                 status: {
                   type: "string",
                   enum: ["open", "in_progress", "blocked", "closed"],
-                  description: "Issue status (optional)",
+                  description:
+                    "Workflow status: 'open' (ready but not started), 'in_progress' (actively working), 'blocked' (waiting on dependencies), 'closed' (completed). **Before closing spec-implementing issues, use add_feedback.**",
                 },
                 archived: {
                   type: "boolean",
-                  description: "Archive status (optional)",
+                  description:
+                    "Set to true to archive completed/obsolete issues. Archived issues are hidden from default queries but preserved for history.",
                 },
               },
             },
           },
           {
             name: "list_specs",
-            description: "List all specs with optional filters",
+            description:
+              "Search and browse all specs in the project. Use this to find existing specifications by keyword, or to see what specs are available before creating new ones.",
             inputSchema: {
               type: "object",
               properties: {
                 limit: {
                   type: "number",
-                  description: "Max results (optional)",
+                  description:
+                    "Maximum number of results to return. Defaults to 50.",
                   default: 50,
                 },
                 search: {
                   type: "string",
                   description:
-                    "Search specs by title or description (optional)",
+                    "Search text - matches against spec titles and descriptions (case-insensitive). Use keywords to find relevant specs.",
                 },
               },
             },
@@ -178,13 +189,14 @@ export class SudocodeMCPServer {
           {
             name: "show_spec",
             description:
-              "Show detailed spec information including all feedback anchored to the spec",
+              "Get full details about a specific spec including its content, relationships, and all anchored feedback. Use this to understand requirements before implementing. Shows what issues implement this spec and feedback from previous implementations.",
             inputSchema: {
               type: "object",
               properties: {
                 spec_id: {
                   type: "string",
-                  description: 'Spec ID (e.g., "s-14sh")',
+                  description:
+                    'Spec ID with format "s-xxxx" (e.g., "s-14sh"). Get IDs from list_specs, ready, or show_issue results.',
                 },
               },
               required: ["spec_id"],
@@ -193,35 +205,40 @@ export class SudocodeMCPServer {
           {
             name: "upsert_spec",
             description:
-              "Create or update a spec. If spec_id is provided, updates the spec; otherwise creates a new one with a hash-based ID (e.g., s-14sh).",
+              "Create or update a spec (user's requirements/intent/context document). Create spec to document design requirements, architecture, API design, etc with user guidance. If spec_id is provided, updates the spec; otherwise creates a new one with a hash-based ID (e.g., s-14sh). If editing the content of an existing spec, you can also edit the content of the corresponding spec markdown file directly (`spec.file_path` you can get with show_spec).",
             inputSchema: {
               type: "object",
               properties: {
                 spec_id: {
                   type: "string",
                   description:
-                    "Spec ID (optional - if provided, updates the spec; if not, creates new)",
+                    'Spec ID in format "s-xxxx". Omit to create new spec (auto-generates hash-based ID). Provide to update existing spec.',
                 },
                 title: {
                   type: "string",
-                  description: "Spec title (required for create)",
+                  description:
+                    "Descriptive spec title (e.g., 'OAuth Authentication System Design'). Required when creating, optional when updating.",
                 },
                 priority: {
                   type: "number",
-                  description: "Priority (0-4, 0=highest) (optional)",
+                  description:
+                    "Priority level: 0 (highest/urgent) to 4 (lowest/nice-to-have). Helps prioritize which specs to implement first.",
                 },
                 description: {
                   type: "string",
-                  description: "Spec description (optional)",
+                  description:
+                    "Full specification content in markdown format. Include requirements, architecture, API designs, user flows, technical decisions. Supports Obsidian-style [[entityId]] mention syntax for referencing other specs/issues.",
                 },
                 parent: {
                   type: "string",
-                  description: "Parent spec ID (optional)",
+                  description:
+                    "Parent spec ID for hierarchical organization (e.g., 's-abc123'). Use to break large specs into sub-specs or organize by system/feature area.",
                 },
                 tags: {
                   type: "array",
                   items: { type: "string" },
-                  description: "Tags (optional)",
+                  description:
+                    "Array of tag strings for categorization (e.g., ['architecture', 'api', 'security']). Useful for filtering and finding related specs.",
                 },
               },
             },
@@ -229,17 +246,19 @@ export class SudocodeMCPServer {
           {
             name: "link",
             description:
-              "Create a relationship between two entities (specs or issues)",
+              "Create a relationship between specs and/or issues. Use this to establish the dependency graph and connect work to requirements. Most common: 'implements' (issue → spec) and 'blocks' (dependency ordering).",
             inputSchema: {
               type: "object",
               properties: {
                 from_id: {
                   type: "string",
-                  description: "Source entity ID",
+                  description:
+                    "Source entity ID (format 'i-xxxx' for issue or 's-xxxx' for spec). This is the entity creating the relationship.",
                 },
                 to_id: {
                   type: "string",
-                  description: "Target entity ID",
+                  description:
+                    "Target entity ID (format 'i-xxxx' for issue or 's-xxxx' for spec). This is the entity being related to.",
                 },
                 type: {
                   type: "string",
@@ -251,7 +270,8 @@ export class SudocodeMCPServer {
                     "discovered-from",
                     "related",
                   ],
-                  description: "Relationship type",
+                  description:
+                    "Relationship type:\n• 'implements' - issue implements a spec (core workflow, e.g., i-abc implements s-xyz)\n• 'blocks' - from_id must complete before to_id can start (execution ordering, affects 'ready' command)\n• 'parent-child' - hierarchical organization (epics → subtasks, system specs → component specs)\n• 'depends-on' - general dependency without blocking semantics\n• 'discovered-from' - new issue found during work on another issue (provenance tracking)\n• 'references' - soft reference for context\n• 'related' - general relationship",
                 },
               },
               required: ["from_id", "to_id"],
@@ -260,21 +280,24 @@ export class SudocodeMCPServer {
           {
             name: "add_reference",
             description:
-              "Add an inline cross-reference/mention to a spec or issue using Obsidian-style [[ID]] syntax. References are inserted at a specific location in the markdown content. Use this to add references to an issue or spec without having to modify the content directly.",
+              "Insert an Obsidian-style [[ID]] reference into spec or issue markdown content. Alternative to directly editing markdown - programmatically adds cross-references at specific locations.",
             inputSchema: {
               type: "object",
               properties: {
                 entity_id: {
                   type: "string",
-                  description: "Target entity ID (where to add the reference)",
+                  description:
+                    "Entity ID where the reference will be inserted (format 'i-xxxx' or 's-xxxx'). This is the document being edited.",
                 },
                 reference_id: {
                   type: "string",
-                  description: "ID to reference (e.g., i-x7k9, s-14sh)",
+                  description:
+                    "Entity ID being referenced (format 'i-xxxx' or 's-xxxx'). This creates a [[reference_id]] or [[reference_id|display_text]] link in the markdown.",
                 },
                 display_text: {
                   type: "string",
-                  description: "Display text (optional)",
+                  description:
+                    "Optional display text for the reference. If provided, creates [[reference_id|display_text]] instead of [[reference_id]].",
                 },
                 relationship_type: {
                   type: "string",
@@ -286,23 +309,24 @@ export class SudocodeMCPServer {
                     "discovered-from",
                     "related",
                   ],
-                  description: "Relationship type (optional)",
+                  description:
+                    "Optional relationship type to declare using { } syntax. Creates [[reference_id]]{ relationship_type } in markdown. Use 'implements', 'blocks', 'depends-on', etc.",
                 },
                 line: {
                   type: "number",
                   description:
-                    "Line number to insert reference (use line OR text, not both)",
+                    "Line number where reference should be inserted. Use either 'line' OR 'text', not both. Line numbers start at 1.",
                 },
                 text: {
                   type: "string",
                   description:
-                    "Text to search for insertion point (use line OR text, not both)",
+                    "Text substring to search for as insertion point. Use either 'line' OR 'text', not both. Reference will be inserted at/near this text.",
                 },
                 format: {
                   type: "string",
                   enum: ["inline", "newline"],
                   description:
-                    "Format: inline (same line) or newline (new line)",
+                    "How to insert: 'inline' adds reference on same line as insertion point, 'newline' adds reference on a new line. Defaults to 'inline'.",
                   default: "inline",
                 },
                 // TODO: Add position handling later if needed.
@@ -313,38 +337,40 @@ export class SudocodeMCPServer {
           {
             name: "add_feedback",
             description:
-              "Provide anchored feedback to a spec. IMPORTANT: You MUST specify either 'line' OR 'text' to anchor the feedback to a specific location in the spec. ",
+              "**REQUIRED when closing issues that implement specs.** Document implementation results by providing feedback on the spec. This closes the feedback loop between requirements (specs) and implementation (issues). Include what was accomplished, design decisions made, challenges encountered, and evidence of completion. When possible, anchor feedback to a specific and relevant location in the spec.",
             inputSchema: {
               type: "object",
               properties: {
                 issue_id: {
                   type: "string",
                   description:
-                    "Issue ID providing feedback (required for create)",
+                    "Issue ID that's providing the feedback (format 'i-xxxx'). This is the issue that implemented the spec and is now documenting results.",
                 },
                 spec_id: {
                   type: "string",
                   description:
-                    "Spec ID receiving feedback (required for create)",
+                    "Spec ID receiving the feedback (format 's-xxxx'). This is the spec that was implemented.",
                 },
                 content: {
                   type: "string",
-                  description: "Feedback content (required for create)",
+                  description:
+                    "Feedback content in markdown. Document: (1) Requirements met from spec, (2) Design decisions made during implementation, (3) Challenges encountered and how resolved, (4) Evidence of completion (e.g., 'All tests passing: npm test'). Be specific and actionable.",
                 },
                 type: {
                   type: "string",
                   enum: ["comment", "suggestion", "request"],
-                  description: "Feedback type",
+                  description:
+                    "Feedback type:\n• 'comment' - informational feedback about implementation (most common for completed work)\n• 'suggestion' - spec needs updating based on implementation learnings\n• 'request' - need clarification or spec is unclear/incomplete",
                 },
                 line: {
                   type: "number",
                   description:
-                    "Line number to anchor feedback (REQUIRED: must use either 'line' OR 'text', not both). Use this if you know the exact line number in the spec markdown file.",
+                    "Optional: Line number in spec markdown to anchor feedback. Use either 'line' OR 'text', not both. Anchoring connects feedback to specific spec sections. Omit both for general feedback on entire spec.",
                 },
                 text: {
                   type: "string",
                   description:
-                    "Text snippet to anchor feedback (REQUIRED: must use either 'line' OR 'text', not both). Must be an EXACT substring match from the spec content - case-sensitive and whitespace-sensitive. Use show_spec first to see the exact content and copy the text precisely.",
+                    "Optional: Exact text substring from spec to anchor feedback. Use either 'line' OR 'text', not both. Must match EXACTLY (case-sensitive, whitespace-sensitive). Use show_spec first to copy exact text. Anchoring makes feedback contextual and trackable.",
                 },
                 // TODO: Re-enable when the agent data structure is more developed.
                 // agent: {
