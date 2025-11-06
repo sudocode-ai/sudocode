@@ -32,6 +32,10 @@ For Claude Code, you can install the plugin:
 # In Claude Code
 /plugin marketplace add sudocode-ai/sudocode
 /plugin install sudocode
+
+# From a Terminal
+claude plugin marketplace add sudocode-ai/sudocode
+claude plugin install sudocode
 ```
 
 ## Context-as-Code
