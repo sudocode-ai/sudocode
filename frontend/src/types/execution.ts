@@ -2,7 +2,7 @@
  * Execution system types
  */
 
-import type { ExecutionStatus, AgentType, Execution } from '@sudocode-ai/types'
+import type { ExecutionStatus, AgentType, Execution, VoiceConfig } from '@sudocode-ai/types'
 
 // TODO: Remove this re-export and fully migrate to @sudocode-ai/types
 /**
@@ -52,6 +52,9 @@ export interface ExecutionConfig {
   // Output settings
   captureFileChanges?: boolean
   captureToolCalls?: boolean
+
+  // Voice settings
+  voice?: VoiceConfig
 }
 
 /**

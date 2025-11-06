@@ -1,6 +1,10 @@
 /**
  * Core entity types for sudocode
  */
+
+// Re-export voice types
+export * from './voice.js'
+
 export interface Spec {
   id: string;
   title: string;
