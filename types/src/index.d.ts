@@ -273,3 +273,85 @@ export interface Execution {
   step_index: number | null;
   step_config: string | null;
 }
+
+/**
+ * P2P Coordination types
+ */
+export interface PeerInfo {
+  agentId: string;
+  multiaddrs: string[];
+  publicKey: string;
+  capabilities: string[];
+  lastSeen: string;
+  ttl: number;
+}
+
+export interface ActiveWork {
+  agentId: string;
+  issues: string[];
+  specs: string[];
+  files: string[];
+  status: string;
+  startedAt: number;
+  lastHeartbeat: number;
+  metadata: Record<string, any>;
+}
+
+export interface ChecklistItem {
+  status: "pending" | "in-progress" | "completed" | "blocked";
+  completedAt?: number;
+  note?: string;
+}
+
+export interface IssueUpdate {
+  agentId: string;
+  issueId: string;
+  tempTitle?: string;
+  tempDescription?: string;
+  tempLabels?: string[];
+  tempAssignees?: string[];
+  tempChecklist?: Record<string, ChecklistItem>;
+  lastModified: number;
+  version: number;
+}
+
+export interface SpecUpdate {
+  agentId: string;
+  specPath: string;
+  tempDiff?: string;
+  tempContent?: string;
+  tempSections?: Record<string, string>;
+  lastModified: number;
+  version: number;
+}
+
+export interface Lease {
+  holder: string;
+  resourcePath: string;
+  leaseType: "file" | "issue" | "spec" | "component";
+  acquiredAt: number;
+  expires: number;
+  renewable: boolean;
+  priority: number;
+  metadata?: Record<string, any>;
+}
+
+export interface CoordinationConfig {
+  agentId: string;
+  gitRemote: string;
+  coordinationBranch: string;
+  peerDiscoveryInterval: number;
+  heartbeatInterval: number;
+  leaseTTL: number;
+  capabilities: string[];
+  listenAddresses: string[];
+  enableFileDiffs: boolean;
+}
+
+export type AgentStatus =
+  | "initializing"
+  | "connecting"
+  | "syncing"
+  | "active"
+  | "disconnected"
+  | "error";

@@ -49,6 +49,15 @@ import {
   handleInitMergeDriver,
   handleRemoveMergeDriver,
 } from "./cli/merge-commands.js";
+import {
+  handleCoordStart,
+  handleCoordStop,
+  handleCoordStatus,
+  handleCoordPeers,
+  handleCoordLeases,
+  handleCoordLease,
+  handleCoordRelease,
+} from "./cli/coord-commands.js";
 import { getUpdateNotification } from "./update-checker.js";
 import { VERSION } from "./version.js";
 
@@ -532,6 +541,72 @@ program
   .option("--global", "Remove from global config instead of just current repo")
   .action(async (options) => {
     await handleRemoveMergeDriver(options);
+  });
+
+// ============================================================================
+// COORDINATION COMMANDS
+// ============================================================================
+
+const coord = program
+  .command("coord")
+  .description("P2P agent coordination system");
+
+coord
+  .command("start")
+  .description("Start coordination agent")
+  .option("--agent-id <id>", "Custom agent ID")
+  .option("--capabilities <list>", "Comma-separated capabilities", "code,review,test")
+  .option("--branch <name>", "Coordination branch name", "coordination")
+  .action(async (options) => {
+    const capabilities = options.capabilities ? options.capabilities.split(",") : undefined;
+    await handleCoordStart({ ...options, capabilities });
+  });
+
+coord
+  .command("stop")
+  .description("Stop coordination agent")
+  .action(async () => {
+    await handleCoordStop();
+  });
+
+coord
+  .command("status")
+  .description("Show coordination agent status")
+  .action(async () => {
+    await handleCoordStatus();
+  });
+
+coord
+  .command("peers")
+  .description("List connected peers")
+  .action(async () => {
+    await handleCoordPeers();
+  });
+
+coord
+  .command("leases")
+  .description("List leases held by this agent")
+  .action(async () => {
+    await handleCoordLeases();
+  });
+
+coord
+  .command("lease <resource>")
+  .description("Acquire a lease on a resource")
+  .option("-t, --type <type>", "Lease type (file, issue, spec)", "file")
+  .option("-p, --priority <priority>", "Lease priority (0-10)", "5")
+  .action(async (resource, options) => {
+    await handleCoordLease(resource, {
+      type: options.type,
+      priority: parseInt(options.priority),
+    });
+  });
+
+coord
+  .command("release <resource>")
+  .description("Release a lease on a resource")
+  .action(async (resource) => {
+    await handleCoordRelease(resource);
   });
 
 // Parse arguments

@@ -10,16 +10,18 @@
     "mcp",
     "server",
     "sudocode",
-    "frontend"
+    "frontend",
+    "coordination"
   ],
   "scripts": {
-    "build": "npm run build --workspace=types && npm run build --workspace=cli && npm run build --workspace=mcp && npm run build --workspace=frontend && npm run build --workspace=server",
+    "build": "npm run build --workspace=types && npm run build --workspace=cli && npm run build --workspace=coordination && npm run build --workspace=mcp && npm run build --workspace=frontend && npm run build --workspace=server",
     "build:cli": "npm run build --workspace=cli",
     "build:mcp": "npm run build --workspace=mcp",
     "build:server": "npm run build:frontend && npm run build --workspace=server",
     "build:frontend": "npm run build --workspace=frontend",
     "test": "npm test --workspaces --if-present",
     "test:cli": "npm test --workspace=cli",
+    "test:coordination": "npm test --workspace=coordination",
     "test:mcp": "npm test --workspace=mcp",
     "test:server": "npm test --workspace=server",
     "test:frontend": "npm test --workspace=frontend",
