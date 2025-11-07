@@ -357,6 +357,226 @@ export class SudocodeMCPServer {
               },
             },
           },
+          {
+            name: "list_executions",
+            description: "List all executions with optional filters",
+            inputSchema: {
+              type: "object",
+              properties: {
+                status: {
+                  type: "string",
+                  enum: ["preparing", "pending", "running", "paused", "completed", "failed", "cancelled", "stopped"],
+                  description: "Filter by status (optional)",
+                },
+                issue_id: {
+                  type: "string",
+                  description: "Filter by issue ID (optional)",
+                },
+                agent_type: {
+                  type: "string",
+                  enum: ["claude-code", "codex", "project-coordinator"],
+                  description: "Filter by agent type (optional)",
+                },
+                limit: {
+                  type: "number",
+                  description: "Max results (optional)",
+                  default: 50,
+                },
+              },
+            },
+          },
+          {
+            name: "show_execution",
+            description: "Show detailed execution information including logs and metrics",
+            inputSchema: {
+              type: "object",
+              properties: {
+                execution_id: {
+                  type: "string",
+                  description: "Execution ID to show",
+                },
+              },
+              required: ["execution_id"],
+            },
+          },
+          {
+            name: "start_execution",
+            description: "Start an execution for an issue",
+            inputSchema: {
+              type: "object",
+              properties: {
+                issue_id: {
+                  type: "string",
+                  description: "Issue ID to execute",
+                },
+                config: {
+                  type: "object",
+                  description: "Execution configuration (optional)",
+                  properties: {
+                    model: {
+                      type: "string",
+                      description: "AI model to use",
+                    },
+                    agentType: {
+                      type: "string",
+                      enum: ["claude-code", "codex"],
+                      description: "Agent type",
+                    },
+                    targetBranch: {
+                      type: "string",
+                      description: "Target branch",
+                    },
+                    cleanupMode: {
+                      type: "string",
+                      enum: ["auto", "manual", "never"],
+                      description: "Cleanup mode",
+                    },
+                  },
+                },
+                reason: {
+                  type: "string",
+                  description: "Reason for starting this execution (optional)",
+                },
+              },
+              required: ["issue_id"],
+            },
+          },
+          {
+            name: "pause_execution",
+            description: "Pause a running execution",
+            inputSchema: {
+              type: "object",
+              properties: {
+                execution_id: {
+                  type: "string",
+                  description: "Execution ID to pause",
+                },
+                reason: {
+                  type: "string",
+                  description: "Reason for pausing",
+                },
+              },
+              required: ["execution_id", "reason"],
+            },
+          },
+          {
+            name: "resume_execution",
+            description: "Resume a paused execution",
+            inputSchema: {
+              type: "object",
+              properties: {
+                execution_id: {
+                  type: "string",
+                  description: "Execution ID to resume",
+                },
+                additional_context: {
+                  type: "string",
+                  description: "Additional context for resumption (optional)",
+                },
+              },
+              required: ["execution_id"],
+            },
+          },
+          {
+            name: "get_execution_health",
+            description: "Get execution health status and metrics",
+            inputSchema: {
+              type: "object",
+              properties: {
+                execution_id: {
+                  type: "string",
+                  description: "Execution ID to check",
+                },
+              },
+              required: ["execution_id"],
+            },
+          },
+          {
+            name: "propose_action",
+            description: "Propose an action for user approval. Use this to suggest actions that require user confirmation.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                action_type: {
+                  type: "string",
+                  enum: [
+                    "create_issues_from_spec",
+                    "start_execution",
+                    "pause_execution",
+                    "resume_execution",
+                    "add_feedback",
+                    "modify_spec",
+                    "create_relationship",
+                    "update_issue_status",
+                  ],
+                  description: "Type of action to propose",
+                },
+                target_id: {
+                  type: "string",
+                  description: "Target entity ID (optional)",
+                },
+                payload: {
+                  type: "object",
+                  description: "Action payload (specific to action type)",
+                },
+                justification: {
+                  type: "string",
+                  description: "Justification for this action (2-3 sentences explaining why)",
+                },
+                priority: {
+                  type: "string",
+                  enum: ["high", "medium", "low"],
+                  description: "Action priority (optional)",
+                },
+              },
+              required: ["action_type", "payload", "justification"],
+            },
+          },
+          {
+            name: "list_actions",
+            description: "List proposed actions with optional status filter",
+            inputSchema: {
+              type: "object",
+              properties: {
+                status: {
+                  type: "string",
+                  enum: ["proposed", "approved", "rejected", "executing", "completed", "failed"],
+                  description: "Filter by status (optional)",
+                },
+                limit: {
+                  type: "number",
+                  description: "Max results (optional)",
+                  default: 50,
+                },
+              },
+            },
+          },
+          {
+            name: "analyze_project",
+            description: "Analyze overall project state and health. Returns comprehensive analysis of specs, issues, executions with prioritized recommendations.",
+            inputSchema: {
+              type: "object",
+              properties: {},
+            },
+          },
+          {
+            name: "plan_spec",
+            description: "Create an implementation plan for a spec. Proposes breakdown into issues with dependencies and timeline estimates.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                spec_id: {
+                  type: "string",
+                  description: "Spec ID to plan",
+                },
+                include_existing: {
+                  type: "boolean",
+                  description: "Include existing related issues (optional, default: false)",
+                },
+              },
+              required: ["spec_id"],
+            },
+          },
         ],
       };
     });
@@ -423,6 +643,46 @@ export class SudocodeMCPServer {
 
           case "add_feedback":
             result = await feedbackTools.addFeedback(this.client, args as any);
+            break;
+
+          case "list_executions":
+            result = await executionTools.listExecutions(this.client, args as any);
+            break;
+
+          case "show_execution":
+            result = await executionTools.showExecution(this.client, args as any);
+            break;
+
+          case "start_execution":
+            result = await executionTools.startExecution(this.client, args as any);
+            break;
+
+          case "pause_execution":
+            result = await executionTools.pauseExecution(this.client, args as any);
+            break;
+
+          case "resume_execution":
+            result = await executionTools.resumeExecution(this.client, args as any);
+            break;
+
+          case "get_execution_health":
+            result = await executionTools.getExecutionHealth(this.client, args as any);
+            break;
+
+          case "propose_action":
+            result = await actionTools.proposeAction(this.client, args as any);
+            break;
+
+          case "list_actions":
+            result = await actionTools.listActions(this.client, args as any);
+            break;
+
+          case "analyze_project":
+            result = await projectTools.analyzeProject(this.client, args as any);
+            break;
+
+          case "plan_spec":
+            result = await projectTools.planSpec(this.client, args as any);
             break;
 
           default:

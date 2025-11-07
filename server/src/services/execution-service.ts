@@ -801,6 +801,66 @@ Please continue working on this issue, taking into account the feedback above.`;
   }
 
   /**
+   * Pause a running execution
+   *
+   * Pauses the workflow execution, allowing it to be resumed later.
+   *
+   * @param executionId - ID of execution to pause
+   */
+  async pauseExecution(executionId: string): Promise<void> {
+    const execution = getExecution(this.db, executionId);
+    if (!execution) {
+      throw new Error(`Execution ${executionId} not found`);
+    }
+
+    if (execution.status !== "running") {
+      throw new Error(`Cannot pause execution in ${execution.status} state`);
+    }
+
+    // Get orchestrator from active map
+    const orchestrator = this.activeOrchestrators.get(executionId);
+    if (orchestrator) {
+      // Pause via orchestrator
+      await orchestrator.pauseWorkflow(executionId);
+    }
+
+    // Update status in database
+    updateExecution(this.db, executionId, {
+      status: "paused",
+    });
+  }
+
+  /**
+   * Resume a paused execution
+   *
+   * Resumes a previously paused execution from its last checkpoint.
+   *
+   * @param executionId - ID of execution to resume
+   */
+  async resumeExecution(executionId: string): Promise<void> {
+    const execution = getExecution(this.db, executionId);
+    if (!execution) {
+      throw new Error(`Execution ${executionId} not found`);
+    }
+
+    if (execution.status !== "paused") {
+      throw new Error(`Cannot resume execution in ${execution.status} state`);
+    }
+
+    // Get orchestrator from active map
+    const orchestrator = this.activeOrchestrators.get(executionId);
+    if (orchestrator) {
+      // Resume via orchestrator
+      await orchestrator.resumeWorkflow(executionId);
+    }
+
+    // Update status in database
+    updateExecution(this.db, executionId, {
+      status: "running",
+    });
+  }
+
+  /**
    * Clean up execution resources
    *
    * Removes the worktree and associated files. This is called automatically

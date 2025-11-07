@@ -18,6 +18,8 @@ import {
   updateProjectAgentActionResult,
   incrementProjectAgentMetric,
 } from "./project-agent-db.js";
+import { SudocodeClient } from "@sudocode-ai/cli/dist/client.js";
+import { getEventBus } from "./event-bus.js";
 
 /**
  * Proposed action parameters
@@ -47,10 +49,25 @@ export interface ActionResult {
 export class ActionManager {
   private db: Database.Database;
   private config: ProjectAgentConfig;
+  private cliClient: SudocodeClient;
+  private repoPath: string;
+  private executionService?: any; // ExecutionService instance (optional for non-execution actions)
 
-  constructor(db: Database.Database, config: ProjectAgentConfig) {
+  constructor(
+    db: Database.Database,
+    config: ProjectAgentConfig,
+    repoPath: string,
+    executionService?: any
+  ) {
     this.db = db;
     this.config = config;
+    this.repoPath = repoPath;
+    this.executionService = executionService;
+
+    // Initialize CLI client for executing actions
+    this.cliClient = new SudocodeClient({
+      workingDir: repoPath,
+    });
   }
 
   /**
@@ -262,52 +279,305 @@ export class ActionManager {
   // ============================================================================
 
   private async executeCreateIssuesFromSpec(payload: any): Promise<any> {
-    // TODO: Implement issue creation logic
-    // This will use the CLI operations to create issues with relationships
     console.log("[action-manager] Executing create_issues_from_spec", payload);
-    return { issuesCreated: payload.issues?.length || 0 };
+
+    const issues = payload.issues || [];
+    const relationships = payload.relationships || [];
+    const createdIssues: string[] = [];
+
+    // Create each issue
+    for (const issue of issues) {
+      try {
+        const args = ["issue", "create", issue.title];
+
+        if (issue.description) {
+          args.push("--description", issue.description);
+        }
+        if (issue.priority !== undefined) {
+          args.push("--priority", issue.priority.toString());
+        }
+        if (issue.parent) {
+          args.push("--parent", issue.parent);
+        }
+        if (issue.tags && issue.tags.length > 0) {
+          args.push("--tags", issue.tags.join(","));
+        }
+
+        const result = await this.cliClient.exec(args);
+        createdIssues.push(result.id);
+
+        // Emit event
+        try {
+          const eventBus = getEventBus();
+          eventBus.emitEvent("filesystem:issue_created", {
+            entityType: "issue",
+            entityId: result.id,
+          });
+        } catch (err) {
+          console.error("[action-manager] Failed to emit event:", err);
+        }
+      } catch (error) {
+        console.error("[action-manager] Failed to create issue:", error);
+      }
+    }
+
+    // Create relationships
+    for (const rel of relationships) {
+      try {
+        const args = ["link", rel.from, rel.to];
+        if (rel.type) {
+          args.push("--type", rel.type);
+        }
+        await this.cliClient.exec(args);
+
+        // Emit event
+        try {
+          const eventBus = getEventBus();
+          eventBus.emitRelationshipCreated(
+            rel.from,
+            "issue",
+            rel.to,
+            "issue",
+            rel.type || "related"
+          );
+        } catch (err) {
+          console.error("[action-manager] Failed to emit event:", err);
+        }
+      } catch (error) {
+        console.error("[action-manager] Failed to create relationship:", error);
+      }
+    }
+
+    return { issuesCreated: createdIssues, relationships: relationships.length };
   }
 
   private async executeStartExecution(payload: any): Promise<any> {
-    // TODO: Implement execution start logic
-    // This will use the ExecutionService to create and start an execution
     console.log("[action-manager] Executing start_execution", payload);
-    return { executionId: payload.issue_id };
+
+    if (!this.executionService) {
+      throw new Error("ExecutionService not available");
+    }
+
+    // Prepare execution (renders prompt with template)
+    const prepareResult = await this.executionService.prepareExecution(
+      payload.issue_id,
+      {
+        config: payload.config || {},
+      }
+    );
+
+    // Create and start execution
+    const execution = await this.executionService.createExecution(
+      payload.issue_id,
+      prepareResult.defaultConfig,
+      prepareResult.renderedPrompt
+    );
+
+    // Emit event
+    try {
+      const eventBus = getEventBus();
+      eventBus.emitExecutionEvent(
+        "started",
+        execution.id,
+        "running",
+        payload.issue_id
+      );
+    } catch (err) {
+      console.error("[action-manager] Failed to emit event:", err);
+    }
+
+    return {
+      executionId: execution.id,
+      issueId: payload.issue_id,
+      status: execution.status,
+      worktreePath: execution.worktree_path,
+    };
   }
 
   private async executePauseExecution(payload: any): Promise<any> {
-    // TODO: Implement execution pause logic
     console.log("[action-manager] Executing pause_execution", payload);
-    return { executionId: payload.execution_id, paused: true };
+
+    if (!this.executionService) {
+      throw new Error("ExecutionService not available");
+    }
+
+    // Pause the execution
+    await this.executionService.pauseExecution(payload.execution_id);
+
+    // Emit event
+    try {
+      const eventBus = getEventBus();
+      eventBus.emitExecutionEvent(
+        "paused",
+        payload.execution_id,
+        "paused"
+      );
+    } catch (err) {
+      console.error("[action-manager] Failed to emit event:", err);
+    }
+
+    return {
+      executionId: payload.execution_id,
+      status: "paused",
+    };
   }
 
   private async executeResumeExecution(payload: any): Promise<any> {
-    // TODO: Implement execution resume logic
     console.log("[action-manager] Executing resume_execution", payload);
-    return { executionId: payload.execution_id, resumed: true };
+
+    if (!this.executionService) {
+      throw new Error("ExecutionService not available");
+    }
+
+    // Resume the execution
+    await this.executionService.resumeExecution(payload.execution_id);
+
+    // Emit event
+    try {
+      const eventBus = getEventBus();
+      eventBus.emitExecutionEvent(
+        "resumed",
+        payload.execution_id,
+        "running"
+      );
+    } catch (err) {
+      console.error("[action-manager] Failed to emit event:", err);
+    }
+
+    return {
+      executionId: payload.execution_id,
+      status: "running",
+    };
   }
 
   private async executeAddFeedback(payload: any): Promise<any> {
-    // TODO: Implement feedback addition logic
     console.log("[action-manager] Executing add_feedback", payload);
-    return { feedbackId: `feedback_${Date.now()}` };
+
+    try {
+      const args = [
+        "feedback",
+        "add",
+        "--issue", payload.issue_id,
+        "--spec", payload.spec_id,
+        "--content", payload.content,
+        "--type", payload.type || "comment",
+      ];
+
+      if (payload.line !== undefined) {
+        args.push("--line", payload.line.toString());
+      } else if (payload.text) {
+        args.push("--text", payload.text);
+      }
+
+      const result = await this.cliClient.exec(args);
+
+      // Emit event
+      try {
+        const eventBus = getEventBus();
+        eventBus.emitFeedbackCreated(result.id, payload.issue_id, payload.spec_id);
+      } catch (err) {
+        console.error("[action-manager] Failed to emit event:", err);
+      }
+
+      return { feedbackId: result.id };
+    } catch (error: any) {
+      console.error("[action-manager] Failed to add feedback:", error);
+      throw new Error(`Failed to add feedback: ${error.message}`);
+    }
   }
 
   private async executeModifySpec(payload: any): Promise<any> {
-    // TODO: Implement spec modification logic
     console.log("[action-manager] Executing modify_spec", payload);
-    return { specId: payload.spec_id, modified: true };
+
+    try {
+      const args = ["spec", "update", payload.spec_id];
+
+      if (payload.title) {
+        args.push("--title", payload.title);
+      }
+      if (payload.description) {
+        args.push("--description", payload.description);
+      }
+      if (payload.priority !== undefined) {
+        args.push("--priority", payload.priority.toString());
+      }
+
+      const result = await this.cliClient.exec(args);
+
+      // Emit event
+      try {
+        const eventBus = getEventBus();
+        eventBus.emitEvent("filesystem:spec_updated", {
+          entityType: "spec",
+          entityId: payload.spec_id,
+        });
+      } catch (err) {
+        console.error("[action-manager] Failed to emit event:", err);
+      }
+
+      return { specId: result.id, modified: true };
+    } catch (error: any) {
+      console.error("[action-manager] Failed to modify spec:", error);
+      throw new Error(`Failed to modify spec: ${error.message}`);
+    }
   }
 
   private async executeCreateRelationship(payload: any): Promise<any> {
-    // TODO: Implement relationship creation logic
     console.log("[action-manager] Executing create_relationship", payload);
-    return { relationshipCreated: true };
+
+    try {
+      const args = ["link", payload.from_id, payload.to_id];
+      if (payload.type) {
+        args.push("--type", payload.type);
+      }
+
+      await this.cliClient.exec(args);
+
+      // Emit event
+      try {
+        const eventBus = getEventBus();
+        eventBus.emitRelationshipCreated(
+          payload.from_id,
+          payload.from_type || "issue",
+          payload.to_id,
+          payload.to_type || "issue",
+          payload.type || "related"
+        );
+      } catch (err) {
+        console.error("[action-manager] Failed to emit event:", err);
+      }
+
+      return { relationshipCreated: true };
+    } catch (error: any) {
+      console.error("[action-manager] Failed to create relationship:", error);
+      throw new Error(`Failed to create relationship: ${error.message}`);
+    }
   }
 
   private async executeUpdateIssueStatus(payload: any): Promise<any> {
-    // TODO: Implement issue status update logic
     console.log("[action-manager] Executing update_issue_status", payload);
-    return { issueId: payload.issue_id, newStatus: payload.status };
+
+    try {
+      const args = ["issue", "update", payload.issue_id, "--status", payload.status];
+
+      const result = await this.cliClient.exec(args);
+
+      // Emit event
+      try {
+        const eventBus = getEventBus();
+        eventBus.emitIssueStatusChanged(
+          payload.issue_id,
+          payload.old_status || "unknown",
+          payload.status
+        );
+      } catch (err) {
+        console.error("[action-manager] Failed to emit event:", err);
+      }
+
+      return { issueId: result.id, newStatus: result.status };
+    } catch (error: any) {
+      console.error("[action-manager] Failed to update issue status:", error);
+      throw new Error(`Failed to update issue status: ${error.message}`);
+    }
   }
 }

@@ -14,17 +14,25 @@ import {
   listProjectAgentEvents,
 } from "../services/project-agent-db.js";
 import type { ProjectAgentConfig } from "@sudocode-ai/types";
+import {
+  ProjectAgentExecutor,
+  initProjectAgentExecutor,
+  getProjectAgentExecutor,
+  destroyProjectAgentExecutor,
+} from "../services/project-agent-executor.js";
 
 /**
  * Create project agent router
  *
  * @param db - Database instance
  * @param repoPath - Path to git repository
+ * @param executionService - Execution service instance for managing executions
  * @returns Express router with project agent endpoints
  */
 export function createProjectAgentRouter(
   db: Database.Database,
-  repoPath: string
+  repoPath: string,
+  executionService: any
 ): Router {
   const router = Router();
 
@@ -103,7 +111,7 @@ export function createProjectAgentRouter(
    */
   router.post("/start", async (req: Request, res: Response) => {
     try {
-      const config: Partial<ProjectAgentConfig> = req.body.config || {};
+      const configInput: Partial<ProjectAgentConfig> = req.body.config || {};
 
       // Check if already running
       const existing = getRunningProjectAgentExecution(db);
@@ -116,18 +124,36 @@ export function createProjectAgentRouter(
         return;
       }
 
-      // TODO: Implement project agent start logic
-      // This will create an execution and start the project agent process
+      // Build full config with defaults
+      const config: ProjectAgentConfig = {
+        useWorktree: configInput.useWorktree ?? false,
+        worktreePath: configInput.worktreePath,
+        mode: configInput.mode || "monitoring",
+        autoApprove: {
+          enabled: configInput.autoApprove?.enabled ?? false,
+          allowedActions: configInput.autoApprove?.allowedActions || [],
+        },
+        monitoring: {
+          watchExecutions: configInput.monitoring?.watchExecutions ?? true,
+          checkInterval: configInput.monitoring?.checkInterval ?? 60000,
+          stalledExecutionThreshold: configInput.monitoring?.stalledExecutionThreshold ?? 3600000,
+        },
+      };
+
+      // Initialize and start project agent executor
+      const executor = initProjectAgentExecutor(db, repoPath, config, executionService);
+      const execution = await executor.start();
 
       res.json({
         success: true,
         data: {
-          execution_id: "exec_proj_pending",
-          status: "starting",
-          worktree_path: config.worktreePath || null,
-          created_at: new Date().toISOString(),
+          execution_id: execution.execution_id,
+          status: execution.status,
+          mode: execution.mode,
+          worktree_path: execution.worktree_path,
+          created_at: execution.started_at,
         },
-        message: "Project agent start requested (implementation pending)",
+        message: "Project agent started successfully",
       });
     } catch (error) {
       console.error("[API Route] ERROR: Failed to start project agent:", error);
@@ -157,16 +183,23 @@ export function createProjectAgentRouter(
         return;
       }
 
-      // TODO: Implement project agent stop logic
-      // This will gracefully stop the project agent process
+      // Stop project agent executor
+      try {
+        const executor = getProjectAgentExecutor();
+        await executor.stop();
+        await destroyProjectAgentExecutor();
+      } catch (error) {
+        console.error("[API Route] ERROR: Failed to get/stop executor:", error);
+        // Continue anyway - executor might not be initialized
+      }
 
       res.json({
         success: true,
         data: {
           execution_id: execution.execution_id,
-          status: "stopping",
+          status: "stopped",
         },
-        message: "Project agent stop requested (implementation pending)",
+        message: "Project agent stopped successfully",
       });
     } catch (error) {
       console.error("[API Route] ERROR: Failed to stop project agent:", error);
@@ -337,7 +370,7 @@ export function createProjectAgentRouter(
       }
 
       const config = JSON.parse(execution.config_json);
-      const actionManager = new ActionManager(db, config);
+      const actionManager = new ActionManager(db, config, repoPath, executionService);
 
       await actionManager.approveAction(id);
 
@@ -382,7 +415,7 @@ export function createProjectAgentRouter(
       }
 
       const config = JSON.parse(execution.config_json);
-      const actionManager = new ActionManager(db, config);
+      const actionManager = new ActionManager(db, config, repoPath, executionService);
 
       await actionManager.rejectAction(id, reason);
 

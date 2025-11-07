@@ -27,6 +27,7 @@ import { createRelationshipsRouter } from "./routes/relationships.js";
 import { createFeedbackRouter } from "./routes/feedback.js";
 import { createExecutionsRouter } from "./routes/executions.js";
 import { createExecutionStreamRoutes } from "./routes/executions-stream.js";
+import { createProjectAgentRouter } from "./routes/project-agent.js";
 import { TransportManager } from "./execution/transport/transport-manager.js";
 import { getIssueById } from "./services/issues.js";
 import { getSpecById } from "./services/specs.js";
@@ -41,6 +42,11 @@ import {
   broadcastIssueUpdate,
   broadcastSpecUpdate,
 } from "./services/websocket.js";
+import {
+  createEventBus,
+  destroyEventBus,
+  type EventBus,
+} from "./services/event-bus.js";
 
 // Load environment variables
 dotenv.config();
@@ -66,6 +72,7 @@ let transportManager!: TransportManager;
 let logsStore!: ExecutionLogsStore;
 // let logsCleanup: ExecutionLogsCleanup | null = null;
 let executionService: ExecutionService | null = null;
+let eventBus: EventBus | null = null;
 
 // Async initialization function
 async function initialize() {
@@ -116,6 +123,14 @@ async function initialize() {
       logsStore
     );
     console.log("Execution service initialized");
+
+    // Initialize EventBus for project agent and real-time events
+    eventBus = await createEventBus({
+      db,
+      baseDir: SUDOCODE_DIR,
+      debounceDelay: 2000,
+    });
+    console.log("EventBus initialized");
 
     // Cleanup orphaned worktrees on startup (if configured)
     const worktreeConfig = getWorktreeConfig(REPO_ROOT);
@@ -206,6 +221,7 @@ app.use("/api/issues", createIssuesRouter(db));
 app.use("/api/specs", createSpecsRouter(db));
 app.use("/api/relationships", createRelationshipsRouter(db));
 app.use("/api/feedback", createFeedbackRouter(db));
+app.use("/api/project-agent", createProjectAgentRouter(db, REPO_ROOT, executionService));
 // Mount execution routes (must be before stream routes to avoid conflicts)
 app.use(
   "/api",
@@ -432,6 +448,12 @@ process.on("SIGINT", async () => {
     await watcher.stop();
   }
 
+  // Shutdown EventBus
+  if (eventBus) {
+    await destroyEventBus();
+    console.log("EventBus shutdown complete");
+  }
+
   // Shutdown WebSocket server
   await shutdownWebSocketServer();
 
@@ -474,6 +496,12 @@ process.on("SIGTERM", async () => {
   // Stop file watcher
   if (watcher) {
     await watcher.stop();
+  }
+
+  // Shutdown EventBus
+  if (eventBus) {
+    await destroyEventBus();
+    console.log("EventBus shutdown complete");
   }
 
   // Shutdown WebSocket server
