@@ -207,7 +207,7 @@ export interface Config {
 /**
  * Agent types supported for execution
  */
-export type AgentType = "claude-code" | "codex";
+export type AgentType = "claude-code" | "codex" | "project-coordinator";
 
 /**
  * Execution status
@@ -272,4 +272,148 @@ export interface Execution {
   step_type: string | null;
   step_index: number | null;
   step_config: string | null;
+}
+
+/**
+ * Project Agent types
+ */
+
+/**
+ * Project agent mode
+ */
+export type ProjectAgentMode = "monitoring" | "planning" | "full";
+
+/**
+ * Project agent status
+ */
+export type ProjectAgentStatus = "running" | "stopped" | "error";
+
+/**
+ * Project agent execution tracking
+ */
+export interface ProjectAgentExecution {
+  id: string;
+  execution_id: string;
+  status: ProjectAgentStatus;
+  mode: ProjectAgentMode;
+  use_worktree: boolean;
+  worktree_path: string | null;
+  config_json: string;
+
+  // Metrics
+  events_processed: number;
+  actions_proposed: number;
+  actions_approved: number;
+  actions_rejected: number;
+
+  started_at: string;
+  stopped_at: string | null;
+  last_activity_at: string | null;
+}
+
+/**
+ * Project agent action types
+ */
+export type ProjectAgentActionType =
+  | "create_issues_from_spec"
+  | "start_execution"
+  | "pause_execution"
+  | "resume_execution"
+  | "add_feedback"
+  | "modify_spec"
+  | "create_relationship"
+  | "update_issue_status";
+
+/**
+ * Project agent action status
+ */
+export type ProjectAgentActionStatus =
+  | "proposed"
+  | "approved"
+  | "rejected"
+  | "executing"
+  | "completed"
+  | "failed";
+
+/**
+ * Project agent action priority
+ */
+export type ProjectAgentActionPriority = "high" | "medium" | "low";
+
+/**
+ * Project agent action target type
+ */
+export type ProjectAgentActionTargetType = "spec" | "issue" | "execution";
+
+/**
+ * Project agent action
+ */
+export interface ProjectAgentAction {
+  id: string;
+  project_agent_execution_id: string;
+
+  action_type: ProjectAgentActionType;
+  status: ProjectAgentActionStatus;
+  priority: ProjectAgentActionPriority | null;
+
+  // Action details
+  target_id: string | null;
+  target_type: ProjectAgentActionTargetType | null;
+  payload_json: string;
+  justification: string;
+
+  // Lifecycle
+  created_at: string;
+  approved_at: string | null;
+  rejected_at: string | null;
+  executed_at: string | null;
+  completed_at: string | null;
+
+  // Result
+  result_json: string | null;
+  error_message: string | null;
+}
+
+/**
+ * Project agent event
+ */
+export interface ProjectAgentEvent {
+  id: string;
+  project_agent_execution_id: string;
+
+  event_type: string;
+  event_payload_json: string;
+
+  processed_at: string;
+  processing_duration_ms: number | null;
+
+  // Action taken (if any)
+  action_id: string | null;
+}
+
+/**
+ * Project agent configuration
+ */
+export interface ProjectAgentConfig {
+  useWorktree: boolean;
+  worktreePath?: string;
+  mode: ProjectAgentMode;
+  autoApprove: AutoApprovalConfig;
+  monitoring: MonitoringConfig;
+}
+
+/**
+ * Auto-approval configuration
+ */
+export interface AutoApprovalConfig {
+  enabled: boolean;
+  allowedActions: ProjectAgentActionType[];
+}
+
+/**
+ * Monitoring configuration
+ */
+export interface MonitoringConfig {
+  stallThresholdMinutes: number;
+  checkIntervalSeconds: number;
 }

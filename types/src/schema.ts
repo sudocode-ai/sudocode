@@ -142,7 +142,7 @@ CREATE TABLE IF NOT EXISTS executions (
     config TEXT,
 
     -- Process information (legacy + new)
-    agent_type TEXT CHECK(agent_type IN ('claude-code', 'codex')),
+    agent_type TEXT CHECK(agent_type IN ('claude-code', 'codex', 'project-coordinator')),
     session_id TEXT,
     workflow_execution_id TEXT,
 
@@ -214,6 +214,98 @@ CREATE TABLE IF NOT EXISTS execution_logs (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE
+);
+`;
+
+// Project agent executions table - tracks project agent lifecycle
+export const PROJECT_AGENT_EXECUTIONS_TABLE = `
+CREATE TABLE IF NOT EXISTS project_agent_executions (
+    id TEXT PRIMARY KEY,
+    execution_id TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL CHECK(status IN ('running', 'stopped', 'error')),
+    mode TEXT NOT NULL CHECK(mode IN ('monitoring', 'planning', 'full')),
+    use_worktree INTEGER NOT NULL DEFAULT 1 CHECK(use_worktree IN (0, 1)),
+    worktree_path TEXT,
+    config_json TEXT NOT NULL,
+
+    -- Metrics
+    events_processed INTEGER NOT NULL DEFAULT 0,
+    actions_proposed INTEGER NOT NULL DEFAULT 0,
+    actions_approved INTEGER NOT NULL DEFAULT 0,
+    actions_rejected INTEGER NOT NULL DEFAULT 0,
+
+    started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    stopped_at DATETIME,
+    last_activity_at DATETIME,
+
+    FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE
+);
+`;
+
+// Project agent actions table - stores proposed actions and their lifecycle
+export const PROJECT_AGENT_ACTIONS_TABLE = `
+CREATE TABLE IF NOT EXISTS project_agent_actions (
+    id TEXT PRIMARY KEY,
+    project_agent_execution_id TEXT NOT NULL,
+
+    action_type TEXT NOT NULL CHECK(action_type IN (
+        'create_issues_from_spec',
+        'start_execution',
+        'pause_execution',
+        'resume_execution',
+        'add_feedback',
+        'modify_spec',
+        'create_relationship',
+        'update_issue_status'
+    )),
+    status TEXT NOT NULL CHECK(status IN (
+        'proposed',
+        'approved',
+        'rejected',
+        'executing',
+        'completed',
+        'failed'
+    )),
+    priority TEXT CHECK(priority IN ('high', 'medium', 'low')),
+
+    -- Action details
+    target_id TEXT,
+    target_type TEXT CHECK(target_type IN ('spec', 'issue', 'execution')),
+    payload_json TEXT NOT NULL,
+    justification TEXT NOT NULL,
+
+    -- Lifecycle
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    approved_at DATETIME,
+    rejected_at DATETIME,
+    executed_at DATETIME,
+    completed_at DATETIME,
+
+    -- Result
+    result_json TEXT,
+    error_message TEXT,
+
+    FOREIGN KEY (project_agent_execution_id) REFERENCES project_agent_executions(id) ON DELETE CASCADE
+);
+`;
+
+// Project agent events table - log of events processed by project agent
+export const PROJECT_AGENT_EVENTS_TABLE = `
+CREATE TABLE IF NOT EXISTS project_agent_events (
+    id TEXT PRIMARY KEY,
+    project_agent_execution_id TEXT NOT NULL,
+
+    event_type TEXT NOT NULL,
+    event_payload_json TEXT NOT NULL,
+
+    processed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    processing_duration_ms INTEGER,
+
+    -- Action taken (if any)
+    action_id TEXT,
+
+    FOREIGN KEY (project_agent_execution_id) REFERENCES project_agent_executions(id) ON DELETE CASCADE,
+    FOREIGN KEY (action_id) REFERENCES project_agent_actions(id) ON DELETE SET NULL
 );
 `;
 
@@ -301,6 +393,28 @@ CREATE INDEX IF NOT EXISTS idx_execution_logs_byte_size ON execution_logs(byte_s
 CREATE INDEX IF NOT EXISTS idx_execution_logs_line_count ON execution_logs(line_count);
 `;
 
+export const PROJECT_AGENT_EXECUTIONS_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_project_agent_exec_execution_id ON project_agent_executions(execution_id);
+CREATE INDEX IF NOT EXISTS idx_project_agent_exec_status ON project_agent_executions(status);
+CREATE INDEX IF NOT EXISTS idx_project_agent_exec_mode ON project_agent_executions(mode);
+CREATE INDEX IF NOT EXISTS idx_project_agent_exec_started_at ON project_agent_executions(started_at);
+`;
+
+export const PROJECT_AGENT_ACTIONS_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_project_agent_actions_exec_id ON project_agent_actions(project_agent_execution_id);
+CREATE INDEX IF NOT EXISTS idx_project_agent_actions_status ON project_agent_actions(status);
+CREATE INDEX IF NOT EXISTS idx_project_agent_actions_type ON project_agent_actions(action_type);
+CREATE INDEX IF NOT EXISTS idx_project_agent_actions_created_at ON project_agent_actions(created_at);
+CREATE INDEX IF NOT EXISTS idx_project_agent_actions_target ON project_agent_actions(target_id, target_type);
+`;
+
+export const PROJECT_AGENT_EVENTS_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_project_agent_events_exec_id ON project_agent_events(project_agent_execution_id);
+CREATE INDEX IF NOT EXISTS idx_project_agent_events_type ON project_agent_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_project_agent_events_processed_at ON project_agent_events(processed_at);
+CREATE INDEX IF NOT EXISTS idx_project_agent_events_action_id ON project_agent_events(action_id);
+`;
+
 /**
  * View definitions
  */
@@ -359,6 +473,9 @@ export const ALL_TABLES = [
   EXECUTIONS_TABLE,
   PROMPT_TEMPLATES_TABLE,
   EXECUTION_LOGS_TABLE,
+  PROJECT_AGENT_EXECUTIONS_TABLE,
+  PROJECT_AGENT_ACTIONS_TABLE,
+  PROJECT_AGENT_EVENTS_TABLE,
 ];
 
 export const ALL_INDEXES = [
@@ -371,6 +488,9 @@ export const ALL_INDEXES = [
   EXECUTIONS_INDEXES,
   PROMPT_TEMPLATES_INDEXES,
   EXECUTION_LOGS_INDEXES,
+  PROJECT_AGENT_EXECUTIONS_INDEXES,
+  PROJECT_AGENT_ACTIONS_INDEXES,
+  PROJECT_AGENT_EVENTS_INDEXES,
 ];
 
 export const ALL_VIEWS = [READY_ISSUES_VIEW, BLOCKED_ISSUES_VIEW];
