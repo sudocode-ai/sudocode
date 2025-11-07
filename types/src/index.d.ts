@@ -282,8 +282,50 @@ export interface SchedulerConfig {
   enabled: boolean;
   maxConcurrency: number;
   pollInterval: number;
+  qualityGatesEnabled: boolean;
+  qualityGatesConfig?: QualityGateConfig;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Quality gate configuration
+ */
+export interface QualityGateConfig {
+  runTests?: boolean;
+  testCommand?: string;
+  testTimeout?: number;
+  runBuild?: boolean;
+  buildCommand?: string;
+  runLint?: boolean;
+  lintCommand?: string;
+  customChecks?: Array<{
+    name: string;
+    command: string;
+    timeout?: number;
+  }>;
+}
+
+/**
+ * Quality gate check result
+ */
+export interface QualityGateCheckResult {
+  name: string;
+  passed: boolean;
+  output?: string;
+  error?: string;
+  duration: number;
+}
+
+/**
+ * Quality gate results for an execution
+ */
+export interface QualityGateResult {
+  id: string;
+  execution_id: string;
+  passed: boolean;
+  results: QualityGateCheckResult[];
+  created_at: string;
 }
 
 /**

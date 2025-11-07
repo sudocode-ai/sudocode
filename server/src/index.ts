@@ -123,7 +123,7 @@ async function initialize() {
     console.log("Execution service initialized");
 
     // Initialize execution scheduler
-    executionScheduler = new ExecutionScheduler(db, executionService);
+    executionScheduler = new ExecutionScheduler(db, executionService, REPO_ROOT);
     console.log("Execution scheduler initialized");
 
     // Cleanup orphaned worktrees on startup (if configured)

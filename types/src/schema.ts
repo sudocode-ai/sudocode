@@ -224,6 +224,8 @@ CREATE TABLE IF NOT EXISTS scheduler_config (
     enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0, 1)),
     max_concurrency INTEGER NOT NULL DEFAULT 5 CHECK(max_concurrency > 0 AND max_concurrency <= 10),
     poll_interval INTEGER NOT NULL DEFAULT 5000 CHECK(poll_interval >= 1000),
+    quality_gates_enabled INTEGER NOT NULL DEFAULT 0 CHECK(quality_gates_enabled IN (0, 1)),
+    quality_gates_config TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -267,6 +269,18 @@ CREATE TABLE IF NOT EXISTS issue_group_members (
     FOREIGN KEY (group_uuid) REFERENCES issue_groups(uuid) ON DELETE CASCADE,
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
     FOREIGN KEY (issue_uuid) REFERENCES issues(uuid) ON DELETE CASCADE
+);
+`;
+
+// Quality gate results table - stores validation results for executions
+export const QUALITY_GATE_RESULTS_TABLE = `
+CREATE TABLE IF NOT EXISTS quality_gate_results (
+    id TEXT PRIMARY KEY,
+    execution_id TEXT NOT NULL,
+    passed INTEGER NOT NULL CHECK(passed IN (0, 1)),
+    results TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE
 );
 `;
 
@@ -372,6 +386,12 @@ CREATE INDEX IF NOT EXISTS idx_group_members_issue_id ON issue_group_members(iss
 CREATE INDEX IF NOT EXISTS idx_group_members_issue_uuid ON issue_group_members(issue_uuid);
 `;
 
+export const QUALITY_GATE_RESULTS_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_quality_gate_results_execution_id ON quality_gate_results(execution_id);
+CREATE INDEX IF NOT EXISTS idx_quality_gate_results_passed ON quality_gate_results(passed);
+CREATE INDEX IF NOT EXISTS idx_quality_gate_results_created_at ON quality_gate_results(created_at);
+`;
+
 /**
  * View definitions
  */
@@ -433,6 +453,7 @@ export const ALL_TABLES = [
   SCHEDULER_CONFIG_TABLE,
   ISSUE_GROUPS_TABLE,
   ISSUE_GROUP_MEMBERS_TABLE,
+  QUALITY_GATE_RESULTS_TABLE,
 ];
 
 export const ALL_INDEXES = [
@@ -448,6 +469,7 @@ export const ALL_INDEXES = [
   SCHEDULER_CONFIG_INDEXES,
   ISSUE_GROUPS_INDEXES,
   ISSUE_GROUP_MEMBERS_INDEXES,
+  QUALITY_GATE_RESULTS_INDEXES,
 ];
 
 export const ALL_VIEWS = [READY_ISSUES_VIEW, BLOCKED_ISSUES_VIEW];

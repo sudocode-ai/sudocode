@@ -19,6 +19,7 @@ import { ExecutionService } from "./execution-service.js";
 import { getExecution, getAllExecutions } from "./executions.js";
 import { updateIssue } from "@sudocode-ai/cli/dist/operations/index.js";
 import { getGroupForIssue } from "./issue-groups.js";
+import { QualityGateService } from "./quality-gate.js";
 
 /**
  * Active execution tracking
@@ -44,6 +45,7 @@ interface ActiveExecution {
 export class ExecutionScheduler {
   private db: Database.Database;
   private executionService: ExecutionService;
+  private qualityGateService: QualityGateService;
   private enabled: boolean = false;
   private tickTimer: NodeJS.Timeout | null = null;
   private activeExecutions = new Map<string, ActiveExecution>();
@@ -53,10 +55,16 @@ export class ExecutionScheduler {
    *
    * @param db - Database instance
    * @param executionService - Execution service for creating/managing executions
+   * @param repoRoot - Repository root path for running quality gate commands
    */
-  constructor(db: Database.Database, executionService: ExecutionService) {
+  constructor(
+    db: Database.Database,
+    executionService: ExecutionService,
+    repoRoot: string
+  ) {
     this.db = db;
     this.executionService = executionService;
+    this.qualityGateService = new QualityGateService(db, repoRoot);
   }
 
   /**
@@ -340,11 +348,38 @@ export class ExecutionScheduler {
 
     try {
       if (execution.status === "completed") {
-        // Success - close the issue
-        console.log(`[Scheduler] Closing issue ${execution.issue_id} (execution succeeded)`);
-        await updateIssue(this.db, execution.issue_id, {
-          status: "closed",
-        });
+        // Success - run quality gates before closing
+        const config = getSchedulerConfig(this.db);
+
+        if (config.qualityGatesEnabled && config.qualityGatesConfig) {
+          console.log(`[Scheduler] Running quality gates for issue ${execution.issue_id}`);
+
+          // Run quality gates in the execution's worktree directory
+          const workingDir = execution.worktree_path || execution.project_root;
+          const result = await this.qualityGateService.runChecks(
+            execution.id,
+            config.qualityGatesConfig,
+            workingDir
+          );
+
+          if (result.passed) {
+            console.log(`[Scheduler] Quality gates passed for issue ${execution.issue_id}`);
+            await updateIssue(this.db, execution.issue_id, {
+              status: "closed",
+            });
+          } else {
+            console.log(`[Scheduler] Quality gates failed for issue ${execution.issue_id}`);
+            await updateIssue(this.db, execution.issue_id, {
+              status: "needs_review",
+            });
+          }
+        } else {
+          // No quality gates - close the issue directly
+          console.log(`[Scheduler] Closing issue ${execution.issue_id} (execution succeeded, no quality gates)`);
+          await updateIssue(this.db, execution.issue_id, {
+            status: "closed",
+          });
+        }
       } else if (execution.status === "failed") {
         // Failure - mark as needs_review
         console.log(`[Scheduler] Marking issue ${execution.issue_id} as needs_review (execution failed)`);
