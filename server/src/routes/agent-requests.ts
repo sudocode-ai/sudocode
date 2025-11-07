@@ -297,5 +297,93 @@ export function createAgentRequestsRouter(
     }
   );
 
+  /**
+   * GET /api/agent-requests/batches
+   *
+   * Get batches of similar requests
+   */
+  router.get("/agent-requests/batches", async (req: Request, res: Response) => {
+    try {
+      const batches = routerService.getBatches();
+
+      // Enhance batches with pattern information
+      const enhancedBatches = batches.map((batch) => ({
+        ...batch,
+        patterns: routerService.getBatchPatterns(batch.id, batch.requests),
+      }));
+
+      res.json({
+        success: true,
+        data: enhancedBatches,
+      });
+    } catch (error) {
+      console.error("[API Route] ERROR: Failed to get batches:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to get batches",
+      });
+    }
+  });
+
+  /**
+   * POST /api/agent-requests/batch/respond
+   *
+   * Respond to multiple requests in a batch with the same response
+   */
+  router.post(
+    "/agent-requests/batch/respond",
+    async (req: Request, res: Response) => {
+      try {
+        const { requestIds, response } = req.body;
+
+        if (!requestIds || !Array.isArray(requestIds) || requestIds.length === 0) {
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: "requestIds array is required",
+          });
+          return;
+        }
+
+        if (!response) {
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: "Response is required",
+          });
+          return;
+        }
+
+        const responses = await routerService.respondToBatch(
+          requestIds,
+          response,
+          false
+        );
+
+        res.json({
+          success: true,
+          data: {
+            responses,
+            successCount: responses.length,
+            totalCount: requestIds.length,
+          },
+        });
+      } catch (error) {
+        console.error(
+          "[API Route] ERROR: Failed to respond to batch:",
+          error
+        );
+        res.status(500).json({
+          success: false,
+          data: null,
+          error_data: error instanceof Error ? error.message : String(error),
+          message: "Failed to respond to batch",
+        });
+      }
+    }
+  );
+
   return router;
 }

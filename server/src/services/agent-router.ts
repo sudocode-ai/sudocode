@@ -18,16 +18,26 @@ import type {
   RequestContext,
 } from "./agent-router-types.js";
 import { DEFAULT_ROUTER_CONFIG } from "./agent-router-types.js";
+import { BatchingEngine, type RequestBatch } from "./batching-engine.js";
+
+// Re-export for external use
+export type { RequestBatch } from "./batching-engine.js";
 
 export class AgentRouter extends EventEmitter {
   private db: Database.Database;
   private config: AgentRouterConfig;
   private cleanupInterval?: NodeJS.Timeout;
+  private batchingEngine: BatchingEngine;
 
   constructor(db: Database.Database, config?: Partial<AgentRouterConfig>) {
     super();
     this.db = db;
     this.config = { ...DEFAULT_ROUTER_CONFIG, ...config };
+    this.batchingEngine = new BatchingEngine({
+      similarityThreshold: 0.7,
+      minBatchSize: 2,
+      batchTimeWindowMs: 30000, // 30 seconds
+    });
 
     // Start cleanup interval for expired requests
     this.startCleanupInterval();
@@ -337,6 +347,59 @@ export class AgentRouter extends EventEmitter {
       averageWaitTime: stats.avg_wait || 0,
       oldestRequest: oldestRow ? this.rowToRequest(oldestRow) : undefined,
     };
+  }
+
+  /**
+   * Get batches of similar requests
+   */
+  getBatches(): RequestBatch[] {
+    const queue = this.getQueue();
+    return this.batchingEngine.findBatchable(queue);
+  }
+
+  /**
+   * Extract common patterns from a batch
+   */
+  getBatchPatterns(batchId: string, requests: AgentRequest[]) {
+    const batch: RequestBatch = {
+      id: batchId,
+      requests,
+      similarityScore: 0,
+      createdAt: new Date(),
+    };
+    return this.batchingEngine.extractCommonPatterns(batch);
+  }
+
+  /**
+   * Respond to all requests in a batch with the same response
+   */
+  async respondToBatch(
+    requestIds: string[],
+    response: string,
+    auto: boolean = false,
+    patternId?: string
+  ): Promise<UserResponse[]> {
+    const responses: UserResponse[] = [];
+
+    for (const requestId of requestIds) {
+      try {
+        const userResponse = await this.respondToRequest(
+          requestId,
+          response,
+          auto,
+          patternId
+        );
+        responses.push(userResponse);
+      } catch (error) {
+        // Log error but continue with other requests
+        console.error(`Failed to respond to request ${requestId}:`, error);
+      }
+    }
+
+    // Emit batch response event
+    this.emit('batch_responded', requestIds, response);
+
+    return responses;
   }
 
   /**

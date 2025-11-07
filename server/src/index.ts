@@ -42,6 +42,10 @@ import {
   shutdownWebSocketServer,
   broadcastIssueUpdate,
   broadcastSpecUpdate,
+  broadcastAgentRequestUpdate,
+  broadcastAgentStatsUpdate,
+  broadcastAgentBatchResponded,
+  broadcastAgentRequestsExpired,
 } from "./services/websocket.js";
 
 // Load environment variables
@@ -95,6 +99,38 @@ async function initialize() {
     // Initialize agent router
     agentRouter = new AgentRouter(db);
     console.log("Agent router initialized");
+
+    // Set up agent router WebSocket broadcasts
+    agentRouter.on("request_queued", (request) => {
+      broadcastAgentRequestUpdate("queued", request);
+      broadcastAgentStatsUpdate(agentRouter.getStats());
+    });
+
+    agentRouter.on("request_presented", (requestId) => {
+      const request = agentRouter.getRequest(requestId);
+      broadcastAgentRequestUpdate("presented", request);
+      broadcastAgentStatsUpdate(agentRouter.getStats());
+    });
+
+    agentRouter.on("request_responded", (request, response) => {
+      broadcastAgentRequestUpdate("responded", { request, response });
+      broadcastAgentStatsUpdate(agentRouter.getStats());
+    });
+
+    agentRouter.on("request_cancelled", (requestId) => {
+      broadcastAgentRequestUpdate("cancelled", { requestId });
+      broadcastAgentStatsUpdate(agentRouter.getStats());
+    });
+
+    agentRouter.on("requests_expired", (count) => {
+      broadcastAgentRequestsExpired(count);
+      broadcastAgentStatsUpdate(agentRouter.getStats());
+    });
+
+    agentRouter.on("batch_responded", (requestIds, response) => {
+      broadcastAgentBatchResponded(requestIds, response);
+      broadcastAgentStatsUpdate(agentRouter.getStats());
+    });
 
     // Initialize execution logs cleanup service
     // TODO: Enable auto-cleanup config via .sudocode/config.json

@@ -20,7 +20,7 @@ interface Client {
  */
 interface ClientMessage {
   type: "subscribe" | "unsubscribe" | "ping";
-  entity_type?: "issue" | "spec" | "all";
+  entity_type?: "issue" | "spec" | "agent-requests" | "all";
   entity_id?: string;
 }
 
@@ -40,6 +40,13 @@ export interface ServerMessage {
     | "feedback_deleted"
     | "relationship_created"
     | "relationship_deleted"
+    | "agent_request_queued"
+    | "agent_request_presented"
+    | "agent_request_responded"
+    | "agent_request_cancelled"
+    | "agent_requests_expired"
+    | "agent_batch_responded"
+    | "agent_stats_updated"
     | "pong"
     | "error"
     | "subscribed"
@@ -515,6 +522,49 @@ export function broadcastRelationshipUpdate(
   websocketManager.broadcastGeneric({
     type: `relationship_${action}` as any,
     data,
+  });
+}
+
+/**
+ * Broadcast agent request updates to subscribed clients
+ */
+export function broadcastAgentRequestUpdate(
+  action: "queued" | "presented" | "responded" | "cancelled",
+  data?: any
+): void {
+  websocketManager.broadcast("agent-requests", "all", {
+    type: `agent_request_${action}` as any,
+    data,
+  });
+}
+
+/**
+ * Broadcast agent request stats updates
+ */
+export function broadcastAgentStatsUpdate(data?: any): void {
+  websocketManager.broadcast("agent-requests", "all", {
+    type: "agent_stats_updated",
+    data,
+  });
+}
+
+/**
+ * Broadcast agent batch responded event
+ */
+export function broadcastAgentBatchResponded(requestIds: string[], response: string): void {
+  websocketManager.broadcast("agent-requests", "all", {
+    type: "agent_batch_responded",
+    data: { requestIds, response },
+  });
+}
+
+/**
+ * Broadcast agent requests expired event
+ */
+export function broadcastAgentRequestsExpired(count: number): void {
+  websocketManager.broadcast("agent-requests", "all", {
+    type: "agent_requests_expired",
+    data: { count },
   });
 }
 
