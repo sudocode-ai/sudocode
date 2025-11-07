@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -24,6 +25,7 @@ import type {
   ExecutionMode,
   CleanupMode,
 } from '@/types/execution'
+import type { VoiceConfig } from '@sudocode-ai/types'
 import { AlertCircle, Info } from 'lucide-react'
 
 interface ExecutionConfigDialogProps {
@@ -71,6 +73,13 @@ export function ExecutionConfigDialog({
 
   const updateConfig = (updates: Partial<ExecutionConfig>) => {
     setConfig({ ...config, ...updates })
+  }
+
+  const updateVoiceConfig = (updates: Partial<VoiceConfig>) => {
+    setConfig({
+      ...config,
+      voice: { ...config.voice, ...updates } as VoiceConfig,
+    })
   }
 
   const handleStart = () => {
@@ -288,6 +297,106 @@ export function ExecutionConfigDialog({
                     }
                     placeholder="Model default"
                   />
+                </div>
+
+                {/* Voice Settings */}
+                <div className="space-y-3 border-t pt-3">
+                  <h4 className="text-sm font-medium">Voice Settings</h4>
+
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="voice-enabled" className="cursor-pointer">
+                      Enable Voice Features
+                    </Label>
+                    <Switch
+                      id="voice-enabled"
+                      checked={config.voice?.enabled ?? false}
+                      onCheckedChange={(enabled) =>
+                        updateVoiceConfig({ enabled, inputEnabled: enabled, outputEnabled: enabled })
+                      }
+                    />
+                  </div>
+
+                  {config.voice?.enabled && (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="voice-input" className="cursor-pointer">
+                          Voice Input (Speech-to-Text)
+                        </Label>
+                        <Switch
+                          id="voice-input"
+                          checked={config.voice?.inputEnabled ?? false}
+                          onCheckedChange={(inputEnabled) => updateVoiceConfig({ inputEnabled })}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="voice-output" className="cursor-pointer">
+                          Voice Output (Text-to-Speech)
+                        </Label>
+                        <Switch
+                          id="voice-output"
+                          checked={config.voice?.outputEnabled ?? false}
+                          onCheckedChange={(outputEnabled) => updateVoiceConfig({ outputEnabled })}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="voice-rate">Speech Rate ({config.voice?.rate ?? 1}x)</Label>
+                        <input
+                          id="voice-rate"
+                          type="range"
+                          min="0.5"
+                          max="2"
+                          step="0.1"
+                          className="w-full"
+                          value={config.voice?.rate ?? 1}
+                          onChange={(e) =>
+                            updateVoiceConfig({ rate: parseFloat(e.target.value) })
+                          }
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="voice-pitch">Speech Pitch ({config.voice?.pitch ?? 1})</Label>
+                        <input
+                          id="voice-pitch"
+                          type="range"
+                          min="0"
+                          max="2"
+                          step="0.1"
+                          className="w-full"
+                          value={config.voice?.pitch ?? 1}
+                          onChange={(e) =>
+                            updateVoiceConfig({ pitch: parseFloat(e.target.value) })
+                          }
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="auto-speak" className="cursor-pointer">
+                          Auto-speak agent messages
+                        </Label>
+                        <Switch
+                          id="auto-speak"
+                          checked={config.voice?.autoSpeak ?? true}
+                          onCheckedChange={(autoSpeak) => updateVoiceConfig({ autoSpeak })}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="interrupt-input" className="cursor-pointer">
+                          Interrupt on user input
+                        </Label>
+                        <Switch
+                          id="interrupt-input"
+                          checked={config.voice?.interruptOnInput ?? true}
+                          onCheckedChange={(interruptOnInput) =>
+                            updateVoiceConfig({ interruptOnInput })
+                          }
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}

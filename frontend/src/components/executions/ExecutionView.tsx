@@ -3,6 +3,7 @@ import { executionsApi } from '@/lib/api'
 import { ExecutionMonitor } from './ExecutionMonitor'
 import { FollowUpDialog } from './FollowUpDialog'
 import { DeleteWorktreeDialog } from './DeleteWorktreeDialog'
+import { VoiceControls } from './VoiceControls'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -388,6 +389,15 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
           </div>
         </div>
       </Card>
+
+      {/* Voice Controls - show for running executions */}
+      {execution.status === 'running' && execution.config?.voice && (
+        <VoiceControls
+          executionId={executionId}
+          initialConfig={execution.config.voice}
+          compact={true}
+        />
+      )}
 
       {/* Execution Monitor - uses SSE for active, logs API for completed */}
       {(execution.status === 'running' ||

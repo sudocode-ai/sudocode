@@ -3,6 +3,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { WebSocketProvider } from '@/contexts/WebSocketContext'
+import { VoiceProvider } from '@/contexts/VoiceContext'
 
 /**
  * Custom render function that includes all providers
@@ -25,7 +26,9 @@ export function renderWithProviders(
       <QueryClientProvider client={queryClient}>
         <WebSocketProvider>
           <ThemeProvider>
-            <BrowserRouter>{children}</BrowserRouter>
+            <VoiceProvider>
+              <BrowserRouter>{children}</BrowserRouter>
+            </VoiceProvider>
           </ThemeProvider>
         </WebSocketProvider>
       </QueryClientProvider>
