@@ -18,6 +18,7 @@ import { getSchedulerConfig } from "./scheduler-config.js";
 import { ExecutionService } from "./execution-service.js";
 import { getExecution, getAllExecutions } from "./executions.js";
 import { updateIssue } from "@sudocode-ai/cli/dist/operations/index.js";
+import { getGroupForIssue } from "./issue-groups.js";
 
 /**
  * Active execution tracking
@@ -26,6 +27,7 @@ interface ActiveExecution {
   executionId: string;
   issueId: string;
   issueTitle: string;
+  groupId?: string; // Track group for coordination
   startedAt: Date;
 }
 
@@ -189,8 +191,9 @@ export class ExecutionScheduler {
    * Algorithm:
    * 1. Get all ready issues (no blockers, status='open')
    * 2. Filter out issues already executing
-   * 3. Sort by priority (0=highest, 4=lowest)
-   * 4. Return highest priority issue
+   * 3. Filter out issues in groups that have active executions
+   * 4. Sort by priority (0=highest, 4=lowest)
+   * 5. Return highest priority issue
    */
   private async selectNextIssue(): Promise<Issue | null> {
     // 1. Get ready issues
@@ -205,15 +208,35 @@ export class ExecutionScheduler {
       Array.from(this.activeExecutions.values()).map((e) => e.issueId)
     );
 
-    const available = readyIssues.filter(
+    const notExecuting = readyIssues.filter(
       (issue) => !activeIssueIds.has(issue.id)
     );
+
+    if (notExecuting.length === 0) {
+      return null;
+    }
+
+    // 3. Filter out issues in groups that have active executions
+    // (only one execution per group at a time to avoid branch conflicts)
+    const activeGroupIds = new Set(
+      Array.from(this.activeExecutions.values())
+        .map((e) => e.groupId)
+        .filter((id): id is string => id !== undefined)
+    );
+
+    const available = notExecuting.filter((issue) => {
+      const group = getGroupForIssue(this.db, issue.id);
+      // Allow if:
+      // - Issue has no group (ungrouped issues execute independently)
+      // - Issue's group is not currently executing
+      return !group || !activeGroupIds.has(group.id);
+    });
 
     if (available.length === 0) {
       return null;
     }
 
-    // 3. Sort by priority (ascending - 0 is highest priority)
+    // 4. Sort by priority (ascending - 0 is highest priority)
     const sorted = available.sort((a, b) => {
       if (a.priority !== b.priority) {
         return a.priority - b.priority;
@@ -233,26 +256,42 @@ export class ExecutionScheduler {
   private async startExecution(issue: Issue): Promise<void> {
     console.log(`[Scheduler] Starting execution for issue ${issue.id}: ${issue.title}`);
 
-    // 1. Mark issue as in_progress
+    // 1. Get group if issue is in one
+    const group = getGroupForIssue(this.db, issue.id);
+
+    // Check if group is paused
+    if (group && group.status === "paused") {
+      console.log(`[Scheduler] Skipping issue ${issue.id} - group ${group.id} is paused`);
+      return;
+    }
+
+    // 2. Mark issue as in_progress
     await updateIssue(this.db, issue.id, {
       status: "in_progress",
     });
 
-    // 2. Create execution
+    // 3. Create execution
+    // If issue is in a group, use group's working branch as base
+    // Otherwise use default base branch
     const executionId = await this.executionService.createExecution(issue.id, {
       mode: "worktree",
-      baseBranch: "main", // TODO: Make configurable
+      baseBranch: group ? group.workingBranch : "main",
+      branchName: group ? group.workingBranch : undefined, // Reuse group branch
     });
 
-    // 3. Track active execution
+    // 4. Track active execution
     this.activeExecutions.set(executionId, {
       executionId,
       issueId: issue.id,
       issueTitle: issue.title,
+      groupId: group?.id,
       startedAt: new Date(),
     });
 
-    console.log(`[Scheduler] Started execution ${executionId} for issue ${issue.id}`);
+    console.log(
+      `[Scheduler] Started execution ${executionId} for issue ${issue.id}` +
+        (group ? ` (group: ${group.name})` : "")
+    );
   }
 
   /**
