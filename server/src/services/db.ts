@@ -15,6 +15,10 @@ import {
   EXECUTION_LOGS_INDEXES,
   AGENT_REQUESTS_TABLE,
   AGENT_REQUESTS_INDEXES,
+  AGENT_PATTERNS_TABLE,
+  AGENT_PATTERNS_INDEXES,
+  AGENT_PATTERN_RESPONSES_TABLE,
+  AGENT_PATTERN_RESPONSES_INDEXES,
 } from "@sudocode-ai/types/schema";
 import { initializeDefaultTemplates } from "./prompt-templates.js";
 
@@ -60,12 +64,16 @@ export function initDatabase(config: DatabaseConfig): Database.Database {
   db.exec(PROMPT_TEMPLATES_TABLE);
   db.exec(EXECUTION_LOGS_TABLE);
   db.exec(AGENT_REQUESTS_TABLE);
+  db.exec(AGENT_PATTERNS_TABLE);
+  db.exec(AGENT_PATTERN_RESPONSES_TABLE);
 
   // Create indexes
   db.exec(EXECUTIONS_INDEXES);
   db.exec(PROMPT_TEMPLATES_INDEXES);
   db.exec(EXECUTION_LOGS_INDEXES);
   db.exec(AGENT_REQUESTS_INDEXES);
+  db.exec(AGENT_PATTERNS_INDEXES);
+  db.exec(AGENT_PATTERN_RESPONSES_INDEXES);
 
   // Initialize default prompt templates
   initializeDefaultTemplates(db);

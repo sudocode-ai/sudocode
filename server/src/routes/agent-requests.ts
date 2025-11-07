@@ -385,5 +385,237 @@ export function createAgentRequestsRouter(
     }
   );
 
+  /**
+   * Pattern Management Endpoints
+   */
+
+  /**
+   * GET /api/agent-requests/patterns
+   *
+   * Get all learned patterns
+   */
+  router.get("/agent-requests/patterns", async (req: Request, res: Response) => {
+    try {
+      const { autoResponseOnly, orderBy, limit } = req.query;
+
+      const patterns = routerService.getPatterns({
+        autoResponseOnly: autoResponseOnly === "true",
+        orderBy: orderBy as any,
+        limit: limit ? parseInt(limit as string) : undefined,
+      });
+
+      res.json({
+        success: true,
+        data: patterns,
+      });
+    } catch (error) {
+      console.error("[API Route] ERROR: Failed to get patterns:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to get patterns",
+      });
+    }
+  });
+
+  /**
+   * GET /api/agent-requests/patterns/:patternId
+   *
+   * Get a specific pattern
+   */
+  router.get(
+    "/agent-requests/patterns/:patternId",
+    async (req: Request, res: Response) => {
+      try {
+        const { patternId } = req.params;
+        const pattern = await routerService.getPattern(patternId);
+
+        if (!pattern) {
+          res.status(404).json({
+            success: false,
+            data: null,
+            message: "Pattern not found",
+          });
+          return;
+        }
+
+        res.json({
+          success: true,
+          data: pattern,
+        });
+      } catch (error) {
+        console.error("[API Route] ERROR: Failed to get pattern:", error);
+        res.status(500).json({
+          success: false,
+          data: null,
+          error_data: error instanceof Error ? error.message : String(error),
+          message: "Failed to get pattern",
+        });
+      }
+    }
+  );
+
+  /**
+   * PUT /api/agent-requests/patterns/:patternId/auto-response
+   *
+   * Toggle auto-response for a pattern
+   */
+  router.put(
+    "/agent-requests/patterns/:patternId/auto-response",
+    async (req: Request, res: Response) => {
+      try {
+        const { patternId } = req.params;
+        const { enabled } = req.body;
+
+        if (typeof enabled !== "boolean") {
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: "enabled must be a boolean",
+          });
+          return;
+        }
+
+        await routerService.setPatternAutoResponse(patternId, enabled);
+
+        res.json({
+          success: true,
+          data: { patternId, enabled },
+        });
+      } catch (error) {
+        console.error(
+          "[API Route] ERROR: Failed to update pattern auto-response:",
+          error
+        );
+        res.status(500).json({
+          success: false,
+          data: null,
+          error_data: error instanceof Error ? error.message : String(error),
+          message: "Failed to update pattern auto-response",
+        });
+      }
+    }
+  );
+
+  /**
+   * DELETE /api/agent-requests/patterns/:patternId
+   *
+   * Delete a pattern
+   */
+  router.delete(
+    "/agent-requests/patterns/:patternId",
+    async (req: Request, res: Response) => {
+      try {
+        const { patternId } = req.params;
+        await routerService.deletePattern(patternId);
+
+        res.json({
+          success: true,
+          data: { patternId },
+        });
+      } catch (error) {
+        console.error("[API Route] ERROR: Failed to delete pattern:", error);
+        res.status(500).json({
+          success: false,
+          data: null,
+          error_data: error instanceof Error ? error.message : String(error),
+          message: "Failed to delete pattern",
+        });
+      }
+    }
+  );
+
+  /**
+   * GET /api/agent-requests/auto-response/config
+   *
+   * Get auto-response configuration
+   */
+  router.get(
+    "/agent-requests/auto-response/config",
+    async (req: Request, res: Response) => {
+      try {
+        const config = routerService.getAutoResponseConfig();
+
+        res.json({
+          success: true,
+          data: config,
+        });
+      } catch (error) {
+        console.error(
+          "[API Route] ERROR: Failed to get auto-response config:",
+          error
+        );
+        res.status(500).json({
+          success: false,
+          data: null,
+          error_data: error instanceof Error ? error.message : String(error),
+          message: "Failed to get auto-response config",
+        });
+      }
+    }
+  );
+
+  /**
+   * PUT /api/agent-requests/auto-response/config
+   *
+   * Update auto-response configuration
+   */
+  router.put(
+    "/agent-requests/auto-response/config",
+    async (req: Request, res: Response) => {
+      try {
+        const config = req.body;
+        routerService.updateAutoResponseConfig(config);
+
+        res.json({
+          success: true,
+          data: config,
+        });
+      } catch (error) {
+        console.error(
+          "[API Route] ERROR: Failed to update auto-response config:",
+          error
+        );
+        res.status(500).json({
+          success: false,
+          data: null,
+          error_data: error instanceof Error ? error.message : String(error),
+          message: "Failed to update auto-response config",
+        });
+      }
+    }
+  );
+
+  /**
+   * GET /api/agent-requests/auto-response/stats
+   *
+   * Get auto-response statistics
+   */
+  router.get(
+    "/agent-requests/auto-response/stats",
+    async (req: Request, res: Response) => {
+      try {
+        const stats = await routerService.getAutoResponseStats();
+
+        res.json({
+          success: true,
+          data: stats,
+        });
+      } catch (error) {
+        console.error(
+          "[API Route] ERROR: Failed to get auto-response stats:",
+          error
+        );
+        res.status(500).json({
+          success: false,
+          data: null,
+          error_data: error instanceof Error ? error.message : String(error),
+          message: "Failed to get auto-response stats",
+        });
+      }
+    }
+  );
+
   return router;
 }

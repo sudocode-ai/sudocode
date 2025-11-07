@@ -19,17 +19,26 @@ import type {
 } from "./agent-router-types.js";
 import { DEFAULT_ROUTER_CONFIG } from "./agent-router-types.js";
 import { BatchingEngine, type RequestBatch } from "./batching-engine.js";
+import { PatternMatcher, type Pattern } from "./pattern-matcher.js";
+import { AutoResponder, type AutoResponseConfig } from "./auto-responder.js";
 
 // Re-export for external use
 export type { RequestBatch } from "./batching-engine.js";
+export type { Pattern } from "./pattern-matcher.js";
 
 export class AgentRouter extends EventEmitter {
   private db: Database.Database;
   private config: AgentRouterConfig;
   private cleanupInterval?: NodeJS.Timeout;
   private batchingEngine: BatchingEngine;
+  private patternMatcher: PatternMatcher;
+  private autoResponder: AutoResponder;
 
-  constructor(db: Database.Database, config?: Partial<AgentRouterConfig>) {
+  constructor(
+    db: Database.Database,
+    config?: Partial<AgentRouterConfig>,
+    autoResponseConfig?: Partial<AutoResponseConfig>
+  ) {
     super();
     this.db = db;
     this.config = { ...DEFAULT_ROUTER_CONFIG, ...config };
@@ -37,6 +46,15 @@ export class AgentRouter extends EventEmitter {
       similarityThreshold: 0.7,
       minBatchSize: 2,
       batchTimeWindowMs: 30000, // 30 seconds
+    });
+
+    // Initialize pattern learning
+    this.patternMatcher = new PatternMatcher(db);
+    this.autoResponder = new AutoResponder(this.patternMatcher, autoResponseConfig);
+
+    // Forward auto-responder events
+    this.autoResponder.on("auto_response", (data) => {
+      this.emit("auto_response", data);
     });
 
     // Start cleanup interval for expired requests
@@ -137,7 +155,29 @@ export class AgentRouter extends EventEmitter {
     // Emit event for real-time updates
     this.emit('request_queued', request);
 
+    // Try auto-response (async, non-blocking)
+    this.tryAutoResponse(request).catch((error) => {
+      console.error(`Failed to auto-respond to request ${request.id}:`, error);
+    });
+
     return request;
+  }
+
+  /**
+   * Try to auto-respond to a request based on learned patterns
+   */
+  private async tryAutoResponse(request: AgentRequest): Promise<void> {
+    const autoResponse = await this.autoResponder.tryAutoRespond(request);
+
+    if (autoResponse) {
+      // Auto-respond
+      await this.respondToRequest(
+        request.id,
+        autoResponse.value,
+        true,
+        autoResponse.patternId
+      );
+    }
   }
 
   /**
@@ -244,6 +284,13 @@ export class AgentRouter extends EventEmitter {
       auto,
       patternId,
     };
+
+    // Learn from response (if not auto-generated)
+    if (!auto) {
+      this.patternMatcher.learn(request, userResponse).catch((error) => {
+        console.error(`Failed to learn from response ${requestId}:`, error);
+      });
+    }
 
     // Emit event
     this.emit('request_responded', request, userResponse);
@@ -439,6 +486,64 @@ export class AgentRouter extends EventEmitter {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = undefined;
     }
+  }
+
+  /**
+   * Pattern Learning API
+   */
+
+  /**
+   * Get all learned patterns
+   */
+  getPatterns(options?: {
+    autoResponseOnly?: boolean;
+    orderBy?: "confidence" | "occurrences" | "recent";
+    limit?: number;
+  }): Pattern[] {
+    return this.patternMatcher.getAllPatterns(options);
+  }
+
+  /**
+   * Get a specific pattern
+   */
+  async getPattern(patternId: string): Promise<Pattern | null> {
+    const patterns = this.patternMatcher.getAllPatterns();
+    return patterns.find((p) => p.id === patternId) || null;
+  }
+
+  /**
+   * Toggle auto-response for a pattern
+   */
+  async setPatternAutoResponse(patternId: string, enabled: boolean): Promise<void> {
+    await this.patternMatcher.setAutoResponse(patternId, enabled);
+  }
+
+  /**
+   * Delete a pattern
+   */
+  async deletePattern(patternId: string): Promise<void> {
+    await this.patternMatcher.deletePattern(patternId);
+  }
+
+  /**
+   * Get auto-response configuration
+   */
+  getAutoResponseConfig() {
+    return this.autoResponder.getConfig();
+  }
+
+  /**
+   * Update auto-response configuration
+   */
+  updateAutoResponseConfig(config: Partial<AutoResponseConfig>): void {
+    this.autoResponder.updateConfig(config);
+  }
+
+  /**
+   * Get auto-response statistics
+   */
+  async getAutoResponseStats() {
+    return await this.autoResponder.getStats();
   }
 
   /**

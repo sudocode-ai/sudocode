@@ -260,6 +260,46 @@ CREATE TABLE IF NOT EXISTS agent_requests (
 );
 `;
 
+// Agent patterns table - stores learned patterns from user responses
+export const AGENT_PATTERNS_TABLE = `
+CREATE TABLE IF NOT EXISTS agent_patterns (
+    id TEXT PRIMARY KEY,
+    signature TEXT NOT NULL UNIQUE,
+
+    -- Pattern characteristics
+    request_type TEXT NOT NULL,
+    keywords TEXT NOT NULL,
+    context_patterns TEXT,
+
+    -- Statistics
+    total_occurrences INTEGER DEFAULT 0,
+    confidence_score REAL DEFAULT 0,
+    last_seen DATETIME NOT NULL,
+
+    -- Auto-response
+    suggested_response TEXT,
+    auto_response_enabled INTEGER DEFAULT 0 CHECK(auto_response_enabled IN (0, 1)),
+
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+`;
+
+// Pattern responses table - historical responses for each pattern
+export const AGENT_PATTERN_RESPONSES_TABLE = `
+CREATE TABLE IF NOT EXISTS agent_pattern_responses (
+    id TEXT PRIMARY KEY,
+    pattern_id TEXT NOT NULL,
+
+    response_value TEXT NOT NULL,
+    timestamp DATETIME NOT NULL,
+    user_confidence TEXT CHECK(user_confidence IN ('certain', 'uncertain')),
+    was_overridden INTEGER DEFAULT 0 CHECK(was_overridden IN (0, 1)),
+
+    FOREIGN KEY (pattern_id) REFERENCES agent_patterns(id) ON DELETE CASCADE
+);
+`;
+
 /**
  * Index definitions
  */
@@ -353,6 +393,19 @@ CREATE INDEX IF NOT EXISTS idx_agent_requests_created_at ON agent_requests(creat
 CREATE INDEX IF NOT EXISTS idx_agent_requests_priority ON agent_requests(issue_priority, urgency);
 `;
 
+export const AGENT_PATTERNS_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_agent_patterns_signature ON agent_patterns(signature);
+CREATE INDEX IF NOT EXISTS idx_agent_patterns_confidence ON agent_patterns(confidence_score);
+CREATE INDEX IF NOT EXISTS idx_agent_patterns_type ON agent_patterns(request_type);
+CREATE INDEX IF NOT EXISTS idx_agent_patterns_last_seen ON agent_patterns(last_seen);
+CREATE INDEX IF NOT EXISTS idx_agent_patterns_auto_response ON agent_patterns(auto_response_enabled);
+`;
+
+export const AGENT_PATTERN_RESPONSES_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_pattern_responses_pattern ON agent_pattern_responses(pattern_id);
+CREATE INDEX IF NOT EXISTS idx_pattern_responses_timestamp ON agent_pattern_responses(timestamp);
+`;
+
 /**
  * View definitions
  */
@@ -412,6 +465,8 @@ export const ALL_TABLES = [
   PROMPT_TEMPLATES_TABLE,
   EXECUTION_LOGS_TABLE,
   AGENT_REQUESTS_TABLE,
+  AGENT_PATTERNS_TABLE,
+  AGENT_PATTERN_RESPONSES_TABLE,
 ];
 
 export const ALL_INDEXES = [
@@ -425,6 +480,8 @@ export const ALL_INDEXES = [
   PROMPT_TEMPLATES_INDEXES,
   EXECUTION_LOGS_INDEXES,
   AGENT_REQUESTS_INDEXES,
+  AGENT_PATTERNS_INDEXES,
+  AGENT_PATTERN_RESPONSES_INDEXES,
 ];
 
 export const ALL_VIEWS = [READY_ISSUES_VIEW, BLOCKED_ISSUES_VIEW];
