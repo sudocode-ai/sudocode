@@ -57,6 +57,16 @@ import {
   handleAgentDelete,
   handleAgentInstallDefaults,
 } from "./cli/agent-commands.js";
+import {
+  handleHookList,
+  handleHookAdd,
+  handleHookRemove,
+  handleHookTest,
+} from "./cli/hook-commands.js";
+import {
+  handleAgentExport,
+  handleAgentExportAll,
+} from "./cli/export-commands.js";
 import { getUpdateNotification } from "./update-checker.js";
 import { VERSION } from "./version.js";
 
@@ -566,6 +576,74 @@ agent
   .option("--presets <presets>", "Comma-separated list of specific presets to install")
   .action(async (options) => {
     await handleAgentInstallDefaults(options);
+  });
+
+agent
+  .command("export <preset-id>")
+  .description("Export agent preset to another platform format")
+  .requiredOption("-p, --platform <platform>", "Target platform (claude-code, cursor, gemini-cli, mcp)")
+  .option("-o, --output <path>", "Output file path")
+  .option("--overwrite", "Overwrite existing file")
+  .action(async (presetId, options) => {
+    await handleAgentExport(presetId, options);
+  });
+
+agent
+  .command("export-all")
+  .description("Export all agent presets to another platform format")
+  .requiredOption("-p, --platform <platform>", "Target platform (claude-code, cursor, gemini-cli, mcp)")
+  .option("-o, --output <dir>", "Output directory")
+  .option("--overwrite", "Overwrite existing files")
+  .action(async (options) => {
+    await handleAgentExportAll(options);
+  });
+
+// ============================================================================
+// HOOK COMMANDS
+// ============================================================================
+
+const hook = program
+  .command("hook")
+  .alias("hooks")
+  .description("Manage execution hooks");
+
+hook
+  .command("list")
+  .description("List all configured hooks")
+  .option("--event <event>", "Filter by event type")
+  .action(async (options) => {
+    await handleHookList(options);
+  });
+
+hook
+  .command("add <hook-id>")
+  .description("Add a new hook")
+  .requiredOption("--event <event>", "Hook event (before_execution, after_execution, on_error, etc.)")
+  .requiredOption("--type <type>", "Hook type (command or plugin)")
+  .requiredOption("--command <command>", "Command path or plugin name")
+  .option("--matcher <pattern>", "Matcher pattern")
+  .option("--matcher-type <type>", "Matcher type (exact, regex, wildcard)")
+  .option("--timeout <ms>", "Timeout in milliseconds")
+  .option("--required", "Mark hook as required")
+  .option("--on-failure <behavior>", "Failure behavior (block, warn, ignore)")
+  .action(async (hookId, options) => {
+    await handleHookAdd(hookId, options);
+  });
+
+hook
+  .command("remove <hook-id>")
+  .description("Remove a hook")
+  .action(async (hookId, options) => {
+    await handleHookRemove(hookId, options);
+  });
+
+hook
+  .command("test <hook-id>")
+  .description("Test a hook execution")
+  .option("--preset-id <id>", "Test with specific preset ID")
+  .option("--issue-id <id>", "Test with specific issue ID")
+  .action(async (hookId, options) => {
+    await handleHookTest(hookId, options);
   });
 
 // ============================================================================
