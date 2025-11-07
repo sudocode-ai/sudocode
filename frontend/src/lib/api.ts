@@ -5,6 +5,8 @@ import type {
   Spec,
   Relationship,
   IssueFeedback,
+  IssueGroup,
+  IssueGroupWithStats,
   CreateIssueRequest,
   UpdateIssueRequest,
   CreateSpecRequest,
@@ -13,6 +15,9 @@ import type {
   DeleteRelationshipRequest,
   CreateFeedbackRequest,
   UpdateFeedbackRequest,
+  CreateIssueGroupRequest,
+  UpdateIssueGroupRequest,
+  AddIssueToGroupRequest,
 } from '@/types/api'
 import type {
   Execution,
@@ -154,6 +159,51 @@ export const executionsApi = {
 
   // Delete worktree for execution
   deleteWorktree: (executionId: string) => del(`/executions/${executionId}/worktree`),
+}
+
+/**
+ * Issue Groups API
+ */
+export const issueGroupsApi = {
+  // Get all issue groups
+  getAll: (status?: 'active' | 'paused' | 'completed') => {
+    const params = status ? `?status=${status}` : ''
+    return get<IssueGroup[]>(`/issue-groups${params}`)
+  },
+
+  // Get issue group by ID with issues and stats
+  getById: (id: string) => get<IssueGroupWithStats>(`/issue-groups/${id}`),
+
+  // Create new issue group
+  create: (data: CreateIssueGroupRequest) => post<IssueGroup>('/issue-groups', data),
+
+  // Update issue group
+  update: (id: string, data: UpdateIssueGroupRequest) =>
+    put<IssueGroup>(`/issue-groups/${id}`, data),
+
+  // Delete issue group
+  delete: (id: string) => del(`/issue-groups/${id}`),
+
+  // Pause issue group
+  pause: (id: string, reason?: string) =>
+    post<IssueGroup>(`/issue-groups/${id}/pause`, { reason }),
+
+  // Resume issue group
+  resume: (id: string) => post<IssueGroup>(`/issue-groups/${id}/resume`),
+
+  // Complete issue group
+  complete: (id: string) => post<IssueGroup>(`/issue-groups/${id}/complete`),
+
+  // Add issue to group
+  addIssue: (groupId: string, data: AddIssueToGroupRequest) =>
+    post<Issue>(`/issue-groups/${groupId}/members`, data),
+
+  // Remove issue from group
+  removeIssue: (groupId: string, issueId: string) =>
+    del(`/issue-groups/${groupId}/members/${issueId}`),
+
+  // Get issues in group
+  getIssues: (groupId: string) => get<Issue[]>(`/issue-groups/${groupId}/members`),
 }
 
 export default api

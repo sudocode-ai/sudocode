@@ -10,6 +10,8 @@ import SpecDetailPage from '@/pages/SpecDetailPage'
 import ArchivedIssuesPage from '@/pages/ArchivedIssuesPage'
 import ArchivedSpecsPage from '@/pages/ArchivedSpecsPage'
 import ExecutionDetailPage from '@/pages/ExecutionDetailPage'
+import IssueGroupsPage from '@/pages/IssueGroupsPage'
+import IssueGroupDetailPage from '@/pages/IssueGroupDetailPage'
 
 // Configure TanStack Query
 const queryClient = new QueryClient({
@@ -38,6 +40,8 @@ function App() {
                 <Route path="specs" element={<SpecsPage />} />
                 <Route path="specs/archived" element={<ArchivedSpecsPage />} />
                 <Route path="specs/:id" element={<SpecDetailPage />} />
+                <Route path="groups" element={<IssueGroupsPage />} />
+                <Route path="groups/:id" element={<IssueGroupDetailPage />} />
                 <Route path="executions/:id" element={<ExecutionDetailPage />} />
               </Route>
             </Routes>

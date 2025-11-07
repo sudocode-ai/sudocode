@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { FileText, ListTodo, X, Settings, HelpCircle } from 'lucide-react'
+import { FileText, ListTodo, X, Settings, HelpCircle, FolderKanban } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { SettingsDialog } from './SettingsDialog'
@@ -26,6 +26,11 @@ export default function Sidebar({ open, collapsed, onClose }: SidebarProps) {
       path: '/issues',
       label: 'Issues',
       icon: ListTodo,
+    },
+    {
+      path: '/groups',
+      label: 'Groups',
+      icon: FolderKanban,
     },
     {
       path: '/specs',

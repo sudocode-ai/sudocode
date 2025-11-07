@@ -8,6 +8,8 @@ import type {
   RelationshipType,
   FeedbackType,
   FeedbackAnchor,
+  IssueGroup,
+  IssueGroupMember,
 } from '@sudocode-ai/types'
 
 /**
@@ -101,6 +103,42 @@ export interface UpdateFeedbackRequest {
 }
 
 /**
+ * Issue Group API types
+ */
+export interface CreateIssueGroupRequest {
+  name: string
+  description?: string
+  baseBranch: string
+  workingBranch: string
+  color?: string
+}
+
+export interface UpdateIssueGroupRequest {
+  name?: string
+  description?: string
+  baseBranch?: string
+  workingBranch?: string
+  color?: string
+}
+
+export interface IssueGroupWithStats extends IssueGroup {
+  issues: Issue[]
+  stats: {
+    totalIssues: number
+    openIssues: number
+    inProgressIssues: number
+    completedIssues: number
+    blockedIssues: number
+    needsReviewIssues: number
+  }
+}
+
+export interface AddIssueToGroupRequest {
+  issueId: string
+  position?: number
+}
+
+/**
  * WebSocket message types
  */
 export interface WebSocketMessage {
@@ -139,4 +177,6 @@ export type {
   RelationshipType,
   FeedbackType,
   FeedbackAnchor,
+  IssueGroup,
+  IssueGroupMember,
 }
