@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS executions (
     -- Process information (legacy + new)
     agent_type TEXT CHECK(agent_type IN ('claude-code', 'codex')),
     session_id TEXT,
+    managed_session_id TEXT,
     workflow_execution_id TEXT,
 
     -- Git/branch information
@@ -185,7 +186,8 @@ CREATE TABLE IF NOT EXISTS executions (
 
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL,
     FOREIGN KEY (issue_uuid) REFERENCES issues(uuid) ON DELETE SET NULL,
-    FOREIGN KEY (parent_execution_id) REFERENCES executions(id) ON DELETE SET NULL
+    FOREIGN KEY (parent_execution_id) REFERENCES executions(id) ON DELETE SET NULL,
+    FOREIGN KEY (managed_session_id) REFERENCES sessions(id) ON DELETE SET NULL
 );
 `;
 
@@ -215,6 +217,22 @@ CREATE TABLE IF NOT EXISTS execution_logs (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE
+);
+`;
+
+// Sessions table - first-class session entities with friendly names
+export const SESSIONS_TABLE = `
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    uuid TEXT NOT NULL UNIQUE,
+    session_id TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL CHECK(length(title) <= 500),
+    description TEXT,
+    agent_type TEXT NOT NULL CHECK(agent_type IN ('claude-code', 'codex')),
+    archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0, 1)),
+    archived_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 `;
 
@@ -284,6 +302,7 @@ CREATE INDEX IF NOT EXISTS idx_executions_issue_id ON executions(issue_id);
 CREATE INDEX IF NOT EXISTS idx_executions_issue_uuid ON executions(issue_uuid);
 CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
 CREATE INDEX IF NOT EXISTS idx_executions_session_id ON executions(session_id);
+CREATE INDEX IF NOT EXISTS idx_executions_managed_session_id ON executions(managed_session_id);
 CREATE INDEX IF NOT EXISTS idx_executions_parent ON executions(parent_execution_id);
 CREATE INDEX IF NOT EXISTS idx_executions_created_at ON executions(created_at);
 CREATE INDEX IF NOT EXISTS idx_executions_workflow ON executions(workflow_execution_id);
@@ -300,6 +319,15 @@ export const EXECUTION_LOGS_INDEXES = `
 CREATE INDEX IF NOT EXISTS idx_execution_logs_updated_at ON execution_logs(updated_at);
 CREATE INDEX IF NOT EXISTS idx_execution_logs_byte_size ON execution_logs(byte_size);
 CREATE INDEX IF NOT EXISTS idx_execution_logs_line_count ON execution_logs(line_count);
+`;
+
+export const SESSIONS_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_sessions_uuid ON sessions(uuid);
+CREATE INDEX IF NOT EXISTS idx_sessions_session_id ON sessions(session_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_agent_type ON sessions(agent_type);
+CREATE INDEX IF NOT EXISTS idx_sessions_archived ON sessions(archived);
+CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON sessions(created_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at);
 `;
 
 /**
@@ -360,6 +388,7 @@ export const ALL_TABLES = [
   EXECUTIONS_TABLE,
   PROMPT_TEMPLATES_TABLE,
   EXECUTION_LOGS_TABLE,
+  SESSIONS_TABLE,
 ];
 
 export const ALL_INDEXES = [
@@ -372,6 +401,7 @@ export const ALL_INDEXES = [
   EXECUTIONS_INDEXES,
   PROMPT_TEMPLATES_INDEXES,
   EXECUTION_LOGS_INDEXES,
+  SESSIONS_INDEXES,
 ];
 
 export const ALL_VIEWS = [READY_ISSUES_VIEW, BLOCKED_ISSUES_VIEW];

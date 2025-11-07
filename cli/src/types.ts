@@ -8,6 +8,7 @@
 export type {
   Spec,
   Issue,
+  Session,
   Relationship,
   EntityType,
   RelationshipType,

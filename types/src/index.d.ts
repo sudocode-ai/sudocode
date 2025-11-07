@@ -40,6 +40,19 @@ export type IssueStatus =
   | "needs_review"
   | "closed";
 
+export interface Session {
+  id: string;
+  uuid: string;
+  session_id: string;
+  title: string;
+  description?: string;
+  agent_type: AgentType;
+  archived?: boolean;
+  archived_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Relationship {
   from_id: string;
   from_uuid: string;
@@ -52,7 +65,7 @@ export interface Relationship {
   metadata?: string;
 }
 
-export type EntityType = "spec" | "issue";
+export type EntityType = "spec" | "issue" | "session";
 
 export type RelationshipType =
   | "blocks"
@@ -238,6 +251,7 @@ export interface Execution {
   // Process information
   agent_type: AgentType;
   session_id: string | null;
+  managed_session_id: string | null;
   workflow_execution_id: string | null;
 
   // Git/branch information

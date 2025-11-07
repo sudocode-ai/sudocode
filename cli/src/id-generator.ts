@@ -212,6 +212,51 @@ function getNextIssueNumber(db: Database.Database): number {
 }
 
 /**
+ * Get next session number from database
+ * Strategy:
+ * 1. Find the latest session by created_at
+ * 2. Extract number from its ID
+ * 3. Increment by 1
+ * 4. Fallback to count + 1 if extraction fails
+ */
+function getNextSessionNumber(db: Database.Database): number {
+  const stmt = db.prepare(`
+    SELECT id FROM sessions
+    ORDER BY created_at DESC
+    LIMIT 1
+  `);
+
+  const latest = stmt.get() as { id: string } | undefined;
+
+  if (latest) {
+    const match = latest.id.match(/(\d+)$/);
+    if (match) {
+      return parseInt(match[1], 10) + 1;
+    }
+  }
+
+  // Fallback: count + 1
+  const countStmt = db.prepare(`SELECT COUNT(*) as count FROM sessions`);
+  const result = countStmt.get() as { count: number };
+  return result.count + 1;
+}
+
+/**
+ * Generate session ID and UUID
+ * Returns sequential ID in format SESS-001
+ */
+export function generateSessionId(
+  db: Database.Database,
+  outputDir: string
+): { id: string; uuid: string } {
+  const uuid = crypto.randomUUID();
+  const number = getNextSessionNumber(db);
+  const id = `SESS-${String(number).padStart(3, "0")}`;
+
+  return { id, uuid };
+}
+
+/**
  * Generate a UUID v4
  */
 export function generateUUID(): string {

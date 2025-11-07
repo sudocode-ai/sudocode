@@ -7,6 +7,7 @@ import * as fs from "fs";
 import type Database from "better-sqlite3";
 import { getSpec } from "./operations/specs.js";
 import { getIssue } from "./operations/issues.js";
+import { getSession } from "./operations/sessions.js";
 import { createFeedbackAnchor } from "./operations/feedback-anchors.js";
 import type { LocationAnchor } from "@sudocode-ai/types";
 
@@ -31,17 +32,17 @@ export interface ParsedMarkdown<T extends object = Record<string, any>> {
 
 export interface CrossReference {
   /**
-   * The full matched text (e.g., "[[spec-001]]" or "[[@issue-042]]")
+   * The full matched text (e.g., "[[spec-001]]", "[[@issue-042]]", or "[[SESS-001]]")
    */
   match: string;
   /**
-   * The entity ID (e.g., "spec-001" or "issue-042")
+   * The entity ID (e.g., "spec-001", "issue-042", or "SESS-001")
    */
   id: string;
   /**
-   * Entity type (spec or issue)
+   * Entity type (spec, issue, or session)
    */
-  type: "spec" | "issue";
+  type: "spec" | "issue" | "session";
   /**
    * Position in content
    */
@@ -130,6 +131,7 @@ function feedbackAnchorToLocationAnchor(
  * Extract cross-references from markdown content
  * Supports formats:
  * - [[i-x7k9]] or [[s-14sh]] - hash-based entity reference
+ * - [[SESS-001]] - session reference
  * - [[@i-x7k9]] - entity reference with @ prefix (for clarity)
  * - [[i-x7k9|Display Text]] - with custom display text
  * - [[i-x7k9]]{ blocks } - with relationship type (shorthand)
@@ -139,7 +141,7 @@ function feedbackAnchorToLocationAnchor(
  * If db is provided, validates references against the database and determines entity type.
  * Only returns references to entities that actually exist.
  *
- * If db is not provided, determines entity type from hash-based ID prefix (i- or s-).
+ * If db is not provided, determines entity type from hash-based ID prefix (i- or s-) or SESS- prefix.
  */
 export function extractCrossReferences(
   content: string,
@@ -148,13 +150,14 @@ export function extractCrossReferences(
   const references: CrossReference[] = [];
 
   // Pattern: [[optional-@][entity-id][|display-text]]optional-metadata
-  // Supports hash-based IDs only:
+  // Supports hash-based IDs and session IDs:
   // - [[i-x7k9]] or [[s-14sh]]
+  // - [[SESS-001]]
   // - [[i-x7k9|Display Text]]
   // - [[i-x7k9]]{ blocks }
   // - [[i-x7k9]]{ type: depends-on }
   const refPattern =
-    /\[\[(@)?([is]-[0-9a-z]{4,8})(?:\|([^\]]+))?\]\](?:\{\s*(?:type:\s*)?([a-z-]+)\s*\})?/gi;
+    /\[\[(@)?([is]-[0-9a-z]{4,8}|SESS-\d{3,})(?:\|([^\]]+))?\]\](?:\{\s*(?:type:\s*)?([a-z-]+)\s*\})?/gi;
 
   let match: RegExpExecArray | null;
 
@@ -180,7 +183,7 @@ export function extractCrossReferences(
     }
 
     if (db) {
-      let entityType: "spec" | "issue" | null = null;
+      let entityType: "spec" | "issue" | "session" | null = null;
       try {
         const spec = getSpec(db, id);
         if (spec) {
@@ -197,6 +200,15 @@ export function extractCrossReferences(
         } catch (error) {}
       }
 
+      if (!entityType) {
+        try {
+          const session = getSession(db, id);
+          if (session) {
+            entityType = "session";
+          }
+        } catch (error) {}
+      }
+
       if (entityType) {
         references.push({
           match: match[0],
@@ -209,9 +221,20 @@ export function extractCrossReferences(
         });
       }
     } else {
-      // Determine type from hash-based ID prefix
+      // Determine type from hash-based ID prefix or SESS prefix
       // Hash IDs always use i- for issues, s- for specs
-      const type: "spec" | "issue" = id.startsWith("i-") ? "issue" : "spec";
+      // Session IDs use SESS- prefix
+      let type: "spec" | "issue" | "session";
+      if (id.startsWith("i-")) {
+        type = "issue";
+      } else if (id.startsWith("s-")) {
+        type = "spec";
+      } else if (id.startsWith("SESS-")) {
+        type = "session";
+      } else {
+        // Fallback (should not happen with current regex)
+        type = "spec";
+      }
 
       references.push({
         match: match[0],

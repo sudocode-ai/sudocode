@@ -4,6 +4,7 @@
 
 export * from './specs.js';
 export * from './issues.js';
+export * from './sessions.js';
 export * from './relationships.js';
 export * from './tags.js';
 export * from './events.js';
