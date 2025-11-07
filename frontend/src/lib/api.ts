@@ -20,6 +20,7 @@ import type {
   PrepareExecutionRequest,
   CreateExecutionRequest,
   CreateFollowUpRequest,
+  ResumeSessionRequest,
 } from '@/types/execution'
 
 // Create axios instance
@@ -144,6 +145,10 @@ export const executionsApi = {
   // Create follow-up execution
   createFollowUp: (executionId: string, request: CreateFollowUpRequest) =>
     post<Execution>(`/executions/${executionId}/follow-up`, request),
+
+  // Resume a previous Claude Code session
+  resumeSession: (executionId: string, request: ResumeSessionRequest) =>
+    post<Execution>(`/executions/${executionId}/resume`, request),
 
   // Cancel execution
   cancel: (executionId: string) => del(`/executions/${executionId}`),

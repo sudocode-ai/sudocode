@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { executionsApi } from '@/lib/api'
 import { ExecutionMonitor } from './ExecutionMonitor'
 import { FollowUpDialog } from './FollowUpDialog'
+import { ResumeSessionDialog } from './ResumeSessionDialog'
 import { DeleteWorktreeDialog } from './DeleteWorktreeDialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -17,6 +18,7 @@ import {
   Trash2,
   Clock,
   PauseCircle,
+  Play,
 } from 'lucide-react'
 
 export interface ExecutionViewProps {
@@ -42,6 +44,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showFollowUp, setShowFollowUp] = useState(false)
+  const [showResumeSession, setShowResumeSession] = useState(false)
   const [showDeleteWorktree, setShowDeleteWorktree] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [deletingWorktree, setDeletingWorktree] = useState(false)
@@ -124,6 +127,16 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
   const handleFollowUpSubmit = async (feedback: string) => {
     const newExecution = await executionsApi.createFollowUp(executionId, { feedback })
     setShowFollowUp(false)
+
+    if (onFollowUpCreated) {
+      onFollowUpCreated(newExecution.id)
+    }
+  }
+
+  // Handle resume session submission
+  const handleResumeSessionSubmit = async (prompt: string) => {
+    const newExecution = await executionsApi.resumeSession(executionId, { prompt })
+    setShowResumeSession(false)
 
     if (onFollowUpCreated) {
       onFollowUpCreated(newExecution.id)
@@ -251,6 +264,11 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
     execution.status === 'completed' ||
     execution.status === 'failed' ||
     execution.status === 'stopped'
+  const canResumeSession =
+    (execution.status === 'completed' ||
+      execution.status === 'failed' ||
+      execution.status === 'stopped') &&
+    execution.session_id
   const canDeleteWorktree = execution.worktree_path && worktreeExists
 
   return (
@@ -380,6 +398,12 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                 Follow Up
               </Button>
             )}
+            {canResumeSession && (
+              <Button variant="default" size="sm" onClick={() => setShowResumeSession(true)}>
+                <Play className="mr-2 h-4 w-4" />
+                Continue Session
+              </Button>
+            )}
             {canDeleteWorktree && (
               <Button
                 variant="outline"
@@ -417,6 +441,14 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
         open={showFollowUp}
         onSubmit={handleFollowUpSubmit}
         onCancel={() => setShowFollowUp(false)}
+      />
+
+      {/* Resume Session Dialog */}
+      <ResumeSessionDialog
+        open={showResumeSession}
+        onSubmit={handleResumeSessionSubmit}
+        onCancel={() => setShowResumeSession(false)}
+        sessionId={execution.session_id}
       />
 
       {/* Delete Worktree Dialog */}

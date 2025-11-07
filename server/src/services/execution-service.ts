@@ -518,6 +518,309 @@ export class ExecutionService {
   }
 
   /**
+   * Resume a previous Claude Code session
+   *
+   * Creates a new execution that resumes a previous Claude Code session using
+   * the --resume flag. This preserves the full conversational context from the
+   * original session, allowing the user to continue where they left off.
+   *
+   * @param executionId - ID of execution whose session to resume
+   * @param prompt - New prompt to send in the resumed session
+   * @returns Created execution record with parent_execution_id set
+   */
+  async resumeSession(
+    executionId: string,
+    prompt: string
+  ): Promise<Execution> {
+    // 1. Get previous execution
+    const prevExecution = getExecution(this.db, executionId);
+    if (!prevExecution) {
+      throw new Error(`Execution ${executionId} not found`);
+    }
+
+    // 2. Verify execution has a session_id
+    if (!prevExecution.session_id) {
+      throw new Error(
+        `Cannot resume: execution ${executionId} has no session_id. ` +
+          `Session resumption requires a Claude Code session ID.`
+      );
+    }
+
+    // 3. Verify execution has an issue_id
+    if (!prevExecution.issue_id) {
+      throw new Error(
+        `Cannot resume: execution ${executionId} has no issue_id`
+      );
+    }
+
+    // 4. Check if worktree still exists, recreate if needed
+    if (prevExecution.worktree_path && this.lifecycleService) {
+      const fs = await import("fs");
+      const worktreeExists = fs.existsSync(prevExecution.worktree_path);
+
+      if (!worktreeExists) {
+        console.log(
+          `Recreating worktree for resumed execution: ${prevExecution.worktree_path}`
+        );
+
+        // Recreate the worktree using the same path and branch
+        const worktreeManager = (this.lifecycleService as any).worktreeManager;
+        await worktreeManager.createWorktree({
+          repoPath: this.repoPath,
+          branchName: prevExecution.branch_name,
+          worktreePath: prevExecution.worktree_path,
+          baseBranch: prevExecution.target_branch,
+          createBranch: false, // Branch already exists, just recreate worktree
+        });
+      }
+    }
+
+    // 5. Create new execution record with parent_execution_id
+    const newExecutionId = randomUUID();
+    const newExecution = createExecution(this.db, {
+      id: newExecutionId,
+      issue_id: prevExecution.issue_id,
+      agent_type: "claude-code",
+      target_branch: prevExecution.target_branch,
+      branch_name: prevExecution.branch_name,
+      worktree_path: prevExecution.worktree_path,
+      config: prevExecution.config || undefined,
+      mode: prevExecution.mode || undefined,
+      prompt: prompt,
+    });
+
+    // 6. Set parent_execution_id to track the relationship
+    updateExecution(this.db, newExecution.id, {
+      // Store parent relationship for execution chain tracking
+    });
+
+    // Update to set parent_execution_id (updateExecution doesn't support it yet, so we'll do it directly)
+    const stmt = this.db.prepare(`
+      UPDATE executions
+      SET parent_execution_id = ?,
+          updated_at = ?
+      WHERE id = ?
+    `);
+    stmt.run(executionId, new Date().toISOString(), newExecution.id);
+
+    // Initialize empty logs for this execution
+    try {
+      this.logsStore.initializeLogs(newExecution.id);
+    } catch (error) {
+      console.error(
+        "[ExecutionService] Failed to initialize logs (non-critical):",
+        {
+          executionId: newExecution.id,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+    }
+
+    // 7. Build WorkflowDefinition with resume configuration
+    const workflow: WorkflowDefinition = {
+      id: `workflow-${newExecution.id}`,
+      steps: [
+        {
+          id: "resume-session",
+          taskType: "issue",
+          prompt: prompt,
+          taskConfig: {
+            model: prevExecution.model || "claude-sonnet-4",
+            captureFileChanges: true,
+            captureToolCalls: true,
+            // Pass session_id for resume
+            resumeSessionId: prevExecution.session_id,
+          },
+        },
+      ],
+      config: {
+        checkpointInterval: 1,
+        continueOnStepFailure: false,
+      },
+      metadata: {
+        workDir: prevExecution.worktree_path || this.repoPath,
+        issueId: prevExecution.issue_id,
+        executionId: newExecution.id,
+        resumedFrom: executionId,
+        originalSessionId: prevExecution.session_id,
+      },
+    };
+
+    // 8. Create execution engine stack with --resume flag
+    const processManager = new SimpleProcessManager({
+      executablePath: "claude",
+      args: [
+        "--print",
+        "--output-format",
+        "stream-json",
+        "--dangerously-skip-permissions",
+        "--resume",
+        prevExecution.session_id, // Pass session_id to Claude Code
+      ],
+    });
+
+    let engine = new SimpleExecutionEngine(processManager, {
+      maxConcurrent: 1,
+    });
+
+    let executor = new ResilientExecutor(engine);
+
+    // 9. Create AG-UI system (processor + adapter) if transport manager is available
+    let agUiAdapter: AgUiEventAdapter | undefined;
+    if (this.transportManager) {
+      const agUiSystem = createAgUiSystem(newExecution.id);
+      agUiAdapter = agUiSystem.adapter;
+      this.transportManager.connectAdapter(agUiAdapter, newExecution.id);
+
+      // Register session handler to capture session_id (might be different after resume)
+      agUiSystem.processor.onSession((sessionId: string) => {
+        console.log(
+          `[ExecutionService] Session ID detected: ${sessionId} for resumed execution ${newExecution.id}`
+        );
+        try {
+          updateExecution(this.db, newExecution.id, {
+            session_id: sessionId,
+          });
+        } catch (error) {
+          console.error(
+            "[ExecutionService] Failed to update session_id (non-critical):",
+            {
+              executionId: newExecution.id,
+              sessionId,
+              error: error instanceof Error ? error.message : String(error),
+            }
+          );
+        }
+      });
+
+      // Connect processor to execution engine for real-time output parsing
+      let lineBuffer = "";
+
+      engine = new SimpleExecutionEngine(processManager, {
+        maxConcurrent: 1,
+        onOutput: (data, type) => {
+          if (type === "stdout") {
+            lineBuffer += data.toString();
+
+            let newlineIndex;
+            while ((newlineIndex = lineBuffer.indexOf("\n")) !== -1) {
+              const line = lineBuffer.slice(0, newlineIndex);
+              lineBuffer = lineBuffer.slice(newlineIndex + 1);
+
+              if (line.trim()) {
+                // 1. Persist raw log
+                try {
+                  this.logsStore.appendRawLog(newExecution.id, line);
+                } catch (err) {
+                  console.error(
+                    "[ExecutionService] Failed to persist raw log (non-critical):",
+                    {
+                      executionId: newExecution.id,
+                      error: err instanceof Error ? err.message : String(err),
+                    }
+                  );
+                }
+
+                // 2. Process through AG-UI pipeline
+                agUiSystem.processor.processLine(line).catch((err) => {
+                  console.error(
+                    "[ExecutionService] Error processing output line:",
+                    {
+                      error: err instanceof Error ? err.message : String(err),
+                      line: line.slice(0, 100),
+                    }
+                  );
+                });
+              }
+            }
+          }
+        },
+      });
+      executor = new ResilientExecutor(engine);
+    }
+
+    // 10. Create LinearOrchestrator
+    const orchestrator = new LinearOrchestrator(
+      executor,
+      undefined,
+      agUiAdapter,
+      this.lifecycleService
+    );
+
+    // 11. Register event handlers
+    orchestrator.onWorkflowStart(() => {
+      try {
+        updateExecution(this.db, newExecution.id, {
+          status: "running",
+        });
+      } catch (error) {
+        console.error(
+          "[ExecutionService] Failed to update resumed execution status to running",
+          {
+            executionId: newExecution.id,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+      }
+    });
+
+    orchestrator.onWorkflowComplete(() => {
+      try {
+        updateExecution(this.db, newExecution.id, {
+          status: "completed",
+          completed_at: new Date().toISOString(),
+        });
+      } catch (error) {
+        console.error(
+          "[ExecutionService] Failed to update resumed execution status to completed",
+          {
+            executionId: newExecution.id,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+      }
+      this.activeOrchestrators.delete(newExecution.id);
+    });
+
+    orchestrator.onWorkflowFailed((_execId, error) => {
+      try {
+        updateExecution(this.db, newExecution.id, {
+          status: "failed",
+          completed_at: new Date().toISOString(),
+          error_message: error.message,
+        });
+      } catch (updateError) {
+        console.error(
+          "[ExecutionService] Failed to update resumed execution status to failed",
+          {
+            executionId: newExecution.id,
+            error:
+              updateError instanceof Error
+                ? updateError.message
+                : String(updateError),
+          }
+        );
+      }
+      this.activeOrchestrators.delete(newExecution.id);
+    });
+
+    // 12. Start workflow execution (non-blocking)
+    orchestrator.startWorkflow(
+      workflow,
+      prevExecution.worktree_path || this.repoPath,
+      {
+        checkpointInterval: 1,
+        executionId: newExecution.id,
+      }
+    );
+
+    // 13. Store orchestrator for later cancellation
+    this.activeOrchestrators.set(newExecution.id, orchestrator);
+
+    return newExecution;
+  }
+
+  /**
    * Create follow-up execution - reuse worktree from previous execution
    *
    * Creates a new execution that reuses the worktree from a previous execution,

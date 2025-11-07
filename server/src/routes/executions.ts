@@ -280,6 +280,59 @@ export function createExecutionsRouter(
   );
 
   /**
+   * POST /api/executions/:executionId/resume
+   *
+   * Resume a previous Claude Code session with full context
+   */
+  router.post(
+    "/executions/:executionId/resume",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+        const { prompt } = req.body;
+
+        // Validate required fields
+        if (!prompt) {
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: "Prompt is required",
+          });
+          return;
+        }
+
+        const resumedExecution = await service.resumeSession(
+          executionId,
+          prompt
+        );
+
+        res.status(201).json({
+          success: true,
+          data: resumedExecution,
+        });
+      } catch (error) {
+        console.error("Error resuming session:", error);
+
+        // Handle specific error cases
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        const statusCode =
+          errorMessage.includes("not found") ||
+          errorMessage.includes("no session_id")
+            ? 404
+            : 500;
+
+        res.status(statusCode).json({
+          success: false,
+          data: null,
+          error_data: errorMessage,
+          message: "Failed to resume session",
+        });
+      }
+    }
+  );
+
+  /**
    * DELETE /api/executions/:executionId
    *
    * Cancel a running execution

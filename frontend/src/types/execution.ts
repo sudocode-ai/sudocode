@@ -128,3 +128,7 @@ export interface CreateExecutionRequest {
 export interface CreateFollowUpRequest {
   feedback: string
 }
+
+export interface ResumeSessionRequest {
+  prompt: string
+}
