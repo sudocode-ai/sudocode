@@ -271,10 +271,10 @@ export class A2AClient {
    * Get authentication headers for remote repo
    * TODO: Implement proper auth token management
    */
-  private getAuthHeaders(remoteRepo: RemoteRepo): Record<string, string> {
+  private getAuthHeaders(_remoteRepo: RemoteRepo): Record<string, string> {
     // For now, return empty headers
     // In production, this would read from environment variables or secret store
-    // Example: Authorization: Bearer ${process.env[`REMOTE_REPO_TOKEN_${remoteRepo.url}`]}
+    // Example: Authorization: Bearer ${process.env[`REMOTE_REPO_TOKEN_${_remoteRepo.url}`]}
     return {};
   }
 
@@ -306,11 +306,11 @@ export class A2AClient {
    * @param _remoteRepo - Remote repository configuration (unused for now)
    * @returns Authentication token or undefined
    */
-  private getAuthToken(_remoteRepo: RemoteRepo): string | undefined {
-    // TODO: Implement proper auth token retrieval from secrets
-    // For now, return undefined
-    return undefined;
-  }
+  // private getAuthToken(_remoteRepo: RemoteRepo): string | undefined {
+  //   // TODO: Implement proper auth token retrieval from secrets
+  //   // For now, return undefined
+  //   return undefined;
+  // }
 
   /**
    * Log error to audit log

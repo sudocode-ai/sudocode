@@ -622,6 +622,7 @@ export function createFederationRouter(
       const client = createA2AClient(db, localRepoUrl);
 
       const response = await client.query(url, {
+        type: "query",
         query: req.body,
       });
 

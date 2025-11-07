@@ -11,7 +11,6 @@
 
 import type Database from "better-sqlite3";
 import axios from "axios";
-import { v4 as uuidv4 } from "uuid";
 
 export interface CrossRepoReference {
   local_entity_id: string;

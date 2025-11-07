@@ -14,8 +14,10 @@ import {
   A2ACapabilities,
   RemoteRepo,
   EntityType,
+  CrossRepoRequest,
 } from "../../types/federation.js";
 import { createAuditLog } from "./audit.js";
+import { evaluatePolicies, applyPolicyDecision, loadPolicies } from "../policyEngine.js";
 
 /**
  * Handle discover message - return local capabilities
@@ -285,15 +287,47 @@ export async function handleMutate(
       new Date().toISOString()
     );
 
-    const response: A2AMutateResponse = {
-      type: "mutate_response",
-      from: localRepoUrl,
-      to: message.from,
-      timestamp: new Date().toISOString(),
-      status: "pending_approval",
-      request_id: requestId,
-      message: "Request queued for approval",
-    };
+    // Evaluate policies for auto-approval
+    const request = db.prepare("SELECT * FROM cross_repo_requests WHERE request_id = ?").get(requestId) as CrossRepoRequest;
+    const policies = loadPolicies(db);
+    const policyDecision = evaluatePolicies(db, request, policies);
+
+    // Apply policy decision
+    await applyPolicyDecision(db, requestId, policyDecision);
+
+    let response: A2AMutateResponse;
+
+    if (policyDecision.decision === "approve") {
+      response = {
+        type: "mutate_response",
+        from: localRepoUrl,
+        to: message.from,
+        timestamp: new Date().toISOString(),
+        status: "completed",
+        request_id: requestId,
+        message: `Auto-approved: ${policyDecision.reason}`,
+      };
+    } else if (policyDecision.decision === "reject") {
+      response = {
+        type: "mutate_response",
+        from: localRepoUrl,
+        to: message.from,
+        timestamp: new Date().toISOString(),
+        status: "rejected",
+        request_id: requestId,
+        message: `Auto-rejected: ${policyDecision.reason}`,
+      };
+    } else {
+      response = {
+        type: "mutate_response",
+        from: localRepoUrl,
+        to: message.from,
+        timestamp: new Date().toISOString(),
+        status: "pending_approval",
+        request_id: requestId,
+        message: `Request queued for approval: ${policyDecision.reason}`,
+      };
+    }
 
     // Log successful request creation
     await createAuditLog(db, {
