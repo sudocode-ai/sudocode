@@ -166,7 +166,13 @@ export class SimpleProcessManager implements IProcessManager {
     managedProcess: ManagedProcess,
     config: ProcessConfig
   ): void {
-    const { process: childProcess, id } = managedProcess;
+    const { process: childProcess, streams, id } = managedProcess;
+
+    // SimpleProcessManager always creates stdio processes with childProcess defined
+    if (!childProcess || !streams) {
+      throw new Error('SimpleProcessManager requires process and streams to be defined');
+    }
+
     let timeoutHandle: NodeJS.Timeout | null = null;
 
     // Set up timeout if configured
@@ -216,9 +222,9 @@ export class SimpleProcessManager implements IProcessManager {
       }
 
       // Clean up stdio streams to prevent event loop hang
-      managedProcess.streams.stdin.destroy();
-      managedProcess.streams.stdout.destroy();
-      managedProcess.streams.stderr.destroy();
+      streams.stdin.destroy();
+      streams.stdout.destroy();
+      streams.stderr.destroy();
 
       // Schedule cleanup (delete from activeProcesses after 5s delay)
       const cleanupTimer = setTimeout(() => {
@@ -269,6 +275,11 @@ export class SimpleProcessManager implements IProcessManager {
       return; // Process not found, nothing to terminate
     }
 
+    // SimpleProcessManager requires process to be defined
+    if (!managed.process) {
+      throw new Error('Cannot terminate process: process handle is undefined');
+    }
+
     // If already terminated, do nothing (idempotent)
     if (managed.exitCode !== null) {
       return;
@@ -285,7 +296,7 @@ export class SimpleProcessManager implements IProcessManager {
       if (managed.exitCode !== null) {
         resolve();
       } else {
-        managed.process.once("exit", () => resolve());
+        managed.process!.once("exit", () => resolve());
       }
     });
 
@@ -305,7 +316,7 @@ export class SimpleProcessManager implements IProcessManager {
           if (managed.exitCode !== null) {
             resolve();
           } else {
-            managed.process.once("exit", () => resolve());
+            managed.process!.once("exit", () => resolve());
           }
         }),
         new Promise<void>((resolve) => setTimeout(resolve, 1000)),
@@ -319,8 +330,12 @@ export class SimpleProcessManager implements IProcessManager {
       throw new Error(`Process ${processId} not found`);
     }
 
+    if (!managed.streams) {
+      throw new Error('Cannot send input: streams are undefined');
+    }
+
     return new Promise((resolve, reject) => {
-      managed.streams.stdin.write(input, (error) => {
+      managed.streams!.stdin.write(input, (error) => {
         if (error) reject(error);
         else resolve();
       });
@@ -340,6 +355,10 @@ export class SimpleProcessManager implements IProcessManager {
       throw new Error(`Process ${processId} not found`);
     }
 
+    if (!managed.streams) {
+      throw new Error('Cannot close input: streams are undefined');
+    }
+
     managed.streams.stdin.end();
   }
 
@@ -347,6 +366,10 @@ export class SimpleProcessManager implements IProcessManager {
     const managed = this._activeProcesses.get(processId);
     if (!managed) {
       throw new Error(`Process ${processId} not found`);
+    }
+
+    if (!managed.streams) {
+      throw new Error('Cannot register output handler: streams are undefined');
     }
 
     managed.streams.stdout.on("data", (data: Buffer) => {
@@ -362,6 +385,10 @@ export class SimpleProcessManager implements IProcessManager {
     const managed = this._activeProcesses.get(processId);
     if (!managed) {
       throw new Error(`Process ${processId} not found`);
+    }
+
+    if (!managed.process) {
+      throw new Error('Cannot register error handler: process is undefined');
     }
 
     managed.process.on("error", (error: Error) => {
