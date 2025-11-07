@@ -217,6 +217,49 @@ CREATE TABLE IF NOT EXISTS execution_logs (
 );
 `;
 
+// Agent requests table - stores requests from agents to users
+export const AGENT_REQUESTS_TABLE = `
+CREATE TABLE IF NOT EXISTS agent_requests (
+    id TEXT PRIMARY KEY,
+    execution_id TEXT NOT NULL,
+    issue_id TEXT NOT NULL,
+
+    -- Request details
+    type TEXT NOT NULL CHECK(type IN ('confirmation', 'guidance', 'choice', 'input')),
+    message TEXT NOT NULL,
+    context TEXT,
+
+    -- Priority and batching
+    issue_priority TEXT CHECK(issue_priority IN ('critical', 'high', 'medium', 'low')),
+    urgency TEXT CHECK(urgency IN ('blocking', 'non-blocking')),
+    estimated_impact INTEGER DEFAULT 50,
+    batching_key TEXT,
+    keywords TEXT,
+    pattern_signature TEXT,
+
+    -- Response options (JSON array)
+    options TEXT,
+
+    -- Response
+    response_value TEXT,
+    response_timestamp DATETIME,
+    response_auto INTEGER DEFAULT 0 CHECK(response_auto IN (0, 1)),
+    response_pattern_id TEXT,
+
+    -- Status
+    status TEXT NOT NULL CHECK(status IN ('queued', 'presented', 'responded', 'expired', 'cancelled')),
+
+    -- Timing
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    presented_at DATETIME,
+    responded_at DATETIME,
+    expires_at DATETIME,
+
+    FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE,
+    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE
+);
+`;
+
 /**
  * Index definitions
  */
@@ -301,6 +344,15 @@ CREATE INDEX IF NOT EXISTS idx_execution_logs_byte_size ON execution_logs(byte_s
 CREATE INDEX IF NOT EXISTS idx_execution_logs_line_count ON execution_logs(line_count);
 `;
 
+export const AGENT_REQUESTS_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_agent_requests_status ON agent_requests(status);
+CREATE INDEX IF NOT EXISTS idx_agent_requests_execution ON agent_requests(execution_id);
+CREATE INDEX IF NOT EXISTS idx_agent_requests_issue ON agent_requests(issue_id);
+CREATE INDEX IF NOT EXISTS idx_agent_requests_pattern ON agent_requests(pattern_signature);
+CREATE INDEX IF NOT EXISTS idx_agent_requests_created_at ON agent_requests(created_at);
+CREATE INDEX IF NOT EXISTS idx_agent_requests_priority ON agent_requests(issue_priority, urgency);
+`;
+
 /**
  * View definitions
  */
@@ -359,6 +411,7 @@ export const ALL_TABLES = [
   EXECUTIONS_TABLE,
   PROMPT_TEMPLATES_TABLE,
   EXECUTION_LOGS_TABLE,
+  AGENT_REQUESTS_TABLE,
 ];
 
 export const ALL_INDEXES = [
@@ -371,6 +424,7 @@ export const ALL_INDEXES = [
   EXECUTIONS_INDEXES,
   PROMPT_TEMPLATES_INDEXES,
   EXECUTION_LOGS_INDEXES,
+  AGENT_REQUESTS_INDEXES,
 ];
 
 export const ALL_VIEWS = [READY_ISSUES_VIEW, BLOCKED_ISSUES_VIEW];

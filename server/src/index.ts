@@ -27,7 +27,9 @@ import { createRelationshipsRouter } from "./routes/relationships.js";
 import { createFeedbackRouter } from "./routes/feedback.js";
 import { createExecutionsRouter } from "./routes/executions.js";
 import { createExecutionStreamRoutes } from "./routes/executions-stream.js";
+import { createAgentRequestsRouter } from "./routes/agent-requests.js";
 import { TransportManager } from "./execution/transport/transport-manager.js";
+import { AgentRouter } from "./services/agent-router.js";
 import { getIssueById } from "./services/issues.js";
 import { getSpecById } from "./services/specs.js";
 import {
@@ -66,6 +68,7 @@ let transportManager!: TransportManager;
 let logsStore!: ExecutionLogsStore;
 // let logsCleanup: ExecutionLogsCleanup | null = null;
 let executionService: ExecutionService | null = null;
+let agentRouter!: AgentRouter;
 
 // Async initialization function
 async function initialize() {
@@ -88,6 +91,10 @@ async function initialize() {
     // Initialize execution logs store
     logsStore = new ExecutionLogsStore(db);
     console.log("Execution logs store initialized");
+
+    // Initialize agent router
+    agentRouter = new AgentRouter(db);
+    console.log("Agent router initialized");
 
     // Initialize execution logs cleanup service
     // TODO: Enable auto-cleanup config via .sudocode/config.json
@@ -218,6 +225,7 @@ app.use(
   )
 );
 app.use("/api/executions", createExecutionStreamRoutes(transportManager));
+app.use("/api", createAgentRequestsRouter(db, agentRouter));
 
 // Health check endpoint
 app.get("/health", (_req: Request, res: Response) => {
@@ -421,6 +429,12 @@ process.on("SIGINT", async () => {
     await executionService.shutdown();
   }
 
+  // Shutdown agent router
+  if (agentRouter) {
+    agentRouter.shutdown();
+    console.log("Agent router shutdown complete");
+  }
+
   // Stop logs cleanup service
   // TODO: Re-enable when logs cleanup is supported
   // if (logsCleanup) {
@@ -463,6 +477,12 @@ process.on("SIGTERM", async () => {
   // Shutdown execution service (cancel active executions)
   if (executionService) {
     await executionService.shutdown();
+  }
+
+  // Shutdown agent router
+  if (agentRouter) {
+    agentRouter.shutdown();
+    console.log("Agent router shutdown complete");
   }
 
   // Stop logs cleanup service

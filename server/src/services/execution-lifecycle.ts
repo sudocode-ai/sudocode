@@ -94,29 +94,18 @@ export class ExecutionLifecycleService {
   ): Promise<CreateExecutionWithWorktreeResult> {
     const { issueId, issueTitle, agentType, targetBranch, repoPath } = params;
 
-    // Validation 1: Check for existing active execution for this issue
-    const existingExecution = this.db
-      .prepare(
-        `SELECT id FROM executions
-         WHERE issue_id = ?
-         AND status = 'running'
-         AND worktree_path IS NOT NULL`
-      )
-      .get(issueId) as { id: string } | undefined;
+    // NOTE: Concurrent executions are now supported via Agent Router
+    // Multiple executions can run simultaneously for the same issue
+    // The Agent Router manages user requests from concurrent agents intelligently
+    // Each execution gets its own isolated worktree
 
-    if (existingExecution) {
-      throw new Error(
-        `Active execution already exists for issue ${issueId}: ${existingExecution.id}`
-      );
-    }
-
-    // Validation 2: Validate git repository
+    // Validation 1: Validate git repository
     const isValidRepo = await this.worktreeManager.isValidRepo(repoPath);
     if (!isValidRepo) {
       throw new Error(`Not a git repository: ${repoPath}`);
     }
 
-    // Validation 3: Validate target branch exists
+    // Validation 2: Validate target branch exists
     const branches = await this.worktreeManager.listBranches(repoPath);
     if (!branches.includes(targetBranch)) {
       throw new Error(`Target branch does not exist: ${targetBranch}`);
