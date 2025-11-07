@@ -44,7 +44,6 @@ import {
 import {
   initTerminalWebSocketServer,
   shutdownTerminalWebSocketServer,
-  getActiveTerminalSessionCount,
 } from "./services/terminal-websocket.js";
 
 // Load environment variables

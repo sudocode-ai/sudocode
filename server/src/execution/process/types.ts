@@ -108,10 +108,10 @@ export interface ManagedProcess {
   signal: string | null;
 
   // Resources
-  /** Node.js ChildProcess handle */
-  process: ChildProcess;
-  /** Process I/O streams */
-  streams: {
+  /** Node.js ChildProcess handle (undefined for PTY processes) */
+  process?: ChildProcess;
+  /** Process I/O streams (undefined for PTY processes) */
+  streams?: {
     stdout: Readable;
     stderr: Readable;
     stdin: Writable;
@@ -165,8 +165,11 @@ export interface ProcessMetrics {
  *
  * Extends the base managed process concept with PTY-specific capabilities
  * for full terminal interactivity, ANSI support, and bidirectional I/O.
+ *
+ * Note: For PTY processes, the `process` and `streams` fields from ManagedProcess
+ * are undefined since PTY uses a different API (IPty) for I/O.
  */
-export interface ManagedPtyProcess extends Omit<ManagedProcess, 'process' | 'streams'> {
+export interface ManagedPtyProcess extends ManagedProcess {
   /** PTY process instance from node-pty */
   ptyProcess: IPty;
 

@@ -4,11 +4,16 @@
  * Manages bidirectional communication between WebSocket client and PTY process.
  * Enables real-time terminal interaction with ANSI support and proper sizing.
  *
+ * Supports two modes:
+ * - Interactive: Pure terminal forwarding (no structured parsing)
+ * - Hybrid: Terminal forwarding + JSON parsing for structured data
+ *
  * @module execution/transport/terminal-transport
  */
 
 import type { WebSocket } from 'ws';
 import type { ManagedPtyProcess } from '../process/types.js';
+import { HybridOutputProcessor } from '../output/hybrid-output-processor.js';
 
 /**
  * Terminal message types for WebSocket protocol
@@ -57,16 +62,23 @@ export class TerminalTransport {
   private ws: WebSocket;
   private process: ManagedPtyProcess;
   private isAlive = true;
+  private hybridProcessor?: HybridOutputProcessor;
 
   /**
    * Create a new terminal transport
    *
    * @param ws - WebSocket connection to client
    * @param process - Managed PTY process
+   * @param hybridProcessor - Optional hybrid processor for parsing JSON from terminal stream
    */
-  constructor(ws: WebSocket, process: ManagedPtyProcess) {
+  constructor(
+    ws: WebSocket,
+    process: ManagedPtyProcess,
+    hybridProcessor?: HybridOutputProcessor
+  ) {
     this.ws = ws;
     this.process = process;
+    this.hybridProcessor = hybridProcessor;
     this.setupHandlers();
   }
 
@@ -74,18 +86,41 @@ export class TerminalTransport {
    * Set up bidirectional communication handlers
    */
   private setupHandlers(): void {
-    // Forward PTY output to WebSocket
-    this.process.onData((data) => {
-      if (this.isAlive && this.ws.readyState === this.ws.OPEN) {
-        this.send({
-          type: 'terminal:data',
-          data,
-        });
-      }
-    });
+    // Set up hybrid processing if processor provided
+    if (this.hybridProcessor) {
+      // Forward terminal data to WebSocket via hybrid processor
+      this.hybridProcessor.onTerminalData((data) => {
+        if (this.isAlive && this.ws.readyState === this.ws.OPEN) {
+          this.send({
+            type: 'terminal:data',
+            data,
+          });
+        }
+      });
+
+      // Process PTY output through hybrid processor
+      this.process.onData((data) => {
+        this.hybridProcessor!.processTerminalData(data);
+      });
+    } else {
+      // Pure interactive mode - forward PTY output directly to WebSocket
+      this.process.onData((data) => {
+        if (this.isAlive && this.ws.readyState === this.ws.OPEN) {
+          this.send({
+            type: 'terminal:data',
+            data,
+          });
+        }
+      });
+    }
 
     // Handle PTY exit
-    this.process.onExit((exitCode, signal) => {
+    this.process.onExit(async (exitCode, signal) => {
+      // Flush any remaining buffered data in hybrid processor
+      if (this.hybridProcessor) {
+        await this.hybridProcessor.flush();
+      }
+
       if (this.isAlive && this.ws.readyState === this.ws.OPEN) {
         this.send({
           type: 'terminal:exit',
@@ -225,5 +260,14 @@ export class TerminalTransport {
    */
   isActive(): boolean {
     return this.isAlive && this.ws.readyState === this.ws.OPEN;
+  }
+
+  /**
+   * Get the hybrid output processor if available
+   *
+   * @returns Hybrid processor or undefined if in pure interactive mode
+   */
+  getHybridProcessor(): HybridOutputProcessor | undefined {
+    return this.hybridProcessor;
   }
 }

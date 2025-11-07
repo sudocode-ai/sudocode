@@ -8,7 +8,6 @@
  */
 
 import * as pty from 'node-pty';
-import type { IPty } from 'node-pty';
 import type { IProcessManager } from './manager.js';
 import type {
   ProcessConfig,
@@ -104,6 +103,9 @@ export class PtyProcessManager implements IProcessManager {
       exitCode: null,
       signal: null,
       ptyProcess,
+      // PTY processes don't have ChildProcess/streams - use PTY API instead
+      process: undefined,
+      streams: undefined,
       metrics: {
         totalDuration: 0,
         tasksCompleted: 0,
@@ -268,9 +270,9 @@ export class PtyProcessManager implements IProcessManager {
    *
    * PTY input is closed when process terminates.
    *
-   * @param processId - ID of the process
+   * @param _processId - ID of the process (unused - no-op for PTY)
    */
-  closeInput(processId: string): void {
+  closeInput(_processId: string): void {
     // PTY input is closed when process terminates
     // This is a no-op to maintain interface compatibility
   }

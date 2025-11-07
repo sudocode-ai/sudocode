@@ -13,8 +13,12 @@ import * as url from 'url';
 import type Database from 'better-sqlite3';
 import { PtyProcessManager } from '../execution/process/pty-manager.js';
 import { TerminalTransport } from '../execution/transport/terminal-transport.js';
+import { HybridOutputProcessor } from '../execution/output/hybrid-output-processor.js';
 import { buildClaudeConfig } from '../execution/process/builders/claude.js';
 import { getExecution } from '../services/executions.js';
+import { PromptTemplateEngine } from '../services/prompt-template-engine.js';
+import { getIssueById } from '../services/issues.js';
+import { getDefaultTemplate } from '../services/prompt-templates.js';
 
 /**
  * Active terminal session
@@ -127,29 +131,54 @@ class TerminalWebSocketManager {
       // Create new PTY process manager
       const processManager = new PtyProcessManager();
 
-      // Build process config for interactive mode
+      // Determine execution mode from execution metadata or default to hybrid
+      // For now, we'll default to hybrid mode to get both terminal and structured output
+      const executionMode = (execution.mode as 'structured' | 'interactive' | 'hybrid') || 'hybrid';
+
+      // Build process config
       const workDir = execution.worktree_path || this.repoPath;
       const processConfig = buildClaudeConfig({
         workDir,
-        print: false, // Interactive mode - no --print flag
-        outputFormat: undefined, // No structured output
-        verbose: false,
+        mode: executionMode,
         terminal: {
           cols: 80,
           rows: 24,
         },
       });
 
-      // Override mode to interactive
-      processConfig.mode = 'interactive';
-
-      console.log(`[terminal-ws] Starting terminal for execution: ${executionId}`);
+      console.log(`[terminal-ws] Starting terminal for execution: ${executionId} (mode: ${executionMode})`);
 
       // Spawn PTY process
       const ptyProcess = await processManager.acquireProcess(processConfig);
 
+      // Create hybrid processor if in hybrid mode
+      let hybridProcessor: HybridOutputProcessor | undefined;
+      if (executionMode === 'hybrid') {
+        hybridProcessor = new HybridOutputProcessor();
+
+        // Register handlers to persist structured data
+        hybridProcessor.onToolCall((toolCall) => {
+          console.log(`[terminal-ws] Tool called: ${toolCall.name} (${toolCall.id})`);
+          // TODO: Persist tool call to database
+        });
+
+        hybridProcessor.onProgress((metrics) => {
+          // TODO: Update execution progress in database
+          // Currently there's no token_usage field in UpdateExecutionInput
+          // Consider adding this field or storing metrics separately
+          console.log(`[terminal-ws] Execution progress:`, {
+            toolCalls: metrics.toolCalls.length,
+            tokens: metrics.usage.totalTokens,
+          });
+        });
+
+        hybridProcessor.onError((error) => {
+          console.error(`[terminal-ws] Execution error:`, error.message);
+        });
+      }
+
       // Create transport to bridge WebSocket and PTY
-      const transport = new TerminalTransport(ws, ptyProcess);
+      const transport = new TerminalTransport(ws, ptyProcess, hybridProcessor);
 
       // Store session
       const session: TerminalSession = {
@@ -174,9 +203,84 @@ class TerminalWebSocketManager {
         // Session will be cleaned up on WebSocket close
       });
 
+      // Send initial prompt to Claude after a delay
+      this.sendInitialPrompt(executionId, ptyProcess).catch((error) => {
+        console.error(`[terminal-ws] Failed to send initial prompt for ${executionId}:`, error);
+      });
+
     } catch (error) {
       console.error('[terminal-ws] Failed to create terminal session:', error);
       this.closeWithError(ws, 'Failed to create terminal session');
+    }
+  }
+
+  /**
+   * Send initial prompt to PTY process
+   *
+   * Retrieves the execution context, renders the prompt template,
+   * and sends it to the Claude CLI process.
+   *
+   * @param executionId - Execution ID
+   * @param ptyProcess - PTY process to send prompt to
+   */
+  private async sendInitialPrompt(
+    executionId: string,
+    ptyProcess: any
+  ): Promise<void> {
+    try {
+      if (!this.db) {
+        console.warn('[terminal-ws] Cannot send prompt: database not initialized');
+        return;
+      }
+
+      // Get execution and issue
+      const execution = await getExecution(this.db, executionId);
+      if (!execution) {
+        console.warn(`[terminal-ws] Execution ${executionId} not found`);
+        return;
+      }
+
+      // Get issue if execution is tied to one
+      if (!execution.issue_id) {
+        console.warn(`[terminal-ws] Execution ${executionId} has no issue_id`);
+        return;
+      }
+
+      const issue = await getIssueById(this.db, execution.issue_id);
+      if (!issue) {
+        console.warn(`[terminal-ws] Issue ${execution.issue_id} not found`);
+        return;
+      }
+
+      // Get default template
+      const defaultTemplate = getDefaultTemplate(this.db, 'issue');
+      if (!defaultTemplate) {
+        console.warn(`[terminal-ws] Default issue template not found`);
+        return;
+      }
+
+      // Render prompt template
+      const templateEngine = new PromptTemplateEngine();
+      const templateContext = {
+        issueId: issue.id,
+        title: issue.title,
+        description: issue.content,
+        // Note: For full implementation, you may want to include:
+        // - relatedSpecs
+        // - feedback
+        // - additional context
+      };
+
+      const renderedPrompt = templateEngine.render(defaultTemplate.template, templateContext);
+
+      // Wait for Claude to initialize (1 second delay)
+      setTimeout(() => {
+        console.log(`[terminal-ws] Sending initial prompt to execution: ${executionId}`);
+        ptyProcess.write(renderedPrompt + '\n');
+      }, 1000);
+
+    } catch (error) {
+      console.error(`[terminal-ws] Error rendering/sending prompt for ${executionId}:`, error);
     }
   }
 

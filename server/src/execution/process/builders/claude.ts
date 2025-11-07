@@ -7,7 +7,7 @@
  * @module execution/process/builders/claude
  */
 
-import type { ProcessConfig } from '../types.js';
+import type { ProcessConfig, ExecutionMode, TerminalConfig } from '../types.js';
 
 /**
  * Configuration options specific to Claude Code CLI
@@ -75,6 +75,19 @@ export interface ClaudeCodeConfig {
     maxAttempts: number;
     backoffMs: number;
   };
+
+  /**
+   * Execution mode
+   * - structured: Non-interactive with JSON output (default)
+   * - interactive: Interactive terminal without structured output
+   * - hybrid: Interactive terminal WITH JSON output
+   */
+  mode?: ExecutionMode;
+
+  /**
+   * Terminal configuration (for interactive/hybrid modes)
+   */
+  terminal?: TerminalConfig;
 }
 
 /**
@@ -97,20 +110,43 @@ export interface ClaudeCodeConfig {
  */
 export function buildClaudeConfig(config: ClaudeCodeConfig): ProcessConfig {
   const args: string[] = [];
+  const mode = config.mode || 'structured';
 
-  // Add --print flag for non-interactive mode
-  if (config.print) {
-    args.push('--print');
-  }
-
-  // Add --output-format flag
-  if (config.outputFormat) {
-    args.push('--output-format', config.outputFormat);
-  }
-
-  // Add --verbose flag (required for stream-json with print mode)
-  if (config.verbose || (config.print && config.outputFormat === 'stream-json')) {
+  // Configure args based on execution mode
+  if (mode === 'hybrid') {
+    // Hybrid mode: Interactive PTY + structured JSON output
+    // NO --print flag (allows interactivity)
+    // YES --output-format (for structured data)
+    args.push('--output-format', 'stream-json');
     args.push('--verbose');
+  } else if (mode === 'interactive') {
+    // Pure interactive mode: no special flags
+    // User sees Claude's natural terminal interface
+    // Can override with explicit print/outputFormat if needed
+    if (config.print) {
+      args.push('--print');
+    }
+    if (config.outputFormat) {
+      args.push('--output-format', config.outputFormat);
+    }
+    if (config.verbose) {
+      args.push('--verbose');
+    }
+  } else {
+    // Structured mode (default): non-interactive with JSON
+    // Add --print flag for non-interactive mode
+    if (config.print !== false) { // Default to true for structured
+      args.push('--print');
+    }
+
+    // Add --output-format flag
+    const outputFormat = config.outputFormat || 'stream-json';
+    args.push('--output-format', outputFormat);
+
+    // Add --verbose flag (required for stream-json with print mode)
+    if (config.verbose !== false) { // Default to true for structured
+      args.push('--verbose');
+    }
   }
 
   // Add --dangerously-skip-permissions flag
@@ -131,5 +167,7 @@ export function buildClaudeConfig(config: ClaudeCodeConfig): ProcessConfig {
     timeout: config.timeout,
     idleTimeout: config.idleTimeout,
     retry: config.retry,
+    mode,
+    terminal: config.terminal,
   };
 }

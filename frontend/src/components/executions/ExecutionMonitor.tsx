@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AgentTrajectory } from './AgentTrajectory'
 import { TerminalView } from './TerminalView'
-import { AlertCircle, CheckCircle2, Loader2, XCircle, Monitor, Terminal } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Loader2, XCircle, Monitor, Terminal, Columns } from 'lucide-react'
 import type { Execution } from '@/types/execution'
 
 export interface ExecutionMonitorProps {
@@ -74,8 +74,8 @@ export function ExecutionMonitor({
   onError,
   className = '',
 }: ExecutionMonitorProps) {
-  // View mode state (structured or terminal)
-  const [viewMode, setViewMode] = useState<'structured' | 'terminal'>('structured')
+  // View mode state (structured, terminal, or split)
+  const [viewMode, setViewMode] = useState<'structured' | 'terminal' | 'split'>('structured')
 
   // Check if terminal mode is available for this execution
   // TODO: Add execution_mode field to Execution type
@@ -292,6 +292,15 @@ export function ExecutionMonitor({
                   <Terminal className="mr-1 h-3 w-3" />
                   Terminal
                 </Button>
+                <Button
+                  variant={viewMode === 'split' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setViewMode('split')}
+                  className="text-xs"
+                >
+                  <Columns className="mr-1 h-3 w-3" />
+                  Split
+                </Button>
               </div>
             )}
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -335,13 +344,59 @@ export function ExecutionMonitor({
         )}
       </div>
 
-      {/* Main: Content (Terminal or Structured View) */}
+      {/* Main: Content (Terminal, Structured, or Split View) */}
       <div className="flex-1 overflow-auto px-6 py-4">
         {viewMode === 'terminal' ? (
-          /* Terminal View */
+          /* Terminal View Only */
           <TerminalView executionId={executionId} readonly={execution.status !== 'running'} />
+        ) : viewMode === 'split' ? (
+          /* Split View - Terminal and Structured side-by-side */
+          <div className="grid grid-cols-2 gap-4 h-full">
+            {/* Left: Terminal */}
+            <div className="flex flex-col">
+              <h4 className="text-sm font-medium mb-2">Terminal</h4>
+              <TerminalView executionId={executionId} readonly={execution.status !== 'running'} />
+            </div>
+
+            {/* Right: Structured */}
+            <div className="flex flex-col overflow-auto">
+              <h4 className="text-sm font-medium mb-2">Structured View</h4>
+              <div className="overflow-auto">
+                {/* Error display */}
+                {(error || execution.error) && (
+                  <div className="rounded-md bg-destructive/10 border border-destructive/20 p-4 mb-4">
+                    <div className="flex items-start gap-2">
+                      <XCircle className="h-5 w-5 text-destructive mt-0.5" />
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-destructive">Error</h4>
+                        <p className="text-sm text-destructive/90 mt-1">
+                          {execution.error || error?.message}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Agent Trajectory - unified messages and tool calls */}
+                {(messageCount > 0 || toolCallCount > 0) && (
+                  <AgentTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown />
+                )}
+
+                {/* Empty state */}
+                {messageCount === 0 && toolCallCount === 0 && !error && !execution.error && (
+                  <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
+                    <AlertCircle className="h-8 w-8 mb-2" />
+                    <p className="text-sm">No execution activity yet</p>
+                    <p className="text-xs mt-1">
+                      {isConnected ? 'Waiting for events...' : 'Connecting...'}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         ) : (
-          /* Structured View */
+          /* Structured View Only */
           <>
             {/* Error display */}
             {(error || execution.error) && (
