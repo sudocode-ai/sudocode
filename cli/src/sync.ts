@@ -31,6 +31,7 @@ export interface SyncResult {
   action: "created" | "updated" | "no-change";
   entityId: string;
   entityType: "spec" | "issue";
+  content?: string;
   error?: string;
 }
 
@@ -288,6 +289,7 @@ export async function syncMarkdownToJSONL(
       action: isNew ? "created" : "updated",
       entityId,
       entityType,
+      content,
     };
   } catch (error) {
     return {

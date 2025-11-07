@@ -20,6 +20,7 @@ import { listIssues, getIssue } from "./operations/issues.js";
 import { parseMarkdownFile } from "./markdown.js";
 import { listFeedback } from "./operations/feedback.js";
 import { getTags } from "./operations/tags.js";
+import { updateCrossRepoReferences, hasAnyReferences } from "./operations/crossRepoReferences.js";
 
 export interface WatcherOptions {
   /**
@@ -387,6 +388,27 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
             onLog(
               `[watch] Synced ${result.entityType} ${result.entityId} (${result.action})`
             );
+
+            // Parse cross-repo references from content
+            if (result.content && hasAnyReferences(result.content)) {
+              try {
+                const refCount = updateCrossRepoReferences(
+                  db,
+                  result.entityId,
+                  result.entityType as "issue" | "spec",
+                  result.content
+                );
+                if (refCount > 0) {
+                  onLog(
+                    `[watch] Updated ${refCount} cross-repo reference(s) for ${result.entityType} ${result.entityId}`
+                  );
+                }
+              } catch (error) {
+                onLog(
+                  `[watch] Warning: Failed to parse cross-repo references: ${error instanceof Error ? error.message : String(error)}`
+                );
+              }
+            }
           } else {
             onError(new Error(`Failed to sync ${filePath}: ${result.error}`));
             stats.errors++;
