@@ -3,8 +3,12 @@
  */
 
 import type Database from "better-sqlite3";
-import type { Spec } from "../types.js";
+import type { Spec, CompletionSummary } from "../types.js";
 import { generateUUID } from "../id-generator.js";
+import {
+  rowToSpec,
+  serializeCompletionSummary,
+} from "./completion-summary.js";
 
 export interface CreateSpecInput {
   id: string;
@@ -29,6 +33,7 @@ export interface UpdateSpecInput {
   archived?: boolean;
   archived_at?: string;
   updated_at?: string;
+  completion_summary?: CompletionSummary;
 }
 
 export interface ListSpecsOptions {
@@ -162,7 +167,8 @@ export function getSpec(db: Database.Database, id: string): Spec | null {
     SELECT * FROM specs WHERE id = ?
   `);
 
-  return (stmt.get(id) as Spec | undefined) ?? null;
+  const row = stmt.get(id);
+  return row ? rowToSpec(row) : null;
 }
 
 /**
@@ -176,7 +182,8 @@ export function getSpecByFilePath(
     SELECT * FROM specs WHERE file_path = ?
   `);
 
-  return (stmt.get(filePath) as Spec | undefined) ?? null;
+  const row = stmt.get(filePath);
+  return row ? rowToSpec(row) : null;
 }
 
 /**
@@ -247,6 +254,12 @@ export function updateSpec(
     // archived_at provided without archived change
     updates.push("archived_at = @archived_at");
     params.archived_at = input.archived_at;
+  }
+
+  // Handle completion_summary
+  if (input.completion_summary !== undefined) {
+    updates.push("completion_summary = @completion_summary");
+    params.completion_summary = serializeCompletionSummary(input.completion_summary);
   }
 
   // Handle updated_at - use provided value or set to current timestamp
@@ -329,7 +342,8 @@ export function listSpecs(
   }
 
   const stmt = db.prepare(query);
-  return stmt.all(params) as Spec[];
+  const rows = stmt.all(params);
+  return rows.map(rowToSpec);
 }
 
 /**
@@ -366,5 +380,6 @@ export function searchSpecs(
   }
 
   const stmt = db.prepare(sql);
-  return stmt.all(params) as Spec[];
+  const rows = stmt.all(params);
+  return rows.map(rowToSpec);
 }

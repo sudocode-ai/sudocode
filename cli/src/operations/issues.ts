@@ -3,12 +3,16 @@
  */
 
 import type Database from "better-sqlite3";
-import type { Issue, IssueStatus } from "../types.js";
+import type { Issue, IssueStatus, CompletionSummary } from "../types.js";
 import { generateUUID } from "../id-generator.js";
 import {
   getIncomingRelationships,
   getOutgoingRelationships,
 } from "./relationships.js";
+import {
+  rowToIssue,
+  serializeCompletionSummary,
+} from "./completion-summary.js";
 
 export interface CreateIssueInput {
   id: string;
@@ -37,6 +41,7 @@ export interface UpdateIssueInput {
   archived_at?: string;
   updated_at?: string;
   closed_at?: string;
+  completion_summary?: CompletionSummary;
 }
 
 export interface ListIssuesOptions {
@@ -183,7 +188,8 @@ export function getIssue(db: Database.Database, id: string): Issue | null {
     SELECT * FROM issues WHERE id = ?
   `);
 
-  return (stmt.get(id) as Issue | undefined) ?? null;
+  const row = stmt.get(id);
+  return row ? rowToIssue(row) : null;
 }
 
 /**
@@ -282,6 +288,12 @@ export function updateIssue(
     // archived_at provided without archived change
     updates.push("archived_at = @archived_at");
     params.archived_at = input.archived_at;
+  }
+
+  // Handle completion_summary
+  if (input.completion_summary !== undefined) {
+    updates.push("completion_summary = @completion_summary");
+    params.completion_summary = serializeCompletionSummary(input.completion_summary);
   }
 
   // Handle updated_at - use provided value or set to current timestamp
@@ -483,7 +495,8 @@ export function listIssues(
   }
 
   const stmt = db.prepare(query);
-  return stmt.all(params) as Issue[];
+  const rows = stmt.all(params);
+  return rows.map(rowToIssue);
 }
 
 /**
@@ -493,7 +506,8 @@ export function getReadyIssues(db: Database.Database): Issue[] {
   const stmt = db.prepare(
     "SELECT * FROM ready_issues ORDER BY priority DESC, created_at DESC"
   );
-  return stmt.all() as Issue[];
+  const rows = stmt.all();
+  return rows.map(rowToIssue);
 }
 
 /**
@@ -503,7 +517,8 @@ export function getBlockedIssues(db: Database.Database): any[] {
   const stmt = db.prepare(
     "SELECT * FROM blocked_issues ORDER BY priority DESC, created_at DESC"
   );
-  return stmt.all();
+  const rows = stmt.all();
+  return rows.map(rowToIssue);
 }
 
 /**
@@ -550,5 +565,6 @@ export function searchIssues(
   }
 
   const stmt = db.prepare(sql);
-  return stmt.all(params) as Issue[];
+  const rows = stmt.all(params);
+  return rows.map(rowToIssue);
 }

@@ -24,4 +24,5 @@ export type {
   FeedbackJSONL,
   RelationshipJSONL,
   Config,
+  CompletionSummary,
 } from "@sudocode-ai/types";

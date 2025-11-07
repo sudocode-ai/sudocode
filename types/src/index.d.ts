@@ -1,4 +1,41 @@
 /**
+ * Structured learning data captured when specs/issues are completed
+ */
+export interface CompletionSummary {
+  /** Successful patterns discovered during implementation */
+  what_worked: string[];
+  /** Anti-patterns or approaches that failed */
+  what_failed: string[];
+  /** Actual time to complete (in hours) */
+  time_to_complete?: number;
+  /** Factors that blocked or slowed progress */
+  blocking_factors: string[];
+  /** Key architectural or implementation decisions */
+  key_decisions: Array<{
+    decision: string;
+    rationale: string;
+    alternatives_considered: string[];
+  }>;
+  /** New code patterns introduced to the codebase */
+  code_patterns_introduced: string[];
+  /** Dependencies discovered during implementation */
+  dependencies_discovered: string[];
+  /** Git commit range for this completion */
+  git_commit_range?: {
+    start: string;
+    end: string;
+  };
+  /** Files modified during implementation */
+  files_modified?: string[];
+  /** Test results summary */
+  test_results?: {
+    passed: number;
+    failed: number;
+    coverage?: number;
+  };
+}
+
+/**
  * Core entity types for sudocode
  */
 export interface Spec {
@@ -14,6 +51,8 @@ export interface Spec {
   updated_at: string;
   parent_id?: string;
   parent_uuid?: string;
+  /** Learnings captured when spec is completed */
+  completion_summary?: CompletionSummary;
 }
 
 export interface Issue {
@@ -31,6 +70,8 @@ export interface Issue {
   closed_at?: string;
   parent_id?: string;
   parent_uuid?: string;
+  /** Learnings captured when issue is completed */
+  completion_summary?: CompletionSummary;
 }
 
 export type IssueStatus =

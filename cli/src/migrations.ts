@@ -14,7 +14,43 @@ export interface Migration {
 /**
  * All migrations in order
  */
-const MIGRATIONS: Migration[] = [];
+const MIGRATIONS: Migration[] = [
+  {
+    version: 1,
+    name: "add_completion_summary_columns",
+    up: (db: Database.Database) => {
+      // Check if columns already exist before adding them
+      const specsInfo = db.pragma("table_info(specs)") as Array<{
+        name: string;
+      }>;
+      const issuesInfo = db.pragma("table_info(issues)") as Array<{
+        name: string;
+      }>;
+
+      const hasSpecsColumn = specsInfo.some(
+        (col) => col.name === "completion_summary"
+      );
+      const hasIssuesColumn = issuesInfo.some(
+        (col) => col.name === "completion_summary"
+      );
+
+      if (!hasSpecsColumn) {
+        db.exec("ALTER TABLE specs ADD COLUMN completion_summary TEXT");
+      }
+
+      if (!hasIssuesColumn) {
+        db.exec("ALTER TABLE issues ADD COLUMN completion_summary TEXT");
+      }
+    },
+    down: (db: Database.Database) => {
+      // SQLite doesn't support DROP COLUMN easily, so we'd need to recreate tables
+      // For now, we'll leave the columns in place if we ever need to rollback
+      console.log(
+        "Note: SQLite doesn't support dropping columns. completion_summary columns will remain."
+      );
+    },
+  },
+];
 
 /**
  * Get the current migration version from the database

@@ -27,6 +27,10 @@ import {
   handleIssueClose,
   handleIssueDelete,
 } from "./cli/issue-commands.js";
+import {
+  handleIssueComplete,
+  handleSpecComplete,
+} from "./cli/completion-commands.js";
 import { handleLink } from "./cli/relationship-commands.js";
 import { handleAddReference } from "./cli/reference-commands.js";
 import { handleReady, handleBlocked } from "./cli/query-commands.js";
@@ -214,6 +218,18 @@ spec
   });
 
 spec
+  .command("complete <id>")
+  .description("Complete (archive) a spec with optional reflection")
+  .option("--reflect", "Generate completion reflection")
+  .option("--start <commit>", "Start commit for git analysis")
+  .option("--end <commit>", "End commit for git analysis")
+  .option("--summary <json>", "Provide completion summary as JSON")
+  .option("--interactive", "Interactive reflection mode")
+  .action(async (id, options) => {
+    await handleSpecComplete(getContext(), id, options);
+  });
+
+spec
   .command("add-ref <entity-id> <reference-id>")
   .description("Add a reference to a spec")
   .option("-l, --line <number>", "Line number to insert reference")
@@ -285,6 +301,18 @@ issue
   .option("-r, --reason <reason>", "Reason for closing")
   .action(async (ids, options) => {
     await handleIssueClose(getContext(), ids, options);
+  });
+
+issue
+  .command("complete <id>")
+  .description("Complete an issue with optional reflection")
+  .option("--reflect", "Generate completion reflection")
+  .option("--start <commit>", "Start commit for git analysis")
+  .option("--end <commit>", "End commit for git analysis")
+  .option("--summary <json>", "Provide completion summary as JSON")
+  .option("--interactive", "Interactive reflection mode")
+  .action(async (id, options) => {
+    await handleIssueComplete(getContext(), id, options);
   });
 
 issue
