@@ -7,6 +7,8 @@ import type {
   IssueFeedback,
   IssueGroup,
   IssueGroupWithStats,
+  QualityGateConfigResponse,
+  QualityGateResult,
   CreateIssueRequest,
   UpdateIssueRequest,
   CreateSpecRequest,
@@ -18,6 +20,7 @@ import type {
   CreateIssueGroupRequest,
   UpdateIssueGroupRequest,
   AddIssueToGroupRequest,
+  UpdateQualityGateConfigRequest,
 } from '@/types/api'
 import type {
   Execution,
@@ -204,6 +207,24 @@ export const issueGroupsApi = {
 
   // Get issues in group
   getIssues: (groupId: string) => get<Issue[]>(`/issue-groups/${groupId}/members`),
+}
+
+/**
+ * Quality Gates API
+ */
+export const qualityGatesApi = {
+  // Get quality gate configuration
+  getConfig: () => get<QualityGateConfigResponse>('/quality-gates/config'),
+
+  // Update quality gate configuration
+  updateConfig: (data: UpdateQualityGateConfigRequest) =>
+    put<QualityGateConfigResponse>('/quality-gates/config', data),
+
+  // Get quality gate results for an execution
+  getResults: (executionId: string) => get<QualityGateResult>(`/quality-gates/execution/${executionId}`),
+
+  // Delete quality gate results for an execution
+  deleteResults: (executionId: string) => del(`/quality-gates/execution/${executionId}`),
 }
 
 export default api

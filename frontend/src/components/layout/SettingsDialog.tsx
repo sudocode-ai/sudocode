@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useTheme } from '@/contexts/ThemeContext'
-import { Sun, Moon, Play, Square, Activity } from 'lucide-react'
+import { Sun, Moon, Play, Square, Activity, Shield, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import axios from 'axios'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import { useQualityGateConfig } from '@/hooks/useQualityGates'
 
 interface SettingsDialogProps {
   isOpen: boolean
@@ -28,6 +32,24 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   const [versions, setVersions] = useState<VersionInfo | null>(null)
   const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatus | null>(null)
   const [schedulerLoading, setSchedulerLoading] = useState(false)
+
+  // Quality Gates
+  const { config, enabled, updateConfig, isUpdating } = useQualityGateConfig()
+  const [qualityGatesExpanded, setQualityGatesExpanded] = useState(false)
+  const [qgEnabled, setQgEnabled] = useState(false)
+  const [testCommand, setTestCommand] = useState('')
+  const [buildCommand, setBuildCommand] = useState('')
+  const [lintCommand, setLintCommand] = useState('')
+
+  // Initialize quality gates form when data loads
+  useEffect(() => {
+    if (config) {
+      setQgEnabled(enabled)
+      setTestCommand(config.testCommand || '')
+      setBuildCommand(config.buildCommand || '')
+      setLintCommand(config.lintCommand || '')
+    }
+  }, [config, enabled])
 
   const toggleTheme = () => {
     setTheme(theme === 'dark' ? 'light' : 'dark')
@@ -61,6 +83,39 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
     } finally {
       setSchedulerLoading(false)
     }
+  }
+
+  const handleQualityGateToggle = (checked: boolean) => {
+    setQgEnabled(checked)
+    updateConfig({
+      enabled: checked,
+      config: checked
+        ? {
+            runTests: !!testCommand,
+            testCommand: testCommand || undefined,
+            runBuild: !!buildCommand,
+            buildCommand: buildCommand || undefined,
+            runLint: !!lintCommand,
+            lintCommand: lintCommand || undefined,
+          }
+        : null,
+    })
+  }
+
+  const handleQualityGateConfigSave = () => {
+    if (!qgEnabled) return
+
+    updateConfig({
+      enabled: qgEnabled,
+      config: {
+        runTests: !!testCommand,
+        testCommand: testCommand || undefined,
+        runBuild: !!buildCommand,
+        buildCommand: buildCommand || undefined,
+        runLint: !!lintCommand,
+        lintCommand: lintCommand || undefined,
+      },
+    })
   }
 
   useEffect(() => {
@@ -139,6 +194,96 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             <p className="text-xs text-muted-foreground">
               The scheduler automatically executes ready issues based on priority and dependencies.
             </p>
+          </div>
+
+          {/* Quality Gates Section */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium text-foreground flex items-center gap-2">
+                <Shield className="h-4 w-4" />
+                Quality Gates
+              </h3>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={qgEnabled}
+                  onCheckedChange={handleQualityGateToggle}
+                  disabled={isUpdating}
+                />
+                {qualityGatesExpanded ? (
+                  <ChevronUp
+                    className="h-4 w-4 cursor-pointer text-muted-foreground"
+                    onClick={() => setQualityGatesExpanded(false)}
+                  />
+                ) : (
+                  <ChevronDown
+                    className="h-4 w-4 cursor-pointer text-muted-foreground"
+                    onClick={() => setQualityGatesExpanded(true)}
+                  />
+                )}
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Automatically validate code quality before closing issues.
+            </p>
+
+            {qualityGatesExpanded && qgEnabled && (
+              <div className="space-y-3 pt-2">
+                {/* Test Command */}
+                <div className="space-y-2">
+                  <Label htmlFor="test-command" className="text-xs">
+                    Test Command
+                  </Label>
+                  <Input
+                    id="test-command"
+                    value={testCommand}
+                    onChange={(e) => setTestCommand(e.target.value)}
+                    placeholder="npm test"
+                    className="text-xs"
+                    disabled={isUpdating}
+                  />
+                </div>
+
+                {/* Build Command */}
+                <div className="space-y-2">
+                  <Label htmlFor="build-command" className="text-xs">
+                    Build Command
+                  </Label>
+                  <Input
+                    id="build-command"
+                    value={buildCommand}
+                    onChange={(e) => setBuildCommand(e.target.value)}
+                    placeholder="npm run build"
+                    className="text-xs"
+                    disabled={isUpdating}
+                  />
+                </div>
+
+                {/* Lint Command */}
+                <div className="space-y-2">
+                  <Label htmlFor="lint-command" className="text-xs">
+                    Lint Command
+                  </Label>
+                  <Input
+                    id="lint-command"
+                    value={lintCommand}
+                    onChange={(e) => setLintCommand(e.target.value)}
+                    placeholder="npm run lint"
+                    className="text-xs"
+                    disabled={isUpdating}
+                  />
+                </div>
+
+                <Button
+                  onClick={handleQualityGateConfigSave}
+                  disabled={isUpdating}
+                  size="sm"
+                  className="w-full"
+                >
+                  {isUpdating ? 'Saving...' : 'Save Configuration'}
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Theme Section */}

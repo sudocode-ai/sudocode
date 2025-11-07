@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import type { Execution } from '@/types/execution'
+import { useQualityGateResults } from '@/hooks/useQualityGates'
 import {
   Loader2,
   XCircle,
@@ -17,6 +18,7 @@ import {
   Trash2,
   Clock,
   PauseCircle,
+  Shield,
 } from 'lucide-react'
 
 export interface ExecutionViewProps {
@@ -46,6 +48,9 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
   const [cancelling, setCancelling] = useState(false)
   const [deletingWorktree, setDeletingWorktree] = useState(false)
   const [worktreeExists, setWorktreeExists] = useState(false)
+
+  // Load quality gate results for completed executions
+  const { results: qualityGateResults } = useQualityGateResults(executionId)
 
   // Load execution metadata and check worktree status
   useEffect(() => {
@@ -388,6 +393,97 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
           </div>
         </div>
       </Card>
+
+      {/* Quality Gate Results */}
+      {qualityGateResults && (
+        <Card className="p-6">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                <h3 className="text-lg font-semibold">Quality Gates</h3>
+              </div>
+              <Badge
+                variant={qualityGateResults.passed ? 'default' : 'destructive'}
+                className={qualityGateResults.passed ? 'bg-green-600' : ''}
+              >
+                {qualityGateResults.passed ? (
+                  <>
+                    <CheckCircle2 className="mr-1 h-3 w-3" />
+                    Passed
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="mr-1 h-3 w-3" />
+                    Failed
+                  </>
+                )}
+              </Badge>
+            </div>
+
+            {/* Check Results */}
+            <div className="space-y-2">
+              {qualityGateResults.checks.map((check, index) => (
+                <div
+                  key={index}
+                  className={`rounded-md border p-3 ${
+                    check.passed
+                      ? 'border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950'
+                      : 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        {check.passed ? (
+                          <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+                        )}
+                        <span className="font-medium">{check.name}</span>
+                      </div>
+                      {check.message && (
+                        <p className="mt-1 text-sm text-muted-foreground">{check.message}</p>
+                      )}
+                      {check.output && (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-xs text-muted-foreground hover:underline">
+                            View output
+                          </summary>
+                          <pre className="mt-2 max-h-40 overflow-auto rounded bg-muted p-2 text-xs">
+                            {check.output}
+                          </pre>
+                        </details>
+                      )}
+                    </div>
+                    {check.duration && (
+                      <span className="text-xs text-muted-foreground">
+                        {(check.duration / 1000).toFixed(2)}s
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Summary */}
+            <div className="flex items-center justify-between border-t pt-3 text-sm text-muted-foreground">
+              <span>
+                {qualityGateResults.checks.filter((c) => c.passed).length} /{' '}
+                {qualityGateResults.checks.length} checks passed
+              </span>
+              {qualityGateResults.timestamp && (
+                <span>
+                  {new Date(qualityGateResults.timestamp).toLocaleString('en-US', {
+                    dateStyle: 'short',
+                    timeStyle: 'short',
+                  })}
+                </span>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Execution Monitor - uses SSE for active, logs API for completed */}
       {(execution.status === 'running' ||

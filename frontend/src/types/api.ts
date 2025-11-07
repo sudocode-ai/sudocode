@@ -10,6 +10,9 @@ import type {
   FeedbackAnchor,
   IssueGroup,
   IssueGroupMember,
+  QualityGateConfig,
+  QualityGateCheckResult,
+  QualityGateResult,
 } from '@sudocode-ai/types'
 
 /**
@@ -139,6 +142,19 @@ export interface AddIssueToGroupRequest {
 }
 
 /**
+ * Quality Gate API types
+ */
+export interface QualityGateConfigResponse {
+  enabled: boolean
+  config: QualityGateConfig | null
+}
+
+export interface UpdateQualityGateConfigRequest {
+  enabled?: boolean
+  config?: QualityGateConfig | null
+}
+
+/**
  * WebSocket message types
  */
 export interface WebSocketMessage {
@@ -179,4 +195,7 @@ export type {
   FeedbackAnchor,
   IssueGroup,
   IssueGroupMember,
+  QualityGateConfig,
+  QualityGateCheckResult,
+  QualityGateResult,
 }
