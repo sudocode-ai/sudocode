@@ -55,6 +55,7 @@ import {
   handleAgentShow,
   handleAgentValidate,
   handleAgentDelete,
+  handleAgentInstallDefaults,
 } from "./cli/agent-commands.js";
 import { getUpdateNotification } from "./update-checker.js";
 import { VERSION } from "./version.js";
@@ -556,6 +557,15 @@ agent
   .option("-f, --force", "Force deletion without confirmation")
   .action(async (presetId, options) => {
     await handleAgentDelete(presetId, options);
+  });
+
+agent
+  .command("install-defaults")
+  .description("Install default agent presets (code-reviewer, test-writer, refactorer, documenter)")
+  .option("--overwrite", "Overwrite existing presets")
+  .option("--presets <presets>", "Comma-separated list of specific presets to install")
+  .action(async (options) => {
+    await handleAgentInstallDefaults(options);
   });
 
 // ============================================================================

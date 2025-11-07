@@ -9,7 +9,7 @@
     "sdc": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc && chmod +x dist/cli.js",
+    "build": "tsc && chmod +x dist/cli.js && cp -r templates dist/",
     "dev": "tsc --watch",
     "test": "vitest",
     "test:schema": "tsc && node dist/test-schema.js",
@@ -60,6 +60,7 @@
     "vitest": "^3.2.4"
   },
   "files": [
-    "dist/**/*"
+    "dist/**/*",
+    "templates/**/*"
   ]
 }

@@ -386,3 +386,90 @@ export function isAgentsDirectoryInitialized(sudocodeDir: string): boolean {
     fs.existsSync(configPath)
   );
 }
+
+/**
+ * Get path to template presets directory
+ */
+function getTemplatePresetsDir(): string {
+  // Templates are in cli/templates/agents/presets/
+  // This file is in cli/dist/operations/agents.js
+  // So we need to go up to cli/templates/
+  const currentDir = path.dirname(new URL(import.meta.url).pathname);
+  return path.join(currentDir, "..", "..", "templates", "agents", "presets");
+}
+
+/**
+ * Install default agent presets from templates
+ * @param sudocodeDir - Sudocode directory
+ * @param options - Installation options
+ * @returns List of installed preset IDs
+ */
+export function installDefaultPresets(
+  sudocodeDir: string,
+  options?: {
+    overwrite?: boolean;
+    presets?: string[]; // Specific presets to install, or all if not specified
+  }
+): string[] {
+  const presetsDir = getPresetsDir(sudocodeDir);
+  const templatesDir = getTemplatePresetsDir();
+
+  // Ensure presets directory exists
+  if (!fs.existsSync(presetsDir)) {
+    initializeAgentsDirectory(sudocodeDir);
+  }
+
+  // Check if templates directory exists
+  if (!fs.existsSync(templatesDir)) {
+    throw new Error(`Template presets directory not found: ${templatesDir}`);
+  }
+
+  // Get list of template files
+  const templateFiles = fs
+    .readdirSync(templatesDir)
+    .filter((file) => file.endsWith(".agent.md"));
+
+  const installed: string[] = [];
+  const overwrite = options?.overwrite ?? false;
+  const specificPresets = options?.presets;
+
+  for (const templateFile of templateFiles) {
+    const presetId = templateFile.replace(".agent.md", "");
+
+    // Skip if specific presets requested and this isn't one of them
+    if (specificPresets && !specificPresets.includes(presetId)) {
+      continue;
+    }
+
+    const sourcePath = path.join(templatesDir, templateFile);
+    const destPath = path.join(presetsDir, templateFile);
+
+    // Skip if file exists and overwrite is false
+    if (fs.existsSync(destPath) && !overwrite) {
+      continue;
+    }
+
+    // Copy template to presets directory
+    fs.copyFileSync(sourcePath, destPath);
+    installed.push(presetId);
+  }
+
+  return installed;
+}
+
+/**
+ * List available default presets from templates
+ * @returns List of default preset IDs
+ */
+export function listDefaultPresets(): string[] {
+  const templatesDir = getTemplatePresetsDir();
+
+  if (!fs.existsSync(templatesDir)) {
+    return [];
+  }
+
+  return fs
+    .readdirSync(templatesDir)
+    .filter((file) => file.endsWith(".agent.md"))
+    .map((file) => file.replace(".agent.md", ""));
+}

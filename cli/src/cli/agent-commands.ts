@@ -594,3 +594,80 @@ export async function handleAgentDelete(
     process.exit(1);
   }
 }
+
+export interface AgentInstallOptions {
+  dir?: string;
+  overwrite?: boolean;
+  presets?: string;
+  jsonOutput?: boolean;
+}
+
+/**
+ * Handle agent install-defaults command
+ */
+export async function handleAgentInstallDefaults(
+  options: AgentInstallOptions
+): Promise<void> {
+  const { installDefaultPresets, listDefaultPresets } = await import("../operations/agents.js");
+  
+  try {
+    const sudocodeDir = getSudocodeDir(options.dir);
+    const jsonOutput = options.jsonOutput || false;
+
+    ensureAgentsDirectory(sudocodeDir, jsonOutput);
+
+    // Parse presets option
+    const specificPresets = options.presets
+      ? options.presets.split(",").map((p) => p.trim())
+      : undefined;
+
+    // List available defaults
+    const availableDefaults = listDefaultPresets();
+
+    if (!jsonOutput) {
+      console.log(chalk.blue("Available default presets:"));
+      for (const preset of availableDefaults) {
+        console.log(chalk.gray(`  - ${preset}`));
+      }
+      console.log();
+    }
+
+    // Install defaults
+    const installed = installDefaultPresets(sudocodeDir, {
+      overwrite: options.overwrite,
+      presets: specificPresets,
+    });
+
+    if (jsonOutput) {
+      console.log(
+        JSON.stringify({ installed, available: availableDefaults })
+      );
+    } else {
+      if (installed.length === 0) {
+        console.log(
+          chalk.yellow("No presets installed (already exist)."),
+          chalk.gray("Use --overwrite to replace existing presets.")
+        );
+      } else {
+        console.log(
+          chalk.green(`✓ Installed ${installed.length} default preset(s):`)
+        );
+        for (const presetId of installed) {
+          console.log(chalk.cyan(`  - ${presetId}`));
+        }
+      }
+    }
+  } catch (error) {
+    if (options.jsonOutput) {
+      console.error(
+        JSON.stringify({
+          error: error instanceof Error ? error.message : String(error),
+        })
+      );
+    } else {
+      console.error(chalk.red("✗ Failed to install default presets"));
+      console.error(error instanceof Error ? error.message : String(error));
+    }
+    process.exit(1);
+  }
+}
