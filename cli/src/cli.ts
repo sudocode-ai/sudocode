@@ -31,6 +31,11 @@ import {
   handleIssueComplete,
   handleSpecComplete,
 } from "./cli/completion-commands.js";
+import {
+  handleContextGenerate,
+  handleContextQuery,
+  handleContextStats,
+} from "./cli/context-commands.js";
 import { handleLink } from "./cli/relationship-commands.js";
 import { handleAddReference } from "./cli/reference-commands.js";
 import { handleReady, handleBlocked } from "./cli/query-commands.js";
@@ -386,6 +391,43 @@ program
   .description("Show detailed project statistics")
   .action(async (options) => {
     await handleStats(getContext(), options);
+  });
+
+// ============================================================================
+// CONTEXT COMMANDS
+// ============================================================================
+
+const context = program
+  .command("context")
+  .description("Manage context documentation and learnings");
+
+context
+  .command("generate")
+  .description("Generate context documentation from completion summaries")
+  .option("--since <date>", "Only include completions since this date (ISO format)")
+  .option("--limit <number>", "Limit number of completions to analyze", parseInt)
+  .option("--min-occurrences <number>", "Minimum occurrences to include pattern", parseInt)
+  .option("--no-overwrite", "Don't overwrite existing files")
+  .action(async (options) => {
+    await handleContextGenerate(getContext(), options);
+  });
+
+context
+  .command("query <id>")
+  .description("Query relevant context for an issue or spec")
+  .option("--max-similar <number>", "Max similar items to return", parseInt)
+  .option("--max-patterns <number>", "Max patterns to return", parseInt)
+  .option("--max-gotchas <number>", "Max gotchas to return", parseInt)
+  .option("--max-decisions <number>", "Max decisions to return", parseInt)
+  .action(async (id, options) => {
+    await handleContextQuery(getContext(), id, options);
+  });
+
+context
+  .command("stats")
+  .description("Show context coverage statistics")
+  .action(async (options) => {
+    await handleContextStats(getContext());
   });
 
 // ============================================================================
