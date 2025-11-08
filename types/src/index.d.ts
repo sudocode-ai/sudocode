@@ -362,6 +362,10 @@ export interface ProjectAgentAction {
   payload_json: string;
   justification: string;
 
+  // Auto-approval & Risk (Phase 6)
+  confidence_score: number | null; // 0-100: confidence in action correctness
+  risk_level: "low" | "medium" | "high" | null; // risk assessment
+
   // Lifecycle
   created_at: string;
   approved_at: string | null;
@@ -408,6 +412,9 @@ export interface ProjectAgentConfig {
 export interface AutoApprovalConfig {
   enabled: boolean;
   allowedActions: ProjectAgentActionType[];
+  // Phase 6: Confidence & Risk thresholds
+  minConfidenceScore?: number; // Default: 70 (0-100)
+  maxRiskLevel?: "low" | "medium" | "high"; // Default: "medium"
 }
 
 /**

@@ -274,6 +274,10 @@ CREATE TABLE IF NOT EXISTS project_agent_actions (
     payload_json TEXT NOT NULL,
     justification TEXT NOT NULL,
 
+    -- Auto-approval & Risk (Phase 6)
+    confidence_score INTEGER CHECK(confidence_score >= 0 AND confidence_score <= 100),
+    risk_level TEXT CHECK(risk_level IN ('low', 'medium', 'high')),
+
     -- Lifecycle
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     approved_at DATETIME,

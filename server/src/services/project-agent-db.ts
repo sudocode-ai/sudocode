@@ -179,6 +179,8 @@ export function createProjectAgentAction(
     targetType?: "spec" | "issue" | "execution";
     payload: any;
     justification: string;
+    confidenceScore?: number; // Phase 6: 0-100
+    riskLevel?: "low" | "medium" | "high"; // Phase 6
   }
 ): ProjectAgentAction {
   const id = `action_${randomUUID()}`;
@@ -187,8 +189,9 @@ export function createProjectAgentAction(
   const stmt = db.prepare(`
     INSERT INTO project_agent_actions (
       id, project_agent_execution_id, action_type, status, priority,
-      target_id, target_type, payload_json, justification, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      target_id, target_type, payload_json, justification,
+      confidence_score, risk_level, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -201,6 +204,8 @@ export function createProjectAgentAction(
     params.targetType || null,
     JSON.stringify(params.payload),
     params.justification,
+    params.confidenceScore !== undefined ? params.confidenceScore : null,
+    params.riskLevel || null,
     now
   );
 

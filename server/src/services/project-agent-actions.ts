@@ -20,6 +20,7 @@ import {
 } from "./project-agent-db.js";
 import { SudocodeClient } from "@sudocode-ai/cli/dist/client.js";
 import { getEventBus } from "./event-bus.js";
+import { getRiskAssessmentService } from "./risk-assessment.js";
 
 /**
  * Proposed action parameters
@@ -89,6 +90,21 @@ export class ActionManager {
       }
     }
 
+    // Phase 6: Calculate confidence score and risk level
+    const riskAssessment = getRiskAssessmentService().assessAction(
+      params.actionType,
+      params.payload,
+      {
+        previousActions: this.listActions({ limit: 10 }),
+      }
+    );
+
+    console.log(
+      `[action-manager] Risk assessment for ${params.actionType}: ` +
+        `confidence=${riskAssessment.confidenceScore}, risk=${riskAssessment.riskLevel}, ` +
+        `factors=[${riskAssessment.factors.join("; ")}]`
+    );
+
     // Create the action in database
     const action = createProjectAgentAction(this.db, {
       projectAgentExecutionId: params.projectAgentExecutionId,
@@ -98,6 +114,8 @@ export class ActionManager {
       targetType: params.targetType,
       payload: enrichedPayload,
       justification: params.justification,
+      confidenceScore: riskAssessment.confidenceScore,
+      riskLevel: riskAssessment.riskLevel,
     });
 
     // Increment metrics
@@ -309,6 +327,7 @@ export class ActionManager {
 
   /**
    * Check if action should be auto-approved
+   * Phase 6: Considers confidence score and risk level thresholds
    */
   private shouldAutoApprove(action: ProjectAgentAction): boolean {
     const { autoApprove } = this.config;
@@ -317,7 +336,36 @@ export class ActionManager {
       return false;
     }
 
-    return autoApprove.allowedActions.includes(action.action_type);
+    // Check if action type is in allowed list
+    if (!autoApprove.allowedActions.includes(action.action_type)) {
+      return false;
+    }
+
+    // Phase 6: Check confidence score threshold
+    const minConfidence = autoApprove.minConfidenceScore ?? 70; // Default: 70
+    if (action.confidence_score !== null && action.confidence_score < minConfidence) {
+      console.log(
+        `[action-manager] Action ${action.id} confidence (${action.confidence_score}) ` +
+          `below threshold (${minConfidence}), requiring manual approval`
+      );
+      return false;
+    }
+
+    // Phase 6: Check risk level threshold
+    const maxRisk = autoApprove.maxRiskLevel ?? "medium"; // Default: medium
+    const riskLevels = { low: 0, medium: 1, high: 2 };
+    const actionRisk = riskLevels[action.risk_level || "high"];
+    const maxRiskLevel = riskLevels[maxRisk];
+
+    if (actionRisk > maxRiskLevel) {
+      console.log(
+        `[action-manager] Action ${action.id} risk (${action.risk_level}) ` +
+          `exceeds threshold (${maxRisk}), requiring manual approval`
+      );
+      return false;
+    }
+
+    return true;
   }
 
   /**
