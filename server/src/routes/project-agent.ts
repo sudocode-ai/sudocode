@@ -22,6 +22,14 @@ import {
 } from "../services/project-agent-executor.js";
 import { getProgressReportingService } from "../services/progress-reporting.js";
 import { getCacheManager } from "../services/cache-manager.js";
+import {
+  getAvailablePresets,
+  getPresetConfig,
+  getPresetComparison,
+  suggestPreset,
+  mergeWithPreset,
+  type ConfigPreset,
+} from "../services/config-presets.js";
 
 /**
  * Create project agent router
@@ -568,6 +576,125 @@ export function createProjectAgentRouter(
         success: false,
         error: error instanceof Error ? error.message : String(error),
         message: "Failed to clear cache",
+      });
+    }
+  });
+
+  /**
+   * GET /api/project-agent/presets
+   *
+   * List all available configuration presets
+   */
+  router.get("/presets", async (req: Request, res: Response) => {
+    try {
+      const presets = getAvailablePresets();
+
+      res.json({
+        success: true,
+        data: {
+          presets,
+        },
+      });
+    } catch (error) {
+      console.error("[API Route] ERROR: Failed to list presets:", error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        message: "Failed to list presets",
+      });
+    }
+  });
+
+  /**
+   * GET /api/project-agent/presets/:preset
+   *
+   * Get configuration for a specific preset
+   */
+  router.get("/presets/:preset", async (req: Request, res: Response) => {
+    try {
+      const preset = req.params.preset as ConfigPreset;
+
+      if (!["conservative", "balanced", "aggressive"].includes(preset)) {
+        res.status(400).json({
+          success: false,
+          error: "Invalid preset. Must be: conservative, balanced, or aggressive",
+        });
+        return;
+      }
+
+      const config = getPresetConfig(preset);
+
+      res.json({
+        success: true,
+        data: {
+          preset,
+          config,
+        },
+      });
+    } catch (error) {
+      console.error("[API Route] ERROR: Failed to get preset:", error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        message: "Failed to get preset",
+      });
+    }
+  });
+
+  /**
+   * GET /api/project-agent/presets/comparison
+   *
+   * Get comparison matrix of all presets
+   */
+  router.get("/presets/comparison/matrix", async (req: Request, res: Response) => {
+    try {
+      const comparison = getPresetComparison();
+
+      res.json({
+        success: true,
+        data: {
+          comparison,
+        },
+      });
+    } catch (error) {
+      console.error("[API Route] ERROR: Failed to get preset comparison:", error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        message: "Failed to get preset comparison",
+      });
+    }
+  });
+
+  /**
+   * POST /api/project-agent/presets/suggest
+   *
+   * Suggest appropriate preset based on current or provided config
+   */
+  router.post("/presets/suggest", async (req: Request, res: Response) => {
+    try {
+      const config = req.body.config as ProjectAgentConfig;
+
+      if (!config) {
+        res.status(400).json({
+          success: false,
+          error: "Config is required in request body",
+        });
+        return;
+      }
+
+      const suggestion = suggestPreset(config);
+
+      res.json({
+        success: true,
+        data: suggestion,
+      });
+    } catch (error) {
+      console.error("[API Route] ERROR: Failed to suggest preset:", error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        message: "Failed to suggest preset",
       });
     }
   });
