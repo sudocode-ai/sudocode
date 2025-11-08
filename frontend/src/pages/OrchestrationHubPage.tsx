@@ -1,21 +1,22 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, AlertCircle, Activity, Settings } from 'lucide-react'
 import { agentRequestsApi } from '@/lib/api'
+import { useWebSocket } from '@/lib/websocket'
 import { AgentRequestQueue } from '@/components/agent/AgentRequestQueue'
 import { PatternsManager } from '@/components/agent/PatternsManager'
 import { AgentRequestStats } from '@/components/agent/AgentRequestStats'
-import type { AgentRequest } from '@/types/api'
+import type { AgentRequest, WebSocketMessage } from '@/types/api'
 
 export function OrchestrationHubPage() {
   const [pendingRequests, setPendingRequests] = useState<AgentRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const loadPendingRequests = async () => {
+  const loadPendingRequests = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
@@ -26,13 +27,27 @@ export function OrchestrationHubPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  // WebSocket for real-time updates
+  const { connected } = useWebSocket('', {
+    onMessage: (message: WebSocketMessage) => {
+      // Reload pending requests on relevant events
+      if (
+        message.type === 'agent_request_queued' ||
+        message.type === 'agent_request_presented' ||
+        message.type === 'agent_request_responded' ||
+        message.type === 'agent_request_expired' ||
+        message.type === 'agent_auto_response'
+      ) {
+        console.log('[OrchestrationHub] Agent request event received, reloading...')
+        loadPendingRequests()
+      }
+    },
+  })
 
   useEffect(() => {
     loadPendingRequests()
-    // Poll for updates every 5 seconds
-    const interval = setInterval(loadPendingRequests, 5000)
-    return () => clearInterval(interval)
   }, [])
 
   return (
