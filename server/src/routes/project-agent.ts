@@ -20,6 +20,7 @@ import {
   getProjectAgentExecutor,
   destroyProjectAgentExecutor,
 } from "../services/project-agent-executor.js";
+import { getProgressReportingService } from "../services/progress-reporting.js";
 
 /**
  * Create project agent router
@@ -470,6 +471,54 @@ export function createProjectAgentRouter(
         success: false,
         error: error instanceof Error ? error.message : String(error),
         message: "Failed to list events",
+      });
+    }
+  });
+
+  /**
+   * GET /api/project-agent/report
+   *
+   * Generate and retrieve project progress report
+   * Query params:
+   * - format: "json" | "markdown" (default: "json")
+   * - period: number of days (default: 7)
+   * - save: boolean - whether to save to file (default: false)
+   */
+  router.get("/report", async (req: Request, res: Response) => {
+    try {
+      const format = (req.query.format as string) || "json";
+      const periodDays = req.query.period ? parseInt(req.query.period as string) : 7;
+      const save = req.query.save === "true";
+
+      const reportingService = getProgressReportingService(db, repoPath);
+      const report = await reportingService.generateReport({ periodDays });
+
+      if (save) {
+        const filepath = await reportingService.saveReport(
+          report,
+          format === "markdown" ? "markdown" : "json"
+        );
+        res.json({
+          success: true,
+          data: report,
+          saved_to: filepath,
+        });
+      } else if (format === "markdown") {
+        const markdown = reportingService.formatAsMarkdown(report);
+        res.setHeader("Content-Type", "text/markdown");
+        res.send(markdown);
+      } else {
+        res.json({
+          success: true,
+          data: report,
+        });
+      }
+    } catch (error) {
+      console.error("[API Route] ERROR: Failed to generate report:", error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        message: "Failed to generate report",
       });
     }
   });
