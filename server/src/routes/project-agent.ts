@@ -30,6 +30,7 @@ import {
   mergeWithPreset,
   type ConfigPreset,
 } from "../services/config-presets.js";
+import { getMetricsService } from "../services/metrics.js";
 
 /**
  * Create project agent router
@@ -695,6 +696,94 @@ export function createProjectAgentRouter(
         success: false,
         error: error instanceof Error ? error.message : String(error),
         message: "Failed to suggest preset",
+      });
+    }
+  });
+
+  /**
+   * GET /api/project-agent/metrics/dashboard
+   *
+   * Get comprehensive dashboard metrics
+   * Query params:
+   * - period: number of days (default: 7)
+   */
+  router.get("/metrics/dashboard", async (req: Request, res: Response) => {
+    try {
+      const periodDays = req.query.period ? parseInt(req.query.period as string) : 7;
+
+      const metricsService = getMetricsService(db);
+      const metrics = await metricsService.getDashboardMetrics({ periodDays });
+
+      res.json({
+        success: true,
+        data: metrics,
+      });
+    } catch (error) {
+      console.error("[API Route] ERROR: Failed to get dashboard metrics:", error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        message: "Failed to get dashboard metrics",
+      });
+    }
+  });
+
+  /**
+   * GET /api/project-agent/metrics/action-breakdown
+   *
+   * Get action type breakdown for visualization
+   * Query params:
+   * - period: number of days (default: 7)
+   */
+  router.get("/metrics/action-breakdown", async (req: Request, res: Response) => {
+    try {
+      const periodDays = req.query.period ? parseInt(req.query.period as string) : 7;
+
+      const metricsService = getMetricsService(db);
+      const breakdown = await metricsService.getActionTypeBreakdown(periodDays);
+
+      res.json({
+        success: true,
+        data: {
+          breakdown,
+        },
+      });
+    } catch (error) {
+      console.error("[API Route] ERROR: Failed to get action breakdown:", error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        message: "Failed to get action breakdown",
+      });
+    }
+  });
+
+  /**
+   * GET /api/project-agent/metrics/activity
+   *
+   * Get recent activity log
+   * Query params:
+   * - limit: number of items (default: 20)
+   */
+  router.get("/metrics/activity", async (req: Request, res: Response) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
+
+      const metricsService = getMetricsService(db);
+      const activity = await metricsService.getRecentActivity(limit);
+
+      res.json({
+        success: true,
+        data: {
+          activity,
+        },
+      });
+    } catch (error) {
+      console.error("[API Route] ERROR: Failed to get activity:", error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        message: "Failed to get activity",
       });
     }
   });
