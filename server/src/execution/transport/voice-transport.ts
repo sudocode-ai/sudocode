@@ -9,6 +9,7 @@
  */
 
 import type { VoiceEvent, VoiceInputData } from "@sudocode-ai/types";
+import type { VoiceTranscriptQueue } from "../../services/voice-transcript-queue.js";
 
 /**
  * Voice input handler callback
@@ -68,11 +69,16 @@ export class VoiceTransport {
     clientId: string,
     message: any
   ) => void) | null = null;
+  private transcriptQueue: VoiceTranscriptQueue | null = null;
 
   /**
    * Create a new voice transport instance
+   *
+   * @param transcriptQueue - Optional transcript queue for storing voice input
    */
-  constructor() {}
+  constructor(transcriptQueue?: VoiceTranscriptQueue) {
+    this.transcriptQueue = transcriptQueue || null;
+  }
 
   /**
    * Set the callback for broadcasting messages to clients
@@ -202,6 +208,11 @@ export class VoiceTransport {
       `[voice-transport] Voice input from ${clientId} for ${executionId}:`,
       (data as VoiceInputData).transcript?.substring(0, 50)
     );
+
+    // Queue transcript if queue is available
+    if (this.transcriptQueue) {
+      this.transcriptQueue.enqueue(executionId, data as VoiceInputData);
+    }
 
     // Notify all registered handlers
     for (const handler of Array.from(this.inputHandlers)) {

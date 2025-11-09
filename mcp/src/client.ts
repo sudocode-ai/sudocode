@@ -16,6 +16,7 @@ export class SudocodeClient {
   private cliPath: string;
   private cliArgs: string[];
   private dbPath?: string;
+  private serverUrl: string;
   private versionChecked = false;
 
   constructor(config?: SudocodeClientConfig) {
@@ -30,11 +31,19 @@ export class SudocodeClient {
 
     this.workingDir = workingDir;
     this.dbPath = config?.dbPath || process.env.SUDOCODE_DB;
+    this.serverUrl = config?.serverUrl || process.env.SUDOCODE_SERVER_URL || "http://localhost:3000";
 
     // Auto-discover CLI path from node_modules or use configured/env path
     const cliInfo = this.findCliPath();
     this.cliPath = cliInfo.path;
     this.cliArgs = cliInfo.args;
+  }
+
+  /**
+   * Get the server URL for HTTP API calls
+   */
+  getServerUrl(): string {
+    return this.serverUrl;
   }
 
   /**

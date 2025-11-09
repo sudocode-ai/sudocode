@@ -31,6 +31,7 @@ import { EventBuffer } from "./event-buffer.js";
 import { VoiceTransport } from "./voice-transport.js";
 import { VoiceEventAdapter } from "../output/voice-event-adapter.js";
 import type { VoiceEvent } from "@sudocode-ai/types";
+import type { VoiceTranscriptQueue } from "../../services/voice-transcript-queue.js";
 
 /**
  * Union type for all AG-UI events
@@ -82,10 +83,12 @@ export class TransportManager {
    * Create a new transport manager
    *
    * Initializes the SSE transport layer, voice transport, and event buffer
+   *
+   * @param transcriptQueue - Optional voice transcript queue
    */
-  constructor() {
+  constructor(transcriptQueue?: VoiceTranscriptQueue) {
     this.sseTransport = new SseTransport();
-    this.voiceTransport = new VoiceTransport();
+    this.voiceTransport = new VoiceTransport(transcriptQueue);
     this.eventBuffer = new EventBuffer();
 
     // Start periodic pruning of stale buffers (every 15 minutes)

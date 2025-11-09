@@ -18,6 +18,7 @@ import * as specTools from "./tools/specs.js";
 import * as relationshipTools from "./tools/relationships.js";
 import * as feedbackTools from "./tools/feedback.js";
 import * as referenceTools from "./tools/references.js";
+import * as voiceTools from "./tools/voice.js";
 import { SudocodeClientConfig } from "./types.js";
 import { existsSync } from "fs";
 import { join } from "path";
@@ -354,6 +355,46 @@ export class SudocodeMCPServer {
               },
             },
           },
+          {
+            name: "voice_speak",
+            description:
+              "Send text to be spoken via text-to-speech. Useful for providing real-time feedback or updates to the user during execution. Requires voice-enabled execution.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                text: {
+                  type: "string",
+                  description: "Text to speak to the user",
+                },
+                priority: {
+                  type: "string",
+                  enum: ["high", "normal", "low"],
+                  description:
+                    "Speech priority: high (interrupts), normal (queued), low (background)",
+                  default: "normal",
+                },
+              },
+              required: ["text"],
+            },
+          },
+          {
+            name: "voice_listen",
+            description:
+              "Retrieve pending voice transcripts from the user. Returns all voice input since the last call. Each call dequeues transcripts, so subsequent calls only return new input. Requires voice-enabled execution.",
+            inputSchema: {
+              type: "object",
+              properties: {},
+            },
+          },
+          {
+            name: "voice_status",
+            description:
+              "Check if voice features are available for the current execution. Returns voice enablement status, pending transcript count, and transport readiness.",
+            inputSchema: {
+              type: "object",
+              properties: {},
+            },
+          },
         ],
       };
     });
@@ -420,6 +461,18 @@ export class SudocodeMCPServer {
 
           case "add_feedback":
             result = await feedbackTools.addFeedback(this.client, args as any);
+            break;
+
+          case "voice_speak":
+            result = await voiceTools.voice_speak(this.client, args as any);
+            break;
+
+          case "voice_listen":
+            result = await voiceTools.voice_listen(this.client, args as any);
+            break;
+
+          case "voice_status":
+            result = await voiceTools.voice_status(this.client, args as any);
             break;
 
           default:

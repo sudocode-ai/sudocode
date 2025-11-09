@@ -58,6 +58,7 @@ export interface SudocodeClientConfig {
   cliPath?: string;
   dbPath?: string;
   syncOnStartup?: boolean;
+  serverUrl?: string; // URL of sudocode local server for voice API
 }
 
 // ============================================================================

@@ -28,6 +28,8 @@ import { createFeedbackRouter } from "./routes/feedback.js";
 import { createExecutionsRouter } from "./routes/executions.js";
 import { createExecutionStreamRoutes } from "./routes/executions-stream.js";
 import { TransportManager } from "./execution/transport/transport-manager.js";
+import { VoiceTranscriptQueue } from "./services/voice-transcript-queue.js";
+import { createVoiceRouter } from "./routes/voice.js";
 import { getIssueById } from "./services/issues.js";
 import { getSpecById } from "./services/specs.js";
 import {
@@ -64,6 +66,7 @@ const REPO_ROOT = path.dirname(SUDOCODE_DIR);
 let db!: Database.Database;
 let watcher: ServerWatcherControl | null = null;
 let transportManager!: TransportManager;
+let voiceTranscriptQueue!: VoiceTranscriptQueue;
 let logsStore!: ExecutionLogsStore;
 // let logsCleanup: ExecutionLogsCleanup | null = null;
 let executionService: ExecutionService | null = null;
@@ -82,8 +85,12 @@ async function initialize() {
       );
     }
 
-    // Initialize transport manager for SSE streaming
-    transportManager = new TransportManager();
+    // Initialize voice transcript queue
+    voiceTranscriptQueue = new VoiceTranscriptQueue();
+    console.log("Voice transcript queue initialized");
+
+    // Initialize transport manager for SSE streaming and voice
+    transportManager = new TransportManager(voiceTranscriptQueue);
     console.log("Transport manager initialized");
 
     // Initialize execution logs store
@@ -219,6 +226,11 @@ app.use(
   )
 );
 app.use("/api/executions", createExecutionStreamRoutes(transportManager));
+// Mount voice API routes
+app.use(
+  "/api/voice",
+  createVoiceRouter({ transportManager, transcriptQueue: voiceTranscriptQueue })
+);
 
 // Health check endpoint
 app.get("/health", (_req: Request, res: Response) => {
