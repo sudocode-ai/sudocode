@@ -287,9 +287,17 @@ export class CRDTCoordinator {
    * Setup persistence layer
    */
   private setupPersistence(): void {
-    this.ydoc.on('update', (_update: Uint8Array, origin: any) => {
+    this.ydoc.on('update', (update: Uint8Array, origin: any) => {
       // Don't persist updates we just loaded from DB
       if (origin === 'db-load') return;
+
+      // Broadcast local updates to all clients (exclude origin client if specified)
+      if (typeof origin === 'string') {
+        // Update came from a client, already broadcast by handleClientUpdate
+      } else {
+        // Local update from public API - broadcast to all clients
+        this.broadcastUpdate(update);
+      }
 
       // Debounce persistence
       this.debouncedPersist();

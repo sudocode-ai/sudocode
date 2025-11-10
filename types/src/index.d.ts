@@ -273,3 +273,6 @@ export interface Execution {
   step_index: number | null;
   step_config: string | null;
 }
+
+// Export CRDT types
+export * from './crdt.js';
