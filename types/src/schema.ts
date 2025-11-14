@@ -306,7 +306,8 @@ CREATE INDEX IF NOT EXISTS idx_execution_logs_line_count ON execution_logs(line_
  */
 
 export const READY_ISSUES_VIEW = `
-CREATE VIEW IF NOT EXISTS ready_issues AS
+DROP VIEW IF EXISTS ready_issues;
+CREATE VIEW ready_issues AS
 SELECT i.*
 FROM issues i
 WHERE i.status = 'open'
@@ -326,7 +327,8 @@ WHERE i.status = 'open'
 `;
 
 export const BLOCKED_ISSUES_VIEW = `
-CREATE VIEW IF NOT EXISTS blocked_issues AS
+DROP VIEW IF EXISTS blocked_issues;
+CREATE VIEW blocked_issues AS
 SELECT
     i.*,
     COUNT(DISTINCT blocker.id) as blocked_by_count,
