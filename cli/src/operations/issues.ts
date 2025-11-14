@@ -9,6 +9,7 @@ import {
   getIncomingRelationships,
   getOutgoingRelationships,
 } from "./relationships.js";
+import { syncIssue } from "../crdt-sync.js";
 
 export interface CreateIssueInput {
   id: string;
@@ -166,6 +167,10 @@ export function createIssue(
     if (!issue) {
       throw new Error(`Failed to create issue ${input.id}`);
     }
+
+    // Sync to CRDT if enabled
+    syncIssue(issue);
+
     return issue;
   } catch (error: any) {
     if (error.code && error.code.startsWith("SQLITE_CONSTRAINT")) {
@@ -312,6 +317,9 @@ export function updateIssue(
     if (input.status === "closed" && existing.status !== "closed") {
       updateDependentBlockedIssues(db, id);
     }
+
+    // Sync to CRDT if enabled
+    syncIssue(updated);
 
     return updated;
   } catch (error: any) {

@@ -5,6 +5,7 @@
 import type Database from "better-sqlite3";
 import type { Spec } from "../types.js";
 import { generateUUID } from "../id-generator.js";
+import { syncSpec } from "../crdt-sync.js";
 
 export interface CreateSpecInput {
   id: string;
@@ -145,6 +146,10 @@ export function createSpec(
     if (!spec) {
       throw new Error(`Failed to create spec ${input.id}`);
     }
+
+    // Sync to CRDT if enabled
+    syncSpec(spec);
+
     return spec;
   } catch (error: any) {
     if (error.code && error.code.startsWith("SQLITE_CONSTRAINT")) {
@@ -272,6 +277,10 @@ export function updateSpec(
     if (!updated) {
       throw new Error(`Failed to update spec ${id}`);
     }
+
+    // Sync to CRDT if enabled
+    syncSpec(updated);
+
     return updated;
   } catch (error: any) {
     if (error.code && error.code.startsWith("SQLITE_CONSTRAINT")) {

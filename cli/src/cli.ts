@@ -51,6 +51,7 @@ import {
 } from "./cli/merge-commands.js";
 import { getUpdateNotification } from "./update-checker.js";
 import { VERSION } from "./version.js";
+import { initializeCRDT, shutdownCRDT } from "./crdt-sync.js";
 
 // Global state
 let db: Database.Database | null = null;
@@ -124,7 +125,7 @@ program
   .version(VERSION)
   .option("--db <path>", "Database path (default: auto-discover)")
   .option("--json", "Output in JSON format")
-  .hook("preAction", (thisCommand) => {
+  .hook("preAction", async (thisCommand) => {
     // Get global options
     const opts = thisCommand.optsWithGlobals();
     if (opts.db) dbPath = opts.db;
@@ -133,9 +134,14 @@ program
     // Skip DB init for init command
     if (thisCommand.name() !== "init") {
       initDB();
+      // Initialize CRDT if in execution context
+      await initializeCRDT();
     }
   })
-  .hook("postAction", () => {
+  .hook("postAction", async () => {
+    // Shutdown CRDT if enabled
+    await shutdownCRDT();
+
     // Close database after command completes
     if (db) {
       db.close();

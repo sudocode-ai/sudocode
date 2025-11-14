@@ -40,5 +40,5 @@ export async function addFeedback(
   //   args.push("--agent", params.agent);
   // }
 
-  return client.exec(args);
+  return await client.exec(args);
 }

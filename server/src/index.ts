@@ -14,6 +14,7 @@ import { initDatabase, getDatabaseInfo } from "./services/db.js";
 import { ExecutionLifecycleService } from "./services/execution-lifecycle.js";
 import { ExecutionService } from "./services/execution-service.js";
 import { ExecutionLogsStore } from "./services/execution-logs-store.js";
+import { CRDTCoordinator } from "./services/crdt-coordinator.js";
 // import {
 //   ExecutionLogsCleanup,
 //   DEFAULT_CLEANUP_CONFIG,
@@ -66,6 +67,7 @@ let transportManager!: TransportManager;
 let logsStore!: ExecutionLogsStore;
 // let logsCleanup: ExecutionLogsCleanup | null = null;
 let executionService: ExecutionService | null = null;
+let crdtCoordinator: CRDTCoordinator | null = null;
 
 // Async initialization function
 async function initialize() {
@@ -107,15 +109,56 @@ async function initialize() {
     // logsCleanup = new ExecutionLogsCleanup(logsStore, cleanupConfig);
     // logsCleanup.start();
 
+    // Read CRDT configuration
+    const CRDT_ENABLED = process.env.CRDT_ENABLED !== "false";
+    const crdtPort = parseInt(process.env.CRDT_SERVER_PORT || "3001", 10);
+    const crdtHost = process.env.CRDT_SERVER_HOST || "localhost";
+    const crdtPersistInterval = parseInt(
+      process.env.CRDT_PERSIST_INTERVAL || "500",
+      10
+    );
+    const crdtGcInterval = parseInt(
+      process.env.CRDT_GC_INTERVAL || "300000",
+      10
+    );
+
     // Initialize execution service globally for cleanup on shutdown
     executionService = new ExecutionService(
       db,
       REPO_ROOT,
       undefined,
       transportManager,
-      logsStore
+      logsStore,
+      {
+        enabled: CRDT_ENABLED,
+        host: crdtHost,
+        port: crdtPort,
+      }
     );
     console.log("Execution service initialized");
+
+    // Initialize CRDT Coordinator if enabled
+    if (CRDT_ENABLED) {
+      try {
+
+        crdtCoordinator = new CRDTCoordinator(db, {
+          port: crdtPort,
+          host: crdtHost,
+          persistInterval: crdtPersistInterval,
+          gcInterval: crdtGcInterval,
+        });
+
+        console.log(
+          `CRDT Coordinator initialized on ${crdtHost}:${crdtPort}`
+        );
+      } catch (error) {
+        console.error("Failed to initialize CRDT Coordinator:", error);
+        console.warn("Continuing without CRDT synchronization");
+        crdtCoordinator = null;
+      }
+    } else {
+      console.log("CRDT synchronization disabled");
+    }
 
     // Cleanup orphaned worktrees on startup (if configured)
     const worktreeConfig = getWorktreeConfig(REPO_ROOT);
@@ -432,6 +475,16 @@ process.on("SIGINT", async () => {
     await watcher.stop();
   }
 
+  // Shutdown CRDT Coordinator
+  if (crdtCoordinator) {
+    try {
+      await crdtCoordinator.shutdown();
+      console.log("CRDT Coordinator shutdown complete");
+    } catch (error) {
+      console.error("Error shutting down CRDT Coordinator:", error);
+    }
+  }
+
   // Shutdown WebSocket server
   await shutdownWebSocketServer();
 
@@ -474,6 +527,16 @@ process.on("SIGTERM", async () => {
   // Stop file watcher
   if (watcher) {
     await watcher.stop();
+  }
+
+  // Shutdown CRDT Coordinator
+  if (crdtCoordinator) {
+    try {
+      await crdtCoordinator.shutdown();
+      console.log("CRDT Coordinator shutdown complete");
+    } catch (error) {
+      console.error("Error shutting down CRDT Coordinator:", error);
+    }
   }
 
   // Shutdown WebSocket server

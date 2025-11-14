@@ -27,6 +27,7 @@ import { createAgUiSystem } from "../execution/output/ag-ui-integration.js";
 import type { AgUiEventAdapter } from "../execution/output/ag-ui-adapter.js";
 import type { TransportManager } from "../execution/transport/transport-manager.js";
 import { ExecutionLogsStore } from "./execution-logs-store.js";
+import { CRDTAgent } from "../execution/crdt-agent.js";
 
 /**
  * Configuration for creating an execution
@@ -87,6 +88,10 @@ export class ExecutionService {
   private transportManager?: TransportManager;
   private logsStore: ExecutionLogsStore;
   private activeOrchestrators = new Map<string, LinearOrchestrator>();
+  private activeAgents = new Map<string, CRDTAgent>();
+  private crdtEnabled: boolean = false;
+  private crdtHost: string = "localhost";
+  private crdtPort: number = 3001;
 
   /**
    * Create a new ExecutionService
@@ -96,13 +101,19 @@ export class ExecutionService {
    * @param lifecycleService - Optional execution lifecycle service (creates one if not provided)
    * @param transportManager - Optional transport manager for SSE streaming
    * @param logsStore - Optional execution logs store (creates one if not provided)
+   * @param crdtConfig - Optional CRDT configuration
    */
   constructor(
     db: Database.Database,
     repoPath: string,
     lifecycleService?: ExecutionLifecycleService,
     transportManager?: TransportManager,
-    logsStore?: ExecutionLogsStore
+    logsStore?: ExecutionLogsStore,
+    crdtConfig?: {
+      enabled: boolean;
+      host: string;
+      port: number;
+    }
   ) {
     this.db = db;
     this.repoPath = repoPath;
@@ -111,6 +122,13 @@ export class ExecutionService {
       lifecycleService || new ExecutionLifecycleService(db, repoPath);
     this.transportManager = transportManager;
     this.logsStore = logsStore || new ExecutionLogsStore(db);
+
+    // Configure CRDT
+    if (crdtConfig) {
+      this.crdtEnabled = crdtConfig.enabled;
+      this.crdtHost = crdtConfig.host;
+      this.crdtPort = crdtConfig.port;
+    }
   }
 
   /**
@@ -302,6 +320,50 @@ export class ExecutionService {
       // Don't fail execution creation - logs are nice-to-have
     }
 
+    // Create and connect CRDT Agent if enabled
+    let crdtAgent: CRDTAgent | undefined;
+    if (this.crdtEnabled) {
+      try {
+        crdtAgent = new CRDTAgent({
+          agentId: execution.id,
+          coordinatorHost: this.crdtHost,
+          coordinatorPort: this.crdtPort,
+        });
+
+        // Connect to coordinator (non-blocking, will retry/fallback if unavailable)
+        await crdtAgent.connect().catch((error) => {
+          console.warn(
+            "[ExecutionService] CRDT Agent connection failed (continuing in local-only mode):",
+            {
+              executionId: execution.id,
+              error: error instanceof Error ? error.message : String(error),
+            }
+          );
+        });
+
+        // Store agent for later cleanup
+        this.activeAgents.set(execution.id, crdtAgent);
+
+        // Initialize execution state in CRDT
+        crdtAgent.updateExecutionState(execution.id, {
+          status: "preparing",
+          issueId,
+        });
+
+        console.log(`[ExecutionService] CRDT Agent created for execution ${execution.id}`);
+      } catch (error) {
+        console.error(
+          "[ExecutionService] Failed to create CRDT Agent (non-critical):",
+          {
+            executionId: execution.id,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+        // Don't fail execution - CRDT is optional
+        crdtAgent = undefined;
+      }
+    }
+
     // 3. Build WorkflowDefinition
     const workflow: WorkflowDefinition = {
       id: `workflow-${execution.id}`,
@@ -331,6 +393,16 @@ export class ExecutionService {
     };
 
     // 4. Create execution engine stack
+    // Prepare CRDT environment variables if enabled
+    const crdtEnv: Record<string, string> = {};
+    if (this.crdtEnabled) {
+      crdtEnv.CRDT_EXECUTION_ID = execution.id;
+      crdtEnv.CRDT_WORKTREE_PATH = workDir;
+      crdtEnv.CRDT_SERVER_HOST = this.crdtHost;
+      crdtEnv.CRDT_SERVER_PORT = this.crdtPort.toString();
+      crdtEnv.CRDT_SERVER_URL = `ws://${this.crdtHost}:${this.crdtPort}/sync`;
+    }
+
     const processManager = new SimpleProcessManager({
       executablePath: "claude",
       args: [
@@ -339,6 +411,7 @@ export class ExecutionService {
         "stream-json",
         "--dangerously-skip-permissions",
       ],
+      env: this.crdtEnabled ? crdtEnv : undefined,
     });
 
     let engine = new SimpleExecutionEngine(processManager, {
@@ -421,6 +494,15 @@ export class ExecutionService {
         updateExecution(this.db, execution.id, {
           status: "running",
         });
+
+        // Update CRDT state
+        if (crdtAgent) {
+          crdtAgent.updateExecutionState(execution.id, {
+            status: "running",
+            startedAt: Date.now(),
+          });
+          crdtAgent.updateAgentStatus("working");
+        }
       } catch (error) {
         console.error(
           "[ExecutionService] Failed to update execution status to running",
@@ -432,7 +514,7 @@ export class ExecutionService {
       }
     });
 
-    orchestrator.onWorkflowComplete(() => {
+    orchestrator.onWorkflowComplete(async () => {
       console.log("[ExecutionService] Workflow completed successfully", {
         executionId: execution.id,
       });
@@ -441,6 +523,33 @@ export class ExecutionService {
           status: "completed",
           completed_at: new Date().toISOString(),
         });
+
+        // Update CRDT state and cleanup
+        if (crdtAgent) {
+          crdtAgent.updateExecutionState(execution.id, {
+            status: "completed",
+            completedAt: Date.now(),
+          });
+          crdtAgent.updateAgentStatus("idle");
+
+          // Export JSONL to worktree before disconnecting
+          try {
+            await crdtAgent.exportToLocalJSONL(workDir);
+            console.log(`[ExecutionService] Exported CRDT state to JSONL for execution ${execution.id}`);
+          } catch (exportError) {
+            console.error(
+              "[ExecutionService] Failed to export CRDT to JSONL:",
+              {
+                executionId: execution.id,
+                error: exportError instanceof Error ? exportError.message : String(exportError),
+              }
+            );
+          }
+
+          // Disconnect agent
+          await crdtAgent.disconnect();
+          this.activeAgents.delete(execution.id);
+        }
       } catch (error) {
         console.error(
           "[ExecutionService] Failed to update execution status to completed",
@@ -455,7 +564,7 @@ export class ExecutionService {
       this.activeOrchestrators.delete(execution.id);
     });
 
-    orchestrator.onWorkflowFailed((_executionId, error) => {
+    orchestrator.onWorkflowFailed(async (_executionId, error) => {
       console.error("[ExecutionService] Workflow failed", {
         executionId: execution.id,
         error: error.message,
@@ -467,6 +576,33 @@ export class ExecutionService {
           completed_at: new Date().toISOString(),
           error_message: error.message,
         });
+
+        // Update CRDT state and cleanup
+        if (crdtAgent) {
+          crdtAgent.updateExecutionState(execution.id, {
+            status: "failed",
+            completedAt: Date.now(),
+          });
+          crdtAgent.updateAgentStatus("idle");
+
+          // Export JSONL even on failure
+          try {
+            await crdtAgent.exportToLocalJSONL(workDir);
+            console.log(`[ExecutionService] Exported CRDT state to JSONL for failed execution ${execution.id}`);
+          } catch (exportError) {
+            console.error(
+              "[ExecutionService] Failed to export CRDT to JSONL:",
+              {
+                executionId: execution.id,
+                error: exportError instanceof Error ? exportError.message : String(exportError),
+              }
+            );
+          }
+
+          // Disconnect agent
+          await crdtAgent.disconnect();
+          this.activeAgents.delete(execution.id);
+        }
       } catch (updateError) {
         console.error(
           "[ExecutionService] Failed to update execution status to failed",
@@ -587,6 +723,49 @@ Please continue working on this issue, taking into account the feedback above.`;
       // Don't fail execution creation - logs are nice-to-have
     }
 
+    // Create and connect CRDT Agent if enabled
+    let followUpCrdtAgent: CRDTAgent | undefined;
+    if (this.crdtEnabled) {
+      try {
+        followUpCrdtAgent = new CRDTAgent({
+          agentId: newExecution.id,
+          coordinatorHost: this.crdtHost,
+          coordinatorPort: this.crdtPort,
+        });
+
+        // Connect to coordinator
+        await followUpCrdtAgent.connect().catch((error) => {
+          console.warn(
+            "[ExecutionService] CRDT Agent connection failed for follow-up (continuing in local-only mode):",
+            {
+              executionId: newExecution.id,
+              error: error instanceof Error ? error.message : String(error),
+            }
+          );
+        });
+
+        // Store agent for later cleanup
+        this.activeAgents.set(newExecution.id, followUpCrdtAgent);
+
+        // Initialize execution state in CRDT
+        followUpCrdtAgent.updateExecutionState(newExecution.id, {
+          status: "preparing",
+          issueId: prevExecution.issue_id,
+        });
+
+        console.log(`[ExecutionService] CRDT Agent created for follow-up execution ${newExecution.id}`);
+      } catch (error) {
+        console.error(
+          "[ExecutionService] Failed to create CRDT Agent for follow-up (non-critical):",
+          {
+            executionId: newExecution.id,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+        followUpCrdtAgent = undefined;
+      }
+    }
+
     // 5. Build WorkflowDefinition
     const workflow: WorkflowDefinition = {
       id: `workflow-${newExecution.id}`,
@@ -615,6 +794,16 @@ Please continue working on this issue, taking into account the feedback above.`;
     };
 
     // 6. Create execution engine stack
+    // Prepare CRDT environment variables if enabled
+    const followUpCrdtEnv: Record<string, string> = {};
+    if (this.crdtEnabled && prevExecution.worktree_path) {
+      followUpCrdtEnv.CRDT_EXECUTION_ID = newExecution.id;
+      followUpCrdtEnv.CRDT_WORKTREE_PATH = prevExecution.worktree_path;
+      followUpCrdtEnv.CRDT_SERVER_HOST = this.crdtHost;
+      followUpCrdtEnv.CRDT_SERVER_PORT = this.crdtPort.toString();
+      followUpCrdtEnv.CRDT_SERVER_URL = `ws://${this.crdtHost}:${this.crdtPort}/sync`;
+    }
+
     const processManager = new SimpleProcessManager({
       executablePath: "claude",
       args: [
@@ -623,6 +812,7 @@ Please continue working on this issue, taking into account the feedback above.`;
         "stream-json",
         "--dangerously-skip-permissions",
       ],
+      env: this.crdtEnabled ? followUpCrdtEnv : undefined,
     });
 
     let engine = new SimpleExecutionEngine(processManager, {
@@ -703,6 +893,15 @@ Please continue working on this issue, taking into account the feedback above.`;
         updateExecution(this.db, newExecution.id, {
           status: "running",
         });
+
+        // Update CRDT state
+        if (followUpCrdtAgent) {
+          followUpCrdtAgent.updateExecutionState(newExecution.id, {
+            status: "running",
+            startedAt: Date.now(),
+          });
+          followUpCrdtAgent.updateAgentStatus("working");
+        }
       } catch (error) {
         console.error(
           "[ExecutionService] Failed to update follow-up execution status to running",
@@ -714,12 +913,41 @@ Please continue working on this issue, taking into account the feedback above.`;
       }
     });
 
-    orchestrator.onWorkflowComplete(() => {
+    orchestrator.onWorkflowComplete(async () => {
       try {
         updateExecution(this.db, newExecution.id, {
           status: "completed",
           completed_at: new Date().toISOString(),
         });
+
+        // Update CRDT state and cleanup
+        if (followUpCrdtAgent) {
+          followUpCrdtAgent.updateExecutionState(newExecution.id, {
+            status: "completed",
+            completedAt: Date.now(),
+          });
+          followUpCrdtAgent.updateAgentStatus("idle");
+
+          // Export JSONL
+          try {
+            if (prevExecution.worktree_path) {
+              await followUpCrdtAgent.exportToLocalJSONL(prevExecution.worktree_path);
+              console.log(`[ExecutionService] Exported CRDT state to JSONL for follow-up execution ${newExecution.id}`);
+            }
+          } catch (exportError) {
+            console.error(
+              "[ExecutionService] Failed to export CRDT to JSONL:",
+              {
+                executionId: newExecution.id,
+                error: exportError instanceof Error ? exportError.message : String(exportError),
+              }
+            );
+          }
+
+          // Disconnect agent
+          await followUpCrdtAgent.disconnect();
+          this.activeAgents.delete(newExecution.id);
+        }
       } catch (error) {
         console.error(
           "[ExecutionService] Failed to update follow-up execution status to completed",
@@ -732,13 +960,42 @@ Please continue working on this issue, taking into account the feedback above.`;
       this.activeOrchestrators.delete(newExecution.id);
     });
 
-    orchestrator.onWorkflowFailed((_execId, error) => {
+    orchestrator.onWorkflowFailed(async (_execId, error) => {
       try {
         updateExecution(this.db, newExecution.id, {
           status: "failed",
           completed_at: new Date().toISOString(),
           error_message: error.message,
         });
+
+        // Update CRDT state and cleanup
+        if (followUpCrdtAgent) {
+          followUpCrdtAgent.updateExecutionState(newExecution.id, {
+            status: "failed",
+            completedAt: Date.now(),
+          });
+          followUpCrdtAgent.updateAgentStatus("idle");
+
+          // Export JSONL even on failure
+          try {
+            if (prevExecution.worktree_path) {
+              await followUpCrdtAgent.exportToLocalJSONL(prevExecution.worktree_path);
+              console.log(`[ExecutionService] Exported CRDT state to JSONL for failed follow-up execution ${newExecution.id}`);
+            }
+          } catch (exportError) {
+            console.error(
+              "[ExecutionService] Failed to export CRDT to JSONL:",
+              {
+                executionId: newExecution.id,
+                error: exportError instanceof Error ? exportError.message : String(exportError),
+              }
+            );
+          }
+
+          // Disconnect agent
+          await followUpCrdtAgent.disconnect();
+          this.activeAgents.delete(newExecution.id);
+        }
       } catch (updateError) {
         console.error(
           "[ExecutionService] Failed to update follow-up execution status to failed",
@@ -791,6 +1048,34 @@ Please continue working on this issue, taking into account the feedback above.`;
       await orchestrator.cancelWorkflow(executionId);
       // Remove from active map
       this.activeOrchestrators.delete(executionId);
+    }
+
+    // Disconnect CRDT agent if active
+    const agent = this.activeAgents.get(executionId);
+    if (agent) {
+      try {
+        agent.updateExecutionState(executionId, {
+          status: "cancelled",
+          completedAt: Date.now(),
+        });
+        agent.updateAgentStatus("idle");
+
+        // Export JSONL before disconnecting
+        if (execution.worktree_path) {
+          await agent.exportToLocalJSONL(execution.worktree_path);
+        }
+
+        await agent.disconnect();
+        this.activeAgents.delete(executionId);
+      } catch (error) {
+        console.error(
+          "[ExecutionService] Error disconnecting CRDT agent during cancellation:",
+          {
+            executionId,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+      }
     }
 
     // Update status in database (orchestrator.cancelWorkflow doesn't emit events for DB update)
@@ -894,11 +1179,27 @@ Please continue working on this issue, taking into account the feedback above.`;
       );
     }
 
+    // Disconnect all CRDT agents
+    for (const [executionId, agent] of this.activeAgents.entries()) {
+      cancelPromises.push(
+        agent.disconnect().catch((error) => {
+          console.error("[ExecutionService] Error disconnecting CRDT agent", {
+            executionId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        })
+      );
+    }
+
     // Wait for all cancellations to complete (with timeout)
     await Promise.race([
       Promise.all(cancelPromises),
       new Promise((resolve) => setTimeout(resolve, 5000)), // 5 second timeout
     ]);
+
+    // Clear maps
+    this.activeOrchestrators.clear();
+    this.activeAgents.clear();
   }
 
   /**

@@ -103,7 +103,7 @@ export async function upsertSpec(
       args.push("--archived", params.archived.toString());
     }
 
-    return client.exec(args);
+    return await client.exec(args);
   } else {
     // Create mode
     if (!params.title) {
@@ -125,6 +125,6 @@ export async function upsertSpec(
       args.push("--tags", params.tags.join(","));
     }
 
-    return client.exec(args);
+    return await client.exec(args);
   }
 }

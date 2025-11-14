@@ -4,6 +4,7 @@
 
 import type Database from "better-sqlite3";
 import type { IssueFeedback, FeedbackType, FeedbackAnchor } from "../types.js";
+import { syncFeedback } from "../crdt-sync.js";
 
 export interface CreateFeedbackInput {
   id?: string;
@@ -133,6 +134,10 @@ export function createFeedback(
     if (!feedback) {
       throw new Error(`Failed to create feedback ${id}`);
     }
+
+    // Sync to CRDT if enabled
+    syncFeedback(feedback);
+
     return feedback;
   } catch (error: any) {
     if (error.code && error.code.startsWith("SQLITE_CONSTRAINT")) {

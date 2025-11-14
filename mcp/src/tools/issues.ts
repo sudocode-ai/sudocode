@@ -136,7 +136,7 @@ export async function upsertIssue(
       args.push("--archived", params.archived.toString());
     }
 
-    return client.exec(args);
+    return await client.exec(args);
   } else {
     // Create mode
     if (!params.title) {
@@ -158,6 +158,6 @@ export async function upsertIssue(
       args.push("--tags", params.tags.join(","));
     }
 
-    return client.exec(args);
+    return await client.exec(args);
   }
 }

@@ -712,6 +712,34 @@ export class CRDTCoordinator {
   }
 
   /**
+   * Get all agent metadata (for testing/monitoring)
+   */
+  public getAgentMetadata(): AgentMetadata[] {
+    const metadataMap = this.ydoc.getMap<AgentMetadata>('agentMetadata');
+    const agents: AgentMetadata[] = [];
+
+    metadataMap.forEach((metadata) => {
+      agents.push(metadata);
+    });
+
+    return agents;
+  }
+
+  /**
+   * Get all execution states (for testing/monitoring)
+   */
+  public getExecutionState(): ExecutionState[] {
+    const execMap = this.ydoc.getMap<ExecutionState>('executionState');
+    const states: ExecutionState[] = [];
+
+    execMap.forEach((state) => {
+      states.push(state);
+    });
+
+    return states;
+  }
+
+  /**
    * Shutdown coordinator
    */
   public async shutdown(): Promise<void> {
@@ -732,10 +760,33 @@ export class CRDTCoordinator {
 
     // Close all client connections
     this.clients.forEach(ws => ws.close());
-    this.clients.clear();
+
+    // Wait for all connections to close
+    await new Promise<void>((resolve) => {
+      if (this.clients.size === 0) {
+        resolve();
+        return;
+      }
+
+      const checkInterval = setInterval(() => {
+        if (this.clients.size === 0) {
+          clearInterval(checkInterval);
+          resolve();
+        }
+      }, 50);
+
+      // Timeout after 2 seconds
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        this.clients.clear();
+        resolve();
+      }, 2000);
+    });
 
     // Close WebSocket server
-    this.wss.close();
+    await new Promise<void>((resolve) => {
+      this.wss.close(() => resolve());
+    });
 
     console.log('[CRDT Coordinator] Shutdown complete');
   }

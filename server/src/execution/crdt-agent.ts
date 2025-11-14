@@ -32,6 +32,7 @@ export class CRDTAgent {
   private reconnectAttempts: number = 0;
   private isConnected: boolean = false;
   private localOnlyMode: boolean = false;
+  private isDisconnecting: boolean = false;
 
   constructor(config: CRDTAgentConfig) {
     this.config = {
@@ -130,7 +131,10 @@ export class CRDTAgent {
         this.isConnected = false;
         console.log(`[CRDT Agent ${this.config.agentId}] Disconnected`);
         this.stopHeartbeat();
-        this.attemptReconnect();
+        // Only attempt reconnect if we're not intentionally disconnecting
+        if (!this.isDisconnecting) {
+          this.attemptReconnect();
+        }
       });
     });
   }
@@ -197,6 +201,7 @@ export class CRDTAgent {
     const metadataMap = this.ydoc.getMap<AgentMetadata>('agentMetadata');
     const metadata: AgentMetadata = {
       id: this.config.agentId,
+      executionId: this.config.agentId, // Agent ID is the execution ID
       status: 'idle',
       lastHeartbeat: Date.now(),
       connectedAt: Date.now()
@@ -476,6 +481,9 @@ export class CRDTAgent {
   public async disconnect(): Promise<void> {
     console.log(`[CRDT Agent ${this.config.agentId}] Disconnecting...`);
 
+    // Set flag to prevent reconnection attempts
+    this.isDisconnecting = true;
+
     // Stop heartbeat
     this.stopHeartbeat();
 
@@ -507,6 +515,9 @@ export class CRDTAgent {
     }
 
     this.isConnected = false;
+
+    // Wait for close event to complete
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     console.log(`[CRDT Agent ${this.config.agentId}] Disconnected`);
   }
