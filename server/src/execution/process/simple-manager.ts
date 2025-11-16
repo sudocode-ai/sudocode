@@ -289,7 +289,7 @@ export class SimpleProcessManager implements IProcessManager {
     }
 
     // Exit event handler
-    childProcess.once("exit", (code, signal) => {
+    childProcess!.once("exit", (code, signal) => {
       // Clear timeout
       if (timeoutHandle) {
         clearTimeout(timeoutHandle);
@@ -323,9 +323,9 @@ export class SimpleProcessManager implements IProcessManager {
       }
 
       // Clean up stdio streams to prevent event loop hang
-      managedProcess.streams.stdin.destroy();
-      managedProcess.streams.stdout.destroy();
-      managedProcess.streams.stderr.destroy();
+      managedProcess.streams!.stdin.destroy();
+      managedProcess.streams!.stdout.destroy();
+      managedProcess.streams!.stderr.destroy();
 
       // Schedule cleanup (delete from activeProcesses after 5s delay)
       const cleanupTimer = setTimeout(() => {
@@ -339,7 +339,7 @@ export class SimpleProcessManager implements IProcessManager {
     });
 
     // Error event handler
-    childProcess.once("error", (error) => {
+    childProcess!.once("error", (error) => {
       void error; // Error is logged but not used here
 
       // Clear timeout
@@ -382,14 +382,14 @@ export class SimpleProcessManager implements IProcessManager {
     managed.status = "terminating";
 
     // Try graceful shutdown first
-    managed.process.kill(signal);
+    managed.process!.kill(signal);
 
     // Wait for process to exit (with 2 second timeout)
     const exitPromise = new Promise<void>((resolve) => {
       if (managed.exitCode !== null) {
         resolve();
       } else {
-        managed.process.once("exit", () => resolve());
+        managed.process!.once("exit", () => resolve());
       }
     });
 
@@ -401,7 +401,7 @@ export class SimpleProcessManager implements IProcessManager {
 
     // Force kill if still running
     if (managed.exitCode === null) {
-      managed.process.kill("SIGKILL");
+      managed.process!.kill("SIGKILL");
 
       // Wait for SIGKILL to take effect (with timeout)
       await Promise.race([
@@ -409,7 +409,7 @@ export class SimpleProcessManager implements IProcessManager {
           if (managed.exitCode !== null) {
             resolve();
           } else {
-            managed.process.once("exit", () => resolve());
+            managed.process!.once("exit", () => resolve());
           }
         }),
         new Promise<void>((resolve) => setTimeout(resolve, 1000)),
@@ -424,7 +424,7 @@ export class SimpleProcessManager implements IProcessManager {
     }
 
     return new Promise((resolve, reject) => {
-      managed.streams.stdin.write(input, (error) => {
+      managed.streams!.stdin.write(input, (error) => {
         if (error) reject(error);
         else resolve();
       });
@@ -444,7 +444,7 @@ export class SimpleProcessManager implements IProcessManager {
       throw new Error(`Process ${processId} not found`);
     }
 
-    managed.streams.stdin.end();
+    managed.streams!.stdin.end();
   }
 
   onOutput(processId: string, handler: OutputHandler): void {
@@ -479,7 +479,7 @@ export class SimpleProcessManager implements IProcessManager {
       throw new Error(`Process ${processId} not found`);
     }
 
-    managed.process.on("error", (error: Error) => {
+    managed.process!.on("error", (error: Error) => {
       handler(error);
     });
   }

@@ -401,7 +401,8 @@ function getFileModTime(filePath: string): Date | null {
 }
 
 /**
- * Determine sync direction based on file modification times
+ * Determine sync direction based on database timestamps vs file modification times
+ * The database is the source of truth - we compare file times against database entity timestamps
  */
 function determineSyncDirection(ctx: CommandContext): {
   direction: "to-markdown" | "from-markdown" | "no-sync";
@@ -430,36 +431,47 @@ function determineSyncDirection(ctx: CommandContext): {
   const specsMarkdownTime = getMostRecentModTime(specMarkdownFiles);
   const issuesMarkdownTime = getMostRecentModTime(issueMarkdownFiles);
 
+  // Get the most recent updated_at timestamp from database
+  const specs = listSpecs(ctx.db, {});
+  const issues = listIssues(ctx.db, {});
+
+  const dbSpecsTime = specs.length > 0
+    ? new Date(Math.max(...specs.map((s: any) => new Date(s.updated_at).getTime())))
+    : null;
+  const dbIssuesTime = issues.length > 0
+    ? new Date(Math.max(...issues.map((i: any) => new Date(i.updated_at).getTime())))
+    : null;
+
   // Determine sync direction
   let syncToMarkdown = false;
   let syncFromMarkdown = false;
   const reasons: string[] = [];
 
   // Check specs
-  if (!specsJsonlTime && !specsMarkdownTime) {
+  if (!dbSpecsTime && !specsMarkdownTime) {
     // Neither exists - no sync needed
-    reasons.push("No spec files or JSONL found");
-  } else if (!specsJsonlTime && specsMarkdownTime) {
+    reasons.push("No spec files or database entries found");
+  } else if (!dbSpecsTime && specsMarkdownTime) {
     // Only markdown exists - sync from markdown
     syncFromMarkdown = true;
-    reasons.push("Specs JSONL missing, markdown exists");
-  } else if (specsJsonlTime && !specsMarkdownTime) {
-    // Only JSONL exists - sync to markdown
+    reasons.push("Specs database empty, markdown exists");
+  } else if (dbSpecsTime && !specsMarkdownTime) {
+    // Only database exists - sync to markdown
     syncToMarkdown = true;
-    reasons.push("Spec markdown files missing, JSONL exists");
-  } else if (specsJsonlTime && specsMarkdownTime) {
-    // Both exist - compare times
-    if (specsMarkdownTime > specsJsonlTime) {
+    reasons.push("Spec markdown files missing, database has entries");
+  } else if (dbSpecsTime && specsMarkdownTime) {
+    // Both exist - compare markdown file time against database time
+    if (specsMarkdownTime > dbSpecsTime) {
       syncFromMarkdown = true;
       reasons.push(
-        `Spec markdown files are newer (${formatTime(
+        `Spec markdown files are newer than database (${formatTime(
           specsMarkdownTime
-        )} > ${formatTime(specsJsonlTime)})`
+        )} > ${formatTime(dbSpecsTime)})`
       );
-    } else if (specsJsonlTime > specsMarkdownTime) {
+    } else if (dbSpecsTime > specsMarkdownTime) {
       syncToMarkdown = true;
       reasons.push(
-        `Specs JSONL is newer (${formatTime(specsJsonlTime)} > ${formatTime(
+        `Spec database is newer than markdown files (${formatTime(dbSpecsTime)} > ${formatTime(
           specsMarkdownTime
         )})`
       );
@@ -469,30 +481,30 @@ function determineSyncDirection(ctx: CommandContext): {
   }
 
   // Check issues
-  if (!issuesJsonlTime && !issuesMarkdownTime) {
+  if (!dbIssuesTime && !issuesMarkdownTime) {
     // Neither exists - no sync needed
-    reasons.push("No issue files or JSONL found");
-  } else if (!issuesJsonlTime && issuesMarkdownTime) {
+    reasons.push("No issue files or database entries found");
+  } else if (!dbIssuesTime && issuesMarkdownTime) {
     // Only markdown exists - sync from markdown
     syncFromMarkdown = true;
-    reasons.push("Issues JSONL missing, markdown exists");
-  } else if (issuesJsonlTime && !issuesMarkdownTime) {
-    // Only JSONL exists - sync to markdown
+    reasons.push("Issues database empty, markdown exists");
+  } else if (dbIssuesTime && !issuesMarkdownTime) {
+    // Only database exists - sync to markdown
     syncToMarkdown = true;
-    reasons.push("Issue markdown files missing, JSONL exists");
-  } else if (issuesJsonlTime && issuesMarkdownTime) {
-    // Both exist - compare times
-    if (issuesMarkdownTime > issuesJsonlTime) {
+    reasons.push("Issue markdown files missing, database has entries");
+  } else if (dbIssuesTime && issuesMarkdownTime) {
+    // Both exist - compare markdown file time against database time
+    if (issuesMarkdownTime > dbIssuesTime) {
       syncFromMarkdown = true;
       reasons.push(
-        `Issue markdown files are newer (${formatTime(
+        `Issue markdown files are newer than database (${formatTime(
           issuesMarkdownTime
-        )} > ${formatTime(issuesJsonlTime)})`
+        )} > ${formatTime(dbIssuesTime)})`
       );
-    } else if (issuesJsonlTime > issuesMarkdownTime) {
+    } else if (dbIssuesTime > issuesMarkdownTime) {
       syncToMarkdown = true;
       reasons.push(
-        `Issues JSONL is newer (${formatTime(issuesJsonlTime)} > ${formatTime(
+        `Issue database is newer than markdown files (${formatTime(dbIssuesTime)} > ${formatTime(
           issuesMarkdownTime
         )})`
       );
@@ -501,13 +513,14 @@ function determineSyncDirection(ctx: CommandContext): {
     }
   }
 
-  // Decide direction (prefer from-markdown if there's a conflict)
+  // Decide direction - prefer database (to-markdown) in conflicts since database is source of truth
+  // Only sync from-markdown if markdown is clearly newer (user edited files)
   if (syncFromMarkdown && syncToMarkdown) {
-    // Mixed state - some files newer in markdown, some in JSONL
-    // Prefer syncing from markdown to preserve user edits
+    // Mixed state - prefer database as source of truth
+    // This prevents stale markdown files from overwriting fresh database/JSONL data
     return {
-      direction: "from-markdown",
-      reason: reasons.join("; ") + " (choosing markdown as source)",
+      direction: "to-markdown",
+      reason: reasons.join("; ") + " (using database as source of truth)",
     };
   } else if (syncFromMarkdown) {
     return {

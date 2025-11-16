@@ -42,6 +42,7 @@ import {
   shutdownWebSocketServer,
   broadcastIssueUpdate,
   broadcastSpecUpdate,
+  getWebSocketServer,
 } from "./services/websocket.js";
 
 // Load environment variables
@@ -317,8 +318,9 @@ app.get("*", (req: Request, res: Response) => {
 const server = http.createServer(app);
 
 /**
- * Attempts to start the server on the given port, incrementing if unavailable.
+ * Attempts to start the server (HTTP + WebSocket) on the given port, incrementing if unavailable.
  * Only scans for ports if no explicit PORT was provided.
+ * Both HTTP and WebSocket must successfully initialize on the same port.
  */
 async function startServer(
   initialPort: number,
@@ -326,11 +328,12 @@ async function startServer(
 ): Promise<number> {
   const explicitPort = process.env.PORT;
   const shouldScan = !explicitPort;
-
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const port = initialPort + attempt;
+    let httpStarted = false;
 
     try {
+      // First, try to bind the HTTP server
       await new Promise<void>((resolve, reject) => {
         const errorHandler = (err: NodeJS.ErrnoException) => {
           server.removeListener("error", errorHandler);
@@ -348,22 +351,67 @@ async function startServer(
         server.listen(port);
       });
 
-      // Success! Return the port we successfully bound to
+      httpStarted = true;
+      console.log(`[server] HTTP server bound to port ${port}`);
+
+      // Now try to initialize WebSocket on the same server
+      console.log(`[server] Initializing WebSocket server on port ${port}...`);
+      initWebSocketServer(server, "/ws");
+
+      // Verify WebSocket server is accessible
+      const wss = getWebSocketServer();
+      if (!wss) {
+        throw new Error(
+          "WebSocket server failed to initialize - server instance is null"
+        );
+      }
+
+      console.log(
+        `[server] WebSocket server successfully initialized on port ${port}`
+      );
+
+      // Both HTTP and WebSocket succeeded! Return the port
       return port;
     } catch (err) {
       const error = err as NodeJS.ErrnoException;
 
-      if (error.code === "EADDRINUSE") {
+      // Clean up if we partially started
+      if (httpStarted) {
+        console.log(`[server] Cleaning up HTTP server on port ${port}...`);
+        await new Promise<void>((resolve) => {
+          server.close(() => resolve());
+        });
+      }
+
+      // Clean up WebSocket if it was partially initialized
+      const wss = getWebSocketServer();
+      if (wss) {
+        console.log(`[server] Cleaning up WebSocket server on port ${port}...`);
+        await shutdownWebSocketServer();
+      }
+
+      // Determine if we should retry
+      const isPortConflict =
+        error.code === "EADDRINUSE" ||
+        (error.message && error.message.includes("address already in use"));
+
+      if (
+        isPortConflict ||
+        (httpStarted && error.message?.includes("WebSocket"))
+      ) {
         if (!shouldScan) {
           // Explicit port was specified and it's in use - fail immediately
           throw new Error(
-            `Port ${port} is already in use. Please specify a different PORT.`
+            `Port ${port} is already in use or WebSocket initialization failed. Please specify a different PORT.`
           );
         }
 
-        // Port is in use, try next one if we have attempts left
+        // Port is in use or WebSocket failed, try next one if we have attempts left
         if (attempt < maxAttempts - 1) {
-          console.log(`Port ${port} is already in use, trying ${port + 1}...`);
+          const reason = httpStarted
+            ? "WebSocket initialization failed"
+            : "port is already in use";
+          console.log(`[server] Port ${port} ${reason}, trying ${port + 1}...`);
           continue;
         } else {
           throw new Error(
@@ -372,6 +420,10 @@ async function startServer(
         }
       } else {
         // Some other error - fail immediately
+        console.error(
+          `[server] Unexpected error on port ${port}:`,
+          error.message
+        );
         throw error;
       }
     }
@@ -380,18 +432,15 @@ async function startServer(
   throw new Error(`Could not start server after ${maxAttempts} attempts`);
 }
 
-// Start listening with port scanning
+// Start listening with port scanning (includes both HTTP and WebSocket)
 const startPort = process.env.PORT
   ? parseInt(process.env.PORT, 10)
   : DEFAULT_PORT;
 const actualPort = await startServer(startPort, MAX_PORT_ATTEMPTS);
 
-// Initialize WebSocket server AFTER successfully binding to a port
-initWebSocketServer(server, "/ws");
-
 // Handle WebSocket upgrades for terminal connections
 // Route: /ws/terminal/:executionId
-server.on('upgrade', (request, socket, head) => {
+server.on("upgrade", (request, socket, head) => {
   const { pathname } = new URL(request.url!, `http://${request.headers.host}`);
 
   // Check if this is a terminal WebSocket request
@@ -403,11 +452,15 @@ server.on('upgrade', (request, socket, head) => {
     const wss = new WebSocketServer({ noServer: true });
 
     wss.handleUpgrade(request, socket, head, (ws) => {
-      console.log(`[terminal] WebSocket connection for execution ${executionId}`);
-      terminalService!.handleConnection(ws, executionId, REPO_ROOT).catch((error) => {
-        console.error('[terminal] Failed to handle connection:', error);
-        ws.close(1011, 'Internal server error');
-      });
+      console.log(
+        `[terminal] WebSocket connection for execution ${executionId}`
+      );
+      terminalService!
+        .handleConnection(ws, executionId, REPO_ROOT)
+        .catch((error) => {
+          console.error("[terminal] Failed to handle connection:", error);
+          ws.close(1011, "Internal server error");
+        });
     });
     return;
   }

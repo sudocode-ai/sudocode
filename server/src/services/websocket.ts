@@ -60,18 +60,46 @@ class WebSocketManager {
 
   /**
    * Initialize the WebSocket server
+   * @param server HTTP server instance
+   * @param path WebSocket path (default: "/ws")
+   * @param allowReinit Allow re-initialization after shutdown (default: false)
    */
-  init(server: http.Server, path: string = "/ws"): void {
+  init(server: http.Server, path: string = "/ws", allowReinit: boolean = false): void {
     if (this.wss) {
-      console.warn("[websocket] WebSocket server already initialized");
-      return;
+      if (allowReinit) {
+        console.warn("[websocket] WebSocket server already initialized, but re-initialization is allowed");
+        // Don't return, allow re-initialization
+      } else {
+        console.warn("[websocket] WebSocket server already initialized");
+        return;
+      }
     }
 
-    this.wss = new WebSocketServer({ server, path });
-    console.log(`[websocket] WebSocket server initialized on path: ${path}`);
+    try {
+      this.wss = new WebSocketServer({ server, path });
 
-    this.wss.on("connection", this.handleConnection.bind(this));
-    this.startHeartbeat();
+      // Verify the WebSocket server was created successfully
+      if (!this.wss) {
+        throw new Error("Failed to create WebSocket server");
+      }
+
+      // Add error handler to catch initialization issues
+      this.wss.on("error", (error) => {
+        console.error(`[websocket] WebSocket server error:`, error);
+        throw new Error(`WebSocket server error: ${error.message}`);
+      });
+
+      console.log(`[websocket] WebSocket server initialized on path: ${path}`);
+
+      this.wss.on("connection", this.handleConnection.bind(this));
+      this.startHeartbeat();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[websocket] Failed to initialize WebSocket server:`, errorMessage);
+      // Clean up on failure
+      this.wss = null;
+      throw new Error(`Failed to initialize WebSocket server on path ${path}: ${errorMessage}`);
+    }
   }
 
   /**
@@ -400,6 +428,13 @@ class WebSocketManager {
   }
 
   /**
+   * Get the WebSocket server instance
+   */
+  getServer(): WebSocketServer | null {
+    return this.wss;
+  }
+
+  /**
    * Get statistics about connected clients
    */
   getStats(): {
@@ -516,6 +551,13 @@ export function broadcastRelationshipUpdate(
     type: `relationship_${action}` as any,
     data,
   });
+}
+
+/**
+ * Get the WebSocket server instance
+ */
+export function getWebSocketServer() {
+  return websocketManager.getServer();
 }
 
 /**
