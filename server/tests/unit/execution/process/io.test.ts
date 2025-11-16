@@ -4,23 +4,28 @@
  * Tests sendInput, onOutput, and onError methods for process communication.
  */
 
-import { describe, it, beforeEach , expect } from 'vitest'
-import { SimpleProcessManager } from '../../../../src/execution/process/simple-manager.js';
-import type { ProcessConfig } from '../../../../src/execution/process/types.js';
+import { describe, it, beforeEach, afterEach, expect } from "vitest";
+import { SimpleProcessManager } from "../../../../src/execution/process/simple-manager.js";
+import type { ProcessConfig } from "../../../../src/execution/process/types.js";
 
-describe('Process I/O Communication', () => {
+describe.sequential("Process I/O Communication", () => {
   let manager: SimpleProcessManager;
 
   beforeEach(() => {
     manager = new SimpleProcessManager();
   });
 
-  describe('sendInput', () => {
-    it('sends input to process stdin', async () => {
+  afterEach(async () => {
+    // Clean up all processes and timers
+    await manager.shutdown();
+  });
+
+  describe.sequential("sendInput", () => {
+    it("sends input to process stdin", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           `
           process.stdin.on('data', (data) => {
             console.log('Received: ' + data.toString().trim());
@@ -34,32 +39,34 @@ describe('Process I/O Communication', () => {
       const managedProcess = await manager.acquireProcess(config);
 
       // Set up output handler to capture response
-      let output = '';
-      managedProcess.streams.stdout.on('data', (data) => {
+      let output = "";
+      managedProcess.streams.stdout.on("data", (data) => {
         output += data.toString();
       });
 
       // Send input to the process
-      await manager.sendInput(managedProcess.id, 'test input\n');
+      await manager.sendInput(managedProcess.id, "test input\n");
 
       // Wait for process to respond and exit
       await new Promise<void>((resolve) => {
-        managedProcess.process.once('exit', () => {
+        managedProcess.process.once("exit", () => {
           setTimeout(resolve, 50);
         });
       });
 
-      expect(output.includes('Received: test input')).toBeTruthy();
+      expect(output.includes("Received: test input")).toBeTruthy();
     });
 
-    it('throws error for non-existent process', async () => {
-      await expect(manager.sendInput('non-existent-id', 'test')).rejects.toThrow(/Process non-existent-id not found/);
+    it("throws error for non-existent process", async () => {
+      await expect(
+        manager.sendInput("non-existent-id", "test")
+      ).rejects.toThrow(/Process non-existent-id not found/);
     });
 
-    it('handles write errors gracefully', async () => {
+    it("handles write errors gracefully", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'process.exit(0)'],
+        executablePath: "node",
+        args: ["-e", "process.exit(0)"],
         workDir: process.cwd(),
       };
 
@@ -67,20 +74,22 @@ describe('Process I/O Communication', () => {
 
       // Wait for process to exit
       await new Promise<void>((resolve) => {
-        managedProcess.process.once('exit', () => {
+        managedProcess.process.once("exit", () => {
           setTimeout(resolve, 50);
         });
       });
 
       // Try to write to closed stdin
-      await expect(manager.sendInput(managedProcess.id, 'test')).rejects.toThrow();
+      await expect(
+        manager.sendInput(managedProcess.id, "test")
+      ).rejects.toThrow();
     });
 
-    it('supports multiple sendInput calls', async () => {
+    it("supports multiple sendInput calls", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           `
           let count = 0;
           process.stdin.on('data', (data) => {
@@ -97,8 +106,8 @@ describe('Process I/O Communication', () => {
 
       const managedProcess = await manager.acquireProcess(config);
 
-      let output = '';
-      managedProcess.streams.stdout.on('data', (data) => {
+      let output = "";
+      manager.onOutput(managedProcess.id, (data) => {
         output += data.toString();
       });
 
@@ -106,41 +115,41 @@ describe('Process I/O Communication', () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Send multiple inputs with small delays
-      await manager.sendInput(managedProcess.id, 'first\n');
+      await manager.sendInput(managedProcess.id, "first\n");
       await new Promise((resolve) => setTimeout(resolve, 100));
-      await manager.sendInput(managedProcess.id, 'second\n');
+      await manager.sendInput(managedProcess.id, "second\n");
       await new Promise((resolve) => setTimeout(resolve, 100));
-      await manager.sendInput(managedProcess.id, 'third\n');
+      await manager.sendInput(managedProcess.id, "third\n");
 
       // Wait for process to exit with timeout
       await Promise.race([
         new Promise<void>((resolve) => {
-          managedProcess.process.once('exit', () => {
+          managedProcess.process.once("exit", () => {
             setTimeout(resolve, 100);
           });
         }),
         new Promise<void>((resolve) => setTimeout(resolve, 6000)), // Safety timeout
       ]);
 
-      expect(output.includes('Message 1: first')).toBeTruthy();
-      expect(output.includes('Message 2: second')).toBeTruthy();
-      expect(output.includes('Message 3: third')).toBeTruthy();
+      expect(output.includes("Message 1: first")).toBeTruthy();
+      expect(output.includes("Message 2: second")).toBeTruthy();
+      expect(output.includes("Message 3: third")).toBeTruthy();
     });
   });
 
-  describe('onOutput', () => {
-    it('captures stdout output', async () => {
+  describe.sequential("onOutput", () => {
+    it("captures stdout output", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'console.log("test stdout"); setTimeout(() => {}, 100);'],
+        executablePath: "node",
+        args: ["-e", 'console.log("test stdout"); setTimeout(() => {}, 100);'],
         workDir: process.cwd(),
       };
 
+      const outputs: Array<{ data: string; type: "stdout" | "stderr" }> = [];
+
       const managedProcess = await manager.acquireProcess(config);
 
-      const outputs: Array<{ data: string; type: 'stdout' | 'stderr' }> = [];
-
-      // Register output handler
+      // Register output handler immediately after acquiring process to avoid race condition
       manager.onOutput(managedProcess.id, (data, type) => {
         outputs.push({ data: data.toString(), type });
       });
@@ -149,52 +158,31 @@ describe('Process I/O Communication', () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       expect(outputs.length > 0).toBeTruthy();
-      expect(outputs.some((o) => o.type === 'stdout' && o.data.includes('test stdout'))).toBeTruthy();
+      expect(
+        outputs.some(
+          (o) => o.type === "stdout" && o.data.includes("test stdout")
+        )
+      ).toBeTruthy();
 
       // Cleanup
       managedProcess.process.kill();
     });
 
-    it('captures stderr output', async () => {
+    it("captures stderr output", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'console.error("test stderr"); setTimeout(() => {}, 100);'],
-        workDir: process.cwd(),
-      };
-
-      const managedProcess = await manager.acquireProcess(config);
-
-      const outputs: Array<{ data: string; type: 'stdout' | 'stderr' }> = [];
-
-      // Register output handler
-      manager.onOutput(managedProcess.id, (data, type) => {
-        outputs.push({ data: data.toString(), type });
-      });
-
-      // Wait for output
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      expect(outputs.length > 0).toBeTruthy();
-      expect(outputs.some((o) => o.type === 'stderr' && o.data.includes('test stderr'))).toBeTruthy();
-
-      // Cleanup
-      managedProcess.process.kill();
-    });
-
-    it('captures both stdout and stderr', async () => {
-      const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
-          'console.log("stdout msg"); console.error("stderr msg"); setTimeout(() => {}, 100);',
+          "-e",
+          'console.error("test stderr"); setTimeout(() => {}, 100);',
         ],
         workDir: process.cwd(),
       };
 
+      const outputs: Array<{ data: string; type: "stdout" | "stderr" }> = [];
+
       const managedProcess = await manager.acquireProcess(config);
 
-      const outputs: Array<{ data: string; type: 'stdout' | 'stderr' }> = [];
-
+      // Register output handler immediately after acquiring process to avoid race condition
       manager.onOutput(managedProcess.id, (data, type) => {
         outputs.push({ data: data.toString(), type });
       });
@@ -202,21 +190,66 @@ describe('Process I/O Communication', () => {
       // Wait for output
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      expect(outputs.some((o) => o.type === 'stdout' && o.data.includes('stdout msg'))).toBeTruthy();
-      expect(outputs.some((o) => o.type === 'stderr' && o.data.includes('stderr msg'))).toBeTruthy();
+      expect(outputs.length > 0).toBeTruthy();
+      expect(
+        outputs.some(
+          (o) => o.type === "stderr" && o.data.includes("test stderr")
+        )
+      ).toBeTruthy();
 
       // Cleanup
       managedProcess.process.kill();
     });
 
-    it('throws error for non-existent process', () => {
-      expect(() => manager.onOutput('non-existent-id', () => {})).toThrow(/Process non-existent-id not found/);
+    it("captures both stdout and stderr", async () => {
+      const config: ProcessConfig = {
+        executablePath: "node",
+        args: [
+          "-e",
+          'console.log("stdout msg"); console.error("stderr msg"); setTimeout(() => {}, 200);',
+        ],
+        workDir: process.cwd(),
+      };
+
+      const outputs: Array<{ data: string; type: "stdout" | "stderr" }> = [];
+
+      const managedProcess = await manager.acquireProcess(config);
+
+      // Register output handler immediately after acquiring process to avoid race condition
+      manager.onOutput(managedProcess.id, (data, type) => {
+        outputs.push({ data: data.toString(), type });
+      });
+
+      // Wait for output with longer timeout for reliability under parallel test load
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(
+        outputs.some(
+          (o) => o.type === "stdout" && o.data.includes("stdout msg")
+        ),
+        `Expected stdout in outputs: ${JSON.stringify(outputs)}`
+      ).toBeTruthy();
+      expect(
+        outputs.some(
+          (o) => o.type === "stderr" && o.data.includes("stderr msg")
+        ),
+        `Expected stderr in outputs: ${JSON.stringify(outputs)}`
+      ).toBeTruthy();
+
+      // Cleanup
+      managedProcess.process.kill();
     });
 
-    it('supports multiple output handlers', async () => {
+    it("throws error for non-existent process", () => {
+      expect(() => manager.onOutput("non-existent-id", () => {})).toThrow(
+        /Process non-existent-id not found/
+      );
+    });
+
+    it("supports multiple output handlers", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'console.log("test"); setTimeout(() => {}, 100);'],
+        executablePath: "node",
+        args: ["-e", 'console.log("test"); setTimeout(() => {}, 100);'],
         workDir: process.cwd(),
       };
 
@@ -243,11 +276,11 @@ describe('Process I/O Communication', () => {
       managedProcess.process.kill();
     });
 
-    it('handles streaming output in real-time', async () => {
+    it("handles streaming output in real-time", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           `
           for (let i = 1; i <= 3; i++) {
             console.log('Line ' + i);
@@ -263,10 +296,10 @@ describe('Process I/O Communication', () => {
       const lines: string[] = [];
 
       manager.onOutput(managedProcess.id, (data, type) => {
-        if (type === 'stdout') {
+        if (type === "stdout") {
           // Split by newlines to handle buffered chunks correctly
           const output = data.toString();
-          const newLines = output.split('\n').filter((line) => line.trim());
+          const newLines = output.split("\n").filter((line) => line.trim());
           lines.push(...newLines);
         }
       });
@@ -275,20 +308,20 @@ describe('Process I/O Communication', () => {
       await new Promise((resolve) => setTimeout(resolve, 150));
 
       expect(lines.length).toBe(3);
-      expect(lines.includes('Line 1')).toBeTruthy();
-      expect(lines.includes('Line 2')).toBeTruthy();
-      expect(lines.includes('Line 3')).toBeTruthy();
+      expect(lines.includes("Line 1")).toBeTruthy();
+      expect(lines.includes("Line 2")).toBeTruthy();
+      expect(lines.includes("Line 3")).toBeTruthy();
 
       // Cleanup
       managedProcess.process.kill();
     });
   });
 
-  describe('onError', () => {
-    it('captures process errors', async () => {
+  describe.sequential("onError", () => {
+    it("captures process errors", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'throw new Error("test error")'],
+        executablePath: "node",
+        args: ["-e", 'throw new Error("test error")'],
         workDir: process.cwd(),
       };
 
@@ -302,7 +335,7 @@ describe('Process I/O Communication', () => {
 
       // Wait for process to exit
       await new Promise<void>((resolve) => {
-        managedProcess.process.once('exit', () => {
+        managedProcess.process.once("exit", () => {
           setTimeout(resolve, 50);
         });
       });
@@ -311,14 +344,16 @@ describe('Process I/O Communication', () => {
       expect(managedProcess.exitCode !== 0).toBe(true);
     });
 
-    it('throws error for non-existent process', () => {
-      expect(() => manager.onError('non-existent-id', () => {})).toThrow(/Process non-existent-id not found/);
+    it("throws error for non-existent process", () => {
+      expect(() => manager.onError("non-existent-id", () => {})).toThrow(
+        /Process non-existent-id not found/
+      );
     });
 
-    it('supports multiple error handlers', async () => {
+    it("supports multiple error handlers", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'setTimeout(() => {}, 100);'],
+        executablePath: "node",
+        args: ["-e", "setTimeout(() => {}, 100);"],
         workDir: process.cwd(),
       };
 
@@ -345,18 +380,18 @@ describe('Process I/O Communication', () => {
     });
   });
 
-  describe('I/O Edge Cases', () => {
-    it('handles empty sendInput', async () => {
+  describe.sequential("I/O Edge Cases", () => {
+    it("handles empty sendInput", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'process.stdin.on("data", () => process.exit(0));'],
+        executablePath: "node",
+        args: ["-e", 'process.stdin.on("data", () => process.exit(0));'],
         workDir: process.cwd(),
       };
 
       const managedProcess = await manager.acquireProcess(config);
 
       // Send empty string
-      await manager.sendInput(managedProcess.id, '');
+      await manager.sendInput(managedProcess.id, "");
 
       // Should not crash
       expect(managedProcess).toBeTruthy();
@@ -365,19 +400,22 @@ describe('Process I/O Communication', () => {
       managedProcess.process.kill();
     });
 
-    it('handles large data chunks in onOutput', async () => {
-      const largeString = 'A'.repeat(10000);
+    it("handles large data chunks in onOutput", async () => {
+      const largeString = "A".repeat(10000);
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', `console.log('${largeString}'); setTimeout(() => {}, 100);`],
+        executablePath: "node",
+        args: [
+          "-e",
+          `console.log('${largeString}'); setTimeout(() => {}, 100);`,
+        ],
         workDir: process.cwd(),
       };
 
       const managedProcess = await manager.acquireProcess(config);
 
-      let receivedData = '';
+      let receivedData = "";
       manager.onOutput(managedProcess.id, (data, type) => {
-        if (type === 'stdout') {
+        if (type === "stdout") {
           receivedData += data.toString();
         }
       });
@@ -391,11 +429,11 @@ describe('Process I/O Communication', () => {
       managedProcess.process.kill();
     });
 
-    it('handles rapid successive sendInput calls', async () => {
+    it("handles rapid successive sendInput calls", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           `
           const chunks = [];
           process.stdin.on('data', (data) => {
@@ -414,8 +452,8 @@ describe('Process I/O Communication', () => {
 
       const managedProcess = await manager.acquireProcess(config);
 
-      let output = '';
-      managedProcess.streams.stdout.on('data', (data) => {
+      let output = "";
+      managedProcess.streams.stdout.on("data", (data) => {
         output += data.toString();
       });
 
@@ -428,19 +466,19 @@ describe('Process I/O Communication', () => {
 
       // Wait for process to complete
       await new Promise<void>((resolve) => {
-        managedProcess.process.once('exit', () => {
+        managedProcess.process.once("exit", () => {
           setTimeout(resolve, 50);
         });
       });
 
       // Should have received all 10 inputs
-      expect(output.includes('Lines received: 10')).toBeTruthy();
+      expect(output.includes("Lines received: 10")).toBeTruthy();
     });
 
-    it('onOutput handles data immediately after spawn', async () => {
+    it("onOutput handles data immediately after spawn", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'console.log("immediate"); setTimeout(() => {}, 100);'],
+        executablePath: "node",
+        args: ["-e", 'console.log("immediate"); setTimeout(() => {}, 100);'],
         workDir: process.cwd(),
       };
 
@@ -449,7 +487,7 @@ describe('Process I/O Communication', () => {
 
       // Register handler immediately after spawn
       manager.onOutput(managedProcess.id, (data, type) => {
-        if (type === 'stdout' && data.toString().includes('immediate')) {
+        if (type === "stdout" && data.toString().includes("immediate")) {
           capturedOutput = true;
         }
       });
@@ -463,31 +501,37 @@ describe('Process I/O Communication', () => {
       managedProcess.process.kill();
     });
 
-    it('sendInput promise resolves after write completes', async () => {
+    it("sendInput promise resolves after write completes", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'process.stdin.on("data", () => {}); setTimeout(() => {}, 200);'],
+        executablePath: "node",
+        args: [
+          "-e",
+          'process.stdin.on("data", () => {}); setTimeout(() => {}, 200);',
+        ],
         workDir: process.cwd(),
       };
 
       const managedProcess = await manager.acquireProcess(config);
 
       const startTime = Date.now();
-      await manager.sendInput(managedProcess.id, 'test data\n');
+      await manager.sendInput(managedProcess.id, "test data\n");
       const duration = Date.now() - startTime;
 
       // Should resolve quickly (not wait for process to read)
-      expect(duration < 100, `sendInput took ${duration}ms, expected < 100ms`).toBeTruthy();
+      expect(
+        duration < 100,
+        `sendInput took ${duration}ms, expected < 100ms`
+      ).toBeTruthy();
 
       // Cleanup
       managedProcess.process.kill();
     });
 
-    it('handles binary data in I/O operations', async () => {
+    it("handles binary data in I/O operations", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           `
           process.stdin.on('data', (data) => {
             process.stdout.write(data);
@@ -504,32 +548,35 @@ describe('Process I/O Communication', () => {
       let receivedData: Buffer[] = [];
 
       manager.onOutput(managedProcess.id, (data, type) => {
-        if (type === 'stdout') {
+        if (type === "stdout") {
           receivedData.push(data);
         }
       });
 
-      await manager.sendInput(managedProcess.id, binaryData.toString('binary'));
+      await manager.sendInput(managedProcess.id, binaryData.toString("binary"));
 
       // Wait for echo
       await new Promise<void>((resolve) => {
-        managedProcess.process.once('exit', () => {
+        managedProcess.process.once("exit", () => {
           setTimeout(resolve, 50);
         });
       });
 
       expect(receivedData.length > 0).toBeTruthy();
-      const totalLength = receivedData.reduce((sum, buf) => sum + buf.length, 0);
+      const totalLength = receivedData.reduce(
+        (sum, buf) => sum + buf.length,
+        0
+      );
       expect(totalLength > 0).toBeTruthy();
     });
   });
 
-  describe('Combined I/O Operations', () => {
-    it('supports bidirectional communication', async () => {
+  describe.sequential("Combined I/O Operations", () => {
+    it("supports bidirectional communication", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           `
           const readline = require('readline');
           const rl = readline.createInterface({
@@ -551,32 +598,32 @@ describe('Process I/O Communication', () => {
       const outputs: string[] = [];
 
       manager.onOutput(managedProcess.id, (data, type) => {
-        if (type === 'stdout') {
+        if (type === "stdout") {
           const line = data.toString().trim();
-          if (line && !line.includes('undefined')) {
+          if (line && !line.includes("undefined")) {
             outputs.push(line);
           }
         }
       });
 
       // Send inputs and wait for responses
-      await manager.sendInput(managedProcess.id, 'hello\n');
+      await manager.sendInput(managedProcess.id, "hello\n");
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      await manager.sendInput(managedProcess.id, 'world\n');
+      await manager.sendInput(managedProcess.id, "world\n");
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      await manager.sendInput(managedProcess.id, 'exit\n');
+      await manager.sendInput(managedProcess.id, "exit\n");
 
       // Wait for process to exit
       await new Promise<void>((resolve) => {
-        managedProcess.process.once('exit', () => {
+        managedProcess.process.once("exit", () => {
           setTimeout(resolve, 50);
         });
       });
 
-      expect(outputs.some((o) => o.includes('Echo: hello'))).toBeTruthy();
-      expect(outputs.some((o) => o.includes('Echo: world'))).toBeTruthy();
+      expect(outputs.some((o) => o.includes("Echo: hello"))).toBeTruthy();
+      expect(outputs.some((o) => o.includes("Echo: world"))).toBeTruthy();
     });
   });
 });

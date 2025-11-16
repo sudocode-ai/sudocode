@@ -60,6 +60,8 @@ claude plugin marketplace add sudocode-ai/sudocode
 claude plugin install sudocode
 ```
 
+Check out our [Installation Guide](https://docs.sudocode.ai/installation) for instructions on setting up other agents.
+
 ## Context-as-Code
 
 Your context and designs are just as valuable as the code being written. Code is often over-specified, while your actual requirements are under-specified and come with design choices and intent that is not immediately captured.

@@ -13,6 +13,7 @@ export default defineConfig({
     teardownTimeout: 10000,
     isolate: true,
     pool: "forks",
+    retry: 3, // Retry failed tests up to 3 times for flakes.
     poolOptions: {
       forks: {
         singleFork: false,

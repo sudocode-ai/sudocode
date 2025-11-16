@@ -5,23 +5,23 @@
  * with graceful shutdown and SIGKILL fallback.
  */
 
-import { describe, it, beforeEach , expect } from 'vitest'
-import { SimpleProcessManager } from '../../../../src/execution/process/simple-manager.js';
-import type { ProcessConfig } from '../../../../src/execution/process/types.js';
+import { describe, it, beforeEach, expect } from "vitest";
+import { SimpleProcessManager } from "../../../../src/execution/process/simple-manager.js";
+import type { ProcessConfig } from "../../../../src/execution/process/types.js";
 
-describe('Process Termination', () => {
+describe.sequential("Process Termination", () => {
   let manager: SimpleProcessManager;
 
   beforeEach(() => {
     manager = new SimpleProcessManager();
   });
 
-  describe('terminateProcess', () => {
-    it('terminates a running process with SIGTERM', async () => {
+  describe("terminateProcess", () => {
+    it("terminates a running process with SIGTERM", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           'process.on("SIGTERM", () => process.exit(0)); setInterval(() => {}, 1000)',
         ], // Exit immediately on SIGTERM
         workDir: process.cwd(),
@@ -36,14 +36,14 @@ describe('Process Termination', () => {
       // Process should be terminated
       expect(managedProcess.process.killed).toBe(true);
       // Status will be 'crashed' after process exits during grace period
-      expect(managedProcess.status).toBe('crashed');
+      expect(managedProcess.status).toBe("crashed");
     });
 
-    it('sets status to terminating then crashed', async () => {
+    it("sets status to terminating then crashed", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           'process.on("SIGTERM", () => process.exit(0)); setInterval(() => {}, 1000)',
         ],
         workDir: process.cwd(),
@@ -53,19 +53,19 @@ describe('Process Termination', () => {
 
       // Capture status before termination starts
       const beforeStatus = managedProcess.status;
-      expect(beforeStatus).toBe('busy');
+      expect(beforeStatus).toBe("busy");
 
       await manager.terminateProcess(managedProcess.id);
 
       // After termination completes, process has exited so status is crashed
-      expect(managedProcess.status).toBe('crashed');
+      expect(managedProcess.status).toBe("crashed");
     });
 
-    it('waits up to 2 seconds for graceful shutdown', async () => {
+    it("waits up to 2 seconds for graceful shutdown", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           `
           // Exit gracefully after receiving SIGTERM
           process.on('SIGTERM', () => {
@@ -88,11 +88,11 @@ describe('Process Termination', () => {
       expect(duration < 1800).toBeTruthy(); // Much less than 2 seconds
     });
 
-    it('sends SIGKILL if process does not exit gracefully', async () => {
+    it("sends SIGKILL if process does not exit gracefully", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           `
           // Ignore SIGTERM
           process.on('SIGTERM', () => {});
@@ -110,11 +110,11 @@ describe('Process Termination', () => {
       expect(managedProcess.process.killed).toBe(true);
     });
 
-    it('accepts custom signal parameter', async () => {
+    it("accepts custom signal parameter", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           'process.on("SIGINT", () => process.exit(0)); setInterval(() => {}, 1000)',
         ],
         workDir: process.cwd(),
@@ -123,16 +123,16 @@ describe('Process Termination', () => {
       const managedProcess = await manager.acquireProcess(config);
 
       // Use SIGINT instead of SIGTERM
-      await manager.terminateProcess(managedProcess.id, 'SIGINT');
+      await manager.terminateProcess(managedProcess.id, "SIGINT");
 
       expect(managedProcess.process.killed).toBe(true);
     });
 
-    it('is idempotent - safe to call multiple times', async () => {
+    it("is idempotent - safe to call multiple times", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           'process.on("SIGTERM", () => process.exit(0)); setInterval(() => {}, 1000)',
         ],
         workDir: process.cwd(),
@@ -149,15 +149,15 @@ describe('Process Termination', () => {
       expect(managedProcess.process.killed).toBe(true);
     });
 
-    it('returns immediately for non-existent process', async () => {
+    it("returns immediately for non-existent process", async () => {
       // Should not throw error
-      await manager.terminateProcess('non-existent-id');
+      await manager.terminateProcess("non-existent-id");
     });
 
-    it('returns immediately for already terminated process', async () => {
+    it("returns immediately for already terminated process", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'process.exit(0)'],
+        executablePath: "node",
+        args: ["-e", "process.exit(0)"],
         workDir: process.cwd(),
       };
 
@@ -165,7 +165,7 @@ describe('Process Termination', () => {
 
       // Wait for process to exit naturally
       await new Promise<void>((resolve) => {
-        managedProcess.process.once('exit', () => {
+        managedProcess.process.once("exit", () => {
           setTimeout(resolve, 50);
         });
       });
@@ -179,12 +179,12 @@ describe('Process Termination', () => {
     });
   });
 
-  describe('releaseProcess', () => {
-    it('terminates the process', async () => {
+  describe("releaseProcess", () => {
+    it("terminates the process", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           'process.on("SIGTERM", () => process.exit(0)); setInterval(() => {}, 1000)',
         ],
         workDir: process.cwd(),
@@ -197,11 +197,11 @@ describe('Process Termination', () => {
       expect(managedProcess.process.killed).toBe(true);
     });
 
-    it('is equivalent to terminateProcess with default signal', async () => {
+    it("is equivalent to terminateProcess with default signal", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           'process.on("SIGTERM", () => process.exit(0)); setInterval(() => {}, 1000)',
         ],
         workDir: process.cwd(),
@@ -212,22 +212,22 @@ describe('Process Termination', () => {
       await manager.releaseProcess(managedProcess.id);
 
       // After completion, process has exited so status is crashed
-      expect(managedProcess.status).toBe('crashed');
+      expect(managedProcess.status).toBe("crashed");
       expect(managedProcess.process.killed).toBe(true);
     });
 
-    it('does not throw for non-existent process', async () => {
+    it("does not throw for non-existent process", async () => {
       // Should not throw error
-      await manager.releaseProcess('non-existent-id');
+      await manager.releaseProcess("non-existent-id");
     });
   });
 
-  describe('shutdown', () => {
-    it('terminates all active processes', async () => {
+  describe("shutdown", () => {
+    it("terminates all active processes", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           'process.on("SIGTERM", () => process.exit(0)); setInterval(() => {}, 1000)',
         ],
         workDir: process.cwd(),
@@ -247,11 +247,11 @@ describe('Process Termination', () => {
       expect(process3.process.killed).toBe(true);
     });
 
-    it('terminates processes in parallel', async () => {
+    it("terminates processes in parallel", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           `
           // Exit gracefully after receiving SIGTERM
           process.on('SIGTERM', () => {
@@ -277,16 +277,16 @@ describe('Process Termination', () => {
       expect(duration < 2000).toBeTruthy(); // Much less than sequential (3000ms)
     });
 
-    it('handles empty process list', async () => {
+    it("handles empty process list", async () => {
       // Should not throw error when no processes are running
       await manager.shutdown();
     });
 
-    it('is idempotent - safe to call multiple times', async () => {
+    it("is idempotent - safe to call multiple times", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           'process.on("SIGTERM", () => process.exit(0)); setInterval(() => {}, 1000)',
         ],
         workDir: process.cwd(),
@@ -302,19 +302,19 @@ describe('Process Termination', () => {
       // Should not throw errors
     });
 
-    it('handles mix of running and terminated processes', async () => {
+    it("handles mix of running and terminated processes", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           'process.on("SIGTERM", () => process.exit(0)); setInterval(() => {}, 1000)',
         ],
         workDir: process.cwd(),
       };
 
       const configExit: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'process.exit(0)'],
+        executablePath: "node",
+        args: ["-e", "process.exit(0)"],
         workDir: process.cwd(),
       };
 
@@ -324,7 +324,7 @@ describe('Process Termination', () => {
 
       // Wait for exiting process to finish
       await new Promise<void>((resolve) => {
-        exiting.process.once('exit', () => setTimeout(resolve, 50));
+        exiting.process.once("exit", () => setTimeout(resolve, 50));
       });
 
       // Shutdown should handle both
@@ -334,12 +334,12 @@ describe('Process Termination', () => {
     });
   });
 
-  describe('Termination Timing and Signals', () => {
-    it('verifies 2-second grace period before SIGKILL', async () => {
+  describe("Termination Timing and Signals", () => {
+    it("verifies 2-second grace period before SIGKILL", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           `
           // Ignore SIGTERM to force SIGKILL
           process.on('SIGTERM', () => {
@@ -360,18 +360,27 @@ describe('Process Termination', () => {
 
       // Should wait at least close to 2 seconds before SIGKILL
       // The actual duration may vary due to process scheduling and Node.js overhead
-      expect(duration >= 1000, `Duration ${duration}ms should be >= 1000ms`).toBeTruthy();
-      expect(duration <= 3500, `Duration ${duration}ms should be <= 3500ms`).toBeTruthy();
+      expect(
+        duration >= 1000,
+        `Duration ${duration}ms should be >= 1000ms`
+      ).toBeTruthy();
+      expect(
+        duration <= 3500,
+        `Duration ${duration}ms should be <= 3500ms`
+      ).toBeTruthy();
       expect(managedProcess.process.killed).toBe(true);
       // Verify process was killed (not exited gracefully)
-      expect(managedProcess.signal, 'Process should have been killed by signal').toBeTruthy();
+      expect(
+        managedProcess.signal,
+        "Process should have been killed by signal"
+      ).toBeTruthy();
     });
 
-    it('captures terminating status during termination', async () => {
+    it("captures terminating status during termination", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           `
           process.on('SIGTERM', () => {
             setTimeout(() => process.exit(0), 100);
@@ -384,7 +393,7 @@ describe('Process Termination', () => {
 
       const managedProcess = await manager.acquireProcess(config);
 
-      expect(managedProcess.status).toBe('busy');
+      expect(managedProcess.status).toBe("busy");
 
       // Start termination in background
       const terminationPromise = manager.terminateProcess(managedProcess.id);
@@ -397,16 +406,17 @@ describe('Process Termination', () => {
 
       // Should have been 'terminating' at some point, or already 'crashed' if fast
       expect(
-        duringTerminationStatus === 'terminating' || duringTerminationStatus === 'crashed',
+        duringTerminationStatus === "terminating" ||
+          duringTerminationStatus === "crashed",
         `Expected terminating or crashed, got ${duringTerminationStatus}`
       ).toBeTruthy();
     });
 
-    it('shutdown uses SIGTERM signal', async () => {
+    it("shutdown uses SIGTERM signal", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           `
           // Only respond to SIGTERM, not SIGKILL or others
           process.on('SIGTERM', () => {
@@ -421,8 +431,8 @@ describe('Process Termination', () => {
 
       const managedProcess = await manager.acquireProcess(config);
 
-      let output = '';
-      managedProcess.streams.stdout.on('data', (data) => {
+      let output = "";
+      managedProcess.streams.stdout.on("data", (data) => {
         output += data.toString();
       });
 
@@ -435,16 +445,16 @@ describe('Process Termination', () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       // If shutdown used SIGTERM, process should have printed message
-      expect(output.includes('SIGTERM received')).toBeTruthy();
+      expect(output.includes("SIGTERM received")).toBeTruthy();
     });
   });
 
-  describe('Graceful Shutdown Scenarios', () => {
-    it('allows process to clean up during grace period', async () => {
+  describe("Graceful Shutdown Scenarios", () => {
+    it("allows process to clean up during grace period", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           `
           let cleaned = false;
           process.on('SIGTERM', () => {
@@ -460,8 +470,8 @@ describe('Process Termination', () => {
 
       const managedProcess = await manager.acquireProcess(config);
 
-      let output = '';
-      managedProcess.streams.stdout.on('data', (data) => {
+      let output = "";
+      manager.onOutput(managedProcess.id, (data) => {
         output += data.toString();
       });
 
@@ -474,14 +484,14 @@ describe('Process Termination', () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Process should have had time to clean up
-      expect(output.includes('cleaned')).toBeTruthy();
+      expect(output.includes("cleaned")).toBeTruthy();
     });
 
-    it('force kills process that ignores SIGTERM', async () => {
+    it("force kills process that ignores SIGTERM", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           `
           // Ignore SIGTERM completely
           process.on('SIGTERM', () => {
@@ -496,8 +506,8 @@ describe('Process Termination', () => {
 
       const managedProcess = await manager.acquireProcess(config);
 
-      let output = '';
-      managedProcess.streams.stdout.on('data', (data) => {
+      let output = "";
+      managedProcess.streams.stdout.on("data", (data) => {
         output += data.toString();
       });
 
@@ -511,7 +521,7 @@ describe('Process Termination', () => {
 
       // Process should be killed despite ignoring SIGTERM
       expect(managedProcess.process.killed).toBe(true);
-      expect(output.includes('ignored')).toBeTruthy();
+      expect(output.includes("ignored")).toBeTruthy();
     });
   });
 });

@@ -5,14 +5,14 @@
  * lifecycle of process management including spawning, I/O, and termination.
  */
 
-import { describe, it, beforeEach, afterEach , expect } from 'vitest'
-import { SimpleProcessManager } from '../../../../src/execution/process/simple-manager.js';
-import type { ProcessConfig } from '../../../../src/execution/process/types.js';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { mkdirSync, rmSync } from 'node:fs';
+import { describe, it, beforeEach, afterEach, expect } from "vitest";
+import { SimpleProcessManager } from "../../../../src/execution/process/simple-manager.js";
+import type { ProcessConfig } from "../../../../src/execution/process/types.js";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { mkdirSync, rmSync } from "node:fs";
 
-describe('End-to-End Process Execution', () => {
+describe.sequential("End-to-End Process Execution", () => {
   // Integration tests for process lifecycle management
 
   let manager: SimpleProcessManager;
@@ -21,7 +21,10 @@ describe('End-to-End Process Execution', () => {
   beforeEach(() => {
     manager = new SimpleProcessManager();
     // Create temporary directory for test working dir
-    tempDir = join(tmpdir(), `process-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    tempDir = join(
+      tmpdir(),
+      `process-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
     mkdirSync(tempDir, { recursive: true });
   });
 
@@ -34,7 +37,7 @@ describe('End-to-End Process Execution', () => {
       activeProcesses.forEach((proc) => {
         try {
           if (!proc.process.killed) {
-            proc.process.kill('SIGKILL');
+            proc.process.kill("SIGKILL");
           }
         } catch (error) {
           // Process might already be dead
@@ -55,12 +58,12 @@ describe('End-to-End Process Execution', () => {
     }
   });
 
-  describe('Complete Lifecycle', () => {
-    it('executes full spawn → input → output → terminate cycle', async () => {
+  describe.sequential("Complete Lifecycle", () => {
+    it("executes full spawn → input → output → terminate cycle", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           `
           const readline = require('readline');
           const rl = readline.createInterface({
@@ -84,36 +87,38 @@ describe('End-to-End Process Execution', () => {
       const managedProcess = await manager.acquireProcess(config);
       expect(managedProcess.id).toBeTruthy();
       expect(managedProcess.pid).toBeTruthy();
-      expect(managedProcess.status).toBe('busy');
+      expect(managedProcess.status).toBe("busy");
 
       const initialMetrics = manager.getMetrics();
 
       // Set up output capture
       const outputs: string[] = [];
       manager.onOutput(managedProcess.id, (data, type) => {
-        if (type === 'stdout') {
+        if (type === "stdout") {
           const text = data.toString().trim();
           if (text) outputs.push(text);
         }
       });
 
       // Send input
-      await manager.sendInput(managedProcess.id, 'hello world\n');
+      await manager.sendInput(managedProcess.id, "hello world\n");
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      await manager.sendInput(managedProcess.id, 'test message\n');
+      await manager.sendInput(managedProcess.id, "test message\n");
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Verify output received
-      expect(outputs.some((o) => o.includes('Echo: hello world'))).toBeTruthy();
-      expect(outputs.some((o) => o.includes('Echo: test message'))).toBeTruthy();
+      expect(outputs.some((o) => o.includes("Echo: hello world"))).toBeTruthy();
+      expect(
+        outputs.some((o) => o.includes("Echo: test message"))
+      ).toBeTruthy();
 
       // Terminate
-      await manager.sendInput(managedProcess.id, 'quit\n');
+      await manager.sendInput(managedProcess.id, "quit\n");
 
       // Wait for process to exit
       await new Promise<void>((resolve) => {
-        managedProcess.process.once('exit', () => {
+        managedProcess.process.once("exit", () => {
           setTimeout(resolve, 50);
         });
       });
@@ -121,15 +126,17 @@ describe('End-to-End Process Execution', () => {
       // Verify metrics updated
       const finalMetrics = manager.getMetrics();
       expect(finalMetrics.totalSpawned).toBe(initialMetrics.totalSpawned);
-      expect(finalMetrics.totalCompleted).toBe(initialMetrics.totalCompleted + 1);
-      expect(managedProcess.status).toBe('completed');
+      expect(finalMetrics.totalCompleted).toBe(
+        initialMetrics.totalCompleted + 1
+      );
+      expect(managedProcess.status).toBe("completed");
     });
 
-    it('handles process that produces large output', async () => {
+    it("handles process that produces large output", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           `
           // Generate large output
           for (let i = 0; i < 100; i++) {
@@ -146,33 +153,36 @@ describe('End-to-End Process Execution', () => {
       let lineCount = 0;
 
       // Collect output directly from the stream
-      let outputBuffer = '';
-      managedProcess.streams.stdout.on('data', (data) => {
+      let outputBuffer = "";
+      managedProcess.streams.stdout.on("data", (data) => {
         outputBuffer += data.toString();
       });
 
       // Wait for process to complete
       await new Promise<void>((resolve) => {
-        managedProcess.process.once('exit', () => {
+        managedProcess.process.once("exit", () => {
           setTimeout(resolve, 100);
         });
       });
 
       // Count lines after process completes
-      const lines = outputBuffer.split('\n').filter((l) => l.trim());
+      const lines = outputBuffer.split("\n").filter((l) => l.trim());
       lineCount = lines.length;
 
-      expect(managedProcess.status).toBe('completed');
-      expect(lineCount >= 100, `Expected at least 100 lines, got ${lineCount}`).toBeTruthy();
+      expect(managedProcess.status).toBe("completed");
+      expect(
+        lineCount >= 100,
+        `Expected at least 100 lines, got ${lineCount}`
+      ).toBeTruthy();
     });
 
-    it.skip('verifies working directory is correctly set', async () => {
+    it.skip("verifies working directory is correctly set", async () => {
       // TODO: This test is currently skipped due to timing/output capture issues
       // The test verifies that the process working directory is set correctly
       // but there appear to be race conditions in capturing the output
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'console.log(process.cwd()); process.exit(0);'],
+        executablePath: "node",
+        args: ["-e", "console.log(process.cwd()); process.exit(0);"],
         workDir: tempDir,
       };
 
@@ -180,13 +190,13 @@ describe('End-to-End Process Execution', () => {
 
       // Collect output using a Promise that resolves on process exit
       const output = await new Promise<string>((resolve) => {
-        let data = '';
+        let data = "";
 
-        managedProcess.streams.stdout.on('data', (chunk: Buffer) => {
+        managedProcess.streams.stdout.on("data", (chunk: Buffer) => {
           data += chunk.toString();
         });
 
-        managedProcess.process.once('exit', () => {
+        managedProcess.process.once("exit", () => {
           // Give a small delay for any remaining data to arrive
           setTimeout(() => resolve(data), 100);
         });
@@ -196,22 +206,31 @@ describe('End-to-End Process Execution', () => {
     });
   });
 
-  describe('Multiple Concurrent Processes', () => {
-    it('runs multiple processes simultaneously and independently', async () => {
+  describe.sequential("Multiple Concurrent Processes", () => {
+    it("runs multiple processes simultaneously and independently", async () => {
       const configs = [
         {
-          executablePath: 'node',
-          args: ['-e', 'setTimeout(() => { console.log("Process 1"); process.exit(0); }, 100);'],
+          executablePath: "node",
+          args: [
+            "-e",
+            'setTimeout(() => { console.log("Process 1"); process.exit(0); }, 100);',
+          ],
           workDir: tempDir,
         },
         {
-          executablePath: 'node',
-          args: ['-e', 'setTimeout(() => { console.log("Process 2"); process.exit(0); }, 150);'],
+          executablePath: "node",
+          args: [
+            "-e",
+            'setTimeout(() => { console.log("Process 2"); process.exit(0); }, 150);',
+          ],
           workDir: tempDir,
         },
         {
-          executablePath: 'node',
-          args: ['-e', 'setTimeout(() => { console.log("Process 3"); process.exit(0); }, 200);'],
+          executablePath: "node",
+          args: [
+            "-e",
+            'setTimeout(() => { console.log("Process 3"); process.exit(0); }, 200);',
+          ],
           workDir: tempDir,
         },
       ];
@@ -231,7 +250,7 @@ describe('End-to-End Process Execution', () => {
       processes.forEach((proc) => {
         outputs.set(proc.id, []);
         manager.onOutput(proc.id, (data, type) => {
-          if (type === 'stdout') {
+          if (type === "stdout") {
             outputs.get(proc.id)!.push(data.toString().trim());
           }
         });
@@ -242,26 +261,34 @@ describe('End-to-End Process Execution', () => {
         processes.map(
           (proc) =>
             new Promise<void>((resolve) => {
-              proc.process.once('exit', () => setTimeout(resolve, 50));
+              proc.process.once("exit", () => setTimeout(resolve, 50));
             })
         )
       );
 
       // Verify all processes completed successfully
-      expect(outputs.get(processes[0].id)!.some((o) => o.includes('Process 1'))).toBeTruthy();
-      expect(outputs.get(processes[1].id)!.some((o) => o.includes('Process 2'))).toBeTruthy();
-      expect(outputs.get(processes[2].id)!.some((o) => o.includes('Process 3'))).toBeTruthy();
+      expect(
+        outputs.get(processes[0].id)!.some((o) => o.includes("Process 1"))
+      ).toBeTruthy();
+      expect(
+        outputs.get(processes[1].id)!.some((o) => o.includes("Process 2"))
+      ).toBeTruthy();
+      expect(
+        outputs.get(processes[2].id)!.some((o) => o.includes("Process 3"))
+      ).toBeTruthy();
 
       // Verify metrics
       const finalMetrics = manager.getMetrics();
-      expect(finalMetrics.totalCompleted).toBe(initialMetrics.totalCompleted + 3);
+      expect(finalMetrics.totalCompleted).toBe(
+        initialMetrics.totalCompleted + 3
+      );
       expect(finalMetrics.totalFailed).toBe(initialMetrics.totalFailed);
     });
 
-    it('tracks metrics correctly for concurrent processes', async () => {
+    it("tracks metrics correctly for concurrent processes", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'setTimeout(() => process.exit(0), 100);'],
+        executablePath: "node",
+        args: ["-e", "setTimeout(() => process.exit(0), 100);"],
         workDir: tempDir,
       };
 
@@ -276,27 +303,31 @@ describe('End-to-End Process Execution', () => {
         manager.acquireProcess(config),
       ]);
 
-      expect(manager.getMetrics().currentlyActive).toBe(initialMetrics.currentlyActive + 5);
+      expect(manager.getMetrics().currentlyActive).toBe(
+        initialMetrics.currentlyActive + 5
+      );
 
       // Wait for all to complete
       await Promise.all(
         processes.map(
           (proc) =>
             new Promise<void>((resolve) => {
-              proc.process.once('exit', () => setTimeout(resolve, 50));
+              proc.process.once("exit", () => setTimeout(resolve, 50));
             })
         )
       );
 
       const finalMetrics = manager.getMetrics();
-      expect(finalMetrics.totalCompleted).toBe(initialMetrics.totalCompleted + 5);
+      expect(finalMetrics.totalCompleted).toBe(
+        initialMetrics.totalCompleted + 5
+      );
       expect(finalMetrics.currentlyActive).toBe(initialMetrics.currentlyActive);
     });
 
-    it('cleans up all processes properly', async () => {
+    it("cleans up all processes properly", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'setTimeout(() => {}, 5000);'], // Will run for 5s if not killed
+        executablePath: "node",
+        args: ["-e", "setTimeout(() => {}, 5000);"], // Will run for 5s if not killed
         workDir: tempDir,
       };
 
@@ -322,35 +353,35 @@ describe('End-to-End Process Execution', () => {
     });
   });
 
-  describe('Process Crash Recovery', () => {
-    it('handles process exit with non-zero code', async () => {
+  describe.sequential("Process Crash Recovery", () => {
+    it("handles process exit with non-zero code", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'console.log("Before crash"); process.exit(1);'],
+        executablePath: "node",
+        args: ["-e", 'console.log("Before crash"); process.exit(1);'],
         workDir: tempDir,
       };
 
       const initialMetrics = manager.getMetrics();
       const managedProcess = await manager.acquireProcess(config);
 
-      let output = '';
+      let output = "";
       manager.onOutput(managedProcess.id, (data, type) => {
-        if (type === 'stdout') {
+        if (type === "stdout") {
           output += data.toString();
         }
       });
 
       // Wait for process to exit
       await new Promise<void>((resolve) => {
-        managedProcess.process.once('exit', () => {
+        managedProcess.process.once("exit", () => {
           setTimeout(resolve, 50);
         });
       });
 
       // Verify crash handling
-      expect(managedProcess.status).toBe('crashed');
+      expect(managedProcess.status).toBe("crashed");
       expect(managedProcess.exitCode).toBe(1);
-      expect(output.includes('Before crash')).toBeTruthy();
+      expect(output.includes("Before crash")).toBeTruthy();
 
       // Verify metrics
       const finalMetrics = manager.getMetrics();
@@ -358,10 +389,13 @@ describe('End-to-End Process Execution', () => {
       expect(finalMetrics.totalCompleted).toBe(initialMetrics.totalCompleted);
     });
 
-    it('handles runtime errors and updates status', async () => {
+    it("handles runtime errors and updates status", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'console.log("Starting"); throw new Error("Runtime error");'],
+        executablePath: "node",
+        args: [
+          "-e",
+          'console.log("Starting"); throw new Error("Runtime error");',
+        ],
         workDir: tempDir,
       };
 
@@ -369,19 +403,19 @@ describe('End-to-End Process Execution', () => {
 
       // Wait for process to crash
       await new Promise<void>((resolve) => {
-        managedProcess.process.once('exit', () => {
+        managedProcess.process.once("exit", () => {
           setTimeout(resolve, 50);
         });
       });
 
-      expect(managedProcess.status).toBe('crashed');
+      expect(managedProcess.status).toBe("crashed");
       expect(managedProcess.exitCode).not.toBe(0);
     });
 
-    it('cleans up crashed processes automatically', async () => {
+    it("cleans up crashed processes automatically", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'process.exit(1);'],
+        executablePath: "node",
+        args: ["-e", "process.exit(1);"],
         workDir: tempDir,
       };
 
@@ -390,7 +424,7 @@ describe('End-to-End Process Execution', () => {
 
       // Wait for process to crash
       await new Promise<void>((resolve) => {
-        managedProcess.process.once('exit', () => {
+        managedProcess.process.once("exit", () => {
           setTimeout(resolve, 50);
         });
       });
@@ -401,11 +435,11 @@ describe('End-to-End Process Execution', () => {
     });
   });
 
-  describe('Error Scenarios', () => {
-    it('handles invalid executable path', async () => {
+  describe.sequential("Error Scenarios", () => {
+    it("handles invalid executable path", async () => {
       const config: ProcessConfig = {
-        executablePath: '/nonexistent/invalid/path/to/executable',
-        args: ['test'],
+        executablePath: "/nonexistent/invalid/path/to/executable",
+        args: ["test"],
         workDir: tempDir,
       };
 
@@ -421,10 +455,10 @@ describe('End-to-End Process Execution', () => {
       expect(finalMetrics.totalSpawned).toBe(initialMetrics.totalSpawned);
     });
 
-    it('handles timeout correctly', async () => {
+    it("handles timeout correctly", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'setInterval(() => {}, 1000);'],
+        executablePath: "node",
+        args: ["-e", "setInterval(() => {}, 1000);"],
         workDir: tempDir,
         timeout: 150, // 150ms timeout
       };
@@ -434,7 +468,7 @@ describe('End-to-End Process Execution', () => {
       // Wait for timeout to trigger with safety timeout
       await Promise.race([
         new Promise<void>((resolve) => {
-          managedProcess.process.once('exit', () => {
+          managedProcess.process.once("exit", () => {
             setTimeout(resolve, 50);
           });
         }),
@@ -442,15 +476,15 @@ describe('End-to-End Process Execution', () => {
       ]);
 
       // Should be crashed due to timeout
-      expect(managedProcess.status).toBe('crashed');
+      expect(managedProcess.status).toBe("crashed");
       expect(managedProcess.signal).toBeTruthy(); // Killed by signal
     });
 
-    it('verifies SIGTERM then SIGKILL on timeout', async () => {
+    it("verifies SIGTERM then SIGKILL on timeout", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
+        executablePath: "node",
         args: [
-          '-e',
+          "-e",
           `
           process.on('SIGTERM', () => {
             console.log('SIGTERM received');
@@ -465,9 +499,9 @@ describe('End-to-End Process Execution', () => {
 
       const managedProcess = await manager.acquireProcess(config);
 
-      let output = '';
+      let output = "";
       manager.onOutput(managedProcess.id, (data, type) => {
-        if (type === 'stdout') {
+        if (type === "stdout") {
           output += data.toString();
         }
       });
@@ -475,7 +509,7 @@ describe('End-to-End Process Execution', () => {
       // Wait for process to be killed with safety timeout
       await Promise.race([
         new Promise<void>((resolve) => {
-          managedProcess.process.once('exit', () => {
+          managedProcess.process.once("exit", () => {
             setTimeout(resolve, 50);
           });
         }),
@@ -486,35 +520,37 @@ describe('End-to-End Process Execution', () => {
       expect(managedProcess.process.killed).toBe(true);
     });
 
-    it('handles process that exits during I/O operations', async () => {
+    it("handles process that exits during I/O operations", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'setTimeout(() => process.exit(0), 100);'],
+        executablePath: "node",
+        args: ["-e", "setTimeout(() => process.exit(0), 100);"],
         workDir: tempDir,
       };
 
       const managedProcess = await manager.acquireProcess(config);
 
       // Try to send input while process is running
-      await manager.sendInput(managedProcess.id, 'test\n');
+      await manager.sendInput(managedProcess.id, "test\n");
 
       // Wait for process to exit
       await new Promise<void>((resolve) => {
-        managedProcess.process.once('exit', () => {
+        managedProcess.process.once("exit", () => {
           setTimeout(resolve, 50);
         });
       });
 
       // Try to send input after process has exited - should reject
-      await expect(manager.sendInput(managedProcess.id, 'test2\n')).rejects.toThrow();
+      await expect(
+        manager.sendInput(managedProcess.id, "test2\n")
+      ).rejects.toThrow();
     });
   });
 
-  describe('Stress Testing', () => {
-    it('handles rapid process spawning and termination', async () => {
+  describe.sequential("Stress Testing", () => {
+    it("handles rapid process spawning and termination", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'process.exit(0);'],
+        executablePath: "node",
+        args: ["-e", "process.exit(0);"],
         workDir: tempDir,
       };
 
@@ -524,18 +560,20 @@ describe('End-to-End Process Execution', () => {
       for (let i = 0; i < 10; i++) {
         const proc = await manager.acquireProcess(config);
         await new Promise<void>((resolve) => {
-          proc.process.once('exit', () => setTimeout(resolve, 10));
+          proc.process.once("exit", () => setTimeout(resolve, 10));
         });
       }
 
       const finalMetrics = manager.getMetrics();
-      expect(finalMetrics.totalCompleted).toBe(initialMetrics.totalCompleted + 10);
+      expect(finalMetrics.totalCompleted).toBe(
+        initialMetrics.totalCompleted + 10
+      );
     });
 
-    it('handles many concurrent processes', async () => {
+    it("handles many concurrent processes", async () => {
       const config: ProcessConfig = {
-        executablePath: 'node',
-        args: ['-e', 'setTimeout(() => process.exit(0), 100);'],
+        executablePath: "node",
+        args: ["-e", "setTimeout(() => process.exit(0), 100);"],
         workDir: tempDir,
       };
 
@@ -551,14 +589,14 @@ describe('End-to-End Process Execution', () => {
         processes.map(
           (proc) =>
             new Promise<void>((resolve) => {
-              proc.process.once('exit', () => setTimeout(resolve, 50));
+              proc.process.once("exit", () => setTimeout(resolve, 50));
             })
         )
       );
 
       // All should have completed
       processes.forEach((proc) => {
-        expect(proc.status).toBe('completed');
+        expect(proc.status).toBe("completed");
       });
     });
   });
