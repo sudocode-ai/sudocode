@@ -6,6 +6,7 @@ import * as http from "http";
 import { fileURLToPath } from "url";
 import { readFileSync, existsSync } from "fs";
 import type Database from "better-sqlite3";
+import { WebSocketServer } from "ws";
 
 // ES Module __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
@@ -14,6 +15,7 @@ import { initDatabase, getDatabaseInfo } from "./services/db.js";
 import { ExecutionLifecycleService } from "./services/execution-lifecycle.js";
 import { ExecutionService } from "./services/execution-service.js";
 import { ExecutionLogsStore } from "./services/execution-logs-store.js";
+import { TerminalWebSocketService } from "./services/terminal-websocket.js";
 // import {
 //   ExecutionLogsCleanup,
 //   DEFAULT_CLEANUP_CONFIG,
@@ -66,6 +68,7 @@ let transportManager!: TransportManager;
 let logsStore!: ExecutionLogsStore;
 // let logsCleanup: ExecutionLogsCleanup | null = null;
 let executionService: ExecutionService | null = null;
+let terminalService: TerminalWebSocketService | null = null;
 
 // Async initialization function
 async function initialize() {
@@ -88,6 +91,10 @@ async function initialize() {
     // Initialize execution logs store
     logsStore = new ExecutionLogsStore(db);
     console.log("Execution logs store initialized");
+
+    // Initialize terminal WebSocket service
+    terminalService = new TerminalWebSocketService(db);
+    console.log("Terminal WebSocket service initialized");
 
     // Initialize execution logs cleanup service
     // TODO: Enable auto-cleanup config via .sudocode/config.json
@@ -381,6 +388,33 @@ const actualPort = await startServer(startPort, MAX_PORT_ATTEMPTS);
 
 // Initialize WebSocket server AFTER successfully binding to a port
 initWebSocketServer(server, "/ws");
+
+// Handle WebSocket upgrades for terminal connections
+// Route: /ws/terminal/:executionId
+server.on('upgrade', (request, socket, head) => {
+  const { pathname } = new URL(request.url!, `http://${request.headers.host}`);
+
+  // Check if this is a terminal WebSocket request
+  const terminalMatch = pathname.match(/^\/ws\/terminal\/([^/]+)$/);
+  if (terminalMatch && terminalService) {
+    const executionId = terminalMatch[1];
+
+    // Handle the WebSocket upgrade
+    const wss = new WebSocketServer({ noServer: true });
+
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      console.log(`[terminal] WebSocket connection for execution ${executionId}`);
+      terminalService!.handleConnection(ws, executionId, REPO_ROOT).catch((error) => {
+        console.error('[terminal] Failed to handle connection:', error);
+        ws.close(1011, 'Internal server error');
+      });
+    });
+    return;
+  }
+
+  // If not a terminal request, let it fall through to other handlers
+  // or destroy the socket if no handler matches
+});
 
 // Format URLs as clickable links with color
 const httpUrl = `http://localhost:${actualPort}`;

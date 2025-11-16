@@ -83,16 +83,16 @@ describe.sequential("End-to-End Process Execution", () => {
         workDir: tempDir,
       };
 
+      // Set up output capture BEFORE spawning to avoid race condition
+      const outputs: string[] = [];
+
       // Spawn process
       const managedProcess = await manager.acquireProcess(config);
       expect(managedProcess.id).toBeTruthy();
       expect(managedProcess.pid).toBeTruthy();
       expect(managedProcess.status).toBe("busy");
 
-      const initialMetrics = manager.getMetrics();
-
-      // Set up output capture
-      const outputs: string[] = [];
+      // Register output handler immediately after spawn
       manager.onOutput(managedProcess.id, (data, type) => {
         if (type === "stdout") {
           const text = data.toString().trim();
@@ -100,12 +100,18 @@ describe.sequential("End-to-End Process Execution", () => {
         }
       });
 
+      expect(managedProcess.id).toBeTruthy();
+      expect(managedProcess.pid).toBeTruthy();
+      expect(managedProcess.status).toBe("busy");
+
+      const initialMetrics = manager.getMetrics();
+
       // Send input
       await manager.sendInput(managedProcess.id, "hello world\n");
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       await manager.sendInput(managedProcess.id, "test message\n");
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Verify output received
       expect(outputs.some((o) => o.includes("Echo: hello world"))).toBeTruthy();

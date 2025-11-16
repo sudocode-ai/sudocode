@@ -5,7 +5,7 @@
  * These tests verify the skeleton implementation before adding actual functionality.
  */
 
-import { describe, it, beforeEach , expect } from 'vitest'
+import { describe, it, beforeEach, afterEach, expect } from 'vitest'
 import { SimpleProcessManager } from '../../../../src/execution/process/simple-manager.js';
 
 describe('SimpleProcessManager', () => {
@@ -13,6 +13,15 @@ describe('SimpleProcessManager', () => {
 
   beforeEach(() => {
     manager = new SimpleProcessManager();
+  });
+
+  afterEach(async () => {
+    // Clean up all processes to prevent resource leaks
+    try {
+      await manager.shutdown();
+    } catch (error) {
+      // Ignore cleanup errors
+    }
   });
 
   describe('constructor', () => {

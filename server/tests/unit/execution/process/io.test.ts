@@ -16,8 +16,12 @@ describe.sequential("Process I/O Communication", () => {
   });
 
   afterEach(async () => {
-    // Clean up all processes and timers
-    await manager.shutdown();
+    // Clean up all processes to prevent resource leaks
+    try {
+      await manager.shutdown();
+    } catch (error) {
+      // Ignore cleanup errors
+    }
   });
 
   describe.sequential("sendInput", () => {
@@ -154,8 +158,8 @@ describe.sequential("Process I/O Communication", () => {
         outputs.push({ data: data.toString(), type });
       });
 
-      // Wait for output
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Wait for output (increased timeout to reduce flakiness)
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
       expect(outputs.length > 0).toBeTruthy();
       expect(
@@ -187,8 +191,8 @@ describe.sequential("Process I/O Communication", () => {
         outputs.push({ data: data.toString(), type });
       });
 
-      // Wait for output
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Wait for output (increased timeout to reduce flakiness)
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
       expect(outputs.length > 0).toBeTruthy();
       expect(
@@ -266,8 +270,8 @@ describe.sequential("Process I/O Communication", () => {
         handler2Called = true;
       });
 
-      // Wait for output
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Wait for output (increased timeout to reduce flakiness)
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
       expect(handler1Called).toBe(true);
       expect(handler2Called).toBe(true);

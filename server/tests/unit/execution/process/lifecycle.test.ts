@@ -5,7 +5,7 @@
  * and timeout management.
  */
 
-import { describe, it, beforeEach , expect } from 'vitest'
+import { describe, it, beforeEach, afterEach, expect } from 'vitest'
 import { SimpleProcessManager } from '../../../../src/execution/process/simple-manager.js';
 import type { ProcessConfig } from '../../../../src/execution/process/types.js';
 
@@ -14,6 +14,15 @@ describe('Process Lifecycle Events', () => {
 
   beforeEach(() => {
     manager = new SimpleProcessManager();
+  });
+
+  afterEach(async () => {
+    // Clean up all processes to prevent resource leaks
+    try {
+      await manager.shutdown();
+    } catch (error) {
+      // Ignore cleanup errors
+    }
   });
 
   describe('Exit Event Handling', () => {
