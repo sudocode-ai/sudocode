@@ -223,6 +223,11 @@ export type ExecutionStatus =
   | "stopped"; // User stopped (legacy alias for cancelled)
 
 /**
+ * Execution mode for CLI processes
+ */
+export type ExecutionMode = "structured" | "interactive" | "hybrid";
+
+/**
  * Represents a single agent run on an issue
  * Tracks the full lifecycle of a coding agent execution
  */
