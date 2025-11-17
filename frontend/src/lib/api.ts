@@ -5,6 +5,7 @@ import type {
   Spec,
   Relationship,
   IssueFeedback,
+  RepositoryInfo,
   CreateIssueRequest,
   UpdateIssueRequest,
   CreateSpecRequest,
@@ -154,6 +155,13 @@ export const executionsApi = {
 
   // Delete worktree for execution
   deleteWorktree: (executionId: string) => del(`/executions/${executionId}/worktree`),
+}
+
+/**
+ * Repository API
+ */
+export const repositoryApi = {
+  getInfo: () => axios.get<RepositoryInfo>('/api/repo-info').then((res) => res.data),
 }
 
 export default api

@@ -13,7 +13,6 @@ import {
   ExpandIcon,
   FileText,
   Code2,
-  Play,
   ChevronDown,
   ChevronUp,
 } from 'lucide-react'
@@ -33,8 +32,8 @@ import { DeleteIssueDialog } from './DeleteIssueDialog'
 import { RelationshipList } from '@/components/relationships/RelationshipList'
 import { RelationshipForm } from '@/components/relationships/RelationshipForm'
 import { relationshipsApi, executionsApi } from '@/lib/api'
-import { ExecutionConfigDialog } from '@/components/executions/ExecutionConfigDialog'
 import { ExecutionHistory } from '@/components/executions/ExecutionHistory'
+import { AgentConfigPanel } from '@/components/executions/AgentConfigPanel'
 import type { ExecutionConfig } from '@/types/execution'
 import { useRelationshipMutations } from '@/hooks/useRelationshipMutations'
 import { TiptapEditor } from '@/components/specs/TiptapEditor'
@@ -115,7 +114,6 @@ export function IssuePanel({
   }
   const [priority, setPriority] = useState<number>(issue.priority)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  const [showExecutionConfigDialog, setShowExecutionConfigDialog] = useState(false)
   const [relationships, setRelationships] = useState<Relationship[]>([])
   const [showAddRelationship, setShowAddRelationship] = useState(false)
   const [isLoadingRelationships, setIsLoadingRelationships] = useState(false)
@@ -227,8 +225,13 @@ export function IssuePanel({
       const isInAlertDialog = clickedElement.closest('[role="alertdialog"]')
       const isInDropdown = clickedElement.closest('[role="listbox"]')
       const isInPopover = clickedElement.closest('[data-radix-popper-content-wrapper]')
+      const isInSelectContent = clickedElement.closest('[data-radix-select-content]')
+      const isInSelectViewport = clickedElement.closest('[data-radix-select-viewport]')
+      // Check for dialog overlay (the backdrop behind the dialog)
+      const isDialogOverlay = clickedElement.hasAttribute('data-dialog-overlay') ||
+                              clickedElement.closest('[data-dialog-overlay]')
 
-      if (isInDialog || isInAlertDialog || isInDropdown || isInPopover) return
+      if (isInDialog || isInAlertDialog || isInDropdown || isInPopover || isDialogOverlay || isInSelectContent || isInSelectViewport) return
 
       // Don't close if clicking on TipTap/ProseMirror elements
       // TipTap can render menus, tooltips, and other UI in portals
@@ -255,7 +258,7 @@ export function IssuePanel({
       if (!onClose) return
 
       // Don't close if ESC is pressed while a dialog or dropdown is open
-      if (showDeleteDialog || showExecutionConfigDialog || showAddRelationship) return
+      if (showDeleteDialog || showAddRelationship) return
 
       if (event.key === 'Escape') {
         onClose()
@@ -266,7 +269,7 @@ export function IssuePanel({
     return () => {
       document.removeEventListener('keydown', handleEscKey)
     }
-  }, [onClose, showDeleteDialog, showExecutionConfigDialog, showAddRelationship])
+  }, [onClose, showDeleteDialog, showAddRelationship])
 
   // Auto-save effect with debounce
   useEffect(() => {
@@ -396,7 +399,6 @@ export function IssuePanel({
         config,
         prompt,
       })
-      setShowExecutionConfigDialog(false)
       // Navigate to execution view
       navigate(`/executions/${execution.id}`)
     } catch (error) {
@@ -741,26 +743,12 @@ export function IssuePanel({
           </div>
         </div>
 
-        {/* Fixed Footer - Execution Actions */}
-        <div className="border-t bg-background px-6 py-3">
-          <div className="flex items-center justify-end gap-3">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  onClick={() => setShowExecutionConfigDialog(true)}
-                  disabled={issue.archived || isUpdating}
-                  variant="default"
-                  size="xs"
-                  className="gap-2"
-                >
-                  <Play className="h-4 w-4" />
-                  Run Agent
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Configure and start agent execution</TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
+        {/* Fixed Footer - Agent Configuration Panel */}
+        <AgentConfigPanel
+          issueId={issue.id}
+          onStart={handleStartExecution}
+          disabled={issue.archived || isUpdating}
+        />
 
         <DeleteIssueDialog
           issue={issue}
@@ -768,13 +756,6 @@ export function IssuePanel({
           onClose={() => setShowDeleteDialog(false)}
           onConfirm={handleDelete}
           isDeleting={isDeleting}
-        />
-
-        <ExecutionConfigDialog
-          issueId={issue.id}
-          open={showExecutionConfigDialog}
-          onStart={handleStartExecution}
-          onCancel={() => setShowExecutionConfigDialog(false)}
         />
       </div>
     </TooltipProvider>

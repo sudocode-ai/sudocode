@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useIssues, useUpdateIssueStatus } from '@/hooks/useIssues'
+import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
 import type { Issue, IssueStatus } from '@/types/api'
 import type { DragEndEvent } from '@/components/ui/kanban'
 import IssueKanbanBoard from '@/components/issues/IssueKanbanBoard'
@@ -26,7 +27,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Plus, Archive, Search } from 'lucide-react'
+import { Plus, Archive, Search, GitBranch } from 'lucide-react'
 import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels'
 
 type SortOption = 'priority' | 'newest' | 'last-updated'
@@ -50,6 +51,7 @@ export default function IssuesPage() {
     isDeleting,
   } = useIssues()
   const updateStatus = useUpdateIssueStatus()
+  const { data: repoInfo } = useRepositoryInfo()
   const [selectedIssue, setSelectedIssue] = useState<Issue | undefined>()
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [createDialogStatus, setCreateDialogStatus] = useState<IssueStatus | undefined>()
@@ -279,9 +281,18 @@ export default function IssuesPage() {
     <div className="flex h-screen flex-col">
       {/* Header */}
       <div className="flex items-center justify-between border-b bg-background p-4">
-        <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-bold">Issues</h1>
-          <Badge variant="secondary">{issues.length}</Badge>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold">Issues</h1>
+            <Badge variant="secondary">{issues.length}</Badge>
+          </div>
+          {repoInfo && (
+            <div className="flex items-center gap-2 pl-3 text-sm text-muted-foreground">
+              <span className="font-medium">{repoInfo.name}</span>
+              <GitBranch className="h-3.5 w-3.5" />
+              <span>{repoInfo.branch}</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
