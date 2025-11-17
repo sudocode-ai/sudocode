@@ -19,6 +19,7 @@
     "build:server": "npm run build:frontend && npm run build --workspace=server",
     "build:frontend": "npm run build --workspace=frontend",
     "test": "npm test --workspaces --if-present",
+    "test:all": "vitest run",
     "test:cli": "npm test --workspace=cli",
     "test:mcp": "npm test --workspace=mcp",
     "test:server": "npm test --workspace=server",
