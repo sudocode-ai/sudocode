@@ -265,6 +265,43 @@ describe("Relationship CLI Commands", () => {
       expect(processExitSpy).toHaveBeenCalledWith(1);
     });
 
+    it("should reject invalid relationship type", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const spec1Id = createdSpecIds[0];
+      const spec2Id = createdSpecIds[1];
+
+      await handleLink(ctx, spec1Id, spec2Id, { type: "invalid-type" });
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("✗ Invalid relationship type: invalid-type")
+      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Valid types:")
+      );
+      expect(processExitSpy).toHaveBeenCalledWith(1);
+
+      // Verify no relationship was created
+      const relationships = getOutgoingRelationships(db, spec1Id, "spec");
+      expect(relationships).toHaveLength(0);
+    });
+
+    it("should reject empty relationship type", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const spec1Id = createdSpecIds[0];
+      const spec2Id = createdSpecIds[1];
+
+      await handleLink(ctx, spec1Id, spec2Id, { type: "" });
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("✗ Invalid relationship type:")
+      );
+      expect(processExitSpy).toHaveBeenCalledWith(1);
+
+      // Verify no relationship was created
+      const relationships = getOutgoingRelationships(db, spec1Id, "spec");
+      expect(relationships).toHaveLength(0);
+    });
+
     it("should output JSON when jsonOutput is true", async () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: true };
       const spec1Id = createdSpecIds[0];
