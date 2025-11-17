@@ -2,6 +2,8 @@
  * CLI handlers for issue commands
  */
 
+import path from "path";
+import fs from "fs";
 import chalk from "chalk";
 import type Database from "better-sqlite3";
 import { generateIssueId } from "../id-generator.js";
@@ -20,6 +22,7 @@ import {
 import { getTags, setTags } from "../operations/tags.js";
 import { listFeedback } from "../operations/feedback.js";
 import { exportToJSONL } from "../export.js";
+import { syncJSONLToMarkdown } from "../sync.js";
 
 export interface CommandContext {
   db: Database.Database;
@@ -61,6 +64,12 @@ export async function handleIssueCreate(
     }
 
     await exportToJSONL(ctx.db, { outputDir: ctx.outputDir });
+
+    // Also update the markdown file to keep it in sync
+    const issuesDir = path.join(ctx.outputDir, "issues");
+    fs.mkdirSync(issuesDir, { recursive: true });
+    const mdPath = path.join(issuesDir, `${issueId}.md`);
+    await syncJSONLToMarkdown(ctx.db, issueId, 'issue', mdPath);
 
     if (ctx.jsonOutput) {
       console.log(
@@ -303,6 +312,12 @@ export async function handleIssueUpdate(
 
     await exportToJSONL(ctx.db, { outputDir: ctx.outputDir });
 
+    // Also update the markdown file to keep it in sync
+    const issuesDir = path.join(ctx.outputDir, "issues");
+    fs.mkdirSync(issuesDir, { recursive: true });
+    const mdPath = path.join(issuesDir, `${id}.md`);
+    await syncJSONLToMarkdown(ctx.db, id, 'issue', mdPath);
+
     if (ctx.jsonOutput) {
       console.log(JSON.stringify(issue, null, 2));
     } else {
@@ -354,6 +369,16 @@ export async function handleIssueClose(
     }
 
     await exportToJSONL(ctx.db, { outputDir: ctx.outputDir });
+
+    // Also update the markdown files to keep them in sync
+    const issuesDir = path.join(ctx.outputDir, "issues");
+    fs.mkdirSync(issuesDir, { recursive: true });
+    for (const result of results) {
+      if (result.success) {
+        const mdPath = path.join(issuesDir, `${result.id}.md`);
+        await syncJSONLToMarkdown(ctx.db, result.id, 'issue', mdPath);
+      }
+    }
 
     if (ctx.jsonOutput) {
       console.log(JSON.stringify(results, null, 2));

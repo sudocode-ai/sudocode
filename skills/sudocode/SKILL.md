@@ -1,6 +1,6 @@
 ---
 name: sudocode
-description: Use when viewing, creating, or modifying sudocode specs or issues (show_spec, show_issue, upsert_spec, upsert_issue, list_issues, list_specs), planning features, breaking down work, creating dependency graphs, or providing implementation feedback - spec and issue management with hierarchical organization and relationships
+description: ALWAYS use this skill for ALL sudocode spec and issue operations. Use when user mentions "spec", "issue", "ready", "blocked", "implement", "feature", "plan", or "feedback" with sudocode specs and issues. PROACTIVELY use at start of implementation tasks to check ready issues and understand work context. Operations include viewing (show_spec, show_issue, list_issues, list_specs), creating/modifying (upsert_spec, upsert_issue), planning features, breaking down work, creating dependency graphs, and providing implementation feedback.
 ---
 
 # sudocode: Spec & Issue Management

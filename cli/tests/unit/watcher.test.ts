@@ -775,6 +775,83 @@ Updated content.
         expect(errors.length).toBe(0);
       }
     );
+
+    it(
+      "should not create loop when CLI updates issue (simulating MCP operation)",
+      { timeout: 15000 },
+      async () => {
+        const logs: string[] = [];
+        const errors: Error[] = [];
+        let syncCount = 0;
+
+        // Create initial issue
+        const { createIssue } = await import("../../src/operations/issues.js");
+        createIssue(db, {
+          id: "issue-cli-001",
+          uuid: "test-uuid-cli-001",
+          title: "CLI Test Issue",
+          content: "Initial content",
+          status: "open",
+          priority: 2,
+        });
+
+        // Export to JSONL and sync to markdown (simulating initialization)
+        const { exportToJSONL } = await import("../../src/export.js");
+        await exportToJSONL(db, { outputDir: tempDir });
+
+        const { syncJSONLToMarkdown } = await import("../../src/sync.js");
+        const issuesDir = path.join(tempDir, "issues");
+        fs.mkdirSync(issuesDir, { recursive: true });
+        const mdPath = path.join(issuesDir, "issue-cli-001.md");
+        await syncJSONLToMarkdown(db, "issue-cli-001", "issue", mdPath);
+
+        // Wait a bit
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        // Start watcher
+        control = startWatcher({
+          db,
+          baseDir: tempDir,
+          debounceDelay: 50,
+          ignoreInitial: true,
+          syncJSONLToMarkdown: true,
+          onLog: (msg) => {
+            logs.push(msg);
+            if (msg.includes("Synced")) {
+              syncCount++;
+            }
+          },
+          onError: (err) => errors.push(err),
+        });
+
+        // Wait for watcher to be ready
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        // Simulate CLI operation: update issue + export + sync to markdown
+        const { updateIssue } = await import("../../src/operations/issues.js");
+        updateIssue(db, "issue-cli-001", { status: "closed" });
+        await exportToJSONL(db, { outputDir: tempDir });
+        await syncJSONLToMarkdown(db, "issue-cli-001", "issue", mdPath);
+
+        // Wait for watcher to process (should detect content match and skip)
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Reset sync counter
+        syncCount = 0;
+
+        // Wait additional time to verify no oscillation
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Should have zero syncs (watcher should have skipped due to content match)
+        expect(syncCount).toBe(0);
+
+        // Verify markdown file has the update
+        const mdContent = fs.readFileSync(mdPath, "utf8");
+        expect(mdContent).toContain("status: closed");
+
+        expect(errors.length).toBe(0);
+      }
+    );
   });
 
   describe("Smart JSONL Operations (Regression Prevention)", () => {
