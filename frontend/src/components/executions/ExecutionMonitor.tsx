@@ -11,10 +11,11 @@
 import { useEffect, useMemo } from 'react'
 import { useAgUiStream } from '@/hooks/useAgUiStream'
 import { useExecutionLogs } from '@/hooks/useExecutionLogs'
+import { useCRDTExecution, useCRDTAgent } from '@/contexts/CRDTContext'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { AgentTrajectory } from './AgentTrajectory'
-import { AlertCircle, CheckCircle2, Loader2, XCircle } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Loader2, XCircle, Activity } from 'lucide-react'
 import type { Execution } from '@/types/execution'
 
 export interface ExecutionMonitorProps {
@@ -71,6 +72,10 @@ export function ExecutionMonitor({
   onError,
   className = '',
 }: ExecutionMonitorProps) {
+  // Get CRDT real-time state
+  const crdtExecution = useCRDTExecution(executionId)
+  const crdtAgent = useCRDTAgent(executionId)
+
   // Determine if execution is active or completed
   // Active: preparing, pending, running, paused
   // Completed: completed, failed, cancelled, stopped
@@ -90,84 +95,81 @@ export function ExecutionMonitor({
   const logsResult = useExecutionLogs(executionId)
 
   // Select the appropriate data source
-  const {
-    connectionStatus,
-    execution,
-    messages,
-    toolCalls,
-    state,
-    error,
-    isConnected,
-  } = useMemo(() => {
-    if (isActive) {
-      // Use SSE stream for active executions
-      return {
-        connectionStatus: sseStream.connectionStatus,
-        execution: sseStream.execution,
-        messages: sseStream.messages,
-        toolCalls: sseStream.toolCalls,
-        state: sseStream.state,
-        error: sseStream.error,
-        isConnected: sseStream.isConnected,
-      }
-    } else {
-      // Use logs API for completed executions
-      // Transform events to messages/toolCalls format
-      const messages = new Map()
-      const toolCalls = new Map()
-      const state: any = {}
+  const { connectionStatus, execution, messages, toolCalls, state, error, isConnected } =
+    useMemo(() => {
+      if (isActive) {
+        // Use SSE stream for active executions
+        return {
+          connectionStatus: sseStream.connectionStatus,
+          execution: sseStream.execution,
+          messages: sseStream.messages,
+          toolCalls: sseStream.toolCalls,
+          state: sseStream.state,
+          error: sseStream.error,
+          isConnected: sseStream.isConnected,
+        }
+      } else {
+        // Use logs API for completed executions
+        // Transform events to messages/toolCalls format
+        const messages = new Map()
+        const toolCalls = new Map()
+        const state: any = {}
 
-      // Process events from logs
-      if (logsResult.events) {
-        logsResult.events.forEach((event: any) => {
-          // Handle different event types
-          if (event.type === 'TEXT_MESSAGE_CONTENT' || event.name === 'TEXT_MESSAGE_CONTENT') {
-            const content = event.value || event
-            messages.set(messages.size, {
-              id: messages.size,
-              content: content.content || content.text,
-              timestamp: event.timestamp || Date.now(),
-            })
-          } else if (event.type === 'TOOL_CALL_START' || event.name === 'TOOL_CALL_START') {
-            const value = event.value || event
-            toolCalls.set(value.toolCallId, {
-              id: value.toolCallId,
-              name: value.name,
-              status: 'running',
-              timestamp: event.timestamp || Date.now(),
-            })
-          } else if (event.type === 'TOOL_CALL_RESULT' || event.name === 'TOOL_CALL_RESULT') {
-            const value = event.value || event
-            const existing = toolCalls.get(value.toolCallId)
-            if (existing) {
-              toolCalls.set(value.toolCallId, {
-                ...existing,
-                status: 'completed',
-                result: value.result,
+        // Process events from logs
+        if (logsResult.events) {
+          logsResult.events.forEach((event: any) => {
+            // Handle different event types
+            if (event.type === 'TEXT_MESSAGE_CONTENT' || event.name === 'TEXT_MESSAGE_CONTENT') {
+              const content = event.value || event
+              messages.set(messages.size, {
+                id: messages.size,
+                content: content.content || content.text,
+                timestamp: event.timestamp || Date.now(),
               })
+            } else if (event.type === 'TOOL_CALL_START' || event.name === 'TOOL_CALL_START') {
+              const value = event.value || event
+              toolCalls.set(value.toolCallId, {
+                id: value.toolCallId,
+                name: value.name,
+                status: 'running',
+                timestamp: event.timestamp || Date.now(),
+              })
+            } else if (event.type === 'TOOL_CALL_RESULT' || event.name === 'TOOL_CALL_RESULT') {
+              const value = event.value || event
+              const existing = toolCalls.get(value.toolCallId)
+              if (existing) {
+                toolCalls.set(value.toolCallId, {
+                  ...existing,
+                  status: 'completed',
+                  result: value.result,
+                })
+              }
             }
-          }
-        })
-      }
+          })
+        }
 
-      return {
-        connectionStatus: logsResult.loading ? 'connecting' : logsResult.error ? 'error' : 'connected',
-        execution: {
-          status: executionProp?.status || 'completed',
-          runId: executionId,
-          currentStep: undefined,
-          error: logsResult.error?.message,
-          startTime: undefined,
-          endTime: undefined,
-        },
-        messages,
-        toolCalls,
-        state,
-        error: logsResult.error,
-        isConnected: false, // Not live for historical
+        return {
+          connectionStatus: logsResult.loading
+            ? 'connecting'
+            : logsResult.error
+              ? 'error'
+              : 'connected',
+          execution: {
+            status: executionProp?.status || 'completed',
+            runId: executionId,
+            currentStep: undefined,
+            error: logsResult.error?.message,
+            startTime: undefined,
+            endTime: undefined,
+          },
+          messages,
+          toolCalls,
+          state,
+          error: logsResult.error,
+          isConnected: false, // Not live for historical
+        }
       }
-    }
-  }, [isActive, sseStream, logsResult, executionId, executionProp])
+    }, [isActive, sseStream, logsResult, executionId, executionProp])
 
   // Trigger callbacks when execution status changes
   useEffect(() => {
@@ -275,16 +277,63 @@ export function ExecutionMonitor({
           </div>
         )}
 
-        {/* Progress from state */}
-        {state.progress !== undefined && state.totalSteps && (
+        {/* CRDT real-time phase and progress */}
+        {crdtExecution && (
+          <div className="mt-3 space-y-2">
+            {/* Current phase */}
+            {crdtExecution.phase && (
+              <div className="text-sm text-muted-foreground">
+                <span className="font-medium">Phase:</span> {crdtExecution.phase}
+              </div>
+            )}
+
+            {/* CRDT progress (from ExecutionState) */}
+            {crdtExecution.progress && (
+              <div>
+                <div className="mb-1 flex items-center justify-between text-sm text-muted-foreground">
+                  <span>{crdtExecution.progress.message || 'Progress'}</span>
+                  <span>
+                    {crdtExecution.progress.current} / {crdtExecution.progress.total}
+                  </span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className="h-full bg-primary transition-all duration-300"
+                    style={{
+                      width: `${(crdtExecution.progress.current / crdtExecution.progress.total) * 100}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Agent status */}
+            {crdtAgent && (
+              <div className="flex items-center gap-2 text-sm">
+                <Activity className="h-3 w-3 text-muted-foreground" />
+                <span className="text-muted-foreground">
+                  Agent: <span className="font-medium">{crdtAgent.status}</span>
+                </span>
+                {crdtAgent.lastHeartbeat && (
+                  <span className="text-xs text-muted-foreground">
+                    (last heartbeat: {new Date(crdtAgent.lastHeartbeat).toLocaleTimeString()})
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Progress from SSE state (fallback if no CRDT) */}
+        {!crdtExecution?.progress && state.progress !== undefined && state.totalSteps && (
           <div className="mt-3">
-            <div className="flex items-center justify-between text-sm text-muted-foreground mb-1">
+            <div className="mb-1 flex items-center justify-between text-sm text-muted-foreground">
               <span>Progress</span>
               <span>
                 {state.progress} / {state.totalSteps}
               </span>
             </div>
-            <div className="h-2 bg-secondary rounded-full overflow-hidden">
+            <div className="h-2 overflow-hidden rounded-full bg-secondary">
               <div
                 className="h-full bg-primary transition-all duration-300"
                 style={{
@@ -300,12 +349,12 @@ export function ExecutionMonitor({
       <div className="flex-1 overflow-auto px-6 py-4">
         {/* Error display */}
         {(error || execution.error) && (
-          <div className="rounded-md bg-destructive/10 border border-destructive/20 p-4 mb-4">
+          <div className="mb-4 rounded-md border border-destructive/20 bg-destructive/10 p-4">
             <div className="flex items-start gap-2">
-              <XCircle className="h-5 w-5 text-destructive mt-0.5" />
+              <XCircle className="mt-0.5 h-5 w-5 text-destructive" />
               <div className="flex-1">
                 <h4 className="font-semibold text-destructive">Error</h4>
-                <p className="text-sm text-destructive/90 mt-1">
+                <p className="mt-1 text-sm text-destructive/90">
                   {execution.error || error?.message}
                 </p>
               </div>
@@ -321,9 +370,9 @@ export function ExecutionMonitor({
         {/* Empty state */}
         {messageCount === 0 && toolCallCount === 0 && !error && !execution.error && (
           <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-            <AlertCircle className="h-8 w-8 mb-2" />
+            <AlertCircle className="mb-2 h-8 w-8" />
             <p className="text-sm">No execution activity yet</p>
-            <p className="text-xs mt-1">
+            <p className="mt-1 text-xs">
               {isConnected ? 'Waiting for events...' : 'Connecting...'}
             </p>
           </div>
@@ -331,7 +380,7 @@ export function ExecutionMonitor({
       </div>
 
       {/* Footer: Metrics */}
-      <div className="border-t px-6 py-3 bg-muted/30">
+      <div className="border-t bg-muted/30 px-6 py-3">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <div className="flex items-center gap-4">
             <span>

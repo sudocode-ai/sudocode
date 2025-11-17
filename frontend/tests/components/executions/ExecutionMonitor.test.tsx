@@ -9,10 +9,13 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { ExecutionMonitor } from '@/components/executions/ExecutionMonitor'
 import * as useAgUiStreamModule from '@/hooks/useAgUiStream'
 import * as useExecutionLogsModule from '@/hooks/useExecutionLogs'
+import * as CRDTContextModule from '@/contexts/CRDTContext'
 
 // Mock the hooks
 const mockUseAgUiStream = vi.spyOn(useAgUiStreamModule, 'useAgUiStream')
 const mockUseExecutionLogs = vi.spyOn(useExecutionLogsModule, 'useExecutionLogs')
+const mockUseExecution = vi.spyOn(CRDTContextModule, 'useCRDTExecution')
+const mockUseAgent = vi.spyOn(CRDTContextModule, 'useCRDTAgent')
 
 describe('ExecutionMonitor', () => {
   beforeEach(() => {
@@ -25,6 +28,10 @@ describe('ExecutionMonitor', () => {
       error: null,
       metadata: null,
     })
+
+    // Default mock for CRDT hooks (no CRDT state by default)
+    mockUseExecution.mockReturnValue(undefined)
+    mockUseAgent.mockReturnValue(undefined)
   })
 
   describe('Loading State', () => {
@@ -800,6 +807,251 @@ describe('ExecutionMonitor', () => {
         executionId: 'test-exec-1',
         autoConnect: false,
       })
+    })
+  })
+
+  describe('CRDT Integration', () => {
+    it('should display CRDT execution phase', () => {
+      mockUseAgUiStream.mockReturnValue({
+        connectionStatus: 'connected',
+        execution: {
+          runId: 'run-123',
+          threadId: 'thread-456',
+          status: 'running',
+          currentStep: null,
+          error: null,
+          startTime: Date.now(),
+          endTime: null,
+        },
+        messages: new Map(),
+        toolCalls: new Map(),
+        state: {},
+        error: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        reconnect: vi.fn(),
+        isConnected: true,
+      })
+
+      mockUseExecution.mockReturnValue({
+        id: 'test-exec-1',
+        issueId: 'i-test',
+        status: 'running',
+        phase: 'Research and planning',
+        startedAt: Date.now(),
+        updatedAt: Date.now(),
+        agentId: 'test-agent',
+      })
+
+      render(<ExecutionMonitor executionId="test-exec-1" />)
+
+      expect(screen.getByText('Phase:')).toBeInTheDocument()
+      expect(screen.getByText('Research and planning')).toBeInTheDocument()
+    })
+
+    it('should display CRDT execution progress', () => {
+      mockUseAgUiStream.mockReturnValue({
+        connectionStatus: 'connected',
+        execution: {
+          runId: 'run-123',
+          threadId: 'thread-456',
+          status: 'running',
+          currentStep: null,
+          error: null,
+          startTime: Date.now(),
+          endTime: null,
+        },
+        messages: new Map(),
+        toolCalls: new Map(),
+        state: {},
+        error: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        reconnect: vi.fn(),
+        isConnected: true,
+      })
+
+      mockUseExecution.mockReturnValue({
+        id: 'test-exec-1',
+        issueId: 'i-test',
+        status: 'running',
+        progress: {
+          current: 3,
+          total: 10,
+          message: 'Analyzing code',
+        },
+        startedAt: Date.now(),
+        updatedAt: Date.now(),
+        agentId: 'test-agent',
+      })
+
+      render(<ExecutionMonitor executionId="test-exec-1" />)
+
+      expect(screen.getByText('Analyzing code')).toBeInTheDocument()
+      expect(screen.getByText('3 / 10')).toBeInTheDocument()
+    })
+
+    it('should display agent status and heartbeat', () => {
+      mockUseAgUiStream.mockReturnValue({
+        connectionStatus: 'connected',
+        execution: {
+          runId: 'run-123',
+          threadId: 'thread-456',
+          status: 'running',
+          currentStep: null,
+          error: null,
+          startTime: Date.now(),
+          endTime: null,
+        },
+        messages: new Map(),
+        toolCalls: new Map(),
+        state: {},
+        error: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        reconnect: vi.fn(),
+        isConnected: true,
+      })
+
+      mockUseExecution.mockReturnValue({
+        id: 'test-exec-1',
+        issueId: 'i-test',
+        status: 'running',
+        startedAt: Date.now(),
+        updatedAt: Date.now(),
+        agentId: 'test-agent',
+      })
+
+      const lastHeartbeat = Date.now() - 5000 // 5 seconds ago
+      mockUseAgent.mockReturnValue({
+        id: 'test-agent',
+        status: 'working',
+        lastHeartbeat,
+        connectedAt: Date.now() - 60000,
+      })
+
+      render(<ExecutionMonitor executionId="test-exec-1" />)
+
+      expect(screen.getByText('Agent:')).toBeInTheDocument()
+      expect(screen.getByText('working')).toBeInTheDocument()
+      expect(screen.getByText(/last heartbeat:/)).toBeInTheDocument()
+    })
+
+    it('should prefer CRDT progress over SSE state progress', () => {
+      mockUseAgUiStream.mockReturnValue({
+        connectionStatus: 'connected',
+        execution: {
+          runId: 'run-123',
+          threadId: 'thread-456',
+          status: 'running',
+          currentStep: null,
+          error: null,
+          startTime: Date.now(),
+          endTime: null,
+        },
+        messages: new Map(),
+        toolCalls: new Map(),
+        state: {
+          // SSE state has progress, but CRDT should take precedence
+          progress: 50,
+          totalSteps: 100,
+        },
+        error: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        reconnect: vi.fn(),
+        isConnected: true,
+      })
+
+      mockUseExecution.mockReturnValue({
+        id: 'test-exec-1',
+        issueId: 'i-test',
+        status: 'running',
+        progress: {
+          current: 7,
+          total: 10,
+          message: 'CRDT progress',
+        },
+        startedAt: Date.now(),
+        updatedAt: Date.now(),
+        agentId: 'test-agent',
+      })
+
+      render(<ExecutionMonitor executionId="test-exec-1" />)
+
+      // Should show CRDT progress, not SSE progress
+      expect(screen.getByText('CRDT progress')).toBeInTheDocument()
+      expect(screen.getByText('7 / 10')).toBeInTheDocument()
+      // Should not show SSE progress
+      expect(screen.queryByText('50 / 100')).not.toBeInTheDocument()
+    })
+
+    it('should fallback to SSE progress when no CRDT progress', () => {
+      mockUseAgUiStream.mockReturnValue({
+        connectionStatus: 'connected',
+        execution: {
+          runId: 'run-123',
+          threadId: 'thread-456',
+          status: 'running',
+          currentStep: null,
+          error: null,
+          startTime: Date.now(),
+          endTime: null,
+        },
+        messages: new Map(),
+        toolCalls: new Map(),
+        state: {
+          progress: 25,
+          totalSteps: 50,
+        },
+        error: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        reconnect: vi.fn(),
+        isConnected: true,
+      })
+
+      // No CRDT execution state
+      mockUseExecution.mockReturnValue(undefined)
+
+      render(<ExecutionMonitor executionId="test-exec-1" />)
+
+      // Should show SSE progress
+      expect(screen.getByText('Progress')).toBeInTheDocument()
+      expect(screen.getByText('25 / 50')).toBeInTheDocument()
+    })
+
+    it('should handle missing CRDT data gracefully', () => {
+      mockUseAgUiStream.mockReturnValue({
+        connectionStatus: 'connected',
+        execution: {
+          runId: 'run-123',
+          threadId: 'thread-456',
+          status: 'running',
+          currentStep: null,
+          error: null,
+          startTime: Date.now(),
+          endTime: null,
+        },
+        messages: new Map(),
+        toolCalls: new Map(),
+        state: {},
+        error: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        reconnect: vi.fn(),
+        isConnected: true,
+      })
+
+      // No CRDT state
+      mockUseExecution.mockReturnValue(undefined)
+      mockUseAgent.mockReturnValue(undefined)
+
+      // Should render without errors
+      render(<ExecutionMonitor executionId="test-exec-1" />)
+
+      expect(screen.getByText('Execution Monitor')).toBeInTheDocument()
+      expect(screen.getByText('Running')).toBeInTheDocument()
     })
   })
 })

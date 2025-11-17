@@ -7,16 +7,30 @@
 
 import * as Y from 'yjs';
 import { WebSocket } from 'ws';
-import {
+import type {
   IssueState,
   SpecState,
   ExecutionState,
   AgentMetadata,
   FeedbackState,
-  CRDTAgentConfig
-} from '@sudocode-ai/types';
+} from '../services/crdt-coordinator.js';
 import * as fs from 'fs';
 import * as path from 'path';
+
+/**
+ * CRDT Agent configuration
+ */
+export interface CRDTAgentConfig {
+  agentId: string;
+  coordinatorUrl?: string;
+  coordinatorHost?: string;
+  coordinatorPort?: number;
+  heartbeatInterval?: number;
+  maxReconnectAttempts?: number;
+  reconnectBaseDelay?: number;
+  reconnectMaxDelay?: number;
+  connectionTimeout?: number;
+}
 
 /**
  * CRDT Agent
@@ -200,11 +214,12 @@ export class CRDTAgent {
   private registerAgent(): void {
     const metadataMap = this.ydoc.getMap<AgentMetadata>('agentMetadata');
     const metadata: AgentMetadata = {
-      id: this.config.agentId,
+      agentId: this.config.agentId,
       executionId: this.config.agentId, // Agent ID is the execution ID
+      worktreePath: '', // Will be updated when execution starts
       status: 'idle',
-      lastHeartbeat: Date.now(),
-      connectedAt: Date.now()
+      startedAt: Date.now(),
+      lastHeartbeat: Date.now()
     };
     metadataMap.set(this.config.agentId, metadata);
     console.log(`[CRDT Agent ${this.config.agentId}] Registered agent metadata`);
@@ -368,11 +383,13 @@ export class CRDTAgent {
     } else {
       // Create new execution state
       const newState: ExecutionState = {
-        id: executionId,
+        executionId: executionId,
+        worktreePath: '',
+        branch: '',
         status: updates.status || 'preparing',
         startedAt: updates.startedAt || Date.now(),
-        updatedAt: Date.now(),
         agentId: this.config.agentId,
+        lastHeartbeat: Date.now(),
         ...updates
       };
       execMap.set(executionId, newState);

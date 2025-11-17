@@ -89,9 +89,7 @@ export class ExecutionService {
   private logsStore: ExecutionLogsStore;
   private activeOrchestrators = new Map<string, LinearOrchestrator>();
   private activeAgents = new Map<string, CRDTAgent>();
-  private crdtEnabled: boolean = false;
-  private crdtHost: string = "localhost";
-  private crdtPort: number = 3001;
+  private crdtUrl?: string; // Full WebSocket URL like 'ws://localhost:3000/ws/crdt'
 
   /**
    * Create a new ExecutionService
@@ -101,19 +99,13 @@ export class ExecutionService {
    * @param lifecycleService - Optional execution lifecycle service (creates one if not provided)
    * @param transportManager - Optional transport manager for SSE streaming
    * @param logsStore - Optional execution logs store (creates one if not provided)
-   * @param crdtConfig - Optional CRDT configuration
    */
   constructor(
     db: Database.Database,
     repoPath: string,
     lifecycleService?: ExecutionLifecycleService,
     transportManager?: TransportManager,
-    logsStore?: ExecutionLogsStore,
-    crdtConfig?: {
-      enabled: boolean;
-      host: string;
-      port: number;
-    }
+    logsStore?: ExecutionLogsStore
   ) {
     this.db = db;
     this.repoPath = repoPath;
@@ -122,13 +114,18 @@ export class ExecutionService {
       lifecycleService || new ExecutionLifecycleService(db, repoPath);
     this.transportManager = transportManager;
     this.logsStore = logsStore || new ExecutionLogsStore(db);
+  }
 
-    // Configure CRDT
-    if (crdtConfig) {
-      this.crdtEnabled = crdtConfig.enabled;
-      this.crdtHost = crdtConfig.host;
-      this.crdtPort = crdtConfig.port;
-    }
+  /**
+   * Set the CRDT WebSocket URL
+   *
+   * Called after the HTTP server starts and we know the actual port.
+   *
+   * @param url - Full WebSocket URL (e.g., 'ws://localhost:3000/ws/crdt')
+   */
+  setCRDTUrl(url: string): void {
+    this.crdtUrl = url;
+    console.log(`[ExecutionService] CRDT URL set to ${url}`);
   }
 
   /**
@@ -320,14 +317,13 @@ export class ExecutionService {
       // Don't fail execution creation - logs are nice-to-have
     }
 
-    // Create and connect CRDT Agent if enabled
+    // Create and connect CRDT Agent if enabled and URL is configured
     let crdtAgent: CRDTAgent | undefined;
-    if (this.crdtEnabled) {
+    if (this.crdtUrl) {
       try {
         crdtAgent = new CRDTAgent({
           agentId: execution.id,
-          coordinatorHost: this.crdtHost,
-          coordinatorPort: this.crdtPort,
+          coordinatorUrl: this.crdtUrl,
         });
 
         // Connect to coordinator (non-blocking, will retry/fallback if unavailable)
@@ -350,7 +346,9 @@ export class ExecutionService {
           issueId,
         });
 
-        console.log(`[ExecutionService] CRDT Agent created for execution ${execution.id}`);
+        console.log(
+          `[ExecutionService] CRDT Agent created for execution ${execution.id}`
+        );
       } catch (error) {
         console.error(
           "[ExecutionService] Failed to create CRDT Agent (non-critical):",
@@ -362,6 +360,8 @@ export class ExecutionService {
         // Don't fail execution - CRDT is optional
         crdtAgent = undefined;
       }
+    } else if (!this.crdtUrl) {
+      // CRDT URL not configured - will work in local-only mode
     }
 
     // 3. Build WorkflowDefinition
@@ -393,14 +393,12 @@ export class ExecutionService {
     };
 
     // 4. Create execution engine stack
-    // Prepare CRDT environment variables if enabled
+    // Prepare CRDT environment variables if URL is configured
     const crdtEnv: Record<string, string> = {};
-    if (this.crdtEnabled) {
+    if (this.crdtUrl) {
       crdtEnv.CRDT_EXECUTION_ID = execution.id;
       crdtEnv.CRDT_WORKTREE_PATH = workDir;
-      crdtEnv.CRDT_SERVER_HOST = this.crdtHost;
-      crdtEnv.CRDT_SERVER_PORT = this.crdtPort.toString();
-      crdtEnv.CRDT_SERVER_URL = `ws://${this.crdtHost}:${this.crdtPort}/sync`;
+      crdtEnv.CRDT_SERVER_URL = this.crdtUrl;
     }
 
     const processManager = new SimpleProcessManager({
@@ -411,7 +409,7 @@ export class ExecutionService {
         "stream-json",
         "--dangerously-skip-permissions",
       ],
-      env: this.crdtEnabled ? crdtEnv : undefined,
+      env: this.crdtUrl ? crdtEnv : undefined,
     });
 
     let engine = new SimpleExecutionEngine(processManager, {
@@ -535,13 +533,18 @@ export class ExecutionService {
           // Export JSONL to worktree before disconnecting
           try {
             await crdtAgent.exportToLocalJSONL(workDir);
-            console.log(`[ExecutionService] Exported CRDT state to JSONL for execution ${execution.id}`);
+            console.log(
+              `[ExecutionService] Exported CRDT state to JSONL for execution ${execution.id}`
+            );
           } catch (exportError) {
             console.error(
               "[ExecutionService] Failed to export CRDT to JSONL:",
               {
                 executionId: execution.id,
-                error: exportError instanceof Error ? exportError.message : String(exportError),
+                error:
+                  exportError instanceof Error
+                    ? exportError.message
+                    : String(exportError),
               }
             );
           }
@@ -588,13 +591,18 @@ export class ExecutionService {
           // Export JSONL even on failure
           try {
             await crdtAgent.exportToLocalJSONL(workDir);
-            console.log(`[ExecutionService] Exported CRDT state to JSONL for failed execution ${execution.id}`);
+            console.log(
+              `[ExecutionService] Exported CRDT state to JSONL for failed execution ${execution.id}`
+            );
           } catch (exportError) {
             console.error(
               "[ExecutionService] Failed to export CRDT to JSONL:",
               {
                 executionId: execution.id,
-                error: exportError instanceof Error ? exportError.message : String(exportError),
+                error:
+                  exportError instanceof Error
+                    ? exportError.message
+                    : String(exportError),
               }
             );
           }
@@ -723,14 +731,13 @@ Please continue working on this issue, taking into account the feedback above.`;
       // Don't fail execution creation - logs are nice-to-have
     }
 
-    // Create and connect CRDT Agent if enabled
+    // Create and connect CRDT Agent if URL is configured
     let followUpCrdtAgent: CRDTAgent | undefined;
-    if (this.crdtEnabled) {
+    if (this.crdtUrl) {
       try {
         followUpCrdtAgent = new CRDTAgent({
           agentId: newExecution.id,
-          coordinatorHost: this.crdtHost,
-          coordinatorPort: this.crdtPort,
+          coordinatorUrl: this.crdtUrl,
         });
 
         // Connect to coordinator
@@ -753,7 +760,9 @@ Please continue working on this issue, taking into account the feedback above.`;
           issueId: prevExecution.issue_id,
         });
 
-        console.log(`[ExecutionService] CRDT Agent created for follow-up execution ${newExecution.id}`);
+        console.log(
+          `[ExecutionService] CRDT Agent created for follow-up execution ${newExecution.id}`
+        );
       } catch (error) {
         console.error(
           "[ExecutionService] Failed to create CRDT Agent for follow-up (non-critical):",
@@ -764,6 +773,8 @@ Please continue working on this issue, taking into account the feedback above.`;
         );
         followUpCrdtAgent = undefined;
       }
+    } else if (!this.crdtUrl) {
+      // CRDT URL not configured - will work in local-only mode
     }
 
     // 5. Build WorkflowDefinition
@@ -794,14 +805,12 @@ Please continue working on this issue, taking into account the feedback above.`;
     };
 
     // 6. Create execution engine stack
-    // Prepare CRDT environment variables if enabled
+    // Prepare CRDT environment variables if URL is configured
     const followUpCrdtEnv: Record<string, string> = {};
-    if (this.crdtEnabled && prevExecution.worktree_path) {
+    if (this.crdtUrl && prevExecution.worktree_path) {
       followUpCrdtEnv.CRDT_EXECUTION_ID = newExecution.id;
       followUpCrdtEnv.CRDT_WORKTREE_PATH = prevExecution.worktree_path;
-      followUpCrdtEnv.CRDT_SERVER_HOST = this.crdtHost;
-      followUpCrdtEnv.CRDT_SERVER_PORT = this.crdtPort.toString();
-      followUpCrdtEnv.CRDT_SERVER_URL = `ws://${this.crdtHost}:${this.crdtPort}/sync`;
+      followUpCrdtEnv.CRDT_SERVER_URL = this.crdtUrl;
     }
 
     const processManager = new SimpleProcessManager({
@@ -812,7 +821,7 @@ Please continue working on this issue, taking into account the feedback above.`;
         "stream-json",
         "--dangerously-skip-permissions",
       ],
-      env: this.crdtEnabled ? followUpCrdtEnv : undefined,
+      env: this.crdtUrl ? followUpCrdtEnv : undefined,
     });
 
     let engine = new SimpleExecutionEngine(processManager, {
@@ -931,15 +940,22 @@ Please continue working on this issue, taking into account the feedback above.`;
           // Export JSONL
           try {
             if (prevExecution.worktree_path) {
-              await followUpCrdtAgent.exportToLocalJSONL(prevExecution.worktree_path);
-              console.log(`[ExecutionService] Exported CRDT state to JSONL for follow-up execution ${newExecution.id}`);
+              await followUpCrdtAgent.exportToLocalJSONL(
+                prevExecution.worktree_path
+              );
+              console.log(
+                `[ExecutionService] Exported CRDT state to JSONL for follow-up execution ${newExecution.id}`
+              );
             }
           } catch (exportError) {
             console.error(
               "[ExecutionService] Failed to export CRDT to JSONL:",
               {
                 executionId: newExecution.id,
-                error: exportError instanceof Error ? exportError.message : String(exportError),
+                error:
+                  exportError instanceof Error
+                    ? exportError.message
+                    : String(exportError),
               }
             );
           }
@@ -979,15 +995,22 @@ Please continue working on this issue, taking into account the feedback above.`;
           // Export JSONL even on failure
           try {
             if (prevExecution.worktree_path) {
-              await followUpCrdtAgent.exportToLocalJSONL(prevExecution.worktree_path);
-              console.log(`[ExecutionService] Exported CRDT state to JSONL for failed follow-up execution ${newExecution.id}`);
+              await followUpCrdtAgent.exportToLocalJSONL(
+                prevExecution.worktree_path
+              );
+              console.log(
+                `[ExecutionService] Exported CRDT state to JSONL for failed follow-up execution ${newExecution.id}`
+              );
             }
           } catch (exportError) {
             console.error(
               "[ExecutionService] Failed to export CRDT to JSONL:",
               {
                 executionId: newExecution.id,
-                error: exportError instanceof Error ? exportError.message : String(exportError),
+                error:
+                  exportError instanceof Error
+                    ? exportError.message
+                    : String(exportError),
               }
             );
           }

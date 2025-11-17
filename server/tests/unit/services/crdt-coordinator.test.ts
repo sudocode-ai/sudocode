@@ -13,6 +13,7 @@ import { createIssue, createSpec } from '@sudocode-ai/cli/dist/operations/index.
 import { createFeedback } from '@sudocode-ai/cli/dist/operations/feedback.js';
 import * as Y from 'yjs';
 import * as WebSocket from 'ws';
+import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -22,7 +23,9 @@ describe('CRDTCoordinator', () => {
   let coordinator: CRDTCoordinator;
   let testDbPath: string;
   let testDir: string;
+  let server: http.Server;
   let port: number;
+  let wsPath: string;
 
   beforeEach(async () => {
     // Create temporary directory
@@ -34,21 +37,38 @@ describe('CRDTCoordinator', () => {
 
     // Use random port for testing to avoid conflicts
     port = 30000 + Math.floor(Math.random() * 1000);
+    wsPath = '/ws/crdt';
+
+    // Create HTTP server
+    server = http.createServer();
+
+    // Start server
+    await new Promise<void>((resolve) => {
+      server.listen(port, () => resolve());
+    });
 
     // Create coordinator with test config
-    coordinator = await CRDTCoordinator.create(db, {
-      port,
-      host: 'localhost',
+    coordinator = new CRDTCoordinator(db, {
+      path: wsPath,
       persistInterval: 100, // Faster for testing
-      gcInterval: 1000,
-      maxPortAttempts: 5
+      gcInterval: 1000
     });
+
+    // Initialize WebSocket server
+    coordinator.init(server);
   });
 
   afterEach(async () => {
     // Shutdown coordinator
     if (coordinator) {
       await coordinator.shutdown();
+    }
+
+    // Close HTTP server
+    if (server) {
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
     }
 
     // Close database
@@ -66,82 +86,6 @@ describe('CRDTCoordinator', () => {
     it('should initialize with empty state', () => {
       expect(coordinator).toBeDefined();
       expect(coordinator.lastPersistTime).toBe(0);
-    });
-
-    it('should scan for available port when port is in use', async () => {
-      // Create a second coordinator without explicit port (port defaults to 3001)
-      // Since first coordinator is on 'port', this should use default 3001 and scan if needed
-      // Instead, let's create without specifying a port to test scanning behavior
-      const coordinator2 = await CRDTCoordinator.create(db, {
-        // Don't specify port - use default and let it scan
-        host: 'localhost',
-        persistInterval: 100,
-        gcInterval: 1000,
-        maxPortAttempts: 5
-      });
-
-      // Should have bound to a port (may be default 3001 or higher if that's occupied)
-      expect(coordinator2.actualPort).toBeGreaterThan(0);
-
-      await coordinator2.shutdown();
-    });
-
-    it('should throw error if no ports available after max attempts', async () => {
-      // This test creates a scenario where scanning occurs (no explicit port)
-      // but all attempted ports are occupied
-
-      // We'll mock by using a high base port and occupying multiple ports
-      // Since we can't easily occupy the default port 3001, we'll test with explicit ports
-      // but allow the scanning behavior by NOT setting port in config (relies on default behavior)
-
-      // Actually, this is hard to test without mocking. Let's just verify the behavior
-      // when we DO specify a base port and occupy ports around it.
-      // We'll skip port scanning testing for the "max attempts" scenario since it's complex.
-
-      // Instead, test that specifying maxPortAttempts=1 with an occupied port fails
-      const testPort = port + 100;
-      const coordinator1 = await CRDTCoordinator.create(db, {
-        port: testPort,
-        host: 'localhost',
-        maxPortAttempts: 1
-      });
-
-      try {
-        // Try to create another with same explicit port - should fail immediately
-        await expect(
-          CRDTCoordinator.create(db, {
-            port: testPort,
-            host: 'localhost',
-            maxPortAttempts: 1
-          })
-        ).rejects.toThrow(/Port .* is already in use/);
-      } finally {
-        await coordinator1.shutdown();
-      }
-    });
-
-    it('should fail immediately when explicit port is in use', async () => {
-      // Create a coordinator on a specific port
-      const explicitPort = port + 200;
-      const coordinator1 = await CRDTCoordinator.create(db, {
-        port: explicitPort,
-        host: 'localhost',
-        maxPortAttempts: 1
-      });
-
-      try {
-        // Try to create another with the same explicit port
-        // Should fail immediately without scanning
-        await expect(
-          CRDTCoordinator.create(db, {
-            port: explicitPort,
-            host: 'localhost',
-            maxPortAttempts: 1
-          })
-        ).rejects.toThrow(/Port .* is already in use. Please specify a different CRDT_SERVER_PORT/);
-      } finally {
-        await coordinator1.shutdown();
-      }
     });
 
     it('should load initial state from database', async () => {
@@ -164,7 +108,21 @@ describe('CRDTCoordinator', () => {
 
       // Create new coordinator to load data
       await coordinator.shutdown();
-      coordinator = await CRDTCoordinator.create(db, { port: port + 1, maxPortAttempts: 5 });
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+
+      // Create new HTTP server on different port
+      const newPort = port + 1;
+      server = http.createServer();
+      await new Promise<void>((resolve) => {
+        server.listen(newPort, () => resolve());
+      });
+
+      coordinator = new CRDTCoordinator(db, {
+        path: wsPath,
+        persistInterval: 100,
+        gcInterval: 1000
+      });
+      coordinator.init(server);
 
       // Access internal ydoc to verify (note: this is testing internal state)
       const issueMap = (coordinator as any).ydoc.getMap('issueUpdates');
@@ -191,7 +149,7 @@ describe('CRDTCoordinator', () => {
   describe('WebSocket Server', () => {
     it('should accept client connections', async () => {
       // Connect a test client
-      const client = new WebSocket.WebSocket(`ws://localhost:${port}?clientId=test-client`);
+      const client = new WebSocket.WebSocket(`ws://localhost:${port}${wsPath}?clientId=test-client`);
 
       await new Promise<void>((resolve, reject) => {
         client.on('open', () => {
@@ -215,10 +173,24 @@ describe('CRDTCoordinator', () => {
 
       // Recreate coordinator to load data
       await coordinator.shutdown();
-      coordinator = await CRDTCoordinator.create(db, { port: port + 2, maxPortAttempts: 5 });
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+
+      // Create new HTTP server on different port
+      const newPort = port + 2;
+      server = http.createServer();
+      await new Promise<void>((resolve) => {
+        server.listen(newPort, () => resolve());
+      });
+
+      coordinator = new CRDTCoordinator(db, {
+        path: wsPath,
+        persistInterval: 100,
+        gcInterval: 1000
+      });
+      coordinator.init(server);
 
       // Connect client
-      const client = new WebSocket.WebSocket(`ws://localhost:${port + 2}?clientId=test-sync`);
+      const client = new WebSocket.WebSocket(`ws://localhost:${newPort}${wsPath}?clientId=test-sync`);
 
       const syncMessage = await new Promise<any>((resolve, reject) => {
         client.on('message', (data: Buffer) => {
@@ -242,7 +214,7 @@ describe('CRDTCoordinator', () => {
 
       // Connect multiple clients
       for (let i = 0; i < clientCount; i++) {
-        const client = new WebSocket.WebSocket(`ws://localhost:${port}?clientId=client-${i}`);
+        const client = new WebSocket.WebSocket(`ws://localhost:${port}${wsPath}?clientId=client-${i}`);
         clients.push(client);
       }
 
@@ -267,7 +239,7 @@ describe('CRDTCoordinator', () => {
     });
 
     it('should remove client from map on disconnection', async () => {
-      const client = new WebSocket.WebSocket(`ws://localhost:${port}?clientId=disconnect-test`);
+      const client = new WebSocket.WebSocket(`ws://localhost:${port}${wsPath}?clientId=disconnect-test`);
 
       await new Promise<void>((resolve) => {
         client.on('open', () => {
@@ -290,8 +262,8 @@ describe('CRDTCoordinator', () => {
   describe('Update Broadcasting', () => {
     it('should broadcast updates to all clients except sender', async () => {
       // Create two clients
-      const client1 = new WebSocket.WebSocket(`ws://localhost:${port}?clientId=client-1`);
-      const client2 = new WebSocket.WebSocket(`ws://localhost:${port}?clientId=client-2`);
+      const client1 = new WebSocket.WebSocket(`ws://localhost:${port}${wsPath}?clientId=client-1`);
+      const client2 = new WebSocket.WebSocket(`ws://localhost:${port}${wsPath}?clientId=client-2`);
 
       // Wait for both to connect and receive initial sync
       await Promise.all([
@@ -667,7 +639,7 @@ describe('CRDTCoordinator', () => {
 
     it('should close all client connections on shutdown', async () => {
       // Connect client
-      const client = new WebSocket.WebSocket(`ws://localhost:${port}?clientId=shutdown-client`);
+      const client = new WebSocket.WebSocket(`ws://localhost:${port}${wsPath}?clientId=shutdown-client`);
 
       await new Promise<void>(resolve => {
         client.on('open', () => resolve());
@@ -696,7 +668,7 @@ describe('CRDTCoordinator', () => {
 
   describe('Error Handling', () => {
     it('should handle malformed WebSocket messages', async () => {
-      const client = new WebSocket.WebSocket(`ws://localhost:${port}?clientId=malformed`);
+      const client = new WebSocket.WebSocket(`ws://localhost:${port}${wsPath}?clientId=malformed`);
 
       await new Promise<void>(resolve => {
         client.on('open', () => {
@@ -714,7 +686,7 @@ describe('CRDTCoordinator', () => {
     });
 
     it('should handle invalid update data', async () => {
-      const client = new WebSocket.WebSocket(`ws://localhost:${port}?clientId=invalid`);
+      const client = new WebSocket.WebSocket(`ws://localhost:${port}${wsPath}?clientId=invalid`);
 
       await new Promise<void>(resolve => {
         client.on('open', () => {

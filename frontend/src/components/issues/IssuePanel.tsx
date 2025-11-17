@@ -39,6 +39,8 @@ import type { ExecutionConfig } from '@/types/execution'
 import { useRelationshipMutations } from '@/hooks/useRelationshipMutations'
 import { TiptapEditor } from '@/components/specs/TiptapEditor'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { useCRDTIssue } from '@/contexts/CRDTContext'
+import { ProvisionalBadge } from '@/components/ui/ProvisionalBadge'
 
 const VIEW_MODE_STORAGE_KEY = 'sudocode:details:viewMode'
 const DESCRIPTION_COLLAPSED_STORAGE_KEY = 'sudocode:issue:descriptionCollapsed'
@@ -103,6 +105,9 @@ export function IssuePanel({
     return stored !== null ? JSON.parse(stored) : false
   })
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Get CRDT provisional state
+  const crdtIssue = useCRDTIssue(issue.id)
 
   // Use external viewMode if provided, otherwise use internal state
   const viewMode = externalViewMode ?? internalViewMode
@@ -512,9 +517,26 @@ export function IssuePanel({
             {/* Issue ID and Title */}
             <div className="space-y-2 pb-3">
               <div className="flex items-center justify-between">
-                <Badge variant="issue" className="font-mono">
-                  {issue.id}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="issue" className="font-mono">
+                    {issue.id}
+                  </Badge>
+                  {/* Show provisional state badge if CRDT data exists and differs from DB */}
+                  {crdtIssue && (
+                    <ProvisionalBadge
+                      state={
+                        crdtIssue.tempStatus ||
+                        crdtIssue.title !== issue.title ||
+                        crdtIssue.content !== issue.content ||
+                        crdtIssue.status !== issue.status
+                          ? 'provisional'
+                          : 'committed'
+                      }
+                      modifiedBy={crdtIssue.lastModifiedBy}
+                      size="sm"
+                    />
+                  )}
+                </div>
                 {onUpdate && (
                   <div className="text-xs italic text-muted-foreground">
                     {isUpdating
@@ -555,6 +577,15 @@ export function IssuePanel({
                     ))}
                   </SelectContent>
                 </Select>
+                {/* Show CRDT provisional status if different from DB */}
+                {crdtIssue?.tempStatus && crdtIssue.tempStatus !== status && (
+                  <Badge
+                    variant="outline"
+                    className="border-dashed border-orange-500 text-xs text-orange-700"
+                  >
+                    Agent: {crdtIssue.tempStatus}
+                  </Badge>
+                )}
               </div>
 
               {/* Priority */}
@@ -593,6 +624,35 @@ export function IssuePanel({
                   : `Updated ${formatDistanceToNow(new Date(issue.updated_at.endsWith('Z') ? issue.updated_at : issue.updated_at + 'Z'), { addSuffix: true })}`}
               </div>
             </div>
+
+            {/* Provisional Progress (CRDT) */}
+            {crdtIssue?.tempProgress && (
+              <Card className="border-dashed border-orange-500 bg-orange-50 p-4 dark:bg-orange-950/20">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-orange-700 dark:text-orange-400">
+                      Agent Progress (Provisional)
+                    </span>
+                    <span className="text-orange-600 dark:text-orange-500">
+                      {crdtIssue.tempProgress.current} / {crdtIssue.tempProgress.total}
+                    </span>
+                  </div>
+                  {crdtIssue.tempProgress.message && (
+                    <p className="text-xs text-orange-600 dark:text-orange-500">
+                      {crdtIssue.tempProgress.message}
+                    </p>
+                  )}
+                  <div className="h-2 overflow-hidden rounded-full bg-orange-200 dark:bg-orange-900">
+                    <div
+                      className="h-full bg-orange-500 transition-all duration-300 dark:bg-orange-600"
+                      style={{
+                        width: `${(crdtIssue.tempProgress.current / crdtIssue.tempProgress.total) * 100}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              </Card>
+            )}
 
             {/* Relationships */}
             <div className="space-y-2">

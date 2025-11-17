@@ -10,6 +10,7 @@ import { CRDTAgent } from '../../../src/execution/crdt-agent.js';
 import { CRDTCoordinator } from '../../../src/services/crdt-coordinator.js';
 import * as Database from 'better-sqlite3';
 import { initDatabase as initCliDatabase } from '@sudocode-ai/cli/dist/db.js';
+import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -21,7 +22,10 @@ describe('CRDTAgent', () => {
   let agent: CRDTAgent;
   let testDbPath: string;
   let testDir: string;
+  let server: http.Server;
   let port: number;
+  let wsPath: string;
+  let coordinatorUrl: string;
 
   beforeEach(async () => {
     // Create temporary directory
@@ -33,15 +37,26 @@ describe('CRDTAgent', () => {
 
     // Use random port for testing
     port = 30000 + Math.floor(Math.random() * 1000);
+    wsPath = '/ws/crdt';
+
+    // Create HTTP server
+    server = http.createServer();
+
+    // Start server
+    await new Promise<void>((resolve) => {
+      server.listen(port, () => resolve());
+    });
 
     // Create coordinator
-    coordinator = await CRDTCoordinator.create(db, {
-      port,
-      host: 'localhost',
+    coordinator = new CRDTCoordinator(db, {
+      path: wsPath,
       persistInterval: 100,
-      gcInterval: 60000,
-      maxPortAttempts: 5
+      gcInterval: 60000
     });
+    coordinator.init(server);
+
+    // Construct coordinator URL
+    coordinatorUrl = `ws://localhost:${port}${wsPath}`;
   });
 
   afterEach(async () => {
@@ -53,6 +68,13 @@ describe('CRDTAgent', () => {
     // Shutdown coordinator
     if (coordinator) {
       await coordinator.shutdown();
+    }
+
+    // Close HTTP server
+    if (server) {
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
     }
 
     // Close database
@@ -70,8 +92,7 @@ describe('CRDTAgent', () => {
     it('should initialize with agent ID', () => {
       agent = new CRDTAgent({
         agentId: 'test-agent-1',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port
+        coordinatorUrl
       });
 
       expect(agent).toBeDefined();
@@ -79,11 +100,10 @@ describe('CRDTAgent', () => {
       expect(agent.connected).toBe(false);
     });
 
-    it('should build coordinator URL from host and port', () => {
+    it('should build coordinator URL from host and port (legacy)', () => {
       agent = new CRDTAgent({
         agentId: 'test-agent-2',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port
+        coordinatorUrl,
       });
 
       expect(agent).toBeDefined();
@@ -92,7 +112,7 @@ describe('CRDTAgent', () => {
     it('should use provided coordinator URL', () => {
       agent = new CRDTAgent({
         agentId: 'test-agent-3',
-        coordinatorUrl: `ws://localhost:${port}/sync`
+        coordinatorUrl
       });
 
       expect(agent).toBeDefined();
@@ -103,8 +123,7 @@ describe('CRDTAgent', () => {
     it('should connect to coordinator successfully', async () => {
       agent = new CRDTAgent({
         agentId: 'test-connect-1',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port,
+        coordinatorUrl,
         connectionTimeout: 5000
       });
 
@@ -130,8 +149,7 @@ describe('CRDTAgent', () => {
 
       agent = new CRDTAgent({
         agentId: 'test-sync-1',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port
+        coordinatorUrl
       });
 
       await agent.connect();
@@ -151,8 +169,7 @@ describe('CRDTAgent', () => {
     it('should timeout if connection takes too long', async () => {
       agent = new CRDTAgent({
         agentId: 'test-timeout',
-        coordinatorHost: 'localhost',
-        coordinatorPort: 99999, // Invalid port
+        coordinatorUrl: 'ws://localhost:99999/ws/crdt', // Invalid port
         connectionTimeout: 500
       });
 
@@ -162,8 +179,7 @@ describe('CRDTAgent', () => {
     it('should handle connection errors gracefully', async () => {
       agent = new CRDTAgent({
         agentId: 'test-error',
-        coordinatorHost: 'localhost',
-        coordinatorPort: 99999,
+        coordinatorUrl: 'ws://localhost:99999/ws/crdt',
         connectionTimeout: 500
       });
 
@@ -175,8 +191,7 @@ describe('CRDTAgent', () => {
     it('should send local updates to coordinator', async () => {
       agent = new CRDTAgent({
         agentId: 'test-local-remote-1',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port
+        coordinatorUrl
       });
 
       await agent.connect();
@@ -210,8 +225,7 @@ describe('CRDTAgent', () => {
     it('should send spec updates to coordinator', async () => {
       agent = new CRDTAgent({
         agentId: 'test-spec-sync',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port
+        coordinatorUrl
       });
 
       await agent.connect();
@@ -242,8 +256,7 @@ describe('CRDTAgent', () => {
     it('should receive updates from coordinator', async () => {
       agent = new CRDTAgent({
         agentId: 'test-remote-local-1',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port
+        coordinatorUrl
       });
 
       await agent.connect();
@@ -280,8 +293,7 @@ describe('CRDTAgent', () => {
     it('should send periodic heartbeats', async () => {
       agent = new CRDTAgent({
         agentId: 'test-heartbeat',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port,
+        coordinatorUrl,
         heartbeatInterval: 100
       });
 
@@ -307,8 +319,7 @@ describe('CRDTAgent', () => {
     it('should stop heartbeat on disconnect', async () => {
       agent = new CRDTAgent({
         agentId: 'test-heartbeat-stop',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port,
+        coordinatorUrl,
         heartbeatInterval: 100
       });
 
@@ -324,8 +335,7 @@ describe('CRDTAgent', () => {
     it('should attempt reconnection after disconnect', async () => {
       agent = new CRDTAgent({
         agentId: 'test-reconnect',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port,
+        coordinatorUrl,
         reconnectBaseDelay: 100,
         maxReconnectAttempts: 3
       });
@@ -351,8 +361,7 @@ describe('CRDTAgent', () => {
     it('should use exponential backoff for reconnection', async () => {
       agent = new CRDTAgent({
         agentId: 'test-backoff',
-        coordinatorHost: 'localhost',
-        coordinatorPort: 99999, // Will fail
+        coordinatorUrl: 'ws://localhost:99999/ws/crdt', // Will fail
         reconnectBaseDelay: 100,
         maxReconnectAttempts: 3,
         connectionTimeout: 200
@@ -371,8 +380,7 @@ describe('CRDTAgent', () => {
     it('should switch to local-only mode after max attempts', async () => {
       agent = new CRDTAgent({
         agentId: 'test-local-only',
-        coordinatorHost: 'localhost',
-        coordinatorPort: 99999,
+        coordinatorUrl: 'ws://localhost:99999/ws/crdt',
         maxReconnectAttempts: 2,
         reconnectBaseDelay: 100,
         connectionTimeout: 200
@@ -391,8 +399,7 @@ describe('CRDTAgent', () => {
     it('should update issue via public API', async () => {
       agent = new CRDTAgent({
         agentId: 'test-api-issue',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port
+        coordinatorUrl,
       });
 
       await agent.connect();
@@ -416,8 +423,7 @@ describe('CRDTAgent', () => {
     it('should update spec via public API', async () => {
       agent = new CRDTAgent({
         agentId: 'test-api-spec',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port
+        coordinatorUrl,
       });
 
       await agent.connect();
@@ -439,8 +445,7 @@ describe('CRDTAgent', () => {
     it('should update execution state', async () => {
       agent = new CRDTAgent({
         agentId: 'test-api-exec',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port
+        coordinatorUrl,
       });
 
       await agent.connect();
@@ -463,8 +468,7 @@ describe('CRDTAgent', () => {
     it('should add feedback', async () => {
       agent = new CRDTAgent({
         agentId: 'test-api-feedback',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port
+        coordinatorUrl,
       });
 
       await agent.connect();
@@ -488,8 +492,7 @@ describe('CRDTAgent', () => {
     it('should update agent status', async () => {
       agent = new CRDTAgent({
         agentId: 'test-api-status',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port
+        coordinatorUrl,
       });
 
       await agent.connect();
@@ -509,8 +512,7 @@ describe('CRDTAgent', () => {
     it('should export local state to JSONL files', async () => {
       agent = new CRDTAgent({
         agentId: 'test-export',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port
+        coordinatorUrl,
       });
 
       await agent.connect();
@@ -552,8 +554,7 @@ describe('CRDTAgent', () => {
     it('should disconnect gracefully', async () => {
       agent = new CRDTAgent({
         agentId: 'test-disconnect',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port
+        coordinatorUrl,
       });
 
       await agent.connect();
@@ -567,8 +568,7 @@ describe('CRDTAgent', () => {
     it('should mark agent as disconnected in metadata', async () => {
       agent = new CRDTAgent({
         agentId: 'test-disconnect-meta',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port
+        coordinatorUrl,
       });
 
       await agent.connect();
@@ -588,8 +588,7 @@ describe('CRDTAgent', () => {
     it('should clear timers on disconnect', async () => {
       agent = new CRDTAgent({
         agentId: 'test-disconnect-timers',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port
+        coordinatorUrl,
       });
 
       await agent.connect();
@@ -607,8 +606,7 @@ describe('CRDTAgent', () => {
     it('should handle malformed messages gracefully', async () => {
       agent = new CRDTAgent({
         agentId: 'test-malformed',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port
+        coordinatorUrl,
       });
 
       await agent.connect();
@@ -624,8 +622,7 @@ describe('CRDTAgent', () => {
     it('should handle invalid CRDT updates', async () => {
       agent = new CRDTAgent({
         agentId: 'test-invalid-update',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port
+        coordinatorUrl,
       });
 
       await agent.connect();
@@ -646,8 +643,7 @@ describe('CRDTAgent', () => {
     it('should work in local-only mode when offline', () => {
       agent = new CRDTAgent({
         agentId: 'test-local-only',
-        coordinatorHost: 'localhost',
-        coordinatorPort: port,
+        coordinatorUrl,
         maxReconnectAttempts: 0
       });
 

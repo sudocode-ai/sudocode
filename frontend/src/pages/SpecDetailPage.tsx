@@ -31,6 +31,9 @@ import {
 } from 'lucide-react'
 import type { IssueFeedback, Relationship, EntityType, RelationshipType } from '@/types/api'
 import { relationshipsApi } from '@/lib/api'
+import { useCRDTSpec } from '@/contexts/CRDTContext'
+import { ProvisionalBadge } from '@/components/ui/ProvisionalBadge'
+import { CRDTConnectionStatus } from '@/components/ui/CRDTConnectionStatus'
 
 const PRIORITY_OPTIONS = [
   { value: '0', label: 'Critical (P0)' },
@@ -79,6 +82,9 @@ export default function SpecDetailPage() {
   const latestValuesRef = useRef({ title, content, priority, hasChanges })
   const currentIdRef = useRef(id)
   const editorContainerRef = useRef<HTMLDivElement>(null)
+
+  // Get CRDT provisional state
+  const crdtSpec = useCRDTSpec(id)
 
   // Track feedback positions for aligned panel
   const feedbackPositions = useFeedbackPositions(feedback, editorContainerRef)
@@ -360,6 +366,7 @@ export default function SpecDetailPage() {
           <Button variant="ghost" size="sm" onClick={() => navigate('/specs')}>
             ← <span className="hidden sm:inline">Back to Specs</span>
           </Button>
+          <CRDTConnectionStatus showLabel />
         </div>
         <div className="flex items-center gap-1 sm:gap-2">
           {/* View mode toggle */}
@@ -444,7 +451,24 @@ export default function SpecDetailPage() {
               {/* Spec ID and Title */}
               <div className="space-y-2 pb-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-sm text-muted-foreground">{spec.id}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-sm text-muted-foreground">{spec.id}</span>
+                    {/* Show provisional state badge if CRDT data exists and differs from DB */}
+                    {crdtSpec && (
+                      <ProvisionalBadge
+                        state={
+                          crdtSpec.tempSections ||
+                          crdtSpec.tempDiff ||
+                          crdtSpec.title !== spec.title ||
+                          crdtSpec.content !== spec.content
+                            ? 'provisional'
+                            : 'committed'
+                        }
+                        modifiedBy={crdtSpec.lastModifiedBy}
+                        size="sm"
+                      />
+                    )}
+                  </div>
                   <div className="text-xs italic text-muted-foreground">
                     {isUpdating
                       ? 'Saving...'
@@ -500,6 +524,58 @@ export default function SpecDetailPage() {
                   )}
                 </div>
               </div>
+
+              {/* Provisional Sections (CRDT) */}
+              {crdtSpec?.tempSections && Object.keys(crdtSpec.tempSections).length > 0 && (
+                <Card className="border-dashed border-orange-500 bg-orange-50 p-4 dark:bg-orange-950/20">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium text-orange-700 dark:text-orange-400">
+                        Agent Working Sections (Provisional)
+                      </h3>
+                      <ProvisionalBadge state="provisional" size="sm" />
+                    </div>
+                    <div className="space-y-2">
+                      {Object.entries(crdtSpec.tempSections).map(
+                        ([sectionName, sectionContent]) => (
+                          <div
+                            key={sectionName}
+                            className="rounded-md border border-orange-300 bg-white p-3 dark:border-orange-700 dark:bg-orange-900/10"
+                          >
+                            <div className="mb-2 text-sm font-medium text-orange-700 dark:text-orange-400">
+                              {sectionName}
+                            </div>
+                            <div className="prose prose-sm dark:prose-invert max-w-none">
+                              <pre className="whitespace-pre-wrap font-mono text-xs text-orange-900 dark:text-orange-300">
+                                {String(sectionContent)}
+                              </pre>
+                            </div>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              )}
+
+              {/* Provisional Diff (CRDT) */}
+              {crdtSpec?.tempDiff && (
+                <Card className="border-dashed border-orange-500 bg-orange-50 p-4 dark:bg-orange-950/20">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium text-orange-700 dark:text-orange-400">
+                        Pending Changes (Provisional Diff)
+                      </h3>
+                      <ProvisionalBadge state="provisional" size="sm" />
+                    </div>
+                    <div className="overflow-x-auto rounded-md border border-orange-300 bg-white p-3 dark:border-orange-700 dark:bg-orange-900/10">
+                      <pre className="whitespace-pre-wrap font-mono text-xs text-orange-900 dark:text-orange-300">
+                        {crdtSpec.tempDiff}
+                      </pre>
+                    </div>
+                  </div>
+                </Card>
+              )}
 
               {/* Content */}
               {content !== undefined ? (

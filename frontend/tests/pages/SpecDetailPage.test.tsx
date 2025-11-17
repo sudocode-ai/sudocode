@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import SpecDetailPage from '@/pages/SpecDetailPage'
 import * as useSpecsHook from '@/hooks/useSpecs'
 import * as useIssuesHook from '@/hooks/useIssues'
+import { CRDTProvider } from '@/contexts/CRDTContext'
 
 // Mock the hooks
 vi.mock('@/hooks/useSpecs')
@@ -32,11 +33,13 @@ const renderSpecDetailPage = (specId = 'SPEC-001') => {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/specs/${specId}`]}>
-        <Routes>
-          <Route path="/specs/:id" element={<SpecDetailPage />} />
-        </Routes>
-      </MemoryRouter>
+      <CRDTProvider enabled={false}>
+        <MemoryRouter initialEntries={[`/specs/${specId}`]}>
+          <Routes>
+            <Route path="/specs/:id" element={<SpecDetailPage />} />
+          </Routes>
+        </MemoryRouter>
+      </CRDTProvider>
     </QueryClientProvider>
   )
 }
@@ -251,11 +254,13 @@ describe('SpecDetailPage', () => {
 
     const { rerender } = render(
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={['/specs/SPEC-001']}>
-          <Routes>
-            <Route path="/specs/:id" element={<SpecDetailPage />} />
-          </Routes>
-        </MemoryRouter>
+        <CRDTProvider enabled={false}>
+          <MemoryRouter initialEntries={['/specs/SPEC-001']}>
+            <Routes>
+              <Route path="/specs/:id" element={<SpecDetailPage />} />
+            </Routes>
+          </MemoryRouter>
+        </CRDTProvider>
       </QueryClientProvider>
     )
 
@@ -284,11 +289,13 @@ describe('SpecDetailPage', () => {
 
     rerender(
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={['/specs/SPEC-002']}>
-          <Routes>
-            <Route path="/specs/:id" element={<SpecDetailPage />} />
-          </Routes>
-        </MemoryRouter>
+        <CRDTProvider enabled={false}>
+          <MemoryRouter initialEntries={['/specs/SPEC-002']}>
+            <Routes>
+              <Route path="/specs/:id" element={<SpecDetailPage />} />
+            </Routes>
+          </MemoryRouter>
+        </CRDTProvider>
       </QueryClientProvider>
     )
 
@@ -366,11 +373,13 @@ describe('SpecDetailPage', () => {
 
       const { rerender } = render(
         <QueryClientProvider client={queryClient}>
-          <MemoryRouter initialEntries={['/specs/SPEC-001']}>
-            <Routes>
-              <Route path="/specs/:id" element={<SpecDetailPage />} />
-            </Routes>
-          </MemoryRouter>
+          <CRDTProvider enabled={false}>
+            <MemoryRouter initialEntries={['/specs/SPEC-001']}>
+              <Routes>
+                <Route path="/specs/:id" element={<SpecDetailPage />} />
+              </Routes>
+            </MemoryRouter>
+          </CRDTProvider>
         </QueryClientProvider>
       )
 
@@ -392,11 +401,13 @@ describe('SpecDetailPage', () => {
 
       rerender(
         <QueryClientProvider client={queryClient}>
-          <MemoryRouter initialEntries={['/specs/SPEC-002']}>
-            <Routes>
-              <Route path="/specs/:id" element={<SpecDetailPage />} />
-            </Routes>
-          </MemoryRouter>
+          <CRDTProvider enabled={false}>
+            <MemoryRouter initialEntries={['/specs/SPEC-002']}>
+              <Routes>
+                <Route path="/specs/:id" element={<SpecDetailPage />} />
+              </Routes>
+            </MemoryRouter>
+          </CRDTProvider>
         </QueryClientProvider>
       )
 

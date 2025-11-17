@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { WebSocketProvider } from '@/contexts/WebSocketContext'
+import { CRDTProvider } from '@/contexts/CRDTContext'
 import MainLayout from '@/components/layout/MainLayout'
 import IssuesPage from '@/pages/IssuesPage'
 import IssueDetailPage from '@/pages/IssueDetailPage'
@@ -27,22 +28,24 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <WebSocketProvider>
-        <ThemeProvider>
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<MainLayout />}>
-                <Route index element={<Navigate to="/issues" replace />} />
-                <Route path="issues" element={<IssuesPage />} />
-                <Route path="issues/archived" element={<ArchivedIssuesPage />} />
-                <Route path="issues/:id" element={<IssueDetailPage />} />
-                <Route path="specs" element={<SpecsPage />} />
-                <Route path="specs/archived" element={<ArchivedSpecsPage />} />
-                <Route path="specs/:id" element={<SpecDetailPage />} />
-                <Route path="executions/:id" element={<ExecutionDetailPage />} />
-              </Route>
-            </Routes>
-          </BrowserRouter>
-        </ThemeProvider>
+        <CRDTProvider enabled={true}>
+          <ThemeProvider>
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<MainLayout />}>
+                  <Route index element={<Navigate to="/issues" replace />} />
+                  <Route path="issues" element={<IssuesPage />} />
+                  <Route path="issues/archived" element={<ArchivedIssuesPage />} />
+                  <Route path="issues/:id" element={<IssueDetailPage />} />
+                  <Route path="specs" element={<SpecsPage />} />
+                  <Route path="specs/archived" element={<ArchivedSpecsPage />} />
+                  <Route path="specs/:id" element={<SpecDetailPage />} />
+                  <Route path="executions/:id" element={<ExecutionDetailPage />} />
+                </Route>
+              </Routes>
+            </BrowserRouter>
+          </ThemeProvider>
+        </CRDTProvider>
       </WebSocketProvider>
     </QueryClientProvider>
   )

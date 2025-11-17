@@ -15,14 +15,14 @@ import {
 import { initializeDefaultTemplates } from "../../../src/services/prompt-templates.js";
 import { ExecutionService } from "../../../src/services/execution-service.js";
 import { ExecutionLifecycleService } from "../../../src/services/execution-lifecycle.js";
-import { CRDTCoordinator } from "../../../src/services/crdt-coordinator.js";
+import { CRDTCoordinator, type ExecutionState, type AgentMetadata } from "../../../src/services/crdt-coordinator.js";
 import { generateIssueId } from "@sudocode-ai/cli/dist/id-generator.js";
 import { createIssue } from "@sudocode-ai/cli/dist/operations/index.js";
+import * as http from "http";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { execSync } from "child_process";
-import type { ExecutionState, AgentMetadata } from "@sudocode-ai/types";
 
 /**
  * Helper to set up a git repository
@@ -55,9 +55,13 @@ function setupGitRepository(repoPath: string): void {
 describe("CRDT Synchronization Integration", () => {
   let db: Database.Database;
   let repoPath: string;
+  let server: http.Server;
   let coordinator: CRDTCoordinator;
   let executionService: ExecutionService;
   let lifecycleService: ExecutionLifecycleService;
+  let port: number;
+  let wsPath: string;
+  let coordinatorUrl: string;
 
   beforeAll(async () => {
     // Create temporary directory for test repository
@@ -83,14 +87,26 @@ describe("CRDT Synchronization Integration", () => {
     // Initialize templates
     initializeDefaultTemplates(db);
 
-    // Initialize CRDT Coordinator with port scanning
-    coordinator = await CRDTCoordinator.create(db, {
-      port: 3002, // Use different port for tests
-      host: "localhost",
-      persistInterval: 100, // Fast persistence for tests
-      gcInterval: 60000,
-      maxPortAttempts: 20,
+    // Create HTTP server
+    port = 30000 + Math.floor(Math.random() * 1000);
+    wsPath = '/ws/crdt';
+    server = http.createServer();
+
+    // Start server
+    await new Promise<void>((resolve) => {
+      server.listen(port, () => resolve());
     });
+
+    // Initialize CRDT Coordinator
+    coordinator = new CRDTCoordinator(db, {
+      path: wsPath,
+      persistInterval: 100, // Fast persistence for tests
+      gcInterval: 60000
+    });
+    coordinator.init(server);
+
+    // Construct coordinator URL
+    coordinatorUrl = `ws://localhost:${port}${wsPath}`;
 
     // Initialize lifecycle service
     lifecycleService = new ExecutionLifecycleService(db, repoPath);
@@ -101,13 +117,9 @@ describe("CRDT Synchronization Integration", () => {
       repoPath,
       lifecycleService,
       undefined, // No transport manager for these tests
-      undefined, // No logs store for these tests
-      {
-        enabled: true,
-        host: "localhost",
-        port: 3002,
-      }
+      undefined  // No logs store for these tests
     );
+    executionService.setCRDTUrl(coordinatorUrl);
   });
 
   afterAll(async () => {
@@ -117,6 +129,13 @@ describe("CRDT Synchronization Integration", () => {
     }
     if (coordinator) {
       await coordinator.shutdown();
+    }
+
+    // Close HTTP server
+    if (server) {
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
     }
 
     // Close database
@@ -165,7 +184,7 @@ describe("CRDT Synchronization Integration", () => {
 
     // Verify agent metadata exists in coordinator
     const agentMetadata = coordinator.getAgentMetadata();
-    const agent = agentMetadata.find((a) => a.id === execution.id);
+    const agent = agentMetadata.find((a) => a.executionId === execution.id);
 
     expect(agent).toBeDefined();
     expect(agent?.executionId).toBe(execution.id);
@@ -203,7 +222,7 @@ describe("CRDT Synchronization Integration", () => {
 
     // Get execution state from coordinator
     const executionStates = coordinator.getExecutionState();
-    const execState = executionStates.find((e) => e.id === execution.id);
+    const execState = executionStates.find((e) => e.executionId === execution.id);
 
     expect(execState).toBeDefined();
     expect(execState?.issueId).toBe(issueId);
@@ -217,7 +236,7 @@ describe("CRDT Synchronization Integration", () => {
 
     // Verify cancelled state
     const updatedStates = coordinator.getExecutionState();
-    const cancelledState = updatedStates.find((e) => e.id === execution.id);
+    const cancelledState = updatedStates.find((e) => e.executionId === execution.id);
     expect(cancelledState?.status).toBe("cancelled");
   }, 30000);
 
@@ -304,7 +323,7 @@ describe("CRDT Synchronization Integration", () => {
     // Verify all agents are registered
     const agentMetadata = coordinator.getAgentMetadata();
     for (const execution of executions) {
-      const agent = agentMetadata.find((a) => a.id === execution.id);
+      const agent = agentMetadata.find((a) => a.executionId === execution.id);
       expect(agent).toBeDefined();
       expect(agent?.executionId).toBe(execution.id);
     }
@@ -312,7 +331,7 @@ describe("CRDT Synchronization Integration", () => {
     // Verify all execution states exist
     const executionStates = coordinator.getExecutionState();
     for (const execution of executions) {
-      const state = executionStates.find((s) => s.id === execution.id);
+      const state = executionStates.find((s) => s.executionId === execution.id);
       expect(state).toBeDefined();
     }
 
@@ -353,7 +372,7 @@ describe("CRDT Synchronization Integration", () => {
 
     // Agent should be connected (or in local-only mode)
     const agentMetadata = coordinator.getAgentMetadata();
-    const agent = agentMetadata.find((a) => a.id === execution.id);
+    const agent = agentMetadata.find((a) => a.executionId === execution.id);
 
     // Agent may or may not be connected depending on timing
     // But execution should continue regardless
@@ -399,7 +418,7 @@ describe("CRDT Synchronization Integration", () => {
 
     // Agent should be marked as disconnected
     const agentMetadata = coordinator.getAgentMetadata();
-    const agent = agentMetadata.find((a) => a.id === execution.id);
+    const agent = agentMetadata.find((a) => a.executionId === execution.id);
 
     if (agent) {
       expect(agent.status).toBe("disconnected");

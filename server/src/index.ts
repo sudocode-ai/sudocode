@@ -66,7 +66,7 @@ let watcher: ServerWatcherControl | null = null;
 let transportManager!: TransportManager;
 let logsStore!: ExecutionLogsStore;
 // let logsCleanup: ExecutionLogsCleanup | null = null;
-let executionService: ExecutionService | null = null;
+let executionService!: ExecutionService;
 let crdtCoordinator: CRDTCoordinator | null = null;
 
 // Async initialization function
@@ -111,8 +111,7 @@ async function initialize() {
 
     // Read CRDT configuration
     const CRDT_ENABLED = process.env.CRDT_ENABLED !== "false";
-    const crdtPort = parseInt(process.env.CRDT_SERVER_PORT || "3001", 10);
-    const crdtHost = process.env.CRDT_SERVER_HOST || "localhost";
+    const crdtPath = process.env.CRDT_WS_PATH || "/ws/crdt";
     const crdtPersistInterval = parseInt(
       process.env.CRDT_PERSIST_INTERVAL || "500",
       10
@@ -122,43 +121,28 @@ async function initialize() {
       10
     );
 
-    // Initialize execution service globally for cleanup on shutdown
+    // Initialize CRDT Coordinator if enabled (before execution service)
+    if (CRDT_ENABLED) {
+      crdtCoordinator = new CRDTCoordinator(db, {
+        path: crdtPath,
+        persistInterval: crdtPersistInterval,
+        gcInterval: crdtGcInterval,
+      });
+      // Will initialize WebSocket server later after HTTP server is created
+      console.log("CRDT Coordinator created (will initialize WebSocket after HTTP server)");
+    } else {
+      console.log("CRDT synchronization disabled");
+    }
+
+    // Initialize execution service (will set CRDT URL later after server starts)
     executionService = new ExecutionService(
       db,
       REPO_ROOT,
       undefined,
       transportManager,
-      logsStore,
-      {
-        enabled: CRDT_ENABLED,
-        host: crdtHost,
-        port: crdtPort,
-      }
+      logsStore
     );
     console.log("Execution service initialized");
-
-    // Initialize CRDT Coordinator if enabled
-    if (CRDT_ENABLED) {
-      try {
-        crdtCoordinator = await CRDTCoordinator.create(db, {
-          port: crdtPort,
-          host: crdtHost,
-          persistInterval: crdtPersistInterval,
-          gcInterval: crdtGcInterval,
-          maxPortAttempts: 20,
-        });
-
-        console.log(
-          `CRDT Coordinator initialized on ${crdtHost}:${crdtCoordinator.actualPort}`
-        );
-      } catch (error) {
-        console.error("Failed to initialize CRDT Coordinator:", error);
-        console.warn("Continuing without CRDT synchronization");
-        crdtCoordinator = null;
-      }
-    } else {
-      console.log("CRDT synchronization disabled");
-    }
 
     // Cleanup orphaned worktrees on startup (if configured)
     const worktreeConfig = getWorktreeConfig(REPO_ROOT);
@@ -281,17 +265,13 @@ app.get("/health", (_req: Request, res: Response) => {
 // TODO: Return sudocode config json contents.
 app.get("/api/config", (_req: Request, res: Response) => {
   const CRDT_ENABLED = process.env.CRDT_ENABLED !== "false";
-  const crdtHost = process.env.CRDT_SERVER_HOST || "localhost";
-  const actualCrdtPort =
-    crdtCoordinator?.actualPort ||
-    parseInt(process.env.CRDT_SERVER_PORT || "3001", 10);
+  const wsPath = process.env.CRDT_WS_PATH || "/ws/crdt";
 
   res.status(200).json({
     crdt: {
       enabled: CRDT_ENABLED,
-      host: crdtHost,
-      port: actualCrdtPort,
-      url: `ws://${crdtHost}:${actualCrdtPort}`,
+      path: wsPath,
+      url: `ws://localhost:${actualPort}${wsPath}`,
     },
   });
 });
@@ -443,6 +423,28 @@ const actualPort = await startServer(startPort, MAX_PORT_ATTEMPTS);
 
 // Initialize WebSocket server AFTER successfully binding to a port
 initWebSocketServer(server, "/ws");
+
+// Initialize CRDT Coordinator WebSocket server if enabled
+if (crdtCoordinator !== null) {
+  const coordinator: CRDTCoordinator = crdtCoordinator;
+  try {
+    const crdtPath = process.env.CRDT_WS_PATH || "/ws/crdt";
+
+    coordinator.init(server);
+    console.log(`CRDT Coordinator WebSocket initialized on ${crdtPath}`);
+
+    // Configure execution service with CRDT URL now that we know the port
+    if (executionService) {
+      const crdtUrl = `ws://localhost:${actualPort}${crdtPath}`;
+      executionService.setCRDTUrl(crdtUrl);
+      console.log(`ExecutionService configured with CRDT URL: ${crdtUrl}`);
+    }
+  } catch (error) {
+    console.error("Failed to initialize CRDT WebSocket:", error);
+    console.warn("Continuing without CRDT synchronization");
+    crdtCoordinator = null;
+  }
+}
 
 // Format URLs as clickable links with color
 const httpUrl = `http://localhost:${actualPort}`;

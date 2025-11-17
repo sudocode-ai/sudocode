@@ -5,6 +5,7 @@ import IssuePanel from '@/components/issues/IssuePanel'
 import { Button } from '@/components/ui/button'
 import { DeleteIssueDialog } from '@/components/issues/DeleteIssueDialog'
 import { Archive, ArchiveRestore, Trash2, FileText, Code2 } from 'lucide-react'
+import { CRDTConnectionStatus } from '@/components/ui/CRDTConnectionStatus'
 
 const VIEW_MODE_STORAGE_KEY = 'sudocode:details:viewMode'
 
@@ -79,6 +80,7 @@ export default function IssueDetailPage() {
           <Button variant="ghost" size="sm" onClick={() => navigate('/issues')}>
             ← Back to Issues
           </Button>
+          <CRDTConnectionStatus showLabel />
         </div>
         <div className="flex items-center gap-2">
           {/* View mode toggle */}

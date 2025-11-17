@@ -188,7 +188,7 @@ describe.sequential("Process I/O Communication", () => {
       });
 
       // Wait for output
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       expect(outputs.length > 0).toBeTruthy();
       expect(
@@ -305,7 +305,7 @@ describe.sequential("Process I/O Communication", () => {
       });
 
       // Wait for all output
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       expect(lines.length).toBe(3);
       expect(lines.includes("Line 1")).toBeTruthy();

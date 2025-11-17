@@ -67,8 +67,25 @@ class WebSocketManager {
       return;
     }
 
-    this.wss = new WebSocketServer({ server, path });
+    // Use noServer mode to allow manual upgrade handling
+    // This allows multiple WebSocket servers to coexist on different paths
+    this.wss = new WebSocketServer({ noServer: true });
     console.log(`[websocket] WebSocket server initialized on path: ${path}`);
+
+    // Handle HTTP upgrade requests for this specific path
+    server.on('upgrade', (request, socket, head) => {
+      const pathname = request.url || '';
+
+      // Only handle exact path match for this WebSocket server
+      if (pathname === path) {
+        if (this.wss) {
+          this.wss.handleUpgrade(request, socket, head, (ws) => {
+            this.wss?.emit('connection', ws, request);
+          });
+        }
+      }
+      // Otherwise, let other handlers process this upgrade
+    });
 
     this.wss.on("connection", this.handleConnection.bind(this));
     this.startHeartbeat();

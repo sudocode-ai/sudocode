@@ -3,6 +3,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { WebSocketProvider } from '@/contexts/WebSocketContext'
+import { CRDTProvider } from '@/contexts/CRDTContext'
 
 /**
  * Custom render function that includes all providers
@@ -24,9 +25,11 @@ export function renderWithProviders(
     return (
       <QueryClientProvider client={queryClient}>
         <WebSocketProvider>
-          <ThemeProvider>
-            <BrowserRouter>{children}</BrowserRouter>
-          </ThemeProvider>
+          <CRDTProvider enabled={false}>
+            <ThemeProvider>
+              <BrowserRouter>{children}</BrowserRouter>
+            </ThemeProvider>
+          </CRDTProvider>
         </WebSocketProvider>
       </QueryClientProvider>
     )

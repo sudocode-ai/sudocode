@@ -5,15 +5,28 @@
  * between worktree agents and frontend clients via WebSocket.
  */
 
-import * as Y from 'yjs';
-import { WebSocketServer, WebSocket } from 'ws';
-import * as Database from 'better-sqlite3';
-import * as path from 'path';
-import * as fs from 'fs/promises';
-import { getAllIssues, createNewIssue, updateExistingIssue } from './issues.js';
-import { getAllSpecs, createNewSpec, updateExistingSpec } from './specs.js';
-import { getAllFeedback, createNewFeedback, updateExistingFeedback } from './feedback.js';
-import type { Issue, Spec, IssueFeedback, IssueStatus } from '@sudocode-ai/types';
+import * as Y from "yjs";
+import { WebSocketServer, WebSocket } from "ws";
+import * as http from "http";
+import * as syncProtocol from "y-protocols/sync";
+import * as encoding from "lib0/encoding";
+import * as decoding from "lib0/decoding";
+import * as Database from "better-sqlite3";
+import * as path from "path";
+import * as fs from "fs/promises";
+import { getAllIssues, createNewIssue, updateExistingIssue } from "./issues.js";
+import { getAllSpecs, createNewSpec, updateExistingSpec } from "./specs.js";
+import {
+  getAllFeedback,
+  createNewFeedback,
+  updateExistingFeedback,
+} from "./feedback.js";
+import type {
+  Issue,
+  Spec,
+  IssueFeedback,
+  IssueStatus,
+} from "@sudocode-ai/types";
 
 /**
  * CRDT state schemas
@@ -64,7 +77,13 @@ export interface ExecutionState {
   executionId: string;
   issueId?: string;
   specId?: string;
-  status: 'preparing' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
+  status:
+    | "preparing"
+    | "running"
+    | "paused"
+    | "completed"
+    | "failed"
+    | "cancelled";
 
   worktreePath: string;
   branch: string;
@@ -87,7 +106,7 @@ export interface ExecutionState {
   // Logs
   recentLogs?: Array<{
     timestamp: number;
-    level: 'info' | 'warn' | 'error';
+    level: "info" | "warn" | "error";
     message: string;
   }>;
 }
@@ -102,7 +121,7 @@ export interface AgentMetadata {
   lastHeartbeat: number;
 
   // Status
-  status: 'initializing' | 'idle' | 'working' | 'disconnected';
+  status: "initializing" | "idle" | "working" | "disconnected";
   currentActivity?: string;
 
   // Capabilities (for future P2P)
@@ -113,7 +132,7 @@ export interface FeedbackState {
   id: string;
   specId: string;
   issueId: string;
-  type: 'comment' | 'suggestion' | 'request';
+  type: "comment" | "suggestion" | "request";
   content: string;
 
   // Anchoring
@@ -127,22 +146,12 @@ export interface FeedbackState {
 }
 
 /**
- * WebSocket message types
- */
-interface SyncMessage {
-  type: 'sync-init' | 'sync-update';
-  data: number[]; // Uint8Array as number array for JSON
-}
-
-/**
  * CRDT Coordinator configuration
  */
 export interface CRDTCoordinatorConfig {
-  port?: number;
-  host?: string;
   persistInterval?: number;
   gcInterval?: number;
-  maxPortAttempts?: number;
+  path?: string; // WebSocket path, defaults to '/ws/crdt'
 }
 
 /**
@@ -152,138 +161,86 @@ export interface CRDTCoordinatorConfig {
  */
 export class CRDTCoordinator {
   private ydoc: Y.Doc;
-  private wss: WebSocketServer;
+  private wss: WebSocketServer | null = null;
   private clients: Map<string, WebSocket>;
   private persistTimer?: NodeJS.Timeout;
   private gcTimer?: NodeJS.Timeout;
   public lastPersistTime: number = 0;
-  public actualPort: number = 0;
 
-  private constructor(
+  constructor(
     private db: Database.Database,
     private config: CRDTCoordinatorConfig = {}
   ) {
     this.ydoc = new Y.Doc();
     this.clients = new Map();
-    // WebSocketServer will be initialized in startWithPortScanning
-    this.wss = null as any; // Temporary - will be set before use
   }
 
   /**
-   * Create and initialize CRDT Coordinator with port scanning
+   * Initialize WebSocket server on the provided HTTP server
    */
-  static async create(
-    db: Database.Database,
-    config: CRDTCoordinatorConfig = {}
-  ): Promise<CRDTCoordinator> {
-    const coordinator = new CRDTCoordinator(db, config);
-    await coordinator.startWithPortScanning();
-    return coordinator;
-  }
+  init(server: http.Server): void {
+    const basePath = this.config.path || '/ws/crdt';
 
-  /**
-   * Start WebSocket server with port scanning
-   */
-  private async startWithPortScanning(): Promise<void> {
-    const initialPort = this.config.port || 3001;
-    const host = this.config.host || 'localhost';
-    const maxAttempts = this.config.maxPortAttempts || 20;
+    console.log(`[CRDT Coordinator] Initializing on path: ${basePath}`);
 
-    // Check if explicit port was configured via env or config
-    const explicitPort = this.config.port !== undefined;
-    const shouldScan = !explicitPort;
+    // Create WebSocket server attached to the HTTP server
+    // Use noServer mode and handle upgrades manually to support room-based paths
+    this.wss = new WebSocketServer({ noServer: true });
 
-    console.log(`[CRDT Coordinator] Initializing on ${host}:${initialPort}`);
+    // Handle HTTP upgrade requests for CRDT paths
+    server.on('upgrade', (request, socket, head) => {
+      const pathname = request.url || '';
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const port = initialPort + attempt;
-
-      try {
-        await new Promise<void>((resolve, reject) => {
-          const wss = new WebSocketServer({ port, host });
-
-          const errorHandler = (err: Error) => {
-            wss.removeListener('error', errorHandler);
-            wss.removeListener('listening', listeningHandler);
-            wss.close();
-            reject(err);
-          };
-
-          const listeningHandler = () => {
-            wss.removeListener('error', errorHandler);
-            resolve();
-          };
-
-          wss.once('error', errorHandler);
-          wss.once('listening', listeningHandler);
-
-          // Store the successfully created server
-          this.wss = wss;
-          this.actualPort = port;
-        });
-
-        // Success! Setup the rest of the coordinator
-        this.setupYjsMaps();
-        this.setupWebSocketServer();
-        this.setupPersistence();
-        this.loadInitialState();
-        this.startGarbageCollection();
-
-        console.log(`[CRDT Coordinator] Initialized successfully on ${host}:${this.actualPort}`);
-        return;
-
-      } catch (err) {
-        const error = err as NodeJS.ErrnoException;
-
-        if (error.code === 'EADDRINUSE') {
-          if (!shouldScan) {
-            // Explicit port was specified and it's in use - fail immediately
-            throw new Error(
-              `[CRDT Coordinator] Port ${port} is already in use. Please specify a different CRDT_SERVER_PORT.`
-            );
-          }
-
-          // Port is in use, try next one if we have attempts left
-          if (attempt < maxAttempts - 1) {
-            console.log(`[CRDT Coordinator] Port ${port} is already in use, trying ${port + 1}...`);
-            continue;
-          } else {
-            throw new Error(
-              `[CRDT Coordinator] Could not find an available port after ${maxAttempts} attempts (${initialPort}-${port})`
-            );
-          }
-        } else {
-          // Some other error - fail immediately
-          throw error;
+      // Accept connections to /ws/crdt or /ws/crdt/<room>
+      if (pathname === basePath || pathname.startsWith(`${basePath}/`)) {
+        if (this.wss) {
+          this.wss.handleUpgrade(request, socket, head, (ws) => {
+            this.wss?.emit('connection', ws, request);
+          });
         }
       }
-    }
+    });
 
-    throw new Error(`[CRDT Coordinator] Could not start server after ${maxAttempts} attempts`);
+    this.setupYjsMaps();
+    this.setupWebSocketServer();
+    this.setupPersistence();
+    this.loadInitialState();
+    this.startGarbageCollection();
+
+    console.log(`[CRDT Coordinator] Initialized successfully on ${basePath}`);
   }
+
 
   /**
    * Initialize Yjs maps
    */
   private setupYjsMaps(): void {
-    this.ydoc.getMap('issueUpdates');
-    this.ydoc.getMap('specUpdates');
-    this.ydoc.getMap('executionState');
-    this.ydoc.getMap('agentMetadata');
-    this.ydoc.getMap('feedbackUpdates');
+    this.ydoc.getMap("issueUpdates");
+    this.ydoc.getMap("specUpdates");
+    this.ydoc.getMap("executionState");
+    this.ydoc.getMap("agentMetadata");
+    this.ydoc.getMap("feedbackUpdates");
   }
 
   /**
    * Setup WebSocket server
    */
   private setupWebSocketServer(): void {
-    this.wss.on('connection', (ws: WebSocket, req: any) => {
+    if (!this.wss) {
+      throw new Error('[CRDT Coordinator] WebSocket server not initialized. Call init() first.');
+    }
+
+    this.wss.on("connection", (ws: WebSocket, req: http.IncomingMessage) => {
       const clientId = this.extractClientId(req);
+
+      console.log(
+        `[CRDT Coordinator] Client connected: ${clientId} (total: ${this.clients.size + 1})`
+      );
+
+      // Track client
       this.clients.set(clientId, ws);
 
-      console.log(`[CRDT Coordinator] Client connected: ${clientId} (total: ${this.clients.size})`);
-
-      // Send initial state sync
+      // Send initial sync
       this.sendInitialSync(ws);
 
       // Handle incoming updates
@@ -291,52 +248,106 @@ export class CRDTCoordinator {
         this.handleClientUpdate(clientId, data);
       });
 
-      ws.on('close', () => {
+      ws.on("close", () => {
         this.clients.delete(clientId);
-        console.log(`[CRDT Coordinator] Client disconnected: ${clientId} (remaining: ${this.clients.size})`);
+        console.log(
+          `[CRDT Coordinator] Client disconnected: ${clientId} (remaining: ${this.clients.size})`
+        );
       });
 
-      ws.on('error', (error) => {
-        console.error(`[CRDT Coordinator] WebSocket error for ${clientId}:`, error.message);
+      ws.on("error", (error) => {
+        console.error(
+          `[CRDT Coordinator] WebSocket error for ${clientId}:`,
+          error.message
+        );
       });
     });
 
-    this.wss.on('error', (error: Error) => {
-      console.error('[CRDT Coordinator] WebSocket server error:', error);
+    this.wss.on("error", (error: Error) => {
+      console.error("[CRDT Coordinator] WebSocket server error:", error);
     });
   }
 
   /**
-   * Send initial state sync to new client
+   * Send initial state sync to new client using y-protocols
    */
   private sendInitialSync(ws: WebSocket): void {
-    const stateVector = Y.encodeStateAsUpdate(this.ydoc);
-    const message: SyncMessage = {
-      type: 'sync-init',
-      data: Array.from(stateVector)
-    };
-
-    ws.send(JSON.stringify(message));
-    console.log(`[CRDT Coordinator] Sent initial sync (${stateVector.byteLength} bytes)`);
+    // Send SyncStep1 message wrapped in messageSync envelope
+    const encoder = encoding.createEncoder();
+    encoding.writeVarUint(encoder, 0); // messageSync
+    // writeSyncStep1 internally writes messageYjsSyncStep1
+    syncProtocol.writeSyncStep1(encoder, this.ydoc);
+    ws.send(encoding.toUint8Array(encoder));
   }
 
   /**
-   * Handle update from client
+   * Handle update from client using y-protocols
    */
   private handleClientUpdate(clientId: string, data: Buffer): void {
     try {
-      const message = JSON.parse(data.toString()) as SyncMessage;
+      const message = new Uint8Array(data);
+      const decoder = decoding.createDecoder(message);
+      const encoder = encoding.createEncoder();
+      const messageType = decoding.readVarUint(decoder);
 
-      if (message.type === 'sync-update') {
-        const update = new Uint8Array(message.data);
+      // y-websocket message types:
+      // 0 = messageSync (contains sync protocol messages)
+      // 1 = messageAwareness (awareness updates)
+      // 3 = messageQueryAwareness (query for awareness state)
 
-        // Apply update to main document
-        Y.applyUpdate(this.ydoc, update, clientId);
+      switch (messageType) {
+        case 0: {
+          // Sync message - read the sync protocol sub-type
+          const syncMessageType = decoding.readVarUint(decoder);
 
-        // Broadcast to all other clients
-        this.broadcastUpdate(update, clientId);
+          switch (syncMessageType) {
+            case syncProtocol.messageYjsSyncStep1: {
+              // Client sent SyncStep1 (their state vector), respond with SyncStep2 (our update)
+              encoding.writeVarUint(encoder, 0); // messageSync
+              // readSyncStep1 internally calls writeSyncStep2, which writes messageYjsSyncStep2
+              syncProtocol.readSyncStep1(decoder, encoder, this.ydoc);
+              const ws = this.clients.get(clientId);
+              if (ws) {
+                ws.send(encoding.toUint8Array(encoder));
+              }
+              break;
+            }
 
-        console.log(`[CRDT Coordinator] Applied update from ${clientId} (${update.byteLength} bytes)`);
+            case syncProtocol.messageYjsSyncStep2: {
+              // Client sent SyncStep2, apply the update
+              syncProtocol.readSyncStep2(decoder, this.ydoc, clientId);
+              break;
+            }
+
+            case syncProtocol.messageYjsUpdate: {
+              // Client sent an update
+              syncProtocol.readUpdate(decoder, this.ydoc, clientId);
+              // Broadcast to other clients
+              this.broadcastUpdate(message, clientId);
+              break;
+            }
+
+            default:
+              console.warn(`[CRDT Coordinator] Unknown sync message type: ${syncMessageType} from ${clientId}`);
+          }
+          break;
+        }
+
+        case 1: {
+          // Awareness message - just broadcast to other clients
+          // We don't track awareness state on the server
+          this.broadcastUpdate(message, clientId);
+          break;
+        }
+
+        case 3: {
+          // Query awareness - respond with empty awareness state
+          // Since we don't track awareness on the server, just acknowledge
+          break;
+        }
+
+        default:
+          console.warn(`[CRDT Coordinator] Unknown message type: ${messageType} from ${clientId}`);
       }
     } catch (error) {
       console.error(`[CRDT Coordinator] Failed to handle update from ${clientId}:`, error);
@@ -347,22 +358,18 @@ export class CRDTCoordinator {
    * Broadcast update to all clients except sender
    */
   private broadcastUpdate(update: Uint8Array, excludeClient?: string): void {
-    const message: SyncMessage = {
-      type: 'sync-update',
-      data: Array.from(update)
-    };
-    const messageStr = JSON.stringify(message);
-
     let broadcastCount = 0;
     this.clients.forEach((ws, clientId) => {
       if (clientId !== excludeClient && ws.readyState === WebSocket.OPEN) {
-        ws.send(messageStr);
+        ws.send(update);
         broadcastCount++;
       }
     });
 
     if (broadcastCount > 0) {
-      console.log(`[CRDT Coordinator] Broadcast update to ${broadcastCount} clients`);
+      console.log(
+        `[CRDT Coordinator] Broadcast update to ${broadcastCount} clients`
+      );
     }
   }
 
@@ -370,12 +377,12 @@ export class CRDTCoordinator {
    * Setup persistence layer
    */
   private setupPersistence(): void {
-    this.ydoc.on('update', (update: Uint8Array, origin: any) => {
+    this.ydoc.on("update", (update: Uint8Array, origin: any) => {
       // Don't persist updates we just loaded from DB
-      if (origin === 'db-load') return;
+      if (origin === "db-load") return;
 
       // Broadcast local updates to all clients (exclude origin client if specified)
-      if (typeof origin === 'string') {
+      if (typeof origin === "string") {
         // Update came from a client, already broadcast by handleClientUpdate
       } else {
         // Local update from public API - broadcast to all clients
@@ -395,8 +402,8 @@ export class CRDTCoordinator {
 
     const interval = this.config.persistInterval || 500;
     this.persistTimer = setTimeout(() => {
-      this.persistToDatabase().catch(error => {
-        console.error('[CRDT Coordinator] Persistence failed:', error);
+      this.persistToDatabase().catch((error) => {
+        console.error("[CRDT Coordinator] Persistence failed:", error);
       });
     }, interval);
   }
@@ -415,7 +422,9 @@ export class CRDTCoordinator {
         for (const issue of issues) {
           const dbIssue = this.stateToIssue(issue);
           // Check if exists
-          const existing = this.db.prepare('SELECT id FROM issues WHERE id = ?').get(issue.id);
+          const existing = this.db
+            .prepare("SELECT id FROM issues WHERE id = ?")
+            .get(issue.id);
           if (existing) {
             updateExistingIssue(this.db, issue.id, dbIssue);
           } else {
@@ -425,7 +434,9 @@ export class CRDTCoordinator {
 
         for (const spec of specs) {
           const dbSpec = this.stateToSpec(spec);
-          const existing = this.db.prepare('SELECT id FROM specs WHERE id = ?').get(spec.id);
+          const existing = this.db
+            .prepare("SELECT id FROM specs WHERE id = ?")
+            .get(spec.id);
           if (existing) {
             updateExistingSpec(this.db, spec.id, dbSpec);
           } else {
@@ -435,7 +446,9 @@ export class CRDTCoordinator {
 
         for (const fb of feedback) {
           const dbFeedback = this.stateToFeedback(fb);
-          const existing = this.db.prepare('SELECT id FROM feedback WHERE id = ?').get(fb.id);
+          const existing = this.db
+            .prepare("SELECT id FROM feedback WHERE id = ?")
+            .get(fb.id);
           if (existing) {
             updateExistingFeedback(this.db, fb.id, dbFeedback);
           } else {
@@ -445,9 +458,11 @@ export class CRDTCoordinator {
       })();
 
       this.lastPersistTime = Date.now();
-      console.log(`[CRDT Coordinator] Persisted ${issues.length} issues, ${specs.length} specs, ${feedback.length} feedback`);
+      console.log(
+        `[CRDT Coordinator] Persisted ${issues.length} issues, ${specs.length} specs, ${feedback.length} feedback`
+      );
     } catch (error) {
-      console.error('[CRDT Coordinator] Persistence error:', error);
+      console.error("[CRDT Coordinator] Persistence error:", error);
       // Don't throw - log and continue
     }
   }
@@ -456,7 +471,7 @@ export class CRDTCoordinator {
    * Extract issues from CRDT
    */
   private extractIssues(): IssueState[] {
-    const issueMap = this.ydoc.getMap<IssueState>('issueUpdates');
+    const issueMap = this.ydoc.getMap<IssueState>("issueUpdates");
     const issues: IssueState[] = [];
 
     issueMap.forEach((value) => {
@@ -470,7 +485,7 @@ export class CRDTCoordinator {
    * Extract specs from CRDT
    */
   private extractSpecs(): SpecState[] {
-    const specMap = this.ydoc.getMap<SpecState>('specUpdates');
+    const specMap = this.ydoc.getMap<SpecState>("specUpdates");
     const specs: SpecState[] = [];
 
     specMap.forEach((value) => {
@@ -484,7 +499,7 @@ export class CRDTCoordinator {
    * Extract feedback from CRDT
    */
   private extractFeedback(): FeedbackState[] {
-    const feedbackMap = this.ydoc.getMap<FeedbackState>('feedbackUpdates');
+    const feedbackMap = this.ydoc.getMap<FeedbackState>("feedbackUpdates");
     const feedback: FeedbackState[] = [];
 
     feedbackMap.forEach((value) => {
@@ -503,26 +518,28 @@ export class CRDTCoordinator {
       const specs = getAllSpecs(this.db, {});
       const feedback = getAllFeedback(this.db, {});
 
-      const issueMap = this.ydoc.getMap<IssueState>('issueUpdates');
-      const specMap = this.ydoc.getMap<SpecState>('specUpdates');
-      const feedbackMap = this.ydoc.getMap<FeedbackState>('feedbackUpdates');
+      const issueMap = this.ydoc.getMap<IssueState>("issueUpdates");
+      const specMap = this.ydoc.getMap<SpecState>("specUpdates");
+      const feedbackMap = this.ydoc.getMap<FeedbackState>("feedbackUpdates");
 
       // Populate CRDT
       this.ydoc.transact(() => {
-        issues.forEach(issue => {
+        issues.forEach((issue) => {
           issueMap.set(issue.id, this.issueToState(issue));
         });
-        specs.forEach(spec => {
+        specs.forEach((spec) => {
           specMap.set(spec.id, this.specToState(spec));
         });
-        feedback.forEach(fb => {
+        feedback.forEach((fb) => {
           feedbackMap.set(fb.id, this.feedbackToState(fb));
         });
-      }, 'db-load');
+      }, "db-load");
 
-      console.log(`[CRDT Coordinator] Loaded ${issues.length} issues, ${specs.length} specs, ${feedback.length} feedback`);
+      console.log(
+        `[CRDT Coordinator] Loaded ${issues.length} issues, ${specs.length} specs, ${feedback.length} feedback`
+      );
     } catch (error) {
-      console.error('[CRDT Coordinator] Failed to load initial state:', error);
+      console.error("[CRDT Coordinator] Failed to load initial state:", error);
       throw error;
     }
   }
@@ -541,8 +558,8 @@ export class CRDTCoordinator {
       archived: issue.archived || false,
       createdAt: new Date(issue.created_at).getTime(),
       updatedAt: new Date(issue.updated_at).getTime(),
-      lastModifiedBy: 'system',
-      version: 1
+      lastModifiedBy: "system",
+      version: 1,
     };
   }
 
@@ -558,8 +575,8 @@ export class CRDTCoordinator {
       parent: spec.parent_id || undefined,
       createdAt: new Date(spec.created_at).getTime(),
       updatedAt: new Date(spec.updated_at).getTime(),
-      lastModifiedBy: 'system',
-      version: 1
+      lastModifiedBy: "system",
+      version: 1,
     };
   }
 
@@ -577,7 +594,7 @@ export class CRDTCoordinator {
       anchorText: fb.anchor ? JSON.parse(fb.anchor).text_snippet : undefined,
       createdAt: new Date(fb.created_at).getTime(),
       updatedAt: new Date(fb.updated_at).getTime(),
-      lastModifiedBy: 'system'
+      lastModifiedBy: "system",
     };
   }
 
@@ -592,7 +609,7 @@ export class CRDTCoordinator {
       status: state.status,
       priority: state.priority,
       parent_id: state.parent || null,
-      archived: state.archived
+      archived: state.archived,
     };
   }
 
@@ -606,7 +623,7 @@ export class CRDTCoordinator {
       content: state.content,
       priority: state.priority,
       parent_id: state.parent || null,
-      file_path: `.sudocode/specs/${state.id}.md`
+      file_path: `.sudocode/specs/${state.id}.md`,
     };
   }
 
@@ -614,29 +631,35 @@ export class CRDTCoordinator {
    * Convert CRDT state to DB feedback
    */
   private stateToFeedback(state: FeedbackState): any {
-    const anchor = (state.anchorLine || state.anchorText) ? JSON.stringify({
-      line_number: state.anchorLine,
-      text_snippet: state.anchorText
-    }) : undefined;
+    const anchor =
+      state.anchorLine || state.anchorText
+        ? JSON.stringify({
+            line_number: state.anchorLine,
+            text_snippet: state.anchorText,
+          })
+        : undefined;
 
     return {
       issue_id: state.issueId,
       spec_id: state.specId,
       feedback_type: state.type,
       content: state.content,
-      anchor
+      anchor,
     };
   }
 
   /**
    * Extract client ID from request
    */
-  private extractClientId(req: any): string {
+  private extractClientId(req: http.IncomingMessage): string {
     try {
-      const url = new URL(req.url!, `ws://localhost:${this.config.port || 3001}`);
-      return url.searchParams.get('clientId') || `client-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const url = new URL(req.url!, `ws://localhost`);
+      return (
+        url.searchParams.get("clientId") ||
+        `client-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
+      );
     } catch (error) {
-      return `client-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      return `client-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
     }
   }
 
@@ -650,15 +673,17 @@ export class CRDTCoordinator {
       this.runGarbageCollection();
     }, interval);
 
-    console.log(`[CRDT Coordinator] Garbage collection scheduled every ${interval}ms`);
+    console.log(
+      `[CRDT Coordinator] Garbage collection scheduled every ${interval}ms`
+    );
   }
 
   /**
    * Run garbage collection
    */
   private runGarbageCollection(): void {
-    const execMap = this.ydoc.getMap<ExecutionState>('executionState');
-    const agentMap = this.ydoc.getMap<AgentMetadata>('agentMetadata');
+    const execMap = this.ydoc.getMap<ExecutionState>("executionState");
+    const agentMap = this.ydoc.getMap<AgentMetadata>("agentMetadata");
     const now = Date.now();
     const executionTimeout = 3600000; // 1 hour
     const agentTimeout = 120000; // 2 minutes
@@ -668,7 +693,10 @@ export class CRDTCoordinator {
 
     // Clean up stale executions
     execMap.forEach((exec, id) => {
-      if ((exec.status === 'completed' || exec.status === 'failed') && exec.completedAt) {
+      if (
+        (exec.status === "completed" || exec.status === "failed") &&
+        exec.completedAt
+      ) {
         if (now - exec.completedAt > executionTimeout) {
           execMap.delete(id);
           removedExecutions++;
@@ -685,7 +713,9 @@ export class CRDTCoordinator {
     });
 
     if (removedExecutions > 0 || removedAgents > 0) {
-      console.log(`[CRDT Coordinator] GC: Removed ${removedExecutions} executions, ${removedAgents} agents`);
+      console.log(
+        `[CRDT Coordinator] GC: Removed ${removedExecutions} executions, ${removedAgents} agents`
+      );
     }
   }
 
@@ -693,7 +723,7 @@ export class CRDTCoordinator {
    * Public API: Update issue
    */
   public updateIssue(issueId: string, updates: Partial<IssueState>): void {
-    const issueMap = this.ydoc.getMap<IssueState>('issueUpdates');
+    const issueMap = this.ydoc.getMap<IssueState>("issueUpdates");
     const existing = issueMap.get(issueId);
 
     if (existing) {
@@ -701,22 +731,22 @@ export class CRDTCoordinator {
         ...existing,
         ...updates,
         updatedAt: Date.now(),
-        version: existing.version + 1
+        version: existing.version + 1,
       });
     } else {
       // Create new issue if it doesn't exist
       const newIssue: IssueState = {
         id: issueId,
-        title: updates.title || '',
-        content: updates.content || '',
-        status: updates.status || 'open',
+        title: updates.title || "",
+        content: updates.content || "",
+        status: updates.status || "open",
         priority: updates.priority ?? 2,
         archived: updates.archived || false,
         createdAt: updates.createdAt || Date.now(),
         updatedAt: Date.now(),
-        lastModifiedBy: updates.lastModifiedBy || 'system',
+        lastModifiedBy: updates.lastModifiedBy || "system",
         version: 1,
-        ...updates
+        ...updates,
       };
       issueMap.set(issueId, newIssue);
     }
@@ -726,7 +756,7 @@ export class CRDTCoordinator {
    * Public API: Update spec
    */
   public updateSpec(specId: string, updates: Partial<SpecState>): void {
-    const specMap = this.ydoc.getMap<SpecState>('specUpdates');
+    const specMap = this.ydoc.getMap<SpecState>("specUpdates");
     const existing = specMap.get(specId);
 
     if (existing) {
@@ -734,20 +764,20 @@ export class CRDTCoordinator {
         ...existing,
         ...updates,
         updatedAt: Date.now(),
-        version: existing.version + 1
+        version: existing.version + 1,
       });
     } else {
       // Create new spec if it doesn't exist
       const newSpec: SpecState = {
         id: specId,
-        title: updates.title || '',
-        content: updates.content || '',
+        title: updates.title || "",
+        content: updates.content || "",
         priority: updates.priority ?? 2,
         createdAt: updates.createdAt || Date.now(),
         updatedAt: Date.now(),
-        lastModifiedBy: updates.lastModifiedBy || 'system',
+        lastModifiedBy: updates.lastModifiedBy || "system",
         version: 1,
-        ...updates
+        ...updates,
       };
       specMap.set(specId, newSpec);
     }
@@ -761,35 +791,39 @@ export class CRDTCoordinator {
       const issues = this.extractIssues();
       const specs = this.extractSpecs();
 
-      const issuesPath = path.join(outputDir, '.sudocode', 'issues.jsonl');
-      const specsPath = path.join(outputDir, '.sudocode', 'specs.jsonl');
+      const issuesPath = path.join(outputDir, ".sudocode", "issues.jsonl");
+      const specsPath = path.join(outputDir, ".sudocode", "specs.jsonl");
 
-      const issuesData = issues.map(i => {
-        const dbIssue = this.stateToIssue(i);
-        return JSON.stringify({
-          id: i.id,
-          ...dbIssue,
-          created_at: new Date(i.createdAt).toISOString(),
-          updated_at: new Date(i.updatedAt).toISOString()
-        });
-      }).join('\n');
+      const issuesData = issues
+        .map((i) => {
+          const dbIssue = this.stateToIssue(i);
+          return JSON.stringify({
+            id: i.id,
+            ...dbIssue,
+            created_at: new Date(i.createdAt).toISOString(),
+            updated_at: new Date(i.updatedAt).toISOString(),
+          });
+        })
+        .join("\n");
 
-      const specsData = specs.map(s => {
-        const dbSpec = this.stateToSpec(s);
-        return JSON.stringify({
-          id: s.id,
-          ...dbSpec,
-          created_at: new Date(s.createdAt).toISOString(),
-          updated_at: new Date(s.updatedAt).toISOString()
-        });
-      }).join('\n');
+      const specsData = specs
+        .map((s) => {
+          const dbSpec = this.stateToSpec(s);
+          return JSON.stringify({
+            id: s.id,
+            ...dbSpec,
+            created_at: new Date(s.createdAt).toISOString(),
+            updated_at: new Date(s.updatedAt).toISOString(),
+          });
+        })
+        .join("\n");
 
       await fs.writeFile(issuesPath, issuesData);
       await fs.writeFile(specsPath, specsData);
 
-      console.log('[CRDT Coordinator] Exported to JSONL');
+      console.log("[CRDT Coordinator] Exported to JSONL");
     } catch (error) {
-      console.error('[CRDT Coordinator] JSONL export failed:', error);
+      console.error("[CRDT Coordinator] JSONL export failed:", error);
       throw error;
     }
   }
@@ -798,7 +832,7 @@ export class CRDTCoordinator {
    * Get all agent metadata (for testing/monitoring)
    */
   public getAgentMetadata(): AgentMetadata[] {
-    const metadataMap = this.ydoc.getMap<AgentMetadata>('agentMetadata');
+    const metadataMap = this.ydoc.getMap<AgentMetadata>("agentMetadata");
     const agents: AgentMetadata[] = [];
 
     metadataMap.forEach((metadata) => {
@@ -812,7 +846,7 @@ export class CRDTCoordinator {
    * Get all execution states (for testing/monitoring)
    */
   public getExecutionState(): ExecutionState[] {
-    const execMap = this.ydoc.getMap<ExecutionState>('executionState');
+    const execMap = this.ydoc.getMap<ExecutionState>("executionState");
     const states: ExecutionState[] = [];
 
     execMap.forEach((state) => {
@@ -826,7 +860,7 @@ export class CRDTCoordinator {
    * Shutdown coordinator
    */
   public async shutdown(): Promise<void> {
-    console.log('[CRDT Coordinator] Shutting down...');
+    console.log("[CRDT Coordinator] Shutting down...");
 
     // Clear timers
     if (this.persistTimer) {
@@ -842,7 +876,7 @@ export class CRDTCoordinator {
     await this.persistToDatabase();
 
     // Close all client connections
-    this.clients.forEach(ws => ws.close());
+    this.clients.forEach((ws) => ws.close());
 
     // Wait for all connections to close
     await new Promise<void>((resolve) => {
@@ -866,11 +900,14 @@ export class CRDTCoordinator {
       }, 2000);
     });
 
-    // Close WebSocket server
-    await new Promise<void>((resolve) => {
-      this.wss.close(() => resolve());
-    });
+    // Close WebSocket server (if we own it)
+    // Note: We don't close the server since it's shared with the main HTTP server
+    if (this.wss) {
+      await new Promise<void>((resolve) => {
+        this.wss!.close(() => resolve());
+      });
+    }
 
-    console.log('[CRDT Coordinator] Shutdown complete');
+    console.log("[CRDT Coordinator] Shutdown complete");
   }
 }
