@@ -12,7 +12,8 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { AlertCircle, Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { AlertCircle, Loader2, RefreshCw } from 'lucide-react'
 
 export interface TerminalViewProps {
   /**
@@ -111,6 +112,47 @@ export function TerminalView({
   const [status, setStatus] = useState<ConnectionStatus>('connecting')
   const [errorMessage, setErrorMessage] = useState<string>('')
   const [exitCode, setExitCode] = useState<number | null>(null)
+  const [canRetry, setCanRetry] = useState<boolean>(false)
+  const [retryTrigger, setRetryTrigger] = useState<number>(0)
+  const connectionAttempts = useRef<number>(0)
+  const maxRetries = 3
+
+  // Helper function to categorize errors
+  const categorizeError = (code: number, reason: string): string => {
+    if (code === 1008) {
+      // Policy violation (execution not found, unauthorized, etc.)
+      if (reason.includes('not found')) {
+        return 'Execution not found or has been deleted'
+      } else if (reason.includes('already active')) {
+        return 'A terminal is already connected to this execution'
+      } else if (reason.includes('Unauthorized')) {
+        return 'You do not have permission to access this terminal'
+      }
+      return reason || 'Connection rejected by server'
+    } else if (code === 1011) {
+      return 'Server encountered an internal error'
+    } else if (code === 1006) {
+      return 'Connection lost unexpectedly'
+    }
+    return reason || 'Connection failed'
+  }
+
+  // Retry connection handler
+  const retryConnection = () => {
+    if (connectionAttempts.current >= maxRetries) {
+      setErrorMessage(`Maximum retry attempts (${maxRetries}) reached`)
+      setCanRetry(false)
+      return
+    }
+
+    connectionAttempts.current += 1
+    setStatus('connecting')
+    setErrorMessage('')
+    setCanRetry(false)
+
+    // Trigger reconnection by incrementing the retry trigger
+    setRetryTrigger((prev) => prev + 1)
+  }
 
   useEffect(() => {
     if (!terminalRef.current) return
@@ -246,9 +288,15 @@ export function TerminalView({
         onDisconnect?.()
       } else if (status === 'connecting') {
         // Failed to connect
+        const errorMsg = categorizeError(event.code, event.reason)
         setStatus('error')
-        setErrorMessage(event.reason || 'Failed to connect')
-        onError?.(new Error(event.reason || 'Connection failed'))
+        setErrorMessage(errorMsg)
+
+        // Allow retry for certain errors (not for policy violations like 'not found')
+        const canRetryError = event.code !== 1008 || event.reason.includes('Internal')
+        setCanRetry(canRetryError && connectionAttempts.current < maxRetries)
+
+        onError?.(new Error(errorMsg))
       }
     }
 
@@ -258,7 +306,7 @@ export function TerminalView({
         socket.close()
       }
     }
-  }, [executionId, onConnect, onDisconnect, onError, status])
+  }, [executionId, onConnect, onDisconnect, onError, status, retryTrigger])
 
   return (
     <Card className={`flex flex-col ${className}`}>
@@ -287,12 +335,24 @@ export function TerminalView({
             <>
               <AlertCircle className="h-4 w-4 text-destructive" />
               <span className="text-sm text-destructive">{errorMessage}</span>
+              {canRetry && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={retryConnection}
+                  className="ml-2"
+                >
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  Retry
+                </Button>
+              )}
             </>
           )}
         </div>
 
         <Badge variant="outline" className="text-xs">
           {executionId.slice(0, 8)}
+          {connectionAttempts.current > 0 && ` (attempt ${connectionAttempts.current + 1})`}
         </Badge>
       </div>
 
