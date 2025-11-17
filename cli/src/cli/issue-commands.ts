@@ -289,6 +289,7 @@ export interface IssueUpdateOptions {
   assignee?: string;
   title?: string;
   description?: string;
+  parent?: string;
   archived?: string;
 }
 
@@ -304,6 +305,7 @@ export async function handleIssueUpdate(
     if (options.assignee) updates.assignee = options.assignee;
     if (options.title) updates.title = options.title;
     if (options.description) updates.content = options.description;
+    if (options.parent) updates.parent_id = options.parent;
     if (options.archived !== undefined) {
       updates.archived = options.archived === 'true';
     }

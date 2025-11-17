@@ -274,6 +274,7 @@ issue
   .option("-a, --assignee <assignee>", "New assignee")
   .option("--title <title>", "New title")
   .option("--description <desc>", "New description")
+  .option("--parent <id>", "New parent issue ID")
   .option("--archived <bool>", "Archive status (true/false)")
   .action(async (id, options) => {
     await handleIssueUpdate(getContext(), id, options);

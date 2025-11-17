@@ -12,6 +12,7 @@ import {
   handleIssueClose,
   handleIssueDelete,
 } from "../../../src/cli/issue-commands.js";
+import { getIssue } from "../../../src/operations/issues.js";
 import type Database from "better-sqlite3";
 import * as fs from "fs";
 import * as path from "path";
@@ -305,6 +306,40 @@ describe("Issue CLI Commands", () => {
       const updatedIssue = issues.find((i: any) => i.id === issueId);
       expect(updatedIssue).toBeDefined();
       expect(updatedIssue.content).toBe("New content to export");
+    });
+
+    it("should update issue parent", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+
+      // Create a parent issue
+      await handleIssueCreate(ctx, "Parent Issue", { priority: "2" });
+      const parentIssueId = extractIssueId(consoleLogSpy);
+      consoleLogSpy.mockClear();
+
+      // Create a child issue
+      await handleIssueCreate(ctx, "Child Issue", { priority: "2" });
+      const childIssueId = extractIssueId(consoleLogSpy);
+      consoleLogSpy.mockClear();
+
+      // Update child to set parent
+      const options = {
+        parent: parentIssueId,
+      };
+
+      await handleIssueUpdate(ctx, childIssueId, options);
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        "✓ Updated issue",
+        expect.anything()
+      );
+
+      // Verify parent was set in database
+      const issue = getIssue(db, childIssueId);
+      expect(issue?.parent_id).toBe(parentIssueId);
+
+      // Verify parent appears in output
+      const calls = consoleLogSpy.mock.calls.flat().join(" ");
+      expect(calls).toContain(`parent_id: ${parentIssueId}`);
     });
   });
 
