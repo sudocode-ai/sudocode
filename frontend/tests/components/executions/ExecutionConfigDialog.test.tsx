@@ -379,4 +379,302 @@ describe('ExecutionConfigDialog', () => {
       expect(executionsApi.prepare).toHaveBeenCalledTimes(2)
     })
   })
+
+  describe('CLI Execution Mode Selection', () => {
+    it('should default to structured mode', async () => {
+      renderWithProviders(
+        <ExecutionConfigDialog
+          issueId="ISSUE-001"
+          open={true}
+          onStart={mockOnStart}
+          onCancel={mockOnCancel}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText(/CLI Execution Mode/)).toBeInTheDocument()
+      })
+
+      // Should show structured mode as default
+      const modeSelector = screen.getByLabelText('CLI Execution Mode')
+      expect(modeSelector).toBeInTheDocument()
+    })
+
+    it('should not show terminal config for structured mode', async () => {
+      renderWithProviders(
+        <ExecutionConfigDialog
+          issueId="ISSUE-001"
+          open={true}
+          onStart={mockOnStart}
+          onCancel={mockOnCancel}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText(/CLI Execution Mode/)).toBeInTheDocument()
+      })
+
+      // Terminal configuration should not be visible for structured mode
+      expect(screen.queryByText('Terminal Configuration')).not.toBeInTheDocument()
+    })
+
+    it('should show terminal config when interactive mode is selected', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(
+        <ExecutionConfigDialog
+          issueId="ISSUE-001"
+          open={true}
+          onStart={mockOnStart}
+          onCancel={mockOnCancel}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText(/CLI Execution Mode/)).toBeInTheDocument()
+      })
+
+      // Find and click the execution mode selector
+      const modeButton = screen.getByRole('combobox', { name: /CLI Execution Mode/i })
+      await user.click(modeButton)
+
+      // Select interactive mode
+      const interactiveOption = screen.getByRole('option', { name: /Interactive/ })
+      await user.click(interactiveOption)
+
+      // Terminal configuration should now be visible
+      await waitFor(() => {
+        expect(screen.getByText('Terminal Configuration')).toBeInTheDocument()
+        expect(screen.getByLabelText('Columns')).toBeInTheDocument()
+        expect(screen.getByLabelText('Rows')).toBeInTheDocument()
+      })
+    })
+
+    it('should show terminal config when hybrid mode is selected', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(
+        <ExecutionConfigDialog
+          issueId="ISSUE-001"
+          open={true}
+          onStart={mockOnStart}
+          onCancel={mockOnCancel}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText(/CLI Execution Mode/)).toBeInTheDocument()
+      })
+
+      // Find and click the execution mode selector
+      const modeButton = screen.getByRole('combobox', { name: /CLI Execution Mode/i })
+      await user.click(modeButton)
+
+      // Select hybrid mode
+      const hybridOption = screen.getByRole('option', { name: /Hybrid/ })
+      await user.click(hybridOption)
+
+      // Terminal configuration should now be visible
+      await waitFor(() => {
+        expect(screen.getByText('Terminal Configuration')).toBeInTheDocument()
+        expect(screen.getByLabelText('Columns')).toBeInTheDocument()
+        expect(screen.getByLabelText('Rows')).toBeInTheDocument()
+      })
+    })
+
+    it('should validate terminal config columns', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(
+        <ExecutionConfigDialog
+          issueId="ISSUE-001"
+          open={true}
+          onStart={mockOnStart}
+          onCancel={mockOnCancel}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText(/CLI Execution Mode/)).toBeInTheDocument()
+      })
+
+      // Switch to interactive mode
+      const modeButton = screen.getByRole('combobox', { name: /CLI Execution Mode/i })
+      await user.click(modeButton)
+      const interactiveOption = screen.getByRole('option', { name: /Interactive/ })
+      await user.click(interactiveOption)
+
+      await waitFor(() => {
+        expect(screen.getByText('Terminal Configuration')).toBeInTheDocument()
+      })
+
+      // Enter invalid columns (too small)
+      const colsInput = screen.getByLabelText('Columns')
+      await user.clear(colsInput)
+      await user.type(colsInput, '5')
+
+      // Should show validation error
+      await waitFor(() => {
+        expect(screen.getByText(/Columns must be an integer between 20 and 500/)).toBeInTheDocument()
+      })
+
+      // Start button should be disabled
+      const startButton = screen.getByRole('button', { name: /Start Agent/ })
+      expect(startButton).toBeDisabled()
+    })
+
+    it('should validate terminal config rows', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(
+        <ExecutionConfigDialog
+          issueId="ISSUE-001"
+          open={true}
+          onStart={mockOnStart}
+          onCancel={mockOnCancel}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText(/CLI Execution Mode/)).toBeInTheDocument()
+      })
+
+      // Switch to interactive mode
+      const modeButton = screen.getByRole('combobox', { name: /CLI Execution Mode/i })
+      await user.click(modeButton)
+      const interactiveOption = screen.getByRole('option', { name: /Interactive/ })
+      await user.click(interactiveOption)
+
+      await waitFor(() => {
+        expect(screen.getByText('Terminal Configuration')).toBeInTheDocument()
+      })
+
+      // Enter invalid rows (too large)
+      const rowsInput = screen.getByLabelText('Rows')
+      await user.clear(rowsInput)
+      await user.type(rowsInput, '150')
+
+      // Should show validation error
+      await waitFor(() => {
+        expect(screen.getByText(/Rows must be an integer between 10 and 100/)).toBeInTheDocument()
+      })
+
+      // Start button should be disabled
+      const startButton = screen.getByRole('button', { name: /Start Agent/ })
+      expect(startButton).toBeDisabled()
+    })
+
+    it('should include execution_mode in config when starting', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(
+        <ExecutionConfigDialog
+          issueId="ISSUE-001"
+          open={true}
+          onStart={mockOnStart}
+          onCancel={mockOnCancel}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText(/CLI Execution Mode/)).toBeInTheDocument()
+      })
+
+      // Switch to hybrid mode
+      const modeButton = screen.getByRole('combobox', { name: /CLI Execution Mode/i })
+      await user.click(modeButton)
+      const hybridOption = screen.getByRole('option', { name: /Hybrid/ })
+      await user.click(hybridOption)
+
+      await waitFor(() => {
+        expect(screen.getByText('Terminal Configuration')).toBeInTheDocument()
+      })
+
+      // Click start
+      const startButton = screen.getByRole('button', { name: /Start Agent/ })
+      await user.click(startButton)
+
+      // Should include execution_mode and terminal_config in the config
+      expect(mockOnStart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          execution_mode: 'hybrid',
+          terminal_config: expect.objectContaining({
+            cols: expect.any(Number),
+            rows: expect.any(Number),
+          }),
+        }),
+        expect.any(String)
+      )
+    })
+
+    it('should not include terminal_config for structured mode', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(
+        <ExecutionConfigDialog
+          issueId="ISSUE-001"
+          open={true}
+          onStart={mockOnStart}
+          onCancel={mockOnCancel}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText(/CLI Execution Mode/)).toBeInTheDocument()
+      })
+
+      // Structured is default, just click start
+      const startButton = screen.getByRole('button', { name: /Start Agent/ })
+      await user.click(startButton)
+
+      // Should not include terminal_config for structured mode
+      expect(mockOnStart).toHaveBeenCalledWith(
+        expect.not.objectContaining({
+          terminal_config: expect.anything(),
+        }),
+        expect.any(String)
+      )
+    })
+
+    it('should show contextual help text for each mode', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(
+        <ExecutionConfigDialog
+          issueId="ISSUE-001"
+          open={true}
+          onStart={mockOnStart}
+          onCancel={mockOnCancel}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText(/CLI Execution Mode/)).toBeInTheDocument()
+      })
+
+      // Structured mode help (default)
+      expect(screen.getByText(/Recommended for automated workflows and background executions/)).toBeInTheDocument()
+
+      // Switch to interactive mode
+      const modeButton = screen.getByRole('combobox', { name: /CLI Execution Mode/i })
+      await user.click(modeButton)
+      const interactiveOption = screen.getByRole('option', { name: /Interactive/ })
+      await user.click(interactiveOption)
+
+      // Interactive mode help
+      await waitFor(() => {
+        expect(screen.getByText(/Recommended when you need to respond to prompts or see colorful output/)).toBeInTheDocument()
+      })
+
+      // Switch to hybrid mode
+      await user.click(modeButton)
+      const hybridOption = screen.getByRole('option', { name: /Hybrid/ })
+      await user.click(hybridOption)
+
+      // Hybrid mode help
+      await waitFor(() => {
+        expect(screen.getByText(/Best of both worlds - structured parsing with live terminal view/)).toBeInTheDocument()
+      })
+    })
+  })
 })

@@ -6,16 +6,24 @@
  * - Historical logs API for completed executions (completed, failed, cancelled, stopped)
  *
  * Shows execution progress, metrics, messages, and tool calls.
+ * Supports multiple view modes: structured, terminal, and split (hybrid).
  */
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAgUiStream } from '@/hooks/useAgUiStream'
 import { useExecutionLogs } from '@/hooks/useExecutionLogs'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { AgentTrajectory } from './AgentTrajectory'
-import { AlertCircle, CheckCircle2, Loader2, XCircle } from 'lucide-react'
+import { TerminalView } from './TerminalView'
+import { AlertCircle, CheckCircle2, Loader2, XCircle, Monitor, Code, Columns } from 'lucide-react'
 import type { Execution } from '@/types/execution'
+
+/**
+ * View mode for displaying execution output
+ */
+type ViewMode = 'structured' | 'terminal' | 'split'
 
 export interface ExecutionMonitorProps {
   /**
@@ -79,6 +87,14 @@ export function ExecutionMonitor({
     const activeStatuses = ['preparing', 'pending', 'running', 'paused']
     return activeStatuses.includes(executionProp.status)
   }, [executionProp])
+
+  // View mode state - default based on execution mode
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (!executionProp?.execution_mode) return 'structured'
+    if (executionProp.execution_mode === 'interactive') return 'terminal'
+    if (executionProp.execution_mode === 'hybrid') return 'split'
+    return 'structured'
+  })
 
   // Use SSE streaming for active executions
   const sseStream = useAgUiStream({
@@ -189,6 +205,26 @@ export function ExecutionMonitor({
   ).length
   const messageCount = messages.size
 
+  // Determine available view modes based on execution mode
+  const availableViewModes = useMemo(() => {
+    const executionMode = executionProp?.execution_mode
+    if (!executionMode || executionMode === 'structured') {
+      // Structured mode: only structured view
+      return ['structured'] as ViewMode[]
+    } else if (executionMode === 'interactive') {
+      // Interactive mode: only terminal view
+      return ['terminal'] as ViewMode[]
+    } else {
+      // Hybrid mode: all views available
+      return ['structured', 'terminal', 'split'] as ViewMode[]
+    }
+  }, [executionProp?.execution_mode])
+
+  // Check if terminal is available for this execution
+  const hasTerminal = useMemo(() => {
+    return executionProp?.terminal_enabled === true
+  }, [executionProp?.terminal_enabled])
+
   // Render status badge
   const renderStatusBadge = () => {
     if (connectionStatus === 'connecting') {
@@ -294,38 +330,161 @@ export function ExecutionMonitor({
             </div>
           </div>
         )}
-      </div>
 
-      {/* Main: Agent Trajectory */}
-      <div className="flex-1 overflow-auto px-6 py-4">
-        {/* Error display */}
-        {(error || execution.error) && (
-          <div className="rounded-md bg-destructive/10 border border-destructive/20 p-4 mb-4">
-            <div className="flex items-start gap-2">
-              <XCircle className="h-5 w-5 text-destructive mt-0.5" />
-              <div className="flex-1">
-                <h4 className="font-semibold text-destructive">Error</h4>
-                <p className="text-sm text-destructive/90 mt-1">
-                  {execution.error || error?.message}
-                </p>
-              </div>
+        {/* View Mode Switcher */}
+        {availableViewModes.length > 1 && (
+          <div className="mt-3 flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">View:</span>
+            <div className="inline-flex rounded-md shadow-sm" role="group">
+              <Button
+                variant={viewMode === 'structured' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setViewMode('structured')}
+                disabled={!availableViewModes.includes('structured')}
+                className="rounded-r-none"
+              >
+                <Code className="h-3 w-3 mr-1" />
+                Structured
+              </Button>
+              <Button
+                variant={viewMode === 'terminal' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setViewMode('terminal')}
+                disabled={!availableViewModes.includes('terminal') || !hasTerminal}
+                className="rounded-none border-l-0"
+              >
+                <Monitor className="h-3 w-3 mr-1" />
+                Terminal
+              </Button>
+              <Button
+                variant={viewMode === 'split' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setViewMode('split')}
+                disabled={!availableViewModes.includes('split') || !hasTerminal}
+                className="rounded-l-none border-l-0"
+              >
+                <Columns className="h-3 w-3 mr-1" />
+                Split
+              </Button>
             </div>
           </div>
         )}
+      </div>
 
-        {/* Agent Trajectory - unified messages and tool calls */}
-        {(messageCount > 0 || toolCallCount > 0) && (
-          <AgentTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown />
+      {/* Main: Content based on view mode */}
+      <div className="flex-1 overflow-auto">
+        {/* Structured View */}
+        {viewMode === 'structured' && (
+          <div className="px-6 py-4">
+            {/* Error display */}
+            {(error || execution.error) && (
+              <div className="rounded-md bg-destructive/10 border border-destructive/20 p-4 mb-4">
+                <div className="flex items-start gap-2">
+                  <XCircle className="h-5 w-5 text-destructive mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-destructive">Error</h4>
+                    <p className="text-sm text-destructive/90 mt-1">
+                      {execution.error || error?.message}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Agent Trajectory - unified messages and tool calls */}
+            {(messageCount > 0 || toolCallCount > 0) && (
+              <AgentTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown />
+            )}
+
+            {/* Empty state */}
+            {messageCount === 0 && toolCallCount === 0 && !error && !execution.error && (
+              <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
+                <AlertCircle className="h-8 w-8 mb-2" />
+                <p className="text-sm">No execution activity yet</p>
+                <p className="text-xs mt-1">
+                  {isConnected ? 'Waiting for events...' : 'Connecting...'}
+                </p>
+              </div>
+            )}
+          </div>
         )}
 
-        {/* Empty state */}
-        {messageCount === 0 && toolCallCount === 0 && !error && !execution.error && (
-          <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-            <AlertCircle className="h-8 w-8 mb-2" />
-            <p className="text-sm">No execution activity yet</p>
-            <p className="text-xs mt-1">
-              {isConnected ? 'Waiting for events...' : 'Connecting...'}
-            </p>
+        {/* Terminal View */}
+        {viewMode === 'terminal' && (
+          <div className="h-full">
+            {hasTerminal ? (
+              <TerminalView
+                executionId={executionId}
+                onError={(err) => onError?.(err)}
+                className="h-full border-0"
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center py-8 px-6 text-center text-muted-foreground">
+                <Monitor className="h-8 w-8 mb-2" />
+                <p className="text-sm">Terminal not available</p>
+                <p className="text-xs mt-1">
+                  This execution was not started in interactive or hybrid mode
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Split View (Hybrid) */}
+        {viewMode === 'split' && (
+          <div className="flex h-full">
+            {/* Structured content on the left */}
+            <div className="flex-1 border-r overflow-auto px-6 py-4">
+              {/* Error display */}
+              {(error || execution.error) && (
+                <div className="rounded-md bg-destructive/10 border border-destructive/20 p-4 mb-4">
+                  <div className="flex items-start gap-2">
+                    <XCircle className="h-5 w-5 text-destructive mt-0.5" />
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-destructive">Error</h4>
+                      <p className="text-sm text-destructive/90 mt-1">
+                        {execution.error || error?.message}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Agent Trajectory */}
+              {(messageCount > 0 || toolCallCount > 0) && (
+                <AgentTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown />
+              )}
+
+              {/* Empty state */}
+              {messageCount === 0 && toolCallCount === 0 && !error && !execution.error && (
+                <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
+                  <AlertCircle className="h-8 w-8 mb-2" />
+                  <p className="text-sm">No execution activity yet</p>
+                  <p className="text-xs mt-1">
+                    {isConnected ? 'Waiting for events...' : 'Connecting...'}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Terminal on the right */}
+            <div className="flex-1 overflow-hidden">
+              {hasTerminal ? (
+                <TerminalView
+                  executionId={executionId}
+                  onError={(err) => onError?.(err)}
+                  className="h-full border-0"
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full px-6 text-center text-muted-foreground">
+                  <Monitor className="h-8 w-8 mb-2" />
+                  <p className="text-sm">Terminal not available</p>
+                  <p className="text-xs mt-1">
+                    This execution was not started in hybrid mode
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

@@ -21,9 +21,12 @@ import { executionsApi } from '@/lib/api'
 import type {
   ExecutionConfig,
   ExecutionPrepareResult,
-  ExecutionMode,
+  WorktreeMode,
+  CLIExecutionMode,
   CleanupMode,
+  TerminalConfig,
 } from '@/types/execution'
+import { getDefaultTerminalConfig, requiresTerminal, validateTerminalConfig } from '@/types/execution'
 import { AlertCircle, Info } from 'lucide-react'
 
 interface ExecutionConfigDialogProps {
@@ -45,8 +48,11 @@ export function ExecutionConfigDialog({
   const [config, setConfig] = useState<ExecutionConfig>({
     mode: 'worktree',
     cleanupMode: 'manual',
+    execution_mode: 'structured', // Default to structured mode
+    terminal_config: getDefaultTerminalConfig(),
   })
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [terminalConfigErrors, setTerminalConfigErrors] = useState<string[]>([])
 
   // Load template preview when dialog opens
   useEffect(() => {
@@ -70,16 +76,35 @@ export function ExecutionConfigDialog({
   }, [open, issueId])
 
   const updateConfig = (updates: Partial<ExecutionConfig>) => {
-    setConfig({ ...config, ...updates })
+    const newConfig = { ...config, ...updates }
+    setConfig(newConfig)
+
+    // Validate terminal config if in interactive or hybrid mode
+    if (requiresTerminal(newConfig.execution_mode) && newConfig.terminal_config) {
+      const errors = validateTerminalConfig(newConfig.terminal_config)
+      setTerminalConfigErrors(errors)
+    } else {
+      setTerminalConfigErrors([])
+    }
+  }
+
+  const updateTerminalConfig = (updates: Partial<TerminalConfig>) => {
+    const newTerminalConfig = { ...config.terminal_config!, ...updates }
+    updateConfig({ terminal_config: newTerminalConfig })
   }
 
   const handleStart = () => {
-    onStart(config, prompt)
+    // Strip terminal_config if not needed
+    const finalConfig = { ...config }
+    if (!requiresTerminal(config.execution_mode)) {
+      delete finalConfig.terminal_config
+    }
+    onStart(finalConfig, prompt)
   }
 
   const hasErrors = prepareResult?.errors && prepareResult.errors.length > 0
   const hasWarnings = prepareResult?.warnings && prepareResult.warnings.length > 0
-  const canStart = !loading && !hasErrors && prompt.trim().length > 0
+  const canStart = !loading && !hasErrors && terminalConfigErrors.length === 0 && prompt.trim().length > 0
 
   return (
     <Dialog open={open} onOpenChange={onCancel}>
@@ -146,12 +171,12 @@ export function ExecutionConfigDialog({
                 </div>
               )}
 
-            {/* Execution Mode */}
+            {/* Worktree Mode */}
             <div className="space-y-2">
-              <Label htmlFor="mode">Execution Mode</Label>
+              <Label htmlFor="mode">Worktree Mode</Label>
               <Select
                 value={config.mode}
-                onValueChange={(value) => updateConfig({ mode: value as ExecutionMode })}
+                onValueChange={(value) => updateConfig({ mode: value as WorktreeMode })}
               >
                 <SelectTrigger id="mode">
                   <SelectValue />
@@ -206,6 +231,106 @@ export function ExecutionConfigDialog({
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+
+            {/* CLI Execution Mode */}
+            <div className="space-y-2">
+              <Label htmlFor="execution-mode">CLI Execution Mode</Label>
+              <Select
+                value={config.execution_mode}
+                onValueChange={(value) => updateConfig({ execution_mode: value as CLIExecutionMode })}
+              >
+                <SelectTrigger id="execution-mode">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="structured">
+                    <div className="flex flex-col items-start">
+                      <span className="font-medium">Structured</span>
+                      <span className="text-xs text-muted-foreground">
+                        Automated JSON output with parsed events
+                      </span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="interactive">
+                    <div className="flex flex-col items-start">
+                      <span className="font-medium">Interactive</span>
+                      <span className="text-xs text-muted-foreground">
+                        Full terminal emulation with real-time interaction
+                      </span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="hybrid">
+                    <div className="flex flex-col items-start">
+                      <span className="font-medium">Hybrid</span>
+                      <span className="text-xs text-muted-foreground">
+                        Both terminal view and structured parsing
+                      </span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {config.execution_mode === 'structured' &&
+                  'Recommended for automated workflows and background executions.'}
+                {config.execution_mode === 'interactive' &&
+                  'Recommended when you need to respond to prompts or see colorful output.'}
+                {config.execution_mode === 'hybrid' &&
+                  'Best of both worlds - structured parsing with live terminal view.'}
+              </p>
+            </div>
+
+            {/* Terminal Configuration (only for interactive/hybrid) */}
+            {requiresTerminal(config.execution_mode) && (
+              <div className="space-y-2 rounded-lg border bg-muted/30 p-4">
+                <Label>Terminal Configuration</Label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="cols" className="text-xs text-muted-foreground">
+                      Columns
+                    </Label>
+                    <input
+                      id="cols"
+                      type="number"
+                      min="20"
+                      max="500"
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                      value={config.terminal_config?.cols ?? 80}
+                      onChange={(e) =>
+                        updateTerminalConfig({ cols: parseInt(e.target.value) || 80 })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="rows" className="text-xs text-muted-foreground">
+                      Rows
+                    </Label>
+                    <input
+                      id="rows"
+                      type="number"
+                      min="10"
+                      max="100"
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                      value={config.terminal_config?.rows ?? 24}
+                      onChange={(e) =>
+                        updateTerminalConfig({ rows: parseInt(e.target.value) || 24 })
+                      }
+                    />
+                  </div>
+                </div>
+                {terminalConfigErrors.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {terminalConfigErrors.map((error, i) => (
+                      <p key={i} className="text-xs text-destructive">
+                        {error}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Standard terminal size is 80×24. Adjust for your needs.
+                </p>
               </div>
             )}
 

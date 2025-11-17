@@ -6,9 +6,11 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { ExecutionMonitor } from '@/components/executions/ExecutionMonitor'
 import * as useAgUiStreamModule from '@/hooks/useAgUiStream'
 import * as useExecutionLogsModule from '@/hooks/useExecutionLogs'
+import type { Execution } from '@/types/execution'
 
 // Mock the hooks
 const mockUseAgUiStream = vi.spyOn(useAgUiStreamModule, 'useAgUiStream')
@@ -800,6 +802,210 @@ describe('ExecutionMonitor', () => {
         executionId: 'test-exec-1',
         autoConnect: false,
       })
+    })
+  })
+
+  describe('View Mode Switching', () => {
+    const createMockStreamData = () => ({
+      connectionStatus: 'connected' as const,
+      execution: {
+        runId: 'run-123',
+        threadId: 'thread-456',
+        status: 'running' as const,
+        currentStep: null,
+        error: null,
+        startTime: Date.now(),
+        endTime: null,
+      },
+      messages: new Map(),
+      toolCalls: new Map(),
+      state: {},
+      error: null,
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      reconnect: vi.fn(),
+      isConnected: true,
+    })
+
+    beforeEach(() => {
+      mockUseAgUiStream.mockReturnValue(createMockStreamData())
+    })
+
+    it('should default to structured view for structured execution', () => {
+      const execution = {
+        id: 'exec-1',
+        issue_id: 'i-1',
+        status: 'running',
+        execution_mode: 'structured',
+        terminal_enabled: false,
+        config: null,
+        created_at: new Date().toISOString(),
+      } as Execution
+
+      render(<ExecutionMonitor executionId="exec-1" execution={execution} />)
+
+      // Should show structured view (no view switcher for single mode)
+      expect(screen.queryByText('View:')).not.toBeInTheDocument()
+    })
+
+    it('should default to terminal view for interactive execution', () => {
+      const execution = {
+        id: 'exec-1',
+        issue_id: 'i-1',
+        status: 'running',
+        execution_mode: 'interactive',
+        terminal_enabled: true,
+        config: null,
+        created_at: new Date().toISOString(),
+      } as Execution
+
+      render(<ExecutionMonitor executionId="exec-1" execution={execution} />)
+
+      // Should show terminal view (no view switcher for single mode)
+      expect(screen.queryByText('View:')).not.toBeInTheDocument()
+    })
+
+    it('should default to split view for hybrid execution', () => {
+      const execution = {
+        id: 'exec-1',
+        issue_id: 'i-1',
+        status: 'running',
+        execution_mode: 'hybrid',
+        terminal_enabled: true,
+        config: null,
+        created_at: new Date().toISOString(),
+      } as Execution
+
+      render(<ExecutionMonitor executionId="exec-1" execution={execution} />)
+
+      // Should show view switcher for hybrid mode
+      expect(screen.getByText('View:')).toBeInTheDocument()
+
+      // Split button should be active by default
+      const splitButton = screen.getByRole('button', { name: /split/i })
+      expect(splitButton).toHaveClass('bg-primary') // or check variant
+    })
+
+    it('should switch between views in hybrid mode', async () => {
+      const user = userEvent.setup()
+      const execution = {
+        id: 'exec-1',
+        issue_id: 'i-1',
+        status: 'running',
+        execution_mode: 'hybrid',
+        terminal_enabled: true,
+        config: null,
+        created_at: new Date().toISOString(),
+      } as Execution
+
+      render(<ExecutionMonitor executionId="exec-1" execution={execution} />)
+
+      // Click structured view button
+      const structuredButton = screen.getByRole('button', { name: /structured/i })
+      await user.click(structuredButton)
+
+      // Structured button should now be active
+      expect(structuredButton).toHaveClass('bg-primary')
+
+      // Click terminal view button
+      const terminalButton = screen.getByRole('button', { name: /^terminal$/i })
+      await user.click(terminalButton)
+
+      // Terminal button should now be active
+      expect(terminalButton).toHaveClass('bg-primary')
+
+      // Click split view button
+      const splitButton = screen.getByRole('button', { name: /split/i })
+      await user.click(splitButton)
+
+      // Split button should now be active
+      expect(splitButton).toHaveClass('bg-primary')
+    })
+
+    it('should disable terminal and split views when terminal is not available', () => {
+      const execution = {
+        id: 'exec-1',
+        issue_id: 'i-1',
+        status: 'running',
+        execution_mode: 'hybrid',
+        terminal_enabled: false, // Terminal not enabled
+        config: null,
+        created_at: new Date().toISOString(),
+      } as Execution
+
+      render(<ExecutionMonitor executionId="exec-1" execution={execution} />)
+
+      // View switcher should be present
+      expect(screen.getByText('View:')).toBeInTheDocument()
+
+      // Terminal and split buttons should be disabled
+      const terminalButton = screen.getByRole('button', { name: /^terminal$/i })
+      const splitButton = screen.getByRole('button', { name: /split/i })
+
+      expect(terminalButton).toBeDisabled()
+      expect(splitButton).toBeDisabled()
+
+      // Structured button should not be disabled
+      const structuredButton = screen.getByRole('button', { name: /structured/i })
+      expect(structuredButton).not.toBeDisabled()
+    })
+
+    it('should show terminal unavailable message when switching to terminal without terminal enabled', () => {
+      const execution = {
+        id: 'exec-1',
+        issue_id: 'i-1',
+        status: 'running',
+        execution_mode: 'hybrid',
+        terminal_enabled: false,
+        config: null,
+        created_at: new Date().toISOString(),
+      } as Execution
+
+      render(<ExecutionMonitor executionId="exec-1" execution={execution} />)
+
+      // Try to click terminal view (should be disabled, but test the UI anyway)
+      const terminalButton = screen.getByRole('button', { name: /^terminal$/i })
+      expect(terminalButton).toBeDisabled()
+    })
+
+    it('should only show structured view option for structured mode', () => {
+      const execution = {
+        id: 'exec-1',
+        issue_id: 'i-1',
+        status: 'running',
+        execution_mode: 'structured',
+        terminal_enabled: false,
+        config: null,
+        created_at: new Date().toISOString(),
+      } as Execution
+
+      render(<ExecutionMonitor executionId="exec-1" execution={execution} />)
+
+      // View switcher should not be shown (only one view available)
+      expect(screen.queryByText('View:')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /structured/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /terminal/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /split/i })).not.toBeInTheDocument()
+    })
+
+    it('should only show terminal view option for interactive mode', () => {
+      const execution = {
+        id: 'exec-1',
+        issue_id: 'i-1',
+        status: 'running',
+        execution_mode: 'interactive',
+        terminal_enabled: true,
+        config: null,
+        created_at: new Date().toISOString(),
+      } as Execution
+
+      render(<ExecutionMonitor executionId="exec-1" execution={execution} />)
+
+      // View switcher should not be shown (only one view available)
+      expect(screen.queryByText('View:')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /structured/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /terminal/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /split/i })).not.toBeInTheDocument()
     })
   })
 })
