@@ -9,6 +9,7 @@ import { AlignedFeedbackPanel } from '@/components/specs/AlignedFeedbackPanel'
 import { AddFeedbackDialog } from '@/components/specs/AddFeedbackDialog'
 import { useFeedbackPositions } from '@/hooks/useFeedbackPositions'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
@@ -28,6 +29,7 @@ import {
   Signal,
   FileText,
   Code2,
+  GitBranch,
 } from 'lucide-react'
 import type { IssueFeedback, Relationship, EntityType, RelationshipType } from '@/types/api'
 import { relationshipsApi } from '@/lib/api'
@@ -444,7 +446,22 @@ export default function SpecDetailPage() {
               {/* Spec ID and Title */}
               <div className="space-y-2 pb-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-sm text-muted-foreground">{spec.id}</span>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="spec" className="font-mono">
+                      {spec.id}
+                    </Badge>
+                    {spec.parent_id && (
+                      <>
+                        <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-sm text-muted-foreground">Parent: </span>
+                        <button onClick={() => navigate(`/specs/${spec.parent_id}`)}>
+                          <Badge variant="spec" className="cursor-pointer hover:opacity-80">
+                            {spec.parent_id}
+                          </Badge>
+                        </button>
+                      </>
+                    )}
+                  </div>
                   <div className="text-xs italic text-muted-foreground">
                     {isUpdating
                       ? 'Saving...'

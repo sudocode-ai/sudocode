@@ -228,10 +228,20 @@ export function IssuePanel({
       const isInSelectContent = clickedElement.closest('[data-radix-select-content]')
       const isInSelectViewport = clickedElement.closest('[data-radix-select-viewport]')
       // Check for dialog overlay (the backdrop behind the dialog)
-      const isDialogOverlay = clickedElement.hasAttribute('data-dialog-overlay') ||
-                              clickedElement.closest('[data-dialog-overlay]')
+      const isDialogOverlay =
+        clickedElement.hasAttribute('data-dialog-overlay') ||
+        clickedElement.closest('[data-dialog-overlay]')
 
-      if (isInDialog || isInAlertDialog || isInDropdown || isInPopover || isDialogOverlay || isInSelectContent || isInSelectViewport) return
+      if (
+        isInDialog ||
+        isInAlertDialog ||
+        isInDropdown ||
+        isInPopover ||
+        isDialogOverlay ||
+        isInSelectContent ||
+        isInSelectViewport
+      )
+        return
 
       // Don't close if clicking on TipTap/ProseMirror elements
       // TipTap can render menus, tooltips, and other UI in portals
@@ -514,9 +524,22 @@ export function IssuePanel({
             {/* Issue ID and Title */}
             <div className="space-y-2 pb-3">
               <div className="flex items-center justify-between">
-                <Badge variant="issue" className="font-mono">
-                  {issue.id}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="issue" className="font-mono">
+                    {issue.id}
+                  </Badge>
+                  {issue.parent_id && (
+                    <>
+                      <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Parent: </span>
+                      <button onClick={() => navigate(`/issues/${issue.parent_id}`)}>
+                        <Badge variant="issue" className="cursor-pointer hover:opacity-80">
+                          {issue.parent_id}
+                        </Badge>
+                      </button>
+                    </>
+                  )}
+                </div>
                 {onUpdate && (
                   <div className="text-xs italic text-muted-foreground">
                     {isUpdating
@@ -579,14 +602,6 @@ export function IssuePanel({
                   </SelectContent>
                 </Select>
               </div>
-
-              {/* Parent */}
-              {issue.parent_id && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <GitBranch className="h-4 w-4" />
-                  <span>{issue.parent_id}</span>
-                </div>
-              )}
 
               {/* Timestamp */}
               <div className="ml-auto text-xs text-muted-foreground">

@@ -271,7 +271,7 @@ export class SudocodeMCPServer {
                     "related",
                   ],
                   description:
-                    "Relationship type:\n• 'implements' - issue implements a spec (core workflow, e.g., i-abc implements s-xyz)\n• 'blocks' - from_id must complete before to_id can start (execution ordering, affects 'ready' command)\n• 'parent-child' - hierarchical organization (epics → subtasks, system specs → component specs)\n• 'depends-on' - general dependency without blocking semantics\n• 'discovered-from' - new issue found during work on another issue (provenance tracking)\n• 'references' - soft reference for context\n• 'related' - general relationship",
+                    "Relationship type:\n• 'implements' - issue implements a spec (core workflow, e.g., i-abc implements s-xyz)\n• 'blocks' - from_id must complete before to_id can start (execution ordering, affects 'ready' command)\n• 'depends-on' - general dependency without blocking semantics\n• 'discovered-from' - new issue found during work on another issue (provenance tracking)\n• 'references' - soft reference for context\n• 'related' - general relationship",
                 },
               },
               required: ["from_id", "to_id"],
