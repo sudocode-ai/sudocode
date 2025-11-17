@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSpecs } from '@/hooks/useSpecs'
+import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
 import { SpecList } from '@/components/specs/SpecList'
 import { SpecEditor } from '@/components/specs/SpecEditor'
 import { Button } from '@/components/ui/button'
@@ -13,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Archive, Plus, Search } from 'lucide-react'
+import { Archive, Plus, Search, GitBranch } from 'lucide-react'
 import type { Spec } from '@/types/api'
 
 type SortOption = 'priority' | 'newest' | 'last-updated'
@@ -22,6 +23,7 @@ const SORT_STORAGE_KEY = 'sudocode:specs:sortOption'
 
 export default function SpecsPage() {
   const { specs, isLoading } = useSpecs()
+  const { data: repoInfo } = useRepositoryInfo()
   const [showEditor, setShowEditor] = useState(false)
   const [filterText, setFilterText] = useState('')
   const [sortOption, setSortOption] = useState<SortOption>(() => {
@@ -105,9 +107,18 @@ export default function SpecsPage() {
     <div className="flex h-screen flex-col">
       {/* Header */}
       <div className="flex items-center justify-between border-b bg-background p-4">
-        <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-bold">Specs</h1>
-          <Badge variant="secondary">{specs.length}</Badge>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold">Specs</h1>
+            <Badge variant="secondary">{specs.length}</Badge>
+          </div>
+          {repoInfo && (
+            <div className="flex items-center gap-2 pl-3 text-sm text-muted-foreground">
+              <span className="font-medium">{repoInfo.name}</span>
+              <GitBranch className="h-3.5 w-3.5" />
+              <span>{repoInfo.branch}</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">

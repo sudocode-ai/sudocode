@@ -16,6 +16,13 @@ vi.mock('@/lib/api', () => ({
     getById: vi.fn(),
     getFeedback: vi.fn(),
   },
+  repositoryApi: {
+    getInfo: vi.fn().mockResolvedValue({
+      name: 'test-repo',
+      branch: 'main',
+      path: '/test/path',
+    }),
+  },
 }))
 
 // Mock WebSocket

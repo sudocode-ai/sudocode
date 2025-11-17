@@ -21,6 +21,15 @@ export interface ApiResponse<T> {
 }
 
 /**
+ * Repository info types
+ */
+export interface RepositoryInfo {
+  name: string
+  branch: string
+  path: string
+}
+
+/**
  * Issue API types
  */
 export interface CreateIssueRequest {

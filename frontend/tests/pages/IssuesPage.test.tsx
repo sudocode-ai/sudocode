@@ -18,6 +18,23 @@ vi.mock('@/lib/api', () => ({
     create: vi.fn(),
     delete: vi.fn(),
   },
+  repositoryApi: {
+    getInfo: vi.fn().mockResolvedValue({
+      name: 'test-repo',
+      branch: 'main',
+      path: '/test/path',
+    }),
+  },
+  executionsApi: {
+    getById: vi.fn(),
+    list: vi.fn().mockResolvedValue([]),
+    prepare: vi.fn(),
+    create: vi.fn(),
+    cancel: vi.fn(),
+    createFollowUp: vi.fn(),
+    worktreeExists: vi.fn(),
+    deleteWorktree: vi.fn(),
+  },
 }))
 
 // Mock WebSocket - must mock before importing WebSocketProvider in test-utils
