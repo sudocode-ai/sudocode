@@ -124,7 +124,7 @@ program
   .version(VERSION)
   .option("--db <path>", "Database path (default: auto-discover)")
   .option("--json", "Output in JSON format")
-  .hook("preAction", (thisCommand) => {
+  .hook("preAction", (thisCommand: Command) => {
     // Get global options
     const opts = thisCommand.optsWithGlobals();
     if (opts.db) dbPath = opts.db;
@@ -535,7 +535,7 @@ program
   });
 
 // Parse arguments
-program.parse();
+program.parse(process.argv);
 
 // Check for updates (non-blocking)
 // Skip for update and server commands (server handles it explicitly)
