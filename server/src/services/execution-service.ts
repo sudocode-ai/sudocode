@@ -18,11 +18,13 @@ import {
 } from "./executions.js";
 import { getDefaultTemplate, getTemplateById } from "./prompt-templates.js";
 import { randomUUID } from "crypto";
-import { SimpleProcessManager } from "../execution/process/simple-manager.js";
-import { SimpleExecutionEngine } from "../execution/engine/simple-engine.js";
-import { ResilientExecutor } from "../execution/resilience/resilient-executor.js";
-import { LinearOrchestrator } from "../execution/workflow/linear-orchestrator.js";
-import type { WorkflowDefinition } from "../execution/workflow/types.js";
+import {
+  SimpleProcessManager,
+  SimpleExecutionEngine,
+  ResilientExecutor,
+  LinearOrchestrator,
+  type WorkflowDefinition,
+} from "agent-execution-engine";
 import { createAgUiSystem } from "../execution/output/ag-ui-integration.js";
 import type { AgUiEventAdapter } from "../execution/output/ag-ui-adapter.js";
 import type { TransportManager } from "../execution/transport/transport-manager.js";
@@ -331,18 +333,20 @@ export class ExecutionService {
     };
 
     // 4. Create execution engine stack
-    const processManager = new SimpleProcessManager({
-      executablePath: "claude",
-      args: [
-        "--print",
-        "--output-format",
-        "stream-json",
-        "--dangerously-skip-permissions",
-      ],
-    });
+    const processManager = new SimpleProcessManager();
 
     let engine = new SimpleExecutionEngine(processManager, {
       maxConcurrent: 1, // One task at a time for issue execution
+      defaultProcessConfig: {
+        executablePath: "claude",
+        args: [
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--verbose",
+          "--dangerously-skip-permissions",
+        ],
+      },
     });
 
     let executor = new ResilientExecutor(engine);
@@ -362,6 +366,16 @@ export class ExecutionService {
 
       engine = new SimpleExecutionEngine(processManager, {
         maxConcurrent: 1,
+        defaultProcessConfig: {
+          executablePath: "claude",
+          args: [
+            "--print",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--dangerously-skip-permissions",
+          ],
+        },
         // TODO: Factor out this logic for DRY principles.
         onOutput: (data, type) => {
           if (type === "stdout") {
@@ -615,18 +629,20 @@ Please continue working on this issue, taking into account the feedback above.`;
     };
 
     // 6. Create execution engine stack
-    const processManager = new SimpleProcessManager({
-      executablePath: "claude",
-      args: [
-        "--print",
-        "--output-format",
-        "stream-json",
-        "--dangerously-skip-permissions",
-      ],
-    });
+    const processManager = new SimpleProcessManager();
 
     let engine = new SimpleExecutionEngine(processManager, {
       maxConcurrent: 1,
+      defaultProcessConfig: {
+        executablePath: "claude",
+        args: [
+          "--print",
+          "--output-format",
+          "stream-json",
+          "--verbose",
+          "--dangerously-skip-permissions",
+        ],
+      },
     });
 
     let executor = new ResilientExecutor(engine);
@@ -644,6 +660,16 @@ Please continue working on this issue, taking into account the feedback above.`;
 
       engine = new SimpleExecutionEngine(processManager, {
         maxConcurrent: 1,
+        defaultProcessConfig: {
+          executablePath: "claude",
+          args: [
+            "--print",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--dangerously-skip-permissions",
+          ],
+        },
         // TODO: Factor out this logic for DRY principles.
         onOutput: (data, type) => {
           if (type === "stdout") {

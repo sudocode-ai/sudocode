@@ -38,21 +38,32 @@ export function AgentConfigPanel({ issueId, onStart, disabled = false }: AgentCo
 
   // Load template preview on mount
   useEffect(() => {
+    let isMounted = true
+
     const loadPreview = async () => {
+      if (!isMounted) return
       setLoading(true)
       try {
         const result = await executionsApi.prepare(issueId)
-        setPrepareResult(result)
-        setPrompt(result.renderedPrompt)
-        setConfig({ ...config, ...result.defaultConfig })
+        if (isMounted) {
+          setPrepareResult(result)
+          setPrompt(result.renderedPrompt)
+          setConfig({ ...config, ...result.defaultConfig })
+        }
       } catch (error) {
         console.error('Failed to prepare execution:', error)
       } finally {
-        setLoading(false)
+        if (isMounted) {
+          setLoading(false)
+        }
       }
     }
 
     loadPreview()
+
+    return () => {
+      isMounted = false
+    }
   }, [issueId])
 
   // Auto-resize textarea based on content

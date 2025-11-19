@@ -170,7 +170,10 @@ export function IssuePanel({
 
   // Fetch relationships when issue changes
   useEffect(() => {
+    let isMounted = true
+
     const fetchRelationships = async () => {
+      if (!isMounted) return
       setIsLoadingRelationships(true)
       try {
         const data = await relationshipsApi.getForEntity(issue.id, 'issue')
@@ -185,16 +188,26 @@ export function IssuePanel({
           relationshipsArray = [...(grouped.outgoing || []), ...(grouped.incoming || [])]
         }
 
-        setRelationships(relationshipsArray)
+        if (isMounted) {
+          setRelationships(relationshipsArray)
+        }
       } catch (error) {
         console.error('Failed to fetch relationships:', error)
-        setRelationships([])
+        if (isMounted) {
+          setRelationships([])
+        }
       } finally {
-        setIsLoadingRelationships(false)
+        if (isMounted) {
+          setIsLoadingRelationships(false)
+        }
       }
     }
 
     fetchRelationships()
+
+    return () => {
+      isMounted = false
+    }
   }, [issue.id])
 
   // Handle click outside to close panel
