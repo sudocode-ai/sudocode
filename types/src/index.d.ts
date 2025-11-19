@@ -276,3 +276,58 @@ export interface Execution {
 
 // Export CRDT types
 export * from './crdt.js';
+
+// CRDT History types (inline to avoid build issues)
+export interface CRDTUpdateRecord {
+  id: string;
+  entityType: 'issue' | 'spec' | 'feedback';
+  entityId: string;
+  updateData: Uint8Array;
+  clientId: string;
+  timestamp: number;
+  contentSnapshot?: {
+    title: string;
+    content: string;
+    [key: string]: any;
+  };
+}
+
+export interface UpdateHistory {
+  updates: CRDTUpdateRecord[];
+  entityIndex: Map<string, number[]>;
+  clientIndex: Map<string, number[]>;
+  oldestTimestamp: number;
+  newestTimestamp: number;
+}
+
+export interface HistoryMetadata {
+  oldestTimestamp: number;
+  newestTimestamp: number;
+  totalUpdates: number;
+  retentionWindowMs: number;
+  entitiesTracked: number;
+  memoryUsageMB: number;
+}
+
+export interface VersionInfo {
+  timestamp: number;
+  title: string;
+  content: string;
+  lastModifiedBy: string;
+  [key: string]: any;
+}
+
+export interface DiffChunk {
+  type: 'added' | 'removed' | 'unchanged';
+  value: string;
+  count: number;
+}
+
+export interface BlameInfo {
+  lines: Array<{
+    lineNumber: number;
+    author: string;
+    timestamp: number;
+    line: string;
+  }>;
+}

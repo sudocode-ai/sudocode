@@ -26,6 +26,8 @@ import type {
   Spec,
   IssueFeedback,
   IssueStatus,
+  CRDTUpdateRecord,
+  UpdateHistory,
 } from "@sudocode-ai/types";
 
 /**
@@ -152,6 +154,10 @@ export interface CRDTCoordinatorConfig {
   persistInterval?: number;
   gcInterval?: number;
   path?: string; // WebSocket path, defaults to '/ws/crdt'
+
+  // History configuration
+  historyRetentionMs?: number; // Default: 4 hours (14400000ms)
+  historyCleanupIntervalMs?: number; // Default: 15 minutes (900000ms)
 }
 
 /**
@@ -167,12 +173,31 @@ export class CRDTCoordinator {
   private gcTimer?: NodeJS.Timeout;
   public lastPersistTime: number = 0;
 
+  // History tracking
+  private updateHistory: UpdateHistory;
+  private retentionWindowMs: number;
+  private cleanupIntervalMs: number;
+  private cleanupTimer?: NodeJS.Timeout;
+
   constructor(
     private db: Database.Database,
     private config: CRDTCoordinatorConfig = {}
   ) {
     this.ydoc = new Y.Doc();
     this.clients = new Map();
+
+    // Initialize history tracking
+    this.updateHistory = {
+      updates: [],
+      entityIndex: new Map(),
+      clientIndex: new Map(),
+      oldestTimestamp: Date.now(),
+      newestTimestamp: Date.now()
+    };
+
+    // Default: 4 hour retention window, 15 minute cleanup interval
+    this.retentionWindowMs = config.historyRetentionMs || 4 * 60 * 60 * 1000;
+    this.cleanupIntervalMs = config.historyCleanupIntervalMs || 15 * 60 * 1000;
   }
 
   /**
@@ -208,8 +233,10 @@ export class CRDTCoordinator {
     this.setupPersistence();
     this.loadInitialState();
     this.startGarbageCollection();
+    this.startHistoryCleanup();
 
     console.log(`[CRDT Coordinator] Initialized successfully on ${basePath}`);
+    console.log(`[CRDT Coordinator] History retention: ${this.retentionWindowMs}ms (${this.retentionWindowMs / 1000 / 60 / 60}h)`);
   }
 
 
@@ -225,6 +252,11 @@ export class CRDTCoordinator {
 
     // Set up update listener to broadcast local changes to connected clients
     this.ydoc.on('update', (update: Uint8Array, origin: any) => {
+      // Capture update to history (if it came from a client)
+      if (origin && typeof origin === 'string') {
+        this.captureUpdateToHistory(update, origin);
+      }
+
       // Don't broadcast updates that came from clients (they already have them)
       if (origin && typeof origin === 'string') {
         // Origin is a client ID, don't broadcast back to them
@@ -757,6 +789,209 @@ export class CRDTCoordinator {
   }
 
   /**
+   * Start history cleanup timer
+   */
+  private startHistoryCleanup(): void {
+    this.cleanupTimer = setInterval(() => {
+      this.cleanupOldUpdates();
+    }, this.cleanupIntervalMs);
+
+    console.log(
+      `[CRDT History] Cleanup scheduled every ${this.cleanupIntervalMs}ms (retention: ${this.retentionWindowMs}ms)`
+    );
+  }
+
+  /**
+   * Capture CRDT update to in-memory history
+   */
+  private captureUpdateToHistory(update: Uint8Array, clientId: string): void {
+    try {
+      // Decode update to determine which entities changed
+      const changes = this.decodeUpdateChanges(update);
+
+      for (const change of changes) {
+        // Get current state after this update
+        const currentState = this.getEntityState(
+          change.entityType,
+          change.entityId
+        );
+
+        // Create update record
+        const record: CRDTUpdateRecord = {
+          id: this.generateUpdateId(),
+          entityType: change.entityType,
+          entityId: change.entityId,
+          updateData: update,
+          clientId,
+          timestamp: Date.now(),
+          contentSnapshot: currentState
+        };
+
+        // Add to history
+        const index = this.updateHistory.updates.length;
+        this.updateHistory.updates.push(record);
+        this.updateHistory.newestTimestamp = record.timestamp;
+
+        // Update indices for fast lookup
+        const entityKey = `${change.entityType}:${change.entityId}`;
+        if (!this.updateHistory.entityIndex.has(entityKey)) {
+          this.updateHistory.entityIndex.set(entityKey, []);
+        }
+        this.updateHistory.entityIndex.get(entityKey)!.push(index);
+
+        if (!this.updateHistory.clientIndex.has(clientId)) {
+          this.updateHistory.clientIndex.set(clientId, []);
+        }
+        this.updateHistory.clientIndex.get(clientId)!.push(index);
+      }
+    } catch (error) {
+      console.error('[CRDT History] Failed to capture update:', error);
+    }
+  }
+
+  /**
+   * Decode Y.js update to determine which entities changed
+   */
+  private decodeUpdateChanges(update: Uint8Array): Array<{
+    entityType: 'issue' | 'spec' | 'feedback';
+    entityId: string;
+  }> {
+    const changes: Array<{
+      entityType: 'issue' | 'spec' | 'feedback';
+      entityId: string;
+    }> = [];
+
+    try {
+      // Apply update to temporary doc to see what changed
+      const tempDoc = new Y.Doc();
+      Y.applyUpdate(tempDoc, update);
+
+      // Check each map type for changes
+      const mapTypes: Array<{
+        type: 'issue' | 'spec' | 'feedback';
+        mapName: string;
+      }> = [
+        { type: 'issue', mapName: 'issueUpdates' },
+        { type: 'spec', mapName: 'specUpdates' },
+        { type: 'feedback', mapName: 'feedbackUpdates' }
+      ];
+
+      for (const { type, mapName } of mapTypes) {
+        const map = tempDoc.getMap(mapName);
+        map.forEach((_, key) => {
+          changes.push({ entityType: type, entityId: key });
+        });
+      }
+    } catch (error) {
+      console.error('[CRDT History] Failed to decode update:', error);
+    }
+
+    return changes;
+  }
+
+  /**
+   * Get current entity state from CRDT
+   */
+  private getEntityState(
+    entityType: 'issue' | 'spec' | 'feedback',
+    entityId: string
+  ): any {
+    const mapName = `${entityType}Updates`;
+    const map = this.ydoc.getMap(mapName);
+    return map.get(entityId);
+  }
+
+  /**
+   * Generate unique update ID
+   */
+  private generateUpdateId(): string {
+    return `upd-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Clean up old updates from history
+   */
+  private cleanupOldUpdates(): void {
+    const cutoffTime = Date.now() - this.retentionWindowMs;
+    const initialCount = this.updateHistory.updates.length;
+
+    // Find first index to keep
+    let keepFromIndex = 0;
+    for (let i = 0; i < this.updateHistory.updates.length; i++) {
+      if (this.updateHistory.updates[i].timestamp >= cutoffTime) {
+        keepFromIndex = i;
+        break;
+      }
+    }
+
+    if (keepFromIndex === 0) {
+      // No cleanup needed
+      return;
+    }
+
+    // Remove old updates
+    this.updateHistory.updates.splice(0, keepFromIndex);
+    const removedCount = initialCount - this.updateHistory.updates.length;
+
+    // Rebuild indices (subtract keepFromIndex from all indices)
+    const newEntityIndex = new Map<string, number[]>();
+    this.updateHistory.entityIndex.forEach((indices: number[], key: string) => {
+      const newIndices = indices
+        .map((i: number) => i - keepFromIndex)
+        .filter((i: number) => i >= 0);
+      if (newIndices.length > 0) {
+        newEntityIndex.set(key, newIndices);
+      }
+    });
+    this.updateHistory.entityIndex = newEntityIndex;
+
+    const newClientIndex = new Map<string, number[]>();
+    this.updateHistory.clientIndex.forEach((indices: number[], key: string) => {
+      const newIndices = indices
+        .map((i: number) => i - keepFromIndex)
+        .filter((i: number) => i >= 0);
+      if (newIndices.length > 0) {
+        newClientIndex.set(key, newIndices);
+      }
+    });
+    this.updateHistory.clientIndex = newClientIndex;
+
+    // Update oldest timestamp
+    if (this.updateHistory.updates.length > 0) {
+      this.updateHistory.oldestTimestamp = this.updateHistory.updates[0].timestamp;
+    }
+
+    console.log(
+      `[CRDT History] Cleaned up ${removedCount} old updates ` +
+      `(retained ${this.updateHistory.updates.length} updates from last ${this.retentionWindowMs}ms)`
+    );
+
+    // Log memory usage
+    this.logMemoryUsage();
+  }
+
+  /**
+   * Log memory usage of history
+   */
+  private logMemoryUsage(): void {
+    const updateCount = this.updateHistory.updates.length;
+
+    // Estimate memory usage
+    let totalBytes = 0;
+    for (const update of this.updateHistory.updates) {
+      totalBytes += update.updateData.byteLength;
+      if (update.contentSnapshot) {
+        totalBytes += JSON.stringify(update.contentSnapshot).length * 2; // UTF-16
+      }
+    }
+
+    const mb = (totalBytes / 1024 / 1024).toFixed(2);
+    console.log(
+      `[CRDT History] Memory usage: ${updateCount} updates, ~${mb} MB`
+    );
+  }
+
+  /**
    * Public API: Update issue
    */
   public updateIssue(issueId: string, updates: Partial<IssueState>): void {
@@ -908,6 +1143,15 @@ export class CRDTCoordinator {
       clearInterval(this.gcTimer);
       this.gcTimer = undefined;
     }
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = undefined;
+    }
+
+    // Clear history
+    this.updateHistory.updates = [];
+    this.updateHistory.entityIndex.clear();
+    this.updateHistory.clientIndex.clear();
 
     // Final persistence
     await this.persistToDatabase();
