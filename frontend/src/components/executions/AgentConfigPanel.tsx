@@ -47,7 +47,7 @@ export function AgentConfigPanel({ issueId, onStart, disabled = false }: AgentCo
         const result = await executionsApi.prepare(issueId)
         if (isMounted) {
           setPrepareResult(result)
-          setPrompt(result.renderedPrompt)
+          // setPrompt(result.renderedPrompt)
           setConfig({ ...config, ...result.defaultConfig })
         }
       } catch (error) {
@@ -129,7 +129,8 @@ export function AgentConfigPanel({ issueId, onStart, disabled = false }: AgentCo
         )}
 
         {/* Related Context Info */}
-        {prepareResult &&
+        {/* TODO: Re-enable */}
+        {/* {prepareResult &&
           ((prepareResult.relatedSpecs?.length ?? 0) > 0 ||
             (prepareResult.relatedFeedback?.length ?? 0) > 0) && (
             <div className="rounded-lg border bg-muted/50 p-2 text-xs text-muted-foreground">
@@ -142,7 +143,7 @@ export function AgentConfigPanel({ issueId, onStart, disabled = false }: AgentCo
                 <span>{prepareResult.relatedFeedback.length} feedback item(s)</span>
               )}
             </div>
-          )}
+          )} */}
 
         {/* Prompt Input */}
         <div>
