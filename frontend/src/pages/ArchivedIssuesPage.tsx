@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useIssues } from '@/hooks/useIssues'
+import { useIssues, useIssueFeedback } from '@/hooks/useIssues'
+import { useFeedback } from '@/hooks/useFeedback'
 import type { Issue, IssueStatus } from '@/types/api'
 import IssueKanbanBoard from '@/components/issues/IssueKanbanBoard'
 import IssuePanel from '@/components/issues/IssuePanel'
@@ -23,6 +24,8 @@ export default function ArchivedIssuesPage() {
     isDeleting,
   } = useIssues(true)
   const [selectedIssue, setSelectedIssue] = useState<Issue | undefined>()
+  const { feedback } = useIssueFeedback(selectedIssue?.id || '')
+  const { updateFeedback, deleteFeedback } = useFeedback(selectedIssue?.id || '')
   const [filterText, setFilterText] = useState('')
 
   // Group issues by status
@@ -109,6 +112,26 @@ export default function ArchivedIssuesPage() {
       unarchiveIssue(id)
     },
     [unarchiveIssue]
+  )
+
+  const handleFeedbackDismiss = useCallback(
+    (feedbackId: string) => {
+      const fb = feedback.find((f) => f.id === feedbackId)
+      if (fb) {
+        updateFeedback({
+          id: feedbackId,
+          data: { dismissed: !fb.dismissed },
+        })
+      }
+    },
+    [feedback, updateFeedback]
+  )
+
+  const handleFeedbackDelete = useCallback(
+    (feedbackId: string) => {
+      deleteFeedback(feedbackId)
+    },
+    [deleteFeedback]
   )
 
   if (isLoading) {
@@ -243,6 +266,9 @@ export default function ArchivedIssuesPage() {
                 onUnarchive={handleUnarchiveIssue}
                 isUpdating={isUpdating}
                 isDeleting={isDeleting}
+                feedback={feedback}
+                onDismissFeedback={handleFeedbackDismiss}
+                onDeleteFeedback={handleFeedbackDelete}
               />
             </Panel>
           </PanelGroup>

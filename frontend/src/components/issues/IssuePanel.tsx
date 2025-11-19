@@ -32,12 +32,13 @@ import { DeleteIssueDialog } from './DeleteIssueDialog'
 import { RelationshipList } from '@/components/relationships/RelationshipList'
 import { RelationshipForm } from '@/components/relationships/RelationshipForm'
 import { relationshipsApi, executionsApi } from '@/lib/api'
-import { ExecutionHistory } from '@/components/executions/ExecutionHistory'
 import { AgentConfigPanel } from '@/components/executions/AgentConfigPanel'
-import type { ExecutionConfig } from '@/types/execution'
+import type { ExecutionConfig, Execution } from '@/types/execution'
 import { useRelationshipMutations } from '@/hooks/useRelationshipMutations'
 import { TiptapEditor } from '@/components/specs/TiptapEditor'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { ActivityTimeline } from './ActivityTimeline'
+import type { IssueFeedback } from '@/types/api'
 
 const VIEW_MODE_STORAGE_KEY = 'sudocode:details:viewMode'
 const DESCRIPTION_COLLAPSED_STORAGE_KEY = 'sudocode:issue:descriptionCollapsed'
@@ -56,6 +57,9 @@ interface IssuePanelProps {
   viewMode?: 'formatted' | 'markdown'
   onViewModeChange?: (mode: 'formatted' | 'markdown') => void
   showViewToggleInline?: boolean
+  feedback?: IssueFeedback[]
+  onDismissFeedback?: (id: string) => void
+  onDeleteFeedback?: (id: string) => void
 }
 
 const STATUS_OPTIONS: { value: IssueStatus; label: string }[] = [
@@ -88,6 +92,9 @@ export function IssuePanel({
   viewMode: externalViewMode,
   onViewModeChange,
   showViewToggleInline = true,
+  feedback = [],
+  onDismissFeedback,
+  onDeleteFeedback,
 }: IssuePanelProps) {
   const navigate = useNavigate()
   const [title, setTitle] = useState(issue.title)
@@ -118,6 +125,8 @@ export function IssuePanel({
   const [showAddRelationship, setShowAddRelationship] = useState(false)
   const [isLoadingRelationships, setIsLoadingRelationships] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
+  const [executions, setExecutions] = useState<Execution[]>([])
+  const [isLoadingExecutions, setIsLoadingExecutions] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -204,6 +213,37 @@ export function IssuePanel({
     }
 
     fetchRelationships()
+
+    return () => {
+      isMounted = false
+    }
+  }, [issue.id])
+
+  // Fetch executions when issue changes
+  useEffect(() => {
+    let isMounted = true
+
+    const fetchExecutions = async () => {
+      if (!isMounted) return
+      setIsLoadingExecutions(true)
+      try {
+        const data = await executionsApi.list(issue.id)
+        if (isMounted) {
+          setExecutions(data)
+        }
+      } catch (error) {
+        console.error('Failed to fetch executions:', error)
+        if (isMounted) {
+          setExecutions([])
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingExecutions(false)
+        }
+      }
+    }
+
+    fetchExecutions()
 
     return () => {
       isMounted = false
@@ -766,8 +806,24 @@ export function IssuePanel({
               </div>
             )}
 
-            {/* Execution History */}
-            <ExecutionHistory issueId={issue.id} />
+            {/* Activity Timeline */}
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium text-muted-foreground">Activity</h3>
+              {isLoadingExecutions ? (
+                <div className="py-4 text-center text-sm text-muted-foreground">
+                  Loading activity...
+                </div>
+              ) : (
+                <ActivityTimeline
+                  items={[
+                    ...feedback.map((f) => ({ ...f, itemType: 'feedback' as const })),
+                    ...executions.map((e) => ({ ...e, itemType: 'execution' as const })),
+                  ]}
+                  onDismissFeedback={onDismissFeedback}
+                  onDeleteFeedback={onDeleteFeedback}
+                />
+              )}
+            </div>
           </div>
         </div>
 

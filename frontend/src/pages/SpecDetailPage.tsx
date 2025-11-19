@@ -360,7 +360,7 @@ export default function SpecDetailPage() {
       <div className="flex items-center justify-between border-b bg-background p-2 sm:p-4">
         <div className="flex items-center gap-2 sm:gap-4">
           <Button variant="ghost" size="sm" onClick={() => navigate('/specs')}>
-            ← <span className="hidden sm:inline">Back to Specs</span>
+            ← <span className="ml-1 hidden sm:inline">Back to Specs</span>
           </Button>
         </div>
         <div className="flex items-center gap-1 sm:gap-2">
