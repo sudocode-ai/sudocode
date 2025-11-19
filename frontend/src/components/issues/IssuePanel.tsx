@@ -472,7 +472,7 @@ export function IssuePanel({
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex h-full flex-col" ref={panelRef}>
+      <div className="flex h-full w-full flex-col" ref={panelRef}>
         {/* Top Navigation Bar */}
         {!hideTopControls && (
           <div className="flex items-center justify-between px-6 py-3">
@@ -572,8 +572,8 @@ export function IssuePanel({
         )}
 
         {/* Content */}
-        <div className={`flex-1 overflow-y-auto px-6 ${hideTopControls ? 'py-4' : 'py-3'}`}>
-          <div className="space-y-4">
+        <div className={`flex-1 w-full overflow-y-auto ${hideTopControls ? 'py-4' : 'py-3'}`}>
+          <div className="mx-auto w-full max-w-7xl space-y-4 px-6">
             {/* Issue ID and Title */}
             <div className="space-y-2 pb-3">
               <div className="flex items-center justify-between">

@@ -131,9 +131,11 @@ export function ActivityTimeline({
               <Badge className={`text-xs ${getFeedbackTypeColor(feedback.feedback_type)}`}>
                 {feedback.feedback_type}
               </Badge>
-              <Badge variant="outline" className="font-mono text-xs">
-                {feedback.from_id}
-              </Badge>
+              <button onClick={() => navigate(`/issues/${feedback.from_id}`)}>
+                <Badge variant="issue" className="cursor-pointer font-mono text-xs hover:opacity-80">
+                  {feedback.from_id}
+                </Badge>
+              </button>
               {/* Agent info if present */}
               {feedback.agent ? (
                 <span className="text-xs text-muted-foreground">

@@ -155,24 +155,20 @@ export default function IssueDetailPage() {
       </div>
 
       {/* Main content */}
-      <div className="flex flex-1 overflow-auto xl:justify-center">
-        <div className="flex w-full justify-center">
-          <div className="w-full max-w-5xl">
-            <IssuePanel
-              issue={issue}
-              onUpdate={handleUpdate}
-              isUpdating={isUpdating}
-              isDeleting={isDeleting}
-              hideTopControls={true}
-              viewMode={viewMode}
-              onViewModeChange={setViewMode}
-              showViewToggleInline={false}
-              feedback={feedback}
-              onDismissFeedback={handleFeedbackDismiss}
-              onDeleteFeedback={handleFeedbackDelete}
-            />
-          </div>
-        </div>
+      <div className="flex flex-1 overflow-hidden">
+        <IssuePanel
+            issue={issue}
+            onUpdate={handleUpdate}
+            isUpdating={isUpdating}
+            isDeleting={isDeleting}
+            hideTopControls={true}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            showViewToggleInline={false}
+            feedback={feedback}
+            onDismissFeedback={handleFeedbackDismiss}
+            onDeleteFeedback={handleFeedbackDelete}
+          />
       </div>
 
       {/* Delete Dialog */}
