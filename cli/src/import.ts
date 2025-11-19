@@ -516,7 +516,9 @@ function syncIssueFeedback(
       const toId = (fb as any).to_id || (fb as any).spec_id;
 
       if (!fromId || !toId) {
-        console.warn(`Skipping feedback ${fb.id}: missing from_id/to_id or issue_id/spec_id`);
+        console.warn(
+          `Skipping feedback ${fb.id}: missing from_id/to_id or issue_id/spec_id`
+        );
         continue;
       }
 
@@ -578,7 +580,6 @@ export function importIssues(
         closed_at: issue.closed_at,
       });
       setTags(db, issue.id, "issue", issue.tags || []);
-      syncIssueFeedback(db, issue.id, issue.feedback);
       added++;
     }
   }
@@ -618,7 +619,6 @@ export function importIssues(
         closed_at: issue.closed_at,
       });
       setTags(db, issue.id, "issue", issue.tags || []);
-      syncIssueFeedback(db, issue.id, issue.feedback);
       updated++;
     }
   }
@@ -646,6 +646,15 @@ export function importIssues(
   for (const id of changes.deleted) {
     deleteIssue(db, id);
     deleted++;
+  }
+
+  // Sync feedback after all issues/specs are created/updated
+  // This ensures that feedback references to other issues are valid
+  for (const id of [...changes.added, ...changes.updated]) {
+    const issue = issues.find((i) => i.id === id);
+    if (issue) {
+      syncIssueFeedback(db, issue.id, issue.feedback);
+    }
   }
 
   return { added, updated, deleted };
@@ -744,7 +753,8 @@ export async function importFromJSONL(
           for (const otherIssue of incomingIssues) {
             if (otherIssue.feedback) {
               for (const fb of otherIssue.feedback) {
-                const feedbackFromId = (fb as any).from_id || (fb as any).issue_id;
+                const feedbackFromId =
+                  (fb as any).from_id || (fb as any).issue_id;
                 if (feedbackFromId === oldId) {
                   // Update both old and new field names for safety
                   if ((fb as any).from_id) (fb as any).from_id = newId;

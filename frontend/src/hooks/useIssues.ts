@@ -141,3 +141,52 @@ export function useUpdateIssueStatus() {
     },
   })
 }
+
+/**
+ * Hook to fetch feedback for a specific issue
+ */
+export function useIssueFeedback(issueId: string) {
+  const queryClient = useQueryClient()
+  const { connected, subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
+
+  const query = useQuery({
+    queryKey: ['feedback', issueId],
+    queryFn: () => issuesApi.getFeedback(issueId),
+    enabled: !!issueId,
+  })
+
+  // Message handler for feedback updates
+  const handleMessage = useCallback((message: WebSocketMessage) => {
+    if (
+      message.type === 'feedback_created' ||
+      message.type === 'feedback_updated' ||
+      message.type === 'feedback_deleted'
+    ) {
+      queryClient.invalidateQueries({ queryKey: ['feedback', issueId] })
+    }
+  }, [issueId, queryClient])
+
+  // Subscribe to all updates (including feedback) when connected
+  useEffect(() => {
+    if (!issueId) return
+
+    const handlerId = `useIssueFeedback-${issueId}`
+    addMessageHandler(handlerId, handleMessage)
+
+    if (connected) {
+      subscribe('all')
+    }
+
+    return () => {
+      removeMessageHandler(handlerId)
+      unsubscribe('all')
+    }
+  }, [connected, issueId, subscribe, unsubscribe, addMessageHandler, removeMessageHandler, handleMessage])
+
+  return {
+    feedback: query.data ?? [],
+    isLoading: query.isLoading,
+    isError: query.isError,
+    error: query.error,
+  }
+}
