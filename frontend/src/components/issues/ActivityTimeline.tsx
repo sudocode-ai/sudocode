@@ -115,7 +115,7 @@ export function ActivityTimeline({ items, className = '' }: ActivityTimelineProp
     return (
       <div key={feedback.id} className="group relative">
         <Card
-          className={`rounded-r-md border-l-4 border-l-blue-700/50 bg-blue-50/50 p-4 transition-opacity dark:bg-blue-950/20 ${feedback.dismissed ? 'opacity-50' : ''}`}
+          className={`flex flex-col gap-2 rounded-r-md border-l-4 border-l-blue-700/50 bg-blue-50/50 p-4 transition-opacity dark:bg-blue-950/20 ${feedback.dismissed ? 'opacity-50' : ''}`}
         >
           {/* Header */}
           <div className="mb-2 flex items-start justify-between gap-2">
@@ -158,13 +158,15 @@ export function ActivityTimeline({ items, className = '' }: ActivityTimelineProp
                 const anchor = JSON.parse(feedback.anchor)
                 if (anchor.line_number || anchor.text_snippet) {
                   return (
-                    <div className="mt-2 rounded bg-muted/50 p-2 text-xs text-muted-foreground">
-                      {anchor.line_number && <span>Line {anchor.line_number}: </span>}
-                      {anchor.text_snippet && (
-                        <span className="font-mono italic">
-                          &ldquo;{anchor.text_snippet}&rdquo;
-                        </span>
-                      )}
+                    <div>
+                      <span className="rounded bg-muted/50 p-2 text-xs text-muted-foreground">
+                        {anchor.line_number && <span>Line {anchor.line_number}: </span>}
+                        {anchor.text_snippet && (
+                          <span className="font-mono italic">
+                            &ldquo;{anchor.text_snippet}&rdquo;
+                          </span>
+                        )}
+                      </span>
                     </div>
                   )
                 }
@@ -174,7 +176,7 @@ export function ActivityTimeline({ items, className = '' }: ActivityTimelineProp
               return null
             })()}
           {/* Content */}
-          <div className="prose prose-sm dark:prose-invert mt-2 max-w-none">
+          <div className="prose prose-sm dark:prose-invert max-w-none">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
@@ -258,7 +260,7 @@ export function ActivityTimeline({ items, className = '' }: ActivityTimelineProp
     return (
       <div key={execution.id}>
         <Card
-          className="cursor-pointer rounded-r-md border-l-4 border-l-green-500 bg-green-50/50 p-4 transition-colors hover:bg-green-100/50 dark:bg-green-950/20 dark:hover:bg-green-950/30"
+          className="cursor-pointer rounded-r-md border-l-4 border-l-green-500/50 bg-green-50/50 p-4 transition-colors hover:bg-green-100/50 dark:bg-green-950/20 dark:hover:bg-green-950/50"
           onClick={() => navigate(`/executions/${execution.id}`)}
         >
           {/* Header */}

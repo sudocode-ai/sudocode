@@ -38,7 +38,8 @@ import { useRelationshipMutations } from '@/hooks/useRelationshipMutations'
 import { TiptapEditor } from '@/components/specs/TiptapEditor'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ActivityTimeline } from './ActivityTimeline'
-import type { IssueFeedback } from '@/types/api'
+import type { IssueFeedback, WebSocketMessage } from '@/types/api'
+import { useWebSocketContext } from '@/contexts/WebSocketContext'
 
 const VIEW_MODE_STORAGE_KEY = 'sudocode:details:viewMode'
 const DESCRIPTION_COLLAPSED_STORAGE_KEY = 'sudocode:issue:descriptionCollapsed'
@@ -122,9 +123,11 @@ export function IssuePanel({
   const [isLoadingRelationships, setIsLoadingRelationships] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
   const [executions, setExecutions] = useState<Execution[]>([])
-  const [isLoadingExecutions, setIsLoadingExecutions] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // WebSocket for real-time updates
+  const { subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
 
   // Relationship mutations with cache invalidation
   const { createRelationshipAsync, deleteRelationshipAsync } = useRelationshipMutations()
@@ -215,13 +218,12 @@ export function IssuePanel({
     }
   }, [issue.id])
 
-  // Fetch executions when issue changes
+  // Fetch executions when issue changes and listen for WebSocket updates
   useEffect(() => {
     let isMounted = true
 
     const fetchExecutions = async () => {
       if (!isMounted) return
-      setIsLoadingExecutions(true)
       try {
         const data = await executionsApi.list(issue.id)
         if (isMounted) {
@@ -232,19 +234,37 @@ export function IssuePanel({
         if (isMounted) {
           setExecutions([])
         }
-      } finally {
-        if (isMounted) {
-          setIsLoadingExecutions(false)
-        }
       }
     }
 
+    // Initial fetch
     fetchExecutions()
+
+    // Subscribe to WebSocket updates for execution events
+    // Execution updates are broadcast to issue subscribers (dual broadcast)
+    const handlerId = `issue-panel-executions-${issue.id}`
+    const handleMessage = (message: WebSocketMessage) => {
+      if (
+        message.type === 'execution_created' ||
+        message.type === 'execution_updated' ||
+        message.type === 'execution_status_changed' ||
+        message.type === 'execution_deleted'
+      ) {
+        // Re-fetch executions when execution events occur
+        fetchExecutions()
+      }
+    }
+
+    // Subscribe to issue updates
+    subscribe('issue', issue.id)
+    addMessageHandler(handlerId, handleMessage)
 
     return () => {
       isMounted = false
+      removeMessageHandler(handlerId)
+      unsubscribe('issue', issue.id)
     }
-  }, [issue.id])
+  }, [issue.id, subscribe, unsubscribe, addMessageHandler, removeMessageHandler])
 
   // Handle click outside to close panel
   useEffect(() => {
@@ -454,12 +474,12 @@ export function IssuePanel({
 
   const handleStartExecution = async (config: ExecutionConfig, prompt: string) => {
     try {
-      const execution = await executionsApi.create(issue.id, {
+      await executionsApi.create(issue.id, {
         config,
         prompt,
       })
-      // Navigate to execution view
-      navigate(`/executions/${execution.id}`)
+      // Execution will appear in activity timeline via WebSocket
+      // No navigation needed - stay on issue page
     } catch (error) {
       console.error('Failed to create execution:', error)
       // TODO: Show error toast/alert to user
@@ -805,18 +825,12 @@ export function IssuePanel({
             {/* Activity Timeline */}
             <div className="space-y-2">
               <h3 className="text-sm font-medium text-muted-foreground">Activity</h3>
-              {isLoadingExecutions ? (
-                <div className="py-4 text-center text-sm text-muted-foreground">
-                  Loading activity...
-                </div>
-              ) : (
-                <ActivityTimeline
-                  items={[
-                    ...feedback.map((f) => ({ ...f, itemType: 'feedback' as const })),
-                    ...executions.map((e) => ({ ...e, itemType: 'execution' as const })),
-                  ]}
-                />
-              )}
+              <ActivityTimeline
+                items={[
+                  ...feedback.map((f) => ({ ...f, itemType: 'feedback' as const })),
+                  ...executions.map((e) => ({ ...e, itemType: 'execution' as const })),
+                ]}
+              />
             </div>
           </div>
         </div>
