@@ -271,7 +271,7 @@ export class SudocodeMCPServer {
                     "related",
                   ],
                   description:
-                    "Relationship type:\n• 'implements' - issue implements a spec (core workflow, e.g., i-abc implements s-xyz)\n• 'blocks' - from_id must complete before to_id can start (execution ordering, affects 'ready' command)\n• 'depends-on' - general dependency without blocking semantics\n• 'discovered-from' - new issue found during work on another issue (provenance tracking)\n• 'references' - soft reference for context\n• 'related' - general relationship",
+                    "Relationship type:\n• 'implements' - issue implements a spec (core workflow, e.g., i-abc implements s-xyz)\n• 'blocks' - from_id must complete before to_id can start (execution ordering, affects 'ready' command)\n• 'depends-on' - dependency relationship where to_id must complete before from_id can start (execution ordering, affects 'ready' command)\n• 'discovered-from' - new issue found during work on another issue (provenance tracking)\n• 'references' - soft reference for context\n• 'related' - general relationship",
                 },
               },
               required: ["from_id", "to_id"],
@@ -360,7 +360,7 @@ export class SudocodeMCPServer {
                   type: "string",
                   enum: ["comment", "suggestion", "request"],
                   description:
-                    "Feedback type:\n• 'comment' - informational feedback (most common)\n• 'suggestion' - target needs updating based on learnings\n• 'request' - need clarification or target is unclear/incomplete",
+                    "Feedback type:\n• 'comment' - informational feedback about implementation (most common for completed work)\n• 'suggestion' - spec needs updating based on implementation learnings\n• 'request' - need clarification or spec is unclear/incomplete",
                 },
                 line: {
                   type: "number",
