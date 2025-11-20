@@ -4,7 +4,7 @@
 
 import Database from "better-sqlite3";
 import * as schema from "@sudocode-ai/types/schema";
-import { runMigrations } from "./migrations.js";
+import { runMigrations } from "@sudocode-ai/types/migrations";
 
 export interface DatabaseOptions {
   path: string;
@@ -27,6 +27,10 @@ export function initDatabase(options: DatabaseOptions): Database.Database {
     db.exec(table);
   }
 
+  // Run any pending migrations BEFORE creating indexes
+  // (migrations might alter table schemas that indexes depend on)
+  runMigrations(db);
+
   // Create all indexes
   for (const indexes of schema.ALL_INDEXES) {
     db.exec(indexes);
@@ -36,9 +40,6 @@ export function initDatabase(options: DatabaseOptions): Database.Database {
   for (const view of schema.ALL_VIEWS) {
     db.exec(view);
   }
-
-  // Run any pending migrations
-  runMigrations(db);
 
   return db;
 }

@@ -6,14 +6,8 @@
 import Database from "better-sqlite3";
 import * as path from "path";
 import * as fs from "fs";
-import {
-  EXECUTIONS_TABLE,
-  EXECUTIONS_INDEXES,
-  PROMPT_TEMPLATES_TABLE,
-  PROMPT_TEMPLATES_INDEXES,
-  EXECUTION_LOGS_TABLE,
-  EXECUTION_LOGS_INDEXES,
-} from "@sudocode-ai/types/schema";
+import * as schema from "@sudocode-ai/types/schema";
+import { runMigrations } from "@sudocode-ai/types/migrations";
 import { initializeDefaultTemplates } from "./prompt-templates.js";
 
 /**
@@ -47,21 +41,27 @@ export function initDatabase(config: DatabaseConfig): Database.Database {
     return db;
   }
 
-  // Configure database
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
-  db.pragma("synchronous = NORMAL");
-  db.pragma("temp_store = MEMORY");
+  // Apply database configuration
+  db.exec(schema.DB_CONFIG);
 
-  // Create server-specific tables
-  db.exec(EXECUTIONS_TABLE);
-  db.exec(PROMPT_TEMPLATES_TABLE);
-  db.exec(EXECUTION_LOGS_TABLE);
+  // Create all tables (CLI + server-specific)
+  for (const table of schema.ALL_TABLES) {
+    db.exec(table);
+  }
 
-  // Create indexes
-  db.exec(EXECUTIONS_INDEXES);
-  db.exec(PROMPT_TEMPLATES_INDEXES);
-  db.exec(EXECUTION_LOGS_INDEXES);
+  // Run any pending migrations BEFORE creating indexes
+  // (migrations might alter table schemas that indexes depend on)
+  runMigrations(db);
+
+  // Create all indexes (CLI + server-specific)
+  for (const indexes of schema.ALL_INDEXES) {
+    db.exec(indexes);
+  }
+
+  // Create all views
+  for (const view of schema.ALL_VIEWS) {
+    db.exec(view);
+  }
 
   // Initialize default prompt templates
   initializeDefaultTemplates(db);

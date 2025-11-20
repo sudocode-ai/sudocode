@@ -20,7 +20,7 @@ describe('Feedback Tools', () => {
 
       await feedbackTools.addFeedback(mockClient, {
         issue_id: 'sg-1',
-        spec_id: 'sg-spec-1',
+        to_id: 'sg-spec-1',
         content: 'This is unclear',
       });
 
@@ -35,7 +35,7 @@ describe('Feedback Tools', () => {
 
       await feedbackTools.addFeedback(mockClient, {
         issue_id: 'sg-1',
-        spec_id: 'sg-spec-1',
+        to_id: 'sg-spec-1',
         content: 'Needs clarification',
         type: 'comment',
       });
@@ -52,7 +52,7 @@ describe('Feedback Tools', () => {
 
       await feedbackTools.addFeedback(mockClient, {
         issue_id: 'sg-1',
-        spec_id: 'sg-spec-1',
+        to_id: 'sg-spec-1',
         content: 'Fix this line',
         line: 42,
       });
@@ -69,7 +69,7 @@ describe('Feedback Tools', () => {
 
       await feedbackTools.addFeedback(mockClient, {
         issue_id: 'sg-1',
-        spec_id: 'sg-spec-1',
+        to_id: 'sg-spec-1',
         content: 'This text needs updating',
         text: 'original text',
       });
@@ -86,7 +86,7 @@ describe('Feedback Tools', () => {
 
       await feedbackTools.addFeedback(mockClient, {
         issue_id: 'sg-1',
-        spec_id: 'sg-spec-1',
+        to_id: 'sg-spec-1',
         content: 'Needs clarification',
         type: 'comment',
         line: 42,

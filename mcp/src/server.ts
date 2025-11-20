@@ -337,40 +337,40 @@ export class SudocodeMCPServer {
           {
             name: "add_feedback",
             description:
-              "**REQUIRED when closing issues that implement specs.** Document implementation results by providing feedback on the spec. This closes the feedback loop between requirements (specs) and implementation (issues). Include what was accomplished, design decisions made, challenges encountered, and evidence of completion. When possible, anchor feedback to a specific and relevant location in the spec.",
+              "**REQUIRED when closing issues that implement specs.** Document implementation results by providing feedback on a spec or issue. Entity type is automatically inferred from ID prefix (s-xxxx = spec, i-xxxx = issue). Supports:\n• **Issue→Spec**: Document implementation results when completing a spec (most common)\n• **Issue→Issue**: Leave notes for downstream issues, document unforeseen circumstances, or coordinate between related issues\n\nInclude what was accomplished, design decisions made, challenges encountered, and evidence of completion. When possible, anchor feedback to specific locations.",
             inputSchema: {
               type: "object",
               properties: {
                 issue_id: {
                   type: "string",
                   description:
-                    "Issue ID that's providing the feedback (format 'i-xxxx'). This is the issue that implemented the spec and is now documenting results.",
+                    "Issue ID that's providing the feedback (format 'i-xxxx'). This is the issue documenting results or leaving notes.",
                 },
-                spec_id: {
+                to_id: {
                   type: "string",
                   description:
-                    "Spec ID receiving the feedback (format 's-xxxx'). This is the spec that was implemented.",
+                    "Target ID receiving the feedback (format 's-xxxx' for spec or 'i-xxxx' for issue). Entity type is automatically inferred from the ID prefix.",
                 },
                 content: {
                   type: "string",
                   description:
-                    "Feedback content in markdown. Document: (1) Requirements met from spec, (2) Design decisions made during implementation, (3) Challenges encountered and how resolved, (4) Evidence of completion (e.g., 'All tests passing: npm test'). Be specific and actionable.",
+                    "Feedback content in markdown. For specs: (1) Requirements met, (2) Design decisions, (3) Challenges and resolutions, (4) Evidence of completion. For issues: Document discoveries, blockers, coordination notes, or information for downstream work.",
                 },
                 type: {
                   type: "string",
                   enum: ["comment", "suggestion", "request"],
                   description:
-                    "Feedback type:\n• 'comment' - informational feedback about implementation (most common for completed work)\n• 'suggestion' - spec needs updating based on implementation learnings\n• 'request' - need clarification or spec is unclear/incomplete",
+                    "Feedback type:\n• 'comment' - informational feedback (most common)\n• 'suggestion' - target needs updating based on learnings\n• 'request' - need clarification or target is unclear/incomplete",
                 },
                 line: {
                   type: "number",
                   description:
-                    "Optional: Line number in spec markdown to anchor feedback. Use either 'line' OR 'text', not both. Anchoring connects feedback to specific spec sections. Omit both for general feedback on entire spec.",
+                    "Optional: Line number in target markdown to anchor feedback. Use either 'line' OR 'text', not both. Anchoring connects feedback to specific sections.",
                 },
                 text: {
                   type: "string",
                   description:
-                    "Optional: Exact text substring from spec to anchor feedback. Use either 'line' OR 'text', not both. Must match EXACTLY (case-sensitive, whitespace-sensitive). Use show_spec first to copy exact text. Anchoring makes feedback contextual and trackable.",
+                    "Optional: Exact text substring from target to anchor feedback. Use either 'line' OR 'text', not both. Must match EXACTLY (case-sensitive, whitespace-sensitive). Use show_spec/show_issue first to copy exact text.",
                 },
                 // TODO: Re-enable when the agent data structure is more developed.
                 // agent: {
@@ -378,6 +378,7 @@ export class SudocodeMCPServer {
                 //   description: "Agent providing feedback",
                 // },
               },
+              required: ["issue_id", "to_id"],
             },
           },
         ],

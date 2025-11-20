@@ -5,6 +5,7 @@
 import type Database from "better-sqlite3";
 import type { Execution, AgentType, ExecutionStatus } from "@sudocode-ai/types";
 import { randomUUID } from "crypto";
+import { broadcastExecutionUpdate } from "./websocket.js";
 
 /**
  * Input for creating a new execution
@@ -100,6 +101,14 @@ export function createExecution(
   if (!execution) {
     throw new Error(`Failed to create execution with id ${id}`);
   }
+
+  // Broadcast to execution subscribers AND issue subscribers (dual broadcast)
+  broadcastExecutionUpdate(
+    execution.id,
+    "created",
+    execution,
+    execution.issue_id || undefined
+  );
 
   return execution;
 }
@@ -220,6 +229,19 @@ export function updateExecution(
     throw new Error(`Failed to update execution ${id}`);
   }
 
+  // Determine action type based on what changed
+  const statusChanged = input.status !== undefined &&
+                        execution.status !== input.status;
+  const action = statusChanged ? "status_changed" : "updated";
+
+  // Broadcast to both execution and issue subscribers
+  broadcastExecutionUpdate(
+    updated.id,
+    action,
+    updated,
+    updated.issue_id || undefined
+  );
+
   return updated;
 }
 
@@ -227,11 +249,25 @@ export function updateExecution(
  * Delete an execution
  */
 export function deleteExecution(db: Database.Database, id: string): boolean {
+  // Get execution before deletion to access issue_id for broadcast
+  const execution = getExecution(db, id);
+
   const stmt = db.prepare(`
     DELETE FROM executions WHERE id = ?
   `);
 
   const result = stmt.run(id);
+
+  // Broadcast deletion if execution existed
+  if (result.changes > 0 && execution) {
+    broadcastExecutionUpdate(
+      id,
+      "deleted",
+      { id },
+      execution.issue_id || undefined
+    );
+  }
+
   return result.changes > 0;
 }
 

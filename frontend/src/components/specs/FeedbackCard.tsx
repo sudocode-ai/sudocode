@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { IssueFeedback, FeedbackType, FeedbackAnchor } from '@/types/api'
 
 interface FeedbackCardProps {
@@ -85,12 +86,13 @@ export function FeedbackCard({
   }
 
   return (
-    <Card
-      className={`relative cursor-pointer rounded-lg border-2 bg-card shadow-sm transition-all hover:border-primary/30 hover:shadow-lg ${feedback.dismissed ? 'opacity-60' : ''} ${className}`}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onClick={onClick}
-    >
+    <TooltipProvider>
+      <Card
+        className={`relative cursor-pointer rounded-lg border-2 bg-card shadow-sm transition-all hover:border-primary/30 hover:shadow-lg ${feedback.dismissed ? 'opacity-60' : ''} ${className}`}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        onClick={onClick}
+      >
       <div className="p-3">
         {/* Header */}
         <div className="mb-2">
@@ -107,10 +109,10 @@ export function FeedbackCard({
                 className="text-xs font-medium text-foreground hover:text-primary hover:underline"
                 onClick={(e) => {
                   e.stopPropagation()
-                  navigate(`/issues/${feedback.issue_id}`)
+                  navigate(`/issues/${feedback.from_id}`)
                 }}
               >
-                {feedback.issue_id}
+                {feedback.from_id}
               </button>
             </div>
 
@@ -121,46 +123,64 @@ export function FeedbackCard({
                 style={{ opacity: isHovered ? 1 : 0 }}
               >
                 {!feedback.dismissed && onDismiss && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDismiss(feedback.id)
-                    }}
-                    title="Dismiss"
-                    className="h-6 w-6 p-0"
-                  >
-                    <Check className="h-3 w-3" />
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onDismiss(feedback.id)
+                        }}
+                        className="h-6 w-6 p-0"
+                      >
+                        <Check className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Dismiss</p>
+                    </TooltipContent>
+                  </Tooltip>
                 )}
                 {feedback.dismissed && onDismiss && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDismiss(feedback.id)
-                    }}
-                    title="Restore"
-                    className="h-6 w-6 p-0"
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onDismiss(feedback.id)
+                        }}
+                        className="h-6 w-6 p-0"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Restore</p>
+                    </TooltipContent>
+                  </Tooltip>
                 )}
                 {onDelete && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDelete(feedback.id)
-                    }}
-                    title="Delete"
-                    className="h-6 w-6 p-0"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onDelete(feedback.id)
+                        }}
+                        className="h-6 w-6 p-0"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Delete</p>
+                    </TooltipContent>
+                  </Tooltip>
                 )}
               </div>
             )}
@@ -257,6 +277,7 @@ export function FeedbackCard({
           </button>
         )}
       </div>
-    </Card>
+      </Card>
+    </TooltipProvider>
   )
 }

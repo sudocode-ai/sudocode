@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useIssues } from '@/hooks/useIssues'
+import { useIssues, useIssueFeedback } from '@/hooks/useIssues'
 import type { Issue, IssueStatus } from '@/types/api'
 import IssueKanbanBoard from '@/components/issues/IssueKanbanBoard'
 import IssuePanel from '@/components/issues/IssuePanel'
@@ -23,6 +23,7 @@ export default function ArchivedIssuesPage() {
     isDeleting,
   } = useIssues(true)
   const [selectedIssue, setSelectedIssue] = useState<Issue | undefined>()
+  const { feedback } = useIssueFeedback(selectedIssue?.id || '')
   const [filterText, setFilterText] = useState('')
 
   // Group issues by status
@@ -194,7 +195,7 @@ export default function ArchivedIssuesPage() {
                 return 66
               })()}
               minSize={30}
-              className="min-w-0 min-h-0 overflow-auto"
+              className="min-h-0 min-w-0 overflow-auto"
             >
               <IssueKanbanBoard
                 groupedIssues={groupedIssues}
@@ -205,12 +206,12 @@ export default function ArchivedIssuesPage() {
             </Panel>
 
             {/* Resize Handle */}
-            <PanelResizeHandle className="relative z-30 w-1 bg-border cursor-col-resize group touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-1 focus-visible:ring-offset-background">
-              <div className="pointer-events-none absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border" />
-              <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1 bg-muted/90 border border-border rounded-full px-1.5 py-3 opacity-70 group-hover:opacity-100 group-focus:opacity-100 transition-opacity shadow-sm">
-                <span className="w-1 h-1 rounded-full bg-muted-foreground" />
-                <span className="w-1 h-1 rounded-full bg-muted-foreground" />
-                <span className="w-1 h-1 rounded-full bg-muted-foreground" />
+            <PanelResizeHandle className="group relative z-30 w-1 cursor-col-resize touch-none bg-border focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-1 focus-visible:ring-offset-background">
+              <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border" />
+              <div className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 rounded-full border border-border bg-muted/90 px-1.5 py-3 opacity-70 shadow-sm transition-opacity group-hover:opacity-100 group-focus:opacity-100">
+                <span className="h-1 w-1 rounded-full bg-muted-foreground" />
+                <span className="h-1 w-1 rounded-full bg-muted-foreground" />
+                <span className="h-1 w-1 rounded-full bg-muted-foreground" />
               </div>
             </PanelResizeHandle>
 
@@ -233,7 +234,7 @@ export default function ArchivedIssuesPage() {
                 return 34
               })()}
               minSize={20}
-              className="min-w-0 min-h-0 overflow-hidden border-l bg-background shadow-lg"
+              className="min-h-0 min-w-0 overflow-hidden border-l bg-background shadow-lg"
             >
               <IssuePanel
                 issue={selectedIssue}
@@ -243,6 +244,7 @@ export default function ArchivedIssuesPage() {
                 onUnarchive={handleUnarchiveIssue}
                 isUpdating={isUpdating}
                 isDeleting={isDeleting}
+                feedback={feedback}
               />
             </Panel>
           </PanelGroup>

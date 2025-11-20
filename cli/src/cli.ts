@@ -367,12 +367,12 @@ program
 
 const feedback = program
   .command("feedback")
-  .description("Manage spec feedback from issues");
+  .description("Manage feedback from issues");
 
 feedback
-  .command("add <issue-id> <spec-id>")
-  .description("Add feedback to a spec from an issue")
-  .option("-l, --line <number>", "Line number in spec")
+  .command("add <issue-id> <target-id>")
+  .description("Add feedback to a target from an issue")
+  .option("-l, --line <number>", "Line number in target to anchor feedback")
   .option("-t, --text <text>", "Text to search for anchor")
   .option(
     "--type <type>",
@@ -381,16 +381,16 @@ feedback
   )
   .option("-c, --content <text>", "Feedback content (required)")
   .option("-a, --agent <name>", "Agent name")
-  .action(async (issueId, specId, options) => {
-    await handleFeedbackAdd(getContext(), issueId, specId, options);
+  .action(async (issueId, targetId, options) => {
+    await handleFeedbackAdd(getContext(), issueId, targetId, options);
   });
 
 feedback
   .command("list")
   .description("List all feedback")
   .option("-i, --issue <id>", "Filter by issue ID")
-  .option("-s, --spec <id>", "Filter by spec ID")
-  .option("-t, --type <type>", "Filter by feedback type")
+  .option("-t, --target <id>", "Filter by target ID")
+  .option("--type <type>", "Filter by feedback type")
   .option(
     "--status <status>",
     "Filter by status (open, acknowledged, resolved, wont_fix)"
@@ -411,8 +411,8 @@ feedback
   .command("dismiss <id>")
   .description("Dismiss feedback")
   .option("-c, --comment <text>", "Optional comment")
-  .action(async (id, options) => {
-    await handleFeedbackDismiss(getContext(), id, options);
+  .action(async (id) => {
+    await handleFeedbackDismiss(getContext(), id);
   });
 
 feedback
@@ -512,8 +512,15 @@ program
   .description("Git merge driver for JSONL files (called automatically by git)")
   .requiredOption("--base <path>", "Base/ancestor version file path")
   .requiredOption("--ours <path>", "Our version file path (HEAD)")
-  .requiredOption("--theirs <path>", "Their version file path (incoming branch)")
-  .option("--marker-size <size>", "Conflict marker size (provided by git)", parseInt)
+  .requiredOption(
+    "--theirs <path>",
+    "Their version file path (incoming branch)"
+  )
+  .option(
+    "--marker-size <size>",
+    "Conflict marker size (provided by git)",
+    parseInt
+  )
   .action(async (options) => {
     // Don't call initDB - this runs during git merge, might not have db access
     await handleMergeDriver(options);
@@ -521,8 +528,13 @@ program
 
 program
   .command("init-merge-driver")
-  .description("Configure git to use sudocode for automatic JSONL merge resolution")
-  .option("--global", "Install globally (all repos) instead of just current repo")
+  .description(
+    "Configure git to use sudocode for automatic JSONL merge resolution"
+  )
+  .option(
+    "--global",
+    "Install globally (all repos) instead of just current repo"
+  )
   .action(async (options) => {
     await handleInitMergeDriver(options);
   });

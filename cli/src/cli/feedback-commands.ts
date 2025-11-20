@@ -3,8 +3,6 @@
  */
 
 import chalk from 'chalk';
-import * as fs from 'fs';
-import * as path from 'path';
 import type Database from 'better-sqlite3';
 import {
   createFeedback,
@@ -19,6 +17,7 @@ import { getIssue } from '../operations/issues.js';
 import { createFeedbackAnchor, createAnchorByText } from '../operations/feedback-anchors.js';
 import { exportToJSONL } from '../export.js';
 import type { FeedbackType } from '../types.js';
+import { getEntityTypeFromId } from '../id-generator.js';
 
 export interface CommandContext {
   db: Database.Database;
@@ -35,32 +34,45 @@ export interface FeedbackAddOptions {
 }
 
 /**
- * Add feedback to a spec from an issue
+ * Add feedback to a spec or issue from an issue
+ * Entity type is automatically inferred from the ID prefix
  */
 export async function handleFeedbackAdd(
   ctx: CommandContext,
   issueId: string,
-  specId: string,
+  toId: string,
   options: FeedbackAddOptions
 ): Promise<void> {
   try {
-    // Validate issue and spec exist
+    // Infer target type from ID
+    const toType = getEntityTypeFromId(toId);
+
+    // Validate issue exists
     const issue = getIssue(ctx.db, issueId);
     if (!issue) {
       console.error(chalk.red(`✗ Issue not found: ${issueId}`));
       process.exit(1);
     }
 
-    const spec = getSpec(ctx.db, specId);
-    if (!spec) {
-      console.error(chalk.red(`✗ Spec not found: ${specId}`));
-      process.exit(1);
+    // Validate target exists and get content
+    let toContent: string;
+    if (toType === 'spec') {
+      const spec = getSpec(ctx.db, toId);
+      if (!spec) {
+        console.error(chalk.red(`✗ Spec not found: ${toId}`));
+        process.exit(1);
+      }
+      toContent = spec.content;
+    } else {
+      const toIssue = getIssue(ctx.db, toId);
+      if (!toIssue) {
+        console.error(chalk.red(`✗ Issue not found: ${toId}`));
+        process.exit(1);
+      }
+      toContent = toIssue.content;
     }
 
-    // Read spec content for anchor creation
-    const specContent = spec.content;
-
-    // Create anchor based on line number or text search
+    // Create anchor based on line number or text search (optional)
     let anchor;
     if (options.line) {
       const lineNumber = parseInt(options.line);
@@ -68,22 +80,20 @@ export async function handleFeedbackAdd(
         console.error(chalk.red('✗ Invalid line number'));
         process.exit(1);
       }
-      anchor = createFeedbackAnchor(specContent, lineNumber);
+      anchor = createFeedbackAnchor(toContent, lineNumber);
     } else if (options.text) {
-      anchor = createAnchorByText(specContent, options.text);
+      anchor = createAnchorByText(toContent, options.text);
       if (!anchor) {
-        console.error(chalk.red(`✗ Text not found in spec: "${options.text}"`));
+        console.error(chalk.red(`✗ Text not found in target: "${options.text}"`));
         process.exit(1);
       }
-    } else {
-      console.error(chalk.red('✗ Either --line or --text must be specified'));
-      process.exit(1);
     }
+    // Note: anchor is now optional - feedback can be general (not anchored)
 
     // Create feedback
     const feedback = createFeedback(ctx.db, {
-      issue_id: issueId,
-      spec_id: specId,
+      from_id: issueId,
+      to_id: toId,
       feedback_type: options.type as FeedbackType,
       content: options.content,
       agent: options.agent || process.env.USER || 'cli',
@@ -97,10 +107,12 @@ export async function handleFeedbackAdd(
       console.log(JSON.stringify(feedback, null, 2));
     } else {
       console.log(chalk.green('✓ Created feedback'), chalk.cyan(feedback.id));
-      console.log(chalk.gray(`  Issue: ${issueId}`));
-      console.log(chalk.gray(`  Spec: ${specId}`));
+      console.log(chalk.gray(`  From: ${issueId}`));
+      console.log(chalk.gray(`  To: ${toId} (${toType})`));
       console.log(chalk.gray(`  Type: ${options.type}`));
-      console.log(chalk.gray(`  Location: ${anchor.section_heading || 'Unknown'} (line ${anchor.line_number})`));
+      if (anchor) {
+        console.log(chalk.gray(`  Location: ${anchor.section_heading || 'Unknown'} (line ${anchor.line_number})`));
+      }
     }
   } catch (error) {
     console.error(chalk.red('✗ Failed to create feedback'));
@@ -110,8 +122,8 @@ export async function handleFeedbackAdd(
 }
 
 export interface FeedbackListOptions {
-  issue?: string;
-  spec?: string;
+  from?: string;
+  to?: string;
   type?: string;
   dismissed?: string;
   limit: string;
@@ -126,8 +138,8 @@ export async function handleFeedbackList(
 ): Promise<void> {
   try {
     const filters: ListFeedbackOptions = {
-      issue_id: options.issue,
-      spec_id: options.spec,
+      from_id: options.from,
+      to_id: options.to,
       feedback_type: options.type as FeedbackType | undefined,
       dismissed: options.dismissed !== undefined ? options.dismissed === 'true' : undefined,
       limit: parseInt(options.limit),
@@ -147,25 +159,33 @@ export async function handleFeedbackList(
 
       for (const feedback of feedbackList) {
         const anchor = typeof feedback.anchor === 'string' ? JSON.parse(feedback.anchor) : feedback.anchor;
+        const toType = getEntityTypeFromId(feedback.to_id);
 
         const statusColor = feedback.dismissed ? chalk.gray : chalk.white;
 
-        const anchorStatusColor =
-          anchor.anchor_status === 'valid'
+        const anchorStatusColor = anchor
+          ? (anchor.anchor_status === 'valid'
             ? chalk.green
             : anchor.anchor_status === 'relocated'
             ? chalk.yellow
-            : chalk.red;
+            : chalk.red)
+          : chalk.gray;
 
         console.log(
           chalk.cyan(feedback.id),
           statusColor(`[${feedback.dismissed ? 'dismissed' : 'active'}]`),
-          anchorStatusColor(`[${anchor.anchor_status}]`),
-          chalk.gray(`${feedback.issue_id} → ${feedback.spec_id}`)
+          anchor ? anchorStatusColor(`[${anchor.anchor_status}]`) : '',
+          chalk.gray(`${feedback.from_id} → ${feedback.to_id} (${toType})`)
         );
-        console.log(
-          chalk.gray(`  Type: ${feedback.feedback_type} | ${anchor.section_heading || 'No section'} (line ${anchor.line_number})`)
-        );
+        if (anchor) {
+          console.log(
+            chalk.gray(`  Type: ${feedback.feedback_type} | ${anchor.section_heading || 'No section'} (line ${anchor.line_number})`)
+          );
+        } else {
+          console.log(
+            chalk.gray(`  Type: ${feedback.feedback_type} | General feedback`)
+          );
+        }
         console.log(chalk.gray(`  ${feedback.content.substring(0, 80)}${feedback.content.length > 80 ? '...' : ''}`));
       }
       console.log();
@@ -193,14 +213,16 @@ export async function handleFeedbackShow(
 
     const anchor = typeof feedback.anchor === 'string' ? JSON.parse(feedback.anchor) : feedback.anchor;
 
+    const toType = getEntityTypeFromId(feedback.to_id);
+
     if (ctx.jsonOutput) {
       console.log(JSON.stringify({ ...feedback, anchor }, null, 2));
     } else {
       console.log();
       console.log(chalk.bold.cyan(feedback.id), chalk.bold(feedback.feedback_type));
       console.log(chalk.gray('─'.repeat(60)));
-      console.log(chalk.gray('Issue:'), feedback.issue_id);
-      console.log(chalk.gray('Spec:'), feedback.spec_id);
+      console.log(chalk.gray('From:'), feedback.from_id);
+      console.log(chalk.gray('To:'), `${feedback.to_id} (${toType})`);
       console.log(chalk.gray('Status:'), feedback.dismissed ? 'Dismissed' : 'Active');
       console.log(chalk.gray('Agent:'), feedback.agent);
       console.log(chalk.gray('Created:'), feedback.created_at);
@@ -210,31 +232,32 @@ export async function handleFeedbackShow(
       console.log(chalk.bold('Content:'));
       console.log(feedback.content);
 
-      console.log();
-      console.log(chalk.bold('Anchor Location:'));
-
-      const anchorStatusColor =
-        anchor.anchor_status === 'valid'
-          ? chalk.green
-          : anchor.anchor_status === 'relocated'
-          ? chalk.yellow
-          : chalk.red;
-
-      console.log(chalk.gray('  Status:'), anchorStatusColor(anchor.anchor_status));
-      console.log(chalk.gray('  Section:'), anchor.section_heading || 'None');
-      console.log(chalk.gray('  Line:'), anchor.line_number || 'Unknown');
-
-      if (anchor.text_snippet) {
-        console.log(chalk.gray('  Snippet:'), `"${anchor.text_snippet}"`);
-      }
-
-      if (anchor.original_location && anchor.anchor_status !== 'valid') {
+      if (anchor) {
         console.log();
-        console.log(chalk.bold('Original Location:'));
-        console.log(chalk.gray('  Line:'), anchor.original_location.line_number);
-        console.log(chalk.gray('  Section:'), anchor.original_location.section_heading || 'None');
-      }
+        console.log(chalk.bold('Anchor Location:'));
 
+        const anchorStatusColor =
+          anchor.anchor_status === 'valid'
+            ? chalk.green
+            : anchor.anchor_status === 'relocated'
+            ? chalk.yellow
+            : chalk.red;
+
+        console.log(chalk.gray('  Status:'), anchorStatusColor(anchor.anchor_status));
+        console.log(chalk.gray('  Section:'), anchor.section_heading || 'None');
+        console.log(chalk.gray('  Line:'), anchor.line_number || 'Unknown');
+
+        if (anchor.text_snippet) {
+          console.log(chalk.gray('  Snippet:'), `"${anchor.text_snippet}"`);
+        }
+
+        if (anchor.original_location && anchor.anchor_status !== 'valid') {
+          console.log();
+          console.log(chalk.bold('Original Location:'));
+          console.log(chalk.gray('  Line:'), anchor.original_location.line_number);
+          console.log(chalk.gray('  Section:'), anchor.original_location.section_heading || 'None');
+        }
+      }
 
       console.log();
     }
@@ -245,16 +268,12 @@ export async function handleFeedbackShow(
   }
 }
 
-export interface FeedbackDismissOptions {
-}
-
 /**
  * Dismiss feedback
  */
 export async function handleFeedbackDismiss(
   ctx: CommandContext,
-  id: string,
-  options: FeedbackDismissOptions
+  id: string
 ): Promise<void> {
   try {
     const feedback = dismissFeedback(ctx.db, id);
@@ -300,10 +319,12 @@ export async function handleFeedbackStale(
       for (const feedback of staleFeedback) {
         const anchor = typeof feedback.anchor === 'string' ? JSON.parse(feedback.anchor) : feedback.anchor;
 
+        const toType = getEntityTypeFromId(feedback.to_id);
+
         console.log(
           chalk.cyan(feedback.id),
           chalk.red('[stale]'),
-          chalk.gray(`${feedback.issue_id} → ${feedback.spec_id}`)
+          chalk.gray(`${feedback.from_id} → ${feedback.to_id} (${toType})`)
         );
         console.log(
           chalk.gray(`  Original: ${anchor.original_location?.section_heading || 'Unknown'} (line ${anchor.original_location?.line_number})`)
@@ -341,10 +362,23 @@ export async function handleFeedbackRelocate(
       process.exit(1);
     }
 
-    const spec = getSpec(ctx.db, feedback.spec_id);
-    if (!spec) {
-      console.error(chalk.red(`✗ Spec not found: ${feedback.spec_id}`));
-      process.exit(1);
+    // Get target content based on inferred type
+    const toType = getEntityTypeFromId(feedback.to_id);
+    let toContent: string;
+    if (toType === 'spec') {
+      const spec = getSpec(ctx.db, feedback.to_id);
+      if (!spec) {
+        console.error(chalk.red(`✗ Spec not found: ${feedback.to_id}`));
+        process.exit(1);
+      }
+      toContent = spec.content;
+    } else {
+      const issue = getIssue(ctx.db, feedback.to_id);
+      if (!issue) {
+        console.error(chalk.red(`✗ Issue not found: ${feedback.to_id}`));
+        process.exit(1);
+      }
+      toContent = issue.content;
     }
 
     const lineNumber = parseInt(options.line);
@@ -354,7 +388,7 @@ export async function handleFeedbackRelocate(
     }
 
     // Create new anchor at specified line
-    const newAnchor = createFeedbackAnchor(spec.content, lineNumber);
+    const newAnchor = createFeedbackAnchor(toContent, lineNumber);
 
     // Preserve original location
     const oldAnchor = typeof feedback.anchor === 'string' ? JSON.parse(feedback.anchor) : feedback.anchor;

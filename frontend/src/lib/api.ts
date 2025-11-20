@@ -84,6 +84,7 @@ export const issuesApi = {
   create: (data: CreateIssueRequest) => post<Issue>('/issues', data),
   update: (id: string, data: UpdateIssueRequest) => put<Issue>(`/issues/${id}`, data),
   delete: (id: string) => del(`/issues/${id}`),
+  getFeedback: (id: string) => get<IssueFeedback[]>(`/feedback?to_id=${id}`),
 }
 
 /**
@@ -98,7 +99,7 @@ export const specsApi = {
   create: (data: CreateSpecRequest) => post<Spec>('/specs', data),
   update: (id: string, data: UpdateSpecRequest) => put<Spec>(`/specs/${id}`, data),
   delete: (id: string) => del(`/specs/${id}`),
-  getFeedback: (id: string) => get<IssueFeedback[]>(`/feedback?spec_id=${id}`),
+  getFeedback: (id: string) => get<IssueFeedback[]>(`/feedback?to_id=${id}`),
 }
 
 /**

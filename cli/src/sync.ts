@@ -444,7 +444,7 @@ async function syncSpec(
 
     // Relocate feedback anchors if content changed
     if (oldContent !== content) {
-      const feedbackList = listFeedback(db, { spec_id: id });
+      const feedbackList = listFeedback(db, { to_id: id });
 
       if (feedbackList.length > 0) {
         // Relocate each feedback anchor

@@ -181,7 +181,7 @@ export async function handleSpecShow(
     const outgoing = getOutgoingRelationships(ctx.db, id, "spec");
     const incoming = getIncomingRelationships(ctx.db, id, "spec");
     const tags = getTags(ctx.db, id, "spec");
-    const feedback = listFeedback(ctx.db, { spec_id: id });
+    const feedback = listFeedback(ctx.db, { to_id: id });
 
     if (ctx.jsonOutput) {
       console.log(
@@ -252,7 +252,7 @@ export async function handleSpecShow(
                 : chalk.red;
 
           console.log(
-            `  ${chalk.cyan(fb.id)} ← ${chalk.cyan(fb.issue_id)}`,
+            `  ${chalk.cyan(fb.id)} ← ${chalk.cyan(fb.from_id)}`,
             statusColor(`[${fb.dismissed ? "dismissed" : "active"}]`),
             anchorStatusColor(`[${anchor.anchor_status}]`)
           );

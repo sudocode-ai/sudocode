@@ -125,8 +125,8 @@ describe("Feedback API", () => {
   describe("POST /api/feedback", () => {
     it("should create a new feedback", async () => {
       const feedback = {
-        issue_id: testIssueId,
-        spec_id: testSpecId,
+        from_id: testIssueId,
+        to_id: testSpecId,
         feedback_type: "comment",
         content: "This is a great spec!",
         agent: "test-user",
@@ -145,8 +145,8 @@ describe("Feedback API", () => {
       expect(response.body.success).toBe(true);
       expect(response.body.data).toBeTruthy();
       expect(response.body.data.id).toBeTruthy();
-      expect(response.body.data.issue_id).toBe(testIssueId);
-      expect(response.body.data.spec_id).toBe(testSpecId);
+      expect(response.body.data.from_id).toBe(testIssueId);
+      expect(response.body.data.to_id).toBe(testSpecId);
       expect(response.body.data.feedback_type).toBe("comment");
       expect(response.body.data.content).toBe(feedback.content);
 
@@ -158,7 +158,7 @@ describe("Feedback API", () => {
       const response = await request(app)
         .post("/api/feedback")
         .send({
-          spec_id: testSpecId,
+          to_id: testSpecId,
           feedback_type: "comment",
           content: "Test",
           agent: "test",
@@ -174,7 +174,7 @@ describe("Feedback API", () => {
       const response = await request(app)
         .post("/api/feedback")
         .send({
-          issue_id: testIssueId,
+          from_id: testIssueId,
           feedback_type: "comment",
           content: "Test",
           agent: "test",
@@ -190,8 +190,8 @@ describe("Feedback API", () => {
       const response = await request(app)
         .post("/api/feedback")
         .send({
-          issue_id: testIssueId,
-          spec_id: testSpecId,
+          from_id: testIssueId,
+          to_id: testSpecId,
           content: "Test",
           agent: "test",
           anchor: { anchor_status: "valid" },
@@ -206,8 +206,8 @@ describe("Feedback API", () => {
       const response = await request(app)
         .post("/api/feedback")
         .send({
-          issue_id: testIssueId,
-          spec_id: testSpecId,
+          from_id: testIssueId,
+          to_id: testSpecId,
           feedback_type: "invalid-type",
           content: "Test",
           agent: "test",
@@ -225,8 +225,8 @@ describe("Feedback API", () => {
       const response = await request(app)
         .post("/api/feedback")
         .send({
-          issue_id: testIssueId,
-          spec_id: testSpecId,
+          from_id: testIssueId,
+          to_id: testSpecId,
           feedback_type: "comment",
           agent: "test",
           anchor: { anchor_status: "valid" },
@@ -241,8 +241,8 @@ describe("Feedback API", () => {
       const response = await request(app)
         .post("/api/feedback")
         .send({
-          issue_id: testIssueId,
-          spec_id: testSpecId,
+          from_id: testIssueId,
+          to_id: testSpecId,
           feedback_type: "comment",
           content: "Test without agent",
           anchor: { anchor_status: "valid" },
@@ -257,8 +257,8 @@ describe("Feedback API", () => {
       const response = await request(app)
         .post("/api/feedback")
         .send({
-          issue_id: testIssueId,
-          spec_id: testSpecId,
+          from_id: testIssueId,
+          to_id: testSpecId,
           feedback_type: "comment",
           content: "Test without anchor",
           agent: "test",
@@ -273,8 +273,8 @@ describe("Feedback API", () => {
       const response = await request(app)
         .post("/api/feedback")
         .send({
-          issue_id: testIssueId,
-          spec_id: testSpecId,
+          from_id: testIssueId,
+          to_id: testSpecId,
           feedback_type: "comment",
           content: "Test",
           agent: "test",
@@ -304,7 +304,7 @@ describe("Feedback API", () => {
 
     it("should return 404 for non-existent feedback", async () => {
       const response = await request(app)
-        .get("/api/feedback/FB-99999")
+        .get("/api/feedback/00000000-0000-0000-0000-000000099999")
         .expect(404);
 
       expect(response.body.success).toBe(false);
@@ -364,7 +364,7 @@ describe("Feedback API", () => {
 
     it("should return 404 for non-existent feedback", async () => {
       const response = await request(app)
-        .put("/api/feedback/FB-99999")
+        .put("/api/feedback/00000000-0000-0000-0000-000000099999")
         .send({ content: "Updated" })
         .expect(404);
 
@@ -405,8 +405,8 @@ describe("Feedback API", () => {
       const response = await request(app)
         .post("/api/feedback")
         .send({
-          issue_id: testIssueId,
-          spec_id: testSpecId,
+          from_id: testIssueId,
+          to_id: testSpecId,
           feedback_type: "suggestion",
           content: "Feedback to delete",
           agent: "test",
@@ -428,7 +428,7 @@ describe("Feedback API", () => {
 
     it("should return 404 when deleting non-existent feedback", async () => {
       const response = await request(app)
-        .delete("/api/feedback/FB-99999")
+        .delete("/api/feedback/00000000-0000-0000-0000-000000099999")
         .expect(404);
 
       expect(response.body.success).toBe(false);
@@ -471,7 +471,7 @@ describe("Feedback API", () => {
 
       // All returned feedback should belong to testSpecId
       response.body.data.forEach((fb: any) => {
-        expect(fb.spec_id).toBe(testSpecId);
+        expect(fb.to_id).toBe(testSpecId);
       });
     });
 
@@ -485,7 +485,7 @@ describe("Feedback API", () => {
 
       // All returned feedback should belong to testIssueId
       response.body.data.forEach((fb: any) => {
-        expect(fb.issue_id).toBe(testIssueId);
+        expect(fb.from_id).toBe(testIssueId);
       });
     });
 
@@ -508,8 +508,8 @@ describe("Feedback API", () => {
       await request(app)
         .post("/api/feedback")
         .send({
-          issue_id: testIssueId,
-          spec_id: testSpecId,
+          from_id: testIssueId,
+          to_id: testSpecId,
           feedback_type: "suggestion",
           content: "Suggestion feedback",
           agent: "test",
@@ -520,8 +520,8 @@ describe("Feedback API", () => {
       await request(app)
         .post("/api/feedback")
         .send({
-          issue_id: testIssueId,
-          spec_id: testSpecId,
+          from_id: testIssueId,
+          to_id: testSpecId,
           feedback_type: "request",
           content: "Request feedback",
           agent: "test",

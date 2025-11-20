@@ -3,6 +3,7 @@ import type {
   Spec,
   Relationship,
   IssueFeedback,
+  Execution,
   IssueStatus,
   EntityType,
   RelationshipType,
@@ -96,7 +97,7 @@ export interface DeleteRelationshipRequest {
  */
 export interface CreateFeedbackRequest {
   issue_id: string
-  spec_id: string
+  to_id: string
   feedback_type: FeedbackType
   content: string
   anchor?: FeedbackAnchor
@@ -125,13 +126,17 @@ export interface WebSocketMessage {
     | 'feedback_created'
     | 'feedback_updated'
     | 'feedback_deleted'
-  data: Issue | Spec | Relationship | IssueFeedback
+    | 'execution_created'
+    | 'execution_updated'
+    | 'execution_status_changed'
+    | 'execution_deleted'
+  data: Issue | Spec | Relationship | IssueFeedback | Execution
   timestamp: string
 }
 
 export interface WebSocketSubscribeMessage {
   type: 'subscribe'
-  entity_type: 'issue' | 'spec' | 'all'
+  entity_type: 'issue' | 'spec' | 'execution' | 'all'
   entity_id?: string
 }
 
@@ -143,6 +148,7 @@ export type {
   Spec,
   Relationship,
   IssueFeedback,
+  Execution,
   IssueStatus,
   EntityType,
   RelationshipType,

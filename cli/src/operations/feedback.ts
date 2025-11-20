@@ -2,13 +2,15 @@
  * CRUD operations for Issue Feedback
  */
 
+import * as crypto from "crypto";
 import type Database from "better-sqlite3";
 import type { IssueFeedback, FeedbackType, FeedbackAnchor } from "../types.js";
+import { getEntityTypeFromId } from "../id-generator.js";
 
 export interface CreateFeedbackInput {
   id?: string;
-  issue_id: string;
-  spec_id: string;
+  from_id: string;
+  to_id: string;
   feedback_type: FeedbackType;
   content: string;
   agent?: string;
@@ -25,8 +27,8 @@ export interface UpdateFeedbackInput {
 }
 
 export interface ListFeedbackOptions {
-  issue_id?: string;
-  spec_id?: string;
+  from_id?: string;
+  to_id?: string;
   feedback_type?: FeedbackType;
   dismissed?: boolean;
   limit?: number;
@@ -45,26 +47,11 @@ function convertDbRowToFeedback(row: any): IssueFeedback {
 }
 
 /**
- * Generate next feedback ID (FB-001, FB-002, etc.)
+ * Generate feedback ID using UUID
+ * This provides collision resistance for distributed workflows
  */
 export function generateFeedbackId(db: Database.Database): string {
-  const stmt = db.prepare(`
-    SELECT id FROM issue_feedback ORDER BY id DESC LIMIT 1
-  `);
-
-  const lastFeedback = stmt.get() as { id: string } | undefined;
-
-  if (!lastFeedback) {
-    return "FB-001";
-  }
-
-  const match = lastFeedback.id.match(/^FB-(\d+)$/);
-  if (!match) {
-    return "FB-001";
-  }
-
-  const nextNum = parseInt(match[1], 10) + 1;
-  return `FB-${String(nextNum).padStart(3, "0")}`;
+  return crypto.randomUUID();
 }
 
 /**
@@ -78,15 +65,28 @@ export function createFeedback(
   const anchorJson = input.anchor ? JSON.stringify(input.anchor) : null;
   const agent = input.agent || "user";
 
-  // Get issue_uuid and spec_uuid
-  const issue = db.prepare(`SELECT uuid FROM issues WHERE id = ?`).get(input.issue_id) as { uuid: string } | undefined;
-  if (!issue) {
-    throw new Error(`Issue not found: ${input.issue_id}`);
+  // Get from_uuid (must be an issue)
+  const fromIssue = db.prepare(`SELECT uuid FROM issues WHERE id = ?`).get(input.from_id) as { uuid: string } | undefined;
+  if (!fromIssue) {
+    throw new Error(`Issue not found: ${input.from_id}`);
   }
 
-  const spec = db.prepare(`SELECT uuid FROM specs WHERE id = ?`).get(input.spec_id) as { uuid: string } | undefined;
-  if (!spec) {
-    throw new Error(`Spec not found: ${input.spec_id}`);
+  // Get to_uuid based on inferred entity type
+  const toType = getEntityTypeFromId(input.to_id);
+  let toUuid: string;
+
+  if (toType === "spec") {
+    const spec = db.prepare(`SELECT uuid FROM specs WHERE id = ?`).get(input.to_id) as { uuid: string } | undefined;
+    if (!spec) {
+      throw new Error(`Spec not found: ${input.to_id}`);
+    }
+    toUuid = spec.uuid;
+  } else {
+    const issue = db.prepare(`SELECT uuid FROM issues WHERE id = ?`).get(input.to_id) as { uuid: string } | undefined;
+    if (!issue) {
+      throw new Error(`Issue not found: ${input.to_id}`);
+    }
+    toUuid = issue.uuid;
   }
 
   // Build SQL statement - include timestamps only if provided
@@ -95,26 +95,26 @@ export function createFeedback(
   const stmt = hasTimestamps
     ? db.prepare(`
         INSERT INTO issue_feedback (
-          id, issue_id, issue_uuid, spec_id, spec_uuid, feedback_type, content, agent, anchor, dismissed, created_at, updated_at
+          id, from_id, from_uuid, to_id, to_uuid, feedback_type, content, agent, anchor, dismissed, created_at, updated_at
         ) VALUES (
-          @id, @issue_id, @issue_uuid, @spec_id, @spec_uuid, @feedback_type, @content, @agent, @anchor, @dismissed, @created_at, @updated_at
+          @id, @from_id, @from_uuid, @to_id, @to_uuid, @feedback_type, @content, @agent, @anchor, @dismissed, @created_at, @updated_at
         )
       `)
     : db.prepare(`
         INSERT INTO issue_feedback (
-          id, issue_id, issue_uuid, spec_id, spec_uuid, feedback_type, content, agent, anchor, dismissed
+          id, from_id, from_uuid, to_id, to_uuid, feedback_type, content, agent, anchor, dismissed
         ) VALUES (
-          @id, @issue_id, @issue_uuid, @spec_id, @spec_uuid, @feedback_type, @content, @agent, @anchor, @dismissed
+          @id, @from_id, @from_uuid, @to_id, @to_uuid, @feedback_type, @content, @agent, @anchor, @dismissed
         )
       `);
 
   try {
     const params: any = {
       id,
-      issue_id: input.issue_id,
-      issue_uuid: issue.uuid,
-      spec_id: input.spec_id,
-      spec_uuid: spec.uuid,
+      from_id: input.from_id,
+      from_uuid: fromIssue.uuid,
+      to_id: input.to_id,
+      to_uuid: toUuid,
       feedback_type: input.feedback_type,
       content: input.content,
       agent: agent,
@@ -241,13 +241,13 @@ export function listFeedback(
   const conditions: string[] = [];
   const params: Record<string, any> = {};
 
-  if (options.issue_id !== undefined) {
-    conditions.push("issue_id = @issue_id");
-    params.issue_id = options.issue_id;
+  if (options.from_id !== undefined) {
+    conditions.push("from_id = @from_id");
+    params.from_id = options.from_id;
   }
-  if (options.spec_id !== undefined) {
-    conditions.push("spec_id = @spec_id");
-    params.spec_id = options.spec_id;
+  if (options.to_id !== undefined) {
+    conditions.push("to_id = @to_id");
+    params.to_id = options.to_id;
   }
   if (options.feedback_type !== undefined) {
     conditions.push("feedback_type = @feedback_type");
@@ -279,13 +279,23 @@ export function listFeedback(
 }
 
 /**
- * Get all feedback for a specific issue
+ * Get all feedback FROM a specific issue (issue providing feedback)
  */
-export function getFeedbackForIssue(
+export function getFeedbackFromIssue(
   db: Database.Database,
   issue_id: string
 ): IssueFeedback[] {
-  return listFeedback(db, { issue_id });
+  return listFeedback(db, { from_id: issue_id });
+}
+
+/**
+ * Get all feedback FOR a specific target (spec or issue receiving feedback)
+ */
+export function getFeedbackForTarget(
+  db: Database.Database,
+  to_id: string
+): IssueFeedback[] {
+  return listFeedback(db, { to_id });
 }
 
 /**
@@ -295,7 +305,19 @@ export function getFeedbackForSpec(
   db: Database.Database,
   spec_id: string
 ): IssueFeedback[] {
-  return listFeedback(db, { spec_id });
+  return listFeedback(db, { to_id: spec_id });
+}
+
+/**
+ * Get all feedback for a specific issue (feedback provided BY this issue)
+ * For backward compatibility, this returns feedback FROM the issue.
+ * For feedback TO an issue, use getFeedbackForTarget()
+ */
+export function getFeedbackForIssue(
+  db: Database.Database,
+  issue_id: string
+): IssueFeedback[] {
+  return listFeedback(db, { from_id: issue_id });
 }
 
 /**
@@ -305,22 +327,37 @@ export function getActiveFeedbackForSpec(
   db: Database.Database,
   spec_id: string
 ): IssueFeedback[] {
-  return listFeedback(db, { spec_id, dismissed: false });
+  return listFeedback(db, { to_id: spec_id, dismissed: false });
 }
 
 /**
- * Count feedback by dismissed status
+ * Get active feedback for an issue (not dismissed)
+ */
+export function getActiveFeedbackForIssue(
+  db: Database.Database,
+  issue_id: string
+): IssueFeedback[] {
+  return listFeedback(db, { to_id: issue_id, dismissed: false });
+}
+
+/**
+ * Count feedback by dismissed status for a target
  */
 export function countFeedbackByDismissed(
   db: Database.Database,
-  spec_id?: string
+  to_id?: string
 ): { active: number; dismissed: number } {
   let query = "SELECT dismissed, COUNT(*) as count FROM issue_feedback";
   const params: Record<string, any> = {};
+  const conditions: string[] = [];
 
-  if (spec_id) {
-    query += " WHERE spec_id = @spec_id";
-    params.spec_id = spec_id;
+  if (to_id) {
+    conditions.push("to_id = @to_id");
+    params.to_id = to_id;
+  }
+
+  if (conditions.length > 0) {
+    query += " WHERE " + conditions.join(" AND ");
   }
 
   query += " GROUP BY dismissed";

@@ -174,7 +174,7 @@ export async function handleIssueShow(
     const outgoing = getOutgoingRelationships(ctx.db, id, "issue");
     const incoming = getIncomingRelationships(ctx.db, id, "issue");
     const tags = getTags(ctx.db, id, "issue");
-    const feedback = listFeedback(ctx.db, { issue_id: id });
+    const feedback = listFeedback(ctx.db, { from_id: id });
 
     if (ctx.jsonOutput) {
       console.log(
@@ -257,7 +257,7 @@ export async function handleIssueShow(
                 : chalk.red;
 
           console.log(
-            `  ${chalk.cyan(fb.id)} → ${chalk.cyan(fb.spec_id)}`,
+            `  ${chalk.cyan(fb.id)} → ${chalk.cyan(fb.to_id)}`,
             statusColor(`[${fb.dismissed ? "dismissed" : "active"}]`),
             anchorStatusColor(`[${anchor.anchor_status}]`)
           );

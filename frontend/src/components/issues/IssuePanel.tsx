@@ -32,12 +32,14 @@ import { DeleteIssueDialog } from './DeleteIssueDialog'
 import { RelationshipList } from '@/components/relationships/RelationshipList'
 import { RelationshipForm } from '@/components/relationships/RelationshipForm'
 import { relationshipsApi, executionsApi } from '@/lib/api'
-import { ExecutionHistory } from '@/components/executions/ExecutionHistory'
 import { AgentConfigPanel } from '@/components/executions/AgentConfigPanel'
-import type { ExecutionConfig } from '@/types/execution'
+import type { ExecutionConfig, Execution } from '@/types/execution'
 import { useRelationshipMutations } from '@/hooks/useRelationshipMutations'
 import { TiptapEditor } from '@/components/specs/TiptapEditor'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { ActivityTimeline } from './ActivityTimeline'
+import type { IssueFeedback, WebSocketMessage } from '@/types/api'
+import { useWebSocketContext } from '@/contexts/WebSocketContext'
 
 const VIEW_MODE_STORAGE_KEY = 'sudocode:details:viewMode'
 const DESCRIPTION_COLLAPSED_STORAGE_KEY = 'sudocode:issue:descriptionCollapsed'
@@ -56,6 +58,7 @@ interface IssuePanelProps {
   viewMode?: 'formatted' | 'markdown'
   onViewModeChange?: (mode: 'formatted' | 'markdown') => void
   showViewToggleInline?: boolean
+  feedback?: IssueFeedback[]
 }
 
 const STATUS_OPTIONS: { value: IssueStatus; label: string }[] = [
@@ -88,6 +91,7 @@ export function IssuePanel({
   viewMode: externalViewMode,
   onViewModeChange,
   showViewToggleInline = true,
+  feedback = [],
 }: IssuePanelProps) {
   const navigate = useNavigate()
   const [title, setTitle] = useState(issue.title)
@@ -118,8 +122,12 @@ export function IssuePanel({
   const [showAddRelationship, setShowAddRelationship] = useState(false)
   const [isLoadingRelationships, setIsLoadingRelationships] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
+  const [executions, setExecutions] = useState<Execution[]>([])
   const panelRef = useRef<HTMLDivElement>(null)
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // WebSocket for real-time updates
+  const { subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
 
   // Relationship mutations with cache invalidation
   const { createRelationshipAsync, deleteRelationshipAsync } = useRelationshipMutations()
@@ -209,6 +217,54 @@ export function IssuePanel({
       isMounted = false
     }
   }, [issue.id])
+
+  // Fetch executions when issue changes and listen for WebSocket updates
+  useEffect(() => {
+    let isMounted = true
+
+    const fetchExecutions = async () => {
+      if (!isMounted) return
+      try {
+        const data = await executionsApi.list(issue.id)
+        if (isMounted) {
+          setExecutions(data)
+        }
+      } catch (error) {
+        console.error('Failed to fetch executions:', error)
+        if (isMounted) {
+          setExecutions([])
+        }
+      }
+    }
+
+    // Initial fetch
+    fetchExecutions()
+
+    // Subscribe to WebSocket updates for execution events
+    // Execution updates are broadcast to issue subscribers (dual broadcast)
+    const handlerId = `issue-panel-executions-${issue.id}`
+    const handleMessage = (message: WebSocketMessage) => {
+      if (
+        message.type === 'execution_created' ||
+        message.type === 'execution_updated' ||
+        message.type === 'execution_status_changed' ||
+        message.type === 'execution_deleted'
+      ) {
+        // Re-fetch executions when execution events occur
+        fetchExecutions()
+      }
+    }
+
+    // Subscribe to issue updates
+    subscribe('issue', issue.id)
+    addMessageHandler(handlerId, handleMessage)
+
+    return () => {
+      isMounted = false
+      removeMessageHandler(handlerId)
+      unsubscribe('issue', issue.id)
+    }
+  }, [issue.id, subscribe, unsubscribe, addMessageHandler, removeMessageHandler])
 
   // Handle click outside to close panel
   useEffect(() => {
@@ -418,12 +474,12 @@ export function IssuePanel({
 
   const handleStartExecution = async (config: ExecutionConfig, prompt: string) => {
     try {
-      const execution = await executionsApi.create(issue.id, {
+      await executionsApi.create(issue.id, {
         config,
         prompt,
       })
-      // Navigate to execution view
-      navigate(`/executions/${execution.id}`)
+      // Execution will appear in activity timeline via WebSocket
+      // No navigation needed - stay on issue page
     } catch (error) {
       console.error('Failed to create execution:', error)
       // TODO: Show error toast/alert to user
@@ -432,7 +488,7 @@ export function IssuePanel({
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex h-full flex-col" ref={panelRef}>
+      <div className="flex h-full w-full flex-col" ref={panelRef}>
         {/* Top Navigation Bar */}
         {!hideTopControls && (
           <div className="flex items-center justify-between px-6 py-3">
@@ -532,8 +588,8 @@ export function IssuePanel({
         )}
 
         {/* Content */}
-        <div className={`flex-1 overflow-y-auto px-6 ${hideTopControls ? 'py-4' : 'py-3'}`}>
-          <div className="space-y-4">
+        <div className={`w-full flex-1 overflow-y-auto ${hideTopControls ? 'py-4' : 'py-3'}`}>
+          <div className="mx-auto w-full max-w-7xl space-y-4 px-6">
             {/* Issue ID and Title */}
             <div className="space-y-2 pb-3">
               <div className="flex items-center justify-between">
@@ -766,17 +822,29 @@ export function IssuePanel({
               </div>
             )}
 
-            {/* Execution History */}
-            <ExecutionHistory issueId={issue.id} />
+            {/* Activity Timeline */}
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium text-muted-foreground">Activity</h3>
+              <ActivityTimeline
+                items={[
+                  ...feedback.map((f) => ({ ...f, itemType: 'feedback' as const })),
+                  ...executions.map((e) => ({ ...e, itemType: 'execution' as const })),
+                ]}
+              />
+            </div>
           </div>
         </div>
 
         {/* Fixed Footer - Agent Configuration Panel */}
-        <AgentConfigPanel
-          issueId={issue.id}
-          onStart={handleStartExecution}
-          disabled={issue.archived || isUpdating}
-        />
+        <div className="border-t border-border bg-muted/30">
+          <div className="mx-auto w-full max-w-7xl px-6">
+            <AgentConfigPanel
+              issueId={issue.id}
+              onStart={handleStartExecution}
+              disabled={issue.archived || isUpdating}
+            />
+          </div>
+        </div>
 
         <DeleteIssueDialog
           issue={issue}

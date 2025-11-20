@@ -11,8 +11,12 @@ import {
   updateFeedback,
   deleteFeedback,
   listFeedback,
+  getFeedbackFromIssue,
+  getFeedbackForTarget,
   getFeedbackForSpec,
   getFeedbackForIssue,
+  getActiveFeedbackForSpec,
+  getActiveFeedbackForIssue,
   dismissFeedback,
   type CreateFeedbackInput,
   type UpdateFeedbackInput,
@@ -71,6 +75,26 @@ export function getAllFeedback(
 }
 
 /**
+ * Get all feedback FROM a specific issue
+ */
+export function getFeedbackByIssue(
+  db: Database.Database,
+  issue_id: string
+): IssueFeedback[] {
+  return getFeedbackFromIssue(db, issue_id);
+}
+
+/**
+ * Get all feedback FOR a specific target
+ */
+export function getFeedbackByTarget(
+  db: Database.Database,
+  to_id: string
+): IssueFeedback[] {
+  return getFeedbackForTarget(db, to_id);
+}
+
+/**
  * Get all feedback for a specific spec
  */
 export function getSpecFeedback(
@@ -88,6 +112,26 @@ export function getIssueFeedback(
   issue_id: string
 ): IssueFeedback[] {
   return getFeedbackForIssue(db, issue_id);
+}
+
+/**
+ * Get active feedback for a specific spec
+ */
+export function getActiveSpecFeedback(
+  db: Database.Database,
+  spec_id: string
+): IssueFeedback[] {
+  return getActiveFeedbackForSpec(db, spec_id);
+}
+
+/**
+ * Get active feedback for a specific issue
+ */
+export function getActiveIssueFeedback(
+  db: Database.Database,
+  issue_id: string
+): IssueFeedback[] {
+  return getActiveFeedbackForIssue(db, issue_id);
 }
 
 /**

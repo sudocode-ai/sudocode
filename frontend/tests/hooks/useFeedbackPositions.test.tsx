@@ -51,10 +51,10 @@ describe('useFeedbackPositions', () => {
     const feedback: IssueFeedback[] = [
       {
         id: 'FB-001',
-        issue_id: 'ISSUE-001',
-        issue_uuid: 'uuid-issue-001',
-        spec_id: 'SPEC-001',
-        spec_uuid: 'uuid-spec-001',
+        from_id: 'ISSUE-001',
+        from_uuid: 'uuid-issue-001',
+        to_id: 'SPEC-001',
+        to_uuid: 'uuid-spec-001',
         feedback_type: 'comment',
         content: 'Test',
         anchor: JSON.stringify({
@@ -78,10 +78,10 @@ describe('useFeedbackPositions', () => {
     const feedback: IssueFeedback[] = [
       {
         id: 'FB-001',
-        issue_id: 'ISSUE-001',
-        issue_uuid: 'uuid-issue-001',
-        spec_id: 'SPEC-001',
-        spec_uuid: 'uuid-spec-001',
+        from_id: 'ISSUE-001',
+        from_uuid: 'uuid-issue-001',
+        to_id: 'SPEC-001',
+        to_uuid: 'uuid-spec-001',
         feedback_type: 'comment',
         content: 'General comment',
         created_at: '2024-01-01T00:00:00Z',
@@ -117,10 +117,10 @@ describe('useFeedbackPositions', () => {
     const feedback: IssueFeedback[] = [
       {
         id: 'FB-001',
-        issue_id: 'ISSUE-001',
-        issue_uuid: 'uuid-issue-001',
-        spec_id: 'SPEC-001',
-        spec_uuid: 'uuid-spec-001',
+        from_id: 'ISSUE-001',
+        from_uuid: 'uuid-issue-001',
+        to_id: 'SPEC-001',
+        to_uuid: 'uuid-spec-001',
         feedback_type: 'comment',
         content: 'Test',
         anchor: JSON.stringify({
@@ -163,10 +163,10 @@ describe('useFeedbackPositions', () => {
     const feedback: IssueFeedback[] = [
       {
         id: 'FB-002',
-        issue_id: 'ISSUE-001',
-        issue_uuid: 'uuid-issue-001',
-        spec_id: 'SPEC-001',
-        spec_uuid: 'uuid-spec-001',
+        from_id: 'ISSUE-001',
+        from_uuid: 'uuid-issue-001',
+        to_id: 'SPEC-001',
+        to_uuid: 'uuid-spec-001',
         feedback_type: 'comment',
         content: 'Test',
         anchor: JSON.stringify({
@@ -214,10 +214,10 @@ describe('useFeedbackPositions', () => {
     const feedback: IssueFeedback[] = [
       {
         id: 'FB-003',
-        issue_id: 'ISSUE-001',
-        issue_uuid: 'uuid-issue-001',
-        spec_id: 'SPEC-001',
-        spec_uuid: 'uuid-spec-001',
+        from_id: 'ISSUE-001',
+        from_uuid: 'uuid-issue-001',
+        to_id: 'SPEC-001',
+        to_uuid: 'uuid-spec-001',
         feedback_type: 'comment',
         content: 'Test',
         anchor: JSON.stringify({
@@ -268,10 +268,10 @@ describe('useFeedbackPositions', () => {
     const feedback: IssueFeedback[] = [
       {
         id: 'FB-001',
-        issue_id: 'ISSUE-001',
-        issue_uuid: 'uuid-issue-001',
-        spec_id: 'SPEC-001',
-        spec_uuid: 'uuid-spec-001',
+        from_id: 'ISSUE-001',
+        from_uuid: 'uuid-issue-001',
+        to_id: 'SPEC-001',
+        to_uuid: 'uuid-spec-001',
         feedback_type: 'comment',
         content: 'Test 1',
         anchor: JSON.stringify({ line_number: 1, anchor_status: 'valid' }),
@@ -280,10 +280,10 @@ describe('useFeedbackPositions', () => {
       },
       {
         id: 'FB-002',
-        issue_id: 'ISSUE-001',
-        issue_uuid: 'uuid-issue-001',
-        spec_id: 'SPEC-001',
-        spec_uuid: 'uuid-spec-001',
+        from_id: 'ISSUE-001',
+        from_uuid: 'uuid-issue-001',
+        to_id: 'SPEC-001',
+        to_uuid: 'uuid-spec-001',
         feedback_type: 'comment',
         content: 'Test 2',
         anchor: JSON.stringify({ line_number: 5, anchor_status: 'valid' }),
@@ -305,10 +305,10 @@ describe('useFeedbackPositions', () => {
     const feedback: IssueFeedback[] = [
       {
         id: 'FB-001',
-        issue_id: 'ISSUE-001',
-        issue_uuid: 'uuid-issue-001',
-        spec_id: 'SPEC-001',
-        spec_uuid: 'uuid-spec-001',
+        from_id: 'ISSUE-001',
+        from_uuid: 'uuid-issue-001',
+        to_id: 'SPEC-001',
+        to_uuid: 'uuid-spec-001',
         feedback_type: 'comment',
         content: 'Test',
         anchor: 'invalid json',
@@ -344,10 +344,10 @@ describe('useFeedbackPositions', () => {
     const feedback: IssueFeedback[] = [
       {
         id: 'FB-001',
-        issue_id: 'ISSUE-001',
-        issue_uuid: 'uuid-issue-001',
-        spec_id: 'SPEC-001',
-        spec_uuid: 'uuid-spec-001',
+        from_id: 'ISSUE-001',
+        from_uuid: 'uuid-issue-001',
+        to_id: 'SPEC-001',
+        to_uuid: 'uuid-spec-001',
         feedback_type: 'comment',
         content: 'Test',
         anchor: JSON.stringify({ line_number: 10, anchor_status: 'valid' }),
@@ -383,10 +383,10 @@ describe('useFeedbackPositions', () => {
     const initialFeedback: IssueFeedback[] = [
       {
         id: 'FB-001',
-        issue_id: 'ISSUE-001',
-        issue_uuid: 'uuid-issue-001',
-        spec_id: 'SPEC-001',
-        spec_uuid: 'uuid-spec-001',
+        from_id: 'ISSUE-001',
+        from_uuid: 'uuid-issue-001',
+        to_id: 'SPEC-001',
+        to_uuid: 'uuid-spec-001',
         feedback_type: 'comment',
         content: 'Test',
         anchor: JSON.stringify({ line_number: 10, anchor_status: 'valid' }),
@@ -423,10 +423,10 @@ describe('useFeedbackPositions', () => {
       ...initialFeedback,
       {
         id: 'FB-002',
-        issue_id: 'ISSUE-001',
-        issue_uuid: 'uuid-issue-001',
-        spec_id: 'SPEC-001',
-        spec_uuid: 'uuid-spec-001',
+        from_id: 'ISSUE-001',
+        from_uuid: 'uuid-issue-001',
+        to_id: 'SPEC-001',
+        to_uuid: 'uuid-spec-001',
         feedback_type: 'comment',
         content: 'Test 2',
         anchor: JSON.stringify({ line_number: 20, anchor_status: 'valid' }),

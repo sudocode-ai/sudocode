@@ -19,17 +19,19 @@ export function createFeedbackRouter(db: Database.Database): Router {
 
   /**
    * GET /api/feedback - List all feedback with optional filters
-   * Query params: spec_id, issue_id, feedback_type, dismissed, limit, offset
+   * Query params: to_id, from_id, feedback_type, dismissed, limit, offset
+   * Legacy params: spec_id (maps to to_id), issue_id (maps to from_id)
    */
   router.get("/", (req: Request, res: Response) => {
     try {
       const options: any = {};
 
-      if (req.query.spec_id) {
-        options.spec_id = req.query.spec_id as string;
+      // Support both new and legacy parameter names
+      if (req.query.to_id || req.query.spec_id) {
+        options.to_id = (req.query.to_id || req.query.spec_id) as string;
       }
-      if (req.query.issue_id) {
-        options.issue_id = req.query.issue_id as string;
+      if (req.query.from_id || req.query.issue_id) {
+        options.from_id = (req.query.from_id || req.query.issue_id) as string;
       }
       if (req.query.feedback_type) {
         options.feedback_type = req.query.feedback_type as FeedbackType;
@@ -95,12 +97,15 @@ export function createFeedbackRouter(db: Database.Database): Router {
 
   /**
    * POST /api/feedback - Create a new feedback entry
+   * Supports both new fields (from_id, to_id) and legacy fields (issue_id, spec_id)
    */
   router.post("/", (req: Request, res: Response) => {
     try {
       const {
-        issue_id,
-        spec_id,
+        from_id,
+        to_id,
+        issue_id,  // legacy
+        spec_id,   // legacy
         feedback_type,
         content,
         agent,
@@ -108,21 +113,25 @@ export function createFeedbackRouter(db: Database.Database): Router {
         dismissed,
       } = req.body;
 
+      // Support both new and legacy field names
+      const fromId = from_id || issue_id;
+      const toId = to_id || spec_id;
+
       // Validate required fields
-      if (!issue_id || typeof issue_id !== "string") {
+      if (!fromId || typeof fromId !== "string") {
         res.status(400).json({
           success: false,
           data: null,
-          message: "issue_id is required and must be a string",
+          message: "from_id (or issue_id) is required and must be a string",
         });
         return;
       }
 
-      if (!spec_id || typeof spec_id !== "string") {
+      if (!toId || typeof toId !== "string") {
         res.status(400).json({
           success: false,
           data: null,
-          message: "spec_id is required and must be a string",
+          message: "to_id (or spec_id) is required and must be a string",
         });
         return;
       }
@@ -183,8 +192,8 @@ export function createFeedbackRouter(db: Database.Database): Router {
 
       // Create feedback using CLI operation
       const feedback = createNewFeedback(db, {
-        issue_id,
-        spec_id,
+        from_id: fromId,
+        to_id: toId,
         feedback_type: feedback_type as FeedbackType,
         content,
         agent: agent || undefined,

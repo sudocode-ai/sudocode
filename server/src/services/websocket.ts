@@ -20,7 +20,7 @@ interface Client {
  */
 interface ClientMessage {
   type: "subscribe" | "unsubscribe" | "ping";
-  entity_type?: "issue" | "spec" | "all";
+  entity_type?: "issue" | "spec" | "execution" | "all";
   entity_id?: string;
 }
 
@@ -40,6 +40,10 @@ export interface ServerMessage {
     | "feedback_deleted"
     | "relationship_created"
     | "relationship_deleted"
+    | "execution_created"
+    | "execution_updated"
+    | "execution_status_changed"
+    | "execution_deleted"
     | "pong"
     | "error"
     | "subscribed"
@@ -314,7 +318,7 @@ class WebSocketManager {
    * Broadcast a message to all subscribed clients
    */
   broadcast(
-    entityType: "issue" | "spec",
+    entityType: "issue" | "spec" | "execution",
     entityId: string,
     message: ServerMessage
   ): void {
@@ -551,6 +555,38 @@ export function broadcastRelationshipUpdate(
     type: `relationship_${action}` as any,
     data,
   });
+}
+
+/**
+ * Broadcast execution updates to subscribed clients
+ * Also optionally broadcasts to parent issue subscribers
+ *
+ * @param executionId - ID of the execution
+ * @param action - The action performed on the execution
+ * @param data - Execution data to broadcast
+ * @param issueId - Optional issue ID to also broadcast to issue subscribers
+ */
+export function broadcastExecutionUpdate(
+  executionId: string,
+  action: "created" | "updated" | "status_changed" | "deleted",
+  data?: any,
+  issueId?: string
+): void {
+  // Primary broadcast to execution subscribers
+  websocketManager.broadcast("execution", executionId, {
+    type: `execution_${action}` as any,
+    data,
+  });
+
+  // Secondary broadcast to issue subscribers if issueId provided
+  // This allows clients viewing an issue to see its execution updates
+  // without subscribing to each individual execution
+  if (issueId) {
+    websocketManager.broadcast("issue", issueId, {
+      type: `execution_${action}` as any,
+      data,
+    });
+  }
 }
 
 /**

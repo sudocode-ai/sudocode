@@ -16,11 +16,14 @@ import {
   getActiveFeedbackForSpec,
   countFeedbackByDismissed,
   generateFeedbackId,
+  getFeedbackForTarget,
+  getFeedbackFromIssue,
 } from "../../../src/operations/feedback.js";
 import { createSpec, deleteSpec } from "../../../src/operations/specs.js";
 import { createIssue, deleteIssue } from "../../../src/operations/issues.js";
 import type Database from "better-sqlite3";
 import type { FeedbackAnchor } from "../../../src/types.js";
+import { getEntityTypeFromId } from "../../../src/id-generator.js";
 
 describe("Feedback Operations", () => {
   let db: Database.Database;
@@ -28,9 +31,9 @@ describe("Feedback Operations", () => {
   beforeEach(() => {
     db = initDatabase({ path: ":memory:" });
 
-    // Create test spec and issue for foreign key constraints
+    // Create test spec and issues for foreign key constraints
     createSpec(db, {
-      id: "spec-001",
+      id: "s-001",
       title: "Test Spec",
       file_path: "specs/test.md",
       content: "Test content",
@@ -38,54 +41,54 @@ describe("Feedback Operations", () => {
     });
 
     createIssue(db, {
-      id: "issue-001",
-      title: "Test Issue",
+      id: "i-001",
+      title: "Test Issue 1",
+    });
+
+    createIssue(db, {
+      id: "i-002",
+      title: "Test Issue 2",
     });
   });
 
   describe("generateFeedbackId", () => {
-    it("should generate FB-001 for first feedback", () => {
+    it("should generate UUID for feedback ID", () => {
       const id = generateFeedbackId(db);
-      expect(id).toBe("FB-001");
+      // UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+      expect(id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      );
     });
 
-    it("should increment feedback IDs", () => {
-      const anchor: FeedbackAnchor = {
-        section_heading: "Introduction",
-        line_number: 10,
-        anchor_status: "valid",
-      };
+    it("should generate unique IDs for each feedback", () => {
+      const id1 = generateFeedbackId(db);
+      const id2 = generateFeedbackId(db);
 
-      createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
-        feedback_type: "comment",
-        content: "First feedback",
-        agent: "claude-code",
-        anchor,
-      });
-
-      const id = generateFeedbackId(db);
-      expect(id).toBe("FB-002");
+      expect(id1).not.toBe(id2);
+      expect(id1).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      );
+      expect(id2).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      );
     });
 
-    it("should handle custom IDs", () => {
+    it("should allow custom IDs (for backward compatibility with legacy FB-XXX format)", () => {
       const anchor: FeedbackAnchor = {
         anchor_status: "valid",
       };
 
-      createFeedback(db, {
+      const feedback = createFeedback(db, {
         id: "FB-005",
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "suggestion",
-        content: "Custom ID",
+        content: "Legacy custom ID",
         agent: "claude-code",
         anchor,
       });
 
-      const id = generateFeedbackId(db);
-      expect(id).toBe("FB-006");
+      expect(feedback.id).toBe("FB-005");
     });
   });
 
@@ -103,17 +106,19 @@ describe("Feedback Operations", () => {
       };
 
       const feedback = createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "comment",
         content: "Token rotation policy not specified",
         agent: "claude-code",
         anchor,
       });
 
-      expect(feedback.id).toMatch(/^FB-\d{3}$/);
-      expect(feedback.issue_id).toBe("issue-001");
-      expect(feedback.spec_id).toBe("spec-001");
+      expect(feedback.id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      );
+      expect(feedback.from_id).toBe("i-001");
+      expect(feedback.to_id).toBe("s-001");
       expect(feedback.feedback_type).toBe("comment");
       expect(feedback.content).toBe("Token rotation policy not specified");
       expect(feedback.agent).toBe("claude-code");
@@ -132,8 +137,8 @@ describe("Feedback Operations", () => {
       };
 
       const feedback = createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "request",
         content: "Simple question",
         agent: "claude-code",
@@ -150,8 +155,8 @@ describe("Feedback Operations", () => {
 
       expect(() => {
         createFeedback(db, {
-          issue_id: "invalid-issue",
-          spec_id: "spec-001",
+          from_id: "invalid-issue",
+          to_id: "s-001",
           feedback_type: "comment",
           content: "Test",
           agent: "claude-code",
@@ -167,8 +172,8 @@ describe("Feedback Operations", () => {
 
       expect(() => {
         createFeedback(db, {
-          issue_id: "issue-001",
-          spec_id: "spec-001",
+          from_id: "i-001",
+          to_id: "s-001",
           feedback_type: "invalid" as any,
           content: "Test",
           agent: "claude-code",
@@ -185,8 +190,8 @@ describe("Feedback Operations", () => {
       };
 
       const created = createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "suggestion",
         content: "Test feedback",
         agent: "claude-code",
@@ -200,7 +205,7 @@ describe("Feedback Operations", () => {
     });
 
     it("should return null for non-existent ID", () => {
-      const feedback = getFeedback(db, "FB-999");
+      const feedback = getFeedback(db, "00000000-0000-0000-0000-000000000999");
       expect(feedback).toBeNull();
     });
   });
@@ -212,8 +217,8 @@ describe("Feedback Operations", () => {
       };
 
       const created = createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "comment",
         content: "Original content",
         agent: "claude-code",
@@ -233,8 +238,8 @@ describe("Feedback Operations", () => {
       };
 
       const created = createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "comment",
         content: "Test",
         agent: "claude-code",
@@ -255,8 +260,8 @@ describe("Feedback Operations", () => {
       };
 
       const created = createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "comment",
         content: "Test",
         agent: "claude-code",
@@ -284,7 +289,9 @@ describe("Feedback Operations", () => {
 
     it("should throw error for non-existent ID", () => {
       expect(() => {
-        updateFeedback(db, "FB-999", { content: "Test" });
+        updateFeedback(db, "00000000-0000-0000-0000-000000000999", {
+          content: "Test",
+        });
       }).toThrow("Feedback not found");
     });
   });
@@ -296,8 +303,8 @@ describe("Feedback Operations", () => {
       };
 
       const created = createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "comment",
         content: "Test",
         agent: "claude-code",
@@ -317,8 +324,8 @@ describe("Feedback Operations", () => {
       };
 
       const created = createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "suggestion",
         content: "Test",
         agent: "claude-code",
@@ -333,7 +340,10 @@ describe("Feedback Operations", () => {
     });
 
     it("should return false for non-existent ID", () => {
-      const deleted = deleteFeedback(db, "FB-999");
+      const deleted = deleteFeedback(
+        db,
+        "00000000-0000-0000-0000-000000000999"
+      );
       expect(deleted).toBe(false);
     });
   });
@@ -341,7 +351,7 @@ describe("Feedback Operations", () => {
   describe("listFeedback", () => {
     beforeEach(() => {
       createSpec(db, {
-        id: "spec-002",
+        id: "s-002",
         title: "Another Spec",
         file_path: "specs/another.md",
         content: "Content",
@@ -349,15 +359,15 @@ describe("Feedback Operations", () => {
       });
 
       createIssue(db, {
-        id: "issue-002",
+        id: "i-002",
         title: "Another Issue",
       });
 
       const anchor: FeedbackAnchor = { anchor_status: "valid" };
 
       createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "comment",
         content: "Feedback 1",
         agent: "claude-code",
@@ -366,8 +376,8 @@ describe("Feedback Operations", () => {
       });
 
       createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-002",
+        from_id: "i-001",
+        to_id: "s-002",
         feedback_type: "suggestion",
         content: "Feedback 2",
         agent: "claude-code",
@@ -376,8 +386,8 @@ describe("Feedback Operations", () => {
       });
 
       createFeedback(db, {
-        issue_id: "issue-002",
-        spec_id: "spec-001",
+        from_id: "i-002",
+        to_id: "s-001",
         feedback_type: "request",
         content: "Feedback 3",
         agent: "cursor",
@@ -391,16 +401,16 @@ describe("Feedback Operations", () => {
       expect(feedback).toHaveLength(3);
     });
 
-    it("should filter by issue_id", () => {
-      const feedback = listFeedback(db, { issue_id: "issue-001" });
+    it("should filter by from_id (issue)", () => {
+      const feedback = listFeedback(db, { from_id: "i-001" });
       expect(feedback).toHaveLength(2);
-      expect(feedback.every((f) => f.issue_id === "issue-001")).toBe(true);
+      expect(feedback.every((f) => f.from_id === "i-001")).toBe(true);
     });
 
-    it("should filter by spec_id", () => {
-      const feedback = listFeedback(db, { spec_id: "spec-001" });
+    it("should filter by to_id (spec)", () => {
+      const feedback = listFeedback(db, { to_id: "s-001" });
       expect(feedback).toHaveLength(2);
-      expect(feedback.every((f) => f.spec_id === "spec-001")).toBe(true);
+      expect(feedback.every((f) => f.to_id === "s-001")).toBe(true);
     });
 
     it("should filter by dismissed status", () => {
@@ -417,7 +427,7 @@ describe("Feedback Operations", () => {
 
     it("should combine filters", () => {
       const feedback = listFeedback(db, {
-        issue_id: "issue-001",
+        from_id: "i-001",
         dismissed: false,
       });
       expect(feedback).toHaveLength(1);
@@ -435,8 +445,8 @@ describe("Feedback Operations", () => {
       const anchor: FeedbackAnchor = { anchor_status: "valid" };
 
       createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "comment",
         content: "Feedback 1",
         agent: "claude-code",
@@ -444,15 +454,15 @@ describe("Feedback Operations", () => {
       });
 
       createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "suggestion",
         content: "Feedback 2",
         agent: "claude-code",
         anchor,
       });
 
-      const feedback = getFeedbackForIssue(db, "issue-001");
+      const feedback = getFeedbackForIssue(db, "i-001");
       expect(feedback).toHaveLength(2);
     });
   });
@@ -462,8 +472,8 @@ describe("Feedback Operations", () => {
       const anchor: FeedbackAnchor = { anchor_status: "valid" };
 
       createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "comment",
         content: "Feedback 1",
         agent: "claude-code",
@@ -471,15 +481,15 @@ describe("Feedback Operations", () => {
       });
 
       createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "suggestion",
         content: "Feedback 2",
         agent: "claude-code",
         anchor,
       });
 
-      const feedback = getFeedbackForSpec(db, "spec-001");
+      const feedback = getFeedbackForSpec(db, "s-001");
       expect(feedback).toHaveLength(2);
     });
   });
@@ -489,8 +499,8 @@ describe("Feedback Operations", () => {
       const anchor: FeedbackAnchor = { anchor_status: "valid" };
 
       createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "comment",
         content: "Active feedback",
         agent: "claude-code",
@@ -499,8 +509,8 @@ describe("Feedback Operations", () => {
       });
 
       createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "suggestion",
         content: "Dismissed feedback",
         agent: "claude-code",
@@ -508,7 +518,7 @@ describe("Feedback Operations", () => {
         dismissed: true,
       });
 
-      const feedback = getActiveFeedbackForSpec(db, "spec-001");
+      const feedback = getActiveFeedbackForSpec(db, "s-001");
       expect(feedback).toHaveLength(1);
       expect(feedback[0].dismissed).toBe(false);
     });
@@ -519,8 +529,8 @@ describe("Feedback Operations", () => {
       const anchor: FeedbackAnchor = { anchor_status: "valid" };
 
       createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "comment",
         content: "Active 1",
         agent: "claude-code",
@@ -529,8 +539,8 @@ describe("Feedback Operations", () => {
       });
 
       createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "suggestion",
         content: "Active 2",
         agent: "claude-code",
@@ -539,8 +549,8 @@ describe("Feedback Operations", () => {
       });
 
       createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "request",
         content: "Dismissed",
         agent: "claude-code",
@@ -555,7 +565,7 @@ describe("Feedback Operations", () => {
 
     it("should count feedback for specific spec", () => {
       createSpec(db, {
-        id: "spec-002",
+        id: "s-002",
         title: "Another Spec",
         file_path: "specs/another.md",
         content: "Content",
@@ -565,8 +575,8 @@ describe("Feedback Operations", () => {
       const anchor: FeedbackAnchor = { anchor_status: "valid" };
 
       createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "comment",
         content: "Spec 1",
         agent: "claude-code",
@@ -575,8 +585,8 @@ describe("Feedback Operations", () => {
       });
 
       createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-002",
+        from_id: "i-001",
+        to_id: "s-002",
         feedback_type: "suggestion",
         content: "Spec 2",
         agent: "claude-code",
@@ -584,7 +594,7 @@ describe("Feedback Operations", () => {
         dismissed: true,
       });
 
-      const counts = countFeedbackByDismissed(db, "spec-001");
+      const counts = countFeedbackByDismissed(db, "s-001");
       expect(counts.active).toBe(1);
       expect(counts.dismissed).toBe(0);
     });
@@ -595,17 +605,17 @@ describe("Feedback Operations", () => {
       const anchor: FeedbackAnchor = { anchor_status: "valid" };
 
       createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "comment",
         content: "Test",
         agent: "claude-code",
         anchor,
       });
 
-      deleteIssue(db, "issue-001");
+      deleteIssue(db, "i-001");
 
-      const feedback = getFeedbackForIssue(db, "issue-001");
+      const feedback = getFeedbackForIssue(db, "i-001");
       expect(feedback).toHaveLength(0);
     });
 
@@ -613,17 +623,17 @@ describe("Feedback Operations", () => {
       const anchor: FeedbackAnchor = { anchor_status: "valid" };
 
       createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "comment",
         content: "Test",
         agent: "claude-code",
         anchor,
       });
 
-      deleteSpec(db, "spec-001");
+      deleteSpec(db, "s-001");
 
-      const feedback = getFeedbackForSpec(db, "spec-001");
+      const feedback = getFeedbackForSpec(db, "s-001");
       expect(feedback).toHaveLength(0);
     });
   });
@@ -648,8 +658,8 @@ describe("Feedback Operations", () => {
       };
 
       const created = createFeedback(db, {
-        issue_id: "issue-001",
-        spec_id: "spec-001",
+        from_id: "i-001",
+        to_id: "s-001",
         feedback_type: "comment",
         content: "Performance concern",
         agent: "claude-code",
@@ -662,6 +672,237 @@ describe("Feedback Operations", () => {
 
       const parsedAnchor = JSON.parse(retrieved!.anchor!);
       expect(parsedAnchor).toEqual(anchor);
+    });
+  });
+});
+
+describe("Generalized Feedback Operations", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = initDatabase({ path: ":memory:" });
+
+    // Create test entities
+    createSpec(db, {
+      id: "s-abc",
+      title: "Test Spec",
+      file_path: "specs/test.md",
+      content: "Test spec content",
+      priority: 2,
+    });
+
+    createIssue(db, { id: "i-001", title: "Issue 1" });
+    createIssue(db, { id: "i-002", title: "Issue 2" });
+    createIssue(db, { id: "i-003", title: "Issue 3" });
+  });
+
+  describe("getEntityTypeFromId", () => {
+    it("should infer spec from s- prefix", () => {
+      expect(getEntityTypeFromId("s-abc")).toBe("spec");
+      expect(getEntityTypeFromId("s-xyz123")).toBe("spec");
+    });
+
+    it("should infer issue from i- prefix", () => {
+      expect(getEntityTypeFromId("i-001")).toBe("issue");
+      expect(getEntityTypeFromId("i-xyz")).toBe("issue");
+    });
+
+    it("should infer from legacy IDs", () => {
+      expect(getEntityTypeFromId("SPEC-001")).toBe("spec");
+      expect(getEntityTypeFromId("ISSUE-042")).toBe("issue");
+    });
+
+    it("should throw on invalid ID", () => {
+      expect(() => getEntityTypeFromId("invalid")).toThrow();
+    });
+  });
+
+  describe("Issue→Spec feedback", () => {
+    it("should create feedback from issue to spec", () => {
+      const anchor: FeedbackAnchor = {
+        section_heading: "API Design",
+        line_number: 25,
+        anchor_status: "valid",
+      };
+
+      const feedback = createFeedback(db, {
+        from_id: "i-001",
+        to_id: "s-abc",
+        feedback_type: "comment",
+        content: "Implementation complete, all tests passing",
+        agent: "claude-code",
+        anchor,
+      });
+
+      expect(feedback.from_id).toBe("i-001");
+      expect(feedback.to_id).toBe("s-abc");
+      expect(feedback.feedback_type).toBe("comment");
+      expect(getEntityTypeFromId(feedback.to_id)).toBe("spec");
+    });
+
+    it("should list feedback for a spec", () => {
+      createFeedback(db, {
+        from_id: "i-001",
+        to_id: "s-abc",
+        feedback_type: "comment",
+        content: "Feedback 1",
+      });
+
+      createFeedback(db, {
+        from_id: "i-002",
+        to_id: "s-abc",
+        feedback_type: "suggestion",
+        content: "Feedback 2",
+      });
+
+      const feedbackList = getFeedbackForSpec(db, "s-abc");
+      expect(feedbackList).toHaveLength(2);
+    });
+  });
+
+  describe("Issue→Issue feedback", () => {
+    it("should create feedback from issue to issue", () => {
+      const feedback = createFeedback(db, {
+        from_id: "i-001",
+        to_id: "i-002",
+        feedback_type: "suggestion",
+        content: "FYI: Discovered rate limiting affects this issue too",
+        agent: "claude-code",
+      });
+
+      expect(feedback.from_id).toBe("i-001");
+      expect(feedback.to_id).toBe("i-002");
+      expect(getEntityTypeFromId(feedback.to_id)).toBe("issue");
+    });
+
+    it("should list feedback from an issue", () => {
+      createFeedback(db, {
+        from_id: "i-001",
+        to_id: "s-abc",
+        feedback_type: "comment",
+        content: "To spec",
+      });
+
+      createFeedback(db, {
+        from_id: "i-001",
+        to_id: "i-002",
+        feedback_type: "suggestion",
+        content: "To issue",
+      });
+
+      const fromFeedback = getFeedbackFromIssue(db, "i-001");
+      expect(fromFeedback).toHaveLength(2);
+    });
+
+    it("should list feedback for an issue (receiving)", () => {
+      createFeedback(db, {
+        from_id: "i-001",
+        to_id: "i-003",
+        feedback_type: "request",
+        content: "Question about implementation",
+      });
+
+      createFeedback(db, {
+        from_id: "i-002",
+        to_id: "i-003",
+        feedback_type: "comment",
+        content: "Note for this issue",
+      });
+
+      // Use getFeedbackForTarget to get feedback TO an issue
+      const forIssue = getFeedbackForTarget(db, "i-003");
+      expect(forIssue).toHaveLength(2);
+    });
+
+    it("should support feedback without anchors (general)", () => {
+      const feedback = createFeedback(db, {
+        from_id: "i-001",
+        to_id: "i-002",
+        feedback_type: "comment",
+        content: "General note without specific location",
+      });
+
+      // SQLite returns null for missing values
+      expect(feedback.anchor).toBeNull();
+    });
+  });
+
+  describe("Mixed feedback scenarios", () => {
+    it("should handle multiple feedback paths", () => {
+      // i-001 provides feedback to spec
+      createFeedback(db, {
+        from_id: "i-001",
+        to_id: "s-abc",
+        feedback_type: "comment",
+        content: "Spec implemented",
+      });
+
+      // i-001 provides feedback to i-002
+      createFeedback(db, {
+        from_id: "i-001",
+        to_id: "i-002",
+        feedback_type: "suggestion",
+        content: "Watch out for rate limits",
+      });
+
+      // i-002 provides feedback to i-003
+      createFeedback(db, {
+        from_id: "i-002",
+        to_id: "i-003",
+        feedback_type: "request",
+        content: "Need clarification",
+      });
+
+      const i001Feedback = getFeedbackFromIssue(db, "i-001");
+      const i002Receiving = getFeedbackForIssue(db, "i-002");
+      const specFeedback = getFeedbackForSpec(db, "s-abc");
+
+      expect(i001Feedback).toHaveLength(2);
+      expect(i002Receiving).toHaveLength(1);
+      expect(specFeedback).toHaveLength(1);
+    });
+  });
+
+  describe("Filtering", () => {
+    beforeEach(() => {
+      createFeedback(db, {
+        from_id: "i-001",
+        to_id: "s-abc",
+        feedback_type: "comment",
+        content: "Comment 1",
+      });
+
+      createFeedback(db, {
+        from_id: "i-001",
+        to_id: "i-002",
+        feedback_type: "suggestion",
+        content: "Suggestion 1",
+      });
+
+      createFeedback(db, {
+        from_id: "i-002",
+        to_id: "i-003",
+        feedback_type: "comment",
+        content: "Comment 2",
+      });
+    });
+
+    it("should filter by from_id", () => {
+      const feedback = listFeedback(db, { from_id: "i-001" });
+      expect(feedback).toHaveLength(2);
+    });
+
+    it("should filter by to_id", () => {
+      const feedback = listFeedback(db, { to_id: "i-002" });
+      expect(feedback).toHaveLength(1);
+    });
+
+    it("should filter by feedback_type", () => {
+      const comments = listFeedback(db, { feedback_type: "comment" });
+      expect(comments).toHaveLength(2);
+
+      const suggestions = listFeedback(db, { feedback_type: "suggestion" });
+      expect(suggestions).toHaveLength(1);
     });
   });
 });

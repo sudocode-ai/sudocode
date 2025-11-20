@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useIssues, useUpdateIssueStatus } from '@/hooks/useIssues'
+import { useIssues, useUpdateIssueStatus, useIssueFeedback } from '@/hooks/useIssues'
 import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
 import type { Issue, IssueStatus } from '@/types/api'
 import type { DragEndEvent } from '@/components/ui/kanban'
@@ -53,6 +53,7 @@ export default function IssuesPage() {
   const updateStatus = useUpdateIssueStatus()
   const { data: repoInfo } = useRepositoryInfo()
   const [selectedIssue, setSelectedIssue] = useState<Issue | undefined>()
+  const { feedback } = useIssueFeedback(selectedIssue?.id || '')
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [createDialogStatus, setCreateDialogStatus] = useState<IssueStatus | undefined>()
   const [showArchiveAllDialog, setShowArchiveAllDialog] = useState(false)
@@ -425,6 +426,7 @@ export default function IssuesPage() {
                 isUpdating={isUpdating}
                 isDeleting={isDeleting}
                 showOpenDetail={true}
+                feedback={feedback}
               />
             </Panel>
           </PanelGroup>

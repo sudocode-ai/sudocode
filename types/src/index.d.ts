@@ -94,14 +94,15 @@ export type EventType =
   | "tag_removed";
 
 /**
- * Issue-based spec feedback types
+ * Issue-based feedback types
+ * Feedback can target either a spec or another issue (type inferred from ID prefix)
  */
 export interface IssueFeedback {
   id: string;
-  issue_id: string;
-  issue_uuid: string;
-  spec_id: string;
-  spec_uuid: string;
+  from_id: string;
+  from_uuid: string;
+  to_id: string;
+  to_uuid: string;
   feedback_type: FeedbackType;
   content: string;
   agent?: string;
@@ -155,8 +156,8 @@ export interface IssueJSONL extends Issue {
 
 export interface FeedbackJSONL {
   id: string;
-  issue_id: string;
-  spec_id: string;
+  from_id: string;
+  to_id: string;
   feedback_type: FeedbackType;
   content: string;
   agent?: string;
