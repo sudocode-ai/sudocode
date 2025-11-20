@@ -62,7 +62,14 @@ export function RelationshipForm({
   }
 
   const content = (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form
+      onSubmit={handleSubmit}
+      className="space-y-4"
+      onMouseDown={(e) => {
+        // Prevent clicks inside the form from bubbling up and closing parent panels
+        e.stopPropagation()
+      }}
+    >
       {/* Target Entity */}
       <div className="space-y-2">
         <Label htmlFor="target-id">Target Entity</Label>
