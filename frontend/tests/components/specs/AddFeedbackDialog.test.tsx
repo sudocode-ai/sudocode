@@ -131,11 +131,12 @@ describe('AddFeedbackDialog', () => {
     const issueSelect = screen.getByRole('combobox', { name: /issue/i })
     await user.click(issueSelect)
 
+    // Wait for the popover to open and show issues
     await waitFor(() => {
-      expect(screen.getByRole('option', { name: /issue-001/i })).toBeInTheDocument()
+      expect(screen.getByText('ISSUE-001')).toBeInTheDocument()
     })
 
-    const issueOption = screen.getByRole('option', { name: /issue-001/i })
+    const issueOption = screen.getByText('ISSUE-001')
     await user.click(issueOption)
 
     // Fill form
@@ -187,11 +188,12 @@ describe('AddFeedbackDialog', () => {
     const issueSelect = screen.getByRole('combobox', { name: /issue/i })
     await user.click(issueSelect)
 
+    // Wait for the popover to open and show issues
     await waitFor(() => {
-      expect(screen.getByRole('option', { name: /issue-001/i })).toBeInTheDocument()
+      expect(screen.getByText('ISSUE-001')).toBeInTheDocument()
     })
 
-    const issueOption = screen.getByRole('option', { name: /issue-001/i })
+    const issueOption = screen.getByText('ISSUE-001')
     await user.click(issueOption)
 
     // Fill form
@@ -248,11 +250,12 @@ describe('AddFeedbackDialog', () => {
     const issueSelect = screen.getByRole('combobox', { name: /issue/i })
     await user.click(issueSelect)
 
+    // Wait for the popover to open and show issues
     await waitFor(() => {
-      expect(screen.getByRole('option', { name: /issue-001/i })).toBeInTheDocument()
+      expect(screen.getByText('ISSUE-001')).toBeInTheDocument()
     })
 
-    const issueOption = screen.getByRole('option', { name: /issue-001/i })
+    const issueOption = screen.getByText('ISSUE-001')
     await user.click(issueOption)
 
     // Fill form
