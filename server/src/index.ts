@@ -462,13 +462,34 @@ const reset = "\u001b[0m";
 const makeClickable = (url: string, text: string) =>
   `\u001b]8;;${url}\u001b\\${text}\u001b]8;;\u001b\\`;
 
-console.log(`WebSocket server available at: ${makeClickable(wsUrl, wsUrl)}`);
+// ASCII art banner
+console.log(`\n${green}${bold}`);
+console.log(
+  " ███████╗ ██╗   ██╗ ██████╗   ██████╗   ██████╗  ██████╗  ██████╗  ███████╗"
+);
+console.log(
+  " ██╔════╝ ██║   ██║ ██╔══██╗ ██╔═══██╗ ██╔════╝ ██╔═══██╗ ██╔══██╗ ██╔════╝"
+);
+console.log(
+  " ███████╗ ██║   ██║ ██║  ██║ ██║   ██║ ██║      ██║   ██║ ██║  ██║ █████╗  "
+);
+console.log(
+  " ╚════██║ ██║   ██║ ██║  ██║ ██║   ██║ ██║      ██║   ██║ ██║  ██║ ██╔══╝  "
+);
+console.log(
+  " ███████║ ╚██████╔╝ ██████╔╝ ╚██████╔╝ ╚██████╗ ╚██████╔╝ ██████╔╝ ███████╗"
+);
+console.log(
+  ` ╚══════╝  ╚═════╝  ╚═════╝   ╚═════╝   ╚═════╝  ╚═════╝  ╚═════╝  ╚══════╝${reset}\n`
+);
+
 console.log(
   `${bold}${green}sudocode local server running on: ${makeClickable(
     httpUrl,
     httpUrl
   )}${reset}`
 );
+console.log(`WebSocket server available at: ${makeClickable(wsUrl, wsUrl)}`);
 
 // Error handlers for debugging
 process.on("uncaughtException", (error) => {

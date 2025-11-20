@@ -272,12 +272,9 @@ export function IssuePanel({
       if (!panelRef.current || !onClose) return
 
       const target = event.target as Node
-
-      // Don't close if clicking inside the panel
-      if (panelRef.current.contains(target)) return
+      const clickedElement = target as HTMLElement
 
       // Don't close if clicking on an issue card (to prevent flicker when switching issues)
-      const clickedElement = target as HTMLElement
       const issueCard = clickedElement.closest('[data-issue-id]')
       if (issueCard) return
 
@@ -288,7 +285,7 @@ export function IssuePanel({
       // Also check for resize handle by class (backup check)
       if (clickedElement.classList?.contains('cursor-col-resize')) return
 
-      // Don't close if clicking on a portal element (dialogs, dropdowns, etc.)
+      // Check for portal elements (dialogs, dropdowns, etc.)
       // Radix UI (which shadcn/ui is built on) renders portals with specific attributes
       const isInDialog = clickedElement.closest('[role="dialog"]')
       const isInAlertDialog = clickedElement.closest('[role="alertdialog"]')
@@ -296,40 +293,80 @@ export function IssuePanel({
       const isInPopover = clickedElement.closest('[data-radix-popper-content-wrapper]')
       const isInSelectContent = clickedElement.closest('[data-radix-select-content]')
       const isInSelectViewport = clickedElement.closest('[data-radix-select-viewport]')
-      // Check for dialog overlay (the backdrop behind the dialog)
+      const isOpenSelect = clickedElement.closest('[data-state="open"]')
+      const openSelectTrigger = document.querySelector(
+        '[data-radix-select-trigger][data-state="open"]'
+      )
       const isDialogOverlay =
         clickedElement.hasAttribute('data-dialog-overlay') ||
         clickedElement.closest('[data-dialog-overlay]')
 
+      // Check if any Select dropdown is currently open
+      const isSelectDropdownOpen =
+        isInDropdown ||
+        isInSelectContent ||
+        isInSelectViewport ||
+        isOpenSelect ||
+        !!openSelectTrigger
+
+      // Don't close if clicking on TipTap/ProseMirror elements
+      const isInProseMirror = clickedElement.closest('.ProseMirror')
+      const isInTiptap = clickedElement.closest('.tiptap-editor')
+      const isInTiptapMenu = clickedElement.closest('[data-tippy-root]')
+      const isInBubbleMenu = clickedElement.closest('.tippy-box')
+
+      // If clicking on portal elements (except Select when dropdown is open), don't close
       if (
         isInDialog ||
         isInAlertDialog ||
-        isInDropdown ||
         isInPopover ||
         isDialogOverlay ||
-        isInSelectContent ||
-        isInSelectViewport
-      )
+        isInProseMirror ||
+        isInTiptap ||
+        isInTiptapMenu ||
+        isInBubbleMenu
+      ) {
         return
+      }
 
-      // Don't close if clicking on TipTap/ProseMirror elements
-      // TipTap can render menus, tooltips, and other UI in portals
-      const isInProseMirror = clickedElement.closest('.ProseMirror')
-      const isInTiptap = clickedElement.closest('.tiptap-editor')
-      const isInTiptapMenu = clickedElement.closest('[data-tippy-root]') // Tippy.js tooltips
-      const isInBubbleMenu = clickedElement.closest('.tippy-box') // Bubble menu
+      if (isSelectDropdownOpen) {
+        return
+      }
+      const isInsidePanel = panelRef.current.contains(target)
 
-      if (isInProseMirror || isInTiptap || isInTiptapMenu || isInBubbleMenu) return
-
-      // Close the panel if clicking outside
-      onClose()
+      if (showAddRelationship) {
+        const relationshipFormContainer = panelRef.current.querySelector(
+          '[data-relationship-form-container]'
+        )
+        const isInsideFormContainer = relationshipFormContainer?.contains(target) || false
+        if (isInsideFormContainer) {
+          // Clicking inside form container - do nothing (let form and dropdowns handle themselves)
+          return
+        }
+        if (isInsidePanel) {
+          // Clicking inside panel but outside form container - close the form
+          setShowAddRelationship(false)
+          return
+        } else {
+          // Clicking outside panel - close the form first
+          setShowAddRelationship(false)
+          return
+        }
+      } else {
+        // Relationship form is closed
+        if (!isInsidePanel) {
+          // Clicking outside panel - close the panel
+          onClose()
+        }
+        // Clicking inside panel - do nothing
+      }
     }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [onClose])
+  }, [onClose, showAddRelationship])
 
   // Handle ESC key to close panel
   useEffect(() => {
@@ -700,7 +737,7 @@ export function IssuePanel({
 
               {/* Add Relationship Form */}
               {showAddRelationship && (
-                <div className="rounded-lg border p-4">
+                <div className="rounded-lg border p-4" data-relationship-form-container>
                   <RelationshipForm
                     fromId={issue.id}
                     fromType="issue"

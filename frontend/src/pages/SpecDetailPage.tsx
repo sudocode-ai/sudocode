@@ -30,9 +30,11 @@ import {
   FileText,
   Code2,
   GitBranch,
+  Trash2,
 } from 'lucide-react'
 import type { IssueFeedback, Relationship, EntityType, RelationshipType } from '@/types/api'
 import { relationshipsApi } from '@/lib/api'
+import { DeleteSpecDialog } from '@/components/specs/DeleteSpecDialog'
 
 const PRIORITY_OPTIONS = [
   { value: '0', label: 'Critical (P0)' },
@@ -51,7 +53,7 @@ export default function SpecDetailPage() {
   const { spec, isLoading, isError } = useSpec(id || '')
   const { feedback } = useSpecFeedback(id || '')
   const { issues } = useIssues()
-  const { updateSpec, isUpdating, archiveSpec, unarchiveSpec } = useSpecs()
+  const { updateSpec, isUpdating, archiveSpec, unarchiveSpec, deleteSpec } = useSpecs()
   const { createFeedback, updateFeedback, deleteFeedback } = useFeedback(id || '')
 
   const [selectedLine, setSelectedLine] = useState<number | null>(null)
@@ -64,6 +66,8 @@ export default function SpecDetailPage() {
     const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY)
     return stored !== null ? JSON.parse(stored) : 'formatted'
   })
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Local state for editable fields
   const [title, setTitle] = useState('')
@@ -354,6 +358,21 @@ export default function SpecDetailPage() {
     }
   }
 
+  const handleDelete = async () => {
+    if (!id) return
+
+    setIsDeleting(true)
+    try {
+      await deleteSpec(id)
+      setShowDeleteDialog(false)
+      navigate('/specs')
+    } catch (error) {
+      console.error('Failed to delete spec:', error)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   return (
     <div className="flex h-screen flex-col">
       {/* Header */}
@@ -435,6 +454,22 @@ export default function SpecDetailPage() {
               <span className="hidden sm:inline">Archive</span>
             </Button>
           )}
+
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowDeleteDialog(true)}
+                  disabled={isUpdating || isDeleting}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Delete spec</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
 
@@ -570,6 +605,14 @@ export default function SpecDetailPage() {
           )}
         </div>
       </div>
+
+      <DeleteSpecDialog
+        spec={spec}
+        isOpen={showDeleteDialog}
+        onClose={() => setShowDeleteDialog(false)}
+        onConfirm={handleDelete}
+        isDeleting={isDeleting}
+      />
     </div>
   )
 }
