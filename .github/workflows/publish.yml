@@ -20,9 +20,10 @@ on:
         type: boolean
 
   # Automatically publish on new tags matching v*.*.*
-  push:
-    tags:
-      - 'v*.*.*'
+  # TODO: Uncomment when ready to enable automatic publishing
+    # push:
+      # tags:
+        # - 'v*.*.*'
 
 jobs:
   publish:
