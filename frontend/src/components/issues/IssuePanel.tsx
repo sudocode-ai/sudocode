@@ -15,6 +15,8 @@ import {
   Code2,
   ChevronDown,
   ChevronUp,
+  Copy,
+  Check,
 } from 'lucide-react'
 import type { Issue, Relationship, EntityType, RelationshipType, IssueStatus } from '@/types/api'
 import { Card } from '@/components/ui/card'
@@ -40,6 +42,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ActivityTimeline } from './ActivityTimeline'
 import type { IssueFeedback, WebSocketMessage } from '@/types/api'
 import { useWebSocketContext } from '@/contexts/WebSocketContext'
+import { toast } from 'sonner'
 
 const VIEW_MODE_STORAGE_KEY = 'sudocode:details:viewMode'
 const DESCRIPTION_COLLAPSED_STORAGE_KEY = 'sudocode:issue:descriptionCollapsed'
@@ -123,6 +126,7 @@ export function IssuePanel({
   const [isLoadingRelationships, setIsLoadingRelationships] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
   const [executions, setExecutions] = useState<Execution[]>([])
+  const [isCopied, setIsCopied] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -523,6 +527,20 @@ export function IssuePanel({
     }
   }
 
+  const handleCopyId = async () => {
+    try {
+      await navigator.clipboard.writeText(issue.id)
+      setIsCopied(true)
+      setTimeout(() => setIsCopied(false), 2000)
+      toast.success('ID copied to clipboard', {
+        duration: 2000,
+      })
+    } catch (error) {
+      console.error('Failed to copy ID:', error)
+      toast.error('Failed to copy ID')
+    }
+  }
+
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-full w-full flex-col" ref={panelRef}>
@@ -631,9 +649,30 @@ export function IssuePanel({
             <div className="space-y-2 pb-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Badge variant="issue" className="font-mono">
-                    {issue.id}
-                  </Badge>
+                  <div className="group relative flex items-center gap-1">
+                    <Badge variant="issue" className="font-mono">
+                      {issue.id}
+                    </Badge>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleCopyId}
+                          className="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+                        >
+                          {isCopied ? (
+                            <Check className="h-3.5 w-3.5" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{isCopied ? 'Copied!' : 'Copy ID to Clipboard'}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
                   {issue.parent_id && (
                     <>
                       <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />

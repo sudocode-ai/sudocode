@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { WebSocketProvider } from '@/contexts/WebSocketContext'
+import { Toaster } from '@/components/ui/sonner'
 import MainLayout from '@/components/layout/MainLayout'
 import IssuesPage from '@/pages/IssuesPage'
 import IssueDetailPage from '@/pages/IssueDetailPage'
@@ -42,6 +43,7 @@ function App() {
               </Route>
             </Routes>
           </BrowserRouter>
+          <Toaster />
         </ThemeProvider>
       </WebSocketProvider>
     </QueryClientProvider>

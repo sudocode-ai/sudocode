@@ -31,10 +31,13 @@ import {
   Code2,
   GitBranch,
   Trash2,
+  Copy,
+  Check,
 } from 'lucide-react'
 import type { IssueFeedback, Relationship, EntityType, RelationshipType } from '@/types/api'
 import { relationshipsApi } from '@/lib/api'
 import { DeleteSpecDialog } from '@/components/specs/DeleteSpecDialog'
+import { toast } from 'sonner'
 
 const PRIORITY_OPTIONS = [
   { value: '0', label: 'Critical (P0)' },
@@ -68,6 +71,7 @@ export default function SpecDetailPage() {
   })
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isCopied, setIsCopied] = useState(false)
 
   // Local state for editable fields
   const [title, setTitle] = useState('')
@@ -373,6 +377,21 @@ export default function SpecDetailPage() {
     }
   }
 
+  const handleCopyId = async () => {
+    if (!id) return
+    try {
+      await navigator.clipboard.writeText(id)
+      setIsCopied(true)
+      setTimeout(() => setIsCopied(false), 2000)
+      toast.success('ID copied to clipboard', {
+        duration: 2000,
+      })
+    } catch (error) {
+      console.error('Failed to copy ID:', error)
+      toast.error('Failed to copy ID')
+    }
+  }
+
   return (
     <div className="flex h-screen flex-col">
       {/* Header */}
@@ -482,9 +501,32 @@ export default function SpecDetailPage() {
               <div className="space-y-2 pb-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Badge variant="spec" className="font-mono">
-                      {spec.id}
-                    </Badge>
+                    <div className="group relative flex items-center gap-1">
+                      <Badge variant="spec" className="font-mono">
+                        {spec.id}
+                      </Badge>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={handleCopyId}
+                              className="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+                            >
+                              {isCopied ? (
+                                <Check className="h-3.5 w-3.5" />
+                              ) : (
+                                <Copy className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{isCopied ? 'Copied!' : 'Copy ID to Clipboard'}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
                     {spec.parent_id && (
                       <>
                         <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
