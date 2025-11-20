@@ -1,0 +1,384 @@
+import * as fs from "fs";
+import * as path from "path";
+import type Database from "better-sqlite3";
+import { ProjectRegistry } from "./project-registry.js";
+import { ProjectContext } from "./project-context.js";
+import { initDatabase } from "./db.js";
+import { TransportManager } from "../execution/transport/transport-manager.js";
+import { ExecutionService } from "./execution-service.js";
+import { ExecutionLogsStore } from "./execution-logs-store.js";
+import { WorktreeManager } from "../execution/worktree/manager.js";
+import { getWorktreeConfig } from "../execution/worktree/config.js";
+import { ExecutionLifecycleService } from "./execution-lifecycle.js";
+import { startServerWatcher } from "./watcher.js";
+import type { ProjectError, Result } from "../types/project.js";
+import { Ok, Err } from "../types/project.js";
+
+interface CachedDatabase {
+  db: Database.Database;
+  lastAccessed: Date;
+  evictionTimer?: NodeJS.Timeout;
+}
+
+/**
+ * ProjectManager manages the lifecycle of multiple open projects.
+ *
+ * Responsibilities:
+ * - Open and close projects
+ * - Validate project directories
+ * - Cache database connections with TTL eviction
+ * - Track all open projects
+ * - Coordinate with ProjectRegistry for persistence
+ *
+ * Architecture:
+ * - Each open project gets a ProjectContext with isolated services
+ * - Database connections are cached for 30 minutes after project close
+ * - All services (file watcher, executions, etc.) are per-project
+ */
+export class ProjectManager {
+  private registry: ProjectRegistry;
+  private openProjects: Map<string, ProjectContext> = new Map();
+  private dbCache: Map<string, CachedDatabase> = new Map();
+
+  /** Database connection TTL: 30 minutes */
+  private readonly DB_CACHE_TTL = 30 * 60 * 1000;
+
+  /** Whether file watching is enabled */
+  private readonly watchEnabled: boolean;
+
+  constructor(registry: ProjectRegistry, options?: { watchEnabled?: boolean }) {
+    this.registry = registry;
+    this.watchEnabled = options?.watchEnabled ?? true;
+  }
+
+  /**
+   * Open a project and initialize all its services
+   * @param projectPath - Absolute path to project root directory
+   * @returns ProjectContext for the opened project
+   */
+  async openProject(
+    projectPath: string
+  ): Promise<Result<ProjectContext, ProjectError>> {
+    try {
+      // 1. Validate project structure
+      const validation = this.validateProject(projectPath);
+      if (!validation.ok) {
+        return validation as Result<ProjectContext, ProjectError>;
+      }
+
+      // 2. Generate or lookup project ID
+      const projectId = this.registry.generateProjectId(projectPath);
+
+      // 3. Check if already open
+      const existing = this.openProjects.get(projectId);
+      if (existing) {
+        console.log(`Project already open: ${projectId}`);
+        this.registry.updateLastOpened(projectId);
+        await this.registry.save();
+        return Ok(existing);
+      }
+
+      // 4. Initialize database (check cache first)
+      const db = await this.getOrCreateDatabase(projectId, projectPath);
+
+      // 5. Initialize all services for this project
+      const sudocodeDir = path.join(projectPath, ".sudocode");
+      const transportManager = new TransportManager();
+      const logsStore = new ExecutionLogsStore(db);
+      const worktreeConfig = getWorktreeConfig(projectPath);
+      const worktreeManager = new WorktreeManager(worktreeConfig);
+
+      const executionService = new ExecutionService(
+        db,
+        projectPath,
+        undefined,
+        transportManager,
+        logsStore
+      );
+
+      // 6. Create project context
+      const context = new ProjectContext(
+        projectId,
+        projectPath,
+        sudocodeDir,
+        db,
+        transportManager,
+        executionService,
+        logsStore,
+        worktreeManager
+      );
+
+      await context.initialize();
+
+      // 7. Start file watcher if enabled
+      if (this.watchEnabled) {
+        context.watcher = startServerWatcher({
+          db,
+          baseDir: sudocodeDir,
+          onFileChange: (info) => {
+            // TODO: Broadcast WebSocket updates with projectId
+            console.log(`File change in ${projectId}:`, info);
+          },
+        });
+      }
+
+      // 8. Cleanup orphaned worktrees on first open
+      if (worktreeConfig.cleanupOrphanedWorktreesOnStartup) {
+        try {
+          const lifecycleService = new ExecutionLifecycleService(
+            db,
+            projectPath,
+            worktreeManager
+          );
+          await lifecycleService.cleanupOrphanedWorktrees();
+          console.log(`Cleaned up orphaned worktrees for ${projectId}`);
+        } catch (error) {
+          console.warn(
+            `Failed to cleanup orphaned worktrees for ${projectId}:`,
+            error
+          );
+          // Don't fail the open operation
+        }
+      }
+
+      // 9. Register and track
+      this.registry.registerProject(projectPath);
+      this.registry.updateLastOpened(projectId);
+      await this.registry.save();
+
+      this.openProjects.set(projectId, context);
+
+      console.log(
+        `Project opened successfully: ${projectId} at ${projectPath}`
+      );
+      return Ok(context);
+    } catch (error: any) {
+      console.error(`Failed to open project at ${projectPath}:`, error);
+      return Err({
+        type: "UNKNOWN",
+        message: error.message || String(error),
+      });
+    }
+  }
+
+  /**
+   * Close a project and cleanup its resources
+   * @param projectId - Project ID to close
+   * @param keepDbInCache - Whether to keep database in cache (default: true)
+   */
+  async closeProject(
+    projectId: string,
+    keepDbInCache: boolean = true
+  ): Promise<void> {
+    const context = this.openProjects.get(projectId);
+    if (!context) {
+      console.warn(`Cannot close project ${projectId}: not open`);
+      return;
+    }
+
+    console.log(`Closing project: ${projectId}`);
+
+    try {
+      // Shutdown project context (stops watcher, cancels executions, etc.)
+      await context.shutdown();
+
+      // Keep DB in cache for fast reopening (unless explicitly disabled)
+      if (keepDbInCache) {
+        this.addToDbCache(projectId, context.db);
+      } else {
+        context.db.close();
+      }
+
+      // Remove from active projects
+      this.openProjects.delete(projectId);
+
+      // TODO: Broadcast project_closed WebSocket message
+
+      console.log(`Project closed: ${projectId}`);
+    } catch (error) {
+      console.error(`Error closing project ${projectId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get an open project by ID
+   */
+  getProject(projectId: string): ProjectContext | null {
+    return this.openProjects.get(projectId) || null;
+  }
+
+  /**
+   * Get all currently open projects
+   */
+  getAllOpenProjects(): ProjectContext[] {
+    return Array.from(this.openProjects.values());
+  }
+
+  /**
+   * Check if a project is currently open
+   */
+  isProjectOpen(projectId: string): boolean {
+    return this.openProjects.has(projectId);
+  }
+
+  /**
+   * Validate that a project directory is valid for opening
+   */
+  private validateProject(projectPath: string): Result<void, ProjectError> {
+    // Check that path exists
+    if (!fs.existsSync(projectPath)) {
+      return Err({
+        type: "PATH_NOT_FOUND",
+        path: projectPath,
+      });
+    }
+
+    // Check that it's a directory
+    const stats = fs.statSync(projectPath);
+    if (!stats.isDirectory()) {
+      return Err({
+        type: "INVALID_PROJECT",
+        message: `Path is not a directory: ${projectPath}`,
+      });
+    }
+
+    // Check that .sudocode directory exists
+    const sudocodeDir = path.join(projectPath, ".sudocode");
+    if (!fs.existsSync(sudocodeDir)) {
+      return Err({
+        type: "INVALID_PROJECT",
+        message: `Missing .sudocode directory: ${sudocodeDir}`,
+      });
+    }
+
+    // Check that cache.db exists
+    const dbPath = path.join(sudocodeDir, "cache.db");
+    if (!fs.existsSync(dbPath)) {
+      return Err({
+        type: "INVALID_PROJECT",
+        message: `Missing cache.db file: ${dbPath}`,
+      });
+    }
+
+    return Ok(undefined);
+  }
+
+  /**
+   * Get or create a database connection for a project
+   * Checks cache first, then initializes new connection
+   */
+  private async getOrCreateDatabase(
+    projectId: string,
+    projectPath: string
+  ): Promise<Database.Database> {
+    // Check cache
+    const cached = this.dbCache.get(projectId);
+    if (cached) {
+      console.log(`Using cached database for ${projectId}`);
+      cached.lastAccessed = new Date();
+
+      // Clear eviction timer since we're using it again
+      if (cached.evictionTimer) {
+        clearTimeout(cached.evictionTimer);
+        cached.evictionTimer = undefined;
+      }
+
+      // Remove from cache (will be managed by project context)
+      this.dbCache.delete(projectId);
+
+      return cached.db;
+    }
+
+    // Initialize new database
+    const dbPath = path.join(projectPath, ".sudocode", "cache.db");
+    console.log(`Initializing new database for ${projectId} at ${dbPath}`);
+    const db = initDatabase({ path: dbPath });
+
+    return db;
+  }
+
+  /**
+   * Add a database to the cache with TTL eviction
+   */
+  private addToDbCache(projectId: string, db: Database.Database): void {
+    // Clear any existing cache entry
+    const existing = this.dbCache.get(projectId);
+    if (existing?.evictionTimer) {
+      clearTimeout(existing.evictionTimer);
+    }
+
+    // Add to cache
+    const cached: CachedDatabase = {
+      db,
+      lastAccessed: new Date(),
+    };
+
+    // Schedule eviction
+    cached.evictionTimer = setTimeout(() => {
+      const entry = this.dbCache.get(projectId);
+      if (entry) {
+        const age = Date.now() - entry.lastAccessed.getTime();
+        if (age >= this.DB_CACHE_TTL) {
+          console.log(
+            `Evicting cached database for ${projectId} (age: ${age}ms)`
+          );
+          try {
+            entry.db.close();
+          } catch (error) {
+            console.error(
+              `Error closing cached database for ${projectId}:`,
+              error
+            );
+          }
+          this.dbCache.delete(projectId);
+        }
+      }
+    }, this.DB_CACHE_TTL);
+
+    this.dbCache.set(projectId, cached);
+    console.log(
+      `Database cached for ${projectId} (TTL: ${this.DB_CACHE_TTL}ms)`
+    );
+  }
+
+  /**
+   * Get summary of all projects (open and cached)
+   */
+  getSummary() {
+    return {
+      openProjects: this.getAllOpenProjects().map((p) => p.getSummary()),
+      cachedDatabases: Array.from(this.dbCache.keys()),
+      totalOpen: this.openProjects.size,
+      totalCached: this.dbCache.size,
+    };
+  }
+
+  /**
+   * Shutdown the project manager and cleanup all resources
+   */
+  async shutdown(): Promise<void> {
+    console.log("Shutting down ProjectManager...");
+
+    // Close all open projects
+    const projectIds = Array.from(this.openProjects.keys());
+    for (const projectId of projectIds) {
+      await this.closeProject(projectId, false); // Don't cache on shutdown
+    }
+
+    // Close all cached databases
+    for (const [projectId, cached] of this.dbCache.entries()) {
+      if (cached.evictionTimer) {
+        clearTimeout(cached.evictionTimer);
+      }
+      try {
+        cached.db.close();
+      } catch (error) {
+        console.error(`Error closing cached database for ${projectId}:`, error);
+      }
+    }
+    this.dbCache.clear();
+
+    console.log("ProjectManager shutdown complete");
+  }
+}
