@@ -29,6 +29,10 @@ import { createAgUiSystem } from "../execution/output/ag-ui-integration.js";
 import type { AgUiEventAdapter } from "../execution/output/ag-ui-adapter.js";
 import type { TransportManager } from "../execution/transport/transport-manager.js";
 import { ExecutionLogsStore } from "./execution-logs-store.js";
+import { DirectRunnerAdapter } from "../execution/adapters/direct-runner-adapter.js";
+import type { IAgentExecutor } from "agent-execution-engine/agents";
+import { ClaudeCodeExecutor } from "agent-execution-engine/agents";
+import type { ExecutionTask } from "agent-execution-engine/engine";
 
 /**
  * Configuration for creating an execution
@@ -43,6 +47,9 @@ export interface ExecutionConfig {
   continueOnStepFailure?: boolean;
   captureFileChanges?: boolean;
   captureToolCalls?: boolean;
+  executorMode?: "legacy" | "direct-runner";
+  agentType?: "claude-code";
+  agentProfile?: string;
 }
 
 /**
@@ -114,6 +121,158 @@ export class ExecutionService {
     this.transportManager = transportManager;
     this.logsStore = logsStore || new ExecutionLogsStore(db);
   }
+
+  // ============================================================================
+  // Private Methods - Executor Factory (Phase 2)
+  // ============================================================================
+
+  /**
+   * Create agent executor based on executor mode
+   *
+   * @param config - Execution configuration
+   * @param workDir - Working directory for execution
+   * @returns Executor instance
+   */
+  private createExecutor(
+    config: ExecutionConfig,
+    workDir: string
+  ): IAgentExecutor {
+    // Always use direct-runner (legacy removed)
+    return this.createDirectRunnerExecutor(config, workDir);
+  }
+
+  /**
+   * Create direct runner executor (ClaudeCodeExecutor)
+   *
+   * Phase 2 only supports Claude Code. Cursor/Copilot in Phase 3.
+   *
+   * @param config - Execution configuration
+   * @param workDir - Working directory
+   * @returns ClaudeCodeExecutor instance
+   */
+  private createDirectRunnerExecutor(
+    config: ExecutionConfig,
+    workDir: string
+  ): IAgentExecutor {
+    const agentType = config.agentType || "claude-code";
+
+    if (agentType !== "claude-code") {
+      throw new Error(
+        `Unsupported agent type in Phase 2: ${agentType}. Only claude-code is supported.`
+      );
+    }
+
+    // Create ClaudeCodeExecutor with config
+    const executor = new ClaudeCodeExecutor({
+      workDir,
+      print: true,
+      outputFormat: "stream-json",
+      verbose: true,
+      dangerouslySkipPermissions: true,
+      ...(config.model && { model: config.model }),
+    });
+
+    return executor;
+  }
+
+  /**
+   * Execute task using direct runner adapter
+   *
+   * Creates DirectRunnerAdapter, executes task, and handles lifecycle events.
+   *
+   * @param execution - Execution record
+   * @param prompt - Rendered prompt
+   * @param config - Execution configuration
+   * @param workDir - Working directory
+   */
+  private async executeWithDirectRunner(
+    execution: Execution,
+    prompt: string,
+    config: ExecutionConfig,
+    workDir: string
+  ): Promise<void> {
+    try {
+      // 1. Create executor
+      const executor = this.createExecutor(config, workDir);
+
+      // 2. Create AG-UI adapter for event streaming (if transport available)
+      let agUiAdapter: AgUiEventAdapter | undefined;
+      if (this.transportManager) {
+        const agUiSystem = createAgUiSystem(execution.id);
+        agUiAdapter = agUiSystem.adapter;
+        this.transportManager.connectAdapter(agUiAdapter, execution.id);
+
+        // Emit RUN_STARTED
+        agUiAdapter.emitRunStarted({
+          executionId: execution.id,
+          mode: "direct-runner",
+        });
+      }
+
+      // 3. Create DirectRunnerAdapter
+      const adapter = new DirectRunnerAdapter(
+        executor,
+        agUiAdapter,
+        this.logsStore
+      );
+
+      // 4. Create execution task
+      const task: ExecutionTask = {
+        id: execution.id,
+        type: "issue",
+        prompt,
+        workDir,
+        priority: 0,
+        dependencies: [],
+        createdAt: new Date(),
+        config: {
+          timeout: config.timeout,
+        },
+      };
+
+      // 5. Update status to running
+      updateExecution(this.db, execution.id, {
+        status: "running",
+      });
+
+      // 6. Execute and stream
+      await adapter.executeAndStream(task, execution.id, workDir);
+
+      // 7. Update execution status to completed
+      updateExecution(this.db, execution.id, {
+        status: "completed",
+        completed_at: new Date().toISOString(),
+      });
+
+      // 8. Emit RUN_FINISHED
+      if (agUiAdapter) {
+        agUiAdapter.emitRunFinished({ status: "completed" });
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+
+      console.error("[ExecutionService] Direct runner execution failed:", {
+        executionId: execution.id,
+        error: errorMessage,
+        stack: errorStack,
+      });
+
+      // Update execution status to failed
+      updateExecution(this.db, execution.id, {
+        status: "failed",
+        completed_at: new Date().toISOString(),
+        error_message: errorMessage,
+      });
+
+      throw error;
+    }
+  }
+
+  // ============================================================================
+  // Public Methods
+  // ============================================================================
 
   /**
    * Prepare execution - load issue, render template, return preview
@@ -264,7 +423,7 @@ export class ExecutionService {
       const result = await this.lifecycleService.createExecutionWithWorktree({
         issueId,
         issueTitle: issue.title,
-        agentType: "claude-code",
+        agentType: config.agentType || "claude-code",
         targetBranch: config.baseBranch || "main",
         repoPath: this.repoPath,
         mode: mode,
@@ -280,7 +439,7 @@ export class ExecutionService {
       execution = createExecution(this.db, {
         id: executionId,
         issue_id: issueId,
-        agent_type: "claude-code",
+        agent_type: config.agentType || "claude-code",
         mode: mode,
         prompt: prompt,
         config: JSON.stringify(config),
@@ -304,209 +463,8 @@ export class ExecutionService {
       // Don't fail execution creation - logs are nice-to-have
     }
 
-    // 3. Build WorkflowDefinition
-    const workflow: WorkflowDefinition = {
-      id: `workflow-${execution.id}`,
-      steps: [
-        {
-          id: "execute-issue",
-          taskType: "issue",
-          prompt,
-          taskConfig: {
-            model: config.model || "claude-sonnet-4",
-            timeout: config.timeout,
-            captureFileChanges: config.captureFileChanges ?? true,
-            captureToolCalls: config.captureToolCalls ?? true,
-          },
-        },
-      ],
-      config: {
-        checkpointInterval: config.checkpointInterval ?? 1,
-        continueOnStepFailure: config.continueOnStepFailure ?? false,
-        timeout: config.timeout,
-      },
-      metadata: {
-        workDir,
-        issueId,
-        executionId: execution.id,
-      },
-    };
-
-    // 4. Create execution engine stack
-    const processManager = new SimpleProcessManager();
-
-    let engine = new SimpleExecutionEngine(processManager, {
-      maxConcurrent: 1, // One task at a time for issue execution
-      defaultProcessConfig: {
-        executablePath: "claude",
-        args: [
-          "--print",
-          "--output-format",
-          "stream-json",
-          "--verbose",
-          "--dangerously-skip-permissions",
-        ],
-      },
-    });
-
-    let executor = new ResilientExecutor(engine);
-
-    // 5. Create AG-UI system (processor + adapter) if transport manager is available
-    let agUiAdapter: AgUiEventAdapter | undefined;
-    if (this.transportManager) {
-      const agUiSystem = createAgUiSystem(execution.id);
-      agUiAdapter = agUiSystem.adapter;
-
-      // Connect adapter to transport for SSE streaming
-      this.transportManager.connectAdapter(agUiAdapter, execution.id);
-
-      // Connect processor to execution engine for real-time output parsing
-      // Buffer for incomplete lines (stream-json can split mid-line)
-      let lineBuffer = "";
-
-      engine = new SimpleExecutionEngine(processManager, {
-        maxConcurrent: 1,
-        defaultProcessConfig: {
-          executablePath: "claude",
-          args: [
-            "--print",
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            "--dangerously-skip-permissions",
-          ],
-        },
-        // TODO: Factor out this logic for DRY principles.
-        onOutput: (data, type) => {
-          if (type === "stdout") {
-            // Append new data to buffer
-            lineBuffer += data.toString();
-
-            // Process complete lines (ending with \n)
-            let newlineIndex;
-            while ((newlineIndex = lineBuffer.indexOf("\n")) !== -1) {
-              const line = lineBuffer.slice(0, newlineIndex);
-              lineBuffer = lineBuffer.slice(newlineIndex + 1);
-
-              if (line.trim()) {
-                // 1. Persist raw log immediately (before processing)
-                try {
-                  this.logsStore.appendRawLog(execution.id, line);
-                } catch (err) {
-                  console.error(
-                    "[ExecutionService] Failed to persist raw log (non-critical):",
-                    {
-                      executionId: execution.id,
-                      error: err instanceof Error ? err.message : String(err),
-                    }
-                  );
-                  // Don't crash execution - logs are nice-to-have
-                }
-
-                // 2. Process through AG-UI pipeline for live clients
-                agUiSystem.processor.processLine(line).catch((err) => {
-                  console.error(
-                    "[ExecutionService] Error processing output line:",
-                    {
-                      error: err instanceof Error ? err.message : String(err),
-                      line: line.slice(0, 100), // Log first 100 chars for debugging
-                    }
-                  );
-                });
-              }
-            }
-          }
-        },
-      });
-      executor = new ResilientExecutor(engine);
-    }
-
-    // 6. Create LinearOrchestrator
-    const orchestrator = new LinearOrchestrator(
-      executor,
-      undefined, // No storage/checkpointing for now
-      agUiAdapter,
-      this.lifecycleService
-    );
-
-    // 7. Register event handlers to update execution status in database
-    orchestrator.onWorkflowStart(() => {
-      try {
-        updateExecution(this.db, execution.id, {
-          status: "running",
-        });
-      } catch (error) {
-        console.error(
-          "[ExecutionService] Failed to update execution status to running",
-          {
-            executionId: execution.id,
-            error: error instanceof Error ? error.message : String(error),
-          }
-        );
-      }
-    });
-
-    orchestrator.onWorkflowComplete(() => {
-      console.log("[ExecutionService] Workflow completed successfully", {
-        executionId: execution.id,
-      });
-      try {
-        updateExecution(this.db, execution.id, {
-          status: "completed",
-          completed_at: new Date().toISOString(),
-        });
-      } catch (error) {
-        console.error(
-          "[ExecutionService] Failed to update execution status to completed",
-          {
-            executionId: execution.id,
-            error: error instanceof Error ? error.message : String(error),
-            note: "Execution may have been deleted (e.g., due to CASCADE DELETE from issue deletion)",
-          }
-        );
-      }
-      // Remove orchestrator from active map
-      this.activeOrchestrators.delete(execution.id);
-    });
-
-    orchestrator.onWorkflowFailed((_executionId, error) => {
-      console.error("[ExecutionService] Workflow failed", {
-        executionId: execution.id,
-        error: error.message,
-        stack: error.stack,
-      });
-      try {
-        updateExecution(this.db, execution.id, {
-          status: "failed",
-          completed_at: new Date().toISOString(),
-          error_message: error.message,
-        });
-      } catch (updateError) {
-        console.error(
-          "[ExecutionService] Failed to update execution status to failed",
-          {
-            executionId: execution.id,
-            error:
-              updateError instanceof Error
-                ? updateError.message
-                : String(updateError),
-            note: "Execution may have been deleted (e.g., due to CASCADE DELETE from issue deletion)",
-          }
-        );
-      }
-      // Remove orchestrator from active map
-      this.activeOrchestrators.delete(execution.id);
-    });
-
-    // 8. Start workflow execution (non-blocking)
-    orchestrator.startWorkflow(workflow, workDir, {
-      checkpointInterval: config.checkpointInterval,
-      executionId: execution.id,
-    });
-
-    // 9. Store orchestrator for later cancellation
-    this.activeOrchestrators.set(execution.id, orchestrator);
-
+    // 3. Execute with direct runner (uses agent-execution-engine)
+    await this.executeWithDirectRunner(execution, prompt, config, workDir);
     return execution;
   }
 

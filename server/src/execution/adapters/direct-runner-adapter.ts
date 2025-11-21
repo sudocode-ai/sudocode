@@ -9,10 +9,10 @@
 
 import type {
   IAgentExecutor,
-  ExecutionTask,
   AgentCapabilities,
   NormalizedEntry,
 } from "agent-execution-engine/agents";
+import type { ExecutionTask } from "agent-execution-engine/engine";
 import type { AgUiEventAdapter } from "../output/ag-ui-adapter.js";
 import type { ExecutionLogsStore } from "../../services/execution-logs-store.js";
 import { normalizedEntryToAgUiEvents } from "../output/normalized-to-ag-ui.js";

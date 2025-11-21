@@ -20,6 +20,7 @@ import {
   EXECUTION_LOGS_INDEXES,
   ISSUES_TABLE,
 } from "@sudocode-ai/types/schema";
+import { runMigrations } from "@sudocode-ai/types/migrations";
 
 describe("ExecutionLogsStore Integration", () => {
   let db: Database.Database;
@@ -37,6 +38,9 @@ describe("ExecutionLogsStore Integration", () => {
     db.exec(EXECUTION_LOGS_TABLE);
     db.exec(EXECUTION_LOGS_INDEXES);
     db.exec(ISSUES_TABLE);
+
+    // Run migrations
+    runMigrations(db);
 
     // Create test issue
     db.prepare(`
@@ -67,6 +71,12 @@ describe("ExecutionLogsStore Integration", () => {
       lifecycleService,
       undefined, // No transport manager
       logsStore
+    );
+
+    // Mock executeWithDirectRunner to prevent actual claude execution
+    // These tests focus on log store integration, not actual execution
+    vi.spyOn(executionService as any, "executeWithDirectRunner").mockResolvedValue(
+      undefined
     );
   });
 

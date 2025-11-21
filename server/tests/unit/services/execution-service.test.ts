@@ -188,7 +188,10 @@ describe("ExecutionService", () => {
 
     it("should handle issue without related specs", async () => {
       // Create issue without relationships
-      const { id: isolatedIssueId, uuid: isolatedIssueUuid } = generateIssueId(db, testDir);
+      const { id: isolatedIssueId, uuid: isolatedIssueUuid } = generateIssueId(
+        db,
+        testDir
+      );
       createIssue(db, {
         id: isolatedIssueId,
         uuid: isolatedIssueUuid,
@@ -215,7 +218,10 @@ describe("ExecutionService", () => {
 
     it("should render template even with empty issue content", async () => {
       // Create issue with empty content
-      const { id: emptyIssueId, uuid: emptyIssueUuid } = generateIssueId(db, testDir);
+      const { id: emptyIssueId, uuid: emptyIssueUuid } = generateIssueId(
+        db,
+        testDir
+      );
       createIssue(db, {
         id: emptyIssueId,
         uuid: emptyIssueUuid,
@@ -486,7 +492,10 @@ describe("ExecutionService", () => {
       ).toBeTruthy();
 
       // Issue without related specs should not show section
-      const { id: isolatedIssueId, uuid: isolatedIssueUuid } = generateIssueId(db, testDir);
+      const { id: isolatedIssueId, uuid: isolatedIssueUuid } = generateIssueId(
+        db,
+        testDir
+      );
       createIssue(db, {
         id: isolatedIssueId,
         uuid: isolatedIssueUuid,
@@ -528,6 +537,52 @@ describe("ExecutionService", () => {
         result.renderedPrompt.includes("Authentication System Design")
       ).toBeTruthy();
       expect(result.renderedPrompt.includes("Database Design")).toBeTruthy();
+    });
+  });
+
+  describe("Direct Runner Integration", () => {
+    it("should create executor with direct-runner mode", () => {
+      const mockWorktreeManager = createMockWorktreeManager();
+      const lifecycleService = new ExecutionLifecycleService(
+        db,
+        testDir,
+        mockWorktreeManager
+      );
+      const service = new ExecutionService(db, testDir, lifecycleService);
+
+      // Access private method via type assertion (for testing only)
+      const config = {
+        agentType: "claude-code" as const,
+      };
+
+      // Test executor factory method
+      const executor = (service as any).createExecutor(config, testDir);
+      expect(executor).toBeDefined();
+
+      // Verify capabilities
+      const capabilities = executor.getCapabilities();
+      expect(capabilities).toBeDefined();
+      expect(capabilities.supportsApprovals).toBe(true);
+      expect(capabilities.supportsSessionResume).toBe(true);
+    });
+
+    it("should throw error for unsupported agent type", () => {
+      const mockWorktreeManager = createMockWorktreeManager();
+      const lifecycleService = new ExecutionLifecycleService(
+        db,
+        testDir,
+        mockWorktreeManager
+      );
+      const service = new ExecutionService(db, testDir, lifecycleService);
+
+      const config = {
+        agentType: "codex" as any, // Unsupported agent type
+      };
+
+      // Should throw error for unsupported agent type
+      expect(() => {
+        (service as any).createExecutor(config, testDir);
+      }).toThrow("Unsupported agent type");
     });
   });
 });
