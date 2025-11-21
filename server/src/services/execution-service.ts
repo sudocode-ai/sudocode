@@ -29,6 +29,7 @@ import { createAgUiSystem } from "../execution/output/ag-ui-integration.js";
 import type { AgUiEventAdapter } from "../execution/output/ag-ui-adapter.js";
 import type { TransportManager } from "../execution/transport/transport-manager.js";
 import { ExecutionLogsStore } from "./execution-logs-store.js";
+import { broadcastExecutionUpdate } from "./websocket.js";
 
 /**
  * Configuration for creating an execution
@@ -83,6 +84,7 @@ export interface ExecutionPrepareResult {
  */
 export class ExecutionService {
   private db: Database.Database;
+  private projectId: string;
   private templateEngine: PromptTemplateEngine;
   private lifecycleService: ExecutionLifecycleService;
   private repoPath: string;
@@ -94,6 +96,7 @@ export class ExecutionService {
    * Create a new ExecutionService
    *
    * @param db - Database instance
+   * @param projectId - Project ID for WebSocket broadcasts
    * @param repoPath - Path to the git repository
    * @param lifecycleService - Optional execution lifecycle service (creates one if not provided)
    * @param transportManager - Optional transport manager for SSE streaming
@@ -101,12 +104,14 @@ export class ExecutionService {
    */
   constructor(
     db: Database.Database,
+    projectId: string,
     repoPath: string,
     lifecycleService?: ExecutionLifecycleService,
     transportManager?: TransportManager,
     logsStore?: ExecutionLogsStore
   ) {
     this.db = db;
+    this.projectId = projectId;
     this.repoPath = repoPath;
     this.templateEngine = new PromptTemplateEngine();
     this.lifecycleService =
@@ -435,6 +440,17 @@ export class ExecutionService {
         updateExecution(this.db, execution.id, {
           status: "running",
         });
+        // Broadcast status change
+        const updated = getExecution(this.db, execution.id);
+        if (updated) {
+          broadcastExecutionUpdate(
+            this.projectId,
+            execution.id,
+            "status_changed",
+            updated,
+            updated.issue_id || undefined
+          );
+        }
       } catch (error) {
         console.error(
           "[ExecutionService] Failed to update execution status to running",
@@ -455,6 +471,17 @@ export class ExecutionService {
           status: "completed",
           completed_at: new Date().toISOString(),
         });
+        // Broadcast status change
+        const updated = getExecution(this.db, execution.id);
+        if (updated) {
+          broadcastExecutionUpdate(
+            this.projectId,
+            execution.id,
+            "status_changed",
+            updated,
+            updated.issue_id || undefined
+          );
+        }
       } catch (error) {
         console.error(
           "[ExecutionService] Failed to update execution status to completed",
@@ -481,6 +508,17 @@ export class ExecutionService {
           completed_at: new Date().toISOString(),
           error_message: error.message,
         });
+        // Broadcast status change
+        const updated = getExecution(this.db, execution.id);
+        if (updated) {
+          broadcastExecutionUpdate(
+            this.projectId,
+            execution.id,
+            "status_changed",
+            updated,
+            updated.issue_id || undefined
+          );
+        }
       } catch (updateError) {
         console.error(
           "[ExecutionService] Failed to update execution status to failed",
@@ -506,6 +544,15 @@ export class ExecutionService {
 
     // 9. Store orchestrator for later cancellation
     this.activeOrchestrators.set(execution.id, orchestrator);
+
+    // 10. Broadcast execution creation
+    broadcastExecutionUpdate(
+      this.projectId,
+      execution.id,
+      "created",
+      execution,
+      execution.issue_id || undefined
+    );
 
     return execution;
   }
@@ -729,6 +776,17 @@ Please continue working on this issue, taking into account the feedback above.`;
         updateExecution(this.db, newExecution.id, {
           status: "running",
         });
+        // Broadcast status change
+        const updated = getExecution(this.db, newExecution.id);
+        if (updated) {
+          broadcastExecutionUpdate(
+            this.projectId,
+            newExecution.id,
+            "status_changed",
+            updated,
+            updated.issue_id || undefined
+          );
+        }
       } catch (error) {
         console.error(
           "[ExecutionService] Failed to update follow-up execution status to running",
@@ -746,6 +804,17 @@ Please continue working on this issue, taking into account the feedback above.`;
           status: "completed",
           completed_at: new Date().toISOString(),
         });
+        // Broadcast status change
+        const updated = getExecution(this.db, newExecution.id);
+        if (updated) {
+          broadcastExecutionUpdate(
+            this.projectId,
+            newExecution.id,
+            "status_changed",
+            updated,
+            updated.issue_id || undefined
+          );
+        }
       } catch (error) {
         console.error(
           "[ExecutionService] Failed to update follow-up execution status to completed",
@@ -765,6 +834,17 @@ Please continue working on this issue, taking into account the feedback above.`;
           completed_at: new Date().toISOString(),
           error_message: error.message,
         });
+        // Broadcast status change
+        const updated = getExecution(this.db, newExecution.id);
+        if (updated) {
+          broadcastExecutionUpdate(
+            this.projectId,
+            newExecution.id,
+            "status_changed",
+            updated,
+            updated.issue_id || undefined
+          );
+        }
       } catch (updateError) {
         console.error(
           "[ExecutionService] Failed to update follow-up execution status to failed",
@@ -788,6 +868,15 @@ Please continue working on this issue, taking into account the feedback above.`;
 
     // 11. Store orchestrator for later cancellation
     this.activeOrchestrators.set(newExecution.id, orchestrator);
+
+    // 12. Broadcast execution creation
+    broadcastExecutionUpdate(
+      this.projectId,
+      newExecution.id,
+      "created",
+      newExecution,
+      newExecution.issue_id || undefined
+    );
 
     return newExecution;
   }
@@ -824,6 +913,18 @@ Please continue working on this issue, taking into account the feedback above.`;
       status: "stopped",
       completed_at: new Date().toISOString(),
     });
+
+    // Broadcast status change
+    const updated = getExecution(this.db, executionId);
+    if (updated) {
+      broadcastExecutionUpdate(
+        this.projectId,
+        executionId,
+        "status_changed",
+        updated,
+        updated.issue_id || undefined
+      );
+    }
   }
 
   /**

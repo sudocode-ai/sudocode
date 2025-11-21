@@ -12,8 +12,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import { initDatabase, getDatabaseInfo } from "./services/db.js";
 import { ExecutionLifecycleService } from "./services/execution-lifecycle.js";
-import { ExecutionService } from "./services/execution-service.js";
-import { ExecutionLogsStore } from "./services/execution-logs-store.js";
 // import {
 //   ExecutionLogsCleanup,
 //   DEFAULT_CLEANUP_CONFIG,
@@ -60,9 +58,7 @@ const REPO_ROOT = path.dirname(SUDOCODE_DIR);
 // Initialize database and transport manager
 let db!: Database.Database;
 let transportManager!: TransportManager;
-let logsStore!: ExecutionLogsStore;
 // let logsCleanup: ExecutionLogsCleanup | null = null;
-let executionService: ExecutionService | null = null;
 
 // Multi-project infrastructure
 let projectRegistry!: ProjectRegistry;
@@ -112,9 +108,7 @@ async function initialize() {
     transportManager = new TransportManager();
     console.log("Transport manager initialized");
 
-    // Initialize execution logs store
-    logsStore = new ExecutionLogsStore(db);
-    console.log("Execution logs store initialized");
+    // Note: ExecutionLogsStore is now initialized per-project in ProjectManager
 
     // Initialize execution logs cleanup service
     // TODO: Enable auto-cleanup config via .sudocode/config.json
@@ -133,16 +127,6 @@ async function initialize() {
     // };
     // logsCleanup = new ExecutionLogsCleanup(logsStore, cleanupConfig);
     // logsCleanup.start();
-
-    // Initialize execution service globally for cleanup on shutdown
-    executionService = new ExecutionService(
-      db,
-      REPO_ROOT,
-      undefined,
-      transportManager,
-      logsStore
-    );
-    console.log("Execution service initialized");
 
     // Cleanup orphaned worktrees on startup (if configured)
     const worktreeConfig = getWorktreeConfig(REPO_ROOT);
@@ -444,26 +428,20 @@ const reset = "\u001b[0m";
 const makeClickable = (url: string, text: string) =>
   `\u001b]8;;${url}\u001b\\${text}\u001b]8;;\u001b\\`;
 
-// ASCII art banner
+// ASCII art banner (split-line version for narrower terminals)
 console.log(`\n${green}${bold}`);
-console.log(
-  " ███████╗ ██╗   ██╗ ██████╗   ██████╗   ██████╗  ██████╗  ██████╗  ███████╗"
-);
-console.log(
-  " ██╔════╝ ██║   ██║ ██╔══██╗ ██╔═══██╗ ██╔════╝ ██╔═══██╗ ██╔══██╗ ██╔════╝"
-);
-console.log(
-  " ███████╗ ██║   ██║ ██║  ██║ ██║   ██║ ██║      ██║   ██║ ██║  ██║ █████╗  "
-);
-console.log(
-  " ╚════██║ ██║   ██║ ██║  ██║ ██║   ██║ ██║      ██║   ██║ ██║  ██║ ██╔══╝  "
-);
-console.log(
-  " ███████║ ╚██████╔╝ ██████╔╝ ╚██████╔╝ ╚██████╗ ╚██████╔╝ ██████╔╝ ███████╗"
-);
-console.log(
-  ` ╚══════╝  ╚═════╝  ╚═════╝   ╚═════╝   ╚═════╝  ╚═════╝  ╚═════╝  ╚══════╝${reset}\n`
-);
+console.log(" ███████╗ ██╗   ██╗ ██████╗   ██████╗ ");
+console.log(" ██╔════╝ ██║   ██║ ██╔══██╗ ██╔═══██╗");
+console.log(" ███████╗ ██║   ██║ ██║  ██║ ██║   ██║");
+console.log(" ╚════██║ ██║   ██║ ██║  ██║ ██║   ██║");
+console.log(" ███████║ ╚██████╔╝ ██████╔╝ ╚██████╔╝");
+console.log(" ╚══════╝  ╚═════╝  ╚═════╝   ╚═════╝ ");
+console.log("  ██████╗  ██████╗  ██████╗  ███████╗");
+console.log(" ██╔════╝ ██╔═══██╗ ██╔══██╗ ██╔════╝");
+console.log(" ██║      ██║   ██║ ██║  ██║ █████╗  ");
+console.log(" ██║      ██║   ██║ ██║  ██║ ██╔══╝  ");
+console.log(" ╚██████╗ ╚██████╔╝ ██████╔╝ ███████╗");
+console.log(` ╚═════╝  ╚═════╝  ╚═════╝  ╚══════╝${reset}\n`);
 
 console.log(
   `${bold}${green}sudocode local server running on: ${makeClickable(
@@ -488,11 +466,6 @@ process.on("unhandledRejection", (reason, promise) => {
 process.on("SIGINT", async () => {
   console.log("\nShutting down server...");
 
-  // Shutdown execution service (cancel active executions)
-  if (executionService) {
-    await executionService.shutdown();
-  }
-
   // Stop logs cleanup service
   // TODO: Re-enable when logs cleanup is supported
   // if (logsCleanup) {
@@ -500,6 +473,7 @@ process.on("SIGINT", async () => {
   // }
 
   // Shutdown ProjectManager (closes all projects and their watchers)
+  // This will shutdown all per-project ExecutionServices
   if (projectManager) {
     await projectManager.shutdown();
   }
@@ -532,11 +506,6 @@ process.on("SIGINT", async () => {
 process.on("SIGTERM", async () => {
   console.log("\nShutting down server...");
 
-  // Shutdown execution service (cancel active executions)
-  if (executionService) {
-    await executionService.shutdown();
-  }
-
   // Stop logs cleanup service
   // TODO: Re-enable when logs cleanup is supported
   // if (logsCleanup) {
@@ -544,6 +513,7 @@ process.on("SIGTERM", async () => {
   // }
 
   // Shutdown ProjectManager (closes all projects and their watchers)
+  // This will shutdown all per-project ExecutionServices
   if (projectManager) {
     await projectManager.shutdown();
   }

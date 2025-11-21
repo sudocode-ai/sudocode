@@ -90,6 +90,7 @@ export class ProjectManager {
 
       const executionService = new ExecutionService(
         db,
+        projectId,
         projectPath,
         undefined,
         transportManager,

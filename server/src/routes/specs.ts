@@ -145,7 +145,7 @@ export function createSpecsRouter(): Router {
       });
 
       // Broadcast spec creation to WebSocket clients
-      broadcastSpecUpdate(spec.id, "created", spec);
+      broadcastSpecUpdate(req.project!.id, spec.id, "created", spec);
 
       res.status(201).json({
         success: true,
@@ -223,7 +223,7 @@ export function createSpecsRouter(): Router {
       });
 
       // Broadcast spec update to WebSocket clients
-      broadcastSpecUpdate(spec.id, "updated", spec);
+      broadcastSpecUpdate(req.project!.id, spec.id, "updated", spec);
 
       res.json({
         success: true,
@@ -277,7 +277,7 @@ export function createSpecsRouter(): Router {
         triggerExport(req.project!.db, req.project!.sudocodeDir);
 
         // Broadcast spec deletion to WebSocket clients
-        broadcastSpecUpdate(id, "deleted", { id });
+        broadcastSpecUpdate(req.project!.id, id, "deleted", { id });
 
         res.json({
           success: true,

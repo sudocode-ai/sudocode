@@ -203,7 +203,7 @@ export function createFeedbackRouter(): Router {
       });
 
       // Broadcast feedback creation to WebSocket clients
-      broadcastFeedbackUpdate("created", feedback);
+      broadcastFeedbackUpdate(req.project!.id, "created", feedback);
 
       res.status(201).json({
         success: true,
@@ -305,7 +305,7 @@ export function createFeedbackRouter(): Router {
       const feedback = updateExistingFeedback(req.project!.db, id, updateInput);
 
       // Broadcast feedback update to WebSocket clients
-      broadcastFeedbackUpdate("updated", feedback);
+      broadcastFeedbackUpdate(req.project!.id, "updated", feedback);
 
       res.json({
         success: true,
@@ -356,7 +356,7 @@ export function createFeedbackRouter(): Router {
 
       if (deleted) {
         // Broadcast feedback deletion to WebSocket clients
-        broadcastFeedbackUpdate("deleted", { id });
+        broadcastFeedbackUpdate(req.project!.id, "deleted", { id });
 
         res.json({
           success: true,

@@ -149,7 +149,7 @@ export function createIssuesRouter(): Router {
       });
 
       // Broadcast issue creation to WebSocket clients
-      broadcastIssueUpdate(issue.id, "created", issue);
+      broadcastIssueUpdate(req.project!.id, issue.id, "created", issue);
 
       res.status(201).json({
         success: true,
@@ -239,7 +239,7 @@ export function createIssuesRouter(): Router {
       });
 
       // Broadcast issue update to WebSocket clients
-      broadcastIssueUpdate(issue.id, "updated", issue);
+      broadcastIssueUpdate(req.project!.id, issue.id, "updated", issue);
 
       res.json({
         success: true,
@@ -293,7 +293,7 @@ export function createIssuesRouter(): Router {
         triggerExport(req.project!.db, req.project!.sudocodeDir);
 
         // Broadcast issue deletion to WebSocket clients
-        broadcastIssueUpdate(id, "deleted", { id });
+        broadcastIssueUpdate(req.project!.id, id, "deleted", { id });
 
         res.json({
           success: true,
