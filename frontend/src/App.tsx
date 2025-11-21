@@ -1,9 +1,11 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { ProjectProvider } from '@/contexts/ProjectContext'
 import { WebSocketProvider } from '@/contexts/WebSocketContext'
 import MainLayout from '@/components/layout/MainLayout'
+import { ProtectedRoute } from '@/components/routing/ProtectedRoute'
+import { DefaultRoute } from '@/components/routing/DefaultRoute'
 import IssuesPage from '@/pages/IssuesPage'
 import IssueDetailPage from '@/pages/IssueDetailPage'
 import SpecsPage from '@/pages/SpecsPage'
@@ -34,15 +36,64 @@ function App() {
             <BrowserRouter>
               <Routes>
                 <Route path="/" element={<MainLayout />}>
-                  <Route index element={<Navigate to="/issues" replace />} />
+                  <Route index element={<DefaultRoute />} />
                   <Route path="projects" element={<ProjectsPage />} />
-                  <Route path="issues" element={<IssuesPage />} />
-                  <Route path="issues/archived" element={<ArchivedIssuesPage />} />
-                  <Route path="issues/:id" element={<IssueDetailPage />} />
-                  <Route path="specs" element={<SpecsPage />} />
-                  <Route path="specs/archived" element={<ArchivedSpecsPage />} />
-                  <Route path="specs/:id" element={<SpecDetailPage />} />
-                  <Route path="executions/:id" element={<ExecutionDetailPage />} />
+                  <Route
+                    path="issues"
+                    element={
+                      <ProtectedRoute>
+                        <IssuesPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="issues/archived"
+                    element={
+                      <ProtectedRoute>
+                        <ArchivedIssuesPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="issues/:id"
+                    element={
+                      <ProtectedRoute>
+                        <IssueDetailPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="specs"
+                    element={
+                      <ProtectedRoute>
+                        <SpecsPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="specs/archived"
+                    element={
+                      <ProtectedRoute>
+                        <ArchivedSpecsPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="specs/:id"
+                    element={
+                      <ProtectedRoute>
+                        <SpecDetailPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="executions/:id"
+                    element={
+                      <ProtectedRoute>
+                        <ExecutionDetailPage />
+                      </ProtectedRoute>
+                    }
+                  />
                 </Route>
               </Routes>
             </BrowserRouter>

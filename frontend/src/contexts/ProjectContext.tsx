@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import type { ProjectInfo } from '@/types/project'
-import { setCurrentProjectId as setApiProjectId } from '@/lib/api'
+import type { ProjectInfo, OpenProjectInfo } from '@/types/project'
+import { setCurrentProjectId as setApiProjectId, projectsApi } from '@/lib/api'
 
 const PROJECT_ID_STORAGE_KEY = 'sudocode:currentProjectId'
 
@@ -46,6 +46,47 @@ export function ProjectProvider({ children, defaultProjectId }: ProjectProviderP
   })
 
   const [currentProject, setCurrentProject] = useState<ProjectInfo | null>(null)
+  const [isValidatingProject, setIsValidatingProject] = useState(false)
+
+  // Validate and auto-open last selected project on mount
+  useEffect(() => {
+    const validateStoredProject = async () => {
+      // Skip if no stored project ID or already validated
+      if (!currentProjectId || isValidatingProject) {
+        return
+      }
+
+      setIsValidatingProject(true)
+
+      try {
+        // Check if the project is still open on the backend
+        const openProjects = await projectsApi.getOpen()
+        const isOpen = openProjects.some((p: OpenProjectInfo) => p.id === currentProjectId)
+
+        if (!isOpen) {
+          // Project is no longer open, try to fetch project info and re-open it
+          try {
+            const projectInfo = await projectsApi.getById(currentProjectId)
+            // Project exists but isn't open - open it
+            await projectsApi.open({ path: projectInfo.path })
+          } catch (error) {
+            // Project doesn't exist or can't be opened, clear it
+            console.warn('Stored project no longer available, clearing:', currentProjectId)
+            setCurrentProjectIdState(null)
+          }
+        }
+      } catch (error) {
+        console.error('Failed to validate stored project:', error)
+        // Don't clear on network errors, let user try again
+      } finally {
+        setIsValidatingProject(false)
+      }
+    }
+
+    validateStoredProject()
+    // Only run on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Persist to localStorage and update API client whenever currentProjectId changes
   useEffect(() => {

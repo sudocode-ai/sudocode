@@ -218,13 +218,20 @@ app.get("/api/version", (_req: Request, res: Response) => {
     );
 
     res.status(200).json({
-      cli: cliPackage.version,
-      server: serverPackage.version,
-      frontend: frontendPackage.version,
+      success: true,
+      data: {
+        cli: cliPackage.version,
+        server: serverPackage.version,
+        frontend: frontendPackage.version,
+      },
     });
   } catch (error) {
     console.error("Failed to read version information:", error);
-    res.status(500).json({ error: "Failed to read version information" });
+    res.status(500).json({
+      success: false,
+      data: null,
+      message: "Failed to read version information",
+    });
   }
 });
 
@@ -247,14 +254,25 @@ app.get(
   async (req: Request, res: Response): Promise<void> => {
     try {
       const repoInfo = await getRepositoryInfo(req.project!.path);
-      res.status(200).json(repoInfo);
+      res.status(200).json({
+        success: true,
+        data: repoInfo,
+      });
     } catch (error) {
       const err = error as Error;
       if (err.message === "Not a git repository") {
-        res.status(404).json({ error: err.message });
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: err.message,
+        });
       } else {
         console.error("Failed to get repository info:", error);
-        res.status(500).json({ error: "Failed to get repository info" });
+        res.status(500).json({
+          success: false,
+          data: null,
+          message: "Failed to get repository info",
+        });
       }
     }
   }

@@ -1,6 +1,15 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useProjects, useOpenProject, useDeleteProject, useInitProject } from '@/hooks/useProjects'
+import {
+  useProjects,
+  useOpenProjects,
+  useRecentProjects,
+  useOpenProject,
+  useCloseProject,
+  useDeleteProject,
+  useInitProject,
+  useValidateProject,
+} from '@/hooks/useProjects'
 import { useProject } from '@/hooks/useProject'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -23,23 +32,33 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { FolderOpen, Trash2, Plus, Check, Loader2 } from 'lucide-react'
+import { FolderOpen, Trash2, Plus, Check, Loader2, X, FolderClosed } from 'lucide-react'
 import type { ProjectInfo } from '@/types/project'
 
 export default function ProjectsPage() {
   const navigate = useNavigate()
   const { data: projects, isLoading, isError } = useProjects()
+  const { data: openProjects } = useOpenProjects()
+  const { data: recentProjects } = useRecentProjects()
   const { currentProjectId, setCurrentProjectId } = useProject()
   const openProject = useOpenProject()
+  const closeProject = useCloseProject()
   const deleteProject = useDeleteProject()
   const initProject = useInitProject()
+  const validateProject = useValidateProject()
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [projectToDelete, setProjectToDelete] = useState<ProjectInfo | null>(null)
   const [initDialogOpen, setInitDialogOpen] = useState(false)
+  const [openDialogOpen, setOpenDialogOpen] = useState(false)
   const [projectPath, setProjectPath] = useState('')
   const [projectName, setProjectName] = useState('')
-  const [isValidating, setIsValidating] = useState(false)
+  const [validationError, setValidationError] = useState<string | null>(null)
+
+  // Helper to check if a project is open
+  const isProjectOpen = (projectId: string) => {
+    return openProjects?.some((p) => p.id === projectId) || false
+  }
 
   const handleOpenProject = async (project: ProjectInfo) => {
     try {
@@ -48,6 +67,45 @@ export default function ProjectsPage() {
       navigate('/issues')
     } catch (error) {
       console.error('Failed to open project:', error)
+    }
+  }
+
+  const handleCloseProject = async (projectId: string) => {
+    try {
+      await closeProject.mutateAsync(projectId)
+      // If closing the current project, clear it
+      if (projectId === currentProjectId) {
+        setCurrentProjectId(null)
+      }
+    } catch (error) {
+      console.error('Failed to close project:', error)
+    }
+  }
+
+  const handleOpenExistingProject = async () => {
+    if (!projectPath.trim()) return
+
+    setValidationError(null)
+
+    try {
+      // First validate the project path
+      const validation = await validateProject.mutateAsync({ path: projectPath.trim() })
+
+      if (!validation.valid) {
+        setValidationError(validation.error || 'Invalid project path')
+        return
+      }
+
+      // If valid, open the project
+      const project = await openProject.mutateAsync({ path: projectPath.trim() })
+      setCurrentProjectId(project.id)
+      setOpenDialogOpen(false)
+      setProjectPath('')
+      setValidationError(null)
+      navigate('/issues')
+    } catch (error) {
+      console.error('Failed to open project:', error)
+      setValidationError(error instanceof Error ? error.message : 'Failed to open project')
     }
   }
 
@@ -75,7 +133,7 @@ export default function ProjectsPage() {
   const handleInitProject = async () => {
     if (!projectPath.trim()) return
 
-    setIsValidating(true)
+    setValidationError(null)
     try {
       const project = await initProject.mutateAsync({
         path: projectPath.trim(),
@@ -85,11 +143,11 @@ export default function ProjectsPage() {
       setInitDialogOpen(false)
       setProjectPath('')
       setProjectName('')
+      setValidationError(null)
       navigate('/issues')
     } catch (error) {
       console.error('Failed to initialize project:', error)
-    } finally {
-      setIsValidating(false)
+      setValidationError(error instanceof Error ? error.message : 'Failed to initialize project')
     }
   }
 
@@ -115,7 +173,7 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="container mx-auto max-w-4xl p-6">
+    <div className="container mx-auto max-w-5xl p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Projects</h1>
@@ -123,77 +181,78 @@ export default function ProjectsPage() {
             Manage your Sudocode projects
           </p>
         </div>
-        <Button onClick={() => setInitDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Project
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setOpenDialogOpen(true)}>
+            <FolderOpen className="mr-2 h-4 w-4" />
+            Open Existing
+          </Button>
+          <Button onClick={() => setInitDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Project
+          </Button>
+        </div>
       </div>
 
       {!projects || projects.length === 0 ? (
         <div className="rounded-lg border border-border bg-card p-12 text-center">
-          <FolderOpen className="mx-auto h-12 w-12 text-muted-foreground" />
-          <h3 className="mt-4 text-lg font-semibold">No projects yet</h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Get started by initializing a new project
+          <FolderOpen className="mx-auto h-16 w-16 text-muted-foreground" />
+          <h3 className="mt-6 text-xl font-semibold">No projects yet</h3>
+          <p className="mt-3 text-sm text-muted-foreground max-w-md mx-auto">
+            Sudocode helps you manage specifications and issues for your projects.
+            Get started by opening an existing project or creating a new one.
           </p>
-          <Button onClick={() => setInitDialogOpen(true)} className="mt-4">
-            <Plus className="mr-2 h-4 w-4" />
-            Initialize Project
-          </Button>
+          <div className="mt-6 flex gap-3 justify-center">
+            <Button variant="outline" onClick={() => setOpenDialogOpen(true)}>
+              <FolderOpen className="mr-2 h-4 w-4" />
+              Open Existing Project
+            </Button>
+            <Button onClick={() => setInitDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Initialize New Project
+            </Button>
+          </div>
         </div>
       ) : (
-        <div className="space-y-2">
-          {projects.map((project) => (
-            <div
-              key={project.id}
-              className="flex items-center justify-between rounded-lg border border-border bg-card p-4 hover:bg-accent/50"
-            >
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold">{project.name}</h3>
-                  {project.id === currentProjectId && (
-                    <Badge variant="default" className="text-xs">
-                      Current
-                    </Badge>
-                  )}
-                  {project.favorite && (
-                    <span className="text-yellow-500">★</span>
-                  )}
-                </div>
-                <p className="mt-1 text-sm text-muted-foreground">{project.path}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Last opened: {new Date(project.lastOpenedAt).toLocaleDateString()}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {project.id !== currentProjectId && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleOpenProject(project)}
-                    disabled={openProject.isPending}
-                  >
-                    <FolderOpen className="mr-2 h-4 w-4" />
-                    Open
-                  </Button>
-                )}
-                {project.id === currentProjectId && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Check className="h-4 w-4" />
-                    Active
-                  </div>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDeleteClick(project)}
-                  disabled={deleteProject.isPending}
-                >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
+        <div className="space-y-6">
+          {/* Recent Projects Section */}
+          {recentProjects && recentProjects.length > 0 && (
+            <div>
+              <h2 className="mb-3 text-lg font-semibold">Recent Projects</h2>
+              <div className="space-y-2">
+                {recentProjects.slice(0, 3).map((project) => (
+                  <ProjectCard
+                    key={project.id}
+                    project={project}
+                    isOpen={isProjectOpen(project.id)}
+                    isCurrent={project.id === currentProjectId}
+                    onOpen={handleOpenProject}
+                    onClose={handleCloseProject}
+                    onDelete={handleDeleteClick}
+                  />
+                ))}
               </div>
             </div>
-          ))}
+          )}
+
+          {/* All Projects Section */}
+          <div>
+            <h2 className="mb-3 text-lg font-semibold">
+              {recentProjects && recentProjects.length > 0 ? 'All Projects' : 'Projects'}
+            </h2>
+            <div className="space-y-2">
+              {projects.map((project) => (
+                <ProjectCard
+                  key={project.id}
+                  project={project}
+                  isOpen={isProjectOpen(project.id)}
+                  isCurrent={project.id === currentProjectId}
+                  onOpen={handleOpenProject}
+                  onClose={handleCloseProject}
+                  onDelete={handleDeleteClick}
+                />
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -216,6 +275,67 @@ export default function ProjectsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Open Existing Project Dialog */}
+      <Dialog open={openDialogOpen} onOpenChange={setOpenDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Open Existing Project</DialogTitle>
+            <DialogDescription>
+              Enter the path to an existing Sudocode project directory.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <label className="text-sm font-medium">Project Path</label>
+              <Input
+                value={projectPath}
+                onChange={(e) => {
+                  setProjectPath(e.target.value)
+                  setValidationError(null)
+                }}
+                placeholder="/path/to/project"
+                className="mt-1"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && projectPath.trim()) {
+                    handleOpenExistingProject()
+                  }
+                }}
+              />
+              {validationError && (
+                <p className="mt-2 text-sm text-destructive">{validationError}</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setOpenDialogOpen(false)
+                setProjectPath('')
+                setValidationError(null)
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleOpenExistingProject}
+              disabled={
+                !projectPath.trim() || validateProject.isPending || openProject.isPending
+              }
+            >
+              {validateProject.isPending || openProject.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Opening...
+                </>
+              ) : (
+                'Open Project'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Initialize Project Dialog */}
       <Dialog open={initDialogOpen} onOpenChange={setInitDialogOpen}>
         <DialogContent>
@@ -230,9 +350,17 @@ export default function ProjectsPage() {
               <label className="text-sm font-medium">Project Path</label>
               <Input
                 value={projectPath}
-                onChange={(e) => setProjectPath(e.target.value)}
+                onChange={(e) => {
+                  setProjectPath(e.target.value)
+                  setValidationError(null)
+                }}
                 placeholder="/path/to/project"
                 className="mt-1"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && projectPath.trim()) {
+                    handleInitProject()
+                  }
+                }}
               />
             </div>
             <div>
@@ -244,16 +372,27 @@ export default function ProjectsPage() {
                 className="mt-1"
               />
             </div>
+            {validationError && (
+              <p className="text-sm text-destructive">{validationError}</p>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setInitDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setInitDialogOpen(false)
+                setProjectPath('')
+                setProjectName('')
+                setValidationError(null)
+              }}
+            >
               Cancel
             </Button>
             <Button
               onClick={handleInitProject}
-              disabled={!projectPath.trim() || isValidating || initProject.isPending}
+              disabled={!projectPath.trim() || initProject.isPending}
             >
-              {isValidating || initProject.isPending ? (
+              {initProject.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Initializing...
@@ -265,6 +404,78 @@ export default function ProjectsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+// ProjectCard component
+interface ProjectCardProps {
+  project: ProjectInfo
+  isOpen: boolean
+  isCurrent: boolean
+  onOpen: (project: ProjectInfo) => void
+  onClose: (projectId: string) => void
+  onDelete: (project: ProjectInfo) => void
+}
+
+function ProjectCard({ project, isOpen, isCurrent, onOpen, onClose, onDelete }: ProjectCardProps) {
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-border bg-card p-4 transition-colors hover:bg-accent/50">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h3 className="font-semibold truncate">{project.name}</h3>
+          {isCurrent && (
+            <Badge variant="default" className="text-xs">
+              <Check className="mr-1 h-3 w-3" />
+              Current
+            </Badge>
+          )}
+          {isOpen && !isCurrent && (
+            <Badge variant="secondary" className="text-xs">
+              Open
+            </Badge>
+          )}
+          {!isOpen && (
+            <Badge variant="outline" className="text-xs">
+              <FolderClosed className="mr-1 h-3 w-3" />
+              Closed
+            </Badge>
+          )}
+          {project.favorite && <span className="text-yellow-500 text-lg">★</span>}
+        </div>
+        <p className="mt-1 text-sm text-muted-foreground truncate">{project.path}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Last opened: {new Date(project.lastOpenedAt).toLocaleDateString()}
+        </p>
+      </div>
+      <div className="flex items-center gap-2 ml-4">
+        {!isOpen && (
+          <Button variant="outline" size="sm" onClick={() => onOpen(project)}>
+            <FolderOpen className="mr-2 h-4 w-4" />
+            Open
+          </Button>
+        )}
+        {isOpen && !isCurrent && (
+          <>
+            <Button variant="outline" size="sm" onClick={() => onOpen(project)}>
+              Switch To
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => onClose(project.id)}>
+              <X className="mr-2 h-4 w-4" />
+              Close
+            </Button>
+          </>
+        )}
+        {isOpen && isCurrent && (
+          <Button variant="outline" size="sm" onClick={() => onClose(project.id)}>
+            <X className="mr-2 h-4 w-4" />
+            Close
+          </Button>
+        )}
+        <Button variant="ghost" size="sm" onClick={() => onDelete(project)}>
+          <Trash2 className="h-4 w-4 text-destructive" />
+        </Button>
+      </div>
     </div>
   )
 }
