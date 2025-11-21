@@ -10,7 +10,6 @@ import { ExecutionLogsStore } from "./execution-logs-store.js";
 import { WorktreeManager } from "../execution/worktree/manager.js";
 import { getWorktreeConfig } from "../execution/worktree/config.js";
 import { ExecutionLifecycleService } from "./execution-lifecycle.js";
-import { ExecutionWorkerPool } from "./execution-worker-pool.js";
 import { startServerWatcher } from "./watcher.js";
 import type { ProjectError, Result } from "../types/project.js";
 import { Ok, Err } from "../types/project.js";
@@ -89,36 +88,11 @@ export class ProjectManager {
       const worktreeConfig = getWorktreeConfig(projectPath);
       const worktreeManager = new WorktreeManager(worktreeConfig);
 
-      // Create worker pool for isolated execution processes
-      const workerPool = new ExecutionWorkerPool(
-        projectId,
-        {
-          maxConcurrentWorkers: 3,
-          maxMemoryMB: 512,
-          verbose: process.env.NODE_ENV !== 'production',
-        },
-        {
-          onLog: (executionId, event) => {
-            // Logs are already persisted by the worker
-            // Just forward to transport for real-time streaming
-            logsStore.appendRawLog(executionId, event.data);
-          },
-          onStatusChange: (_executionId, _status) => {
-            // Status changes are handled by worker
-            // Transport manager will forward via SSE
-          },
-          onComplete: (_executionId, _result) => {
-            // Completion is handled by worker
-            // Transport manager will forward via SSE
-          },
-          onError: (executionId, error, _fatal) => {
-            // Errors are already persisted by the worker
-            logsStore.appendRawLog(executionId, error);
-          },
-        }
-      );
+      // NOTE: Worker pool execution is disabled - using in-process execution
+      // Worker pool can be re-enabled by uncommenting the ExecutionWorkerPool creation
+      // and passing it to ExecutionService and ProjectContext
 
-      // Create execution service with worker pool
+      // Create execution service without worker pool (will use in-process execution)
       const executionService = new ExecutionService(
         db,
         projectId,
@@ -126,7 +100,7 @@ export class ProjectManager {
         undefined,
         transportManager,
         logsStore,
-        workerPool
+        undefined // No worker pool - use in-process execution
       );
 
       // 6. Create project context
@@ -139,7 +113,7 @@ export class ProjectManager {
         executionService,
         logsStore,
         worktreeManager,
-        workerPool
+        undefined // No worker pool
       );
 
       await context.initialize();

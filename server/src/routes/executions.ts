@@ -30,7 +30,10 @@ export function createExecutionsRouter(): Router {
       try {
         const { issueId } = req.params;
         const options = req.body || {};
-        const result = await req.project!.executionService!.prepareExecution(issueId, options);
+        const result = await req.project!.executionService!.prepareExecution(
+          issueId,
+          options
+        );
 
         res.json({
           success: true,
@@ -106,7 +109,8 @@ export function createExecutionsRouter(): Router {
   router.get("/executions/:executionId", (req: Request, res: Response) => {
     try {
       const { executionId } = req.params;
-      const execution = req.project!.executionService!.getExecution(executionId);
+      const execution =
+        req.project!.executionService!.getExecution(executionId);
 
       if (!execution) {
         res.status(404).json({
@@ -142,7 +146,8 @@ export function createExecutionsRouter(): Router {
       const { executionId } = req.params;
 
       // Verify execution exists
-      const execution = req.project!.executionService!.getExecution(executionId);
+      const execution =
+        req.project!.executionService!.getExecution(executionId);
       if (!execution) {
         res.status(404).json({
           success: false,
@@ -234,10 +239,11 @@ export function createExecutionsRouter(): Router {
           return;
         }
 
-        const followUpExecution = await req.project!.executionService!.createFollowUp(
-          executionId,
-          feedback
-        );
+        const followUpExecution =
+          await req.project!.executionService!.createFollowUp(
+            executionId,
+            feedback
+          );
 
         res.status(201).json({
           success: true,
@@ -312,7 +318,8 @@ export function createExecutionsRouter(): Router {
       try {
         const { executionId } = req.params;
 
-        const exists = await req.project!.executionService!.worktreeExists(executionId);
+        const exists =
+          await req.project!.executionService!.worktreeExists(executionId);
 
         res.json({
           success: true,

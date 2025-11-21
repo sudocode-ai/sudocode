@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosError } from 'axios'
+import axios, { AxiosInstance, AxiosError, isCancel } from 'axios'
 import type {
   ApiResponse,
   Issue,
@@ -91,6 +91,11 @@ api.interceptors.response.use(
     return apiResponse.data
   },
   (error: AxiosError) => {
+    // Don't log or transform canceled requests
+    if (isCancel(error)) {
+      throw error
+    }
+
     console.error('API Error:', error)
 
     // Handle network errors

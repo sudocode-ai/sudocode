@@ -44,8 +44,8 @@ export class ProjectContext {
   /** Worktree manager for execution isolation */
   readonly worktreeManager: WorktreeManager;
 
-  /** Worker pool for isolated execution processes */
-  readonly workerPool: ExecutionWorkerPool;
+  /** Worker pool for isolated execution processes (optional) */
+  readonly workerPool: ExecutionWorkerPool | undefined;
 
   /** File watcher for detecting changes */
   watcher: ServerWatcherControl | null = null;
@@ -62,7 +62,7 @@ export class ProjectContext {
     executionService: ExecutionService,
     logsStore: ExecutionLogsStore,
     worktreeManager: WorktreeManager,
-    workerPool: ExecutionWorkerPool
+    workerPool?: ExecutionWorkerPool
   ) {
     this.id = id;
     this.path = path;
@@ -126,7 +126,12 @@ export class ProjectContext {
    * Check if the project context is active (has active executions)
    */
   hasActiveExecutions(): boolean {
-    return this.workerPool.getActiveWorkerCount() > 0;
+    // Check worker pool if available, otherwise check execution service
+    if (this.workerPool) {
+      return this.workerPool.getActiveWorkerCount() > 0;
+    }
+    // For in-process execution, check the execution service
+    return this.executionService.hasActiveExecutions();
   }
 
   /**

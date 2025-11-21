@@ -364,17 +364,23 @@ export class ExecutionService {
     // 5. Create execution engine stack
     const processManager = new SimpleProcessManager();
 
+    // Build Claude CLI args with prompt
+    // NOTE: The generic engine doesn't know how to pass Claude-specific prompts,
+    // so we add the prompt as the last CLI argument
+    const claudeArgs = [
+      "--print",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--dangerously-skip-permissions",
+      prompt, // Add prompt as last argument
+    ];
+
     let engine = new SimpleExecutionEngine(processManager, {
       maxConcurrent: 1, // One task at a time for issue execution
       defaultProcessConfig: {
         executablePath: "claude",
-        args: [
-          "--print",
-          "--output-format",
-          "stream-json",
-          "--verbose",
-          "--dangerously-skip-permissions",
-        ],
+        args: claudeArgs,
       },
     });
 
@@ -397,13 +403,7 @@ export class ExecutionService {
         maxConcurrent: 1,
         defaultProcessConfig: {
           executablePath: "claude",
-          args: [
-            "--print",
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            "--dangerously-skip-permissions",
-          ],
+          args: claudeArgs, // Use same args with prompt
         },
         // TODO: Factor out this logic for DRY principles.
         onOutput: (data, type) => {
@@ -702,17 +702,23 @@ Please continue working on this issue, taking into account the feedback above.`;
     // 6. Create execution engine stack
     const processManager = new SimpleProcessManager();
 
+    // Build Claude CLI args with follow-up prompt
+    // NOTE: The generic engine doesn't know how to pass Claude-specific prompts,
+    // so we add the prompt as the last CLI argument
+    const claudeArgs = [
+      "--print",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--dangerously-skip-permissions",
+      followUpPrompt, // Add follow-up prompt as last argument
+    ];
+
     let engine = new SimpleExecutionEngine(processManager, {
       maxConcurrent: 1,
       defaultProcessConfig: {
         executablePath: "claude",
-        args: [
-          "--print",
-          "--output-format",
-          "stream-json",
-          "--verbose",
-          "--dangerously-skip-permissions",
-        ],
+        args: claudeArgs,
       },
     });
 
@@ -733,13 +739,7 @@ Please continue working on this issue, taking into account the feedback above.`;
         maxConcurrent: 1,
         defaultProcessConfig: {
           executablePath: "claude",
-          args: [
-            "--print",
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            "--dangerously-skip-permissions",
-          ],
+          args: claudeArgs, // Use same args with follow-up prompt
         },
         // TODO: Factor out this logic for DRY principles.
         onOutput: (data, type) => {
@@ -1090,5 +1090,14 @@ Please continue working on this issue, taking into account the feedback above.`;
    */
   getExecution(executionId: string): Execution | null {
     return getExecution(this.db, executionId);
+  }
+
+  /**
+   * Check if there are any active executions
+   *
+   * @returns true if there are active in-process executions
+   */
+  hasActiveExecutions(): boolean {
+    return this.activeOrchestrators.size > 0;
   }
 }
