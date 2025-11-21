@@ -28,19 +28,15 @@ import { createRelationshipsRouter } from "./routes/relationships.js";
 import { createFeedbackRouter } from "./routes/feedback.js";
 import { createExecutionsRouter } from "./routes/executions.js";
 import { createExecutionStreamRoutes } from "./routes/executions-stream.js";
+import { createProjectsRouter } from "./routes/projects.js";
 import { TransportManager } from "./execution/transport/transport-manager.js";
-import { getIssueById } from "./services/issues.js";
-import { getSpecById } from "./services/specs.js";
-import {
-  startServerWatcher,
-  type ServerWatcherControl,
-} from "./services/watcher.js";
+import { ProjectRegistry } from "./services/project-registry.js";
+import { ProjectManager } from "./services/project-manager.js";
+import { requireProject } from "./middleware/project-context.js";
 import {
   initWebSocketServer,
   getWebSocketStats,
   shutdownWebSocketServer,
-  broadcastIssueUpdate,
-  broadcastSpecUpdate,
   getWebSocketServer,
 } from "./services/websocket.js";
 
@@ -63,11 +59,17 @@ const REPO_ROOT = path.dirname(SUDOCODE_DIR);
 
 // Initialize database and transport manager
 let db!: Database.Database;
-let watcher: ServerWatcherControl | null = null;
 let transportManager!: TransportManager;
 let logsStore!: ExecutionLogsStore;
 // let logsCleanup: ExecutionLogsCleanup | null = null;
 let executionService: ExecutionService | null = null;
+
+// Multi-project infrastructure
+let projectRegistry!: ProjectRegistry;
+let projectManager!: ProjectManager;
+
+// Start file watcher (enabled by default, disable with WATCH=false)
+const WATCH_ENABLED = process.env.WATCH !== "false";
 
 // Async initialization function
 async function initialize() {
@@ -82,6 +84,29 @@ async function initialize() {
         "Warning: CLI tables not found. Run 'sudocode sync' to initialize the database."
       );
     }
+
+    // Initialize ProjectRegistry and ProjectManager for multi-project support
+    projectRegistry = new ProjectRegistry();
+    await projectRegistry.load();
+    console.log(
+      `ProjectRegistry loaded from: ${projectRegistry.getConfigPath()}`
+    );
+
+    projectManager = new ProjectManager(projectRegistry, {
+      watchEnabled: WATCH_ENABLED,
+    });
+
+    // Auto-open the current project (REPO_ROOT) for backward compatibility
+    console.log(`Opening default project at: ${REPO_ROOT}`);
+    const openResult = await projectManager.openProject(REPO_ROOT);
+    if (!openResult.ok) {
+      const errorMsg =
+        "message" in openResult.error!
+          ? openResult.error!.message
+          : `${openResult.error!.type}`;
+      throw new Error(`Failed to open default project: ${errorMsg}`);
+    }
+    // Default project opened successfully
 
     // Initialize transport manager for SSE streaming
     transportManager = new TransportManager();
@@ -147,79 +172,36 @@ async function initialize() {
 // Run initialization
 await initialize();
 
-// Start file watcher (enabled by default, disable with WATCH=false)
-const WATCH_ENABLED = process.env.WATCH !== "false";
-const SYNC_JSONL_TO_MARKDOWN = process.env.SYNC_JSONL_TO_MARKDOWN === "true";
-if (WATCH_ENABLED) {
-  try {
-    watcher = startServerWatcher({
-      db,
-      baseDir: SUDOCODE_DIR,
-      debounceDelay: parseInt(process.env.WATCH_DEBOUNCE || "2000", 10),
-      syncJSONLToMarkdown: SYNC_JSONL_TO_MARKDOWN,
-      onFileChange: (info) => {
-        console.log(
-          `[server] File change detected: ${info.entityType || "unknown"} ${
-            info.entityId || ""
-          }`
-        );
-
-        // Broadcast WebSocket updates for issue and spec changes
-        if (info.entityType === "issue" && info.entityId) {
-          if (info.entityId === "*") {
-            // Wildcard update (JSONL file changed) - broadcast to all issue subscribers
-            broadcastIssueUpdate("*", "updated", null);
-          } else {
-            // Specific issue update - fetch and broadcast the specific issue
-            const issue = getIssueById(db, info.entityId);
-            if (issue) {
-              broadcastIssueUpdate(info.entityId, "updated", issue);
-            }
-          }
-        } else if (info.entityType === "spec" && info.entityId) {
-          if (info.entityId === "*") {
-            // Wildcard update (JSONL file changed) - broadcast to all spec subscribers
-            broadcastSpecUpdate("*", "updated", null);
-          } else {
-            // Specific spec update - fetch and broadcast the specific spec
-            const spec = getSpecById(db, info.entityId);
-            if (spec) {
-              broadcastSpecUpdate(info.entityId, "updated", spec);
-            }
-          }
-        }
-      },
-    });
-    console.log(`[server] File watcher started on: ${SUDOCODE_DIR}`);
-  } catch (error) {
-    console.error("Failed to start file watcher:", error);
-    console.warn(
-      "Continuing without file watcher. Set WATCH=false to suppress this warning."
-    );
-  }
-}
-
 // Middleware
 app.use(cors());
 app.use(express.json());
 
 // API Routes
-app.use("/api/issues", createIssuesRouter(db));
-app.use("/api/specs", createSpecsRouter(db));
-app.use("/api/relationships", createRelationshipsRouter(db));
-app.use("/api/feedback", createFeedbackRouter(db));
-// Mount execution routes (must be before stream routes to avoid conflicts)
+
+// Project management routes (no project context required)
+app.use("/api/projects", createProjectsRouter(projectManager, projectRegistry));
+
+// Entity routes (require project context via X-Project-ID header)
+app.use("/api/issues", requireProject(projectManager), createIssuesRouter());
+app.use("/api/specs", requireProject(projectManager), createSpecsRouter());
 app.use(
-  "/api",
-  createExecutionsRouter(
-    db,
-    REPO_ROOT,
-    transportManager,
-    executionService!,
-    logsStore
-  )
+  "/api/relationships",
+  requireProject(projectManager),
+  createRelationshipsRouter()
 );
-app.use("/api/executions", createExecutionStreamRoutes(transportManager));
+app.use(
+  "/api/feedback",
+  requireProject(projectManager),
+  createFeedbackRouter()
+);
+
+// Mount execution routes (must be before stream routes to avoid conflicts)
+app.use("/api", requireProject(projectManager), createExecutionsRouter());
+app.use(
+  "/api/executions",
+  requireProject(projectManager),
+  createExecutionStreamRoutes()
+);
 
 // Health check endpoint
 app.get("/health", (_req: Request, res: Response) => {
@@ -517,9 +499,9 @@ process.on("SIGINT", async () => {
   //   logsCleanup.stop();
   // }
 
-  // Stop file watcher
-  if (watcher) {
-    await watcher.stop();
+  // Shutdown ProjectManager (closes all projects and their watchers)
+  if (projectManager) {
+    await projectManager.shutdown();
   }
 
   // Shutdown WebSocket server
@@ -561,9 +543,9 @@ process.on("SIGTERM", async () => {
   //   logsCleanup.stop();
   // }
 
-  // Stop file watcher
-  if (watcher) {
-    await watcher.stop();
+  // Shutdown ProjectManager (closes all projects and their watchers)
+  if (projectManager) {
+    await projectManager.shutdown();
   }
 
   // Shutdown WebSocket server

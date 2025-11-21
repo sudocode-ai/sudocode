@@ -5,31 +5,40 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import express from "express";
-import type Database from "better-sqlite3";
-import { initDatabase } from "@sudocode-ai/cli/dist/db.js";
+import { createFeedbackRouter } from "../../src/routes/feedback.js";
+import { createIssuesRouter } from "../../src/routes/issues.js";
 import { createSpecsRouter } from "../../src/routes/specs.js";
 import { cleanupExport } from "../../src/services/export.js";
+import { ProjectManager } from "../../src/services/project-manager.js";
+import { ProjectRegistry } from "../../src/services/project-registry.js";
+import { requireProject } from "../../src/middleware/project-context.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
 describe("Specs API", () => {
   let app: express.Application;
-  let db: Database.Database;
-  let testDbPath: string;
   let testDir: string;
+  let testProjectPath: string;
+  let projectManager: ProjectManager;
+  let projectRegistry: ProjectRegistry;
+  let projectId: string;
+  let testIssueId: string;
+  let testSpecId: string;
+  let testSpecId2: string;
   let createdSpecId: string;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     // Create a unique temporary directory in system temp
     testDir = fs.mkdtempSync(path.join(os.tmpdir(), "sudocode-test-specs-"));
-    testDbPath = path.join(testDir, "cache.db");
 
-    // Set SUDOCODE_DIR environment variable
-    process.env.SUDOCODE_DIR = testDir;
+    // Create test project directory structure
+    testProjectPath = path.join(testDir, "test-project");
+    const sudocodeDir = path.join(testProjectPath, ".sudocode");
+    fs.mkdirSync(sudocodeDir, { recursive: true });
 
     // Create config.json for ID generation
-    const configPath = path.join(testDir, "config.json");
+    const configPath = path.join(sudocodeDir, "config.json");
     const config = {
       version: "1.0.0",
       id_prefix: {
@@ -39,46 +48,78 @@ describe("Specs API", () => {
     };
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 
-    // Create specs directory for spec files
-    const specsDir = path.join(testDir, "specs");
+    // Create directories for markdown files
+    const issuesDir = path.join(sudocodeDir, "issues");
+    const specsDir = path.join(sudocodeDir, "specs");
+    fs.mkdirSync(issuesDir, { recursive: true });
     fs.mkdirSync(specsDir, { recursive: true });
 
-    // Initialize test database
-    db = initDatabase({ path: testDbPath });
+    // Create database file
+    const dbPath = path.join(sudocodeDir, "cache.db");
+    fs.writeFileSync(dbPath, "");
+
+    // Set up project manager
+    const registryPath = path.join(testDir, "projects.json");
+    projectRegistry = new ProjectRegistry(registryPath);
+    await projectRegistry.load();
+
+    projectManager = new ProjectManager(projectRegistry, { watchEnabled: false });
+
+    // Open the test project
+    const result = await projectManager.openProject(testProjectPath);
+    if (result.ok) {
+      projectId = result.value.id;
+    } else {
+      throw new Error("Failed to open test project");
+    }
 
     // Set up Express app with routes
     app = express();
     app.use(express.json());
-    app.use("/api/specs", createSpecsRouter(db));
+    app.use("/api/issues", requireProject(projectManager), createIssuesRouter());
+    app.use("/api/specs", requireProject(projectManager), createSpecsRouter());
+    app.use("/api/feedback", requireProject(projectManager), createFeedbackRouter());
+
+    // Create test issue and spec
+    const issueResponse = await request(app)
+      .post("/api/issues")
+      .set("X-Project-ID", projectId)
+      .send({ title: "Test Issue", description: "Test", status: "open" });
+    testIssueId = issueResponse.body.data.id;
+
+    const specResponse = await request(app)
+      .post("/api/specs")
+      .set("X-Project-ID", projectId)
+      .send({ title: "Test Spec", content: "# Test" });
+    testSpecId = specResponse.body.data.id;
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     // Clean up export debouncer first
     cleanupExport();
-    // Clean up database
-    db.close();
+    // Shutdown project manager
+    await projectManager.shutdown();
+    // Clean up test directory
     if (fs.existsSync(testDir)) {
       fs.rmSync(testDir, { recursive: true, force: true });
     }
-    // Unset environment variable
-    delete process.env.SUDOCODE_DIR;
   });
 
   describe("GET /api/specs", () => {
-    it("should return an empty list initially", async () => {
+    it("should return list of specs", async () => {
       const response = await request(app)
-        .get("/api/specs")
+        .get("/api/specs").set("X-Project-ID", projectId)
         .expect(200)
         .expect("Content-Type", /json/);
 
       expect(response.body.success).toBe(true);
       expect(Array.isArray(response.body.data)).toBeTruthy();
-      expect(response.body.data.length).toBe(0);
+      expect(response.body.data.length >= 1).toBeTruthy();
     });
 
     it("should support filtering by priority", async () => {
       const response = await request(app)
-        .get("/api/specs?priority=1")
+        .get("/api/specs?priority=1").set("X-Project-ID", projectId)
         .expect(200);
 
       expect(response.body.success).toBe(true);
@@ -86,7 +127,10 @@ describe("Specs API", () => {
     });
 
     it("should support limit parameter", async () => {
-      const response = await request(app).get("/api/specs?limit=5").expect(200);
+      const response = await request(app)
+        .get("/api/specs?limit=5")
+        .set("X-Project-ID", projectId)
+        .expect(200);
 
       expect(response.body.success).toBe(true);
       expect(Array.isArray(response.body.data)).toBeTruthy();
@@ -103,7 +147,7 @@ describe("Specs API", () => {
       };
 
       const response = await request(app)
-        .post("/api/specs")
+        .post("/api/specs").set("X-Project-ID", projectId)
         .send(newSpec)
         .expect(201)
         .expect("Content-Type", /json/);
@@ -125,7 +169,7 @@ describe("Specs API", () => {
       };
 
       const response = await request(app)
-        .post("/api/specs")
+        .post("/api/specs").set("X-Project-ID", projectId)
         .send(invalidSpec)
         .expect(400);
 
@@ -140,7 +184,7 @@ describe("Specs API", () => {
       };
 
       const response = await request(app)
-        .post("/api/specs")
+        .post("/api/specs").set("X-Project-ID", projectId)
         .send(invalidSpec)
         .expect(400);
 
@@ -154,7 +198,7 @@ describe("Specs API", () => {
       };
 
       const response = await request(app)
-        .post("/api/specs")
+        .post("/api/specs").set("X-Project-ID", projectId)
         .send(minimalSpec)
         .expect(201);
 
@@ -168,7 +212,7 @@ describe("Specs API", () => {
   describe("GET /api/specs/:id", () => {
     it("should get a spec by ID", async () => {
       const response = await request(app)
-        .get(`/api/specs/${createdSpecId}`)
+        .get(`/api/specs/${createdSpecId}`).set("X-Project-ID", projectId)
         .expect(200)
         .expect("Content-Type", /json/);
 
@@ -180,7 +224,7 @@ describe("Specs API", () => {
 
     it("should return 404 for non-existent spec", async () => {
       const response = await request(app)
-        .get("/api/specs/SPEC-99999")
+        .get("/api/specs/SPEC-99999").set("X-Project-ID", projectId)
         .expect(404);
 
       expect(response.body.success).toBe(false);
@@ -196,7 +240,7 @@ describe("Specs API", () => {
       };
 
       const response = await request(app)
-        .put(`/api/specs/${createdSpecId}`)
+        .put(`/api/specs/${createdSpecId}`).set("X-Project-ID", projectId)
         .send(updates)
         .expect(200)
         .expect("Content-Type", /json/);
@@ -211,7 +255,7 @@ describe("Specs API", () => {
 
     it("should return 404 for non-existent spec", async () => {
       const response = await request(app)
-        .put("/api/specs/SPEC-99999")
+        .put("/api/specs/SPEC-99999").set("X-Project-ID", projectId)
         .send({ content: "Updated" })
         .expect(404);
 
@@ -221,7 +265,7 @@ describe("Specs API", () => {
 
     it("should reject empty update", async () => {
       const response = await request(app)
-        .put(`/api/specs/${createdSpecId}`)
+        .put(`/api/specs/${createdSpecId}`).set("X-Project-ID", projectId)
         .send({})
         .expect(400);
 
@@ -231,7 +275,7 @@ describe("Specs API", () => {
 
     it("should reject title that is too long", async () => {
       const response = await request(app)
-        .put(`/api/specs/${createdSpecId}`)
+        .put(`/api/specs/${createdSpecId}`).set("X-Project-ID", projectId)
         .send({ title: "x".repeat(501) })
         .expect(400);
 
@@ -246,14 +290,14 @@ describe("Specs API", () => {
     // Create a spec to delete in tests
     beforeAll(async () => {
       const response = await request(app)
-        .post("/api/specs")
+        .post("/api/specs").set("X-Project-ID", projectId)
         .send({ title: "Spec to Delete" });
       specToDelete = response.body.data.id;
     });
 
     it("should delete a spec", async () => {
       const response = await request(app)
-        .delete(`/api/specs/${specToDelete}`)
+        .delete(`/api/specs/${specToDelete}`).set("X-Project-ID", projectId)
         .expect(200);
 
       expect(response.body.success).toBe(true);
@@ -264,7 +308,7 @@ describe("Specs API", () => {
 
     it("should return 404 when deleting non-existent spec", async () => {
       const response = await request(app)
-        .delete("/api/specs/SPEC-99999")
+        .delete("/api/specs/SPEC-99999").set("X-Project-ID", projectId)
         .expect(404);
 
       expect(response.body.success).toBe(false);
@@ -273,7 +317,7 @@ describe("Specs API", () => {
 
     it("should not find deleted spec", async () => {
       const response = await request(app)
-        .get(`/api/specs/${specToDelete}`)
+        .get(`/api/specs/${specToDelete}`).set("X-Project-ID", projectId)
         .expect(404);
 
       expect(response.body.success).toBe(false);
@@ -282,7 +326,10 @@ describe("Specs API", () => {
 
   describe("Integration tests", () => {
     it("should list the created specs", async () => {
-      const response = await request(app).get("/api/specs").expect(200);
+      const response = await request(app)
+        .get("/api/specs")
+        .set("X-Project-ID", projectId)
+        .expect(200);
 
       expect(response.body.success).toBe(true);
       expect(Array.isArray(response.body.data)).toBeTruthy();
@@ -299,7 +346,7 @@ describe("Specs API", () => {
 
     it("should filter specs by priority", async () => {
       const response = await request(app)
-        .get("/api/specs?priority=3")
+        .get("/api/specs?priority=3").set("X-Project-ID", projectId)
         .expect(200);
 
       expect(response.body.success).toBe(true);

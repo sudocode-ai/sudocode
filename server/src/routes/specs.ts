@@ -1,9 +1,10 @@
 /**
  * Specs API routes (mapped to /api/specs)
+ *
+ * Note: All routes require X-Project-ID header via requireProject() middleware
  */
 
 import { Router, Request, Response } from "express";
-import type Database from "better-sqlite3";
 import {
   getAllSpecs,
   getSpecById,
@@ -13,11 +14,10 @@ import {
 } from "../services/specs.js";
 import { generateSpecId } from "@sudocode-ai/cli/dist/id-generator.js";
 import { broadcastSpecUpdate } from "../services/websocket.js";
-import { getSudocodeDir } from "../utils/sudocode-dir.js";
 import { triggerExport, syncEntityToMarkdown } from "../services/export.js";
 import * as path from "path";
 
-export function createSpecsRouter(db: Database.Database): Router {
+export function createSpecsRouter(): Router {
   const router = Router();
 
   /**
@@ -43,7 +43,7 @@ export function createSpecsRouter(db: Database.Database): Router {
         options.offset = parseInt(req.query.offset as string, 10);
       }
 
-      const specs = getAllSpecs(db, options);
+      const specs = getAllSpecs(req.project!.db, options);
 
       res.json({
         success: true,
@@ -66,7 +66,7 @@ export function createSpecsRouter(db: Database.Database): Router {
   router.get("/:id", (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const spec = getSpecById(db, id);
+      const spec = getSpecById(req.project!.db, id);
 
       if (!spec) {
         res.status(404).json({
@@ -119,14 +119,14 @@ export function createSpecsRouter(db: Database.Database): Router {
       }
 
       // Generate new spec ID
-      const outputDir = getSudocodeDir();
-      const { id, uuid } = generateSpecId(db, outputDir);
+      const outputDir = req.project!.sudocodeDir;
+      const { id, uuid } = generateSpecId(req.project!.db, outputDir);
 
       // Generate file path for the spec
       const file_path = path.join(outputDir, "specs", `${id}.md`);
 
       // Create spec using CLI operation
-      const spec = createNewSpec(db, {
+      const spec = createNewSpec(req.project!.db, {
         id,
         uuid,
         title,
@@ -137,10 +137,10 @@ export function createSpecsRouter(db: Database.Database): Router {
       });
 
       // Trigger export to JSONL files
-      triggerExport(db);
+      triggerExport(req.project!.db, req.project!.sudocodeDir);
 
       // Sync this specific spec to its markdown file (don't wait for it)
-      syncEntityToMarkdown(db, spec.id, "spec").catch((error) => {
+      syncEntityToMarkdown(req.project!.db, spec.id, "spec", req.project!.sudocodeDir).catch((error) => {
         console.error(`Failed to sync spec ${spec.id} to markdown:`, error);
       });
 
@@ -212,13 +212,13 @@ export function createSpecsRouter(db: Database.Database): Router {
       }
 
       // Update spec using CLI operation
-      const spec = updateExistingSpec(db, id, updateInput);
+      const spec = updateExistingSpec(req.project!.db, id, updateInput);
 
       // Trigger export to JSONL files
-      triggerExport(db);
+      triggerExport(req.project!.db, req.project!.sudocodeDir);
 
       // Sync this specific spec to its markdown file (don't wait for it)
-      syncEntityToMarkdown(db, spec.id, "spec").catch((error) => {
+      syncEntityToMarkdown(req.project!.db, spec.id, "spec", req.project!.sudocodeDir).catch((error) => {
         console.error(`Failed to sync spec ${spec.id} to markdown:`, error);
       });
 
@@ -259,7 +259,7 @@ export function createSpecsRouter(db: Database.Database): Router {
       const { id } = req.params;
 
       // Check if spec exists first
-      const existingSpec = getSpecById(db, id);
+      const existingSpec = getSpecById(req.project!.db, id);
       if (!existingSpec) {
         res.status(404).json({
           success: false,
@@ -270,11 +270,11 @@ export function createSpecsRouter(db: Database.Database): Router {
       }
 
       // Delete spec using CLI operation
-      const deleted = deleteExistingSpec(db, id);
+      const deleted = deleteExistingSpec(req.project!.db, id);
 
       if (deleted) {
         // Trigger export to JSONL files
-        triggerExport(db);
+        triggerExport(req.project!.db, req.project!.sudocodeDir);
 
         // Broadcast spec deletion to WebSocket clients
         broadcastSpecUpdate(id, "deleted", { id });

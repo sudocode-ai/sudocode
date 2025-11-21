@@ -2,36 +2,22 @@
  * Executions API routes (mapped to /api)
  *
  * Provides REST API for managing issue executions.
+ *
+ * Note: All routes require X-Project-ID header via requireProject() middleware
  */
 
 import { Router, Request, Response } from "express";
-import type Database from "better-sqlite3";
-import { ExecutionService } from "../services/execution-service.js";
-import { ExecutionLogsStore } from "../services/execution-logs-store.js";
-import type { TransportManager } from "../execution/transport/transport-manager.js";
 
 /**
  * Create executions router
  *
- * @param db - Database instance
- * @param repoPath - Path to git repository
- * @param transportManager - Optional transport manager for SSE streaming
- * @param executionService - Optional execution service instance
- * @param logsStore - Optional execution logs store instance
+ * Note: ExecutionService and ExecutionLogsStore are accessed via req.project
+ * which is injected by the requireProject() middleware
+ *
  * @returns Express router with execution endpoints
  */
-export function createExecutionsRouter(
-  db: Database.Database,
-  repoPath: string,
-  transportManager?: TransportManager,
-  executionService?: ExecutionService,
-  logsStore?: ExecutionLogsStore
-): Router {
+export function createExecutionsRouter(): Router {
   const router = Router();
-  const service =
-    executionService ||
-    new ExecutionService(db, repoPath, undefined, transportManager);
-  const store = logsStore || new ExecutionLogsStore(db);
 
   /**
    * POST /api/issues/:issueId/executions/prepare
@@ -44,7 +30,7 @@ export function createExecutionsRouter(
       try {
         const { issueId } = req.params;
         const options = req.body || {};
-        const result = await service.prepareExecution(issueId, options);
+        const result = await req.project!.executionService!.prepareExecution(issueId, options);
 
         res.json({
           success: true,
@@ -84,7 +70,7 @@ export function createExecutionsRouter(
           return;
         }
 
-        const execution = await service.createExecution(
+        const execution = await req.project!.executionService!.createExecution(
           issueId,
           config || {},
           prompt
@@ -120,7 +106,7 @@ export function createExecutionsRouter(
   router.get("/executions/:executionId", (req: Request, res: Response) => {
     try {
       const { executionId } = req.params;
-      const execution = service.getExecution(executionId);
+      const execution = req.project!.executionService!.getExecution(executionId);
 
       if (!execution) {
         res.status(404).json({
@@ -156,7 +142,7 @@ export function createExecutionsRouter(
       const { executionId } = req.params;
 
       // Verify execution exists
-      const execution = service.getExecution(executionId);
+      const execution = req.project!.executionService!.getExecution(executionId);
       if (!execution) {
         res.status(404).json({
           success: false,
@@ -167,8 +153,8 @@ export function createExecutionsRouter(
       }
 
       // Fetch raw logs and metadata
-      const logs = store.getRawLogs(executionId);
-      const metadata = store.getLogMetadata(executionId);
+      const logs = req.project!.logsStore!.getRawLogs(executionId);
+      const metadata = req.project!.logsStore!.getLogMetadata(executionId);
 
       res.json({
         success: true,
@@ -209,7 +195,7 @@ export function createExecutionsRouter(
   router.get("/issues/:issueId/executions", (req: Request, res: Response) => {
     try {
       const { issueId } = req.params;
-      const executions = service.listExecutions(issueId);
+      const executions = req.project!.executionService!.listExecutions(issueId);
 
       res.json({
         success: true,
@@ -248,7 +234,7 @@ export function createExecutionsRouter(
           return;
         }
 
-        const followUpExecution = await service.createFollowUp(
+        const followUpExecution = await req.project!.executionService!.createFollowUp(
           executionId,
           feedback
         );
@@ -290,7 +276,7 @@ export function createExecutionsRouter(
       try {
         const { executionId } = req.params;
 
-        await service.cancelExecution(executionId);
+        await req.project!.executionService!.cancelExecution(executionId);
 
         res.json({
           success: true,
@@ -326,7 +312,7 @@ export function createExecutionsRouter(
       try {
         const { executionId } = req.params;
 
-        const exists = await service.worktreeExists(executionId);
+        const exists = await req.project!.executionService!.worktreeExists(executionId);
 
         res.json({
           success: true,
@@ -356,7 +342,7 @@ export function createExecutionsRouter(
       try {
         const { executionId } = req.params;
 
-        await service.deleteWorktree(executionId);
+        await req.project!.executionService!.deleteWorktree(executionId);
 
         res.json({
           success: true,

@@ -5,21 +5,24 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import express from "express";
-import type Database from "better-sqlite3";
-import { initDatabase } from "@sudocode-ai/cli/dist/db.js";
 import { createRelationshipsRouter } from "../../src/routes/relationships.js";
 import { createIssuesRouter } from "../../src/routes/issues.js";
 import { createSpecsRouter } from "../../src/routes/specs.js";
 import { cleanupExport } from "../../src/services/export.js";
+import { ProjectManager } from "../../src/services/project-manager.js";
+import { ProjectRegistry } from "../../src/services/project-registry.js";
+import { requireProject } from "../../src/middleware/project-context.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
 describe("Relationships API", () => {
   let app: express.Application;
-  let db: Database.Database;
-  let testDbPath: string;
   let testDir: string;
+  let testProjectPath: string;
+  let projectManager: ProjectManager;
+  let projectRegistry: ProjectRegistry;
+  let projectId: string;
   let testIssueId: string;
   let testSpecId: string;
 
@@ -28,13 +31,14 @@ describe("Relationships API", () => {
     testDir = fs.mkdtempSync(
       path.join(os.tmpdir(), "sudocode-test-relationships-")
     );
-    testDbPath = path.join(testDir, "cache.db");
 
-    // Set SUDOCODE_DIR environment variable
-    process.env.SUDOCODE_DIR = testDir;
+    // Create test project directory structure
+    testProjectPath = path.join(testDir, "test-project");
+    const sudocodeDir = path.join(testProjectPath, ".sudocode");
+    fs.mkdirSync(sudocodeDir, { recursive: true });
 
     // Create config.json for ID generation
-    const configPath = path.join(testDir, "config.json");
+    const configPath = path.join(sudocodeDir, "config.json");
     const config = {
       version: "1.0.0",
       id_prefix: {
@@ -44,42 +48,61 @@ describe("Relationships API", () => {
     };
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 
-    // Create specs directory for spec files
-    const specsDir = path.join(testDir, "specs");
+    // Create directories for markdown files
+    const issuesDir = path.join(sudocodeDir, "issues");
+    const specsDir = path.join(sudocodeDir, "specs");
+    fs.mkdirSync(issuesDir, { recursive: true });
     fs.mkdirSync(specsDir, { recursive: true });
 
-    // Initialize test database
-    db = initDatabase({ path: testDbPath });
+    // Create database file
+    const dbPath = path.join(sudocodeDir, "cache.db");
+    fs.writeFileSync(dbPath, "");
+
+    // Set up project manager
+    const registryPath = path.join(testDir, "projects.json");
+    projectRegistry = new ProjectRegistry(registryPath);
+    await projectRegistry.load();
+
+    projectManager = new ProjectManager(projectRegistry, { watchEnabled: false });
+
+    // Open the test project
+    const result = await projectManager.openProject(testProjectPath);
+    if (result.ok) {
+      projectId = result.value.id;
+    } else {
+      throw new Error("Failed to open test project");
+    }
 
     // Set up Express app with routes
     app = express();
     app.use(express.json());
-    app.use("/api/issues", createIssuesRouter(db));
-    app.use("/api/specs", createSpecsRouter(db));
-    app.use("/api/relationships", createRelationshipsRouter(db));
+    app.use("/api/issues", requireProject(projectManager), createIssuesRouter());
+    app.use("/api/specs", requireProject(projectManager), createSpecsRouter());
+    app.use("/api/relationships", requireProject(projectManager), createRelationshipsRouter());
 
     // Create test issue and spec
     const issueResponse = await request(app)
       .post("/api/issues")
+      .set("X-Project-ID", projectId)
       .send({ title: "Test Issue", description: "Test", status: "open" });
     testIssueId = issueResponse.body.data.id;
 
     const specResponse = await request(app)
       .post("/api/specs")
+      .set("X-Project-ID", projectId)
       .send({ title: "Test Spec", content: "# Test" });
     testSpecId = specResponse.body.data.id;
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     // Clean up export debouncer first
     cleanupExport();
-    // Clean up database
-    db.close();
+    // Shutdown project manager
+    await projectManager.shutdown();
+    // Clean up test directory
     if (fs.existsSync(testDir)) {
       fs.rmSync(testDir, { recursive: true, force: true });
     }
-    // Unset environment variable
-    delete process.env.SUDOCODE_DIR;
   });
 
   describe("POST /api/relationships", () => {
@@ -93,7 +116,7 @@ describe("Relationships API", () => {
       };
 
       const response = await request(app)
-        .post("/api/relationships")
+        .post("/api/relationships").set("X-Project-ID", projectId)
         .send(relationship)
         .expect(201)
         .expect("Content-Type", /json/);
@@ -115,7 +138,7 @@ describe("Relationships API", () => {
       };
 
       const response = await request(app)
-        .post("/api/relationships")
+        .post("/api/relationships").set("X-Project-ID", projectId)
         .send(relationship)
         .expect(201)
         .expect("Content-Type", /json/);
@@ -129,7 +152,7 @@ describe("Relationships API", () => {
 
     it("should reject relationship without from_id", async () => {
       const response = await request(app)
-        .post("/api/relationships")
+        .post("/api/relationships").set("X-Project-ID", projectId)
         .send({
           from_type: "issue",
           to_id: testSpecId,
@@ -144,7 +167,7 @@ describe("Relationships API", () => {
 
     it("should reject relationship with invalid from_type", async () => {
       const response = await request(app)
-        .post("/api/relationships")
+        .post("/api/relationships").set("X-Project-ID", projectId)
         .send({
           from_id: testIssueId,
           from_type: "invalid",
@@ -160,7 +183,7 @@ describe("Relationships API", () => {
 
     it("should reject relationship without to_id", async () => {
       const response = await request(app)
-        .post("/api/relationships")
+        .post("/api/relationships").set("X-Project-ID", projectId)
         .send({
           from_id: testIssueId,
           from_type: "issue",
@@ -175,7 +198,7 @@ describe("Relationships API", () => {
 
     it("should reject relationship with invalid relationship_type", async () => {
       const response = await request(app)
-        .post("/api/relationships")
+        .post("/api/relationships").set("X-Project-ID", projectId)
         .send({
           from_id: testIssueId,
           from_type: "issue",
@@ -193,7 +216,7 @@ describe("Relationships API", () => {
 
     it("should reject relationship with non-existent from_id", async () => {
       const response = await request(app)
-        .post("/api/relationships")
+        .post("/api/relationships").set("X-Project-ID", projectId)
         .send({
           from_id: "ISSUE-99999",
           from_type: "issue",
@@ -211,7 +234,7 @@ describe("Relationships API", () => {
   describe("GET /api/relationships/:entity_type/:entity_id", () => {
     it("should get all relationships for an issue", async () => {
       const response = await request(app)
-        .get(`/api/relationships/issue/${testIssueId}`)
+        .get(`/api/relationships/issue/${testIssueId}`).set("X-Project-ID", projectId)
         .expect(200)
         .expect("Content-Type", /json/);
 
@@ -225,7 +248,7 @@ describe("Relationships API", () => {
 
     it("should get all relationships for a spec", async () => {
       const response = await request(app)
-        .get(`/api/relationships/spec/${testSpecId}`)
+        .get(`/api/relationships/spec/${testSpecId}`).set("X-Project-ID", projectId)
         .expect(200)
         .expect("Content-Type", /json/);
 
@@ -240,11 +263,11 @@ describe("Relationships API", () => {
     it("should return empty arrays for entity with no relationships", async () => {
       // Create another issue with no relationships
       const issueResponse = await request(app)
-        .post("/api/issues")
+        .post("/api/issues").set("X-Project-ID", projectId)
         .send({ title: "Isolated Issue", status: "open" });
 
       const response = await request(app)
-        .get(`/api/relationships/issue/${issueResponse.body.data.id}`)
+        .get(`/api/relationships/issue/${issueResponse.body.data.id}`).set("X-Project-ID", projectId)
         .expect(200);
 
       expect(response.body.success).toBe(true);
@@ -254,7 +277,7 @@ describe("Relationships API", () => {
 
     it("should reject invalid entity_type", async () => {
       const response = await request(app)
-        .get(`/api/relationships/invalid/${testIssueId}`)
+        .get(`/api/relationships/invalid/${testIssueId}`).set("X-Project-ID", projectId)
         .expect(400);
 
       expect(response.body.success).toBe(false);
@@ -267,7 +290,7 @@ describe("Relationships API", () => {
   describe("GET /api/relationships/:entity_type/:entity_id/outgoing", () => {
     it("should get outgoing relationships for an entity", async () => {
       const response = await request(app)
-        .get(`/api/relationships/issue/${testIssueId}/outgoing`)
+        .get(`/api/relationships/issue/${testIssueId}/outgoing`).set("X-Project-ID", projectId)
         .expect(200)
         .expect("Content-Type", /json/);
 
@@ -283,6 +306,7 @@ describe("Relationships API", () => {
         .get(
           `/api/relationships/issue/${testIssueId}/outgoing?relationship_type=implements`
         )
+        .set("X-Project-ID", projectId)
         .expect(200);
 
       expect(response.body.success).toBe(true);
@@ -297,6 +321,7 @@ describe("Relationships API", () => {
         .get(
           `/api/relationships/issue/${testIssueId}/outgoing?relationship_type=blocks`
         )
+        .set("X-Project-ID", projectId)
         .expect(200);
 
       expect(response.body.success).toBe(true);
@@ -307,7 +332,7 @@ describe("Relationships API", () => {
   describe("GET /api/relationships/:entity_type/:entity_id/incoming", () => {
     it("should get incoming relationships for an entity", async () => {
       const response = await request(app)
-        .get(`/api/relationships/spec/${testSpecId}/incoming`)
+        .get(`/api/relationships/spec/${testSpecId}/incoming`).set("X-Project-ID", projectId)
         .expect(200)
         .expect("Content-Type", /json/);
 
@@ -323,6 +348,7 @@ describe("Relationships API", () => {
         .get(
           `/api/relationships/spec/${testSpecId}/incoming?relationship_type=implements`
         )
+        .set("X-Project-ID", projectId)
         .expect(200);
 
       expect(response.body.success).toBe(true);
@@ -344,7 +370,7 @@ describe("Relationships API", () => {
       };
 
       const response = await request(app)
-        .delete("/api/relationships")
+        .delete("/api/relationships").set("X-Project-ID", projectId)
         .send(relationship)
         .expect(200);
 
@@ -357,7 +383,7 @@ describe("Relationships API", () => {
     it("should trigger JSONL export after deleting relationship", async () => {
       // Create a new issue and spec for this test
       const issueResponse = await request(app)
-        .post("/api/issues")
+        .post("/api/issues").set("X-Project-ID", projectId)
         .send({
           title: "Delete Export Test Issue",
           description: "Test",
@@ -366,13 +392,13 @@ describe("Relationships API", () => {
       const issueId = issueResponse.body.data.id;
 
       const specResponse = await request(app)
-        .post("/api/specs")
+        .post("/api/specs").set("X-Project-ID", projectId)
         .send({ title: "Delete Export Test Spec", content: "# Test" });
       const specId = specResponse.body.data.id;
 
       // Create relationship
       await request(app)
-        .post("/api/relationships")
+        .post("/api/relationships").set("X-Project-ID", projectId)
         .send({
           from_id: issueId,
           from_type: "issue",
@@ -387,7 +413,7 @@ describe("Relationships API", () => {
 
       // Delete the relationship
       await request(app)
-        .delete("/api/relationships")
+        .delete("/api/relationships").set("X-Project-ID", projectId)
         .send({
           from_id: issueId,
           from_type: "issue",
@@ -401,7 +427,8 @@ describe("Relationships API", () => {
       await new Promise((resolve) => setTimeout(resolve, 2500));
 
       // Check that JSONL files exist and relationship is removed
-      const issuesJsonlPath = path.join(testDir, "issues.jsonl");
+      const sudocodeDir = path.join(testProjectPath, ".sudocode");
+      const issuesJsonlPath = path.join(sudocodeDir, "issues.jsonl");
       expect(fs.existsSync(issuesJsonlPath)).toBeTruthy();
 
       const issuesContent = fs.readFileSync(issuesJsonlPath, "utf-8");
@@ -425,7 +452,7 @@ describe("Relationships API", () => {
       };
 
       const response = await request(app)
-        .delete("/api/relationships")
+        .delete("/api/relationships").set("X-Project-ID", projectId)
         .send(relationship)
         .expect(404);
 
@@ -435,7 +462,7 @@ describe("Relationships API", () => {
 
     it("should reject delete without from_id", async () => {
       const response = await request(app)
-        .delete("/api/relationships")
+        .delete("/api/relationships").set("X-Project-ID", projectId)
         .send({
           from_type: "issue",
           to_id: testSpecId,
@@ -450,7 +477,7 @@ describe("Relationships API", () => {
 
     it("should reject delete with invalid from_type", async () => {
       const response = await request(app)
-        .delete("/api/relationships")
+        .delete("/api/relationships").set("X-Project-ID", projectId)
         .send({
           from_id: testIssueId,
           from_type: "invalid",
@@ -474,13 +501,13 @@ describe("Relationships API", () => {
     it("should support multiple relationship types", async () => {
       // Create another spec
       const spec2Response = await request(app)
-        .post("/api/specs")
+        .post("/api/specs").set("X-Project-ID", projectId)
         .send({ title: "Related Spec", content: "# Related" });
       const spec2Id = spec2Response.body.data.id;
 
       // Create multiple relationships
       await request(app)
-        .post("/api/relationships")
+        .post("/api/relationships").set("X-Project-ID", projectId)
         .send({
           from_id: testIssueId,
           from_type: "issue",
@@ -491,7 +518,7 @@ describe("Relationships API", () => {
         .expect(201);
 
       await request(app)
-        .post("/api/relationships")
+        .post("/api/relationships").set("X-Project-ID", projectId)
         .send({
           from_id: testSpecId,
           from_type: "spec",
@@ -503,14 +530,14 @@ describe("Relationships API", () => {
 
       // Get all relationships for the issue
       const response = await request(app)
-        .get(`/api/relationships/issue/${testIssueId}`)
+        .get(`/api/relationships/issue/${testIssueId}`).set("X-Project-ID", projectId)
         .expect(200);
 
       expect(response.body.data.outgoing.length).toBe(1);
 
       // Get all relationships for spec2
       const spec2RelationshipsResponse = await request(app)
-        .get(`/api/relationships/spec/${spec2Id}`)
+        .get(`/api/relationships/spec/${spec2Id}`).set("X-Project-ID", projectId)
         .expect(200);
 
       expect(spec2RelationshipsResponse.body.data.incoming.length).toBe(2);
@@ -519,18 +546,18 @@ describe("Relationships API", () => {
     it("should handle bidirectional relationships correctly", async () => {
       // Create a new issue and spec
       const issueResponse = await request(app)
-        .post("/api/issues")
+        .post("/api/issues").set("X-Project-ID", projectId)
         .send({ title: "Bidirectional Issue", status: "open" });
       const issueId = issueResponse.body.data.id;
 
       const specResponse = await request(app)
-        .post("/api/specs")
+        .post("/api/specs").set("X-Project-ID", projectId)
         .send({ title: "Bidirectional Spec", content: "# Test" });
       const specId = specResponse.body.data.id;
 
       // Create relationship in one direction
       await request(app)
-        .post("/api/relationships")
+        .post("/api/relationships").set("X-Project-ID", projectId)
         .send({
           from_id: issueId,
           from_type: "issue",
@@ -542,7 +569,7 @@ describe("Relationships API", () => {
 
       // Create relationship in reverse direction (different type)
       await request(app)
-        .post("/api/relationships")
+        .post("/api/relationships").set("X-Project-ID", projectId)
         .send({
           from_id: specId,
           from_type: "spec",
@@ -553,15 +580,15 @@ describe("Relationships API", () => {
         .expect(201);
 
       // Verify both entities have both incoming and outgoing relationships
-      const issueRels = await request(app).get(
-        `/api/relationships/issue/${issueId}`
-      );
+      const issueRels = await request(app)
+        .get(`/api/relationships/issue/${issueId}`)
+        .set("X-Project-ID", projectId);
       expect(issueRels.body.data.outgoing.length).toBe(1);
       expect(issueRels.body.data.incoming.length).toBe(1);
 
-      const specRels = await request(app).get(
-        `/api/relationships/spec/${specId}`
-      );
+      const specRels = await request(app)
+        .get(`/api/relationships/spec/${specId}`)
+        .set("X-Project-ID", projectId);
       expect(specRels.body.data.outgoing.length).toBe(1);
       expect(specRels.body.data.incoming.length).toBe(1);
     });

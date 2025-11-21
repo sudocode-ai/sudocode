@@ -1,9 +1,10 @@
 /**
  * Issues API routes (mapped to /api/issues)
+ *
+ * Note: All routes require X-Project-ID header via requireProject() middleware
  */
 
 import { Router, Request, Response } from "express";
-import type Database from "better-sqlite3";
 import {
   getAllIssues,
   getIssueById,
@@ -13,10 +14,9 @@ import {
 } from "../services/issues.js";
 import { generateIssueId } from "@sudocode-ai/cli/dist/id-generator.js";
 import { broadcastIssueUpdate } from "../services/websocket.js";
-import { getSudocodeDir } from "../utils/sudocode-dir.js";
 import { triggerExport, syncEntityToMarkdown } from "../services/export.js";
 
-export function createIssuesRouter(db: Database.Database): Router {
+export function createIssuesRouter(): Router {
   const router = Router();
 
   /**
@@ -48,7 +48,7 @@ export function createIssuesRouter(db: Database.Database): Router {
         options.offset = parseInt(req.query.offset as string, 10);
       }
 
-      const issues = getAllIssues(db, options);
+      const issues = getAllIssues(req.project!.db, options);
 
       res.json({
         success: true,
@@ -71,7 +71,7 @@ export function createIssuesRouter(db: Database.Database): Router {
   router.get("/:id", (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const issue = getIssueById(db, id);
+      const issue = getIssueById(req.project!.db, id);
 
       if (!issue) {
         res.status(404).json({
@@ -125,11 +125,11 @@ export function createIssuesRouter(db: Database.Database): Router {
       }
 
       // Generate new issue ID
-      const outputDir = getSudocodeDir();
-      const { id, uuid } = generateIssueId(db, outputDir);
+      const outputDir = req.project!.sudocodeDir;
+      const { id, uuid } = generateIssueId(req.project!.db, outputDir);
 
       // Create issue using CLI operation
-      const issue = createNewIssue(db, {
+      const issue = createNewIssue(req.project!.db, {
         id,
         uuid,
         title,
@@ -141,10 +141,10 @@ export function createIssuesRouter(db: Database.Database): Router {
       });
 
       // Trigger export to JSONL files
-      triggerExport(db);
+      triggerExport(req.project!.db, req.project!.sudocodeDir);
 
       // Sync this specific issue to its markdown file (don't wait for it)
-      syncEntityToMarkdown(db, issue.id, "issue").catch((error) => {
+      syncEntityToMarkdown(req.project!.db, issue.id, "issue", req.project!.sudocodeDir).catch((error) => {
         console.error(`Failed to sync issue ${issue.id} to markdown:`, error);
       });
 
@@ -228,13 +228,13 @@ export function createIssuesRouter(db: Database.Database): Router {
       }
 
       // Update issue using CLI operation
-      const issue = updateExistingIssue(db, id, updateInput);
+      const issue = updateExistingIssue(req.project!.db, id, updateInput);
 
       // Trigger export to JSONL files
-      triggerExport(db);
+      triggerExport(req.project!.db, req.project!.sudocodeDir);
 
       // Sync this specific issue to its markdown file (don't wait for it)
-      syncEntityToMarkdown(db, issue.id, "issue").catch((error) => {
+      syncEntityToMarkdown(req.project!.db, issue.id, "issue", req.project!.sudocodeDir).catch((error) => {
         console.error(`Failed to sync issue ${issue.id} to markdown:`, error);
       });
 
@@ -275,7 +275,7 @@ export function createIssuesRouter(db: Database.Database): Router {
       const { id } = req.params;
 
       // Check if issue exists first
-      const existingIssue = getIssueById(db, id);
+      const existingIssue = getIssueById(req.project!.db, id);
       if (!existingIssue) {
         res.status(404).json({
           success: false,
@@ -286,11 +286,11 @@ export function createIssuesRouter(db: Database.Database): Router {
       }
 
       // Delete issue using CLI operation
-      const deleted = deleteExistingIssue(db, id);
+      const deleted = deleteExistingIssue(req.project!.db, id);
 
       if (deleted) {
         // Trigger export to JSONL files
-        triggerExport(db);
+        triggerExport(req.project!.db, req.project!.sudocodeDir);
 
         // Broadcast issue deletion to WebSocket clients
         broadcastIssueUpdate(id, "deleted", { id });
