@@ -10,12 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { executionsApi } from '@/lib/api'
-import type {
-  ExecutionConfig,
-  ExecutionPrepareResult,
-  ExecutionMode,
-  CleanupMode,
-} from '@/types/execution'
+import type { ExecutionConfig, ExecutionPrepareResult, ExecutionMode } from '@/types/execution'
 import { AgentSettingsDialog } from './AgentSettingsDialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -23,9 +18,15 @@ interface AgentConfigPanelProps {
   issueId: string
   onStart: (config: ExecutionConfig, prompt: string) => void
   disabled?: boolean
+  onSelectOpenChange?: (isOpen: boolean) => void
 }
 
-export function AgentConfigPanel({ issueId, onStart, disabled = false }: AgentConfigPanelProps) {
+export function AgentConfigPanel({
+  issueId,
+  onStart,
+  disabled = false,
+  onSelectOpenChange,
+}: AgentConfigPanelProps) {
   const [loading, setLoading] = useState(true)
   const [prepareResult, setPrepareResult] = useState<ExecutionPrepareResult | null>(null)
   const [prompt, setPrompt] = useState('')
@@ -165,6 +166,7 @@ export function AgentConfigPanel({ issueId, onStart, disabled = false }: AgentCo
           <Select
             value={config.model}
             onValueChange={(value) => updateConfig({ model: value })}
+            onOpenChange={onSelectOpenChange}
             disabled={loading}
           >
             <SelectTrigger className="h-8 w-[140px] text-xs">
@@ -184,6 +186,7 @@ export function AgentConfigPanel({ issueId, onStart, disabled = false }: AgentCo
         <Select
           value={config.mode}
           onValueChange={(value) => updateConfig({ mode: value as ExecutionMode })}
+          onOpenChange={onSelectOpenChange}
           disabled={loading}
         >
           <SelectTrigger className="h-8 w-[140px] text-xs">
@@ -191,10 +194,10 @@ export function AgentConfigPanel({ issueId, onStart, disabled = false }: AgentCo
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="worktree" className="text-xs">
-              Worktree
+              Run in worktree
             </SelectItem>
             <SelectItem value="local" className="text-xs">
-              Local
+              Run directly
             </SelectItem>
           </SelectContent>
         </Select>
@@ -204,6 +207,7 @@ export function AgentConfigPanel({ issueId, onStart, disabled = false }: AgentCo
           <Select
             value={config.baseBranch}
             onValueChange={(value) => updateConfig({ baseBranch: value })}
+            onOpenChange={onSelectOpenChange}
             disabled={loading}
           >
             <SelectTrigger className="h-8 w-[120px] text-xs">
@@ -218,28 +222,6 @@ export function AgentConfigPanel({ issueId, onStart, disabled = false }: AgentCo
             </SelectContent>
           </Select>
         )}
-
-        {/* Cleanup Mode */}
-        <Select
-          value={config.cleanupMode}
-          onValueChange={(value) => updateConfig({ cleanupMode: value as CleanupMode })}
-          disabled={loading}
-        >
-          <SelectTrigger className="h-8 w-[120px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="auto" className="text-xs">
-              Auto Cleanup
-            </SelectItem>
-            <SelectItem value="manual" className="text-xs">
-              Manual
-            </SelectItem>
-            <SelectItem value="never" className="text-xs">
-              Never
-            </SelectItem>
-          </SelectContent>
-        </Select>
 
         <div className="ml-auto" />
 

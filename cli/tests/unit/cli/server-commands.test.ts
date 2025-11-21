@@ -207,7 +207,7 @@ describe("Server Commands", () => {
       processExitSpy.mockRestore();
     });
 
-    it("should use default port if not specified", async () => {
+    it("should not set PORT if not specified (let server scan for available ports)", async () => {
       const getUpdateNotificationMock = vi.mocked(
         updateChecker.getUpdateNotification
       );
@@ -221,7 +221,7 @@ describe("Server Commands", () => {
 
       const call = spawnMock.mock.calls[0];
       const options = call?.[2] as any;
-      expect(options?.env?.PORT).toBe("3000");
+      expect(options?.env?.PORT).toBeUndefined();
     });
 
     it("should pass SUDOCODE_DIR environment variable", async () => {

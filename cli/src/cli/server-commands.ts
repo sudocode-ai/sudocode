@@ -23,7 +23,7 @@ export interface ServerStartOptions {
  * 'package' if @sudocode-ai/local-server package is available,
  * or null if neither is available
  */
-async function getServerAvailability(): Promise<'binary' | 'package' | null> {
+async function getServerAvailability(): Promise<"binary" | "package" | null> {
   const { execSync } = await import("child_process");
 
   // First try sudocode-server binary
@@ -32,7 +32,7 @@ async function getServerAvailability(): Promise<'binary' | 'package' | null> {
       stdio: "ignore",
       timeout: 5000,
     });
-    return 'binary';
+    return "binary";
   } catch {
     // Binary not found, try package
   }
@@ -43,7 +43,7 @@ async function getServerAvailability(): Promise<'binary' | 'package' | null> {
       stdio: "ignore",
       timeout: 5000,
     });
-    return 'package';
+    return "package";
   } catch {
     // Package not found either
   }
@@ -94,11 +94,15 @@ export async function handleServerStart(
   }
 
   // Set up environment variables
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     SUDOCODE_DIR: ctx.outputDir,
-    PORT: options.port || process.env.PORT || "3000",
   };
+
+  // Only set PORT if explicitly provided - otherwise let server scan for available ports
+  if (options.port) {
+    env.PORT = options.port;
+  }
 
   console.log(chalk.blue("Starting sudocode local server..."));
   if (options.port) {
@@ -106,32 +110,30 @@ export async function handleServerStart(
   }
 
   if (process.env.DEBUG) {
-    console.log(chalk.gray(`Using ${serverAvailability === 'binary' ? 'sudocode-server binary' : 'npx @sudocode-ai/local-server'}`));
+    console.log(
+      chalk.gray(
+        `Using ${serverAvailability === "binary" ? "sudocode-server binary" : "npx @sudocode-ai/local-server"}`
+      )
+    );
   }
 
-  const serverProcess = serverAvailability === 'binary'
-    ? spawn("sudocode-server", [], {
-        detached: options.detach || false,
-        stdio: options.detach ? "ignore" : "inherit",
-        env,
-      })
-    : spawn("npx", ["--no", "@sudocode-ai/local-server"], {
-        detached: options.detach || false,
-        stdio: options.detach ? "ignore" : "inherit",
-        env,
-      });
+  const serverProcess =
+    serverAvailability === "binary"
+      ? spawn("sudocode-server", [], {
+          detached: options.detach || false,
+          stdio: options.detach ? "ignore" : "inherit",
+          env,
+        })
+      : spawn("npx", ["--no", "@sudocode-ai/local-server"], {
+          detached: options.detach || false,
+          stdio: options.detach ? "ignore" : "inherit",
+          env,
+        });
 
   if (options.detach) {
     serverProcess.unref();
-    console.log(
-      chalk.green(
-        `✓ Server started in background on http://localhost:${env.PORT}`
-      )
-    );
+    console.log(chalk.green(`✓ Server started in background`));
     console.log(chalk.gray(`  Process ID: ${serverProcess.pid}`));
-    console.log(
-      chalk.gray(`  Health check: http://localhost:${env.PORT}/health`)
-    );
   } else {
     // Handle Ctrl+C gracefully
     process.on("SIGINT", () => {

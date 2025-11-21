@@ -44,7 +44,7 @@
     "@sudocode-ai/cli": "^0.1.7",
     "@sudocode-ai/types": "^0.1.7",
     "@types/ws": "^8.18.1",
-    "agent-execution-engine": "^0.0.4",
+    "agent-execution-engine": "^0.0.6",
     "async-mutex": "^0.5.0",
     "better-sqlite3": "^11.10.0",
     "cors": "^2.8.5",

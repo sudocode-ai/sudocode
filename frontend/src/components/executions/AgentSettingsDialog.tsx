@@ -8,7 +8,14 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import type { ExecutionConfig } from '@/types/execution'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import type { ExecutionConfig, CleanupMode } from '@/types/execution'
 
 interface AgentSettingsDialogProps {
   open: boolean
@@ -47,6 +54,27 @@ export function AgentSettingsDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="cleanupMode">Worktree Cleanup Mode</Label>
+            <Select
+              value={config.cleanupMode ?? 'manual'}
+              onValueChange={(value) => onConfigChange({ cleanupMode: value as CleanupMode })}
+            >
+              <SelectTrigger id="cleanupMode" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Auto Cleanup</SelectItem>
+                <SelectItem value="manual">Manual</SelectItem>
+                <SelectItem value="never">Never</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Auto: cleanup on successful completion. Manual: user must cleanup. Never: no
+              auto-cleanup (for debugging).
+            </p>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="timeout">Timeout (ms)</Label>
             <input
