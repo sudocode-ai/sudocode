@@ -10,12 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { executionsApi } from '@/lib/api'
-import type {
-  ExecutionConfig,
-  ExecutionPrepareResult,
-  ExecutionMode,
-  CleanupMode,
-} from '@/types/execution'
+import type { ExecutionConfig, ExecutionPrepareResult, ExecutionMode } from '@/types/execution'
 import { AgentSettingsDialog } from './AgentSettingsDialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -199,10 +194,10 @@ export function AgentConfigPanel({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="worktree" className="text-xs">
-              Worktree
+              Run in worktree
             </SelectItem>
             <SelectItem value="local" className="text-xs">
-              Local
+              Run directly
             </SelectItem>
           </SelectContent>
         </Select>
@@ -227,29 +222,6 @@ export function AgentConfigPanel({
             </SelectContent>
           </Select>
         )}
-
-        {/* Cleanup Mode */}
-        <Select
-          value={config.cleanupMode}
-          onValueChange={(value) => updateConfig({ cleanupMode: value as CleanupMode })}
-          onOpenChange={onSelectOpenChange}
-          disabled={loading}
-        >
-          <SelectTrigger className="h-8 w-[120px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="auto" className="text-xs">
-              Auto Cleanup
-            </SelectItem>
-            <SelectItem value="manual" className="text-xs">
-              Manual
-            </SelectItem>
-            <SelectItem value="never" className="text-xs">
-              Never
-            </SelectItem>
-          </SelectContent>
-        </Select>
 
         <div className="ml-auto" />
 
