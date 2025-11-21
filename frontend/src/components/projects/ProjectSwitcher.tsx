@@ -54,7 +54,7 @@ export function ProjectSwitcher({ className, collapsed = false }: ProjectSwitche
     setSwitching(true)
 
     try {
-      // Update current project
+      // Update current project (this also updates the API client synchronously)
       setCurrentProjectId(projectId)
 
       // Invalidate all queries to trigger refetch with new project

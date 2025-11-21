@@ -114,6 +114,10 @@ export function ProjectProvider({ children, defaultProjectId, skipValidation = f
   const setCurrentProjectId = (projectId: string | null) => {
     setCurrentProjectIdState(projectId)
 
+    // Update API client immediately (synchronously) to avoid race condition
+    // when queries are invalidated right after this call
+    setApiProjectId(projectId)
+
     // Clear project info when switching projects
     // (will be refetched by useProject hook)
     if (projectId !== currentProjectId) {
@@ -123,6 +127,7 @@ export function ProjectProvider({ children, defaultProjectId, skipValidation = f
 
   const clearProject = () => {
     setCurrentProjectIdState(null)
+    setApiProjectId(null)
     setCurrentProject(null)
   }
 
