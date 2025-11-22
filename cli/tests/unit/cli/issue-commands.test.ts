@@ -608,8 +608,9 @@ describe("Issue CLI Commands", () => {
       await handleIssueCreate(ctx, "Test Issue for MD", options);
       const issueId = extractIssueId(consoleLogSpy);
 
-      // Check that markdown file was created
-      const mdPath = path.join(tempDir, "issues", `${issueId}.md`);
+      // Check that markdown file was created with unified naming scheme
+      const issuesDir = path.join(tempDir, "issues");
+      const mdPath = path.join(issuesDir, `${issueId}_test_issue_for_md.md`);
       expect(fs.existsSync(mdPath)).toBe(true);
 
       // Verify markdown content

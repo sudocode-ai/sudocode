@@ -471,8 +471,8 @@ This spec has no frontmatter and will be deleted.
       // Wait for JSONL change to be detected and processed
       await new Promise((resolve) => setTimeout(resolve, 800));
 
-      // Verify markdown file was created
-      const issueMdPath = path.join(tempDir, "issues", "issue-001.md");
+      // Verify markdown file was created with unified naming scheme
+      const issueMdPath = path.join(tempDir, "issues", "issue-001_test_issue_from_jsonl.md");
       expect(fs.existsSync(issueMdPath)).toBe(true);
 
       // Verify markdown content
@@ -768,8 +768,8 @@ Updated content.
         // Should have no additional syncs (oscillation would cause repeated syncs)
         expect(syncCount).toBe(0);
 
-        // Verify the file exists and has correct content
-        const issueMdPath = path.join(tempDir, "issues", "issue-osc-001.md");
+        // Verify the file exists and has correct content with unified naming scheme
+        const issueMdPath = path.join(tempDir, "issues", "issue-osc-001_test_no_oscillation.md");
         expect(fs.existsSync(issueMdPath)).toBe(true);
 
         expect(errors.length).toBe(0);

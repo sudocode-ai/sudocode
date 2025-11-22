@@ -14,7 +14,7 @@ import { listSpecs } from "../operations/specs.js";
 import { listIssues } from "../operations/issues.js";
 import {
   generateUniqueFilename,
-  findExistingSpecFile,
+  findExistingEntityFile,
 } from "../filename-generator.js";
 import { isInitialized, performInitialization } from "./init-commands.js";
 
@@ -277,12 +277,12 @@ async function handleSyncToMarkdown(ctx: CommandContext): Promise<void> {
   for (const spec of specs) {
     let filePath = path.join(ctx.outputDir, spec.file_path);
     if (!fs.existsSync(filePath)) {
-      const foundFile = findExistingSpecFile(spec.id, specsDir, spec.title);
+      const foundFile = findExistingEntityFile(spec.id, specsDir, spec.title);
 
       if (foundFile) {
         filePath = foundFile;
       } else {
-        const fileName = generateUniqueFilename(spec.title, spec.id, specsDir);
+        const fileName = generateUniqueFilename(spec.title, spec.id);
         filePath = path.join(specsDir, fileName);
       }
     }
@@ -309,8 +309,14 @@ async function handleSyncToMarkdown(ctx: CommandContext): Promise<void> {
   console.log(chalk.gray(`  Found ${issues.length} issues in database`));
 
   for (const issue of issues) {
-    const fileName = `${issue.id}.md`;
-    const filePath = path.join(issuesDir, fileName);
+    // Find existing file or generate new filename using unified scheme
+    let filePath = findExistingEntityFile(issue.id, issuesDir, issue.title);
+
+    if (!filePath) {
+      // File doesn't exist, generate new filename with unified format
+      const fileName = generateUniqueFilename(issue.title, issue.id);
+      filePath = path.join(issuesDir, fileName);
+    }
 
     const result = await syncJSONLToMarkdown(
       ctx.db,
@@ -321,7 +327,11 @@ async function handleSyncToMarkdown(ctx: CommandContext): Promise<void> {
 
     if (result.success) {
       syncedCount++;
-      console.log(chalk.gray(`  ✓ ${result.action} issue ${issue.id}`));
+      console.log(
+        chalk.gray(
+          `  ✓ ${result.action} issue ${issue.id} → ${path.basename(filePath)}`
+        )
+      );
     } else {
       errorCount++;
       console.log(
@@ -435,12 +445,18 @@ function determineSyncDirection(ctx: CommandContext): {
   const specs = listSpecs(ctx.db, {});
   const issues = listIssues(ctx.db, {});
 
-  const dbSpecsTime = specs.length > 0
-    ? new Date(Math.max(...specs.map((s: any) => new Date(s.updated_at).getTime())))
-    : null;
-  const dbIssuesTime = issues.length > 0
-    ? new Date(Math.max(...issues.map((i: any) => new Date(i.updated_at).getTime())))
-    : null;
+  const dbSpecsTime =
+    specs.length > 0
+      ? new Date(
+          Math.max(...specs.map((s: any) => new Date(s.updated_at).getTime()))
+        )
+      : null;
+  const dbIssuesTime =
+    issues.length > 0
+      ? new Date(
+          Math.max(...issues.map((i: any) => new Date(i.updated_at).getTime()))
+        )
+      : null;
 
   // Determine sync direction
   let syncToMarkdown = false;
