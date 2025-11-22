@@ -117,6 +117,101 @@ const MIGRATIONS: Migration[] = [
       db.exec(`ALTER TABLE issue_feedback_old RENAME TO issue_feedback;`);
     },
   },
+  {
+    version: 2,
+    name: "add-normalized-entry-support",
+    up: (db: Database.Database) => {
+      // Check if normalized_entry column already exists
+      const tableInfo = db.pragma("table_info(execution_logs)") as Array<{
+        name: string;
+      }>;
+      const hasNormalizedColumn = tableInfo.some(
+        (col) => col.name === "normalized_entry"
+      );
+
+      if (hasNormalizedColumn) {
+        // Already migrated
+        return;
+      }
+
+      // Check if table exists
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='execution_logs'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (tables.length === 0) {
+        // Table doesn't exist yet, will be created with new schema
+        return;
+      }
+
+      // Create new table with updated schema
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS execution_logs_new (
+          execution_id TEXT PRIMARY KEY,
+          raw_logs TEXT,
+          normalized_entry TEXT,
+          byte_size INTEGER NOT NULL DEFAULT 0,
+          line_count INTEGER NOT NULL DEFAULT 0,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE,
+          CHECK (raw_logs IS NOT NULL OR normalized_entry IS NOT NULL)
+        );
+      `);
+
+      // Copy existing data (raw_logs will preserve their values, normalized_entry will be NULL)
+      db.exec(`
+        INSERT INTO execution_logs_new (
+          execution_id, raw_logs, normalized_entry, byte_size, line_count,
+          created_at, updated_at
+        )
+        SELECT
+          execution_id, raw_logs, NULL, byte_size, line_count,
+          created_at, updated_at
+        FROM execution_logs;
+      `);
+
+      // Drop old table
+      db.exec(`DROP TABLE execution_logs;`);
+
+      // Rename new table
+      db.exec(`ALTER TABLE execution_logs_new RENAME TO execution_logs;`);
+
+      console.log(
+        "  ✓ Added normalized_entry column to execution_logs table"
+      );
+    },
+    down: (db: Database.Database) => {
+      // Rollback: remove normalized_entry column
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS execution_logs_old (
+          execution_id TEXT PRIMARY KEY,
+          raw_logs TEXT NOT NULL DEFAULT '',
+          byte_size INTEGER NOT NULL DEFAULT 0,
+          line_count INTEGER NOT NULL DEFAULT 0,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE
+        );
+      `);
+
+      db.exec(`
+        INSERT INTO execution_logs_old (
+          execution_id, raw_logs, byte_size, line_count,
+          created_at, updated_at
+        )
+        SELECT
+          execution_id, COALESCE(raw_logs, ''), byte_size, line_count,
+          created_at, updated_at
+        FROM execution_logs;
+      `);
+
+      db.exec(`DROP TABLE execution_logs;`);
+      db.exec(`ALTER TABLE execution_logs_old RENAME TO execution_logs;`);
+    },
+  },
 ];
 
 /**

@@ -24,6 +24,7 @@
     "test:mcp": "npm test --workspace=mcp",
     "test:server": "npm test --workspace=server",
     "test:frontend": "npm test --workspace=frontend",
+    "test:types": "npm test --workspace=types",
     "clean": "npm run clean --workspaces --if-present",
     "dev": "npm run dev --workspaces --if-present",
     "dev:server": "SUDOCODE_DIR=$(pwd)/.sudocode npm run dev --workspace=server",

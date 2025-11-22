@@ -19,7 +19,9 @@
     }
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test": "vitest",
+    "test:run": "vitest --run"
   },
   "keywords": [
     "sudocode",
@@ -45,6 +47,9 @@
     "dist"
   ],
   "devDependencies": {
-    "typescript": "^5.0.0"
+    "@types/better-sqlite3": "^7.6.12",
+    "better-sqlite3": "^11.7.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.2.4"
   }
 }

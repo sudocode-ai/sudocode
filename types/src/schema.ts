@@ -202,16 +202,21 @@ CREATE TABLE IF NOT EXISTS prompt_templates (
 `;
 
 // Execution logs table - stores detailed execution output
-// Logs are stored in JSONL format (newline-delimited JSON)
+// Supports two formats:
+// - raw_logs: Legacy JSONL format (newline-delimited JSON from stream-json output)
+// - normalized_entry: New NDJSON format (NormalizedEntry objects from agent-execution-engine)
+// At least one of raw_logs or normalized_entry must be non-null
 export const EXECUTION_LOGS_TABLE = `
 CREATE TABLE IF NOT EXISTS execution_logs (
     execution_id TEXT PRIMARY KEY,
-    raw_logs TEXT NOT NULL DEFAULT '',
+    raw_logs TEXT,
+    normalized_entry TEXT,
     byte_size INTEGER NOT NULL DEFAULT 0,
     line_count INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE
+    FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE,
+    CHECK (raw_logs IS NOT NULL OR normalized_entry IS NOT NULL)
 );
 `;
 
