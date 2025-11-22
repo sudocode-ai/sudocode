@@ -27,6 +27,7 @@ interface AlignedFeedbackPanelProps {
   className?: string
   relationships?: Relationship[]
   currentEntityId?: string
+  currentEntityType?: EntityType
   onDeleteRelationship?: (relationship: Relationship) => void
   onCreateRelationship?: (
     toId: string,
@@ -64,6 +65,7 @@ export function AlignedFeedbackPanel({
   className = '',
   relationships,
   currentEntityId,
+  currentEntityType = 'spec',
   onDeleteRelationship,
   onCreateRelationship,
 }: AlignedFeedbackPanelProps) {
@@ -229,7 +231,7 @@ export function AlignedFeedbackPanel({
             <RelationshipList
               relationships={relationships}
               currentEntityId={currentEntityId}
-              currentEntityType="spec"
+              currentEntityType={currentEntityType}
               onDelete={onDeleteRelationship}
               showEmpty={false}
               showGroupHeaders={false}
@@ -247,7 +249,7 @@ export function AlignedFeedbackPanel({
           {currentEntityId && (
             <RelationshipForm
               fromId={currentEntityId}
-              fromType="spec"
+              fromType={currentEntityType}
               onSubmit={handleCreateRelationship}
               onCancel={() => setShowAddRelationship(false)}
             />

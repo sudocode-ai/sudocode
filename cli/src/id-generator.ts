@@ -217,3 +217,27 @@ function getNextIssueNumber(db: Database.Database): number {
 export function generateUUID(): string {
   return crypto.randomUUID();
 }
+
+/**
+ * Infer entity type from ID
+ * Supports both hash-based (i-xxxx, s-xxxx) and legacy (ISSUE-xxx, SPEC-xxx) formats
+ */
+export function getEntityTypeFromId(id: string): "spec" | "issue" {
+  // Hash format: i-xxxx for issues, s-xxxx for specs
+  if (id.startsWith("i-")) {
+    return "issue";
+  }
+  if (id.startsWith("s-")) {
+    return "spec";
+  }
+
+  // Legacy format: ISSUE-xxx for issues, SPEC-xxx for specs
+  if (id.startsWith("ISSUE-")) {
+    return "issue";
+  }
+  if (id.startsWith("SPEC-")) {
+    return "spec";
+  }
+
+  throw new Error(`Cannot infer entity type from ID: ${id}`);
+}

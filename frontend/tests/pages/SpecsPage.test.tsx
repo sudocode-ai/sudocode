@@ -8,6 +8,8 @@ import type { Spec } from '@/types/api'
 
 // Mock the API
 vi.mock('@/lib/api', () => ({
+  setCurrentProjectId: vi.fn(),
+  getCurrentProjectId: vi.fn(() => 'test-project-123'),
   specsApi: {
     getAll: vi.fn(),
     create: vi.fn(),
@@ -15,6 +17,13 @@ vi.mock('@/lib/api', () => ({
     delete: vi.fn(),
     getById: vi.fn(),
     getFeedback: vi.fn(),
+  },
+  repositoryApi: {
+    getInfo: vi.fn().mockResolvedValue({
+      name: 'test-repo',
+      branch: 'main',
+      path: '/test/path',
+    }),
   },
 }))
 

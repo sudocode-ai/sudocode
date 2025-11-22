@@ -18,22 +18,37 @@ export interface ServerStartOptions {
 }
 
 /**
- * Check if @sudocode-ai/local-server is installed and available
- * Uses 'npx --no @sudocode-ai/local-server --version' to check without installing
+ * Check which server installation method is available
+ * Returns 'binary' if sudocode-server binary is available,
+ * 'package' if @sudocode-ai/local-server package is available,
+ * or null if neither is available
  */
-async function isServerInstalled(): Promise<boolean> {
+async function getServerAvailability(): Promise<"binary" | "package" | null> {
   const { execSync } = await import("child_process");
 
+  // First try sudocode-server binary
   try {
-    // Use npx with --no flag to check if package exists without installing
+    execSync("which sudocode-server", {
+      stdio: "ignore",
+      timeout: 5000,
+    });
+    return "binary";
+  } catch {
+    // Binary not found, try package
+  }
+
+  // Then try @sudocode-ai/local-server package
+  try {
     execSync("npx --no @sudocode-ai/local-server --version", {
       stdio: "ignore",
       timeout: 5000,
     });
-    return true;
+    return "package";
   } catch {
-    return false;
+    // Package not found either
   }
+
+  return null;
 }
 
 /**
@@ -58,32 +73,36 @@ export async function handleServerStart(
     }
   }
 
-  // Check if server is installed first
-  const serverInstalled = await isServerInstalled();
+  // Check which server installation is available
+  const serverAvailability = await getServerAvailability();
 
-  if (!serverInstalled) {
-    console.error(chalk.red("✗ @sudocode-ai/local-server is not installed"));
+  if (!serverAvailability) {
+    console.error(chalk.red("✗ sudocode server is not available"));
     console.log();
-    console.log(chalk.yellow("Please install the server package first:"));
+    console.log(chalk.yellow("Please install the sudocode package:"));
     console.log();
     console.log(chalk.blue("  Global installation (recommended):"));
-    console.log(chalk.gray("    npm install -g @sudocode-ai/local-server"));
+    console.log(chalk.gray("    npm install -g sudocode"));
     console.log();
     console.log(chalk.blue("  Or local installation:"));
-    console.log(chalk.gray("    npm install @sudocode-ai/local-server"));
+    console.log(chalk.gray("    npm install sudocode"));
     console.log();
-    console.log(chalk.blue("  Or run directly without installing:"));
-    console.log(chalk.gray("    npx @sudocode-ai/local-server"));
+    console.log(chalk.blue("  Or install the server package directly:"));
+    console.log(chalk.gray("    npm install -g @sudocode-ai/local-server"));
     console.log();
     process.exit(1);
   }
 
   // Set up environment variables
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     SUDOCODE_DIR: ctx.outputDir,
-    PORT: options.port || process.env.PORT || "3000",
   };
+
+  // Only set PORT if explicitly provided - otherwise let server scan for available ports
+  if (options.port) {
+    env.PORT = options.port;
+  }
 
   console.log(chalk.blue("Starting sudocode local server..."));
   if (options.port) {
@@ -91,30 +110,30 @@ export async function handleServerStart(
   }
 
   if (process.env.DEBUG) {
-    console.log(chalk.gray("Using npx @sudocode-ai/local-server"));
+    console.log(
+      chalk.gray(
+        `Using ${serverAvailability === "binary" ? "sudocode-server binary" : "npx @sudocode-ai/local-server"}`
+      )
+    );
   }
 
-  const serverProcess = spawn(
-    "npx",
-    ["--no", "@sudocode-ai/local-server"], // --no prevents auto-install
-    {
-      detached: options.detach || false,
-      stdio: options.detach ? "ignore" : "inherit",
-      env,
-    }
-  );
+  const serverProcess =
+    serverAvailability === "binary"
+      ? spawn("sudocode-server", [], {
+          detached: options.detach || false,
+          stdio: options.detach ? "ignore" : "inherit",
+          env,
+        })
+      : spawn("npx", ["--no", "@sudocode-ai/local-server"], {
+          detached: options.detach || false,
+          stdio: options.detach ? "ignore" : "inherit",
+          env,
+        });
 
   if (options.detach) {
     serverProcess.unref();
-    console.log(
-      chalk.green(
-        `✓ Server started in background on http://localhost:${env.PORT}`
-      )
-    );
+    console.log(chalk.green(`✓ Server started in background`));
     console.log(chalk.gray(`  Process ID: ${serverProcess.pid}`));
-    console.log(
-      chalk.gray(`  Health check: http://localhost:${env.PORT}/health`)
-    );
   } else {
     // Handle Ctrl+C gracefully
     process.on("SIGINT", () => {

@@ -13,9 +13,10 @@ import {
   ExpandIcon,
   FileText,
   Code2,
-  Play,
   ChevronDown,
   ChevronUp,
+  Copy,
+  Check,
 } from 'lucide-react'
 import type { Issue, Relationship, EntityType, RelationshipType, IssueStatus } from '@/types/api'
 import { Card } from '@/components/ui/card'
@@ -33,12 +34,15 @@ import { DeleteIssueDialog } from './DeleteIssueDialog'
 import { RelationshipList } from '@/components/relationships/RelationshipList'
 import { RelationshipForm } from '@/components/relationships/RelationshipForm'
 import { relationshipsApi, executionsApi } from '@/lib/api'
-import { ExecutionConfigDialog } from '@/components/executions/ExecutionConfigDialog'
-import { ExecutionHistory } from '@/components/executions/ExecutionHistory'
-import type { ExecutionConfig } from '@/types/execution'
+import { AgentConfigPanel } from '@/components/executions/AgentConfigPanel'
+import type { ExecutionConfig, Execution } from '@/types/execution'
 import { useRelationshipMutations } from '@/hooks/useRelationshipMutations'
 import { TiptapEditor } from '@/components/specs/TiptapEditor'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { ActivityTimeline } from './ActivityTimeline'
+import type { IssueFeedback, WebSocketMessage } from '@/types/api'
+import { useWebSocketContext } from '@/contexts/WebSocketContext'
+import { toast } from 'sonner'
 
 const VIEW_MODE_STORAGE_KEY = 'sudocode:details:viewMode'
 const DESCRIPTION_COLLAPSED_STORAGE_KEY = 'sudocode:issue:descriptionCollapsed'
@@ -57,6 +61,7 @@ interface IssuePanelProps {
   viewMode?: 'formatted' | 'markdown'
   onViewModeChange?: (mode: 'formatted' | 'markdown') => void
   showViewToggleInline?: boolean
+  feedback?: IssueFeedback[]
 }
 
 const STATUS_OPTIONS: { value: IssueStatus; label: string }[] = [
@@ -89,6 +94,7 @@ export function IssuePanel({
   viewMode: externalViewMode,
   onViewModeChange,
   showViewToggleInline = true,
+  feedback = [],
 }: IssuePanelProps) {
   const navigate = useNavigate()
   const [title, setTitle] = useState(issue.title)
@@ -115,13 +121,19 @@ export function IssuePanel({
   }
   const [priority, setPriority] = useState<number>(issue.priority)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  const [showExecutionConfigDialog, setShowExecutionConfigDialog] = useState(false)
   const [relationships, setRelationships] = useState<Relationship[]>([])
   const [showAddRelationship, setShowAddRelationship] = useState(false)
   const [isLoadingRelationships, setIsLoadingRelationships] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
+  const [executions, setExecutions] = useState<Execution[]>([])
+  const [isCopied, setIsCopied] = useState(false)
+  const isAgentPanelSelectOpenRef = useRef(false)
+  const selectCloseTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // WebSocket for real-time updates
+  const { subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
 
   // Relationship mutations with cache invalidation
   const { createRelationshipAsync, deleteRelationshipAsync } = useRelationshipMutations()
@@ -172,7 +184,10 @@ export function IssuePanel({
 
   // Fetch relationships when issue changes
   useEffect(() => {
+    let isMounted = true
+
     const fetchRelationships = async () => {
+      if (!isMounted) return
       setIsLoadingRelationships(true)
       try {
         const data = await relationshipsApi.getForEntity(issue.id, 'issue')
@@ -187,17 +202,75 @@ export function IssuePanel({
           relationshipsArray = [...(grouped.outgoing || []), ...(grouped.incoming || [])]
         }
 
-        setRelationships(relationshipsArray)
+        if (isMounted) {
+          setRelationships(relationshipsArray)
+        }
       } catch (error) {
         console.error('Failed to fetch relationships:', error)
-        setRelationships([])
+        if (isMounted) {
+          setRelationships([])
+        }
       } finally {
-        setIsLoadingRelationships(false)
+        if (isMounted) {
+          setIsLoadingRelationships(false)
+        }
       }
     }
 
     fetchRelationships()
+
+    return () => {
+      isMounted = false
+    }
   }, [issue.id])
+
+  // Fetch executions when issue changes and listen for WebSocket updates
+  useEffect(() => {
+    let isMounted = true
+
+    const fetchExecutions = async () => {
+      if (!isMounted) return
+      try {
+        const data = await executionsApi.list(issue.id)
+        if (isMounted) {
+          setExecutions(data)
+        }
+      } catch (error) {
+        console.error('Failed to fetch executions:', error)
+        if (isMounted) {
+          setExecutions([])
+        }
+      }
+    }
+
+    // Initial fetch
+    fetchExecutions()
+
+    // Subscribe to WebSocket updates for execution events
+    // Execution updates are broadcast to issue subscribers (dual broadcast)
+    const handlerId = `issue-panel-executions-${issue.id}`
+    const handleMessage = (message: WebSocketMessage) => {
+      if (
+        message.type === 'execution_created' ||
+        message.type === 'execution_updated' ||
+        message.type === 'execution_status_changed' ||
+        message.type === 'execution_deleted'
+      ) {
+        // Re-fetch executions when execution events occur
+        fetchExecutions()
+      }
+    }
+
+    // Subscribe to issue updates
+    subscribe('issue', issue.id)
+    addMessageHandler(handlerId, handleMessage)
+
+    return () => {
+      isMounted = false
+      removeMessageHandler(handlerId)
+      unsubscribe('issue', issue.id)
+    }
+  }, [issue.id, subscribe, unsubscribe, addMessageHandler, removeMessageHandler])
 
   // Handle click outside to close panel
   useEffect(() => {
@@ -205,12 +278,18 @@ export function IssuePanel({
       if (!panelRef.current || !onClose) return
 
       const target = event.target as Node
+      const clickedElement = target as HTMLElement
 
-      // Don't close if clicking inside the panel
-      if (panelRef.current.contains(target)) return
+      // Don't close panel if agent panel Select was open (it's being dismissed)
+      if (isAgentPanelSelectOpenRef.current) {
+        // Reset the ref after a short delay
+        setTimeout(() => {
+          isAgentPanelSelectOpenRef.current = false
+        }, 100)
+        return
+      }
 
       // Don't close if clicking on an issue card (to prevent flicker when switching issues)
-      const clickedElement = target as HTMLElement
       const issueCard = clickedElement.closest('[data-issue-id]')
       if (issueCard) return
 
@@ -221,33 +300,88 @@ export function IssuePanel({
       // Also check for resize handle by class (backup check)
       if (clickedElement.classList?.contains('cursor-col-resize')) return
 
-      // Don't close if clicking on a portal element (dialogs, dropdowns, etc.)
+      // Check for portal elements (dialogs, dropdowns, etc.)
       // Radix UI (which shadcn/ui is built on) renders portals with specific attributes
       const isInDialog = clickedElement.closest('[role="dialog"]')
       const isInAlertDialog = clickedElement.closest('[role="alertdialog"]')
       const isInDropdown = clickedElement.closest('[role="listbox"]')
       const isInPopover = clickedElement.closest('[data-radix-popper-content-wrapper]')
+      const isInSelectContent = clickedElement.closest('[data-radix-select-content]')
+      const isInSelectViewport = clickedElement.closest('[data-radix-select-viewport]')
+      const isOpenSelect = clickedElement.closest('[data-state="open"]')
+      const openSelectTrigger = document.querySelector(
+        '[data-radix-select-trigger][data-state="open"]'
+      )
+      const isDialogOverlay =
+        clickedElement.hasAttribute('data-dialog-overlay') ||
+        clickedElement.closest('[data-dialog-overlay]')
 
-      if (isInDialog || isInAlertDialog || isInDropdown || isInPopover) return
+      // Check if any Select dropdown is currently open
+      const isSelectDropdownOpen =
+        isInDropdown ||
+        isInSelectContent ||
+        isInSelectViewport ||
+        isOpenSelect ||
+        !!openSelectTrigger
 
       // Don't close if clicking on TipTap/ProseMirror elements
-      // TipTap can render menus, tooltips, and other UI in portals
       const isInProseMirror = clickedElement.closest('.ProseMirror')
       const isInTiptap = clickedElement.closest('.tiptap-editor')
-      const isInTiptapMenu = clickedElement.closest('[data-tippy-root]') // Tippy.js tooltips
-      const isInBubbleMenu = clickedElement.closest('.tippy-box') // Bubble menu
+      const isInTiptapMenu = clickedElement.closest('[data-tippy-root]')
+      const isInBubbleMenu = clickedElement.closest('.tippy-box')
 
-      if (isInProseMirror || isInTiptap || isInTiptapMenu || isInBubbleMenu) return
+      // If clicking on portal elements (except Select when dropdown is open), don't close
+      if (
+        isInDialog ||
+        isInAlertDialog ||
+        isInPopover ||
+        isDialogOverlay ||
+        isInProseMirror ||
+        isInTiptap ||
+        isInTiptapMenu ||
+        isInBubbleMenu
+      ) {
+        return
+      }
 
-      // Close the panel if clicking outside
-      onClose()
+      if (isSelectDropdownOpen) {
+        return
+      }
+      const isInsidePanel = panelRef.current.contains(target)
+
+      if (showAddRelationship) {
+        const relationshipFormContainer = panelRef.current.querySelector(
+          '[data-relationship-form-container]'
+        )
+        const isInsideFormContainer = relationshipFormContainer?.contains(target) || false
+        if (isInsideFormContainer) {
+          // Clicking inside form container - do nothing (let form and dropdowns handle themselves)
+          return
+        }
+        if (isInsidePanel) {
+          // Clicking inside panel but outside form container - close the form
+          setShowAddRelationship(false)
+          return
+        } else {
+          // Clicking outside panel - close the form first
+          setShowAddRelationship(false)
+          return
+        }
+      } else {
+        // Relationship form is closed
+        if (!isInsidePanel) {
+          // Clicking outside panel - close the panel
+          onClose()
+        }
+        // Clicking inside panel - do nothing
+      }
     }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [onClose])
+  }, [onClose, showAddRelationship])
 
   // Handle ESC key to close panel
   useEffect(() => {
@@ -255,7 +389,7 @@ export function IssuePanel({
       if (!onClose) return
 
       // Don't close if ESC is pressed while a dialog or dropdown is open
-      if (showDeleteDialog || showExecutionConfigDialog || showAddRelationship) return
+      if (showDeleteDialog || showAddRelationship) return
 
       if (event.key === 'Escape') {
         onClose()
@@ -266,7 +400,7 @@ export function IssuePanel({
     return () => {
       document.removeEventListener('keydown', handleEscKey)
     }
-  }, [onClose, showDeleteDialog, showExecutionConfigDialog, showAddRelationship])
+  }, [onClose, showDeleteDialog, showAddRelationship])
 
   // Auto-save effect with debounce
   useEffect(() => {
@@ -392,22 +526,35 @@ export function IssuePanel({
 
   const handleStartExecution = async (config: ExecutionConfig, prompt: string) => {
     try {
-      const execution = await executionsApi.create(issue.id, {
+      await executionsApi.create(issue.id, {
         config,
         prompt,
       })
-      setShowExecutionConfigDialog(false)
-      // Navigate to execution view
-      navigate(`/executions/${execution.id}`)
+      // Execution will appear in activity timeline via WebSocket
+      // No navigation needed - stay on issue page
     } catch (error) {
       console.error('Failed to create execution:', error)
       // TODO: Show error toast/alert to user
     }
   }
 
+  const handleCopyId = async () => {
+    try {
+      await navigator.clipboard.writeText(issue.id)
+      setIsCopied(true)
+      setTimeout(() => setIsCopied(false), 2000)
+      toast.success('ID copied to clipboard', {
+        duration: 2000,
+      })
+    } catch (error) {
+      console.error('Failed to copy ID:', error)
+      toast.error('Failed to copy ID')
+    }
+  }
+
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex h-full flex-col" ref={panelRef}>
+      <div className="flex h-full w-full flex-col" ref={panelRef}>
         {/* Top Navigation Bar */}
         {!hideTopControls && (
           <div className="flex items-center justify-between px-6 py-3">
@@ -507,14 +654,48 @@ export function IssuePanel({
         )}
 
         {/* Content */}
-        <div className={`flex-1 overflow-y-auto px-6 ${hideTopControls ? 'py-4' : 'py-3'}`}>
-          <div className="space-y-4">
+        <div className={`w-full flex-1 overflow-y-auto ${hideTopControls ? 'py-4' : 'py-3'}`}>
+          <div className="mx-auto w-full max-w-7xl space-y-4 px-6">
             {/* Issue ID and Title */}
             <div className="space-y-2 pb-3">
               <div className="flex items-center justify-between">
-                <Badge variant="issue" className="font-mono">
-                  {issue.id}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <div className="group relative flex items-center gap-1">
+                    <Badge variant="issue" className="font-mono">
+                      {issue.id}
+                    </Badge>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleCopyId}
+                          className="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+                        >
+                          {isCopied ? (
+                            <Check className="h-3.5 w-3.5" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{isCopied ? 'Copied!' : 'Copy ID to Clipboard'}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                  {issue.parent_id && (
+                    <>
+                      <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Parent: </span>
+                      <button onClick={() => navigate(`/issues/${issue.parent_id}`)}>
+                        <Badge variant="issue" className="cursor-pointer hover:opacity-80">
+                          {issue.parent_id}
+                        </Badge>
+                      </button>
+                    </>
+                  )}
+                </div>
                 {onUpdate && (
                   <div className="text-xs italic text-muted-foreground">
                     {isUpdating
@@ -578,14 +759,6 @@ export function IssuePanel({
                 </Select>
               </div>
 
-              {/* Parent */}
-              {issue.parent_id && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <GitBranch className="h-4 w-4" />
-                  <span>{issue.parent_id}</span>
-                </div>
-              )}
-
               {/* Timestamp */}
               <div className="ml-auto text-xs text-muted-foreground">
                 {issue.closed_at
@@ -614,7 +787,7 @@ export function IssuePanel({
 
               {/* Add Relationship Form */}
               {showAddRelationship && (
-                <div className="rounded-lg border p-4">
+                <div className="rounded-lg border p-4" data-relationship-form-container>
                   <RelationshipForm
                     fromId={issue.id}
                     fromType="issue"
@@ -736,29 +909,52 @@ export function IssuePanel({
               </div>
             )}
 
-            {/* Execution History */}
-            <ExecutionHistory issueId={issue.id} />
+            {/* Activity Timeline */}
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium text-muted-foreground">Activity</h3>
+              <ActivityTimeline
+                items={[
+                  ...feedback.map((f) => ({ ...f, itemType: 'feedback' as const })),
+                  ...executions.map((e) => ({ ...e, itemType: 'execution' as const })),
+                ]}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Fixed Footer - Execution Actions */}
-        <div className="border-t bg-background px-6 py-3">
-          <div className="flex items-center justify-end gap-3">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  onClick={() => setShowExecutionConfigDialog(true)}
-                  disabled={issue.archived || isUpdating}
-                  variant="default"
-                  size="xs"
-                  className="gap-2"
-                >
-                  <Play className="h-4 w-4" />
-                  Run Agent
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Configure and start agent execution</TooltipContent>
-            </Tooltip>
+        {/* Fixed Footer - Agent Configuration Panel */}
+        <div
+          className="border-t border-border bg-muted/30"
+          onMouseDown={(e) => {
+            // Prevent clicks inside the agent config panel from bubbling up and closing the panel
+            e.stopPropagation()
+          }}
+        >
+          <div className="mx-auto w-full max-w-7xl px-6">
+            <AgentConfigPanel
+              issueId={issue.id}
+              onStart={handleStartExecution}
+              disabled={issue.archived || isUpdating}
+              onSelectOpenChange={(open) => {
+                // Clear any pending timeout
+                if (selectCloseTimeoutRef.current) {
+                  clearTimeout(selectCloseTimeoutRef.current)
+                  selectCloseTimeoutRef.current = null
+                }
+
+                if (open) {
+                  // Immediately set to true when opening
+                  isAgentPanelSelectOpenRef.current = true
+                } else {
+                  // Keep ref as true for a bit longer so mousedown handler can see it
+                  // This handles the case where Radix closes the Select before mousedown fires
+                  selectCloseTimeoutRef.current = setTimeout(() => {
+                    isAgentPanelSelectOpenRef.current = false
+                    selectCloseTimeoutRef.current = null
+                  }, 50)
+                }
+              }}
+            />
           </div>
         </div>
 
@@ -768,13 +964,6 @@ export function IssuePanel({
           onClose={() => setShowDeleteDialog(false)}
           onConfirm={handleDelete}
           isDeleting={isDeleting}
-        />
-
-        <ExecutionConfigDialog
-          issueId={issue.id}
-          open={showExecutionConfigDialog}
-          onStart={handleStartExecution}
-          onCancel={() => setShowExecutionConfigDialog(false)}
         />
       </div>
     </TooltipProvider>

@@ -152,7 +152,7 @@ describe('API Module', () => {
     it('should call create with feedback data', () => {
       const data = {
         issue_id: 'ISSUE-001',
-        spec_id: 'SPEC-001',
+        to_id: 'SPEC-001',
         feedback_type: 'comment' as const,
         content: 'Test feedback',
         anchor: {

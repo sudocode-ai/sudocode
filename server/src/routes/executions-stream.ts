@@ -4,29 +4,30 @@
  * SSE endpoint for streaming execution events to clients.
  * Integrates with TransportManager to broadcast AG-UI events.
  *
+ * Note: All routes require X-Project-ID header via requireProject() middleware
+ *
  * @module routes/executions-stream
  */
 
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { randomUUID } from "crypto";
-import type { TransportManager } from "../execution/transport/transport-manager.js";
 
 /**
  * Create execution stream routes
  *
- * @param transportManager - Transport manager for SSE connections
+ * Note: TransportManager is accessed via req.project which is injected
+ * by the requireProject() middleware
+ *
  * @returns Express router with SSE endpoints
  *
  * @example
  * ```typescript
- * const router = createExecutionStreamRoutes(transportManager);
- * app.use('/api/executions', router);
+ * const router = createExecutionStreamRoutes();
+ * app.use('/api/executions', requireProject(projectManager), router);
  * ```
  */
-export function createExecutionStreamRoutes(
-  transportManager: TransportManager
-): Router {
+export function createExecutionStreamRoutes(): Router {
   const router = Router();
 
   /**
@@ -49,7 +50,7 @@ export function createExecutionStreamRoutes(
     const clientId = randomUUID();
 
     // Get buffered events for replay
-    const bufferedEvents = transportManager.getBufferedEvents(executionId);
+    const bufferedEvents = req.project!.transportManager!.getBufferedEvents(executionId);
     const replayEvents = bufferedEvents.map((buffered) => ({
       event: buffered.event.type,
       data: buffered.event,
@@ -57,7 +58,7 @@ export function createExecutionStreamRoutes(
 
     // Establish SSE connection through transport manager
     // This will set appropriate headers, send connection acknowledgment, and replay buffered events
-    transportManager
+    req.project!.transportManager!
       .getSseTransport()
       .handleConnection(clientId, res, executionId, replayEvents);
   });

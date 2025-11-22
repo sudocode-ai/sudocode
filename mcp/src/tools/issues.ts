@@ -132,6 +132,9 @@ export async function upsertIssue(
     if (params.description) {
       args.push("--description", params.description);
     }
+    if (params.parent) {
+      args.push("--parent", params.parent);
+    }
     if (params.archived !== undefined) {
       args.push("--archived", params.archived.toString());
     }

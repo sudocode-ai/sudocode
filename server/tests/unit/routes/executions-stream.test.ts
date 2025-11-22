@@ -10,26 +10,84 @@ import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest'
 import express, { type Express } from 'express';
 import request from 'supertest';
 import { createExecutionStreamRoutes } from '../../../src/routes/executions-stream.js';
-import { TransportManager } from '../../../src/execution/transport/transport-manager.js';
+import { ProjectManager } from '../../../src/services/project-manager.js';
+import { ProjectRegistry } from '../../../src/services/project-registry.js';
+import { requireProject } from '../../../src/middleware/project-context.js';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 describe('Execution Stream Routes', () => {
   let app: Express;
-  let transportManager: TransportManager;
+  let testDir: string;
+  let testProjectPath: string;
+  let projectManager: ProjectManager;
+  let projectRegistry: ProjectRegistry;
+  let projectId: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    // Create a unique temporary directory in system temp
+    testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sudocode-test-exec-stream-'));
+
+    // Create test project directory structure
+    testProjectPath = path.join(testDir, 'test-project');
+    const sudocodeDir = path.join(testProjectPath, '.sudocode');
+    fs.mkdirSync(sudocodeDir, { recursive: true });
+
+    // Create config.json for ID generation
+    const configPath = path.join(sudocodeDir, 'config.json');
+    const config = {
+      version: '1.0.0',
+      id_prefix: {
+        spec: 'SPEC',
+        issue: 'ISSUE',
+      },
+    };
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    // Create directories for markdown files
+    const issuesDir = path.join(sudocodeDir, 'issues');
+    const specsDir = path.join(sudocodeDir, 'specs');
+    fs.mkdirSync(issuesDir, { recursive: true });
+    fs.mkdirSync(specsDir, { recursive: true });
+
+    // Create database file
+    const dbPath = path.join(sudocodeDir, 'cache.db');
+    fs.writeFileSync(dbPath, '');
+
+    // Set up project manager
+    const registryPath = path.join(testDir, 'projects.json');
+    projectRegistry = new ProjectRegistry(registryPath);
+    await projectRegistry.load();
+
+    projectManager = new ProjectManager(projectRegistry, { watchEnabled: false });
+
+    // Open the test project
+    const result = await projectManager.openProject(testProjectPath);
+    if (result.ok) {
+      projectId = result.value.id;
+    } else {
+      throw new Error('Failed to open test project');
+    }
+
+    // Set up Express app with routes
     app = express();
-    transportManager = new TransportManager();
-    const router = createExecutionStreamRoutes(transportManager);
-    app.use('/api/executions', router);
+    app.use(express.json());
+    const router = createExecutionStreamRoutes();
+    app.use('/api/executions', requireProject(projectManager), router);
   });
 
-  afterEach(() => {
-    transportManager.shutdown();
+  afterEach(async () => {
+    await projectManager.shutdown();
+    if (fs.existsSync(testDir)) {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    }
   });
 
   describe('GET /:executionId/stream', () => {
     it('should establish SSE connection', async () => {
-      const sseTransport = transportManager.getSseTransport();
+      const project = projectManager.getProject(projectId)!;
+      const sseTransport = project.transportManager.getSseTransport();
 
       // Mock handleConnection to immediately end the response
       const handleConnectionSpy = vi.spyOn(sseTransport, 'handleConnection').mockImplementation((_clientId: string, res: any, _runId?: string) => {
@@ -46,6 +104,7 @@ describe('Execution Stream Routes', () => {
 
       await request(app)
         .get('/api/executions/test-exec-123/stream')
+        .set('X-Project-ID', projectId)
         .expect(200)
         .expect('Content-Type', /text\/event-stream/)
         .expect('Cache-Control', 'no-cache')
@@ -63,7 +122,8 @@ describe('Execution Stream Routes', () => {
     });
 
     it('should set SSE headers', async () => {
-      const sseTransport = transportManager.getSseTransport();
+      const project = projectManager.getProject(projectId)!;
+      const sseTransport = project.transportManager.getSseTransport();
 
       // Mock handleConnection to immediately end the response
       vi.spyOn(sseTransport, 'handleConnection').mockImplementation((_clientId: string, res: any, _runId?: string) => {
@@ -78,6 +138,7 @@ describe('Execution Stream Routes', () => {
 
       const response = await request(app)
         .get('/api/executions/test-exec-123/stream')
+        .set('X-Project-ID', projectId)
         .expect(200);
 
       // Verify SSE headers are set by transport
@@ -87,7 +148,8 @@ describe('Execution Stream Routes', () => {
     });
 
     it('should handle different execution IDs', async () => {
-      const sseTransport = transportManager.getSseTransport();
+      const project = projectManager.getProject(projectId)!;
+      const sseTransport = project.transportManager.getSseTransport();
 
       // Mock handleConnection to immediately end the response
       const handleConnectionSpy = vi.spyOn(sseTransport, 'handleConnection').mockImplementation((_clientId: string, res: any, _runId?: string) => {
@@ -103,11 +165,13 @@ describe('Execution Stream Routes', () => {
       // Connect to first execution
       await request(app)
         .get('/api/executions/exec-1/stream')
+        .set('X-Project-ID', projectId)
         .expect(200);
 
       // Connect to second execution
       await request(app)
         .get('/api/executions/exec-2/stream')
+        .set('X-Project-ID', projectId)
         .expect(200);
 
       expect(handleConnectionSpy.mock.calls.length).toBe(2);
@@ -123,7 +187,8 @@ describe('Execution Stream Routes', () => {
     });
 
     it('should generate unique client IDs for each connection', async () => {
-      const sseTransport = transportManager.getSseTransport();
+      const project = projectManager.getProject(projectId)!;
+      const sseTransport = project.transportManager.getSseTransport();
 
       // Mock handleConnection to immediately end the response
       const handleConnectionSpy = vi.spyOn(sseTransport, 'handleConnection').mockImplementation((_clientId: string, res: any, _runId?: string) => {
@@ -139,10 +204,12 @@ describe('Execution Stream Routes', () => {
       // Make two connections to same execution
       await request(app)
         .get('/api/executions/test-exec-123/stream')
+        .set('X-Project-ID', projectId)
         .expect(200);
 
       await request(app)
         .get('/api/executions/test-exec-123/stream')
+        .set('X-Project-ID', projectId)
         .expect(200);
 
       expect(handleConnectionSpy.mock.calls.length).toBe(2);
@@ -159,7 +226,8 @@ describe('Execution Stream Routes', () => {
     });
 
     it('should support multiple concurrent connections', async () => {
-      const sseTransport = transportManager.getSseTransport();
+      const project = projectManager.getProject(projectId)!;
+      const sseTransport = project.transportManager.getSseTransport();
 
       // Mock handleConnection to immediately end the response
       const handleConnectionSpy = vi.spyOn(sseTransport, 'handleConnection').mockImplementation((_clientId: string, res: any, _runId?: string) => {
@@ -174,9 +242,9 @@ describe('Execution Stream Routes', () => {
 
       // Make multiple concurrent connections
       await Promise.all([
-        request(app).get('/api/executions/exec-1/stream').expect(200),
-        request(app).get('/api/executions/exec-2/stream').expect(200),
-        request(app).get('/api/executions/exec-3/stream').expect(200),
+        request(app).get('/api/executions/exec-1/stream').set('X-Project-ID', projectId).expect(200),
+        request(app).get('/api/executions/exec-2/stream').set('X-Project-ID', projectId).expect(200),
+        request(app).get('/api/executions/exec-3/stream').set('X-Project-ID', projectId).expect(200),
       ]);
 
       expect(handleConnectionSpy.mock.calls.length).toBe(3);
@@ -185,7 +253,8 @@ describe('Execution Stream Routes', () => {
 
   describe('Integration', () => {
     it('should allow streaming events after connection', async () => {
-      const sseTransport = transportManager.getSseTransport();
+      const project = projectManager.getProject(projectId)!;
+      const sseTransport = project.transportManager.getSseTransport();
 
       // Mock handleConnection to immediately end the response
       vi.spyOn(sseTransport, 'handleConnection').mockImplementation((_clientId: string, res: any, _runId?: string) => {
@@ -201,6 +270,7 @@ describe('Execution Stream Routes', () => {
       // Establish connection
       await request(app)
         .get('/api/executions/test-exec-123/stream')
+        .set('X-Project-ID', projectId)
         .expect(200);
 
       // Note: In real usage, broadcastToRun would send to connected clients
@@ -216,7 +286,8 @@ describe('Execution Stream Routes', () => {
     });
 
     it('should isolate events between different executions', async () => {
-      const sseTransport = transportManager.getSseTransport();
+      const project = projectManager.getProject(projectId)!;
+      const sseTransport = project.transportManager.getSseTransport();
 
       // Mock handleConnection to immediately end the response
       vi.spyOn(sseTransport, 'handleConnection').mockImplementation((_clientId: string, res: any, _runId?: string) => {
@@ -232,10 +303,12 @@ describe('Execution Stream Routes', () => {
       // Connect to two different executions
       await request(app)
         .get('/api/executions/exec-1/stream')
+        .set('X-Project-ID', projectId)
         .expect(200);
 
       await request(app)
         .get('/api/executions/exec-2/stream')
+        .set('X-Project-ID', projectId)
         .expect(200);
 
       // Note: With mocked connection, broadcasts won't reach clients

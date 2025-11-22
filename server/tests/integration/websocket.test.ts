@@ -173,4 +173,43 @@ describe.skip('WebSocket Integration Tests', () => {
     expect(message.type).toBe('unsubscribed');
     expect(message.subscription).toBe(`issue:${testIssueId}`);
   });
+
+  it('should subscribe to all executions', async () => {
+    const messagePromise = waitForMessage(
+      ws,
+      (msg) => msg.type === 'subscribed' && msg.subscription === 'execution:*'
+    );
+
+    ws.send(
+      JSON.stringify({
+        type: 'subscribe',
+        entity_type: 'execution',
+      })
+    );
+
+    const message = await messagePromise;
+    expect(message.type).toBe('subscribed');
+    expect(message.subscription).toBe('execution:*');
+  });
+
+  it('should subscribe to a specific execution', async () => {
+    const testExecutionId = 'exec-123';
+    const messagePromise = waitForMessage(
+      ws,
+      (msg) =>
+        msg.type === 'subscribed' && msg.subscription === `execution:${testExecutionId}`
+    );
+
+    ws.send(
+      JSON.stringify({
+        type: 'subscribe',
+        entity_type: 'execution',
+        entity_id: testExecutionId,
+      })
+    );
+
+    const message = await messagePromise;
+    expect(message.type).toBe('subscribed');
+    expect(message.subscription).toBe(`execution:${testExecutionId}`);
+  });
 });

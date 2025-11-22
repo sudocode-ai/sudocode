@@ -3,6 +3,7 @@ import type {
   Spec,
   Relationship,
   IssueFeedback,
+  Execution,
   IssueStatus,
   EntityType,
   RelationshipType,
@@ -18,6 +19,15 @@ export interface ApiResponse<T> {
   data: T | null
   error_data?: any
   message?: string
+}
+
+/**
+ * Repository info types
+ */
+export interface RepositoryInfo {
+  name: string
+  branch: string
+  path: string
 }
 
 /**
@@ -87,7 +97,7 @@ export interface DeleteRelationshipRequest {
  */
 export interface CreateFeedbackRequest {
   issue_id: string
-  spec_id: string
+  to_id: string
   feedback_type: FeedbackType
   content: string
   anchor?: FeedbackAnchor
@@ -116,13 +126,24 @@ export interface WebSocketMessage {
     | 'feedback_created'
     | 'feedback_updated'
     | 'feedback_deleted'
-  data: Issue | Spec | Relationship | IssueFeedback
-  timestamp: string
+    | 'execution_created'
+    | 'execution_updated'
+    | 'execution_status_changed'
+    | 'execution_deleted'
+    | 'project_opened'
+    | 'project_closed'
+    | 'error'
+  projectId?: string // Project ID for project-scoped messages
+  data?: Issue | Spec | Relationship | IssueFeedback | Execution | any
+  message?: string // Error message
+  timestamp?: string
+  subscription?: string // Subscription key for debugging
 }
 
 export interface WebSocketSubscribeMessage {
-  type: 'subscribe'
-  entity_type: 'issue' | 'spec' | 'all'
+  type: 'subscribe' | 'unsubscribe' | 'ping'
+  project_id?: string // Required for project-scoped subscriptions
+  entity_type?: 'issue' | 'spec' | 'execution' | 'all'
   entity_id?: string
 }
 
@@ -134,6 +155,7 @@ export type {
   Spec,
   Relationship,
   IssueFeedback,
+  Execution,
   IssueStatus,
   EntityType,
   RelationshipType,

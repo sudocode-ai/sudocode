@@ -71,7 +71,7 @@ export function SpecFeedbackPanel({
     }
 
     await createFeedback({
-      spec_id: specId,
+      to_id: specId,
       issue_id: issueId,
       feedback_type: data.type,
       content: data.content,

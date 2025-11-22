@@ -44,7 +44,10 @@ export async function handleSpecCreate(
 ): Promise<void> {
   try {
     // Generate spec ID and UUID
-    const { id: specId, uuid: specUUID } = generateSpecId(ctx.db, ctx.outputDir);
+    const { id: specId, uuid: specUUID } = generateSpecId(
+      ctx.db,
+      ctx.outputDir
+    );
 
     // Ensure specs directory exists
     const specsDir = path.join(ctx.outputDir, "specs");
@@ -124,12 +127,18 @@ export async function handleSpecList(
     const specs = options.grep
       ? searchSpecs(ctx.db, options.grep, {
           priority: options.priority ? parseInt(options.priority) : undefined,
-          archived: options.archived !== undefined ? options.archived === 'true' : false, // Default to excluding archived
+          archived:
+            options.archived !== undefined
+              ? options.archived === "true"
+              : false, // Default to excluding archived
           limit: parseInt(options.limit),
         })
       : listSpecs(ctx.db, {
           priority: options.priority ? parseInt(options.priority) : undefined,
-          archived: options.archived !== undefined ? options.archived === 'true' : false, // Default to excluding archived
+          archived:
+            options.archived !== undefined
+              ? options.archived === "true"
+              : false, // Default to excluding archived
           limit: parseInt(options.limit),
         });
 
@@ -172,7 +181,7 @@ export async function handleSpecShow(
     const outgoing = getOutgoingRelationships(ctx.db, id, "spec");
     const incoming = getIncomingRelationships(ctx.db, id, "spec");
     const tags = getTags(ctx.db, id, "spec");
-    const feedback = listFeedback(ctx.db, { spec_id: id });
+    const feedback = listFeedback(ctx.db, { to_id: id });
 
     if (ctx.jsonOutput) {
       console.log(
@@ -243,7 +252,7 @@ export async function handleSpecShow(
                 : chalk.red;
 
           console.log(
-            `  ${chalk.cyan(fb.id)} ← ${chalk.cyan(fb.issue_id)}`,
+            `  ${chalk.cyan(fb.id)} ← ${chalk.cyan(fb.from_id)}`,
             statusColor(`[${fb.dismissed ? "dismissed" : "active"}]`),
             anchorStatusColor(`[${anchor.anchor_status}]`)
           );
@@ -307,7 +316,7 @@ export async function handleSpecUpdate(
       updateData.parent_id = options.parent || undefined;
     }
     if (options.archived !== undefined) {
-      updateData.archived = options.archived === 'true';
+      updateData.archived = options.archived === "true";
     }
 
     // Update spec in database

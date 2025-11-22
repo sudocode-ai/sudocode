@@ -254,6 +254,11 @@ export async function handleMergeDriver(
     // Note: We don't log successful merges to avoid cluttering the repo
     process.exit(0);
   } catch (error) {
+    // Re-throw test errors to avoid logging them
+    if (error instanceof Error && error.message.includes("process.exit called with code")) {
+      throw error;
+    }
+
     // Only log on failure for debugging
     const logDir = path.dirname(logPath);
     if (!fs.existsSync(logDir)) {
@@ -510,8 +515,8 @@ async function testMergeDriver(): Promise<{
     try {
       await handleMergeDriver({ base, ours, theirs });
     } catch (error) {
-      // Expected - handleMergeDriver calls process.exit
-      if (error instanceof Error && !error.message.includes("process.exit")) {
+      // Expected - handleMergeDriver calls process.exit which throws
+      if (error instanceof Error && !error.message.startsWith("process.exit called with code")) {
         throw error;
       }
     }

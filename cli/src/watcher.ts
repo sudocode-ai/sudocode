@@ -206,7 +206,7 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
           if (jsonlEntity.closed_at !== dbIssue.closed_at) return true;
 
           // Compare feedback
-          const dbFeedback = listFeedback(db, { issue_id: entityId });
+          const dbFeedback = listFeedback(db, { from_id: entityId });
           const jsonlFeedback = jsonlEntity.feedback || [];
           if (jsonlFeedback.length !== dbFeedback.length) return true;
 
@@ -216,7 +216,7 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
             if (!dbf) return true;
             if (jf.content !== dbf.content) return true;
             if (jf.feedback_type !== dbf.feedback_type) return true;
-            if (jf.spec_id !== dbf.spec_id) return true;
+            if (jf.to_id !== dbf.to_id) return true;
             if (jf.dismissed !== dbf.dismissed) return true;
             // Compare anchor (stringified for comparison)
             const jfAnchor = JSON.stringify(jf.anchor || null);

@@ -103,6 +103,44 @@ describe("Relationship Operations", () => {
         });
       }).toThrow("Issue not found: issue-999");
     });
+
+    it("should throw error for invalid relationship type", () => {
+      expect(() => {
+        addRelationship(db, {
+          from_id: "issue-001",
+          from_type: "issue",
+          to_id: "issue-002",
+          to_type: "issue",
+          relationship_type: "invalid-type" as any,
+        });
+      }).toThrow("Invalid relationship type: invalid-type");
+    });
+
+    it("should throw error for empty relationship type", () => {
+      expect(() => {
+        addRelationship(db, {
+          from_id: "issue-001",
+          from_type: "issue",
+          to_id: "issue-002",
+          to_type: "issue",
+          relationship_type: "" as any,
+        });
+      }).toThrow("Invalid relationship type");
+    });
+
+    it("should validate relationship type before checking entity existence", () => {
+      // This test ensures we fail fast on invalid type rather than
+      // making unnecessary database queries
+      expect(() => {
+        addRelationship(db, {
+          from_id: "issue-999",
+          from_type: "issue",
+          to_id: "issue-998",
+          to_type: "issue",
+          relationship_type: "invalid-type" as any,
+        });
+      }).toThrow("Invalid relationship type: invalid-type");
+    });
   });
 
   describe("removeRelationship", () => {

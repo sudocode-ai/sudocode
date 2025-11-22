@@ -1,0 +1,58 @@
+name: Test Versions
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: [20, 22, 24]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all packages
+        run: npm run build
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Test CLI installation (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd cli
+          npm pack
+          PACKAGE=$(ls sudocode-ai-cli-*.tgz)
+          cd ..
+          mkdir test-install
+          cd test-install
+          npm init -y
+          npm install ../${PACKAGE}
+          npx sudocode --version
+
+      - name: Test CLI installation (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cd cli
+          npm pack
+          $package = (Get-ChildItem sudocode-ai-cli-*.tgz).Name
+          cd ..
+          New-Item -ItemType Directory -Path test-install
+          cd test-install
+          npm init -y
+          npm install "../cli/$package"
+          npx sudocode --version

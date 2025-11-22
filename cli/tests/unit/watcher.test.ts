@@ -775,6 +775,83 @@ Updated content.
         expect(errors.length).toBe(0);
       }
     );
+
+    it(
+      "should not create loop when CLI updates issue (simulating MCP operation)",
+      { timeout: 15000 },
+      async () => {
+        const logs: string[] = [];
+        const errors: Error[] = [];
+        let syncCount = 0;
+
+        // Create initial issue
+        const { createIssue } = await import("../../src/operations/issues.js");
+        createIssue(db, {
+          id: "issue-cli-001",
+          uuid: "test-uuid-cli-001",
+          title: "CLI Test Issue",
+          content: "Initial content",
+          status: "open",
+          priority: 2,
+        });
+
+        // Export to JSONL and sync to markdown (simulating initialization)
+        const { exportToJSONL } = await import("../../src/export.js");
+        await exportToJSONL(db, { outputDir: tempDir });
+
+        const { syncJSONLToMarkdown } = await import("../../src/sync.js");
+        const issuesDir = path.join(tempDir, "issues");
+        fs.mkdirSync(issuesDir, { recursive: true });
+        const mdPath = path.join(issuesDir, "issue-cli-001.md");
+        await syncJSONLToMarkdown(db, "issue-cli-001", "issue", mdPath);
+
+        // Wait a bit
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        // Start watcher
+        control = startWatcher({
+          db,
+          baseDir: tempDir,
+          debounceDelay: 50,
+          ignoreInitial: true,
+          syncJSONLToMarkdown: true,
+          onLog: (msg) => {
+            logs.push(msg);
+            if (msg.includes("Synced")) {
+              syncCount++;
+            }
+          },
+          onError: (err) => errors.push(err),
+        });
+
+        // Wait for watcher to be ready
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        // Simulate CLI operation: update issue + export + sync to markdown
+        const { updateIssue } = await import("../../src/operations/issues.js");
+        updateIssue(db, "issue-cli-001", { status: "closed" });
+        await exportToJSONL(db, { outputDir: tempDir });
+        await syncJSONLToMarkdown(db, "issue-cli-001", "issue", mdPath);
+
+        // Wait for watcher to process (should detect content match and skip)
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Reset sync counter
+        syncCount = 0;
+
+        // Wait additional time to verify no oscillation
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Should have zero syncs (watcher should have skipped due to content match)
+        expect(syncCount).toBe(0);
+
+        // Verify markdown file has the update
+        const mdContent = fs.readFileSync(mdPath, "utf8");
+        expect(mdContent).toContain("status: closed");
+
+        expect(errors.length).toBe(0);
+      }
+    );
   });
 
   describe("Smart JSONL Operations (Regression Prevention)", () => {
@@ -1388,7 +1465,7 @@ Test content.
       const { createFeedback } = await import("../../src/operations/feedback.js");
 
       createSpec(db, {
-        id: "spec-fb-001",
+        id: "s-fb001",
         uuid: "test-uuid-spec-fb-001",
         title: "Test Spec for Feedback",
         file_path: "specs/test-fb.md",
@@ -1397,7 +1474,7 @@ Test content.
       });
 
       createIssue(db, {
-        id: "issue-feedback-001",
+        id: "i-fb001",
         uuid: "test-uuid-fb-001",
         title: "Test Feedback Detection",
         content: "Content",
@@ -1408,8 +1485,8 @@ Test content.
       // Add feedback to the issue
       createFeedback(db, {
         id: "feedback-001",
-        issue_id: "issue-feedback-001",
-        spec_id: "spec-fb-001",
+        from_id: "i-fb001",
+        to_id: "s-fb001",
         feedback_type: "comment",
         content: "Original feedback content",
         agent: "test-agent",
@@ -1438,7 +1515,7 @@ Test content.
       // Modify JSONL with different feedback content
       const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
       const updatedIssue = {
-        id: "issue-feedback-001",
+        id: "i-fb001",
         uuid: "test-uuid-fb-001",
         title: "Test Feedback Detection",
         content: "Content",
@@ -1451,8 +1528,8 @@ Test content.
         feedback: [
           {
             id: "feedback-001",
-            issue_id: "issue-feedback-001",
-            spec_id: "spec-fb-001",
+            from_id: "i-fb001",
+            to_id: "s-fb001",
             feedback_type: "comment",
             content: "UPDATED feedback content", // Changed
             agent: "test-agent",
@@ -1476,7 +1553,7 @@ Test content.
 
       // Verify feedback was updated in database
       const { listFeedback } = await import("../../src/operations/feedback.js");
-      const feedbackList = listFeedback(db, { issue_id: "issue-feedback-001" });
+      const feedbackList = listFeedback(db, { from_id: "i-fb001" });
       expect(feedbackList.length).toBe(1);
       expect(feedbackList[0].content).toBe("UPDATED feedback content");
 
@@ -1492,7 +1569,7 @@ Test content.
       const { createIssue } = await import("../../src/operations/issues.js");
 
       createSpec(db, {
-        id: "spec-fb-002",
+        id: "s-fb002",
         uuid: "test-uuid-spec-fb-002",
         title: "Test Spec for New Feedback",
         file_path: "specs/test-fb-2.md",
@@ -1501,7 +1578,7 @@ Test content.
       });
 
       createIssue(db, {
-        id: "issue-feedback-002",
+        id: "i-fb002",
         uuid: "test-uuid-fb-002",
         title: "Test New Feedback Detection",
         content: "Content",
@@ -1532,7 +1609,7 @@ Test content.
       // Modify JSONL to add new feedback
       const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
       const updatedIssue = {
-        id: "issue-feedback-002",
+        id: "i-fb002",
         uuid: "test-uuid-fb-002",
         title: "Test New Feedback Detection",
         content: "Content",
@@ -1545,8 +1622,8 @@ Test content.
         feedback: [
           {
             id: "feedback-002",
-            issue_id: "issue-feedback-002",
-            spec_id: "spec-fb-002",
+            from_id: "i-fb002",
+            to_id: "s-fb002",
             feedback_type: "suggestion",
             content: "New feedback added",
             agent: "test-agent",
@@ -1570,7 +1647,7 @@ Test content.
 
       // Verify feedback was created in database
       const { listFeedback } = await import("../../src/operations/feedback.js");
-      const feedbackList = listFeedback(db, { issue_id: "issue-feedback-002" });
+      const feedbackList = listFeedback(db, { from_id: "i-fb002" });
       expect(feedbackList.length).toBe(1);
       expect(feedbackList[0].content).toBe("New feedback added");
 

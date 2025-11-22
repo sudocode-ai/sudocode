@@ -20,9 +20,10 @@ on:
         type: boolean
 
   # Automatically publish on new tags matching v*.*.*
-  push:
-    tags:
-      - 'v*.*.*'
+  # TODO: Uncomment when ready to enable automatic publishing
+    # push:
+      # tags:
+        # - 'v*.*.*'
 
 jobs:
   publish:
@@ -40,7 +41,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
 

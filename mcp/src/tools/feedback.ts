@@ -8,7 +8,7 @@ import { Feedback, FeedbackType } from "../types.js";
 // Tool parameter types
 export interface AddFeedbackParams {
   issue_id: string;
-  spec_id: string;
+  to_id: string;
   content: string;
   type?: FeedbackType;
   line?: number;
@@ -17,13 +17,14 @@ export interface AddFeedbackParams {
 }
 
 /**
- * Add anchored feedback to a spec
+ * Add anchored feedback to a spec or issue
+ * Entity type is inferred from the ID prefix (s- for specs, i- for issues)
  */
 export async function addFeedback(
   client: SudocodeClient,
   params: AddFeedbackParams
 ): Promise<Feedback> {
-  const args = ["feedback", "add", params.issue_id, params.spec_id];
+  const args = ["feedback", "add", params.issue_id, params.to_id];
 
   args.push("--content", params.content);
 

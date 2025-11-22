@@ -7,6 +7,8 @@ import type { Issue } from '@/types/api'
 
 // Mock the API
 vi.mock('@/lib/api', () => ({
+  setCurrentProjectId: vi.fn(),
+  getCurrentProjectId: vi.fn(() => 'test-project-123'),
   issuesApi: {
     getAll: vi.fn(),
     create: vi.fn(),
@@ -17,6 +19,23 @@ vi.mock('@/lib/api', () => ({
     getForEntity: vi.fn(),
     create: vi.fn(),
     delete: vi.fn(),
+  },
+  repositoryApi: {
+    getInfo: vi.fn().mockResolvedValue({
+      name: 'test-repo',
+      branch: 'main',
+      path: '/test/path',
+    }),
+  },
+  executionsApi: {
+    getById: vi.fn(),
+    list: vi.fn().mockResolvedValue([]),
+    prepare: vi.fn(),
+    create: vi.fn(),
+    cancel: vi.fn(),
+    createFollowUp: vi.fn(),
+    worktreeExists: vi.fn(),
+    deleteWorktree: vi.fn(),
   },
 }))
 

@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { KanbanCard } from '@/components/ui/kanban'
 import type { Issue } from '@sudocode-ai/types'
+import { Copy, Check } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { toast } from 'sonner'
 
 // Priority badge colors - using darker shades for better contrast with white text
 const priorityColors: Record<number, string> = {
@@ -30,6 +34,7 @@ interface IssueCardProps {
 
 export function IssueCard({ issue, index, status, onViewDetails, isOpen }: IssueCardProps) {
   const navigate = useNavigate()
+  const [isCopied, setIsCopied] = useState(false)
 
   const handleClick = useCallback(() => {
     // If onViewDetails is provided, use it (for backward compatibility)
@@ -40,6 +45,24 @@ export function IssueCard({ issue, index, status, onViewDetails, isOpen }: Issue
       navigate(`/issues/${issue.id}`)
     }
   }, [issue, onViewDetails, navigate])
+
+  const handleCopyId = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation() // Prevent card click
+      try {
+        await navigator.clipboard.writeText(issue.id)
+        setIsCopied(true)
+        setTimeout(() => setIsCopied(false), 2000)
+        toast.success('ID copied to clipboard', {
+          duration: 2000,
+        })
+      } catch (error) {
+        console.error('Failed to copy ID:', error)
+        toast.error('Failed to copy ID')
+      }
+    },
+    [issue.id]
+  )
 
   const localRef = useRef<HTMLDivElement>(null)
 
@@ -69,7 +92,26 @@ export function IssueCard({ issue, index, status, onViewDetails, isOpen }: Issue
     >
       <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
         <div className="flex w-full items-center justify-between gap-2">
-          <div className="text-xs text-muted-foreground">{issue.id}</div>
+          <div className="group flex items-center gap-1">
+            <div className="text-xs text-muted-foreground">{issue.id}</div>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCopyId}
+                    className="h-5 w-5 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+                  >
+                    {isCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{isCopied ? 'Copied!' : 'Copy ID to Clipboard'}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
           {/* Priority Badge */}
           {issue.priority !== undefined && issue.priority <= 3 && (
             <span

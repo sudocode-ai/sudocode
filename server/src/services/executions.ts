@@ -232,6 +232,7 @@ export function deleteExecution(db: Database.Database, id: string): boolean {
   `);
 
   const result = stmt.run(id);
+
   return result.changes > 0;
 }
 

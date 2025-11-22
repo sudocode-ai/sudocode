@@ -1,23 +1,90 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { RelationshipForm } from '@/components/relationships/RelationshipForm'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { Issue, Spec } from '@/types/api'
+
+// Mock the hooks
+vi.mock('@/hooks/useIssues', () => ({
+  useIssues: vi.fn(() => ({
+    issues: [
+      { id: 'i-001', title: 'Test Issue 1' },
+      { id: 'i-002', title: 'Test Issue 2' },
+      { id: 'i-003', title: 'Another Issue' },
+    ] as Issue[],
+    isLoading: false,
+  })),
+}))
+
+vi.mock('@/hooks/useSpecs', () => ({
+  useSpecs: vi.fn(() => ({
+    specs: [
+      { id: 's-001', title: 'Test Spec 1' },
+      { id: 's-002', title: 'Test Spec 2' },
+      { id: 's-003', title: 'Another Spec' },
+    ] as Spec[],
+    isLoading: false,
+  })),
+}))
+
+// Mock WebSocket context
+vi.mock('@/contexts/WebSocketContext', () => ({
+  useWebSocketContext: () => ({
+    connected: false,
+    subscribe: vi.fn(),
+    unsubscribe: vi.fn(),
+    addMessageHandler: vi.fn(),
+    removeMessageHandler: vi.fn(),
+  }),
+}))
 
 describe('RelationshipForm', () => {
+  let queryClient: QueryClient
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+      },
+    })
+  })
+
+  const renderWithClient = (ui: React.ReactElement) => {
+    return render(
+      <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
+    )
+  }
+
+  // Helper to get the entity combobox button
+  const getEntityCombobox = () => {
+    // Find the button with either "Search issues", "Search specs", or a selected entity text
+    const buttons = screen.getAllByRole('combobox')
+    // The entity combobox is the one that is NOT the entity type select (Issue/Spec dropdown)
+    // and NOT the relationship type select
+    // It should contain text like "Search issues", "Search specs", or "i-xxx - ..."
+    return buttons.find(
+      (btn) =>
+        btn.textContent?.includes('Search issues') ||
+        btn.textContent?.includes('Search specs') ||
+        /[is]-\d{3}/.test(btn.textContent || '')
+    ) as HTMLElement
+  }
+
   describe('rendering', () => {
     it('should render form with all fields', () => {
       const onSubmit = vi.fn()
 
-      render(<RelationshipForm onSubmit={onSubmit} />)
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
 
-      expect(screen.getByLabelText('Target Entity')).toBeInTheDocument()
-      expect(screen.getByLabelText('Relationship Type')).toBeInTheDocument()
+      expect(screen.getByText('Target Entity')).toBeInTheDocument()
+      expect(screen.getByText('Relationship Type')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /Create/i })).toBeInTheDocument()
     })
 
     it('should render as a card by default', () => {
       const onSubmit = vi.fn()
-      const { container } = render(<RelationshipForm onSubmit={onSubmit} />)
+      const { container } = renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
 
       // Card wrapper should exist
       const card = container.querySelector('.p-4')
@@ -26,7 +93,7 @@ describe('RelationshipForm', () => {
 
     it('should render inline when inline prop is true', () => {
       const onSubmit = vi.fn()
-      const { container } = render(<RelationshipForm onSubmit={onSubmit} inline={true} />)
+      const { container } = renderWithClient(<RelationshipForm onSubmit={onSubmit} inline={true} />)
 
       // Card wrapper should not exist
       const card = container.querySelector('.p-4')
@@ -37,7 +104,7 @@ describe('RelationshipForm', () => {
       const onSubmit = vi.fn()
       const onCancel = vi.fn()
 
-      render(<RelationshipForm onSubmit={onSubmit} onCancel={onCancel} />)
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} onCancel={onCancel} />)
 
       expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument()
     })
@@ -45,34 +112,101 @@ describe('RelationshipForm', () => {
     it('should not show cancel button when onCancel is not provided', () => {
       const onSubmit = vi.fn()
 
-      render(<RelationshipForm onSubmit={onSubmit} />)
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
 
       expect(screen.queryByRole('button', { name: /Cancel/i })).not.toBeInTheDocument()
     })
   })
 
-  describe('entity type selection', () => {
-    it('should default to issue type', () => {
+  describe('entity combobox', () => {
+    it('should show placeholder for issue by default', () => {
       const onSubmit = vi.fn()
 
-      render(<RelationshipForm onSubmit={onSubmit} />)
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
 
-      const input = screen.getByPlaceholderText('i-x7k9')
-      expect(input).toBeInTheDocument()
+      expect(screen.getByText(/Search issues/i)).toBeInTheDocument()
     })
 
-    it('should change placeholder when entity type is changed', async () => {
+    it('should open dropdown and show issues when clicked', async () => {
       const onSubmit = vi.fn()
       const user = userEvent.setup()
 
-      render(<RelationshipForm onSubmit={onSubmit} />)
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
+
+      // Click the entity combobox trigger (the one showing "Search issues...")
+      const comboboxTrigger = getEntityCombobox()
+      await user.click(comboboxTrigger)
+
+      // Should show issues in dropdown
+      await waitFor(() => {
+        expect(screen.getByText('i-001')).toBeInTheDocument()
+        expect(screen.getByText('Test Issue 1')).toBeInTheDocument()
+        expect(screen.getByText('i-002')).toBeInTheDocument()
+        expect(screen.getByText('Test Issue 2')).toBeInTheDocument()
+      })
+    })
+
+    it('should filter issues based on search input', async () => {
+      const onSubmit = vi.fn()
+      const user = userEvent.setup()
+
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
+
+      // Open the combobox
+      const comboboxTrigger = getEntityCombobox()
+      await user.click(comboboxTrigger)
+
+      // Type in search input
+      const searchInput = screen.getByPlaceholderText(/Search issues/i)
+      await user.type(searchInput, 'Another')
+
+      // Should only show the matching issue
+      await waitFor(() => {
+        expect(screen.getByText('i-003')).toBeInTheDocument()
+        expect(screen.queryByText('i-001')).not.toBeInTheDocument()
+        expect(screen.queryByText('i-002')).not.toBeInTheDocument()
+      })
+    })
+
+    it('should select an entity when clicked', async () => {
+      const onSubmit = vi.fn().mockResolvedValue(undefined)
+      const user = userEvent.setup()
+
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
+
+      // Open the combobox
+      const comboboxTrigger = getEntityCombobox()
+      await user.click(comboboxTrigger)
+
+      // Click on an issue
+      const issue = screen.getByText('i-001')
+      await user.click(issue)
+
+      // Should close dropdown and show selected value
+      await waitFor(() => {
+        const combobox = getEntityCombobox()
+        expect(combobox.textContent).toContain('i-001')
+        expect(combobox.textContent).toContain('Test Issue 1')
+      })
+    })
+  })
+
+  describe('entity type selection', () => {
+    it('should change to specs when spec type is selected', async () => {
+      const onSubmit = vi.fn()
+      const user = userEvent.setup()
+
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
 
       // Initially should show issue placeholder
-      expect(screen.getByPlaceholderText('i-x7k9')).toBeInTheDocument()
+      expect(screen.getByText(/Search issues/i)).toBeInTheDocument()
 
       // Click the entity type select
-      const selectTrigger = screen.getAllByRole('combobox')[0]
-      await user.click(selectTrigger)
+      const selectTriggers = screen.getAllByRole('combobox')
+      const entityTypeSelect = selectTriggers.find((el) =>
+        el.textContent?.includes('Issue') || el.textContent?.includes('Spec')
+      )
+      await user.click(entityTypeSelect!)
 
       // Click on Spec option
       const specOption = screen.getByRole('option', { name: /Spec/i })
@@ -80,7 +214,72 @@ describe('RelationshipForm', () => {
 
       // Should now show spec placeholder
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('s-14sh')).toBeInTheDocument()
+        expect(screen.getByText(/Search specs/i)).toBeInTheDocument()
+      })
+    })
+
+    it('should show specs in dropdown when spec type is selected', async () => {
+      const onSubmit = vi.fn()
+      const user = userEvent.setup()
+
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
+
+      // Change to spec type
+      const selectTriggers = screen.getAllByRole('combobox')
+      const entityTypeSelect = selectTriggers.find((el) =>
+        el.textContent?.includes('Issue') || el.textContent?.includes('Spec')
+      )
+      await user.click(entityTypeSelect!)
+      const specOption = screen.getByRole('option', { name: /Spec/i })
+      await user.click(specOption)
+
+      // Open the entity combobox
+      await waitFor(() => {
+        expect(screen.getByText(/Search specs/i)).toBeInTheDocument()
+      })
+
+      const comboboxTrigger = getEntityCombobox()
+      await user.click(comboboxTrigger)
+
+      // Should show specs in dropdown
+      await waitFor(() => {
+        expect(screen.getByText('s-001')).toBeInTheDocument()
+        expect(screen.getByText('Test Spec 1')).toBeInTheDocument()
+      })
+    })
+
+    it('should clear selection when entity type is changed', async () => {
+      const onSubmit = vi.fn()
+      const user = userEvent.setup()
+
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
+
+      // Select an issue
+      const comboboxTrigger = getEntityCombobox()
+      await user.click(comboboxTrigger)
+      const issue = screen.getByText('i-001')
+      await user.click(issue)
+
+      // Verify selection
+      await waitFor(() => {
+        const combobox = getEntityCombobox()
+        expect(combobox.textContent).toContain('i-001')
+      })
+
+      // Change entity type to spec
+      const selectTriggers = screen.getAllByRole('combobox')
+      const entityTypeSelect = selectTriggers.find((el) =>
+        el.textContent?.includes('Issue') || el.textContent?.includes('Spec')
+      )
+      await user.click(entityTypeSelect!)
+      const specOption = screen.getByRole('option', { name: /Spec/i })
+      await user.click(specOption)
+
+      // Selection should be cleared
+      await waitFor(() => {
+        expect(screen.getByText(/Search specs/i)).toBeInTheDocument()
+        const combobox = getEntityCombobox()
+        expect(combobox.textContent).not.toContain('i-001')
       })
     })
   })
@@ -89,22 +288,23 @@ describe('RelationshipForm', () => {
     it('should default to "related" type', () => {
       const onSubmit = vi.fn()
 
-      render(<RelationshipForm onSubmit={onSubmit} />)
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
 
-      // The select should show the default value "Related to"
-      const relationshipTypeSelect = screen.getAllByRole('combobox')[1]
+      // The relationship type select (with id="relationship-type") should show default value "Related to"
+      const relationshipTypeSelect = screen.getByRole('combobox', { name: /relationship type/i })
       expect(relationshipTypeSelect).toBeInTheDocument()
+      expect(relationshipTypeSelect.textContent).toContain('Related to')
     })
 
     it('should allow changing relationship type', async () => {
       const onSubmit = vi.fn()
       const user = userEvent.setup()
 
-      render(<RelationshipForm onSubmit={onSubmit} />)
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
 
-      // Click the relationship type select
-      const selectTrigger = screen.getAllByRole('combobox')[1]
-      await user.click(selectTrigger)
+      // Find and click the relationship type select
+      const relationshipTypeSelect = screen.getByRole('combobox', { name: /relationship type/i })
+      await user.click(relationshipTypeSelect)
 
       // Should show all relationship types
       expect(screen.getByRole('option', { name: /Blocks/i })).toBeInTheDocument()
@@ -121,35 +321,20 @@ describe('RelationshipForm', () => {
       const onSubmit = vi.fn().mockResolvedValue(undefined)
       const user = userEvent.setup()
 
-      render(<RelationshipForm onSubmit={onSubmit} />)
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
 
-      // Fill in the target ID
-      const input = screen.getByPlaceholderText('i-x7k9')
-      await user.type(input, 'ISSUE-002')
+      // Select an issue
+      const comboboxTrigger = getEntityCombobox()
+      await user.click(comboboxTrigger)
+      const issue = screen.getByText('i-002')
+      await user.click(issue)
 
       // Submit the form
       const submitButton = screen.getByRole('button', { name: /Create/i })
       await user.click(submitButton)
 
       await waitFor(() => {
-        expect(onSubmit).toHaveBeenCalledWith('ISSUE-002', 'issue', 'related')
-      })
-    })
-
-    it('should trim whitespace from target ID before submitting', async () => {
-      const onSubmit = vi.fn().mockResolvedValue(undefined)
-      const user = userEvent.setup()
-
-      render(<RelationshipForm onSubmit={onSubmit} />)
-
-      const input = screen.getByPlaceholderText('i-x7k9')
-      await user.type(input, '  ISSUE-002  ')
-
-      const submitButton = screen.getByRole('button', { name: /Create/i })
-      await user.click(submitButton)
-
-      await waitFor(() => {
-        expect(onSubmit).toHaveBeenCalledWith('ISSUE-002', 'issue', 'related')
+        expect(onSubmit).toHaveBeenCalledWith('i-002', 'issue', 'related')
       })
     })
 
@@ -157,11 +342,13 @@ describe('RelationshipForm', () => {
       const onSubmit = vi.fn().mockResolvedValue(undefined)
       const user = userEvent.setup()
 
-      render(<RelationshipForm onSubmit={onSubmit} />)
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
 
-      // Fill in the form
-      const input = screen.getByPlaceholderText('i-x7k9')
-      await user.type(input, 'ISSUE-002')
+      // Select an issue
+      const comboboxTrigger = getEntityCombobox()
+      await user.click(comboboxTrigger)
+      const issue = screen.getByText('i-002')
+      await user.click(issue)
 
       // Submit
       const submitButton = screen.getByRole('button', { name: /Create/i })
@@ -171,14 +358,16 @@ describe('RelationshipForm', () => {
         expect(onSubmit).toHaveBeenCalled()
       })
 
-      // Form should be reset - input should be empty
-      expect(input).toHaveValue('')
+      // Form should be reset - should show placeholder again
+      await waitFor(() => {
+        expect(screen.getByText(/Search issues/i)).toBeInTheDocument()
+      })
     })
 
     it('should disable submit button when target ID is empty', () => {
       const onSubmit = vi.fn()
 
-      render(<RelationshipForm onSubmit={onSubmit} />)
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
 
       const submitButton = screen.getByRole('button', { name: /Create/i })
       expect(submitButton).toBeDisabled()
@@ -188,46 +377,36 @@ describe('RelationshipForm', () => {
       const onSubmit = vi.fn()
       const user = userEvent.setup()
 
-      render(<RelationshipForm onSubmit={onSubmit} />)
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
 
-      const input = screen.getByPlaceholderText('i-x7k9')
-      await user.type(input, 'ISSUE-002')
+      // Select an issue
+      const comboboxTrigger = getEntityCombobox()
+      await user.click(comboboxTrigger)
+      const issue = screen.getByText('i-002')
+      await user.click(issue)
 
       const submitButton = screen.getByRole('button', { name: /Create/i })
-      expect(submitButton).not.toBeDisabled()
+      await waitFor(() => {
+        expect(submitButton).not.toBeDisabled()
+      })
     })
 
-    it('should not submit form if target ID is only whitespace', async () => {
-      const onSubmit = vi.fn()
-      const user = userEvent.setup()
-
-      render(<RelationshipForm onSubmit={onSubmit} />)
-
-      const input = screen.getByPlaceholderText('i-x7k9')
-      await user.type(input, '   ')
-
-      // Button should still be enabled (input has value)
-      // but clicking shouldn't call onSubmit
-      const submitButton = screen.getByRole('button', { name: /Create/i })
-
-      // The submit button should actually be disabled because we check toId.trim()
-      expect(submitButton).toBeDisabled()
-    })
-
-    it('should disable all inputs during submission', async () => {
+    it('should disable inputs during submission', async () => {
       const onSubmit = vi.fn(() => new Promise((resolve) => setTimeout(resolve, 100)))
       const user = userEvent.setup()
 
-      render(<RelationshipForm onSubmit={onSubmit} />)
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
 
-      const input = screen.getByPlaceholderText('i-x7k9')
-      await user.type(input, 'ISSUE-002')
+      // Select an issue
+      const comboboxTrigger = getEntityCombobox()
+      await user.click(comboboxTrigger)
+      const issue = screen.getByText('i-002')
+      await user.click(issue)
 
       const submitButton = screen.getByRole('button', { name: /Create/i })
       await user.click(submitButton)
 
-      // During submission, input should be disabled
-      expect(input).toBeDisabled()
+      // During submission, buttons should be disabled
       expect(submitButton).toBeDisabled()
 
       // Wait for submission to complete
@@ -235,9 +414,6 @@ describe('RelationshipForm', () => {
         expect(onSubmit).toHaveBeenCalled()
       })
     })
-
-    // Note: The component doesn't catch errors from onSubmit - they bubble up to the parent
-    // This is correct behavior, so we don't test error handling here
   })
 
   describe('cancel functionality', () => {
@@ -246,7 +422,7 @@ describe('RelationshipForm', () => {
       const onCancel = vi.fn()
       const user = userEvent.setup()
 
-      render(<RelationshipForm onSubmit={onSubmit} onCancel={onCancel} />)
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} onCancel={onCancel} />)
 
       const cancelButton = screen.getByRole('button', { name: /Cancel/i })
       await user.click(cancelButton)
@@ -259,10 +435,13 @@ describe('RelationshipForm', () => {
       const onCancel = vi.fn()
       const user = userEvent.setup()
 
-      render(<RelationshipForm onSubmit={onSubmit} onCancel={onCancel} />)
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} onCancel={onCancel} />)
 
-      const input = screen.getByPlaceholderText('i-x7k9')
-      await user.type(input, 'ISSUE-002')
+      // Select an issue
+      const comboboxTrigger = getEntityCombobox()
+      await user.click(comboboxTrigger)
+      const issue = screen.getByText('i-002')
+      await user.click(issue)
 
       const submitButton = screen.getByRole('button', { name: /Create/i })
       await user.click(submitButton)
@@ -282,20 +461,28 @@ describe('RelationshipForm', () => {
       const onSubmit = vi.fn().mockResolvedValue(undefined)
       const user = userEvent.setup()
 
-      render(<RelationshipForm onSubmit={onSubmit} />)
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
 
       // Change to spec type
-      const entityTypeSelect = screen.getAllByRole('combobox')[0]
-      await user.click(entityTypeSelect)
+      const selectTriggers = screen.getAllByRole('combobox')
+      const entityTypeSelect = selectTriggers.find((el) =>
+        el.textContent?.includes('Issue') || el.textContent?.includes('Spec')
+      )
+      await user.click(entityTypeSelect!)
       const specOption = screen.getByRole('option', { name: /Spec/i })
       await user.click(specOption)
 
-      // Fill in target ID
-      const input = screen.getByPlaceholderText('s-14sh')
-      await user.type(input, 'SPEC-042')
+      // Select a spec
+      await waitFor(() => {
+        expect(screen.getByText(/Search specs/i)).toBeInTheDocument()
+      })
+      const comboboxTrigger = getEntityCombobox()
+      await user.click(comboboxTrigger)
+      const spec = await screen.findByText('s-002')
+      await user.click(spec)
 
       // Change relationship type to implements
-      const relationshipTypeSelect = screen.getAllByRole('combobox')[1]
+      const relationshipTypeSelect = screen.getByRole('combobox', { name: /relationship type/i })
       await user.click(relationshipTypeSelect)
       const implementsOption = screen.getByRole('option', { name: /Implements/i })
       await user.click(implementsOption)
@@ -305,7 +492,7 @@ describe('RelationshipForm', () => {
       await user.click(submitButton)
 
       await waitFor(() => {
-        expect(onSubmit).toHaveBeenCalledWith('SPEC-042', 'spec', 'implements')
+        expect(onSubmit).toHaveBeenCalledWith('s-002', 'spec', 'implements')
       })
     })
 
@@ -313,31 +500,56 @@ describe('RelationshipForm', () => {
       const onSubmit = vi.fn().mockResolvedValue(undefined)
       const user = userEvent.setup()
 
-      render(<RelationshipForm onSubmit={onSubmit} />)
+      renderWithClient(<RelationshipForm onSubmit={onSubmit} />)
 
       // First submission
-      const input = screen.getByPlaceholderText('i-x7k9')
-      await user.type(input, 'ISSUE-002')
+      let comboboxTrigger = getEntityCombobox()
+      await user.click(comboboxTrigger)
+      let issue = screen.getByText('i-002')
+      await user.click(issue)
 
       const submitButton = screen.getByRole('button', { name: /Create/i })
       await user.click(submitButton)
 
       await waitFor(() => {
-        expect(onSubmit).toHaveBeenCalledWith('ISSUE-002', 'issue', 'related')
+        expect(onSubmit).toHaveBeenCalledWith('i-002', 'issue', 'related')
       })
 
       // Form should be reset
-      expect(input).toHaveValue('')
+      await waitFor(() => {
+        expect(screen.getByText(/Search issues/i)).toBeInTheDocument()
+      })
 
       // Second submission
-      await user.type(input, 'ISSUE-003')
+      comboboxTrigger = getEntityCombobox()
+      await user.click(comboboxTrigger)
+      issue = screen.getByText('i-003')
+      await user.click(issue)
       await user.click(submitButton)
 
       await waitFor(() => {
-        expect(onSubmit).toHaveBeenCalledWith('ISSUE-003', 'issue', 'related')
+        expect(onSubmit).toHaveBeenCalledWith('i-003', 'issue', 'related')
       })
 
       expect(onSubmit).toHaveBeenCalledTimes(2)
+    })
+
+    it('should filter out the current entity from the list', async () => {
+      const onSubmit = vi.fn()
+      const user = userEvent.setup()
+
+      renderWithClient(<RelationshipForm fromId="i-002" onSubmit={onSubmit} />)
+
+      // Open the combobox
+      const comboboxTrigger = getEntityCombobox()
+      await user.click(comboboxTrigger)
+
+      // Should show issues except i-002
+      await waitFor(() => {
+        expect(screen.getByText('i-001')).toBeInTheDocument()
+        expect(screen.queryByText('i-002')).not.toBeInTheDocument()
+        expect(screen.getByText('i-003')).toBeInTheDocument()
+      })
     })
   })
 })

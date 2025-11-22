@@ -112,10 +112,10 @@ CREATE TABLE IF NOT EXISTS events (
 export const ISSUE_FEEDBACK_TABLE = `
 CREATE TABLE IF NOT EXISTS issue_feedback (
     id TEXT PRIMARY KEY,
-    issue_id TEXT NOT NULL,
-    issue_uuid TEXT NOT NULL,
-    spec_id TEXT NOT NULL,
-    spec_uuid TEXT NOT NULL,
+    from_id TEXT NOT NULL,
+    from_uuid TEXT NOT NULL,
+    to_id TEXT NOT NULL,
+    to_uuid TEXT NOT NULL,
     feedback_type TEXT NOT NULL CHECK(feedback_type IN ('comment', 'suggestion', 'request')),
     content TEXT NOT NULL,
     agent TEXT,
@@ -123,10 +123,8 @@ CREATE TABLE IF NOT EXISTS issue_feedback (
     dismissed INTEGER NOT NULL DEFAULT 0 CHECK(dismissed IN (0, 1)),
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
-    FOREIGN KEY (issue_uuid) REFERENCES issues(uuid) ON DELETE CASCADE,
-    FOREIGN KEY (spec_id) REFERENCES specs(id) ON DELETE CASCADE,
-    FOREIGN KEY (spec_uuid) REFERENCES specs(uuid) ON DELETE CASCADE
+    FOREIGN KEY (from_id) REFERENCES issues(id) ON DELETE CASCADE,
+    FOREIGN KEY (from_uuid) REFERENCES issues(uuid) ON DELETE CASCADE
 );
 `;
 
@@ -269,10 +267,10 @@ CREATE INDEX IF NOT EXISTS idx_events_git_commit ON events(git_commit_sha);
 `;
 
 export const ISSUE_FEEDBACK_INDEXES = `
-CREATE INDEX IF NOT EXISTS idx_feedback_issue_id ON issue_feedback(issue_id);
-CREATE INDEX IF NOT EXISTS idx_feedback_issue_uuid ON issue_feedback(issue_uuid);
-CREATE INDEX IF NOT EXISTS idx_feedback_spec_id ON issue_feedback(spec_id);
-CREATE INDEX IF NOT EXISTS idx_feedback_spec_uuid ON issue_feedback(spec_uuid);
+CREATE INDEX IF NOT EXISTS idx_feedback_from_id ON issue_feedback(from_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_from_uuid ON issue_feedback(from_uuid);
+CREATE INDEX IF NOT EXISTS idx_feedback_to_id ON issue_feedback(to_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_to_uuid ON issue_feedback(to_uuid);
 CREATE INDEX IF NOT EXISTS idx_feedback_dismissed ON issue_feedback(dismissed);
 CREATE INDEX IF NOT EXISTS idx_feedback_type ON issue_feedback(feedback_type);
 CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON issue_feedback(created_at);

@@ -1,9 +1,10 @@
 /**
  * Relationships API routes (mapped to /api/relationships)
+ *
+ * Note: All routes require X-Project-ID header via requireProject() middleware
  */
 
 import { Router, Request, Response } from "express";
-import type Database from "better-sqlite3";
 import type { EntityType, RelationshipType } from "@sudocode-ai/types";
 import {
   createRelationship,
@@ -15,7 +16,7 @@ import {
 import { broadcastRelationshipUpdate } from "../services/websocket.js";
 import { triggerExport } from "../services/export.js";
 
-export function createRelationshipsRouter(db: Database.Database): Router {
+export function createRelationshipsRouter(): Router {
   const router = Router();
 
   /**
@@ -36,7 +37,7 @@ export function createRelationshipsRouter(db: Database.Database): Router {
       }
 
       const relationships = getEntityRelationships(
-        db,
+        req.project!.db,
         entity_id,
         entity_type as EntityType
       );
@@ -77,7 +78,7 @@ export function createRelationshipsRouter(db: Database.Database): Router {
         }
 
         const relationships = getEntityOutgoingRelationships(
-          db,
+          req.project!.db,
           entity_id,
           entity_type as EntityType,
           relationship_type as RelationshipType | undefined
@@ -120,7 +121,7 @@ export function createRelationshipsRouter(db: Database.Database): Router {
         }
 
         const relationships = getEntityIncomingRelationships(
-          db,
+          req.project!.db,
           entity_id,
           entity_type as EntityType,
           relationship_type as RelationshipType | undefined
@@ -221,7 +222,7 @@ export function createRelationshipsRouter(db: Database.Database): Router {
       }
 
       // Create relationship using CLI operation
-      const relationship = createRelationship(db, {
+      const relationship = createRelationship(req.project!.db, {
         from_id,
         from_type: from_type as EntityType,
         to_id,
@@ -231,10 +232,10 @@ export function createRelationshipsRouter(db: Database.Database): Router {
       });
 
       // Broadcast relationship creation to WebSocket clients
-      broadcastRelationshipUpdate("created", relationship);
+      broadcastRelationshipUpdate(req.project!.id, "created", relationship);
 
       // Trigger export to sync JSONL files
-      triggerExport(db);
+      triggerExport(req.project!.db, req.project!.sudocodeDir);
 
       res.status(201).json({
         success: true,
@@ -329,7 +330,7 @@ export function createRelationshipsRouter(db: Database.Database): Router {
 
       // Delete relationship using CLI operation
       const deleted = deleteRelationship(
-        db,
+        req.project!.db,
         from_id,
         from_type as EntityType,
         to_id,
@@ -339,7 +340,7 @@ export function createRelationshipsRouter(db: Database.Database): Router {
 
       if (deleted) {
         // Broadcast relationship deletion to WebSocket clients
-        broadcastRelationshipUpdate("deleted", {
+        broadcastRelationshipUpdate(req.project!.id, "deleted", {
           from_id,
           from_type,
           to_id,
@@ -348,7 +349,7 @@ export function createRelationshipsRouter(db: Database.Database): Router {
         });
 
         // Trigger export to sync JSONL files
-        triggerExport(db);
+        triggerExport(req.project!.db, req.project!.sudocodeDir);
 
         res.json({
           success: true,

@@ -283,8 +283,13 @@ export function updateSpec(
 
 /**
  * Delete a spec
+ * Also cascades to delete any feedback targeting this spec
  */
 export function deleteSpec(db: Database.Database, id: string): boolean {
+  // First delete any feedback targeting this spec
+  db.prepare(`DELETE FROM issue_feedback WHERE to_id = ?`).run(id);
+
+  // Then delete the spec itself
   const stmt = db.prepare(`DELETE FROM specs WHERE id = ?`);
   const result = stmt.run(id);
   return result.changes > 0;

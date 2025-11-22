@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { FileText, ListTodo, X, Settings, HelpCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { ProjectSwitcher } from '@/components/projects/ProjectSwitcher'
 import { SettingsDialog } from './SettingsDialog'
 import { HelpDialog } from './HelpDialog'
 
@@ -72,6 +73,11 @@ export default function Sidebar({ open, collapsed, onClose }: SidebarProps) {
           >
             <X className="h-5 w-5" />
           </button>
+        </div>
+
+        {/* Project Switcher */}
+        <div className={cn('border-b border-border p-2', collapsed ? 'px-2' : 'px-3')}>
+          <ProjectSwitcher collapsed={collapsed} />
         </div>
 
         {/* Navigation */}

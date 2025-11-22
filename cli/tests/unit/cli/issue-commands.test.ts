@@ -12,6 +12,7 @@ import {
   handleIssueClose,
   handleIssueDelete,
 } from "../../../src/cli/issue-commands.js";
+import { getIssue } from "../../../src/operations/issues.js";
 import type Database from "better-sqlite3";
 import * as fs from "fs";
 import * as path from "path";
@@ -306,6 +307,40 @@ describe("Issue CLI Commands", () => {
       expect(updatedIssue).toBeDefined();
       expect(updatedIssue.content).toBe("New content to export");
     });
+
+    it("should update issue parent", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+
+      // Create a parent issue
+      await handleIssueCreate(ctx, "Parent Issue", { priority: "2" });
+      const parentIssueId = extractIssueId(consoleLogSpy);
+      consoleLogSpy.mockClear();
+
+      // Create a child issue
+      await handleIssueCreate(ctx, "Child Issue", { priority: "2" });
+      const childIssueId = extractIssueId(consoleLogSpy);
+      consoleLogSpy.mockClear();
+
+      // Update child to set parent
+      const options = {
+        parent: parentIssueId,
+      };
+
+      await handleIssueUpdate(ctx, childIssueId, options);
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        "✓ Updated issue",
+        expect.anything()
+      );
+
+      // Verify parent was set in database
+      const issue = getIssue(db, childIssueId);
+      expect(issue?.parent_id).toBe(parentIssueId);
+
+      // Verify parent appears in output
+      const calls = consoleLogSpy.mock.calls.flat().join(" ");
+      expect(calls).toContain(`parent_id: ${parentIssueId}`);
+    });
   });
 
   describe("handleIssueClose", () => {
@@ -559,6 +594,100 @@ describe("Issue CLI Commands", () => {
         success: true,
         action: "hard_delete",
       });
+    });
+  });
+
+  describe("Markdown Sync After Operations", () => {
+    it("should create markdown file when creating an issue", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const options = {
+        priority: "2",
+        description: "Test description",
+      };
+
+      await handleIssueCreate(ctx, "Test Issue for MD", options);
+      const issueId = extractIssueId(consoleLogSpy);
+
+      // Check that markdown file was created
+      const mdPath = path.join(tempDir, "issues", `${issueId}.md`);
+      expect(fs.existsSync(mdPath)).toBe(true);
+
+      // Verify markdown content
+      const mdContent = fs.readFileSync(mdPath, "utf8");
+      expect(mdContent).toContain("---");
+      expect(mdContent).toContain(`id: ${issueId}`);
+      expect(mdContent).toContain("title: Test Issue for MD");
+      expect(mdContent).toContain("status: open");
+      expect(mdContent).toContain("Test description");
+    });
+
+    it("should update markdown file when updating an issue", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+
+      // Create issue first
+      await handleIssueCreate(ctx, "Original Title", { priority: "2" });
+      const issueId = extractIssueId(consoleLogSpy);
+      consoleLogSpy.mockClear();
+
+      // Update the issue
+      const options = {
+        title: "Updated Title",
+        status: "in_progress",
+      };
+      await handleIssueUpdate(ctx, issueId, options);
+
+      // Check that markdown file was updated
+      const mdPath = path.join(tempDir, "issues", `${issueId}.md`);
+      expect(fs.existsSync(mdPath)).toBe(true);
+
+      // Verify markdown content has updated values
+      const mdContent = fs.readFileSync(mdPath, "utf8");
+      expect(mdContent).toContain("title: Updated Title");
+      expect(mdContent).toContain("status: in_progress");
+    });
+
+    it("should update markdown file when closing an issue", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+
+      // Create issue first
+      await handleIssueCreate(ctx, "Issue to Close", { priority: "2" });
+      const issueId = extractIssueId(consoleLogSpy);
+      consoleLogSpy.mockClear();
+
+      // Close the issue
+      await handleIssueClose(ctx, [issueId], {});
+
+      // Check that markdown file was updated
+      const mdPath = path.join(tempDir, "issues", `${issueId}.md`);
+      expect(fs.existsSync(mdPath)).toBe(true);
+
+      // Verify markdown content has closed status
+      const mdContent = fs.readFileSync(mdPath, "utf8");
+      expect(mdContent).toContain("status: closed");
+    });
+
+    it("should preserve markdown content when updating frontmatter", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+
+      // Create issue with content
+      await handleIssueCreate(ctx, "Issue with Content", {
+        priority: "2",
+        description: "Original content\nMultiple lines\nOf text"
+      });
+      const issueId = extractIssueId(consoleLogSpy);
+      consoleLogSpy.mockClear();
+
+      // Update just the status (not content)
+      await handleIssueUpdate(ctx, issueId, { status: "in_progress" });
+
+      // Check that markdown file preserves content
+      const mdPath = path.join(tempDir, "issues", `${issueId}.md`);
+      const mdContent = fs.readFileSync(mdPath, "utf8");
+
+      expect(mdContent).toContain("Original content");
+      expect(mdContent).toContain("Multiple lines");
+      expect(mdContent).toContain("Of text");
+      expect(mdContent).toContain("status: in_progress");
     });
   });
 });

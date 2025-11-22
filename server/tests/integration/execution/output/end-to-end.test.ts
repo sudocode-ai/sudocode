@@ -1,18 +1,20 @@
 import { describe, it , expect } from 'vitest'
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ClaudeCodeOutputProcessor } from '../../../../src/execution/output/claude-code-output-processor.js';
 import type { ToolCall, FileChange } from '../../../../src/execution/output/types.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /**
  * Helper function to read and process a fixture file
  */
 async function processFixture(fixtureName: string): Promise<ClaudeCodeOutputProcessor> {
   const fixturePath = join(
-    process.cwd(),
-    'tests',
-    'fixtures',
-    'output',
+    __dirname,
+    '../../../fixtures/output',
     fixtureName
   );
   const content = await readFile(fixturePath, 'utf-8');
@@ -217,10 +219,8 @@ describe('End-to-End Output Processing', () => {
   describe('Event-Driven Integration', () => {
     it('should emit tool call events during processing', async () => {
       const fixturePath = join(
-        process.cwd(),
-        'tests',
-        'fixtures',
-        'output',
+        __dirname,
+        '../../../fixtures/output',
         'simple-bash.jsonl'
       );
       const content = await readFile(fixturePath, 'utf-8');
@@ -243,10 +243,8 @@ describe('End-to-End Output Processing', () => {
 
     it('should emit file change events', async () => {
       const fixturePath = join(
-        process.cwd(),
-        'tests',
-        'fixtures',
-        'output',
+        __dirname,
+        '../../../fixtures/output',
         'file-operations.jsonl'
       );
       const content = await readFile(fixturePath, 'utf-8');
@@ -268,10 +266,8 @@ describe('End-to-End Output Processing', () => {
 
     it('should emit progress events', async () => {
       const fixturePath = join(
-        process.cwd(),
-        'tests',
-        'fixtures',
-        'output',
+        __dirname,
+        '../../../fixtures/output',
         'complex-workflow.jsonl'
       );
       const content = await readFile(fixturePath, 'utf-8');
@@ -293,10 +289,8 @@ describe('End-to-End Output Processing', () => {
 
     it('should not emit error events for successful processing', async () => {
       const fixturePath = join(
-        process.cwd(),
-        'tests',
-        'fixtures',
-        'output',
+        __dirname,
+        '../../../fixtures/output',
         'simple-bash.jsonl'
       );
       const content = await readFile(fixturePath, 'utf-8');

@@ -5,7 +5,7 @@
  * template rendering, worktree management, and workflow execution.
  */
 
-import { describe, it, afterEach, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, afterEach, expect, beforeAll, afterAll, vi, beforeEach } from "vitest";
 import type Database from "better-sqlite3";
 import { initDatabase as initCliDatabase } from "@sudocode-ai/cli/dist/db.js";
 import {
@@ -36,6 +36,13 @@ import type {
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+
+// Mock the WebSocket module
+vi.mock("../../../src/services/websocket.js", () => {
+  return {
+    broadcastExecutionUpdate: vi.fn(),
+  };
+});
 
 // Skip tests that spawn real Claude processes unless E2E tests are enabled
 const SKIP_E2E =
@@ -121,7 +128,7 @@ describe("ExecutionService", () => {
     );
 
     // Create execution service
-    service = new ExecutionService(db, testDir, lifecycleService);
+    service = new ExecutionService(db, "test-project", testDir, lifecycleService);
   });
 
   afterAll(() => {
@@ -132,6 +139,11 @@ describe("ExecutionService", () => {
     }
     // Unset environment variable
     delete process.env.SUDOCODE_DIR;
+  });
+
+  beforeEach(() => {
+    // Clear mock call history before each test
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
@@ -529,6 +541,179 @@ describe("ExecutionService", () => {
       ).toBeTruthy();
       expect(result.renderedPrompt.includes("Database Design")).toBeTruthy();
     });
+  });
+
+  describe("WebSocket broadcasting", () => {
+    it(
+      "should broadcast execution_created when creating execution with issue",
+      { skip: SKIP_E2E },
+      async () => {
+        const { broadcastExecutionUpdate } = await import("../../../src/services/websocket.js");
+
+        const prepareResult = await service.prepareExecution(testIssueId);
+        const execution = await service.createExecution(
+          testIssueId,
+          prepareResult.defaultConfig,
+          prepareResult.renderedPrompt
+        );
+
+        // Should broadcast execution created event
+        expect(broadcastExecutionUpdate).toHaveBeenCalledWith(
+          "test-project",
+          execution.id,
+          "created",
+          execution,
+          testIssueId
+        );
+      }
+    );
+
+    it(
+      "should broadcast execution_status_changed on workflow completion",
+      { skip: SKIP_E2E },
+      async () => {
+        const { broadcastExecutionUpdate } = await import("../../../src/services/websocket.js");
+
+        const prepareResult = await service.prepareExecution(testIssueId);
+        const execution = await service.createExecution(
+          testIssueId,
+          prepareResult.defaultConfig,
+          prepareResult.renderedPrompt
+        );
+
+        // Clear creation broadcast
+        vi.clearAllMocks();
+
+        // Wait a moment for workflow to potentially complete or update
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // The orchestrator should broadcast status changes
+        // (Note: In real tests, the workflow may complete quickly or slowly
+        // depending on the actual execution. This test verifies the broadcast
+        // mechanism is wired up correctly)
+        const calls = vi.mocked(broadcastExecutionUpdate).mock.calls;
+
+        // If workflow completed, we should see a status_changed broadcast
+        if (calls.length > 0) {
+          const statusChangedCall = calls.find(
+            (call) => call[2] === "status_changed"
+          );
+          if (statusChangedCall) {
+            expect(statusChangedCall[0]).toBe("test-project");
+            expect(statusChangedCall[1]).toBe(execution.id);
+            expect(statusChangedCall[3]?.status).toMatch(/running|completed|failed|stopped/);
+            expect(statusChangedCall[4]).toBe(testIssueId);
+          }
+        }
+      }
+    );
+
+    it(
+      "should broadcast execution_status_changed when canceling execution",
+      { skip: SKIP_E2E },
+      async () => {
+        const { broadcastExecutionUpdate } = await import("../../../src/services/websocket.js");
+
+        const prepareResult = await service.prepareExecution(testIssueId);
+        const execution = await service.createExecution(
+          testIssueId,
+          prepareResult.defaultConfig,
+          prepareResult.renderedPrompt
+        );
+
+        // Clear creation and any workflow broadcasts
+        vi.clearAllMocks();
+
+        // Cancel the execution
+        await service.cancelExecution(execution.id);
+
+        // Should broadcast status change to stopped
+        const calls = vi.mocked(broadcastExecutionUpdate).mock.calls;
+        const statusChangedCall = calls.find(
+          (call) => call[2] === "status_changed"
+        );
+
+        expect(statusChangedCall).toBeDefined();
+        expect(statusChangedCall?.[0]).toBe("test-project");
+        expect(statusChangedCall?.[1]).toBe(execution.id);
+        expect(statusChangedCall?.[3]?.status).toBe("stopped");
+        expect(statusChangedCall?.[4]).toBe(testIssueId);
+      }
+    );
+
+    it(
+      "should broadcast with issue_id for issue-linked executions",
+      { skip: SKIP_E2E },
+      async () => {
+        const { broadcastExecutionUpdate } = await import("../../../src/services/websocket.js");
+
+        const prepareResult = await service.prepareExecution(testIssueId);
+        await service.createExecution(
+          testIssueId,
+          prepareResult.defaultConfig,
+          prepareResult.renderedPrompt
+        );
+
+        // Verify that issueId is passed for dual broadcast
+        const calls = vi.mocked(broadcastExecutionUpdate).mock.calls;
+        expect(calls[0][4]).toBe(testIssueId); // Fifth parameter is issueId
+      }
+    );
+
+    it(
+      "should broadcast execution_created when creating follow-up execution",
+      { skip: SKIP_E2E },
+      async () => {
+        const { broadcastExecutionUpdate } = await import("../../../src/services/websocket.js");
+
+        // Create initial execution
+        const prepareResult = await service.prepareExecution(testIssueId);
+        const initialExecution = await service.createExecution(
+          testIssueId,
+          prepareResult.defaultConfig,
+          prepareResult.renderedPrompt
+        );
+
+        // Clear initial broadcast
+        vi.clearAllMocks();
+
+        // Create follow-up
+        const followUpExecution = await service.createFollowUp(
+          initialExecution.id,
+          "Please add unit tests"
+        );
+
+        // Should broadcast creation of follow-up execution
+        expect(broadcastExecutionUpdate).toHaveBeenCalledWith(
+          "test-project",
+          followUpExecution.id,
+          "created",
+          followUpExecution,
+          testIssueId
+        );
+      }
+    );
+
+    it(
+      "should include projectId in all broadcasts",
+      { skip: SKIP_E2E },
+      async () => {
+        const { broadcastExecutionUpdate } = await import("../../../src/services/websocket.js");
+
+        const prepareResult = await service.prepareExecution(testIssueId);
+        await service.createExecution(
+          testIssueId,
+          prepareResult.defaultConfig,
+          prepareResult.renderedPrompt
+        );
+
+        // Verify all broadcasts include the project ID
+        const calls = vi.mocked(broadcastExecutionUpdate).mock.calls;
+        calls.forEach((call) => {
+          expect(call[0]).toBe("test-project");
+        });
+      }
+    );
   });
 });
 

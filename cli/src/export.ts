@@ -80,11 +80,11 @@ export function issueToJSONL(db: Database.Database, issue: Issue): IssueJSONL {
   const tags = getTags(db, issue.id, "issue");
 
   // Get feedback provided by this issue
-  const feedbackList = listFeedback(db, { issue_id: issue.id });
+  const feedbackList = listFeedback(db, { from_id: issue.id });
   const feedbackJSONL: FeedbackJSONL[] = feedbackList.map((feedback) => ({
     id: feedback.id,
-    issue_id: feedback.issue_id,
-    spec_id: feedback.spec_id,
+    from_id: feedback.from_id,
+    to_id: feedback.to_id,
     feedback_type: feedback.feedback_type,
     content: feedback.content,
     agent: feedback.agent,

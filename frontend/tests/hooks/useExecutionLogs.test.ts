@@ -8,15 +8,27 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 import { useExecutionLogs } from '@/hooks/useExecutionLogs'
 import * as claudeToAgUi from '../../../server/src/execution/output/claude-to-ag-ui.js'
+import { AxiosError } from 'axios'
 
 // Mock the parseExecutionLogs function
 vi.mock('../../../server/src/execution/output/claude-to-ag-ui.js', () => ({
   parseExecutionLogs: vi.fn(),
 }))
 
-// Mock fetch globally
-const mockFetch = vi.fn()
-global.fetch = mockFetch as any
+// Mock the api module
+vi.mock('@/lib/api', () => {
+  const mockApiGet = vi.fn()
+  return {
+    default: {
+      get: mockApiGet,
+    },
+    mockApiGet, // Export for test access
+  }
+})
+
+// Get the mocked api.get function
+import api from '@/lib/api'
+const mockApiGet = (api as any).get
 
 describe('useExecutionLogs', () => {
   beforeEach(() => {
@@ -29,27 +41,21 @@ describe('useExecutionLogs', () => {
 
   describe('Basic Functionality', () => {
     it('should fetch logs on mount', async () => {
-      const mockResponse = {
-        success: true,
-        data: {
-          executionId: 'exec-123',
-          logs: ['{"type":"assistant","message":{}}'],
-          metadata: {
-            lineCount: 1,
-            byteSize: 100,
-            createdAt: '2025-01-01T00:00:00Z',
-            updatedAt: '2025-01-01T00:00:00Z',
-          },
+      // Mock response data (after axios interceptor unwrapping)
+      const mockData = {
+        executionId: 'exec-123',
+        logs: ['{"type":"assistant","message":{}}'],
+        metadata: {
+          lineCount: 1,
+          byteSize: 100,
+          createdAt: '2025-01-01T00:00:00Z',
+          updatedAt: '2025-01-01T00:00:00Z',
         },
       }
 
       const mockEvents = [{ type: 'CUSTOM', timestamp: Date.now() }]
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => mockResponse,
-      })
+      mockApiGet.mockResolvedValueOnce(mockData)
 
       vi.mocked(claudeToAgUi.parseExecutionLogs).mockResolvedValueOnce(mockEvents as any)
 
@@ -65,8 +71,8 @@ describe('useExecutionLogs', () => {
         expect(result.current.loading).toBe(false)
       })
 
-      // Verify fetch was called correctly
-      expect(mockFetch).toHaveBeenCalledWith('/api/executions/exec-123/logs', {
+      // Verify api.get was called correctly
+      expect(mockApiGet).toHaveBeenCalledWith('/executions/exec-123/logs', {
         signal: expect.any(AbortSignal),
       })
 
@@ -77,7 +83,7 @@ describe('useExecutionLogs', () => {
 
       // Verify state is updated
       expect(result.current.events).toEqual(mockEvents)
-      expect(result.current.metadata).toEqual(mockResponse.data.metadata)
+      expect(result.current.metadata).toEqual(mockData.metadata)
       expect(result.current.error).toBeNull()
     })
 
@@ -92,16 +98,10 @@ describe('useExecutionLogs', () => {
         { type: 'CUSTOM', name: 'USAGE_UPDATE', value: { inputTokens: 10, outputTokens: 5 } },
       ]
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          success: true,
-          data: {
-            executionId: 'exec-123',
-            logs: mockLogs,
-            metadata: { lineCount: 2, byteSize: 200, createdAt: '', updatedAt: '' },
-          },
-        }),
+      mockApiGet.mockResolvedValueOnce({
+        executionId: 'exec-123',
+        logs: mockLogs,
+        metadata: { lineCount: 2, byteSize: 200, createdAt: '', updatedAt: '' },
       })
 
       vi.mocked(claudeToAgUi.parseExecutionLogs).mockResolvedValueOnce(mockEvents as any)
@@ -115,16 +115,10 @@ describe('useExecutionLogs', () => {
     })
 
     it('should handle empty logs', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          success: true,
-          data: {
-            executionId: 'exec-123',
-            logs: [],
-            metadata: { lineCount: 0, byteSize: 0, createdAt: '', updatedAt: '' },
-          },
-        }),
+      mockApiGet.mockResolvedValueOnce({
+        executionId: 'exec-123',
+        logs: [],
+        metadata: { lineCount: 0, byteSize: 0, createdAt: '', updatedAt: '' },
       })
 
       vi.mocked(claudeToAgUi.parseExecutionLogs).mockResolvedValueOnce([])
@@ -148,16 +142,10 @@ describe('useExecutionLogs', () => {
         timestamp: Date.now() + i,
       }))
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          success: true,
-          data: {
-            executionId: 'exec-123',
-            logs: largeLogs,
-            metadata: { lineCount: 1000, byteSize: 50000, createdAt: '', updatedAt: '' },
-          },
-        }),
+      mockApiGet.mockResolvedValueOnce({
+        executionId: 'exec-123',
+        logs: largeLogs,
+        metadata: { lineCount: 1000, byteSize: 50000, createdAt: '', updatedAt: '' },
       })
 
       vi.mocked(claudeToAgUi.parseExecutionLogs).mockResolvedValueOnce(largeEvents as any)
@@ -173,60 +161,63 @@ describe('useExecutionLogs', () => {
 
   describe('Error Handling', () => {
     it('should handle 404 errors', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
+      const axiosError = new AxiosError('Request failed with status code 404')
+      axiosError.response = {
         status: 404,
         statusText: 'Not Found',
-      })
+        data: {},
+        headers: {},
+        config: {} as any,
+      }
+      mockApiGet.mockRejectedValueOnce(axiosError)
 
       const { result } = renderHook(() => useExecutionLogs('exec-404'))
 
       await waitFor(() => expect(result.current.loading).toBe(false))
 
       expect(result.current.error).not.toBeNull()
-      expect(result.current.error?.message).toContain('Execution not found')
+      expect(result.current.error?.message).toContain('404')
       expect(result.current.events).toEqual([])
       expect(result.current.metadata).toBeNull()
     })
 
     it('should handle 500 errors', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
+      const axiosError = new AxiosError('Request failed with status code 500')
+      axiosError.response = {
         status: 500,
         statusText: 'Internal Server Error',
-      })
+        data: {},
+        headers: {},
+        config: {} as any,
+      }
+      mockApiGet.mockRejectedValueOnce(axiosError)
 
       const { result } = renderHook(() => useExecutionLogs('exec-500'))
 
       await waitFor(() => expect(result.current.loading).toBe(false))
 
       expect(result.current.error).not.toBeNull()
-      expect(result.current.error?.message).toContain('Failed to fetch execution logs')
       expect(result.current.error?.message).toContain('500')
     })
 
     it('should handle network errors', async () => {
-      mockFetch.mockRejectedValueOnce(new Error('Network error'))
+      const networkError = new AxiosError('Network Error')
+      networkError.code = 'ERR_NETWORK'
+      mockApiGet.mockRejectedValueOnce(networkError)
 
       const { result } = renderHook(() => useExecutionLogs('exec-net-err'))
 
       await waitFor(() => expect(result.current.loading).toBe(false))
 
       expect(result.current.error).not.toBeNull()
-      expect(result.current.error?.message).toBe('Network error')
+      expect(result.current.error?.message).toContain('Network')
     })
 
     it('should handle parse errors', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          success: true,
-          data: {
-            executionId: 'exec-123',
-            logs: ['invalid json'],
-            metadata: { lineCount: 1, byteSize: 12, createdAt: '', updatedAt: '' },
-          },
-        }),
+      mockApiGet.mockResolvedValueOnce({
+        executionId: 'exec-123',
+        logs: ['invalid json'],
+        metadata: { lineCount: 1, byteSize: 12, createdAt: '', updatedAt: '' },
       })
 
       vi.mocked(claudeToAgUi.parseExecutionLogs).mockRejectedValueOnce(
@@ -242,52 +233,41 @@ describe('useExecutionLogs', () => {
     })
 
     it('should handle API error responses', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          success: false,
-          message: 'Database connection failed',
-        }),
-      })
+      const axiosError = new AxiosError('Database connection failed')
+      axiosError.response = {
+        status: 400,
+        statusText: 'Bad Request',
+        data: { message: 'Database connection failed' },
+        headers: {},
+        config: {} as any,
+      }
+      mockApiGet.mockRejectedValueOnce(axiosError)
 
       const { result } = renderHook(() => useExecutionLogs('exec-api-err'))
 
       await waitFor(() => expect(result.current.loading).toBe(false))
 
       expect(result.current.error).not.toBeNull()
-      expect(result.current.error?.message).toBe('Database connection failed')
     })
   })
 
   describe('Execution ID Changes', () => {
     it('should re-fetch when executionId changes', async () => {
-      const mockResponse1 = {
-        success: true,
-        data: {
-          executionId: 'exec-1',
-          logs: ['log1'],
-          metadata: { lineCount: 1, byteSize: 10, createdAt: '', updatedAt: '' },
-        },
+      const mockData1 = {
+        executionId: 'exec-1',
+        logs: ['log1'],
+        metadata: { lineCount: 1, byteSize: 10, createdAt: '', updatedAt: '' },
       }
 
-      const mockResponse2 = {
-        success: true,
-        data: {
-          executionId: 'exec-2',
-          logs: ['log2'],
-          metadata: { lineCount: 1, byteSize: 10, createdAt: '', updatedAt: '' },
-        },
+      const mockData2 = {
+        executionId: 'exec-2',
+        logs: ['log2'],
+        metadata: { lineCount: 1, byteSize: 10, createdAt: '', updatedAt: '' },
       }
 
-      mockFetch
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => mockResponse1,
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => mockResponse2,
-        })
+      mockApiGet
+        .mockResolvedValueOnce(mockData1)
+        .mockResolvedValueOnce(mockData2)
 
       vi.mocked(claudeToAgUi.parseExecutionLogs)
         .mockResolvedValueOnce([{ type: 'EVENT1' }] as any)
@@ -308,15 +288,15 @@ describe('useExecutionLogs', () => {
 
       await waitFor(() => expect(result.current.loading).toBe(false))
 
-      expect(mockFetch).toHaveBeenCalledTimes(2)
+      expect(mockApiGet).toHaveBeenCalledTimes(2)
       expect(result.current.events).toEqual([{ type: 'EVENT2' }])
     })
 
     it('should abort previous request on ID change', async () => {
       let abortedSignal: AbortSignal | null = null
 
-      mockFetch.mockImplementation((_url, options) => {
-        abortedSignal = (options as any).signal
+      mockApiGet.mockImplementation((_url: string, options?: any) => {
+        abortedSignal = options?.signal
         return new Promise(() => {}) // Never resolves
       })
 
@@ -339,17 +319,11 @@ describe('useExecutionLogs', () => {
     })
 
     it('should reset state when ID changes', async () => {
-      mockFetch
+      mockApiGet
         .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({
-            success: true,
-            data: {
-              executionId: 'exec-1',
-              logs: ['log1'],
-              metadata: { lineCount: 1, byteSize: 10, createdAt: '', updatedAt: '' },
-            },
-          }),
+          executionId: 'exec-1',
+          logs: ['log1'],
+          metadata: { lineCount: 1, byteSize: 10, createdAt: '', updatedAt: '' },
         })
         .mockImplementation(
           () => new Promise(() => {}) // Second request never resolves
@@ -379,16 +353,10 @@ describe('useExecutionLogs', () => {
     it('should set loading state correctly', async () => {
       const loadingStates: boolean[] = []
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          success: true,
-          data: {
-            executionId: 'exec-123',
-            logs: [],
-            metadata: { lineCount: 0, byteSize: 0, createdAt: '', updatedAt: '' },
-          },
-        }),
+      mockApiGet.mockResolvedValueOnce({
+        executionId: 'exec-123',
+        logs: [],
+        metadata: { lineCount: 0, byteSize: 0, createdAt: '', updatedAt: '' },
       })
 
       vi.mocked(claudeToAgUi.parseExecutionLogs).mockResolvedValueOnce([])
@@ -407,7 +375,7 @@ describe('useExecutionLogs', () => {
     })
 
     it('should set loading to false even on error', async () => {
-      mockFetch.mockRejectedValueOnce(new Error('Network error'))
+      mockApiGet.mockRejectedValueOnce(new Error('Network error'))
 
       const { result } = renderHook(() => useExecutionLogs('exec-123'))
 
@@ -424,8 +392,8 @@ describe('useExecutionLogs', () => {
     it('should abort fetch on unmount', async () => {
       let abortedSignal: AbortSignal | null = null
 
-      mockFetch.mockImplementation((_url, options) => {
-        abortedSignal = (options as any).signal
+      mockApiGet.mockImplementation((_url: string, options?: any) => {
+        abortedSignal = options?.signal
         return new Promise(() => {}) // Never resolves
       })
 
@@ -445,20 +413,14 @@ describe('useExecutionLogs', () => {
     })
 
     it('should not update state after abort', async () => {
-      mockFetch.mockImplementation(
+      mockApiGet.mockImplementation(
         () =>
           new Promise((resolve) => {
             setTimeout(() => {
               resolve({
-                ok: true,
-                json: async () => ({
-                  success: true,
-                  data: {
-                    executionId: 'exec-123',
-                    logs: [],
-                    metadata: { lineCount: 0, byteSize: 0, createdAt: '', updatedAt: '' },
-                  },
-                }),
+                executionId: 'exec-123',
+                logs: [],
+                metadata: { lineCount: 0, byteSize: 0, createdAt: '', updatedAt: '' },
               })
             }, 100)
           })
@@ -489,16 +451,10 @@ describe('useExecutionLogs', () => {
         updatedAt: '2025-01-01T11:00:00Z',
       }
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          success: true,
-          data: {
-            executionId: 'exec-123',
-            logs: [],
-            metadata: mockMetadata,
-          },
-        }),
+      mockApiGet.mockResolvedValueOnce({
+        executionId: 'exec-123',
+        logs: [],
+        metadata: mockMetadata,
       })
 
       vi.mocked(claudeToAgUi.parseExecutionLogs).mockResolvedValueOnce([])
@@ -511,7 +467,7 @@ describe('useExecutionLogs', () => {
     })
 
     it('should set metadata to null on error', async () => {
-      mockFetch.mockRejectedValueOnce(new Error('Network error'))
+      mockApiGet.mockRejectedValueOnce(new Error('Network error'))
 
       const { result } = renderHook(() => useExecutionLogs('exec-123'))
 

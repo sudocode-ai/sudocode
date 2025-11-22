@@ -100,7 +100,7 @@ describe("Server Commands", () => {
       expect(allLogs).not.toContain("Update available");
     });
 
-    it("should use npx when server is installed", async () => {
+    it("should use binary when available", async () => {
       const getUpdateNotificationMock = vi.mocked(
         updateChecker.getUpdateNotification
       );
@@ -109,18 +109,61 @@ describe("Server Commands", () => {
       const spawnMock = vi.mocked(childProcess.spawn);
       const execSyncMock = vi.mocked(childProcess.execSync);
 
-      // Mock server as installed
+      // Mock binary as available (first check succeeds)
       execSyncMock.mockReturnValue("0.1.0" as any);
 
       await handleServerStart(mockContext, { detach: true, port: "3001" });
 
-      // Should check if server is installed
+      // Should check if binary is available
+      expect(execSyncMock).toHaveBeenCalledWith(
+        "which sudocode-server",
+        expect.objectContaining({ stdio: "ignore", timeout: 5000 })
+      );
+
+      // Should spawn binary directly
+      expect(spawnMock).toHaveBeenCalledWith(
+        "sudocode-server",
+        [],
+        expect.objectContaining({
+          detached: true,
+          stdio: "ignore",
+          env: expect.objectContaining({
+            SUDOCODE_DIR: "/test/.sudocode",
+            PORT: "3001",
+          }),
+        })
+      );
+    });
+
+    it("should fallback to npx when binary not available but package is", async () => {
+      const getUpdateNotificationMock = vi.mocked(
+        updateChecker.getUpdateNotification
+      );
+      getUpdateNotificationMock.mockResolvedValue(null);
+
+      const spawnMock = vi.mocked(childProcess.spawn);
+      const execSyncMock = vi.mocked(childProcess.execSync);
+
+      // Mock binary not available (first check fails), but package available (second check succeeds)
+      execSyncMock
+        .mockImplementationOnce(() => {
+          throw new Error("Binary not found");
+        })
+        .mockReturnValueOnce("0.1.0" as any);
+
+      await handleServerStart(mockContext, { detach: true, port: "3001" });
+
+      // Should check for binary first, then package
+      expect(execSyncMock).toHaveBeenCalledWith(
+        "which sudocode-server",
+        expect.objectContaining({ stdio: "ignore" })
+      );
       expect(execSyncMock).toHaveBeenCalledWith(
         "npx --no @sudocode-ai/local-server --version",
         expect.objectContaining({ stdio: "ignore" })
       );
 
-      // Should spawn npx
+      // Should spawn npx as fallback
       expect(spawnMock).toHaveBeenCalledWith(
         "npx",
         ["--no", "@sudocode-ai/local-server"],
@@ -148,9 +191,9 @@ describe("Server Commands", () => {
           throw new Error("process.exit called");
         });
 
-      // Mock server as not installed
+      // Mock both binary and package as not available
       execSyncMock.mockImplementation(() => {
-        throw new Error("Package not found");
+        throw new Error("Not found");
       });
 
       await expect(
@@ -158,13 +201,13 @@ describe("Server Commands", () => {
       ).rejects.toThrow("process.exit called");
 
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("@sudocode-ai/local-server is not installed")
+        expect.stringContaining("sudocode server is not available")
       );
 
       processExitSpy.mockRestore();
     });
 
-    it("should use default port if not specified", async () => {
+    it("should not set PORT if not specified (let server scan for available ports)", async () => {
       const getUpdateNotificationMock = vi.mocked(
         updateChecker.getUpdateNotification
       );
@@ -178,7 +221,7 @@ describe("Server Commands", () => {
 
       const call = spawnMock.mock.calls[0];
       const options = call?.[2] as any;
-      expect(options?.env?.PORT).toBe("3000");
+      expect(options?.env?.PORT).toBeUndefined();
     });
 
     it("should pass SUDOCODE_DIR environment variable", async () => {

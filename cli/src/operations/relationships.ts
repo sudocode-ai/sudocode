@@ -4,6 +4,7 @@
 
 import type Database from "better-sqlite3";
 import type { Relationship, EntityType, RelationshipType } from "../types.js";
+import { isValidRelationshipType, getValidRelationshipTypes } from "../validation.js";
 import { getIssue } from "./issues.js";
 
 export interface CreateRelationshipInput {
@@ -22,6 +23,13 @@ export function addRelationship(
   db: Database.Database,
   input: CreateRelationshipInput
 ): Relationship {
+  // Validate relationship type
+  if (!isValidRelationshipType(input.relationship_type)) {
+    throw new Error(
+      `Invalid relationship type: ${input.relationship_type}. Valid types: ${getValidRelationshipTypes().join(", ")}`
+    );
+  }
+
   // Check if from_id exists and get from_uuid
   const fromTable = input.from_type === "spec" ? "specs" : "issues";
   const fromEntity = db

@@ -1155,8 +1155,8 @@ describe("Import Operations", () => {
 
       createFeedback(db, {
         id: "FB-001",
-        issue_id: "ISSUE-001",
-        spec_id: "SPEC-001",
+        from_id: "ISSUE-001",
+        to_id: "SPEC-001",
         feedback_type: "comment",
         content: "Test feedback",
         agent: "test-agent",
@@ -1226,8 +1226,8 @@ describe("Import Operations", () => {
 
       createFeedback(db, {
         id: "FB-002",
-        issue_id: "ISSUE-002",
-        spec_id: "SPEC-002",
+        from_id: "ISSUE-002",
+        to_id: "SPEC-002",
         feedback_type: "comment",
         content: "Test feedback 2",
         agent: "test-agent",
@@ -1247,6 +1247,167 @@ describe("Import Operations", () => {
       expect(feedbackAfterReimport).toBeTruthy();
       expect(feedbackAfterReimport?.created_at).toBe(originalTimestamps.created_at);
       expect(feedbackAfterReimport?.updated_at).toBe(originalTimestamps.updated_at);
+    });
+  });
+
+  describe("Legacy JSONL backward compatibility", () => {
+    it("should import feedback from legacy JSONL format (issue_id/spec_id)", async () => {
+      const { createSpec } = await import("../../src/operations/specs.js");
+      const { createIssue } = await import("../../src/operations/issues.js");
+      const { importFromJSONL } = await import("../../src/import.js");
+      const { exportToJSONL } = await import("../../src/export.js");
+      const { listFeedback } = await import("../../src/operations/feedback.js");
+      const fs = await import("fs");
+      const path = await import("path");
+
+      // Create test entities
+      createSpec(db, {
+        id: "SPEC-LEGACY",
+        uuid: "spec-uuid-legacy",
+        title: "Legacy Test Spec",
+        file_path: "specs/legacy.md",
+        content: "Legacy spec content",
+        priority: 2,
+      });
+
+      createIssue(db, {
+        id: "ISSUE-LEGACY",
+        uuid: "issue-uuid-legacy",
+        title: "Legacy Test Issue",
+        content: "Legacy issue content",
+        status: "open",
+        priority: 2,
+      });
+
+      // Export first to create the JSONL files
+      await exportToJSONL(db, { outputDir: TEST_DIR });
+
+      // Create a JSONL file with legacy format (issue_id/spec_id instead of from_id/to_id)
+      const legacyIssueData = {
+        id: "ISSUE-LEGACY",
+        uuid: "issue-uuid-legacy",
+        title: "Legacy Test Issue",
+        content: "Legacy issue content",
+        status: "open",
+        priority: 2,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        relationships: [],
+        tags: [],
+        feedback: [
+          {
+            id: "FB-LEGACY",
+            issue_id: "ISSUE-LEGACY", // Legacy field name
+            spec_id: "SPEC-LEGACY",   // Legacy field name
+            feedback_type: "comment",
+            content: "Legacy feedback content",
+            agent: "legacy-agent",
+            dismissed: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        ],
+      };
+
+      const issuesJsonlPath = path.join(TEST_DIR, "issues.jsonl");
+      fs.writeFileSync(issuesJsonlPath, JSON.stringify(legacyIssueData) + "\n");
+
+      // Import the legacy JSONL
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      // Verify feedback was imported correctly with new field names
+      const importedFeedback = listFeedback(db, { from_id: "ISSUE-LEGACY" });
+      expect(importedFeedback).toHaveLength(1);
+      expect(importedFeedback[0].id).toBe("FB-LEGACY");
+      expect(importedFeedback[0].from_id).toBe("ISSUE-LEGACY");
+      expect(importedFeedback[0].to_id).toBe("SPEC-LEGACY");
+      expect(importedFeedback[0].content).toBe("Legacy feedback content");
+    });
+
+    it("should update feedback references when issue IDs are renumbered during collision resolution", async () => {
+      const { createIssue } = await import("../../src/operations/issues.js");
+      const { createSpec } = await import("../../src/operations/specs.js");
+      const { exportToJSONL } = await import("../../src/export.js");
+      const { importFromJSONL } = await import("../../src/import.js");
+      const { listFeedback } = await import("../../src/operations/feedback.js");
+      const fs = await import("fs");
+      const path = await import("path");
+
+      // Create an issue in the database
+      createIssue(db, {
+        id: "ISSUE-COLLISION",
+        uuid: "existing-uuid",
+        title: "Existing Issue",
+        content: "Existing content",
+        status: "open",
+        priority: 2,
+      });
+
+      createSpec(db, {
+        id: "SPEC-TARGET",
+        uuid: "spec-uuid-target",
+        title: "Target Spec",
+        file_path: "specs/target.md",
+        content: "Spec content",
+        priority: 2,
+      });
+
+      // Export current state
+      await exportToJSONL(db, { outputDir: TEST_DIR });
+
+      // Create a JSONL file with a different issue that has the same ID but different UUID
+      // This will trigger collision resolution and ID renumbering
+      const collidingIssueData = {
+        id: "ISSUE-COLLISION", // Same ID
+        uuid: "new-uuid", // Different UUID - collision!
+        title: "New Colliding Issue",
+        content: "New content",
+        status: "open",
+        priority: 2,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        relationships: [],
+        tags: [],
+        feedback: [
+          {
+            id: "FB-COLLISION-TEST",
+            from_id: "ISSUE-COLLISION", // References the colliding issue
+            to_id: "SPEC-TARGET",
+            feedback_type: "comment",
+            content: "Feedback from colliding issue",
+            agent: "test-agent",
+            dismissed: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        ],
+      };
+
+      const issuesJsonlPath = path.join(TEST_DIR, "issues.jsonl");
+      const existingContent = fs.readFileSync(issuesJsonlPath, "utf8");
+      fs.writeFileSync(
+        issuesJsonlPath,
+        existingContent + JSON.stringify(collidingIssueData) + "\n"
+      );
+
+      // Import - should resolve collision and update feedback reference
+      const result = await importFromJSONL(db, { inputDir: TEST_DIR, resolveCollisions: true });
+
+      // Verify collision was detected and resolved
+      expect(result.collisions.length).toBeGreaterThan(0);
+      const collision = result.collisions.find(c => c.uuid === "new-uuid");
+      expect(collision).toBeTruthy();
+      expect(collision?.resolution).toBe("renumber");
+      expect(collision?.newId).toBeTruthy();
+
+      // Verify feedback now references the NEW issue ID
+      if (collision?.newId) {
+        const feedbackForNewIssue = listFeedback(db, { from_id: collision.newId });
+        expect(feedbackForNewIssue).toHaveLength(1);
+        expect(feedbackForNewIssue[0].id).toBe("FB-COLLISION-TEST");
+        expect(feedbackForNewIssue[0].from_id).toBe(collision.newId); // Updated to new ID!
+        expect(feedbackForNewIssue[0].to_id).toBe("SPEC-TARGET");
+      }
     });
   });
 });

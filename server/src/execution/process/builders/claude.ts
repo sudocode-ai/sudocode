@@ -7,7 +7,7 @@
  * @module execution/process/builders/claude
  */
 
-import type { ProcessConfig } from '../types.js';
+import type { ProcessConfig } from 'agent-execution-engine';
 
 /**
  * Configuration options specific to Claude Code CLI

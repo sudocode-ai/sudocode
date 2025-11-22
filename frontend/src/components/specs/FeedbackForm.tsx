@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -9,6 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Check, ChevronsUpDown } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import type { FeedbackType, FeedbackAnchor, Issue } from '@/types/api'
 
 interface FeedbackFormProps {
@@ -40,9 +44,27 @@ export function FeedbackForm({
   const [type, setType] = useState<FeedbackType>('comment')
   const [content, setContent] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
 
   // Use either the new or legacy issue ID
   const selectedIssueId = propSelectedIssueId || issueId
+
+  // Filter issues based on search term
+  const filteredIssues = useMemo(() => {
+    if (!searchTerm.trim()) {
+      return issues
+    }
+    const search = searchTerm.toLowerCase()
+    return issues.filter(
+      (issue) =>
+        issue.id.toLowerCase().includes(search) ||
+        issue.title.toLowerCase().includes(search)
+    )
+  }, [issues, searchTerm])
+
+  // Find the selected issue to display its title
+  const selectedIssue = issues.find((i) => i.id === selectedIssueId)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -96,25 +118,84 @@ export function FeedbackForm({
 
       {/* Issue selector */}
       {issues.length > 0 && onIssueSelect && (
-        <div>
+        <div className="space-y-2">
           <Label htmlFor="issue-select">Issue</Label>
-          <Select value={selectedIssueId} onValueChange={onIssueSelect}>
-            <SelectTrigger id="issue-select">
-              <SelectValue placeholder="Select an issue..." />
-            </SelectTrigger>
-            <SelectContent>
-              {issues.map((issue) => (
-                <SelectItem key={issue.id} value={issue.id}>
-                  {issue.id}: {issue.title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                id="issue-select"
+                variant="outline"
+                role="combobox"
+                aria-expanded={open}
+                className="w-full justify-between font-normal"
+                disabled={isSubmitting}
+              >
+                {selectedIssue ? (
+                  <span className="truncate">
+                    <span className="font-medium">{selectedIssue.id}</span>
+                    <span className="text-muted-foreground"> - {selectedIssue.title}</span>
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">Search issues...</span>
+                )}
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+              <div className="flex flex-col">
+                <div className="border-b p-2">
+                  <Input
+                    placeholder="Search issues..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="h-8"
+                    autoFocus
+                  />
+                </div>
+                <div className="max-h-60 overflow-auto">
+                  {filteredIssues.length === 0 ? (
+                    <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                      No issues found
+                    </div>
+                  ) : (
+                    filteredIssues.map((issue) => (
+                      <button
+                        key={issue.id}
+                        type="button"
+                        className={cn(
+                          'flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground',
+                          selectedIssueId === issue.id && 'bg-accent text-accent-foreground'
+                        )}
+                        onClick={() => {
+                          onIssueSelect(issue.id)
+                          setOpen(false)
+                          setSearchTerm('')
+                        }}
+                      >
+                        <Check
+                          className={cn(
+                            'mt-0.5 h-4 w-4 shrink-0',
+                            selectedIssueId === issue.id ? 'opacity-100' : 'opacity-0'
+                          )}
+                        />
+                        <div className="flex-1 overflow-hidden">
+                          <div className="font-medium">{issue.id}</div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {issue.title}
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       )}
 
       {/* Feedback type */}
-      <div>
+      <div className="space-y-2">
         <Label htmlFor="feedback-type">Type</Label>
         <Select value={type} onValueChange={(value) => setType(value as FeedbackType)}>
           <SelectTrigger id="feedback-type">
@@ -129,7 +210,7 @@ export function FeedbackForm({
       </div>
 
       {/* Feedback content */}
-      <div>
+      <div className="space-y-2">
         <Label htmlFor="feedback-content">Content</Label>
         <Textarea
           id="feedback-content"

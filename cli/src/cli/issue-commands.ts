@@ -2,6 +2,8 @@
  * CLI handlers for issue commands
  */
 
+import path from "path";
+import fs from "fs";
 import chalk from "chalk";
 import type Database from "better-sqlite3";
 import { generateIssueId } from "../id-generator.js";
@@ -20,6 +22,7 @@ import {
 import { getTags, setTags } from "../operations/tags.js";
 import { listFeedback } from "../operations/feedback.js";
 import { exportToJSONL } from "../export.js";
+import { syncJSONLToMarkdown } from "../sync.js";
 
 export interface CommandContext {
   db: Database.Database;
@@ -61,6 +64,12 @@ export async function handleIssueCreate(
     }
 
     await exportToJSONL(ctx.db, { outputDir: ctx.outputDir });
+
+    // Also update the markdown file to keep it in sync
+    const issuesDir = path.join(ctx.outputDir, "issues");
+    fs.mkdirSync(issuesDir, { recursive: true });
+    const mdPath = path.join(issuesDir, `${issueId}.md`);
+    await syncJSONLToMarkdown(ctx.db, issueId, 'issue', mdPath);
 
     if (ctx.jsonOutput) {
       console.log(
@@ -165,7 +174,7 @@ export async function handleIssueShow(
     const outgoing = getOutgoingRelationships(ctx.db, id, "issue");
     const incoming = getIncomingRelationships(ctx.db, id, "issue");
     const tags = getTags(ctx.db, id, "issue");
-    const feedback = listFeedback(ctx.db, { issue_id: id });
+    const feedback = listFeedback(ctx.db, { from_id: id });
 
     if (ctx.jsonOutput) {
       console.log(
@@ -248,7 +257,7 @@ export async function handleIssueShow(
                 : chalk.red;
 
           console.log(
-            `  ${chalk.cyan(fb.id)} → ${chalk.cyan(fb.spec_id)}`,
+            `  ${chalk.cyan(fb.id)} → ${chalk.cyan(fb.to_id)}`,
             statusColor(`[${fb.dismissed ? "dismissed" : "active"}]`),
             anchorStatusColor(`[${anchor.anchor_status}]`)
           );
@@ -280,6 +289,7 @@ export interface IssueUpdateOptions {
   assignee?: string;
   title?: string;
   description?: string;
+  parent?: string;
   archived?: string;
 }
 
@@ -295,6 +305,7 @@ export async function handleIssueUpdate(
     if (options.assignee) updates.assignee = options.assignee;
     if (options.title) updates.title = options.title;
     if (options.description) updates.content = options.description;
+    if (options.parent) updates.parent_id = options.parent;
     if (options.archived !== undefined) {
       updates.archived = options.archived === 'true';
     }
@@ -302,6 +313,12 @@ export async function handleIssueUpdate(
     const issue = updateIssue(ctx.db, id, updates);
 
     await exportToJSONL(ctx.db, { outputDir: ctx.outputDir });
+
+    // Also update the markdown file to keep it in sync
+    const issuesDir = path.join(ctx.outputDir, "issues");
+    fs.mkdirSync(issuesDir, { recursive: true });
+    const mdPath = path.join(issuesDir, `${id}.md`);
+    await syncJSONLToMarkdown(ctx.db, id, 'issue', mdPath);
 
     if (ctx.jsonOutput) {
       console.log(JSON.stringify(issue, null, 2));
@@ -354,6 +371,16 @@ export async function handleIssueClose(
     }
 
     await exportToJSONL(ctx.db, { outputDir: ctx.outputDir });
+
+    // Also update the markdown files to keep them in sync
+    const issuesDir = path.join(ctx.outputDir, "issues");
+    fs.mkdirSync(issuesDir, { recursive: true });
+    for (const result of results) {
+      if (result.success) {
+        const mdPath = path.join(issuesDir, `${result.id}.md`);
+        await syncJSONLToMarkdown(ctx.db, result.id, 'issue', mdPath);
+      }
+    }
 
     if (ctx.jsonOutput) {
       console.log(JSON.stringify(results, null, 2));

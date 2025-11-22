@@ -22,7 +22,7 @@
 
 import { describe, it, beforeEach, afterEach, expect, beforeAll } from 'vitest'
 import { spawn } from 'node:child_process';
-import { SimpleProcessManager } from '../../src/execution/process/simple-manager.js';
+import { SimpleProcessManager } from 'agent-execution-engine';
 import { ClaudeCodeOutputProcessor } from '../../src/execution/output/claude-code-output-processor.js';
 import { buildClaudeConfig } from '../../src/execution/process/builders/claude.js';
 

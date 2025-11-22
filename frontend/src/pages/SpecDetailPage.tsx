@@ -9,6 +9,7 @@ import { AlignedFeedbackPanel } from '@/components/specs/AlignedFeedbackPanel'
 import { AddFeedbackDialog } from '@/components/specs/AddFeedbackDialog'
 import { useFeedbackPositions } from '@/hooks/useFeedbackPositions'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
@@ -28,9 +29,15 @@ import {
   Signal,
   FileText,
   Code2,
+  GitBranch,
+  Trash2,
+  Copy,
+  Check,
 } from 'lucide-react'
 import type { IssueFeedback, Relationship, EntityType, RelationshipType } from '@/types/api'
 import { relationshipsApi } from '@/lib/api'
+import { DeleteSpecDialog } from '@/components/specs/DeleteSpecDialog'
+import { toast } from 'sonner'
 
 const PRIORITY_OPTIONS = [
   { value: '0', label: 'Critical (P0)' },
@@ -49,7 +56,7 @@ export default function SpecDetailPage() {
   const { spec, isLoading, isError } = useSpec(id || '')
   const { feedback } = useSpecFeedback(id || '')
   const { issues } = useIssues()
-  const { updateSpec, isUpdating, archiveSpec, unarchiveSpec } = useSpecs()
+  const { updateSpec, isUpdating, archiveSpec, unarchiveSpec, deleteSpec } = useSpecs()
   const { createFeedback, updateFeedback, deleteFeedback } = useFeedback(id || '')
 
   const [selectedLine, setSelectedLine] = useState<number | null>(null)
@@ -62,6 +69,9 @@ export default function SpecDetailPage() {
     const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY)
     return stored !== null ? JSON.parse(stored) : 'formatted'
   })
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [isCopied, setIsCopied] = useState(false)
 
   // Local state for editable fields
   const [title, setTitle] = useState('')
@@ -295,7 +305,7 @@ export default function SpecDetailPage() {
     }
 
     await createFeedback({
-      spec_id: id,
+      to_id: id,
       issue_id: data.issueId,
       feedback_type: data.type,
       content: data.content,
@@ -352,13 +362,43 @@ export default function SpecDetailPage() {
     }
   }
 
+  const handleDelete = async () => {
+    if (!id) return
+
+    setIsDeleting(true)
+    try {
+      await deleteSpec(id)
+      setShowDeleteDialog(false)
+      navigate('/specs')
+    } catch (error) {
+      console.error('Failed to delete spec:', error)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleCopyId = async () => {
+    if (!id) return
+    try {
+      await navigator.clipboard.writeText(id)
+      setIsCopied(true)
+      setTimeout(() => setIsCopied(false), 2000)
+      toast.success('ID copied to clipboard', {
+        duration: 2000,
+      })
+    } catch (error) {
+      console.error('Failed to copy ID:', error)
+      toast.error('Failed to copy ID')
+    }
+  }
+
   return (
     <div className="flex h-screen flex-col">
       {/* Header */}
       <div className="flex items-center justify-between border-b bg-background p-2 sm:p-4">
         <div className="flex items-center gap-2 sm:gap-4">
           <Button variant="ghost" size="sm" onClick={() => navigate('/specs')}>
-            ← <span className="hidden sm:inline">Back to Specs</span>
+            ← <span className="ml-1 hidden sm:inline">Back to Specs</span>
           </Button>
         </div>
         <div className="flex items-center gap-1 sm:gap-2">
@@ -433,6 +473,22 @@ export default function SpecDetailPage() {
               <span className="hidden sm:inline">Archive</span>
             </Button>
           )}
+
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowDeleteDialog(true)}
+                  disabled={isUpdating || isDeleting}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Delete spec</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
 
@@ -444,7 +500,45 @@ export default function SpecDetailPage() {
               {/* Spec ID and Title */}
               <div className="space-y-2 pb-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-sm text-muted-foreground">{spec.id}</span>
+                  <div className="flex items-center gap-2">
+                    <div className="group relative flex items-center gap-1">
+                      <Badge variant="spec" className="font-mono">
+                        {spec.id}
+                      </Badge>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={handleCopyId}
+                              className="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+                            >
+                              {isCopied ? (
+                                <Check className="h-3.5 w-3.5" />
+                              ) : (
+                                <Copy className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{isCopied ? 'Copied!' : 'Copy ID to Clipboard'}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    {spec.parent_id && (
+                      <>
+                        <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-sm text-muted-foreground">Parent: </span>
+                        <button onClick={() => navigate(`/specs/${spec.parent_id}`)}>
+                          <Badge variant="spec" className="cursor-pointer hover:opacity-80">
+                            {spec.parent_id}
+                          </Badge>
+                        </button>
+                      </>
+                    )}
+                  </div>
                   <div className="text-xs italic text-muted-foreground">
                     {isUpdating
                       ? 'Saving...'
@@ -553,6 +647,14 @@ export default function SpecDetailPage() {
           )}
         </div>
       </div>
+
+      <DeleteSpecDialog
+        spec={spec}
+        isOpen={showDeleteDialog}
+        onClose={() => setShowDeleteDialog(false)}
+        onConfirm={handleDelete}
+        isDeleting={isDeleting}
+      />
     </div>
   )
 }

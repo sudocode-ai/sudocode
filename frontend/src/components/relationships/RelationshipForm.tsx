@@ -2,7 +2,6 @@ import { useState } from 'react'
 import type { EntityType, RelationshipType } from '@/types/api'
 import { RELATIONSHIP_LABELS } from '@/lib/relationships'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -12,6 +11,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Card } from '@/components/ui/card'
+import { EntityCombobox } from '@/components/ui/entity-combobox'
+import { useIssues } from '@/hooks/useIssues'
+import { useSpecs } from '@/hooks/useSpecs'
 
 interface RelationshipFormProps {
   fromId?: string
@@ -31,7 +33,7 @@ const RELATIONSHIP_TYPES: RelationshipType[] = [
 ]
 
 export function RelationshipForm({
-  fromId: _fromId,
+  fromId,
   fromType: _fromType,
   onSubmit,
   onCancel,
@@ -41,6 +43,21 @@ export function RelationshipForm({
   const [toType, setToType] = useState<EntityType>('issue')
   const [relationshipType, setRelationshipType] = useState<RelationshipType>('related')
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Fetch all issues and specs for the dropdown
+  const { issues, isLoading: isLoadingIssues } = useIssues(false)
+  const { specs, isLoading: isLoadingSpecs } = useSpecs(false)
+
+  // Filter out the current entity from the list
+  const filteredIssues = issues.filter((issue) => issue.id !== fromId)
+  const filteredSpecs = specs.filter((spec) => spec.id !== fromId)
+
+  // Prepare entities for the combobox based on selected type
+  const entities = toType === 'issue'
+    ? filteredIssues.map((issue) => ({ id: issue.id, title: issue.title }))
+    : filteredSpecs.map((spec) => ({ id: spec.id, title: spec.title }))
+
+  const isLoadingEntities = toType === 'issue' ? isLoadingIssues : isLoadingSpecs
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -62,30 +79,28 @@ export function RelationshipForm({
   }
 
   const content = (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form
+      onSubmit={handleSubmit}
+      className="space-y-4"
+      onMouseDown={(e) => {
+        // Prevent clicks inside the form from bubbling up and closing parent panels
+        e.stopPropagation()
+      }}
+    >
       {/* Target Entity */}
-      <div className="space-y-2">
-        <Label htmlFor="target-id">Target Entity</Label>
-        <div className="flex gap-2">
-          <Select value={toType} onValueChange={(value) => setToType(value as EntityType)}>
-            <SelectTrigger className="w-[120px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="issue">Issue</SelectItem>
-              <SelectItem value="spec">Spec</SelectItem>
-            </SelectContent>
-          </Select>
-          <Input
-            id="target-id"
-            placeholder={toType === 'issue' ? 'i-x7k9' : 's-14sh'}
-            value={toId}
-            onChange={(e) => setToId(e.target.value)}
-            className="flex-1"
-            disabled={isSubmitting}
-          />
-        </div>
-      </div>
+      <EntityCombobox
+        entities={entities}
+        value={toId}
+        onChange={setToId}
+        entityType={toType}
+        onEntityTypeChange={setToType}
+        disabled={isSubmitting || isLoadingEntities}
+        placeholder={isLoadingEntities
+          ? 'Loading...'
+          : toType === 'issue'
+            ? 'Search issues...'
+            : 'Search specs...'}
+      />
 
       {/* Relationship Type */}
       <div className="space-y-2">

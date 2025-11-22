@@ -6,12 +6,13 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import express from "express";
-import type Database from "better-sqlite3";
-import { initDatabase } from "@sudocode-ai/cli/dist/db.js";
 import { createIssuesRouter } from "../../src/routes/issues.js";
 import { createSpecsRouter } from "../../src/routes/specs.js";
 import { cleanupExport } from "../../src/services/export.js";
 import { parseMarkdownFile } from "@sudocode-ai/cli/dist/markdown.js";
+import { ProjectManager } from "../../src/services/project-manager.js";
+import { ProjectRegistry } from "../../src/services/project-registry.js";
+import { requireProject } from "../../src/middleware/project-context.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -33,24 +34,28 @@ function readJSONL(filePath: string): any[] {
 
 describe("JSONL Export Integration", () => {
   let app: express.Application;
-  let db: Database.Database;
-  let testDbPath: string;
   let testDir: string;
+  let testProjectPath: string;
   let issuesJsonlPath: string;
   let specsJsonlPath: string;
+  let projectManager: ProjectManager;
+  let projectRegistry: ProjectRegistry;
+  let projectId: string;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     // Create a unique temporary directory in system temp
     testDir = fs.mkdtempSync(path.join(os.tmpdir(), "sudocode-test-export-"));
-    testDbPath = path.join(testDir, "cache.db");
-    issuesJsonlPath = path.join(testDir, "issues.jsonl");
-    specsJsonlPath = path.join(testDir, "specs.jsonl");
 
-    // Set SUDOCODE_DIR environment variable
-    process.env.SUDOCODE_DIR = testDir;
+    // Create test project directory structure
+    testProjectPath = path.join(testDir, "test-project");
+    const sudocodeDir = path.join(testProjectPath, ".sudocode");
+    fs.mkdirSync(sudocodeDir, { recursive: true });
+
+    issuesJsonlPath = path.join(sudocodeDir, "issues.jsonl");
+    specsJsonlPath = path.join(sudocodeDir, "specs.jsonl");
 
     // Create config.json for ID generation
-    const configPath = path.join(testDir, "config.json");
+    const configPath = path.join(sudocodeDir, "config.json");
     const config = {
       version: "1.0.0",
       id_prefix: {
@@ -61,26 +66,42 @@ describe("JSONL Export Integration", () => {
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 
     // Create directories for markdown files
-    const issuesDir = path.join(testDir, "issues");
-    const specsDir = path.join(testDir, "specs");
+    const issuesDir = path.join(sudocodeDir, "issues");
+    const specsDir = path.join(sudocodeDir, "specs");
     fs.mkdirSync(issuesDir, { recursive: true });
     fs.mkdirSync(specsDir, { recursive: true });
 
-    // Initialize test database
-    db = initDatabase({ path: testDbPath });
+    // Create database file
+    const dbPath = path.join(sudocodeDir, "cache.db");
+    fs.writeFileSync(dbPath, "");
+
+    // Set up project manager
+    const registryPath = path.join(testDir, "projects.json");
+    projectRegistry = new ProjectRegistry(registryPath);
+    await projectRegistry.load();
+
+    projectManager = new ProjectManager(projectRegistry, { watchEnabled: false });
+
+    // Open the test project
+    const result = await projectManager.openProject(testProjectPath);
+    if (result.ok) {
+      projectId = result.value.id;
+    } else {
+      throw new Error("Failed to open test project");
+    }
 
     // Set up Express app with routes
     app = express();
     app.use(express.json());
-    app.use("/api/issues", createIssuesRouter(db));
-    app.use("/api/specs", createSpecsRouter(db));
+    app.use("/api/issues", requireProject(projectManager), createIssuesRouter());
+    app.use("/api/specs", requireProject(projectManager), createSpecsRouter());
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     // Clean up export debouncer first
     cleanupExport();
-    // Clean up database
-    db.close();
+    // Shutdown project manager
+    await projectManager.shutdown();
     if (fs.existsSync(testDir)) {
       fs.rmSync(testDir, { recursive: true, force: true });
     }
@@ -98,7 +119,8 @@ describe("JSONL Export Integration", () => {
       };
 
       const response = await request(app)
-        .post("/api/issues")
+        .post("/api/issues").set("X-Project-ID", projectId)
+        .set("X-Project-ID", projectId)
         .send(newIssue)
         .expect(201);
 
@@ -127,11 +149,12 @@ describe("JSONL Export Integration", () => {
       expect(exportedIssue.priority).toBe(newIssue.priority);
 
       // Verify markdown file was created
-      const issueMdPath = path.join(testDir, "issues", `${issueId}.md`);
+      const issueMdPath = path.join(testProjectPath, ".sudocode", "issues", `${issueId}.md`);
       expect(fs.existsSync(issueMdPath)).toBeTruthy();
 
       // Verify markdown file content
-      const parsed = parseMarkdownFile(issueMdPath, db, testDir);
+      const project = projectManager.getProject(projectId)!;
+      const parsed = parseMarkdownFile(issueMdPath, project.db, testProjectPath);
       expect(parsed.data.id).toBe(issueId);
       expect(parsed.data.title).toBe(newIssue.title);
       expect(parsed.data.status).toBe(newIssue.status);
@@ -141,7 +164,7 @@ describe("JSONL Export Integration", () => {
     it("should update JSONL and Markdown after issue update", async () => {
       // Create an issue first
       const createResponse = await request(app)
-        .post("/api/issues")
+        .post("/api/issues").set("X-Project-ID", projectId)
         .send({
           title: "Issue to Update",
           status: "open",
@@ -159,7 +182,7 @@ describe("JSONL Export Integration", () => {
       };
 
       await request(app)
-        .put(`/api/issues/${issueId}`)
+        .put(`/api/issues/${issueId}`).set("X-Project-ID", projectId)
         .send(updates)
         .expect(200);
 
@@ -179,8 +202,9 @@ describe("JSONL Export Integration", () => {
       expect(updatedIssue.title).toBe("Issue to Update"); // Original title preserved
 
       // Verify markdown file was updated
-      const issueMdPath = path.join(testDir, "issues", `${issueId}.md`);
-      const parsed = parseMarkdownFile(issueMdPath, db, testDir);
+      const issueMdPath = path.join(testProjectPath, ".sudocode", "issues", `${issueId}.md`);
+      const project = projectManager.getProject(projectId)!;
+      const parsed = parseMarkdownFile(issueMdPath, project.db, testProjectPath);
       expect(parsed.data.status).toBe(updates.status);
       expect(parsed.data.priority).toBe(updates.priority);
       expect(parsed.data.title).toBe("Issue to Update");
@@ -189,7 +213,7 @@ describe("JSONL Export Integration", () => {
     it("should remove issue from JSONL after deletion", async () => {
       // Create an issue to delete
       const createResponse = await request(app)
-        .post("/api/issues")
+        .post("/api/issues").set("X-Project-ID", projectId)
         .send({ title: "Issue to Delete" })
         .expect(201);
 
@@ -201,7 +225,7 @@ describe("JSONL Export Integration", () => {
       expect(issues.find((i) => i.id === issueId)).toBeTruthy();
 
       // Delete the issue
-      await request(app).delete(`/api/issues/${issueId}`).expect(200);
+      await request(app).delete(`/api/issues/${issueId}`).set("X-Project-ID", projectId).expect(200);
 
       // Wait for export after deletion
       await waitForExport();
@@ -214,7 +238,7 @@ describe("JSONL Export Integration", () => {
     it("should handle multiple rapid updates with debouncing", async () => {
       // Create an issue
       const createResponse = await request(app)
-        .post("/api/issues")
+        .post("/api/issues").set("X-Project-ID", projectId)
         .send({
           title: "Rapid Update Test",
           priority: 0,
@@ -225,17 +249,17 @@ describe("JSONL Export Integration", () => {
 
       // Make multiple rapid updates (should be batched)
       await request(app)
-        .put(`/api/issues/${issueId}`)
+        .put(`/api/issues/${issueId}`).set("X-Project-ID", projectId)
         .send({ priority: 1 })
         .expect(200);
 
       await request(app)
-        .put(`/api/issues/${issueId}`)
+        .put(`/api/issues/${issueId}`).set("X-Project-ID", projectId)
         .send({ priority: 2 })
         .expect(200);
 
       await request(app)
-        .put(`/api/issues/${issueId}`)
+        .put(`/api/issues/${issueId}`).set("X-Project-ID", projectId)
         .send({ status: "in_progress" })
         .expect(200);
 
@@ -254,7 +278,7 @@ describe("JSONL Export Integration", () => {
     it("should handle multiple different issues updated rapidly", async () => {
       // Create three different issues
       const issue1Response = await request(app)
-        .post("/api/issues")
+        .post("/api/issues").set("X-Project-ID", projectId)
         .send({
           title: "Issue 1",
           priority: 0,
@@ -262,7 +286,7 @@ describe("JSONL Export Integration", () => {
         .expect(201);
 
       const issue2Response = await request(app)
-        .post("/api/issues")
+        .post("/api/issues").set("X-Project-ID", projectId)
         .send({
           title: "Issue 2",
           priority: 0,
@@ -270,7 +294,7 @@ describe("JSONL Export Integration", () => {
         .expect(201);
 
       const issue3Response = await request(app)
-        .post("/api/issues")
+        .post("/api/issues").set("X-Project-ID", projectId)
         .send({
           title: "Issue 3",
           priority: 0,
@@ -286,17 +310,17 @@ describe("JSONL Export Integration", () => {
 
       // Update all three issues in rapid succession
       await request(app)
-        .put(`/api/issues/${issue1Id}`)
+        .put(`/api/issues/${issue1Id}`).set("X-Project-ID", projectId)
         .send({ priority: 1, status: "in_progress" })
         .expect(200);
 
       await request(app)
-        .put(`/api/issues/${issue2Id}`)
+        .put(`/api/issues/${issue2Id}`).set("X-Project-ID", projectId)
         .send({ priority: 2, status: "blocked" })
         .expect(200);
 
       await request(app)
-        .put(`/api/issues/${issue3Id}`)
+        .put(`/api/issues/${issue3Id}`).set("X-Project-ID", projectId)
         .send({ priority: 3, status: "closed" })
         .expect(200);
 
@@ -336,7 +360,7 @@ describe("JSONL Export Integration", () => {
       };
 
       const response = await request(app)
-        .post("/api/specs")
+        .post("/api/specs").set("X-Project-ID", projectId)
         .send(newSpec)
         .expect(201);
 
@@ -362,7 +386,7 @@ describe("JSONL Export Integration", () => {
     it("should update JSONL file after spec update", async () => {
       // Create a spec first
       const createResponse = await request(app)
-        .post("/api/specs")
+        .post("/api/specs").set("X-Project-ID", projectId)
         .send({
           title: "Spec to Update",
           content: "Original content",
@@ -379,7 +403,7 @@ describe("JSONL Export Integration", () => {
         priority: 3,
       };
 
-      await request(app).put(`/api/specs/${specId}`).send(updates).expect(200);
+      await request(app).put(`/api/specs/${specId}`).set("X-Project-ID", projectId).send(updates).expect(200);
 
       // Wait for export after update
       await waitForExport();
@@ -397,7 +421,7 @@ describe("JSONL Export Integration", () => {
     it("should remove spec from JSONL after deletion", async () => {
       // Create a spec to delete
       const createResponse = await request(app)
-        .post("/api/specs")
+        .post("/api/specs").set("X-Project-ID", projectId)
         .send({ title: "Spec to Delete", content: "To be deleted" })
         .expect(201);
 
@@ -409,7 +433,7 @@ describe("JSONL Export Integration", () => {
       expect(specs.find((s) => s.id === specId)).toBeTruthy();
 
       // Delete the spec
-      await request(app).delete(`/api/specs/${specId}`).expect(200);
+      await request(app).delete(`/api/specs/${specId}`).set("X-Project-ID", projectId).expect(200);
 
       // Wait for export after deletion
       await waitForExport();
@@ -431,7 +455,7 @@ describe("JSONL Export Integration", () => {
       const issueIds: string[] = [];
       for (let i = 0; i < 5; i++) {
         const response = await request(app)
-          .post("/api/issues")
+          .post("/api/issues").set("X-Project-ID", projectId)
           .send({ title: `Batch Test Issue ${i}` })
           .expect(201);
         issueIds.push(response.body.data.id);

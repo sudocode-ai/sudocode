@@ -3,13 +3,14 @@ import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { WebSocketProvider } from '@/contexts/WebSocketContext'
+import { ProjectProvider } from '@/contexts/ProjectContext'
 
 /**
  * Custom render function that includes all providers
  */
 export function renderWithProviders(
   ui: React.ReactElement,
-  options?: Omit<RenderOptions, 'wrapper'>
+  options?: Omit<RenderOptions, 'wrapper'> & { defaultProjectId?: string | null }
 ) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -20,14 +21,18 @@ export function renderWithProviders(
     },
   })
 
+  const defaultProjectId = options?.defaultProjectId ?? 'test-project-123'
+
   function Wrapper({ children }: { children: React.ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
-        <WebSocketProvider>
-          <ThemeProvider>
-            <BrowserRouter>{children}</BrowserRouter>
-          </ThemeProvider>
-        </WebSocketProvider>
+        <ProjectProvider defaultProjectId={defaultProjectId} skipValidation={true}>
+          <WebSocketProvider>
+            <ThemeProvider>
+              <BrowserRouter>{children}</BrowserRouter>
+            </ThemeProvider>
+          </WebSocketProvider>
+        </ProjectProvider>
       </QueryClientProvider>
     )
   }

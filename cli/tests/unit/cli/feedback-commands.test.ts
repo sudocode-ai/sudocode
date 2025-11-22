@@ -74,7 +74,7 @@ This is the second section.
 `;
 
     createSpec(db, {
-      id: 'spec-001',
+      id: 's-001',
       title: 'Test Spec',
       file_path: path.join(tempDir, 'specs', 'test.md'),
       content: specContent,
@@ -82,7 +82,7 @@ This is the second section.
     });
 
     createIssue(db, {
-      id: 'issue-001',
+      id: 'i-001',
       title: 'Test Issue',
       description: 'Test issue description',
       content: '',
@@ -117,7 +117,7 @@ This is the second section.
         content: 'This section needs clarification',
       };
 
-      await handleFeedbackAdd(ctx, 'issue-001', 'spec-001', options);
+      await handleFeedbackAdd(ctx, 'i-001', 's-001', options);
 
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining('✓ Created feedback'),
@@ -126,7 +126,7 @@ This is the second section.
 
       // Verify feedback was created in database
       const { listFeedback } = await import('../../../src/operations/feedback.js');
-      const feedbackList = listFeedback(db, { issue_id: 'issue-001' });
+      const feedbackList = listFeedback(db, { from_id: 'i-001' });
       expect(feedbackList.length).toBe(1);
       expect(feedbackList[0].content).toBe('This section needs clarification');
     });
@@ -139,7 +139,7 @@ This is the second section.
         content: 'Need more details here',
       };
 
-      await handleFeedbackAdd(ctx, 'issue-001', 'spec-001', options);
+      await handleFeedbackAdd(ctx, 'i-001', 's-001', options);
 
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining('✓ Created feedback'),
@@ -155,7 +155,7 @@ This is the second section.
         content: 'Test content',
       };
 
-      await handleFeedbackAdd(ctx, 'issue-001', 'spec-001', options);
+      await handleFeedbackAdd(ctx, 'i-001', 's-001', options);
 
       expect(consoleErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining('✗ Text not found')
@@ -163,19 +163,20 @@ This is the second section.
       expect(processExitSpy).toHaveBeenCalledWith(1);
     });
 
-    it('should fail when neither line nor text specified', async () => {
+    it('should create feedback without anchor when neither line nor text specified', async () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
       const options = {
         type: 'comment',
-        content: 'Test content',
+        content: 'General feedback without specific location',
       };
 
-      await handleFeedbackAdd(ctx, 'issue-001', 'spec-001', options);
+      await handleFeedbackAdd(ctx, 'i-001', 's-001', options);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('✗ Either --line or --text must be specified')
+      // Should succeed - general feedback is now allowed
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('✓ Created feedback'),
+        expect.anything()
       );
-      expect(processExitSpy).toHaveBeenCalledWith(1);
     });
 
     it('should output JSON format', async () => {
@@ -186,7 +187,7 @@ This is the second section.
         content: 'Test content',
       };
 
-      await handleFeedbackAdd(ctx, 'issue-001', 'spec-001', options);
+      await handleFeedbackAdd(ctx, 'i-001', 's-001', options);
 
       const output = consoleLogSpy.mock.calls[0][0];
       expect(() => JSON.parse(output)).not.toThrow();
@@ -200,7 +201,7 @@ This is the second section.
         content: 'Feedback that should be exported',
       };
 
-      await handleFeedbackAdd(ctx, 'issue-001', 'spec-001', options);
+      await handleFeedbackAdd(ctx, 'i-001', 's-001', options);
 
       // Check that JSONL file was created and contains the feedback
       const jsonlPath = path.join(tempDir, 'issues.jsonl');
@@ -213,7 +214,7 @@ This is the second section.
         .filter((line) => line.trim())
         .map((line) => JSON.parse(line));
 
-      const issueWithFeedback = issues.find((i: any) => i.id === 'issue-001');
+      const issueWithFeedback = issues.find((i: any) => i.id === 'i-001');
       expect(issueWithFeedback).toBeDefined();
       expect(issueWithFeedback.feedback).toBeDefined();
       expect(issueWithFeedback.feedback.length).toBe(1);
@@ -228,14 +229,14 @@ This is the second section.
       const { createFeedbackAnchor } = await import('../../../src/operations/feedback-anchors.js');
       const { getSpec } = await import('../../../src/operations/specs.js');
 
-      const spec = getSpec(db, 'spec-001');
+      const spec = getSpec(db, 's-001');
       if (!spec) throw new Error('Spec not found');
 
       const anchor = createFeedbackAnchor(spec.content, 7);
 
       createFeedback(db, {
-        issue_id: 'issue-001',
-        spec_id: 'spec-001',
+        from_id: 'i-001',
+        to_id: 's-001',
         feedback_type: 'comment',
         content: 'Feedback 1',
         agent: 'test',
@@ -243,8 +244,8 @@ This is the second section.
       });
 
       createFeedback(db, {
-        issue_id: 'issue-001',
-        spec_id: 'spec-001',
+        from_id: 'i-001',
+        to_id: 's-001',
         feedback_type: 'request',
         content: 'Feedback 2',
         agent: 'test',
@@ -268,14 +269,14 @@ This is the second section.
     it('should filter feedback by issue', async () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
       const options = {
-        issue: 'issue-001',
+        issue: 'i-001',
         limit: '50',
       };
 
       await handleFeedbackList(ctx, options);
 
       const output = consoleLogSpy.mock.calls.flat().join(' ');
-      expect(output).toContain('issue-001');
+      expect(output).toContain('i-001');
     });
 
     it('should filter feedback by type', async () => {
@@ -322,15 +323,15 @@ This is the second section.
       const { createFeedbackAnchor } = await import('../../../src/operations/feedback-anchors.js');
       const { getSpec } = await import('../../../src/operations/specs.js');
 
-      const spec = getSpec(db, 'spec-001');
+      const spec = getSpec(db, 's-001');
       if (!spec) throw new Error('Spec not found');
 
       const anchor = createFeedbackAnchor(spec.content, 7);
 
       createFeedback(db, {
         id: 'FB-001',
-        issue_id: 'issue-001',
-        spec_id: 'spec-001',
+        from_id: 'i-001',
+        to_id: 's-001',
         feedback_type: 'comment',
         content: 'Test feedback content',
         agent: 'test',
@@ -348,8 +349,8 @@ This is the second section.
       const output = consoleLogSpy.mock.calls.flat().join(' ');
       expect(output).toContain('FB-001');
       expect(output).toContain('Test feedback content');
-      expect(output).toContain('issue-001');
-      expect(output).toContain('spec-001');
+      expect(output).toContain('i-001');
+      expect(output).toContain('s-001');
     });
 
     it('should output JSON format', async () => {
@@ -380,15 +381,15 @@ This is the second section.
       const { createFeedbackAnchor } = await import('../../../src/operations/feedback-anchors.js');
       const { getSpec } = await import('../../../src/operations/specs.js');
 
-      const spec = getSpec(db, 'spec-001');
+      const spec = getSpec(db, 's-001');
       if (!spec) throw new Error('Spec not found');
 
       const anchor = createFeedbackAnchor(spec.content, 7);
 
       createFeedback(db, {
         id: 'FB-001',
-        issue_id: 'issue-001',
-        spec_id: 'spec-001',
+        from_id: 'i-001',
+        to_id: 's-001',
         feedback_type: 'comment',
         content: 'Test feedback',
         agent: 'test',
@@ -431,7 +432,7 @@ This is the second section.
         .filter((line) => line.trim())
         .map((line) => JSON.parse(line));
 
-      const issueWithFeedback = issues.find((i: any) => i.id === 'issue-001');
+      const issueWithFeedback = issues.find((i: any) => i.id === 'i-001');
       expect(issueWithFeedback).toBeDefined();
       expect(issueWithFeedback.feedback).toBeDefined();
       expect(issueWithFeedback.feedback.length).toBe(1);
@@ -446,15 +447,15 @@ This is the second section.
       const { createFeedbackAnchor } = await import('../../../src/operations/feedback-anchors.js');
       const { getSpec } = await import('../../../src/operations/specs.js');
 
-      const spec = getSpec(db, 'spec-001');
+      const spec = getSpec(db, 's-001');
       if (!spec) throw new Error('Spec not found');
 
       const anchor = createFeedbackAnchor(spec.content, 7);
       anchor.anchor_status = 'stale';
 
       createFeedback(db, {
-        issue_id: 'issue-001',
-        spec_id: 'spec-001',
+        from_id: 'i-001',
+        to_id: 's-001',
         feedback_type: 'comment',
         content: 'Stale feedback',
         agent: 'test',
@@ -488,6 +489,8 @@ This is the second section.
   });
 
   describe('handleFeedbackRelocate', () => {
+    let createdFeedbackId: string;
+
     beforeEach(async () => {
       // Create feedback using handleFeedbackAdd
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
@@ -497,16 +500,20 @@ This is the second section.
         content: 'This needs to be fixed',
       };
 
-      await handleFeedbackAdd(ctx, 'issue-001', 'spec-001', options);
+      await handleFeedbackAdd(ctx, 'i-001', 's-001', options);
+
+      // Get the ID of the created feedback
+      const { listFeedback } = await import('../../../src/operations/feedback.js');
+      const feedbacks = listFeedback(db, { from_id: 'i-001' });
+      createdFeedbackId = feedbacks[0].id;
 
       consoleLogSpy.mockClear();
     });
 
     it('should relocate feedback to new line number', async () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
-      const feedbackId = 'FB-001'; // Generated by handleFeedbackAdd
 
-      await handleFeedbackRelocate(ctx, feedbackId, { line: '10' });
+      await handleFeedbackRelocate(ctx, createdFeedbackId, { line: '10' });
 
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining('✓ Relocated feedback anchor'),
@@ -521,7 +528,7 @@ This is the second section.
 
       // Verify feedback was updated in database
       const { getFeedback } = await import('../../../src/operations/feedback.js');
-      const updated = getFeedback(db, feedbackId);
+      const updated = getFeedback(db, createdFeedbackId);
       expect(updated).toBeDefined();
 
       const anchor = typeof updated!.anchor === 'string' ? JSON.parse(updated!.anchor) : updated!.anchor;
@@ -532,17 +539,16 @@ This is the second section.
 
     it('should preserve original location when relocating', async () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
-      const feedbackId = 'FB-001';
 
       // Get original anchor details
       const { getFeedback } = await import('../../../src/operations/feedback.js');
-      const original = getFeedback(db, feedbackId);
+      const original = getFeedback(db, createdFeedbackId);
       const originalAnchor = typeof original!.anchor === 'string' ? JSON.parse(original!.anchor) : original!.anchor;
 
-      await handleFeedbackRelocate(ctx, feedbackId, { line: '15' });
+      await handleFeedbackRelocate(ctx, createdFeedbackId, { line: '15' });
 
       // Verify original location is preserved
-      const relocated = getFeedback(db, feedbackId);
+      const relocated = getFeedback(db, createdFeedbackId);
       const relocatedAnchor = typeof relocated!.anchor === 'string' ? JSON.parse(relocated!.anchor) : relocated!.anchor;
 
       expect(relocatedAnchor.original_location).toBeDefined();
@@ -562,9 +568,8 @@ This is the second section.
 
     it('should handle invalid line number', async () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
-      const feedbackId = 'FB-001';
 
-      await handleFeedbackRelocate(ctx, feedbackId, { line: 'invalid' });
+      await handleFeedbackRelocate(ctx, createdFeedbackId, { line: 'invalid' });
 
       expect(consoleErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining('✗ Invalid line number')
@@ -574,9 +579,8 @@ This is the second section.
 
     it('should handle negative line number', async () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
-      const feedbackId = 'FB-001';
 
-      await handleFeedbackRelocate(ctx, feedbackId, { line: '-5' });
+      await handleFeedbackRelocate(ctx, createdFeedbackId, { line: '-5' });
 
       expect(consoleErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining('✗ Invalid line number')
@@ -586,9 +590,8 @@ This is the second section.
 
     it('should handle zero line number', async () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
-      const feedbackId = 'FB-001';
 
-      await handleFeedbackRelocate(ctx, feedbackId, { line: '0' });
+      await handleFeedbackRelocate(ctx, createdFeedbackId, { line: '0' });
 
       expect(consoleErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining('✗ Invalid line number')
@@ -598,16 +601,15 @@ This is the second section.
 
     it('should output JSON when jsonOutput is true', async () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: true };
-      const feedbackId = 'FB-001';
 
-      await handleFeedbackRelocate(ctx, feedbackId, { line: '12' });
+      await handleFeedbackRelocate(ctx, createdFeedbackId, { line: '12' });
 
       const output = consoleLogSpy.mock.calls[0][0];
       const parsed = JSON.parse(output);
 
-      expect(parsed.id).toBe(feedbackId);
-      expect(parsed.spec_id).toBe('spec-001');
-      expect(parsed.issue_id).toBe('issue-001');
+      expect(parsed.id).toBe(createdFeedbackId);
+      expect(parsed.to_id).toBe('s-001');
+      expect(parsed.from_id).toBe('i-001');
 
       const anchor = typeof parsed.anchor === 'string' ? JSON.parse(parsed.anchor) : parsed.anchor;
       expect(anchor.line_number).toBe(12);
@@ -616,9 +618,8 @@ This is the second section.
 
     it('should export to JSONL after relocating feedback', async () => {
       const ctx = { db, outputDir: tempDir, jsonOutput: false };
-      const feedbackId = 'FB-001';
 
-      await handleFeedbackRelocate(ctx, feedbackId, { line: '14' });
+      await handleFeedbackRelocate(ctx, createdFeedbackId, { line: '14' });
 
       // Check that JSONL file contains the relocated feedback
       const jsonlPath = path.join(tempDir, 'issues.jsonl');
@@ -631,12 +632,12 @@ This is the second section.
         .filter((line) => line.trim())
         .map((line) => JSON.parse(line));
 
-      const issueWithFeedback = issues.find((i: any) => i.id === 'issue-001');
+      const issueWithFeedback = issues.find((i: any) => i.id === 'i-001');
       expect(issueWithFeedback).toBeDefined();
       expect(issueWithFeedback.feedback).toBeDefined();
       expect(issueWithFeedback.feedback.length).toBeGreaterThan(0);
 
-      const relocatedFeedback = issueWithFeedback.feedback.find((f: any) => f.id === feedbackId);
+      const relocatedFeedback = issueWithFeedback.feedback.find((f: any) => f.id === createdFeedbackId);
       expect(relocatedFeedback).toBeDefined();
       expect(relocatedFeedback.anchor.line_number).toBe(14);
       expect(relocatedFeedback.anchor.anchor_status).toBe('relocated');

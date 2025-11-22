@@ -8,12 +8,34 @@ Adding sudocode into your repo adds instant organizational capabilities to your 
 
 ## Quick Start
 
-```bash 
-# Install dependencies
+```bash
+# Install globally (recommended: use npx instead to avoid Node version conflicts)
 npm install -g sudocode
 
 # Initialize a sudocode project in your project directory.
 sudocode init
+```
+
+**Note:** If you use multiple Node.js versions (via nvm or similar), use `npx` to avoid native module version conflicts:
+
+```bash
+npx sudocode init
+npx sudocode spec list
+```
+
+Or install locally in your project:
+
+```bash
+npm install --save-dev sudocode
+npx sudocode init
+```
+
+**Troubleshooting:** If you get "NODE_MODULE_VERSION" errors after switching Node versions with a global install:
+
+```bash
+# Reinstall with your current Node version
+npm uninstall -g sudocode
+npm install -g sudocode
 ```
 
 You can also install the sudocode MCP server (stdio):
@@ -37,6 +59,8 @@ For Claude Code, you can install the plugin:
 claude plugin marketplace add sudocode-ai/sudocode
 claude plugin install sudocode
 ```
+
+Check out our [Installation Guide](https://docs.sudocode.ai/installation) for instructions on setting up other agents.
 
 ## Context-as-Code
 

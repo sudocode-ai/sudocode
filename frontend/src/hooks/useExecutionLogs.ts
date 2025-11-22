@@ -10,6 +10,8 @@
 import { useState, useEffect } from 'react';
 import { parseExecutionLogs } from '../../../server/src/execution/output/claude-to-ag-ui.js';
 import type { AgUiEvent } from '../../../server/src/execution/output/claude-to-ag-ui.js';
+import api from '../lib/api';
+import { isCancel } from 'axios';
 
 /**
  * Metadata about execution logs
@@ -22,16 +24,13 @@ export interface ExecutionLogMetadata {
 }
 
 /**
- * API response shape from GET /api/executions/:id/logs
+ * API response shape from GET /api/executions/:id/logs (after axios interceptor unwrapping)
+ * The outer ApiResponse wrapper is removed by the interceptor, so we get this directly
  */
-interface ExecutionLogsResponse {
-  success: boolean;
-  data: {
-    executionId: string;
-    logs: string[];
-    metadata: ExecutionLogMetadata;
-  };
-  message?: string;
+interface ExecutionLogsData {
+  executionId: string;
+  logs: string[];
+  metadata: ExecutionLogMetadata;
 }
 
 /**
@@ -92,45 +91,37 @@ export function useExecutionLogs(executionId: string): UseExecutionLogsResult {
 
     async function fetchAndParseLogs() {
       try {
-        // Fetch raw logs from API
-        const response = await fetch(`/api/executions/${executionId}/logs`, {
-          signal: abortController.signal,
-        });
-
-        // Handle HTTP errors
-        if (!response.ok) {
-          if (response.status === 404) {
-            throw new Error(`Execution not found: ${executionId}`);
+        // Fetch raw logs from API using axios client (automatically includes X-Project-ID header)
+        // Note: axios baseURL is already '/api', so we don't include it here
+        // The response interceptor unwraps the ApiResponse, so we get ExecutionLogsData directly
+        const data = await api.get<ExecutionLogsData, ExecutionLogsData>(
+          `/executions/${executionId}/logs`,
+          {
+            signal: abortController.signal,
           }
-          throw new Error(
-            `Failed to fetch execution logs: ${response.status} ${response.statusText}`
-          );
-        }
-
-        // Parse JSON response
-        const data: ExecutionLogsResponse = await response.json();
-
-        if (!data.success) {
-          throw new Error(data.message || 'Failed to fetch execution logs');
-        }
+        );
 
         // Transform raw logs to AG-UI events
-        const parsedEvents = await parseExecutionLogs(data.data.logs);
+        const parsedEvents = await parseExecutionLogs(data.logs);
 
         // Update state
         setEvents(parsedEvents);
-        setMetadata(data.data.metadata);
+        setMetadata(data.metadata);
       } catch (err) {
-        // Ignore abort errors (cleanup)
-        if (err instanceof Error && err.name === 'AbortError') {
+        // Ignore abort/cancel errors (cleanup)
+        // Check for axios cancellation or browser AbortError
+        if (isCancel(err) || (err instanceof Error && err.name === 'AbortError')) {
+          console.debug('[useExecutionLogs] Request canceled for execution:', executionId);
           return;
         }
 
-        // Set error state
-        const error =
-          err instanceof Error
-            ? err
-            : new Error('Unknown error fetching execution logs');
+        // Set error state - axios wraps errors differently
+        let error: Error;
+        if (err instanceof Error) {
+          error = err;
+        } else {
+          error = new Error('Unknown error fetching execution logs');
+        }
 
         setError(error);
         console.error('[useExecutionLogs] Error:', error);

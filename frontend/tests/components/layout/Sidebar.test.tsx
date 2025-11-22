@@ -1,18 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
-import { BrowserRouter } from 'react-router-dom'
-import { ThemeProvider } from '@/contexts/ThemeContext'
+import { renderWithProviders } from '@/test/test-utils'
 import Sidebar from '@/components/layout/Sidebar'
 
 const renderSidebar = (props = {}) => {
-  return render(
-    <ThemeProvider>
-      <BrowserRouter>
-        <Sidebar open={false} collapsed={false} {...props} />
-      </BrowserRouter>
-    </ThemeProvider>
-  )
+  return renderWithProviders(<Sidebar open={false} collapsed={false} {...props} />)
 }
 
 describe('Sidebar', () => {
