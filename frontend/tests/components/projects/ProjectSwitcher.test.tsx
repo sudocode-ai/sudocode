@@ -381,4 +381,64 @@ describe('ProjectSwitcher', () => {
       expect(api.projectsApi.open).not.toHaveBeenCalled()
     })
   })
+
+  it('should navigate to issues page when switching projects', async () => {
+    const recentProjects = [
+      {
+        id: 'project-1',
+        name: 'Project One',
+        path: '/path/to/project1',
+        sudocodeDir: '/path/to/project1/.sudocode',
+        registeredAt: '2025-01-01T00:00:00Z',
+        lastOpenedAt: '2025-01-01T00:00:00Z',
+        favorite: false,
+      },
+      {
+        id: 'project-2',
+        name: 'Project Two',
+        path: '/path/to/project2',
+        sudocodeDir: '/path/to/project2/.sudocode',
+        registeredAt: '2025-01-01T00:00:00Z',
+        lastOpenedAt: '2025-01-01T00:00:00Z',
+        favorite: false,
+      },
+    ]
+
+    vi.mocked(useProjectsHooks.useRecentProjects).mockReturnValue({
+      data: recentProjects,
+      isLoading: false,
+    } as any)
+
+    vi.mocked(useProjectsHooks.useProjectById).mockReturnValue({
+      data: recentProjects[0],
+    } as any)
+
+    // Mock getOpen to return both projects are open
+    vi.mocked(api.projectsApi.getOpen).mockResolvedValue([
+      {
+        ...recentProjects[0],
+        isOpen: true,
+      },
+      {
+        ...recentProjects[1],
+        isOpen: true,
+      },
+    ] as any)
+
+    const user = userEvent.setup()
+    renderWithProviders('project-1')
+
+    // Open the dropdown
+    const trigger = screen.getByRole('combobox', { name: /select project/i })
+    await user.click(trigger)
+
+    // Click on Project Two
+    const projectTwo = await screen.findByText('Project Two')
+    await user.click(projectTwo)
+
+    // Verify navigation to issues page
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/issues')
+    })
+  })
 })

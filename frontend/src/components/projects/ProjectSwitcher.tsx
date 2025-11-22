@@ -75,6 +75,9 @@ export function ProjectSwitcher({ className, collapsed = false }: ProjectSwitche
       // Invalidate all queries to trigger refetch with new project
       await queryClient.invalidateQueries()
 
+      // Navigate to issues page for the new project
+      navigate('/issues')
+
       // Small delay to show loading state
       await new Promise((resolve) => setTimeout(resolve, 300))
 
