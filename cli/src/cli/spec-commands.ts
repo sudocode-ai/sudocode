@@ -56,7 +56,7 @@ export async function handleSpecCreate(
     // Generate title-based filename
     const fileName = options.filePath
       ? path.basename(options.filePath)
-      : generateUniqueFilename(title, specId, specsDir);
+      : generateUniqueFilename(title, specId);
     const filePath = `specs/${fileName}`;
 
     // Create spec in database

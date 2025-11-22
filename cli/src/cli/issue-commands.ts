@@ -23,6 +23,7 @@ import { getTags, setTags } from "../operations/tags.js";
 import { listFeedback } from "../operations/feedback.js";
 import { exportToJSONL } from "../export.js";
 import { syncJSONLToMarkdown } from "../sync.js";
+import { generateUniqueFilename } from "../filename-generator.js";
 
 export interface CommandContext {
   db: Database.Database;
@@ -68,7 +69,10 @@ export async function handleIssueCreate(
     // Also update the markdown file to keep it in sync
     const issuesDir = path.join(ctx.outputDir, "issues");
     fs.mkdirSync(issuesDir, { recursive: true });
-    const mdPath = path.join(issuesDir, `${issueId}.md`);
+
+    // Generate filename using unified scheme: {id}_{title_slug}.md
+    const fileName = generateUniqueFilename(title, issueId);
+    const mdPath = path.join(issuesDir, fileName);
     await syncJSONLToMarkdown(ctx.db, issueId, 'issue', mdPath);
 
     if (ctx.jsonOutput) {
@@ -78,6 +82,7 @@ export async function handleIssueCreate(
     } else {
       console.log(chalk.green("✓ Created issue"), chalk.cyan(issueId));
       console.log(chalk.gray(`  Title: ${title}`));
+      console.log(chalk.gray(`  File: issues/${fileName}`));
       if (options.assignee) {
         console.log(chalk.gray(`  Assignee: ${options.assignee}`));
       }
