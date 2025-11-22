@@ -7,6 +7,8 @@ import type { Issue } from '@/types/api'
 
 // Mock the API
 vi.mock('@/lib/api', () => ({
+  setCurrentProjectId: vi.fn(),
+  getCurrentProjectId: vi.fn(() => 'test-project-123'),
   issuesApi: {
     getAll: vi.fn(),
     create: vi.fn(),

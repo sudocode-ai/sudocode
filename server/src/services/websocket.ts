@@ -10,7 +10,7 @@ const LOG_CONNECTIONS = false;
 interface Client {
   id: string;
   ws: WebSocket;
-  subscriptions: Set<string>; // e.g., 'issue:ISSUE-001', 'spec:SPEC-001', 'all'
+  subscriptions: Set<string>; // e.g., 'project-id:issue:ISSUE-001', 'project-id:spec:*', 'project-id:all'
   isAlive: boolean;
   connectedAt: Date;
 }
@@ -20,6 +20,7 @@ interface Client {
  */
 interface ClientMessage {
   type: "subscribe" | "unsubscribe" | "ping";
+  project_id?: string; // Project ID for project-scoped subscriptions
   entity_type?: "issue" | "spec" | "execution" | "all";
   entity_id?: string;
 }
@@ -44,10 +45,13 @@ export interface ServerMessage {
     | "execution_updated"
     | "execution_status_changed"
     | "execution_deleted"
+    | "project_opened"
+    | "project_closed"
     | "pong"
     | "error"
     | "subscribed"
     | "unsubscribed";
+  projectId?: string; // Project ID for project-scoped messages
   data?: any;
   message?: string;
   subscription?: string;
@@ -224,16 +228,25 @@ class WebSocketManager {
     }
 
     let subscription: string;
+    const projectId = message.project_id;
+
+    if (!projectId) {
+      this.sendToClient(clientId, {
+        type: "error",
+        message: "project_id is required for subscriptions",
+      });
+      return;
+    }
 
     if (message.entity_type === "all") {
-      // Subscribe to all updates
-      subscription = "all";
+      // Subscribe to all updates for a project
+      subscription = `${projectId}:all`;
     } else if (message.entity_type && message.entity_id) {
-      // Subscribe to a specific entity
-      subscription = `${message.entity_type}:${message.entity_id}`;
+      // Subscribe to a specific entity in a project
+      subscription = `${projectId}:${message.entity_type}:${message.entity_id}`;
     } else if (message.entity_type) {
-      // Subscribe to all entities of a type
-      subscription = `${message.entity_type}:*`;
+      // Subscribe to all entities of a type in a project
+      subscription = `${projectId}:${message.entity_type}:*`;
     } else {
       this.sendToClient(clientId, {
         type: "error",
@@ -266,13 +279,22 @@ class WebSocketManager {
     }
 
     let subscription: string;
+    const projectId = message.project_id;
+
+    if (!projectId) {
+      this.sendToClient(clientId, {
+        type: "error",
+        message: "project_id is required for unsubscription",
+      });
+      return;
+    }
 
     if (message.entity_type === "all") {
-      subscription = "all";
+      subscription = `${projectId}:all`;
     } else if (message.entity_type && message.entity_id) {
-      subscription = `${message.entity_type}:${message.entity_id}`;
+      subscription = `${projectId}:${message.entity_type}:${message.entity_id}`;
     } else if (message.entity_type) {
-      subscription = `${message.entity_type}:*`;
+      subscription = `${projectId}:${message.entity_type}:*`;
     } else {
       this.sendToClient(clientId, {
         type: "error",
@@ -315,27 +337,32 @@ class WebSocketManager {
   }
 
   /**
-   * Broadcast a message to all subscribed clients
+   * Broadcast a message to all subscribed clients for a specific project
    */
   broadcast(
+    projectId: string,
     entityType: "issue" | "spec" | "execution",
     entityId: string,
     message: ServerMessage
   ): void {
-    const subscription = `${entityType}:${entityId}`;
-    const typeSubscription = `${entityType}:*`;
+    const subscription = `${projectId}:${entityType}:${entityId}`;
+    const typeSubscription = `${projectId}:${entityType}:*`;
+    const allSubscription = `${projectId}:all`;
     let sentCount = 0;
+
+    // Ensure message includes projectId
+    message.projectId = projectId;
 
     this.clients.forEach((client) => {
       if (client.ws.readyState !== WebSocket.OPEN) {
         return;
       }
 
-      // Check if client is subscribed to this specific entity, entity type, or all
+      // Check if client is subscribed to this specific entity, entity type, or all for this project
       if (
         client.subscriptions.has(subscription) ||
         client.subscriptions.has(typeSubscription) ||
-        client.subscriptions.has("all")
+        client.subscriptions.has(allSubscription)
       ) {
         try {
           client.ws.send(JSON.stringify(message));
@@ -357,19 +384,23 @@ class WebSocketManager {
   }
 
   /**
-   * Broadcast a relationship or feedback update
-   * These don't have a specific entity type in the subscription, so we broadcast to 'all' subscribers
+   * Broadcast a relationship or feedback update for a specific project
+   * These don't have a specific entity type in the subscription, so we broadcast to 'all' subscribers for the project
    */
-  broadcastGeneric(message: ServerMessage): void {
+  broadcastGeneric(projectId: string, message: ServerMessage): void {
+    const allSubscription = `${projectId}:all`;
     let sentCount = 0;
+
+    // Ensure message includes projectId
+    message.projectId = projectId;
 
     this.clients.forEach((client) => {
       if (client.ws.readyState !== WebSocket.OPEN) {
         return;
       }
 
-      // Only send to clients subscribed to 'all'
-      if (client.subscriptions.has("all")) {
+      // Only send to clients subscribed to 'all' for this project
+      if (client.subscriptions.has(allSubscription)) {
         try {
           client.ws.send(JSON.stringify(message));
           sentCount++;
@@ -384,7 +415,46 @@ class WebSocketManager {
 
     if (sentCount > 0) {
       console.log(
-        `[websocket] Broadcasted ${message.type} to ${sentCount} clients`
+        `[websocket] Broadcasted ${message.type} for project ${projectId} to ${sentCount} clients`
+      );
+    }
+  }
+
+  /**
+   * Broadcast project lifecycle events (opened/closed)
+   */
+  broadcastProjectEvent(projectId: string, event: "opened" | "closed", data?: any): void {
+    const allSubscription = `${projectId}:all`;
+    const message: ServerMessage = {
+      type: event === "opened" ? "project_opened" : "project_closed",
+      projectId,
+      data,
+    };
+
+    let sentCount = 0;
+
+    this.clients.forEach((client) => {
+      if (client.ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      // Send to clients subscribed to this project
+      if (client.subscriptions.has(allSubscription)) {
+        try {
+          client.ws.send(JSON.stringify(message));
+          sentCount++;
+        } catch (error) {
+          console.error(
+            `[websocket] Failed to broadcast to ${client.id}:`,
+            error
+          );
+        }
+      }
+    });
+
+    if (sentCount > 0) {
+      console.log(
+        `[websocket] Broadcasted project_${event} for ${projectId} to ${sentCount} clients`
       );
     }
   }
@@ -504,76 +574,82 @@ export function initWebSocketServer(server: http.Server, path?: string): void {
 }
 
 /**
- * Broadcast issue updates to subscribed clients
+ * Broadcast issue updates to subscribed clients for a specific project
  */
 export function broadcastIssueUpdate(
+  projectId: string,
   issueId: string,
   action: "created" | "updated" | "deleted",
   data?: any
 ): void {
-  websocketManager.broadcast("issue", issueId, {
+  websocketManager.broadcast(projectId, "issue", issueId, {
     type: `issue_${action}` as any,
     data,
   });
 }
 
 /**
- * Broadcast spec updates to subscribed clients
+ * Broadcast spec updates to subscribed clients for a specific project
  */
 export function broadcastSpecUpdate(
+  projectId: string,
   specId: string,
   action: "created" | "updated" | "deleted",
   data?: any
 ): void {
-  websocketManager.broadcast("spec", specId, {
+  websocketManager.broadcast(projectId, "spec", specId, {
     type: `spec_${action}` as any,
     data,
   });
 }
 
 /**
- * Broadcast feedback updates to subscribed clients
+ * Broadcast feedback updates to subscribed clients for a specific project
  */
 export function broadcastFeedbackUpdate(
+  projectId: string,
   action: "created" | "updated" | "deleted",
   data?: any
 ): void {
-  websocketManager.broadcastGeneric({
+  websocketManager.broadcastGeneric(projectId, {
     type: `feedback_${action}` as any,
     data,
   });
 }
 
 /**
- * Broadcast relationship updates to subscribed clients
+ * Broadcast relationship updates to subscribed clients for a specific project
  */
 export function broadcastRelationshipUpdate(
+  projectId: string,
   action: "created" | "deleted",
   data?: any
 ): void {
-  websocketManager.broadcastGeneric({
+  websocketManager.broadcastGeneric(projectId, {
     type: `relationship_${action}` as any,
     data,
   });
 }
 
 /**
- * Broadcast execution updates to subscribed clients
+ * Broadcast execution updates to subscribed clients for a specific project
  * Also optionally broadcasts to parent issue subscribers
  *
+ * @param projectId - ID of the project
  * @param executionId - ID of the execution
  * @param action - The action performed on the execution
  * @param data - Execution data to broadcast
  * @param issueId - Optional issue ID to also broadcast to issue subscribers
  */
 export function broadcastExecutionUpdate(
+  projectId: string,
   executionId: string,
   action: "created" | "updated" | "status_changed" | "deleted",
   data?: any,
   issueId?: string
 ): void {
   // Primary broadcast to execution subscribers
-  websocketManager.broadcast("execution", executionId, {
+  websocketManager.broadcast(projectId, "execution", executionId, {
     type: `execution_${action}` as any,
     data,
   });
@@ -582,11 +658,25 @@ export function broadcastExecutionUpdate(
   // This allows clients viewing an issue to see its execution updates
   // without subscribing to each individual execution
   if (issueId) {
-    websocketManager.broadcast("issue", issueId, {
+    websocketManager.broadcast(projectId, "issue", issueId, {
       type: `execution_${action}` as any,
       data,
     });
   }
+}
+
+/**
+ * Broadcast project opened event to subscribed clients
+ */
+export function broadcastProjectOpened(projectId: string, data?: any): void {
+  websocketManager.broadcastProjectEvent(projectId, "opened", data);
+}
+
+/**
+ * Broadcast project closed event to subscribed clients
+ */
+export function broadcastProjectClosed(projectId: string, data?: any): void {
+  websocketManager.broadcastProjectEvent(projectId, "closed", data);
 }
 
 /**

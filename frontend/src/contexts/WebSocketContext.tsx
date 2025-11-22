@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
 import type { WebSocketMessage, WebSocketSubscribeMessage } from '@/types/api'
+import { useProjectContext } from './ProjectContext'
 
 interface WebSocketContextValue {
   connected: boolean
-  lastMessage: WebSocketMessage | null
   subscribe: (entityType: WebSocketSubscribeMessage['entity_type'], entityId?: string) => void
   unsubscribe: (entityType: WebSocketSubscribeMessage['entity_type'], entityId?: string) => void
   addMessageHandler: (id: string, handler: (message: WebSocketMessage) => void) => void
@@ -35,7 +35,16 @@ export function WebSocketProvider({
   const pendingSubscriptions = useRef<Set<string>>(new Set())
 
   const [connected, setConnected] = useState(false)
-  const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null)
+
+  // Get current project from context
+  const { currentProjectId } = useProjectContext()
+
+  // Track current project ID in a ref (always up-to-date for subscribe/unsubscribe)
+  const currentProjectIdRef = useRef<string | null>(currentProjectId)
+  currentProjectIdRef.current = currentProjectId
+
+  // Track previous project ID for detecting changes
+  const prevProjectIdRef = useRef<string | null>(currentProjectId)
 
   const connect = useCallback(() => {
     if (ws.current?.readyState === WebSocket.OPEN) {
@@ -78,8 +87,15 @@ export function WebSocketProvider({
       ws.current.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data) as WebSocketMessage
-          console.log('[WebSocket] Message received:', message.type)
-          setLastMessage(message)
+          console.log('[WebSocket] Message received:', message.type, 'projectId:', message.projectId)
+
+          // Filter messages by project ID
+          // Only process messages that match current project or have no projectId (global messages)
+          const currentProject = currentProjectIdRef.current
+          if (message.projectId && currentProject && message.projectId !== currentProject) {
+            console.log('[WebSocket] Ignoring message from different project:', message.projectId)
+            return
+          }
 
           // Notify all registered handlers
           messageHandlers.current.forEach((handler) => {
@@ -140,7 +156,15 @@ export function WebSocketProvider({
 
   const subscribe = useCallback(
     (entityType: WebSocketSubscribeMessage['entity_type'], entityId?: string) => {
-      const subscriptionKey = entityId ? `${entityType}:${entityId}` : `${entityType}:*`
+      const projectId = currentProjectIdRef.current
+      if (!projectId) {
+        console.warn('[WebSocket] Cannot subscribe: no project selected')
+        return
+      }
+
+      const subscriptionKey = entityId
+        ? `${projectId}:${entityType}:${entityId}`
+        : `${projectId}:${entityType}:*`
 
       // Track subscription
       subscriptions.current.add(subscriptionKey)
@@ -149,6 +173,7 @@ export function WebSocketProvider({
       if (ws.current?.readyState === WebSocket.OPEN) {
         const message: WebSocketSubscribeMessage = {
           type: 'subscribe',
+          project_id: projectId,
           entity_type: entityType,
           entity_id: entityId,
         }
@@ -164,7 +189,15 @@ export function WebSocketProvider({
 
   const unsubscribe = useCallback(
     (entityType: WebSocketSubscribeMessage['entity_type'], entityId?: string) => {
-      const subscriptionKey = entityId ? `${entityType}:${entityId}` : `${entityType}:*`
+      const projectId = currentProjectIdRef.current
+      if (!projectId) {
+        console.warn('[WebSocket] Cannot unsubscribe: no project selected')
+        return
+      }
+
+      const subscriptionKey = entityId
+        ? `${projectId}:${entityType}:${entityId}`
+        : `${projectId}:${entityType}:*`
 
       // Remove from tracked subscriptions
       subscriptions.current.delete(subscriptionKey)
@@ -172,8 +205,9 @@ export function WebSocketProvider({
 
       // Send unsubscribe message if connected
       if (ws.current?.readyState === WebSocket.OPEN) {
-        const message = {
-          type: 'unsubscribe' as const,
+        const message: WebSocketSubscribeMessage = {
+          type: 'unsubscribe',
+          project_id: projectId,
           entity_type: entityType,
           entity_id: entityId,
         }
@@ -195,6 +229,42 @@ export function WebSocketProvider({
     messageHandlers.current.delete(id)
   }, [])
 
+  // Handle project switching: unsubscribe from old project, subscribe to new project
+  useEffect(() => {
+    const oldProjectId = prevProjectIdRef.current
+    const newProjectId = currentProjectId
+
+    // If project changed and we're connected
+    if (oldProjectId !== newProjectId && ws.current?.readyState === WebSocket.OPEN) {
+      console.log('[WebSocket] Project changed:', oldProjectId, '->', newProjectId)
+
+      // Unsubscribe from all subscriptions of old project
+      if (oldProjectId) {
+        const oldProjectSubscriptions = Array.from(subscriptions.current).filter((sub) =>
+          sub.startsWith(`${oldProjectId}:`)
+        )
+
+        oldProjectSubscriptions.forEach((sub) => {
+          const message = parseSubscriptionString(sub)
+          if (message) {
+            message.type = 'unsubscribe'
+            ws.current?.send(JSON.stringify(message))
+            console.log('[WebSocket] Unsubscribed from old project:', sub)
+          }
+          subscriptions.current.delete(sub)
+        })
+      }
+
+      // Clear pending subscriptions (they're for the old project)
+      pendingSubscriptions.current.clear()
+
+      console.log('[WebSocket] Ready for new project subscriptions')
+    }
+
+    // Update previous project ID
+    prevProjectIdRef.current = newProjectId
+  }, [currentProjectId])
+
   // Connect on mount
   useEffect(() => {
     connect()
@@ -205,7 +275,6 @@ export function WebSocketProvider({
 
   const value: WebSocketContextValue = {
     connected,
-    lastMessage,
     subscribe,
     unsubscribe,
     addMessageHandler,
@@ -224,15 +293,28 @@ export function useWebSocketContext() {
 }
 
 // Helper function to parse subscription string back to message format
+// Format: projectId:entityType:entityId or projectId:entityType:*
 function parseSubscriptionString(sub: string): WebSocketSubscribeMessage | null {
-  if (sub === 'all') {
-    return { type: 'subscribe', entity_type: 'all' }
+  const parts = sub.split(':')
+
+  if (parts.length < 2) {
+    return null
   }
 
-  const [entityType, entityId] = sub.split(':')
-  if (entityType === 'issue' || entityType === 'spec') {
+  const [projectId, entityType, entityId] = parts
+
+  if (entityType === 'all') {
     return {
       type: 'subscribe',
+      project_id: projectId,
+      entity_type: 'all',
+    }
+  }
+
+  if (entityType === 'issue' || entityType === 'spec' || entityType === 'execution') {
+    return {
+      type: 'subscribe',
+      project_id: projectId,
       entity_type: entityType,
       entity_id: entityId === '*' ? undefined : entityId,
     }

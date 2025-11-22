@@ -67,6 +67,7 @@ describe("ExecutionLogsStore Integration", () => {
     // Create execution service with logs store
     executionService = new ExecutionService(
       db,
+      "test-project",
       testDir,
       lifecycleService,
       undefined, // No transport manager
@@ -372,6 +373,7 @@ describe("ExecutionLogsStore Integration", () => {
       const customLogsStore = new ExecutionLogsStore(db);
       const customService = new ExecutionService(
         db,
+        "test-project",
         testDir,
         undefined,
         undefined,
@@ -386,6 +388,7 @@ describe("ExecutionLogsStore Integration", () => {
       // Create service without explicit logsStore
       const serviceWithoutLogs = new ExecutionService(
         db,
+        "test-project",
         testDir,
         undefined,
         undefined

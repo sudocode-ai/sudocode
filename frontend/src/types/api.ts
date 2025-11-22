@@ -130,13 +130,20 @@ export interface WebSocketMessage {
     | 'execution_updated'
     | 'execution_status_changed'
     | 'execution_deleted'
-  data: Issue | Spec | Relationship | IssueFeedback | Execution
-  timestamp: string
+    | 'project_opened'
+    | 'project_closed'
+    | 'error'
+  projectId?: string // Project ID for project-scoped messages
+  data?: Issue | Spec | Relationship | IssueFeedback | Execution | any
+  message?: string // Error message
+  timestamp?: string
+  subscription?: string // Subscription key for debugging
 }
 
 export interface WebSocketSubscribeMessage {
-  type: 'subscribe'
-  entity_type: 'issue' | 'spec' | 'execution' | 'all'
+  type: 'subscribe' | 'unsubscribe' | 'ping'
+  project_id?: string // Required for project-scoped subscriptions
+  entity_type?: 'issue' | 'spec' | 'execution' | 'all'
   entity_id?: string
 }
 

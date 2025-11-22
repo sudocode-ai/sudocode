@@ -8,6 +8,8 @@ import type { Spec } from '@/types/api'
 
 // Mock the API
 vi.mock('@/lib/api', () => ({
+  setCurrentProjectId: vi.fn(),
+  getCurrentProjectId: vi.fn(() => 'test-project-123'),
   specsApi: {
     getAll: vi.fn(),
     create: vi.fn(),

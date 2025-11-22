@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSpecs } from '@/hooks/useSpecs'
 import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
+import { useProject } from '@/hooks/useProject'
+import { useProjectById } from '@/hooks/useProjects'
 import { SpecList } from '@/components/specs/SpecList'
 import { SpecEditor } from '@/components/specs/SpecEditor'
 import { Button } from '@/components/ui/button'
@@ -24,6 +26,8 @@ const SORT_STORAGE_KEY = 'sudocode:specs:sortOption'
 export default function SpecsPage() {
   const { specs, isLoading } = useSpecs()
   const { data: repoInfo } = useRepositoryInfo()
+  const { currentProjectId } = useProject()
+  const { data: currentProject } = useProjectById(currentProjectId)
   const [showEditor, setShowEditor] = useState(false)
   const [filterText, setFilterText] = useState('')
   const [sortOption, setSortOption] = useState<SortOption>(() => {
@@ -112,11 +116,18 @@ export default function SpecsPage() {
             <h1 className="text-2xl font-bold">Specs</h1>
             <Badge variant="secondary">{specs.length}</Badge>
           </div>
-          {repoInfo && (
-            <div className="flex items-center gap-2 pl-3 text-sm text-muted-foreground">
-              <span className="font-medium">{repoInfo.name}</span>
-              <GitBranch className="h-3.5 w-3.5" />
-              <span>{repoInfo.branch}</span>
+          {(currentProject || repoInfo) && (
+            <div className="flex flex-col gap-0.5 pl-3 text-sm">
+              {currentProject && (
+                <div className="font-medium text-foreground">{currentProject.name}</div>
+              )}
+              {repoInfo && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="font-medium">{repoInfo.name}</span>
+                  <GitBranch className="h-3.5 w-3.5" />
+                  <span>{repoInfo.branch}</span>
+                </div>
+              )}
             </div>
           )}
         </div>

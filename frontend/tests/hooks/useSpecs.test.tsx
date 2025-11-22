@@ -8,6 +8,8 @@ import React from 'react'
 
 // Mock the API module
 vi.mock('@/lib/api', () => ({
+  setCurrentProjectId: vi.fn(),
+  getCurrentProjectId: vi.fn(() => 'test-project-123'),
   specsApi: {
     getAll: vi.fn(),
     getById: vi.fn(),

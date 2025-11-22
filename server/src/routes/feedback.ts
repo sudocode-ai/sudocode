@@ -1,9 +1,10 @@
 /**
  * Feedback API routes (mapped to /api/feedback)
+ *
+ * Note: All routes require X-Project-ID header via requireProject() middleware
  */
 
 import { Router, Request, Response } from "express";
-import type Database from "better-sqlite3";
 import type { FeedbackType, FeedbackAnchor } from "@sudocode-ai/types";
 import {
   createNewFeedback,
@@ -14,7 +15,7 @@ import {
 } from "../services/feedback.js";
 import { broadcastFeedbackUpdate } from "../services/websocket.js";
 
-export function createFeedbackRouter(db: Database.Database): Router {
+export function createFeedbackRouter(): Router {
   const router = Router();
 
   /**
@@ -46,7 +47,7 @@ export function createFeedbackRouter(db: Database.Database): Router {
         options.offset = parseInt(req.query.offset as string, 10);
       }
 
-      const feedback = getAllFeedback(db, options);
+      const feedback = getAllFeedback(req.project!.db, options);
 
       res.json({
         success: true,
@@ -69,7 +70,7 @@ export function createFeedbackRouter(db: Database.Database): Router {
   router.get("/:id", (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const feedback = getFeedbackById(db, id);
+      const feedback = getFeedbackById(req.project!.db, id);
 
       if (!feedback) {
         res.status(404).json({
@@ -191,7 +192,7 @@ export function createFeedbackRouter(db: Database.Database): Router {
       }
 
       // Create feedback using CLI operation
-      const feedback = createNewFeedback(db, {
+      const feedback = createNewFeedback(req.project!.db, {
         from_id: fromId,
         to_id: toId,
         feedback_type: feedback_type as FeedbackType,
@@ -202,7 +203,7 @@ export function createFeedbackRouter(db: Database.Database): Router {
       });
 
       // Broadcast feedback creation to WebSocket clients
-      broadcastFeedbackUpdate("created", feedback);
+      broadcastFeedbackUpdate(req.project!.id, "created", feedback);
 
       res.status(201).json({
         success: true,
@@ -301,10 +302,10 @@ export function createFeedbackRouter(db: Database.Database): Router {
       if (anchor !== undefined) updateInput.anchor = anchor as FeedbackAnchor;
 
       // Update feedback using CLI operation
-      const feedback = updateExistingFeedback(db, id, updateInput);
+      const feedback = updateExistingFeedback(req.project!.db, id, updateInput);
 
       // Broadcast feedback update to WebSocket clients
-      broadcastFeedbackUpdate("updated", feedback);
+      broadcastFeedbackUpdate(req.project!.id, "updated", feedback);
 
       res.json({
         success: true,
@@ -340,7 +341,7 @@ export function createFeedbackRouter(db: Database.Database): Router {
       const { id } = req.params;
 
       // Check if feedback exists first
-      const existingFeedback = getFeedbackById(db, id);
+      const existingFeedback = getFeedbackById(req.project!.db, id);
       if (!existingFeedback) {
         res.status(404).json({
           success: false,
@@ -351,11 +352,11 @@ export function createFeedbackRouter(db: Database.Database): Router {
       }
 
       // Delete feedback using CLI operation
-      const deleted = deleteExistingFeedback(db, id);
+      const deleted = deleteExistingFeedback(req.project!.db, id);
 
       if (deleted) {
         // Broadcast feedback deletion to WebSocket clients
-        broadcastFeedbackUpdate("deleted", { id });
+        broadcastFeedbackUpdate(req.project!.id, "deleted", { id });
 
         res.json({
           success: true,

@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useTheme } from '@/contexts/ThemeContext'
 import { Sun, Moon } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import axios from 'axios'
+import api from '@/lib/api'
 
 interface SettingsDialogProps {
   isOpen: boolean
@@ -27,8 +27,8 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   useEffect(() => {
     const fetchVersions = async () => {
       try {
-        const response = await axios.get<VersionInfo>('/api/version')
-        setVersions(response.data)
+        const data = await api.get<VersionInfo, VersionInfo>('/version')
+        setVersions(data)
       } catch (error) {
         console.error('Failed to fetch version information:', error)
       }
@@ -80,19 +80,19 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">CLI</span>
-                <span className="text-sm text-foreground font-mono">
+                <span className="font-mono text-sm text-foreground">
                   {versions?.cli ?? 'Loading...'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Server</span>
-                <span className="text-sm text-foreground font-mono">
+                <span className="font-mono text-sm text-foreground">
                   {versions?.server ?? 'Loading...'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Frontend</span>
-                <span className="text-sm text-foreground font-mono">
+                <span className="font-mono text-sm text-foreground">
                   {versions?.frontend ?? 'Loading...'}
                 </span>
               </div>

@@ -185,6 +185,10 @@ export class TransportManager {
    * ```
    */
   broadcastToRun(runId: string, event: AgUiEvent): number {
+    // Buffer the event for replay to late-connecting clients
+    this.eventBuffer.addEvent(runId, event);
+
+    // Broadcast to currently connected clients
     const clientCount = this.sseTransport.broadcastToRun(runId, {
       event: event.type,
       data: event,

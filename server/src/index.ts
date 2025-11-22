@@ -5,42 +5,27 @@ import * as path from "path";
 import * as http from "http";
 import { fileURLToPath } from "url";
 import { readFileSync, existsSync } from "fs";
-import type Database from "better-sqlite3";
 
 // ES Module __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-import { initDatabase, getDatabaseInfo } from "./services/db.js";
-import { ExecutionLifecycleService } from "./services/execution-lifecycle.js";
-import { ExecutionService } from "./services/execution-service.js";
-import { ExecutionLogsStore } from "./services/execution-logs-store.js";
-// import {
-//   ExecutionLogsCleanup,
-//   DEFAULT_CLEANUP_CONFIG,
-//   type CleanupConfig,
-// } from "./services/execution-logs-cleanup.js";
-import { WorktreeManager } from "./execution/worktree/manager.js";
-import { getWorktreeConfig } from "./execution/worktree/config.js";
-import { getRepositoryInfo } from "./services/repo-info.js";
 import { createIssuesRouter } from "./routes/issues.js";
 import { createSpecsRouter } from "./routes/specs.js";
 import { createRelationshipsRouter } from "./routes/relationships.js";
 import { createFeedbackRouter } from "./routes/feedback.js";
 import { createExecutionsRouter } from "./routes/executions.js";
 import { createExecutionStreamRoutes } from "./routes/executions-stream.js";
+import { createProjectsRouter } from "./routes/projects.js";
+import { createConfigRouter } from "./routes/config.js";
+import { createRepoInfoRouter } from "./routes/repo-info.js";
 import { TransportManager } from "./execution/transport/transport-manager.js";
-import { getIssueById } from "./services/issues.js";
-import { getSpecById } from "./services/specs.js";
-import {
-  startServerWatcher,
-  type ServerWatcherControl,
-} from "./services/watcher.js";
+import { ProjectRegistry } from "./services/project-registry.js";
+import { ProjectManager } from "./services/project-manager.js";
+import { requireProject } from "./middleware/project-context.js";
 import {
   initWebSocketServer,
   getWebSocketStats,
   shutdownWebSocketServer,
-  broadcastIssueUpdate,
-  broadcastSpecUpdate,
   getWebSocketServer,
 } from "./services/websocket.js";
 
@@ -51,95 +36,78 @@ const app = express();
 const DEFAULT_PORT = 3000;
 const MAX_PORT_ATTEMPTS = 20;
 
-// Falls back to current directory for development/testing
-const SUDOCODE_DIR =
-  process.env.SUDOCODE_DIR || path.join(process.cwd(), ".sudocode");
-const DB_PATH = path.join(SUDOCODE_DIR, "cache.db");
-// TODO: Include sudocode install package for serving static files.
-
-// Derive repo root from SUDOCODE_DIR (which is <repo>/.sudocode)
-// This ensures consistency across database and execution paths
-const REPO_ROOT = path.dirname(SUDOCODE_DIR);
-
-// Initialize database and transport manager
-let db!: Database.Database;
-let watcher: ServerWatcherControl | null = null;
+// Initialize transport manager
 let transportManager!: TransportManager;
-let logsStore!: ExecutionLogsStore;
-// let logsCleanup: ExecutionLogsCleanup | null = null;
-let executionService: ExecutionService | null = null;
+
+// Multi-project infrastructure
+let projectRegistry!: ProjectRegistry;
+let projectManager!: ProjectManager;
+
+// Start file watcher (enabled by default, disable with WATCH=false)
+const WATCH_ENABLED = process.env.WATCH !== "false";
 
 // Async initialization function
 async function initialize() {
   try {
-    console.log(`Initializing database at: ${DB_PATH}`);
-    db = initDatabase({ path: DB_PATH });
-    const info = getDatabaseInfo(db);
-    console.log(`Database initialized with ${info.tables.length} tables`);
-    if (!info.hasCliTables) {
-      // TODO: Automatically import and sync.
-      console.warn(
-        "Warning: CLI tables not found. Run 'sudocode sync' to initialize the database."
-      );
+    // Initialize ProjectRegistry and ProjectManager for multi-project support
+    projectRegistry = new ProjectRegistry();
+    await projectRegistry.load();
+    console.log(
+      `ProjectRegistry loaded from: ${projectRegistry.getConfigPath()}`
+    );
+
+    projectManager = new ProjectManager(projectRegistry, {
+      watchEnabled: WATCH_ENABLED,
+    });
+
+    // Auto-open strategy:
+    // 1. If current directory has .sudocode, open it (highest priority)
+    // 2. Otherwise, open the most recently opened project (if available)
+    const currentDir = process.cwd();
+    const sudocodeDir = path.join(currentDir, ".sudocode");
+    const hasLocalProject = existsSync(sudocodeDir);
+
+    if (hasLocalProject) {
+      console.log(`Found .sudocode in current directory, opening: ${currentDir}`);
+      const openResult = await projectManager.openProject(currentDir);
+      if (!openResult.ok) {
+        const errorMsg =
+          "message" in openResult.error!
+            ? openResult.error!.message
+            : `${openResult.error!.type}`;
+        console.warn(`Failed to open local project: ${errorMsg}`);
+        console.log("Server will start with no projects open");
+      } else {
+        const projectInfo = projectRegistry.getProject(openResult.value!.id);
+        console.log(`Auto-opened local project: ${projectInfo?.name || path.basename(currentDir)}`);
+      }
+    } else {
+      // No local project, try most recent
+      const recentProjects = projectRegistry.getRecentProjects();
+      if (recentProjects.length > 0) {
+        const mostRecent = recentProjects[0];
+        console.log(`Auto-opening most recent project: ${mostRecent.name} (${mostRecent.path})`);
+        const openResult = await projectManager.openProject(mostRecent.path);
+        if (!openResult.ok) {
+          const errorMsg =
+            "message" in openResult.error!
+              ? openResult.error!.message
+              : `${openResult.error!.type}`;
+          console.warn(`Failed to auto-open most recent project: ${errorMsg}`);
+          console.log("Server will start with no projects open");
+        } else {
+          console.log(`Auto-opened project: ${mostRecent.name}`);
+        }
+      } else {
+        console.log("No recent projects found. Server will start with no projects open");
+      }
     }
 
     // Initialize transport manager for SSE streaming
     transportManager = new TransportManager();
     console.log("Transport manager initialized");
-
-    // Initialize execution logs store
-    logsStore = new ExecutionLogsStore(db);
-    console.log("Execution logs store initialized");
-
-    // Initialize execution logs cleanup service
-    // TODO: Enable auto-cleanup config via .sudocode/config.json
-    // const cleanupConfig: CleanupConfig = {
-    //   enabled: process.env.CLEANUP_ENABLED !== "false",
-    //   intervalMs: parseInt(
-    //     process.env.CLEANUP_INTERVAL_MS ||
-    //       String(DEFAULT_CLEANUP_CONFIG.intervalMs),
-    //     10
-    //   ),
-    //   retentionMs: parseInt(
-    //     process.env.CLEANUP_RETENTION_MS ||
-    //       String(DEFAULT_CLEANUP_CONFIG.retentionMs),
-    //     10
-    //   ),
-    // };
-    // logsCleanup = new ExecutionLogsCleanup(logsStore, cleanupConfig);
-    // logsCleanup.start();
-
-    // Initialize execution service globally for cleanup on shutdown
-    executionService = new ExecutionService(
-      db,
-      REPO_ROOT,
-      undefined,
-      transportManager,
-      logsStore
-    );
-    console.log("Execution service initialized");
-
-    // Cleanup orphaned worktrees on startup (if configured)
-    const worktreeConfig = getWorktreeConfig(REPO_ROOT);
-    if (worktreeConfig.cleanupOrphanedWorktreesOnStartup) {
-      try {
-        // TODO: Log if there are worktrees to cleanup
-        const worktreeManager = new WorktreeManager(worktreeConfig);
-        const lifecycleService = new ExecutionLifecycleService(
-          db,
-          REPO_ROOT,
-          worktreeManager
-        );
-        console.log("Cleaning up orphaned worktrees...");
-        await lifecycleService.cleanupOrphanedWorktrees();
-        console.log("Orphaned worktree cleanup complete");
-      } catch (error) {
-        console.error("Failed to cleanup orphaned worktrees:", error);
-        // Don't exit - this is best-effort cleanup
-      }
-    }
   } catch (error) {
-    console.error("Failed to initialize database:", error);
+    console.error("Failed to initialize server:", error);
     process.exit(1);
   }
 }
@@ -147,91 +115,56 @@ async function initialize() {
 // Run initialization
 await initialize();
 
-// Start file watcher (enabled by default, disable with WATCH=false)
-const WATCH_ENABLED = process.env.WATCH !== "false";
-const SYNC_JSONL_TO_MARKDOWN = process.env.SYNC_JSONL_TO_MARKDOWN === "true";
-if (WATCH_ENABLED) {
-  try {
-    watcher = startServerWatcher({
-      db,
-      baseDir: SUDOCODE_DIR,
-      debounceDelay: parseInt(process.env.WATCH_DEBOUNCE || "2000", 10),
-      syncJSONLToMarkdown: SYNC_JSONL_TO_MARKDOWN,
-      onFileChange: (info) => {
-        console.log(
-          `[server] File change detected: ${info.entityType || "unknown"} ${
-            info.entityId || ""
-          }`
-        );
-
-        // Broadcast WebSocket updates for issue and spec changes
-        if (info.entityType === "issue" && info.entityId) {
-          if (info.entityId === "*") {
-            // Wildcard update (JSONL file changed) - broadcast to all issue subscribers
-            broadcastIssueUpdate("*", "updated", null);
-          } else {
-            // Specific issue update - fetch and broadcast the specific issue
-            const issue = getIssueById(db, info.entityId);
-            if (issue) {
-              broadcastIssueUpdate(info.entityId, "updated", issue);
-            }
-          }
-        } else if (info.entityType === "spec" && info.entityId) {
-          if (info.entityId === "*") {
-            // Wildcard update (JSONL file changed) - broadcast to all spec subscribers
-            broadcastSpecUpdate("*", "updated", null);
-          } else {
-            // Specific spec update - fetch and broadcast the specific spec
-            const spec = getSpecById(db, info.entityId);
-            if (spec) {
-              broadcastSpecUpdate(info.entityId, "updated", spec);
-            }
-          }
-        }
-      },
-    });
-    console.log(`[server] File watcher started on: ${SUDOCODE_DIR}`);
-  } catch (error) {
-    console.error("Failed to start file watcher:", error);
-    console.warn(
-      "Continuing without file watcher. Set WATCH=false to suppress this warning."
-    );
-  }
-}
-
 // Middleware
 app.use(cors());
 app.use(express.json());
 
 // API Routes
-app.use("/api/issues", createIssuesRouter(db));
-app.use("/api/specs", createSpecsRouter(db));
-app.use("/api/relationships", createRelationshipsRouter(db));
-app.use("/api/feedback", createFeedbackRouter(db));
-// Mount execution routes (must be before stream routes to avoid conflicts)
+
+// Project management routes (no project context required)
+app.use("/api/projects", createProjectsRouter(projectManager, projectRegistry));
+
+// Entity routes (require project context via X-Project-ID header)
+app.use("/api/issues", requireProject(projectManager), createIssuesRouter());
+app.use("/api/specs", requireProject(projectManager), createSpecsRouter());
 app.use(
-  "/api",
-  createExecutionsRouter(
-    db,
-    REPO_ROOT,
-    transportManager,
-    executionService!,
-    logsStore
-  )
+  "/api/relationships",
+  requireProject(projectManager),
+  createRelationshipsRouter()
 );
-app.use("/api/executions", createExecutionStreamRoutes(transportManager));
+app.use(
+  "/api/feedback",
+  requireProject(projectManager),
+  createFeedbackRouter()
+);
+app.use("/api/config", requireProject(projectManager), createConfigRouter());
+app.use("/api/repo-info", requireProject(projectManager), createRepoInfoRouter());
+
+// Mount execution routes (must be before stream routes to avoid conflicts)
+app.use("/api", requireProject(projectManager), createExecutionsRouter());
+app.use(
+  "/api/executions",
+  requireProject(projectManager),
+  createExecutionStreamRoutes()
+);
 
 // Health check endpoint
 app.get("/health", (_req: Request, res: Response) => {
-  const dbInfo = getDatabaseInfo(db);
+  const openProjects = projectManager.getAllOpenProjects();
   res.status(200).json({
     status: "ok",
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    database: {
-      path: DB_PATH,
-      tables: dbInfo.tables.length,
-      hasCliTables: dbInfo.hasCliTables,
+    projects: {
+      totalOpen: openProjects.length,
+      openProjects: openProjects.map((p) => {
+        const projectInfo = projectRegistry.getProject(p.id);
+        return {
+          id: p.id,
+          name: projectInfo?.name || path.basename(p.path),
+          path: p.path,
+        };
+      }),
     },
   });
 });
@@ -252,46 +185,22 @@ app.get("/api/version", (_req: Request, res: Response) => {
     );
 
     res.status(200).json({
-      cli: cliPackage.version,
-      server: serverPackage.version,
-      frontend: frontendPackage.version,
+      success: true,
+      data: {
+        cli: cliPackage.version,
+        server: serverPackage.version,
+        frontend: frontendPackage.version,
+      },
     });
   } catch (error) {
     console.error("Failed to read version information:", error);
-    res.status(500).json({ error: "Failed to read version information" });
+    res.status(500).json({
+      success: false,
+      data: null,
+      message: "Failed to read version information",
+    });
   }
 });
-
-// Config endpoint - returns sudocode configuration
-app.get("/api/config", (_req: Request, res: Response) => {
-  try {
-    const configPath = path.join(SUDOCODE_DIR, "config.json");
-    const config = JSON.parse(readFileSync(configPath, "utf-8"));
-    res.status(200).json(config);
-  } catch (error) {
-    console.error("Failed to read config:", error);
-    res.status(500).json({ error: "Failed to read config" });
-  }
-});
-
-// Repository info endpoint - returns git repository information
-app.get(
-  "/api/repo-info",
-  async (_req: Request, res: Response): Promise<void> => {
-    try {
-      const repoInfo = await getRepositoryInfo(REPO_ROOT);
-      res.status(200).json(repoInfo);
-    } catch (error) {
-      const err = error as Error;
-      if (err.message === "Not a git repository") {
-        res.status(404).json({ error: err.message });
-      } else {
-        console.error("Failed to get repository info:", error);
-        res.status(500).json({ error: "Failed to get repository info" });
-      }
-    }
-  }
-);
 
 // WebSocket stats endpoint
 app.get("/ws/stats", (_req: Request, res: Response) => {
@@ -462,26 +371,20 @@ const reset = "\u001b[0m";
 const makeClickable = (url: string, text: string) =>
   `\u001b]8;;${url}\u001b\\${text}\u001b]8;;\u001b\\`;
 
-// ASCII art banner
+// ASCII art banner (split-line version for narrower terminals)
 console.log(`\n${green}${bold}`);
-console.log(
-  " ███████╗ ██╗   ██╗ ██████╗   ██████╗   ██████╗  ██████╗  ██████╗  ███████╗"
-);
-console.log(
-  " ██╔════╝ ██║   ██║ ██╔══██╗ ██╔═══██╗ ██╔════╝ ██╔═══██╗ ██╔══██╗ ██╔════╝"
-);
-console.log(
-  " ███████╗ ██║   ██║ ██║  ██║ ██║   ██║ ██║      ██║   ██║ ██║  ██║ █████╗  "
-);
-console.log(
-  " ╚════██║ ██║   ██║ ██║  ██║ ██║   ██║ ██║      ██║   ██║ ██║  ██║ ██╔══╝  "
-);
-console.log(
-  " ███████║ ╚██████╔╝ ██████╔╝ ╚██████╔╝ ╚██████╗ ╚██████╔╝ ██████╔╝ ███████╗"
-);
-console.log(
-  ` ╚══════╝  ╚═════╝  ╚═════╝   ╚═════╝   ╚═════╝  ╚═════╝  ╚═════╝  ╚══════╝${reset}\n`
-);
+console.log(" ███████╗ ██╗   ██╗ ██████╗   ██████╗ ");
+console.log(" ██╔════╝ ██║   ██║ ██╔══██╗ ██╔═══██╗");
+console.log(" ███████╗ ██║   ██║ ██║  ██║ ██║   ██║");
+console.log(" ╚════██║ ██║   ██║ ██║  ██║ ██║   ██║");
+console.log(" ███████║ ╚██████╔╝ ██████╔╝ ╚██████╔╝");
+console.log(" ╚══════╝  ╚═════╝  ╚═════╝   ╚═════╝ ");
+console.log("  ██████╗  ██████╗  ██████╗  ███████╗");
+console.log(" ██╔════╝ ██╔═══██╗ ██╔══██╗ ██╔════╝");
+console.log(" ██║      ██║   ██║ ██║  ██║ █████╗  ");
+console.log(" ██║      ██║   ██║ ██║  ██║ ██╔══╝  ");
+console.log(" ╚██████╗ ╚██████╔╝ ██████╔╝ ███████╗");
+console.log(` ╚═════╝  ╚═════╝  ╚═════╝  ╚══════╝${reset}\n`);
 
 console.log(
   `${bold}${green}sudocode local server running on: ${makeClickable(
@@ -506,20 +409,10 @@ process.on("unhandledRejection", (reason, promise) => {
 process.on("SIGINT", async () => {
   console.log("\nShutting down server...");
 
-  // Shutdown execution service (cancel active executions)
-  if (executionService) {
-    await executionService.shutdown();
-  }
-
-  // Stop logs cleanup service
-  // TODO: Re-enable when logs cleanup is supported
-  // if (logsCleanup) {
-  //   logsCleanup.stop();
-  // }
-
-  // Stop file watcher
-  if (watcher) {
-    await watcher.stop();
+  // Shutdown ProjectManager (closes all projects and their watchers)
+  // This will shutdown all per-project ExecutionServices and close all databases
+  if (projectManager) {
+    await projectManager.shutdown();
   }
 
   // Shutdown WebSocket server
@@ -530,9 +423,6 @@ process.on("SIGINT", async () => {
     transportManager.shutdown();
     console.log("Transport manager shutdown complete");
   }
-
-  // Close database
-  db.close();
 
   // Close HTTP server
   server.close(() => {
@@ -550,20 +440,10 @@ process.on("SIGINT", async () => {
 process.on("SIGTERM", async () => {
   console.log("\nShutting down server...");
 
-  // Shutdown execution service (cancel active executions)
-  if (executionService) {
-    await executionService.shutdown();
-  }
-
-  // Stop logs cleanup service
-  // TODO: Re-enable when logs cleanup is supported
-  // if (logsCleanup) {
-  //   logsCleanup.stop();
-  // }
-
-  // Stop file watcher
-  if (watcher) {
-    await watcher.stop();
+  // Shutdown ProjectManager (closes all projects and their watchers)
+  // This will shutdown all per-project ExecutionServices and close all databases
+  if (projectManager) {
+    await projectManager.shutdown();
   }
 
   // Shutdown WebSocket server
@@ -575,9 +455,6 @@ process.on("SIGTERM", async () => {
     console.log("Transport manager shutdown complete");
   }
 
-  // Close database
-  db.close();
-
   // Close HTTP server
   server.close(() => {
     console.log("Server closed");
@@ -586,4 +463,4 @@ process.on("SIGTERM", async () => {
 });
 
 export default app;
-export { db, transportManager };
+export { transportManager };

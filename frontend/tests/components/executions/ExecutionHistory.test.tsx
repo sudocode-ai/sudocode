@@ -8,6 +8,8 @@ import type { Execution } from '@/types/execution'
 
 // Mock the API
 vi.mock('@/lib/api', () => ({
+  setCurrentProjectId: vi.fn(),
+  getCurrentProjectId: vi.fn(() => 'test-project-123'),
   executionsApi: {
     list: vi.fn(),
   },

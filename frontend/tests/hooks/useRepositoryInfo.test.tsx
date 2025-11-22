@@ -5,9 +5,12 @@ import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
 import { repositoryApi } from '@/lib/api'
 import type { RepositoryInfo } from '@/types/api'
 import React from 'react'
+import { ProjectProvider } from '@/contexts/ProjectContext'
 
 // Mock the API module
 vi.mock('@/lib/api', () => ({
+  setCurrentProjectId: vi.fn(),
+  getCurrentProjectId: vi.fn(() => 'test-project-123'),
   repositoryApi: {
     getInfo: vi.fn(),
   },
@@ -28,7 +31,11 @@ describe('useRepositoryInfo', () => {
   })
 
   const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <ProjectProvider defaultProjectId="test-project-123" skipValidation={true}>
+        {children}
+      </ProjectProvider>
+    </QueryClientProvider>
   )
 
   it('should fetch repository info on mount', async () => {

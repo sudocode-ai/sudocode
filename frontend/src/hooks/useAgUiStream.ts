@@ -26,6 +26,7 @@ import {
   type StateSnapshotEvent,
   type State,
 } from '@ag-ui/core'
+import { getCurrentProjectId } from '../lib/api'
 
 /**
  * Connection status
@@ -463,9 +464,21 @@ export function useAgUiStream(options: UseAgUiStreamOptions): UseAgUiStreamRetur
       return
     }
 
-    const url = endpoint || `/api/executions/${executionId}/stream`
+    // Get current project ID from api module
+    // EventSource doesn't support custom headers, so we pass projectId as query parameter
+    const projectId = getCurrentProjectId()
+
+    let url = endpoint || `/api/executions/${executionId}/stream`
+
+    // Append projectId query parameter if available
+    if (projectId) {
+      const separator = url.includes('?') ? '&' : '?'
+      url = `${url}${separator}projectId=${encodeURIComponent(projectId)}`
+    }
+
     console.debug('[SSE]. Connecting to SSE stream', {
       executionId,
+      projectId,
       url,
       timestamp: new Date().toISOString(),
     })

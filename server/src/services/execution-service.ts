@@ -33,6 +33,8 @@ import { DirectRunnerAdapter } from "../execution/adapters/direct-runner-adapter
 import type { IAgentExecutor } from "agent-execution-engine/agents";
 import { ClaudeCodeExecutor } from "agent-execution-engine/agents";
 import type { ExecutionTask } from "agent-execution-engine/engine";
+import { ExecutionWorkerPool } from "./execution-worker-pool.js";
+import { broadcastExecutionUpdate } from "./websocket.js";
 
 /**
  * Configuration for creating an execution
@@ -90,36 +92,44 @@ export interface ExecutionPrepareResult {
  */
 export class ExecutionService {
   private db: Database.Database;
+  private projectId: string;
   private templateEngine: PromptTemplateEngine;
   private lifecycleService: ExecutionLifecycleService;
   private repoPath: string;
   private transportManager?: TransportManager;
   private logsStore: ExecutionLogsStore;
+  private workerPool?: ExecutionWorkerPool;
   private activeOrchestrators = new Map<string, LinearOrchestrator>();
 
   /**
    * Create a new ExecutionService
    *
    * @param db - Database instance
+   * @param projectId - Project ID for WebSocket broadcasts
    * @param repoPath - Path to the git repository
    * @param lifecycleService - Optional execution lifecycle service (creates one if not provided)
    * @param transportManager - Optional transport manager for SSE streaming
    * @param logsStore - Optional execution logs store (creates one if not provided)
+   * @param workerPool - Optional worker pool for isolated execution processes
    */
   constructor(
     db: Database.Database,
+    projectId: string,
     repoPath: string,
     lifecycleService?: ExecutionLifecycleService,
     transportManager?: TransportManager,
-    logsStore?: ExecutionLogsStore
+    logsStore?: ExecutionLogsStore,
+    workerPool?: ExecutionWorkerPool
   ) {
     this.db = db;
+    this.projectId = projectId;
     this.repoPath = repoPath;
     this.templateEngine = new PromptTemplateEngine();
     this.lifecycleService =
       lifecycleService || new ExecutionLifecycleService(db, repoPath);
     this.transportManager = transportManager;
     this.logsStore = logsStore || new ExecutionLogsStore(db);
+    this.workerPool = workerPool;
   }
 
   // ============================================================================
@@ -465,6 +475,16 @@ export class ExecutionService {
 
     // 3. Execute with direct runner (uses agent-execution-engine)
     await this.executeWithDirectRunner(execution, prompt, config, workDir);
+
+    // 4. Broadcast execution creation
+    broadcastExecutionUpdate(
+      this.projectId,
+      execution.id,
+      "created",
+      execution,
+      execution.issue_id || undefined
+    );
+
     return execution;
   }
 
@@ -589,17 +609,23 @@ Please continue working on this issue, taking into account the feedback above.`;
     // 6. Create execution engine stack
     const processManager = new SimpleProcessManager();
 
+    // Build Claude CLI args with follow-up prompt
+    // NOTE: The generic engine doesn't know how to pass Claude-specific prompts,
+    // so we add the prompt as the last CLI argument
+    const claudeArgs = [
+      "--print",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--dangerously-skip-permissions",
+      followUpPrompt, // Add follow-up prompt as last argument
+    ];
+
     let engine = new SimpleExecutionEngine(processManager, {
       maxConcurrent: 1,
       defaultProcessConfig: {
         executablePath: "claude",
-        args: [
-          "--print",
-          "--output-format",
-          "stream-json",
-          "--verbose",
-          "--dangerously-skip-permissions",
-        ],
+        args: claudeArgs,
       },
     });
 
@@ -620,13 +646,7 @@ Please continue working on this issue, taking into account the feedback above.`;
         maxConcurrent: 1,
         defaultProcessConfig: {
           executablePath: "claude",
-          args: [
-            "--print",
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            "--dangerously-skip-permissions",
-          ],
+          args: claudeArgs, // Use same args with follow-up prompt
         },
         // TODO: Factor out this logic for DRY principles.
         onOutput: (data, type) => {
@@ -687,6 +707,17 @@ Please continue working on this issue, taking into account the feedback above.`;
         updateExecution(this.db, newExecution.id, {
           status: "running",
         });
+        // Broadcast status change
+        const updated = getExecution(this.db, newExecution.id);
+        if (updated) {
+          broadcastExecutionUpdate(
+            this.projectId,
+            newExecution.id,
+            "status_changed",
+            updated,
+            updated.issue_id || undefined
+          );
+        }
       } catch (error) {
         console.error(
           "[ExecutionService] Failed to update follow-up execution status to running",
@@ -704,6 +735,17 @@ Please continue working on this issue, taking into account the feedback above.`;
           status: "completed",
           completed_at: new Date().toISOString(),
         });
+        // Broadcast status change
+        const updated = getExecution(this.db, newExecution.id);
+        if (updated) {
+          broadcastExecutionUpdate(
+            this.projectId,
+            newExecution.id,
+            "status_changed",
+            updated,
+            updated.issue_id || undefined
+          );
+        }
       } catch (error) {
         console.error(
           "[ExecutionService] Failed to update follow-up execution status to completed",
@@ -723,6 +765,17 @@ Please continue working on this issue, taking into account the feedback above.`;
           completed_at: new Date().toISOString(),
           error_message: error.message,
         });
+        // Broadcast status change
+        const updated = getExecution(this.db, newExecution.id);
+        if (updated) {
+          broadcastExecutionUpdate(
+            this.projectId,
+            newExecution.id,
+            "status_changed",
+            updated,
+            updated.issue_id || undefined
+          );
+        }
       } catch (updateError) {
         console.error(
           "[ExecutionService] Failed to update follow-up execution status to failed",
@@ -747,6 +800,15 @@ Please continue working on this issue, taking into account the feedback above.`;
     // 11. Store orchestrator for later cancellation
     this.activeOrchestrators.set(newExecution.id, orchestrator);
 
+    // 12. Broadcast execution creation
+    broadcastExecutionUpdate(
+      this.projectId,
+      newExecution.id,
+      "created",
+      newExecution,
+      newExecution.issue_id || undefined
+    );
+
     return newExecution;
   }
 
@@ -768,6 +830,13 @@ Please continue working on this issue, taking into account the feedback above.`;
       throw new Error(`Cannot cancel execution in ${execution.status} state`);
     }
 
+    // Use worker pool cancellation if available
+    if (this.workerPool && this.workerPool.hasWorker(executionId)) {
+      await this.workerPool.cancelExecution(executionId);
+      return; // Worker pool handles DB updates and broadcasts
+    }
+
+    // Legacy in-process cancellation
     // Get orchestrator from active map
     const orchestrator = this.activeOrchestrators.get(executionId);
     if (orchestrator) {
@@ -782,6 +851,18 @@ Please continue working on this issue, taking into account the feedback above.`;
       status: "stopped",
       completed_at: new Date().toISOString(),
     });
+
+    // Broadcast status change
+    const updated = getExecution(this.db, executionId);
+    if (updated) {
+      broadcastExecutionUpdate(
+        this.projectId,
+        executionId,
+        "status_changed",
+        updated,
+        updated.issue_id || undefined
+      );
+    }
   }
 
   /**
@@ -916,5 +997,14 @@ Please continue working on this issue, taking into account the feedback above.`;
    */
   getExecution(executionId: string): Execution | null {
     return getExecution(this.db, executionId);
+  }
+
+  /**
+   * Check if there are any active executions
+   *
+   * @returns true if there are active in-process executions
+   */
+  hasActiveExecutions(): boolean {
+    return this.activeOrchestrators.size > 0;
   }
 }
