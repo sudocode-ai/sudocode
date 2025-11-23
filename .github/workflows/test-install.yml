@@ -106,6 +106,43 @@ jobs:
           SDK_PATH=$(xcrun --show-sdk-path)
           sudo mv "$SDK_PATH/usr/include/c++.bak" "$SDK_PATH/usr/include/c++" || true
 
+  # Hypothesis 8: Verify fix - reinstall CommandLineTools fixes the issue
+  macos-clt-reinstall-fix:
+    name: "macOS (CLT reinstall fix verification)"
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Break c++ headers then reinstall CLT
+        run: |
+          # Switch to CLT and break headers
+          sudo xcode-select --switch /Library/Developer/CommandLineTools
+          SDK_PATH=$(xcrun --show-sdk-path)
+          echo "Breaking headers in: $SDK_PATH"
+          sudo mv "$SDK_PATH/usr/include/c++" "$SDK_PATH/usr/include/c++.bak" || true
+
+          # Verify broken
+          echo "Before reinstall:"
+          echo '#include <memory>' | clang++ -x c++ -E - 2>&1 | head -5
+
+          # Reinstall CommandLineTools
+          echo "Reinstalling CommandLineTools..."
+          sudo rm -rf /Library/Developer/CommandLineTools
+          # xcode-select --install is interactive, use softwareupdate instead
+          sudo xcode-select --install 2>&1 || true
+          # On CI, CLT may already be available or we need to use touch file trick
+          touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+          softwareupdate -i -a 2>&1 || true
+          rm /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+
+          # Verify fixed
+          echo "After reinstall:"
+          echo '#include <memory>' | clang++ -x c++ -E - 2>&1 | head -5
+      - name: Test install (should succeed after CLT reinstall)
+        run: npm install -g sudocode && sudocode --version
+
   # Hypothesis 7: Point to old SDK that might be missing headers
   macos-old-sdk:
     name: "macOS (old SDK symlink)"
