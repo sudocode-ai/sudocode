@@ -92,8 +92,15 @@ export function createMockChildProcess() {
  */
 export function createMockManagedProcess() {
   const mockChildProcess = createMockChildProcess();
+
+  // Mock peer for protocol handling (required for peer-based message handling)
+  const mockPeer = {
+    onMessage: vi.fn(),
+  };
+
   return {
     process: mockChildProcess,
+    peer: mockPeer,
   };
 }
 

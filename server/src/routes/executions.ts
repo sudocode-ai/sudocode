@@ -7,6 +7,8 @@
  */
 
 import { Router, Request, Response } from "express";
+import { NormalizedEntryToAgUiAdapter } from "../execution/output/normalized-to-ag-ui-adapter.js";
+import { AgUiEventAdapter } from "../execution/output/ag-ui-adapter.js";
 
 /**
  * Create executions router
@@ -139,9 +141,12 @@ export function createExecutionsRouter(): Router {
   /**
    * GET /api/executions/:executionId/logs
    *
-   * Get raw execution logs for historical replay
+   * Get AG-UI events for historical replay
+   *
+   * Fetches NormalizedEntry logs from storage and converts them to AG-UI events on-demand.
+   * This preserves full structured data in storage while serving UI-ready events to frontend.
    */
-  router.get("/executions/:executionId/logs", (req: Request, res: Response) => {
+  router.get("/executions/:executionId/logs", async (req: Request, res: Response) => {
     try {
       const { executionId } = req.params;
 
@@ -157,15 +162,32 @@ export function createExecutionsRouter(): Router {
         return;
       }
 
-      // Fetch raw logs and metadata
-      const logs = req.project!.logsStore!.getRawLogs(executionId);
+      // Fetch normalized entries from storage
+      const normalizedEntries = req.project!.logsStore!.getNormalizedEntries(executionId);
       const metadata = req.project!.logsStore!.getLogMetadata(executionId);
+
+      // Convert NormalizedEntry to AG-UI events on-demand
+      const events: any[] = [];
+
+      // Create a temporary AG-UI adapter to collect events
+      const agUiAdapter = new AgUiEventAdapter(executionId);
+      agUiAdapter.onEvent((event) => {
+        events.push(event);
+      });
+
+      // Create normalized adapter to transform entries
+      const normalizedAdapter = new NormalizedEntryToAgUiAdapter(agUiAdapter);
+
+      // Process all normalized entries through the adapter
+      for (const entry of normalizedEntries) {
+        await normalizedAdapter.processEntry(entry);
+      }
 
       res.json({
         success: true,
         data: {
           executionId,
-          logs,
+          events,
           metadata: metadata
             ? {
                 lineCount: metadata.line_count,

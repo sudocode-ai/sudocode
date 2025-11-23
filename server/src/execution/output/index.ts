@@ -29,14 +29,5 @@ export type {
 
 export { DEFAULT_USAGE_METRICS } from "./types.js";
 
-export { ClaudeCodeOutputProcessor } from "./claude-code-output-processor.js";
-
 export { AgUiEventAdapter } from "./ag-ui-adapter.js";
 export type { AgUiEventListener } from "./ag-ui-adapter.js";
-
-export {
-  createAgUiSystem,
-  wireManually,
-  createAgUiSystemWithProcessor,
-} from "./ag-ui-integration.js";
-export type { AgUiSystem } from "./ag-ui-integration.js";

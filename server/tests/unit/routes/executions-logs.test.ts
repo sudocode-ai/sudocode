@@ -2,6 +2,7 @@
  * Execution Logs Routes Tests
  *
  * Tests for the GET /executions/:executionId/logs endpoint
+ * Validates NormalizedEntry storage and on-demand conversion to AG-UI events
  *
  * @module routes/tests/executions-logs
  */
@@ -18,6 +19,7 @@ import {
   EXECUTION_LOGS_TABLE,
   EXECUTION_LOGS_INDEXES,
 } from "@sudocode-ai/types/schema";
+import type { NormalizedEntry } from "agent-execution-engine/agents";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -121,7 +123,7 @@ describe("Execution Logs Routes", () => {
       expect(response.body.message).toContain("not found");
     });
 
-    it("should return empty logs for execution without logs", async () => {
+    it("should return empty events for execution without logs", async () => {
       const response = await request(app)
         .get("/api/executions/exec-test-1/logs")
         .set("X-Project-ID", projectId)
@@ -130,23 +132,32 @@ describe("Execution Logs Routes", () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data.executionId).toBe("exec-test-1");
-      expect(response.body.data.logs).toEqual([]);
+      expect(response.body.data.events).toEqual([]);
       expect(response.body.data.metadata.lineCount).toBe(0);
       expect(response.body.data.metadata.byteSize).toBe(0);
     });
 
-    it("should return logs when they exist", async () => {
-      // Add some test logs
+    it("should convert NormalizedEntry to AG-UI events", async () => {
+      // Add normalized entries
       const project = projectManager.getProject(projectId)!;
       project.logsStore.initializeLogs("exec-test-1");
-      project.logsStore.appendRawLog(
-        "exec-test-1",
-        '{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]}}'
-      );
-      project.logsStore.appendRawLog(
-        "exec-test-1",
-        '{"type":"result","usage":{"input_tokens":10}}'
-      );
+
+      const entry1: NormalizedEntry = {
+        index: 0,
+        type: { kind: "assistant_message" },
+        content: "Hello world",
+        timestamp: new Date(),
+      };
+
+      const entry2: NormalizedEntry = {
+        index: 1,
+        type: { kind: "thinking", reasoning: "Planning the approach" },
+        content: "",
+        timestamp: new Date(),
+      };
+
+      project.logsStore.appendNormalizedEntry("exec-test-1", entry1);
+      project.logsStore.appendNormalizedEntry("exec-test-1", entry2);
 
       const response = await request(app)
         .get("/api/executions/exec-test-1/logs")
@@ -156,17 +167,85 @@ describe("Execution Logs Routes", () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data.executionId).toBe("exec-test-1");
-      expect(response.body.data.logs).toHaveLength(2);
-      expect(response.body.data.logs[0]).toContain("assistant");
-      expect(response.body.data.logs[1]).toContain("result");
-      expect(response.body.data.metadata.lineCount).toBe(2);
-      expect(response.body.data.metadata.byteSize).toBeGreaterThan(0);
+      expect(response.body.data.events).toBeDefined();
+      expect(Array.isArray(response.body.data.events)).toBe(true);
+
+      // Assistant message should create 3 AG-UI events (START, CONTENT, END)
+      const textEvents = response.body.data.events.filter((e: any) =>
+        e.type === "TEXT_MESSAGE_START" ||
+        e.type === "TEXT_MESSAGE_CONTENT" ||
+        e.type === "TEXT_MESSAGE_END"
+      );
+      expect(textEvents.length).toBeGreaterThan(0);
+
+      // Find the content event
+      const contentEvent = response.body.data.events.find((e: any) =>
+        e.type === "TEXT_MESSAGE_CONTENT" && e.delta === "Hello world"
+      );
+      expect(contentEvent).toBeDefined();
+    });
+
+    it("should convert tool_use entries to AG-UI tool events", async () => {
+      const project = projectManager.getProject(projectId)!;
+      project.logsStore.initializeLogs("exec-test-1");
+
+      const toolEntry: NormalizedEntry = {
+        index: 0,
+        type: {
+          kind: "tool_use",
+          tool: {
+            toolName: "Bash",
+            action: { kind: "command_run", command: "ls -la" },
+            status: "success",
+            result: {
+              success: true,
+              data: "file1.txt\nfile2.txt",
+            },
+          },
+        },
+        content: "",
+        timestamp: new Date(),
+      };
+
+      project.logsStore.appendNormalizedEntry("exec-test-1", toolEntry);
+
+      const response = await request(app)
+        .get("/api/executions/exec-test-1/logs")
+        .set("X-Project-ID", projectId)
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.events).toBeDefined();
+
+      // Should have tool-related events
+      const toolStartEvent = response.body.data.events.find((e: any) =>
+        e.type === "TOOL_CALL_START" && e.toolCallName === "Bash"
+      );
+      expect(toolStartEvent).toBeDefined();
+
+      const toolEndEvent = response.body.data.events.find((e: any) =>
+        e.type === "TOOL_CALL_END"
+      );
+      expect(toolEndEvent).toBeDefined();
+
+      const toolResultEvent = response.body.data.events.find((e: any) =>
+        e.type === "TOOL_CALL_RESULT"
+      );
+      expect(toolResultEvent).toBeDefined();
+      expect(toolResultEvent.content).toBeDefined();
     });
 
     it("should return proper metadata structure", async () => {
       const project = projectManager.getProject(projectId)!;
       project.logsStore.initializeLogs("exec-test-1");
-      project.logsStore.appendRawLog("exec-test-1", '{"type":"test"}');
+
+      const entry: NormalizedEntry = {
+        index: 0,
+        type: { kind: "assistant_message" },
+        content: "Test",
+        timestamp: new Date(),
+      };
+      project.logsStore.appendNormalizedEntry("exec-test-1", entry);
 
       const response = await request(app)
         .get("/api/executions/exec-test-1/logs")
@@ -179,60 +258,78 @@ describe("Execution Logs Routes", () => {
       expect(response.body.data.metadata).toHaveProperty("updatedAt");
     });
 
-    it("should handle large number of logs", async () => {
+    it("should handle large number of entries", async () => {
       const project = projectManager.getProject(projectId)!;
       project.logsStore.initializeLogs("exec-test-1");
 
-      // Add 100 log lines
-      const lines = Array.from({ length: 100 }, (_, i) =>
-        JSON.stringify({ type: "test", index: i })
-      );
-      project.logsStore.appendRawLogs("exec-test-1", lines);
+      // Add 50 normalized entries
+      for (let i = 0; i < 50; i++) {
+        const entry: NormalizedEntry = {
+          index: i,
+          type: { kind: "assistant_message" },
+          content: `Message ${i}`,
+          timestamp: new Date(),
+        };
+        project.logsStore.appendNormalizedEntry("exec-test-1", entry);
+      }
 
       const response = await request(app)
         .get("/api/executions/exec-test-1/logs")
         .set("X-Project-ID", projectId)
         .expect(200);
 
-      expect(response.body.data.logs).toHaveLength(100);
-      expect(response.body.data.metadata.lineCount).toBe(100);
+      expect(response.body.data.events).toBeDefined();
+      // Each entry creates 3 AG-UI events (START, CONTENT, END)
+      expect(response.body.data.events.length).toBeGreaterThan(50);
     });
 
-    it("should return valid JSON for all logs", async () => {
+    it("should preserve AG-UI event structure", async () => {
       const project = projectManager.getProject(projectId)!;
       project.logsStore.initializeLogs("exec-test-1");
-      project.logsStore.appendRawLogs("exec-test-1", [
-        '{"type":"assistant","message":{}}',
-        '{"type":"tool_result","result":{}}',
-        '{"type":"result","usage":{"input_tokens":100}}',
-      ]);
+
+      const entry: NormalizedEntry = {
+        index: 0,
+        type: { kind: "assistant_message" },
+        content: "Test message",
+        timestamp: new Date(),
+      };
+      project.logsStore.appendNormalizedEntry("exec-test-1", entry);
 
       const response = await request(app)
         .get("/api/executions/exec-test-1/logs")
         .set("X-Project-ID", projectId)
         .expect(200);
 
-      // Verify each log line is valid JSON
-      response.body.data.logs.forEach((log: string) => {
-        expect(() => JSON.parse(log)).not.toThrow();
+      // Verify AG-UI event structure
+      response.body.data.events.forEach((event: any) => {
+        expect(event).toHaveProperty("type");
+        expect(event).toHaveProperty("timestamp");
+        expect(typeof event.timestamp).toBe("number");
       });
     });
 
-    it("should handle UTF-8 characters in logs", async () => {
+    it("should handle UTF-8 characters in content", async () => {
       const project = projectManager.getProject(projectId)!;
       project.logsStore.initializeLogs("exec-test-1");
-      project.logsStore.appendRawLog(
-        "exec-test-1",
-        '{"text":"Hello 世界 🌍"}'
-      );
+
+      const entry: NormalizedEntry = {
+        index: 0,
+        type: { kind: "assistant_message" },
+        content: "Hello 世界 🌍",
+        timestamp: new Date(),
+      };
+      project.logsStore.appendNormalizedEntry("exec-test-1", entry);
 
       const response = await request(app)
         .get("/api/executions/exec-test-1/logs")
         .set("X-Project-ID", projectId)
         .expect(200);
 
-      expect(response.body.data.logs[0]).toContain("世界");
-      expect(response.body.data.logs[0]).toContain("🌍");
+      const contentEvent = response.body.data.events.find((e: any) =>
+        e.type === "TEXT_MESSAGE_CONTENT"
+      );
+      expect(contentEvent.delta).toContain("世界");
+      expect(contentEvent.delta).toContain("🌍");
     });
 
     it("should handle execution with metadata but no logs initialized", async () => {
@@ -243,26 +340,68 @@ describe("Execution Logs Routes", () => {
         .expect(200);
 
       expect(response.body.success).toBe(true);
-      expect(response.body.data.logs).toEqual([]);
+      expect(response.body.data.events).toEqual([]);
       // Should fallback to execution timestamps
       expect(response.body.data.metadata.createdAt).toBeDefined();
       expect(response.body.data.metadata.updatedAt).toBeDefined();
     });
 
-    it("should return correct byte size for multi-byte characters", async () => {
+    it("should handle multiple entry types in single execution", async () => {
       const project = projectManager.getProject(projectId)!;
       project.logsStore.initializeLogs("exec-test-1");
-      const logLine = '{"text":"Hello 世界"}';
-      project.logsStore.appendRawLog("exec-test-1", logLine);
+
+      // Add different entry types
+      const entries: NormalizedEntry[] = [
+        {
+          index: 0,
+          type: { kind: "assistant_message" },
+          content: "Starting task",
+          timestamp: new Date(),
+        },
+        {
+          index: 1,
+          type: { kind: "thinking", reasoning: "Planning approach" },
+          content: "",
+          timestamp: new Date(),
+        },
+        {
+          index: 2,
+          type: {
+            kind: "tool_use",
+            tool: {
+              toolName: "Read",
+              action: { kind: "read_file", path: "test.ts" },
+              status: "success",
+              result: { success: true, data: "file content" },
+            },
+          },
+          content: "",
+          timestamp: new Date(),
+        },
+      ];
+
+      entries.forEach((entry) =>
+        project.logsStore.appendNormalizedEntry("exec-test-1", entry)
+      );
 
       const response = await request(app)
         .get("/api/executions/exec-test-1/logs")
         .set("X-Project-ID", projectId)
         .expect(200);
 
-      // byte_size should account for UTF-8 encoding
-      const expectedSize = Buffer.byteLength(logLine) + 1; // +1 for newline
-      expect(response.body.data.metadata.byteSize).toBe(expectedSize);
+      expect(response.body.data.events.length).toBeGreaterThan(0);
+
+      // Should have text messages
+      const hasTextMessage = response.body.data.events.some((e: any) =>
+        e.type === "TEXT_MESSAGE_CONTENT"
+      );
+      expect(hasTextMessage).toBe(true);
+
+      // Should have tool calls
+      const hasToolCall = response.body.data.events.some((e: any) =>
+        e.type === "TOOL_CALL_START"
+      );
+      expect(hasToolCall).toBe(true);
     });
 
     it("should handle multiple executions independently", async () => {
@@ -282,10 +421,22 @@ describe("Execution Logs Routes", () => {
       );
 
       project.logsStore.initializeLogs("exec-test-1");
-      project.logsStore.appendRawLog("exec-test-1", '{"execution":1}');
+      const entry1: NormalizedEntry = {
+        index: 0,
+        type: { kind: "assistant_message" },
+        content: "Execution 1",
+        timestamp: new Date(),
+      };
+      project.logsStore.appendNormalizedEntry("exec-test-1", entry1);
 
       project.logsStore.initializeLogs("exec-test-2");
-      project.logsStore.appendRawLog("exec-test-2", '{"execution":2}');
+      const entry2: NormalizedEntry = {
+        index: 0,
+        type: { kind: "assistant_message" },
+        content: "Execution 2",
+        timestamp: new Date(),
+      };
+      project.logsStore.appendNormalizedEntry("exec-test-2", entry2);
 
       const response1 = await request(app)
         .get("/api/executions/exec-test-1/logs")
@@ -297,8 +448,15 @@ describe("Execution Logs Routes", () => {
         .set("X-Project-ID", projectId)
         .expect(200);
 
-      expect(response1.body.data.logs[0]).toContain('"execution":1');
-      expect(response2.body.data.logs[0]).toContain('"execution":2');
+      const content1 = response1.body.data.events.find((e: any) =>
+        e.type === "TEXT_MESSAGE_CONTENT"
+      );
+      const content2 = response2.body.data.events.find((e: any) =>
+        e.type === "TEXT_MESSAGE_CONTENT"
+      );
+
+      expect(content1.delta).toContain("Execution 1");
+      expect(content2.delta).toContain("Execution 2");
     });
 
     it("should return 500 for database errors", async () => {
@@ -326,27 +484,34 @@ describe("Execution Logs Routes", () => {
       expect(response.body.success).toBe(false);
     });
 
-    it("should preserve log order", async () => {
+    it("should preserve entry order in AG-UI events", async () => {
       const project = projectManager.getProject(projectId)!;
       project.logsStore.initializeLogs("exec-test-1");
-      const orderedLogs = [
-        '{"order":1}',
-        '{"order":2}',
-        '{"order":3}',
-        '{"order":4}',
-        '{"order":5}',
-      ];
-      project.logsStore.appendRawLogs("exec-test-1", orderedLogs);
+
+      // Add entries in order
+      for (let i = 0; i < 5; i++) {
+        const entry: NormalizedEntry = {
+          index: i,
+          type: { kind: "assistant_message" },
+          content: `Message ${i + 1}`,
+          timestamp: new Date(),
+        };
+        project.logsStore.appendNormalizedEntry("exec-test-1", entry);
+      }
 
       const response = await request(app)
         .get("/api/executions/exec-test-1/logs")
         .set("X-Project-ID", projectId)
         .expect(200);
 
+      // Extract content events in order
+      const contentEvents = response.body.data.events.filter((e: any) =>
+        e.type === "TEXT_MESSAGE_CONTENT"
+      );
+
       // Verify order is preserved
-      response.body.data.logs.forEach((log: string, index: number) => {
-        const parsed = JSON.parse(log);
-        expect(parsed.order).toBe(index + 1);
+      contentEvents.forEach((event: any, index: number) => {
+        expect(event.delta).toBe(`Message ${index + 1}`);
       });
     });
   });

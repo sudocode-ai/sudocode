@@ -112,38 +112,73 @@ export function ExecutionMonitor({
       }
     } else {
       // Use logs API for completed executions
-      // Transform events to messages/toolCalls format
+      // Transform events to messages/toolCalls format (matching SSE stream format)
       const messages = new Map()
       const toolCalls = new Map()
       const state: any = {}
 
-      // Process events from logs
+      // Process events from logs (same logic as useAgUiStream)
       if (logsResult.events) {
         logsResult.events.forEach((event: any) => {
-          // Handle different event types
-          if (event.type === 'TEXT_MESSAGE_CONTENT' || event.name === 'TEXT_MESSAGE_CONTENT') {
-            const content = event.value || event
-            messages.set(messages.size, {
-              id: messages.size,
-              content: content.content || content.text,
+          // Handle TEXT_MESSAGE events
+          if (event.type === 'TEXT_MESSAGE_START') {
+            messages.set(event.messageId, {
+              messageId: event.messageId,
+              role: event.role || 'assistant',
+              content: '',
+              complete: false,
               timestamp: event.timestamp || Date.now(),
             })
-          } else if (event.type === 'TOOL_CALL_START' || event.name === 'TOOL_CALL_START') {
-            const value = event.value || event
-            toolCalls.set(value.toolCallId, {
-              id: value.toolCallId,
-              name: value.name,
-              status: 'running',
-              timestamp: event.timestamp || Date.now(),
-            })
-          } else if (event.type === 'TOOL_CALL_RESULT' || event.name === 'TOOL_CALL_RESULT') {
-            const value = event.value || event
-            const existing = toolCalls.get(value.toolCallId)
+          } else if (event.type === 'TEXT_MESSAGE_CONTENT') {
+            const existing = messages.get(event.messageId)
             if (existing) {
-              toolCalls.set(value.toolCallId, {
+              messages.set(event.messageId, {
+                ...existing,
+                content: existing.content + (event.delta || ''),
+              })
+            }
+          } else if (event.type === 'TEXT_MESSAGE_END') {
+            const existing = messages.get(event.messageId)
+            if (existing) {
+              messages.set(event.messageId, {
+                ...existing,
+                complete: true,
+              })
+            }
+          }
+          // Handle TOOL_CALL events
+          else if (event.type === 'TOOL_CALL_START') {
+            toolCalls.set(event.toolCallId, {
+              toolCallId: event.toolCallId,
+              toolCallName: event.toolCallName || event.toolName,
+              args: '',
+              status: 'started',
+              startTime: event.timestamp || Date.now(),
+            })
+          } else if (event.type === 'TOOL_CALL_ARGS') {
+            const existing = toolCalls.get(event.toolCallId)
+            if (existing) {
+              toolCalls.set(event.toolCallId, {
+                ...existing,
+                args: existing.args + (event.delta || ''),
+              })
+            }
+          } else if (event.type === 'TOOL_CALL_END') {
+            const existing = toolCalls.get(event.toolCallId)
+            if (existing) {
+              toolCalls.set(event.toolCallId, {
+                ...existing,
+                status: 'executing',
+              })
+            }
+          } else if (event.type === 'TOOL_CALL_RESULT') {
+            const existing = toolCalls.get(event.toolCallId)
+            if (existing) {
+              toolCalls.set(event.toolCallId, {
                 ...existing,
                 status: 'completed',
-                result: value.result,
+                result: event.result || event.content,
+                endTime: event.timestamp || Date.now(),
               })
             }
           }

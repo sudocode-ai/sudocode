@@ -78,8 +78,6 @@ export type AgUiEventListener = (
  *   // Send to SSE transport or WebSocket
  * });
  *
- * const processor = new ClaudeCodeOutputProcessor();
- * adapter.connectToProcessor(processor);
  * adapter.emitRunStarted({ model: 'claude-sonnet-4' });
  * ```
  */

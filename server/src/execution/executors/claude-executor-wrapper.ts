@@ -61,10 +61,17 @@ export class ClaudeExecutorWrapper {
   private activeExecutions: Map<string, { cancel: () => void }>;
 
   constructor(config: ClaudeExecutorWrapperConfig) {
+    // IMPORTANT: ClaudeCodeExecutor has a bug where it uses --input-format=stream-json
+    // but sends SDK protocol messages (sdk_control_request), which are incompatible.
+    //
+    // We need to use the executor WITHOUT the protocol layer to avoid this issue.
+    // The executor should just send the user's prompt directly to Claude CLI.
     this.executor = new ClaudeCodeExecutor({
       workDir: config.workDir,
-      print: false,
+      print: true, // Required for stream-json output format
       outputFormat: "stream-json",
+      verbose: true, // Required when using --print with stream-json
+      dangerouslySkipPermissions: true, // Skip permission prompts for automated execution
     });
     // Note: lifecycleService not stored as we use direct DB calls (updateExecution/getExecution)
     this.logsStore = config.logsStore;
@@ -147,9 +154,23 @@ export class ClaudeExecutorWrapper {
 
       // 5. Execute task with ClaudeCodeExecutor
       console.log(
-        `[ClaudeExecutorWrapper] Spawning Claude process for ${executionId}`
+        `[ClaudeExecutorWrapper] Spawning Claude process for ${executionId}`,
+        {
+          taskId: task.id,
+          workDir,
+          promptLength: task.prompt.length,
+          metadata: task.metadata,
+        }
       );
       const spawned = await this.executor.executeTask(task);
+      console.log(
+        `[ClaudeExecutorWrapper] Claude process spawned for ${executionId}`,
+        {
+          pid: spawned.process.process?.pid,
+          spawnfile: spawned.process.process?.spawnfile,
+          spawnargs: spawned.process.process?.spawnargs,
+        }
+      );
 
       // 6. Store cancellation handle
       this.activeExecutions.set(executionId, {
@@ -160,11 +181,59 @@ export class ClaudeExecutorWrapper {
         },
       });
 
-      // 7. Create output streams
-      // Note: createOutputChunks is protected, so we use type assertion to access it
-      // This is safe because we're integrating with the same package
-      const outputChunks = (this.executor as any).createOutputChunks(spawned.process);
-      const normalized = this.executor.normalizeOutput(outputChunks, workDir);
+      // 7. Create output stream from peer messages
+      // When using the protocol peer, we need to consume messages from the peer,
+      // not from stdout directly (the peer consumes stdout internally)
+      const peer = (spawned.process as any).peer;
+      if (!peer) {
+        throw new Error('No peer attached to spawned process');
+      }
+
+      // Track completion state
+      let executionCompleted = false;
+      let completionExitCode = 0;
+
+      // Create async generator that converts peer messages to output chunks
+      async function* peerMessagesToOutputChunks() {
+        const messageQueue: any[] = [];
+        let streamEnded = false;
+        let exitDetected = false;
+
+        // Register message handler
+        peer.onMessage((message: any) => {
+          messageQueue.push(message);
+          // Detect completion
+          if (message.type === 'result' && (message.subtype === 'success' || message.subtype === 'failure')) {
+            exitDetected = true;
+            executionCompleted = true;
+            completionExitCode = message.subtype === 'success' ? 0 : 1;
+          }
+        });
+
+        // Process messages until completion
+        while (!streamEnded || messageQueue.length > 0) {
+          if (messageQueue.length === 0) {
+            if (exitDetected) {
+              streamEnded = true;
+              break;
+            }
+            // Wait for more messages
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            continue;
+          }
+
+          // Convert message to stream-json line format
+          const message = messageQueue.shift();
+          const line = JSON.stringify(message) + '\n';
+          yield {
+            type: 'stdout' as const,
+            data: Buffer.from(line, 'utf-8'),
+            timestamp: new Date(),
+          };
+        }
+      }
+
+      const normalized = this.executor.normalizeOutput(peerMessagesToOutputChunks(), workDir);
 
       // 8. Process normalized output (runs concurrently with process)
       const processOutputPromise = this.processNormalizedOutput(
@@ -173,34 +242,74 @@ export class ClaudeExecutorWrapper {
         normalizedAdapter
       );
 
-      // 9. Wait for process exit
-      const exitCode = await new Promise<number>((resolve, reject) => {
-        const childProcess = spawned.process.process;
-        if (!childProcess) {
-          reject(new Error("No child process available"));
-          return;
-        }
-
-        childProcess.on("exit", (code: number | null) => {
-          console.log(
-            `[ClaudeExecutorWrapper] Process exited with code ${code} for ${executionId}`
-          );
-          resolve(code || 0);
+      // 9. Capture stderr for debugging
+      const childProcess = spawned.process.process;
+      if (childProcess && childProcess.stderr) {
+        let stderrOutput = '';
+        childProcess.stderr.on('data', (data: Buffer) => {
+          const chunk = data.toString();
+          stderrOutput += chunk;
+          console.error(`[ClaudeExecutorWrapper] Claude stderr for ${executionId}:`, chunk);
         });
-
-        childProcess.on("error", (error: Error) => {
-          console.error(
-            `[ClaudeExecutorWrapper] Process error for ${executionId}:`,
-            error
-          );
-          reject(error);
-        });
-      });
+      }
 
       // 10. Wait for output processing to complete
+      // This will finish when we receive the result message from the peer
       await processOutputPromise;
 
-      // 11. Handle completion
+      console.log(
+        `[ClaudeExecutorWrapper] Output processing completed for ${executionId}`,
+        { executionCompleted, completionExitCode }
+      );
+
+      // 11. Close stdin to signal the process to exit
+      if (childProcess && childProcess.stdin) {
+        try {
+          childProcess.stdin.end();
+        } catch (error) {
+          console.error(`[ClaudeExecutorWrapper] Error closing stdin:`, error);
+        }
+      }
+
+      // 12. Wait for process to exit (with timeout)
+      const exitCode = await Promise.race([
+        new Promise<number>((resolve) => {
+          if (!childProcess) {
+            resolve(completionExitCode);
+            return;
+          }
+
+          childProcess.on("exit", (code: number | null) => {
+            console.log(
+              `[ClaudeExecutorWrapper] Process exited with code ${code} for ${executionId}`
+            );
+            resolve(code ?? completionExitCode);
+          });
+
+          childProcess.on("error", (error: Error) => {
+            console.error(
+              `[ClaudeExecutorWrapper] Process error for ${executionId}:`,
+              error
+            );
+            resolve(1);
+          });
+        }),
+        // Timeout after 5 seconds if process doesn't exit
+        new Promise<number>((resolve) => {
+          setTimeout(() => {
+            console.log(
+              `[ClaudeExecutorWrapper] Process exit timeout for ${executionId}, using completion code`
+            );
+            // Kill the process if it hasn't exited
+            if (childProcess && !childProcess.killed) {
+              childProcess.kill('SIGTERM');
+            }
+            resolve(completionExitCode);
+          }, 5000);
+        }),
+      ]);
+
+      // 13. Handle completion
       if (exitCode === 0) {
         await this.handleSuccess(executionId);
         agUiAdapter.emitRunFinished({ exitCode });
@@ -400,19 +509,24 @@ export class ClaudeExecutorWrapper {
     for await (const entry of outputStream) {
       entryCount++;
 
+      // Log first 10 entries and every 100th entry for debugging
+      if (entryCount <= 10 || entryCount % 100 === 0) {
+        console.log(
+          `[ClaudeExecutorWrapper] Entry ${entryCount} for ${executionId}:`,
+          {
+            index: entry.index,
+            kind: entry.type.kind,
+            timestamp: entry.timestamp,
+          }
+        );
+      }
+
       try {
-        // 1. Persist log entry
+        // 1. Store normalized entry for historical replay
         this.logsStore.appendNormalizedEntry(executionId, entry);
 
-        // 2. Convert to AG-UI and broadcast
+        // 2. Convert to AG-UI and broadcast for real-time streaming
         await normalizedAdapter.processEntry(entry);
-
-        // 3. Log progress periodically
-        if (entryCount % 100 === 0) {
-          console.log(
-            `[ClaudeExecutorWrapper] Processed ${entryCount} entries for ${executionId}`
-          );
-        }
       } catch (error) {
         console.error(
           `[ClaudeExecutorWrapper] Error processing entry for ${executionId}:`,

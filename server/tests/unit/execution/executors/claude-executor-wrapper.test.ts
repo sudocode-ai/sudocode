@@ -7,7 +7,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type Database from "better-sqlite3";
 import { ClaudeExecutorWrapper } from "../../../../src/execution/executors/claude-executor-wrapper.js";
-import type { ExecutionTask, NormalizedEntry } from "agent-execution-engine/agents";
+import type {
+  ExecutionTask,
+  NormalizedEntry,
+} from "agent-execution-engine/agents";
 import { EventEmitter } from "events";
 
 // Mock dependencies
@@ -116,9 +119,15 @@ describe("ClaudeExecutorWrapper", () => {
       const mockChildProcess = new EventEmitter() as any;
       mockChildProcess.kill = vi.fn();
 
+      // Mock peer for protocol handling
+      const mockPeer = {
+        onMessage: vi.fn(),
+      };
+
       // Mock ManagedProcess wrapper
       const mockManagedProcess = {
         process: mockChildProcess,
+        peer: mockPeer,
       };
 
       // Get the executor instance from the wrapper
@@ -171,8 +180,13 @@ describe("ClaudeExecutorWrapper", () => {
       const mockChildProcess = new EventEmitter() as any;
       mockChildProcess.kill = vi.fn();
 
+      const mockPeer = {
+        onMessage: vi.fn(),
+      };
+
       const mockManagedProcess = {
         process: mockChildProcess,
+        peer: mockPeer,
       };
 
       const executorInstance = (wrapper as any).executor;
@@ -248,8 +262,13 @@ describe("ClaudeExecutorWrapper", () => {
       const mockChildProcess = new EventEmitter() as any;
       mockChildProcess.kill = vi.fn();
 
+      const mockPeer = {
+        onMessage: vi.fn(),
+      };
+
       const mockManagedProcess = {
         process: mockChildProcess,
+        peer: mockPeer,
       };
 
       const executorInstance = (wrapper as any).executor;
@@ -274,9 +293,14 @@ describe("ClaudeExecutorWrapper", () => {
 
       setTimeout(() => {
         mockChildProcess.emit("error", new Error("Process crashed"));
+        // After error, process still exits with non-zero code
+        mockChildProcess.emit("exit", 1);
       }, 10);
 
-      await expect(executePromise).rejects.toThrow("Process crashed");
+      // The wrapper throws based on exit code, not the error event
+      await expect(executePromise).rejects.toThrow(
+        "Process exited with code 1"
+      );
 
       // Verify cleanup happened
       expect(mockTransportManager.disconnectAdapter).toHaveBeenCalled();
@@ -297,8 +321,13 @@ describe("ClaudeExecutorWrapper", () => {
       const mockChildProcess = new EventEmitter() as any;
       mockChildProcess.kill = vi.fn();
 
+      const mockPeer = {
+        onMessage: vi.fn(),
+      };
+
       const mockManagedProcess = {
         process: mockChildProcess,
+        peer: mockPeer,
       };
 
       const executorInstance = (wrapper as any).executor;
@@ -345,8 +374,13 @@ describe("ClaudeExecutorWrapper", () => {
       const mockChildProcess = new EventEmitter() as any;
       mockChildProcess.kill = vi.fn();
 
+      const mockPeer = {
+        onMessage: vi.fn(),
+      };
+
       const mockManagedProcess = {
         process: mockChildProcess,
+        peer: mockPeer,
       };
 
       const executorInstance = (wrapper as any).executor;
@@ -423,8 +457,13 @@ describe("ClaudeExecutorWrapper", () => {
       const mockChildProcess = new EventEmitter() as any;
       mockChildProcess.kill = vi.fn();
 
+      const mockPeer = {
+        onMessage: vi.fn(),
+      };
+
       const mockManagedProcess = {
         process: mockChildProcess,
+        peer: mockPeer,
       };
 
       const executorInstance = (wrapper as any).executor;
@@ -476,9 +515,7 @@ describe("ClaudeExecutorWrapper", () => {
 
       const executorInstance = (wrapper as any).executor;
 
-      executorInstance.resumeTask.mockRejectedValue(
-        new Error("Resume failed")
-      );
+      executorInstance.resumeTask.mockRejectedValue(new Error("Resume failed"));
 
       await expect(
         wrapper.resumeWithLifecycle("exec-1", "session-123", task, "/test/dir")
@@ -505,8 +542,13 @@ describe("ClaudeExecutorWrapper", () => {
       const mockChildProcess = new EventEmitter() as any;
       mockChildProcess.kill = vi.fn();
 
+      const mockPeer = {
+        onMessage: vi.fn(),
+      };
+
       const mockManagedProcess = {
         process: mockChildProcess,
+        peer: mockPeer,
       };
 
       const executorInstance = (wrapper as any).executor;
@@ -571,8 +613,13 @@ describe("ClaudeExecutorWrapper", () => {
       const mockChildProcess = new EventEmitter() as any;
       mockChildProcess.kill = vi.fn();
 
+      const mockPeer = {
+        onMessage: vi.fn(),
+      };
+
       const mockManagedProcess = {
         process: mockChildProcess,
+        peer: mockPeer,
       };
 
       const executorInstance = (wrapper as any).executor;
@@ -624,8 +671,13 @@ describe("ClaudeExecutorWrapper", () => {
       const mockChildProcess = new EventEmitter() as any;
       mockChildProcess.kill = vi.fn();
 
+      const mockPeer = {
+        onMessage: vi.fn(),
+      };
+
       const mockManagedProcess = {
         process: mockChildProcess,
+        peer: mockPeer,
       };
 
       const executorInstance = (wrapper as any).executor;

@@ -298,12 +298,15 @@ describe('Phase 1 Integration Tests - Direct Execution Pattern', () => {
         '/tmp/test'
       );
 
-      // Emit error event
+      // Emit error event followed by exit (actual behavior)
       setTimeout(() => {
         mockManagedProcess.process.emit('error', new Error('Process crashed'));
+        // After error, process still exits with non-zero code
+        mockManagedProcess.process.emit('exit', 1);
       }, 10);
 
-      await expect(executePromise).rejects.toThrow('Process crashed');
+      // The wrapper throws based on exit code, not the error event
+      await expect(executePromise).rejects.toThrow('Process exited with code 1');
 
       // Verify execution marked as failed
       const execution = getExecution(db, 'exec-test-crash');

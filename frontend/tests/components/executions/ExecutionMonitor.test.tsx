@@ -801,5 +801,215 @@ describe('ExecutionMonitor', () => {
         autoConnect: false,
       })
     })
+
+    it('should process historical TEXT_MESSAGE events correctly', () => {
+      mockUseAgUiStream.mockReturnValue({
+        connectionStatus: 'idle',
+        execution: {
+          runId: null,
+          threadId: null,
+          status: 'idle',
+          currentStep: null,
+          error: null,
+          startTime: null,
+          endTime: null,
+        },
+        messages: new Map(),
+        toolCalls: new Map(),
+        state: {},
+        error: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        reconnect: vi.fn(),
+        isConnected: false,
+      })
+
+      // Mock AG-UI events in the format returned by /logs API
+      mockUseExecutionLogs.mockReturnValue({
+        events: [
+          {
+            type: 'TEXT_MESSAGE_START',
+            timestamp: 1000,
+            messageId: 'msg-1',
+            role: 'assistant',
+          },
+          {
+            type: 'TEXT_MESSAGE_CONTENT',
+            timestamp: 1001,
+            messageId: 'msg-1',
+            delta: 'Hello ',
+          },
+          {
+            type: 'TEXT_MESSAGE_CONTENT',
+            timestamp: 1002,
+            messageId: 'msg-1',
+            delta: 'world!',
+          },
+          {
+            type: 'TEXT_MESSAGE_END',
+            timestamp: 1003,
+            messageId: 'msg-1',
+          },
+        ],
+        loading: false,
+        error: null,
+        metadata: {
+          lineCount: 4,
+          byteSize: 200,
+          createdAt: '2025-01-01T00:00:00Z',
+          updatedAt: '2025-01-01T00:00:01Z',
+        },
+      })
+
+      render(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
+      )
+
+      // Should display the complete message
+      expect(screen.getByText('Hello world!')).toBeInTheDocument()
+    })
+
+    it('should process historical TOOL_CALL events correctly', () => {
+      mockUseAgUiStream.mockReturnValue({
+        connectionStatus: 'idle',
+        execution: {
+          runId: null,
+          threadId: null,
+          status: 'idle',
+          currentStep: null,
+          error: null,
+          startTime: null,
+          endTime: null,
+        },
+        messages: new Map(),
+        toolCalls: new Map(),
+        state: {},
+        error: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        reconnect: vi.fn(),
+        isConnected: false,
+      })
+
+      mockUseExecutionLogs.mockReturnValue({
+        events: [
+          {
+            type: 'TOOL_CALL_START',
+            timestamp: 2000,
+            toolCallId: 'tool-1',
+            toolCallName: 'Read',
+          },
+          {
+            type: 'TOOL_CALL_ARGS',
+            timestamp: 2001,
+            toolCallId: 'tool-1',
+            delta: '{"file":',
+          },
+          {
+            type: 'TOOL_CALL_ARGS',
+            timestamp: 2002,
+            toolCallId: 'tool-1',
+            delta: '"test.ts"}',
+          },
+          {
+            type: 'TOOL_CALL_END',
+            timestamp: 2003,
+            toolCallId: 'tool-1',
+          },
+          {
+            type: 'TOOL_CALL_RESULT',
+            timestamp: 2004,
+            toolCallId: 'tool-1',
+            result: 'File contents here',
+          },
+        ],
+        loading: false,
+        error: null,
+        metadata: {
+          lineCount: 5,
+          byteSize: 300,
+          createdAt: '2025-01-01T00:00:00Z',
+          updatedAt: '2025-01-01T00:00:02Z',
+        },
+      })
+
+      const { container } = render(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
+      )
+
+      // Should display the tool call
+      expect(screen.getByText('Read')).toBeInTheDocument()
+
+      // Should show completed status (use getAllByText since "completed" appears multiple times)
+      const completedBadges = screen.getAllByText('completed')
+      expect(completedBadges.length).toBeGreaterThan(0)
+    })
+
+    it('should handle multiple messages and tool calls from historical events', () => {
+      mockUseAgUiStream.mockReturnValue({
+        connectionStatus: 'idle',
+        execution: {
+          runId: null,
+          threadId: null,
+          status: 'idle',
+          currentStep: null,
+          error: null,
+          startTime: null,
+          endTime: null,
+        },
+        messages: new Map(),
+        toolCalls: new Map(),
+        state: {},
+        error: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        reconnect: vi.fn(),
+        isConnected: false,
+      })
+
+      mockUseExecutionLogs.mockReturnValue({
+        events: [
+          // First message
+          { type: 'TEXT_MESSAGE_START', timestamp: 1000, messageId: 'msg-1', role: 'assistant' },
+          { type: 'TEXT_MESSAGE_CONTENT', timestamp: 1001, messageId: 'msg-1', delta: 'First message' },
+          { type: 'TEXT_MESSAGE_END', timestamp: 1002, messageId: 'msg-1' },
+          // Tool call
+          { type: 'TOOL_CALL_START', timestamp: 2000, toolCallId: 'tool-1', toolCallName: 'Write' },
+          { type: 'TOOL_CALL_ARGS', timestamp: 2001, toolCallId: 'tool-1', delta: '{"file":"test.txt"}' },
+          { type: 'TOOL_CALL_END', timestamp: 2002, toolCallId: 'tool-1' },
+          { type: 'TOOL_CALL_RESULT', timestamp: 2003, toolCallId: 'tool-1', result: 'Success' },
+          // Second message
+          { type: 'TEXT_MESSAGE_START', timestamp: 3000, messageId: 'msg-2', role: 'assistant' },
+          { type: 'TEXT_MESSAGE_CONTENT', timestamp: 3001, messageId: 'msg-2', delta: 'Second message' },
+          { type: 'TEXT_MESSAGE_END', timestamp: 3002, messageId: 'msg-2' },
+        ],
+        loading: false,
+        error: null,
+        metadata: {
+          lineCount: 10,
+          byteSize: 500,
+          createdAt: '2025-01-01T00:00:00Z',
+          updatedAt: '2025-01-01T00:00:03Z',
+        },
+      })
+
+      const { container } = render(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
+      )
+
+      // Should display both messages
+      expect(screen.getByText('First message')).toBeInTheDocument()
+      expect(screen.getByText('Second message')).toBeInTheDocument()
+
+      // Should display the tool call
+      expect(screen.getByText('Write')).toBeInTheDocument()
+
+      // Should show metrics with correct counts
+      const footer = container.querySelector('.border-t.px-6.py-3')
+      expect(footer?.textContent).toContain('1')
+      expect(footer?.textContent).toContain('tool call')
+      expect(footer?.textContent).toContain('2')
+      expect(footer?.textContent).toContain('messages')
+    })
   })
 })

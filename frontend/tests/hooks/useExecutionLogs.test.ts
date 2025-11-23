@@ -1,19 +1,13 @@
 /**
  * useExecutionLogs Hook Tests
  *
- * Tests for the execution logs fetching and parsing React hook
+ * Tests for the execution logs fetching React hook
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 import { useExecutionLogs } from '@/hooks/useExecutionLogs'
-import * as claudeToAgUi from '../../../server/src/execution/output/claude-to-ag-ui.js'
 import { AxiosError } from 'axios'
-
-// Mock the parseExecutionLogs function
-vi.mock('../../../server/src/execution/output/claude-to-ag-ui.js', () => ({
-  parseExecutionLogs: vi.fn(),
-}))
 
 // Mock the api module
 vi.mock('@/lib/api', () => {
@@ -41,10 +35,12 @@ describe('useExecutionLogs', () => {
 
   describe('Basic Functionality', () => {
     it('should fetch logs on mount', async () => {
-      // Mock response data (after axios interceptor unwrapping)
+      // Mock response data - API now returns events directly (already transformed)
+      const mockEvents = [{ type: 'TEXT_MESSAGE_CONTENT', delta: 'Hello world' }]
+
       const mockData = {
         executionId: 'exec-123',
-        logs: ['{"type":"assistant","message":{}}'],
+        events: mockEvents,
         metadata: {
           lineCount: 1,
           byteSize: 100,
@@ -53,11 +49,7 @@ describe('useExecutionLogs', () => {
         },
       }
 
-      const mockEvents = [{ type: 'CUSTOM', timestamp: Date.now() }]
-
       mockApiGet.mockResolvedValueOnce(mockData)
-
-      vi.mocked(claudeToAgUi.parseExecutionLogs).mockResolvedValueOnce(mockEvents as any)
 
       const { result } = renderHook(() => useExecutionLogs('exec-123'))
 
@@ -76,52 +68,39 @@ describe('useExecutionLogs', () => {
         signal: expect.any(AbortSignal),
       })
 
-      // Verify parseExecutionLogs was called
-      expect(claudeToAgUi.parseExecutionLogs).toHaveBeenCalledWith([
-        '{"type":"assistant","message":{}}',
-      ])
-
-      // Verify state is updated
+      // Verify state is updated (events come directly from API, no client-side parsing)
       expect(result.current.events).toEqual(mockEvents)
       expect(result.current.metadata).toEqual(mockData.metadata)
       expect(result.current.error).toBeNull()
     })
 
-    it('should transform logs to AG-UI events', async () => {
-      const mockLogs = [
-        '{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]}}',
-        '{"type":"result","usage":{"input_tokens":10,"output_tokens":5}}',
-      ]
-
+    it('should receive AG-UI events from API', async () => {
+      // API returns pre-transformed AG-UI events
       const mockEvents = [
-        { type: 'CUSTOM', name: 'TEXT_MESSAGE_CONTENT', value: { content: 'Hello' } },
-        { type: 'CUSTOM', name: 'USAGE_UPDATE', value: { inputTokens: 10, outputTokens: 5 } },
+        { type: 'TEXT_MESSAGE_CONTENT', delta: 'Hello' },
+        { type: 'TOOL_CALL_START', toolCallId: 'tool-1', toolName: 'Read' },
       ]
 
       mockApiGet.mockResolvedValueOnce({
         executionId: 'exec-123',
-        logs: mockLogs,
+        events: mockEvents,
         metadata: { lineCount: 2, byteSize: 200, createdAt: '', updatedAt: '' },
       })
-
-      vi.mocked(claudeToAgUi.parseExecutionLogs).mockResolvedValueOnce(mockEvents as any)
 
       const { result } = renderHook(() => useExecutionLogs('exec-123'))
 
       await waitFor(() => expect(result.current.loading).toBe(false))
 
-      expect(claudeToAgUi.parseExecutionLogs).toHaveBeenCalledWith(mockLogs)
+      // Events come directly from API (server-side transformation)
       expect(result.current.events).toEqual(mockEvents)
     })
 
     it('should handle empty logs', async () => {
       mockApiGet.mockResolvedValueOnce({
         executionId: 'exec-123',
-        logs: [],
+        events: [],
         metadata: { lineCount: 0, byteSize: 0, createdAt: '', updatedAt: '' },
       })
-
-      vi.mocked(claudeToAgUi.parseExecutionLogs).mockResolvedValueOnce([])
 
       const { result } = renderHook(() => useExecutionLogs('exec-123'))
 
@@ -133,22 +112,16 @@ describe('useExecutionLogs', () => {
     })
 
     it('should handle large logs (1000+ lines)', async () => {
-      const largeLogs = Array.from({ length: 1000 }, (_, i) =>
-        JSON.stringify({ type: 'test', index: i })
-      )
-
       const largeEvents = Array.from({ length: 1000 }, (_, i) => ({
-        type: 'CUSTOM',
-        timestamp: Date.now() + i,
+        type: 'TEXT_MESSAGE_CONTENT',
+        delta: `Message ${i}`,
       }))
 
       mockApiGet.mockResolvedValueOnce({
         executionId: 'exec-123',
-        logs: largeLogs,
+        events: largeEvents,
         metadata: { lineCount: 1000, byteSize: 50000, createdAt: '', updatedAt: '' },
       })
-
-      vi.mocked(claudeToAgUi.parseExecutionLogs).mockResolvedValueOnce(largeEvents as any)
 
       const { result } = renderHook(() => useExecutionLogs('exec-123'))
 
@@ -213,23 +186,20 @@ describe('useExecutionLogs', () => {
       expect(result.current.error?.message).toContain('Network')
     })
 
-    it('should handle parse errors', async () => {
+    it('should handle malformed API response', async () => {
+      // API returns invalid response structure
       mockApiGet.mockResolvedValueOnce({
         executionId: 'exec-123',
-        logs: ['invalid json'],
+        // Missing 'events' field - this would cause an error
         metadata: { lineCount: 1, byteSize: 12, createdAt: '', updatedAt: '' },
       })
-
-      vi.mocked(claudeToAgUi.parseExecutionLogs).mockRejectedValueOnce(
-        new Error('JSON parse error at line 1')
-      )
 
       const { result } = renderHook(() => useExecutionLogs('exec-parse-err'))
 
       await waitFor(() => expect(result.current.loading).toBe(false))
 
-      expect(result.current.error).not.toBeNull()
-      expect(result.current.error?.message).toContain('JSON parse error')
+      // Should handle gracefully - events will be undefined which the hook should handle
+      expect(result.current.events).toEqual([])
     })
 
     it('should handle API error responses', async () => {
@@ -255,30 +225,24 @@ describe('useExecutionLogs', () => {
     it('should re-fetch when executionId changes', async () => {
       const mockData1 = {
         executionId: 'exec-1',
-        logs: ['log1'],
+        events: [{ type: 'TEXT_MESSAGE_CONTENT', delta: 'Event 1' }],
         metadata: { lineCount: 1, byteSize: 10, createdAt: '', updatedAt: '' },
       }
 
       const mockData2 = {
         executionId: 'exec-2',
-        logs: ['log2'],
+        events: [{ type: 'TEXT_MESSAGE_CONTENT', delta: 'Event 2' }],
         metadata: { lineCount: 1, byteSize: 10, createdAt: '', updatedAt: '' },
       }
 
-      mockApiGet
-        .mockResolvedValueOnce(mockData1)
-        .mockResolvedValueOnce(mockData2)
-
-      vi.mocked(claudeToAgUi.parseExecutionLogs)
-        .mockResolvedValueOnce([{ type: 'EVENT1' }] as any)
-        .mockResolvedValueOnce([{ type: 'EVENT2' }] as any)
+      mockApiGet.mockResolvedValueOnce(mockData1).mockResolvedValueOnce(mockData2)
 
       const { result, rerender } = renderHook(({ id }) => useExecutionLogs(id), {
         initialProps: { id: 'exec-1' },
       })
 
       await waitFor(() => expect(result.current.loading).toBe(false))
-      expect(result.current.events).toEqual([{ type: 'EVENT1' }])
+      expect(result.current.events).toEqual([{ type: 'TEXT_MESSAGE_CONTENT', delta: 'Event 1' }])
 
       // Change execution ID
       rerender({ id: 'exec-2' })
@@ -289,7 +253,7 @@ describe('useExecutionLogs', () => {
       await waitFor(() => expect(result.current.loading).toBe(false))
 
       expect(mockApiGet).toHaveBeenCalledTimes(2)
-      expect(result.current.events).toEqual([{ type: 'EVENT2' }])
+      expect(result.current.events).toEqual([{ type: 'TEXT_MESSAGE_CONTENT', delta: 'Event 2' }])
     })
 
     it('should abort previous request on ID change', async () => {
@@ -322,21 +286,19 @@ describe('useExecutionLogs', () => {
       mockApiGet
         .mockResolvedValueOnce({
           executionId: 'exec-1',
-          logs: ['log1'],
+          events: [{ type: 'TEXT_MESSAGE_CONTENT', delta: 'Event 1' }],
           metadata: { lineCount: 1, byteSize: 10, createdAt: '', updatedAt: '' },
         })
         .mockImplementation(
           () => new Promise(() => {}) // Second request never resolves
         )
 
-      vi.mocked(claudeToAgUi.parseExecutionLogs).mockResolvedValueOnce([{ type: 'EVENT1' }] as any)
-
       const { result, rerender } = renderHook(({ id }) => useExecutionLogs(id), {
         initialProps: { id: 'exec-1' },
       })
 
       await waitFor(() => expect(result.current.loading).toBe(false))
-      expect(result.current.events).toEqual([{ type: 'EVENT1' }])
+      expect(result.current.events).toEqual([{ type: 'TEXT_MESSAGE_CONTENT', delta: 'Event 1' }])
 
       // Change execution ID
       rerender({ id: 'exec-2' })
@@ -355,11 +317,9 @@ describe('useExecutionLogs', () => {
 
       mockApiGet.mockResolvedValueOnce({
         executionId: 'exec-123',
-        logs: [],
+        events: [],
         metadata: { lineCount: 0, byteSize: 0, createdAt: '', updatedAt: '' },
       })
-
-      vi.mocked(claudeToAgUi.parseExecutionLogs).mockResolvedValueOnce([])
 
       const { result } = renderHook(() => useExecutionLogs('exec-123'))
 
@@ -419,14 +379,12 @@ describe('useExecutionLogs', () => {
             setTimeout(() => {
               resolve({
                 executionId: 'exec-123',
-                logs: [],
+                events: [],
                 metadata: { lineCount: 0, byteSize: 0, createdAt: '', updatedAt: '' },
               })
             }, 100)
           })
       )
-
-      vi.mocked(claudeToAgUi.parseExecutionLogs).mockResolvedValueOnce([])
 
       const { result, unmount } = renderHook(() => useExecutionLogs('exec-123'))
 
@@ -453,11 +411,9 @@ describe('useExecutionLogs', () => {
 
       mockApiGet.mockResolvedValueOnce({
         executionId: 'exec-123',
-        logs: [],
+        events: [],
         metadata: mockMetadata,
       })
-
-      vi.mocked(claudeToAgUi.parseExecutionLogs).mockResolvedValueOnce([])
 
       const { result } = renderHook(() => useExecutionLogs('exec-123'))
 
