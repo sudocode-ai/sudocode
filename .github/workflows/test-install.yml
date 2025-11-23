@@ -80,6 +80,57 @@ jobs:
       - name: Test install
         run: npm install -g sudocode 2>&1 || true
 
+  # Hypothesis 6: CommandLineTools with broken/missing c++ headers
+  macos-clt-no-cxx-headers:
+    name: "macOS (CLT with missing c++ headers)"
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Switch to CommandLineTools and break c++ headers
+        run: |
+          sudo xcode-select --switch /Library/Developer/CommandLineTools
+          SDK_PATH=$(xcrun --show-sdk-path)
+          echo "SDK: $SDK_PATH"
+          # Move c++ headers to simulate missing headers
+          sudo mv "$SDK_PATH/usr/include/c++" "$SDK_PATH/usr/include/c++.bak" || true
+          # Verify headers are gone
+          echo '#include <memory>' | clang++ -x c++ -E - 2>&1 | head -10
+      - name: Test install (expected to fail with memory not found)
+        run: npm install -g sudocode 2>&1 || true
+      - name: Restore c++ headers
+        if: always()
+        run: |
+          SDK_PATH=$(xcrun --show-sdk-path)
+          sudo mv "$SDK_PATH/usr/include/c++.bak" "$SDK_PATH/usr/include/c++" || true
+
+  # Hypothesis 7: Point to old SDK that might be missing headers
+  macos-old-sdk:
+    name: "macOS (old SDK symlink)"
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Switch to CommandLineTools with old SDK
+        run: |
+          sudo xcode-select --switch /Library/Developer/CommandLineTools
+          # List available SDKs
+          ls -la /Library/Developer/CommandLineTools/SDKs/
+          # Point MacOSX.sdk to oldest available SDK
+          OLDEST_SDK=$(ls /Library/Developer/CommandLineTools/SDKs/ | grep -E "MacOSX[0-9]" | sort -V | head -1)
+          echo "Pointing to oldest SDK: $OLDEST_SDK"
+          sudo rm /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk
+          sudo ln -s "/Library/Developer/CommandLineTools/SDKs/$OLDEST_SDK" /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk
+          echo "SDK path: $(xcrun --show-sdk-path)"
+          # Test if headers exist
+          ls -la "$(xcrun --show-sdk-path)/usr/include/c++/" 2>/dev/null || echo "No c++ headers!"
+      - name: Test install
+        run: npm install -g sudocode 2>&1 || true
+
   # Hypothesis 4: macOS 15 specific - use macos-15 runner
   macos-15-sequoia:
     name: "macOS 15 Sequoia"
