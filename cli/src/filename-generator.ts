@@ -2,8 +2,8 @@
  * Generate human-readable filenames from spec titles
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from "fs";
+import * as path from "path";
 
 /**
  * Convert a title to snake_case filename
@@ -16,82 +16,71 @@ import * as path from 'path';
 export function titleToFilename(title: string, maxLength: number = 50): string {
   return title
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_') // Replace non-alphanumeric with underscore
-    .replace(/_+/g, '_')          // Replace multiple underscores with single
-    .replace(/^_|_$/g, '')        // Trim underscores from start/end
-    .slice(0, maxLength);         // Truncate to max length
+    .replace(/[^a-z0-9]+/g, "_") // Replace non-alphanumeric with underscore
+    .replace(/_+/g, "_") // Replace multiple underscores with single
+    .replace(/^_|_$/g, "") // Trim underscores from start/end
+    .slice(0, maxLength); // Truncate to max length
 }
 
 /**
- * Generate a unique filename based on title, with ID suffix if collision
- * @param title - The spec title
- * @param id - The spec ID (used for collision resolution)
- * @param directory - Directory to check for collisions
+ * Generate a unified filename with format: {id}_{title_slug}.md
+ * This format is used for both specs and issues to ensure consistency.
+ * @param title - The entity title
+ * @param id - The entity ID
  * @param extension - File extension (default: .md)
- * @returns Unique filename
+ * @returns Filename in format: {id}_{title_slug}.md
  */
 export function generateUniqueFilename(
   title: string,
   id: string,
-  directory: string,
-  extension: string = '.md'
+  extension: string = ".md"
 ): string {
-  const baseFilename = titleToFilename(title);
-
-  // Try base filename first
-  const baseFile = baseFilename + extension;
-  const basePath = path.join(directory, baseFile);
-
-  // If file doesn't exist, use base filename
-  if (!fs.existsSync(basePath)) {
-    return baseFile;
-  }
-
-  // Check if existing file is for the same spec (by reading its frontmatter ID)
-  try {
-    const existingContent = fs.readFileSync(basePath, 'utf8');
-    const idMatch = existingContent.match(/^---\s*\n[\s\S]*?^id:\s*['"]?([^'"\n]+)['"]?\s*$/m);
-
-    if (idMatch && idMatch[1] === id) {
-      // Same spec, use the existing filename
-      return baseFile;
-    }
-  } catch (error) {
-    // If we can't read the file, assume it's a collision
-  }
-
-  // Collision detected - append ID
-  const collisionFilename = `${baseFilename}_${id}${extension}`;
-  return collisionFilename;
+  const titleSlug = titleToFilename(title);
+  const filename = `${id}_${titleSlug}${extension}`;
+  return filename;
 }
 
 /**
- * Find existing markdown file for a spec (supports both naming conventions)
- * @param specId - The spec ID
+ * Find existing markdown file for an entity (supports multiple naming conventions)
+ * Works for both specs and issues.
+ * @param entityId - The entity ID
  * @param directory - Directory to search
  * @param title - Optional title for title-based search
  * @returns Path to existing file if found, null otherwise
  */
-export function findExistingSpecFile(
-  specId: string,
+export function findExistingEntityFile(
+  entityId: string,
   directory: string,
   title?: string
 ): string | null {
-  // Try ID-based filename first (legacy)
-  const idBasedFile = path.join(directory, `${specId}.md`);
+  // Try new unified format: {id}_{title_slug}.md
+  if (title) {
+    const unifiedFile = path.join(
+      directory,
+      `${entityId}_${titleToFilename(title)}.md`
+    );
+    if (fs.existsSync(unifiedFile)) {
+      return unifiedFile;
+    }
+  }
+
+  // Try ID-based filename (legacy for issues, and legacy specs)
+  const idBasedFile = path.join(directory, `${entityId}.md`);
   if (fs.existsSync(idBasedFile)) {
     return idBasedFile;
   }
 
-  // Try title-based filename
+  // Try title-based filename (legacy for specs)
   if (title) {
     const titleBasedFile = path.join(directory, `${titleToFilename(title)}.md`);
     if (fs.existsSync(titleBasedFile)) {
-      // Verify it's the right spec by checking ID in frontmatter
+      // Verify it's the right entity by checking ID in frontmatter
       try {
-        const content = fs.readFileSync(titleBasedFile, 'utf8');
-        const idMatch = content.match(/^---\s*\n[\s\S]*?^id:\s*['"]?([^'"\n]+)['"]?\s*$/m);
-        if (idMatch && idMatch[1] === specId) {
+        const content = fs.readFileSync(titleBasedFile, "utf8");
+        const idMatch = content.match(
+          /^---\s*\n[\s\S]*?^id:\s*['"]?([^'"\n]+)['"]?\s*$/m
+        );
+        if (idMatch && idMatch[1] === entityId) {
           return titleBasedFile;
         }
       } catch (error) {
@@ -99,11 +88,37 @@ export function findExistingSpecFile(
       }
     }
 
-    // Try title-based with ID suffix
-    const titleWithIdFile = path.join(directory, `${titleToFilename(title)}_${specId}.md`);
+    // Try title-based with ID suffix (legacy collision resolution)
+    const titleWithIdFile = path.join(
+      directory,
+      `${titleToFilename(title)}_${entityId}.md`
+    );
     if (fs.existsSync(titleWithIdFile)) {
       return titleWithIdFile;
     }
+  }
+
+  // Search directory for any file with matching ID in frontmatter
+  try {
+    const files = fs.readdirSync(directory);
+    for (const file of files) {
+      if (!file.endsWith(".md")) continue;
+
+      const filePath = path.join(directory, file);
+      try {
+        const content = fs.readFileSync(filePath, "utf8");
+        const idMatch = content.match(
+          /^---\s*\n[\s\S]*?^id:\s*['"]?([^'"\n]+)['"]?\s*$/m
+        );
+        if (idMatch && idMatch[1] === entityId) {
+          return filePath;
+        }
+      } catch (error) {
+        // Skip files we can't read
+      }
+    }
+  } catch (error) {
+    // Directory doesn't exist or can't be read
   }
 
   // Not found
