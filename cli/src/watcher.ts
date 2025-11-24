@@ -20,6 +20,11 @@ import { listIssues, getIssue } from "./operations/issues.js";
 import { parseMarkdownFile } from "./markdown.js";
 import { listFeedback } from "./operations/feedback.js";
 import { getTags } from "./operations/tags.js";
+import {
+  findExistingEntityFile,
+  generateUniqueFilename,
+} from "./filename-generator.js";
+import { getOutgoingRelationships } from "./operations/relationships.js";
 
 export interface WatcherOptions {
   /**
@@ -236,8 +241,7 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
         const dbTagsSet = new Set(dbTags);
         if (jsonlTags.some((tag: string) => !dbTagsSet.has(tag))) return true;
 
-        // Compare relationships
-        const { getOutgoingRelationships } = require("./operations/relationships.js");
+        // Compare relationships;
         const dbRels = getOutgoingRelationships(db, entityId, entityType);
         const jsonlRels = jsonlEntity.relationships || [];
         if (jsonlRels.length !== dbRels.length) return true;
@@ -449,8 +453,17 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
             const issues = listIssues(db);
             const issuesDir = path.join(baseDir, "issues");
             for (const issue of issues) {
-              const fileName = `${issue.id}.md`;
-              const mdPath = path.join(issuesDir, fileName);
+              // Find existing file or generate new filename using unified scheme
+              let mdPath = findExistingEntityFile(
+                issue.id,
+                issuesDir,
+                issue.title
+              );
+              if (!mdPath) {
+                // File doesn't exist, generate new filename
+                const fileName = generateUniqueFilename(issue.title, issue.id);
+                mdPath = path.join(issuesDir, fileName);
+              }
 
               // Skip if content already matches (prevents unnecessary writes and oscillation)
               if (contentMatches(mdPath, issue.id, "issue")) {
