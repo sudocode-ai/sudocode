@@ -37,6 +37,18 @@ vi.mock('@/lib/api', () => ({
     worktreeExists: vi.fn(),
     deleteWorktree: vi.fn(),
   },
+  agentsApi: {
+    getAll: vi.fn().mockResolvedValue([
+      {
+        type: 'claude-code',
+        displayName: 'Claude Code',
+        supportedModes: ['structured', 'interactive', 'hybrid'],
+        supportsStreaming: true,
+        supportsStructuredOutput: true,
+        implemented: true,
+      },
+    ]),
+  },
 }))
 
 // Mock WebSocket - must mock before importing WebSocketProvider in test-utils

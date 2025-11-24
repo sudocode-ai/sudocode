@@ -148,6 +148,22 @@ export interface WebSocketSubscribeMessage {
 }
 
 /**
+ * Agent API types
+ */
+export interface AgentInfo {
+  type: string // AgentType from @sudocode-ai/types
+  displayName: string
+  supportedModes: string[]
+  supportsStreaming: boolean
+  supportsStructuredOutput: boolean
+  implemented: boolean
+}
+
+export interface GetAgentsResponse {
+  agents: AgentInfo[]
+}
+
+/**
  * Re-export types from @sudocode-ai/types
  */
 export type {

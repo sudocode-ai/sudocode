@@ -123,6 +123,7 @@ export interface PrepareExecutionRequest {
 export interface CreateExecutionRequest {
   config: ExecutionConfig
   prompt: string
+  agentType?: string
 }
 
 export interface CreateFollowUpRequest {

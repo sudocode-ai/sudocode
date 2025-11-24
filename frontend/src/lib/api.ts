@@ -14,6 +14,8 @@ import type {
   DeleteRelationshipRequest,
   CreateFeedbackRequest,
   UpdateFeedbackRequest,
+  AgentInfo,
+  GetAgentsResponse,
 } from '@/types/api'
 import type {
   Execution,
@@ -65,8 +67,8 @@ export function getCurrentProjectId(): string | null {
 api.interceptors.request.use(
   (config) => {
     // Inject X-Project-ID header if we have a current project
-    // Skip for /projects endpoints which don't require project context
-    if (currentProjectId && !config.url?.startsWith('/projects')) {
+    // Skip for /projects and /agents endpoints which don't require project context
+    if (currentProjectId && !config.url?.startsWith('/projects') && !config.url?.startsWith('/agents')) {
       config.headers['X-Project-ID'] = currentProjectId
     }
     return config
@@ -212,6 +214,18 @@ export const executionsApi = {
  */
 export const repositoryApi = {
   getInfo: () => get<RepositoryInfo>('/repo-info'),
+}
+
+/**
+ * Agents API
+ */
+export const agentsApi = {
+  getAll: async (): Promise<AgentInfo[]> => {
+    // Use axios directly to bypass the ApiResponse interceptor
+    // The /agents endpoint returns data directly, not wrapped in ApiResponse
+    const response = await axios.get<GetAgentsResponse>('/api/agents')
+    return response.data.agents
+  },
 }
 
 /**

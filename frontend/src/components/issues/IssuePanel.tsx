@@ -524,11 +524,12 @@ export function IssuePanel({
     }
   }
 
-  const handleStartExecution = async (config: ExecutionConfig, prompt: string) => {
+  const handleStartExecution = async (config: ExecutionConfig, prompt: string, agentType?: string) => {
     try {
       await executionsApi.create(issue.id, {
         config,
         prompt,
+        agentType,
       })
       // Execution will appear in activity timeline via WebSocket
       // No navigation needed - stay on issue page
