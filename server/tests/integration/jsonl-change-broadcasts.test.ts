@@ -139,9 +139,8 @@ describe("JSONL File Changes - WebSocket Broadcasts", () => {
       })
     );
 
-    // Note: Server watcher will use entity from event once Phase 2 is complete
-    // For now, it still uses log parsing, so DB query happens
-    // expect(dbQueryCount).toBe(0) // Future: when server uses onEntitySync directly
+    // Verify entity data optimization works (no DB query)
+    expect(dbQueryCount).toBe(0);
   });
 
   it("should handle multiple entities changed in JSONL", async () => {
@@ -216,6 +215,91 @@ describe("JSONL File Changes - WebSocket Broadcasts", () => {
       issue2.id,
       "updated",
       expect.any(Object)
+    );
+  });
+
+  it("should broadcast spec updates via onEntitySync callback", async () => {
+    const projectId = "test-spec-jsonl";
+
+    // Create a spec and export to JSONL
+    const { createNewSpec } = await import("../../src/services/specs.js");
+    const spec = createNewSpec(db, {
+      id: "s-jsonl1",
+      uuid: "uuid-spec-jsonl-1",
+      title: "JSONL Test Spec",
+      content: "Original spec content",
+      priority: 2,
+      file_path: "specs/s-jsonl1 - JSONL Test Spec.md",
+    });
+
+    await exportToJSONL(db, { outputDir: testDir });
+
+    const specBroadcasts: any[] = [];
+    const broadcastSpecUpdateSpy = vi.spyOn(
+      websocketModule,
+      "broadcastSpecUpdate"
+    );
+
+    // Start watcher with onFileChange callback
+    watcherControl = startServerWatcher({
+      db,
+      baseDir: testDir,
+      debounceDelay: 500,
+      syncJSONLToMarkdown: false,
+      onFileChange: (info) => {
+        if (
+          info.entityType === "spec" &&
+          info.entityId &&
+          info.entityId !== "*"
+        ) {
+          if (info.entity) {
+            websocketModule.broadcastSpecUpdate(
+              projectId,
+              info.entityId,
+              "updated",
+              info.entity
+            );
+          } else {
+            const { getSpecById } = require("../../src/services/specs.js");
+            const updatedSpec = getSpecById(db, info.entityId);
+            if (updatedSpec) {
+              websocketModule.broadcastSpecUpdate(
+                projectId,
+                info.entityId,
+                "updated",
+                updatedSpec
+              );
+            }
+          }
+        }
+      },
+    });
+
+    // Wait for watcher to initialize
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    // Modify the specs JSONL file directly
+    const specsJsonlPath = path.join(testDir, "specs.jsonl");
+    const jsonlContent = fs.readFileSync(specsJsonlPath, "utf8");
+    const specData = JSON.parse(jsonlContent.trim());
+    specData.title = "Updated Spec Title via JSONL";
+    specData.content = "Updated spec content via JSONL";
+    specData.updated_at = new Date().toISOString();
+    fs.writeFileSync(specsJsonlPath, JSON.stringify(specData) + "\n");
+
+    // Wait for file watcher to process the change
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    // Verify broadcast was called
+    expect(broadcastSpecUpdateSpy).toHaveBeenCalled();
+    expect(broadcastSpecUpdateSpy).toHaveBeenCalledWith(
+      projectId,
+      spec.id,
+      "updated",
+      expect.objectContaining({
+        id: spec.id,
+        title: "Updated Spec Title via JSONL",
+      })
     );
   });
 });

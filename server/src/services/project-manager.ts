@@ -132,26 +132,46 @@ export class ProjectManager {
             // Broadcast WebSocket updates based on entity type
             if (info.entityType && info.entityId) {
               if (info.entityType === "issue") {
-                // Get the full issue data for the update
-                const issue = getIssueById(db, info.entityId);
-                if (issue) {
+                // Use entity from event if available (optimization)
+                if (info.entity) {
                   broadcastIssueUpdate(
                     projectId,
                     info.entityId,
                     "updated",
-                    issue
+                    info.entity
                   );
+                } else {
+                  // Fallback to DB query (for backward compatibility)
+                  const issue = getIssueById(db, info.entityId);
+                  if (issue) {
+                    broadcastIssueUpdate(
+                      projectId,
+                      info.entityId,
+                      "updated",
+                      issue
+                    );
+                  }
                 }
               } else if (info.entityType === "spec") {
-                // Get the full spec data for the update
-                const spec = getSpecById(db, info.entityId);
-                if (spec) {
+                // Use entity from event if available (optimization)
+                if (info.entity) {
                   broadcastSpecUpdate(
                     projectId,
                     info.entityId,
                     "updated",
-                    spec
+                    info.entity
                   );
+                } else {
+                  // Fallback to DB query (for backward compatibility)
+                  const spec = getSpecById(db, info.entityId);
+                  if (spec) {
+                    broadcastSpecUpdate(
+                      projectId,
+                      info.entityId,
+                      "updated",
+                      spec
+                    );
+                  }
                 }
               }
             }

@@ -8,6 +8,7 @@ import {
   startWatcher as startCliWatcher,
   type WatcherStats,
 } from "@sudocode-ai/cli/dist/watcher.js";
+import type { EntitySyncEvent } from "@sudocode-ai/types/events";
 
 export interface ServerWatcherOptions {
   /**
@@ -32,9 +33,12 @@ export interface ServerWatcherOptions {
    */
   onFileChange?: (info: {
     filePath: string;
+    baseDir: string;
     event: "add" | "change" | "unlink";
     entityType?: "spec" | "issue";
     entityId?: string;
+    entity?: any;
+    timestamp: Date;
   }) => void;
 }
 
@@ -70,58 +74,37 @@ export function startServerWatcher(
     console.log(`[watcher] Reverse sync (JSONL → Markdown) enabled`);
   }
 
-  // Start the CLI watcher with server-specific callbacks
-  // TODO: Migrate away from parsing messages and start a watcher directly instead of using the CLI watcher.
+  // Start the CLI watcher with typed callbacks
   const control = startCliWatcher({
     db,
     baseDir,
     debounceDelay,
     syncJSONLToMarkdown,
-    onLog: (message) => {
-      console.log(message);
 
-      // Extract entity info from log messages if available
-      // Log format: "[watch] <event> <path>" or "[watch] Synced <type> <id> (<action>)"
+    // NEW PATH: Use typed callback (preferred)
+    onEntitySync: (event: EntitySyncEvent) => {
+      console.log(
+        `[watcher] Entity synced: ${event.entityType} ${event.entityId} (${event.action})`
+      );
+
       if (onFileChange) {
-        // TODO: Use something more robust than regex parsing here.
-
-        // Match markdown sync log: "[watch] Synced issue i-xxxx (updated)" or "[watch] Synced spec s-xxxx (created)"
-        // Supports both old format (ISSUE-001, SPEC-123) and new format (i-x7k9, s-14sh, i-multi-test)
-        // The "to <path>" part is optional and can contain spaces in the path
-        // Pattern allows multiple hyphens in ID (e.g., i-multi-jsonl1)
-        const syncMatch = message.match(
-          /\[watch\] Synced (spec|issue) ([A-Za-z0-9-]+) (?:to .+ )?\((created|updated)\)/
-        );
-        if (syncMatch) {
-          const [, entityType, entityId] = syncMatch;
-          onFileChange({
-            filePath: "", // Path not available in sync message
-            event: "change",
-            entityType: entityType as "spec" | "issue",
-            entityId,
-          });
-          return; // Early return to avoid double-processing
-        }
-
-        // Match JSONL file change: "[watch] change issues.jsonl" or "[watch] change specs.jsonl"
-        const jsonlChangeMatch = message.match(
-          /\[watch\] change (issues|specs)\.jsonl/
-        );
-        if (jsonlChangeMatch) {
-          const [, entityType] = jsonlChangeMatch;
-          // For JSONL changes, we don't know which specific entity changed
-          // so we broadcast a generic update that will trigger a refetch
-          onFileChange({
-            filePath: `${entityType}.jsonl`,
-            event: "change",
-            entityType: (entityType === "issues" ? "issue" : "spec") as
-              | "spec"
-              | "issue",
-            entityId: "*", // Wildcard to indicate "any entity of this type"
-          });
-        }
+        onFileChange({
+          filePath: event.filePath,
+          baseDir: event.baseDir,
+          event: "change",
+          entityType: event.entityType,
+          entityId: event.entityId,
+          entity: event.entity, // ✅ Pass through entity data
+          timestamp: event.timestamp,
+        });
       }
     },
+
+    // Keep onLog for debugging
+    onLog: (message) => {
+      console.log(message);
+    },
+
     onError: (error) => {
       console.error(`[watcher] Error: ${error.message}`);
     },
