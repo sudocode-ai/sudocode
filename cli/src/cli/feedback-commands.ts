@@ -18,6 +18,10 @@ import { createFeedbackAnchor, createAnchorByText } from '../operations/feedback
 import { exportToJSONL } from '../export.js';
 import type { FeedbackType } from '../types.js';
 import { getEntityTypeFromId } from '../id-generator.js';
+import {
+  isValidFeedbackType,
+  getValidFeedbackTypes,
+} from '../validation.js';
 
 export interface CommandContext {
   db: Database.Database;
@@ -44,6 +48,15 @@ export async function handleFeedbackAdd(
   options: FeedbackAddOptions
 ): Promise<void> {
   try {
+    // Validate feedback type
+    if (!isValidFeedbackType(options.type)) {
+      console.error(chalk.red(`✗ Invalid feedback type: ${options.type}`));
+      console.error(
+        chalk.gray(`Valid types: ${getValidFeedbackTypes().join(', ')}`)
+      );
+      process.exit(1);
+    }
+
     // Infer target type from ID
     const toType = getEntityTypeFromId(toId);
 

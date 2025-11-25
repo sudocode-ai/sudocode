@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { ChevronLeft, Plus, Minus, ArrowLeft } from 'lucide-react'
+import { Plus, Minus, ArrowLeft } from 'lucide-react'
 import type { TocItem } from './TiptapEditor'
 
 const TOC_EXPANDED_STORAGE_KEY = 'sudocode:specs:tocExpanded'

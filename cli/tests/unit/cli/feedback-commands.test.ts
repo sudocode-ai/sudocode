@@ -220,6 +220,24 @@ This is the second section.
       expect(issueWithFeedback.feedback.length).toBe(1);
       expect(issueWithFeedback.feedback[0].content).toBe('Feedback that should be exported');
     });
+
+    it('should reject invalid feedback type', async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const options = {
+        type: 'invalid_type',
+        content: 'Test feedback',
+      };
+
+      await handleFeedbackAdd(ctx, 'i-001', 's-001', options);
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('✗ Invalid feedback type: invalid_type')
+      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Valid types: comment, suggestion, request')
+      );
+      expect(processExitSpy).toHaveBeenCalledWith(1);
+    });
   });
 
   describe('handleFeedbackList', () => {
