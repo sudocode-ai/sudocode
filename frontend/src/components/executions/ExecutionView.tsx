@@ -281,212 +281,219 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
   const lastExecution = executions[executions.length - 1]
   const isChain = executions.length > 1
 
-  // Determine if we can show follow-up panel (last execution must be terminal)
+  // Determine if we can enable follow-up panel (last execution must be terminal)
   const lastExecutionTerminal =
     lastExecution.status === 'completed' ||
     lastExecution.status === 'failed' ||
     lastExecution.status === 'stopped' ||
     lastExecution.status === 'cancelled'
-  const showFollowUpPanel = lastExecutionTerminal && rootExecution.issue_id
+  const canEnableFollowUp = lastExecutionTerminal && rootExecution.issue_id
 
   // Can we cancel the last execution?
   const canCancelLast = lastExecution.status === 'running'
   const canDeleteWorktree = rootExecution.worktree_path && worktreeExists
 
   return (
-    <div className="space-y-4">
-      {/* Execution Chain Header */}
-      <Card className="p-6">
-        <div className="flex items-start justify-between">
-          <div className="flex-1 space-y-3">
-            {/* Title and Status */}
-            <div className="flex items-center gap-3">
-              <h2 className="text-xl font-semibold">
-                {isChain ? 'Execution Chain' : 'Execution'}
-              </h2>
-              {isChain && (
-                <Badge variant="outline" className="text-xs">
-                  {executions.length} execution{executions.length > 1 ? 's' : ''}
-                </Badge>
-              )}
-              {renderStatusBadge(lastExecution.status)}
-            </div>
-
-            {/* Metadata Grid - from root execution */}
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-muted-foreground">Root ID:</span>
-                <span className="ml-2 font-mono">{rootExecution.id.slice(0, 8)}...</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Issue:</span>
-                <span className="ml-2 font-mono">{rootExecution.issue_id}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Mode:</span>
-                <span className="ml-2 capitalize">{rootExecution.mode}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Model:</span>
-                <span className="ml-2">{rootExecution.model}</span>
-              </div>
-              {rootExecution.target_branch && (
-                <div>
-                  <span className="text-muted-foreground">Base Branch:</span>
-                  <span className="ml-2 font-mono">{rootExecution.target_branch}</span>
-                </div>
-              )}
-              {rootExecution.worktree_path && (
-                <div>
-                  <span className="text-muted-foreground">Worktree:</span>
-                  <span className="ml-2 font-mono text-xs">{rootExecution.worktree_path}</span>
-                  {worktreeExists ? (
-                    <Badge variant="secondary" className="ml-2 text-xs">
-                      exists
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="ml-2 text-xs text-muted-foreground">
-                      deleted
-                    </Badge>
-                  )}
-                </div>
-              )}
-              {lastExecution.session_id && (
-                <div className="col-span-2">
-                  <span className="text-muted-foreground">Session:</span>
-                  <code className="ml-2 rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                    {lastExecution.session_id}
-                  </code>
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    (use with{' '}
-                    <code className="rounded bg-muted px-1 py-0.5">
-                      claude --resume {lastExecution.session_id}
-                    </code>
-                    )
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Timestamps - from root */}
-            <div className="flex gap-4 text-xs text-muted-foreground">
-              {rootExecution.created_at && (
-                <div>
-                  Started:{' '}
-                  {new Date(rootExecution.created_at).toLocaleString('en-US', {
-                    dateStyle: 'short',
-                    timeStyle: 'short',
-                  })}
-                </div>
-              )}
-              {lastExecution.completed_at && (
-                <div>
-                  Last completed:{' '}
-                  {new Date(lastExecution.completed_at).toLocaleString('en-US', {
-                    dateStyle: 'short',
-                    timeStyle: 'short',
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="ml-4 flex gap-2">
-            {canCancelLast && (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => handleCancel(lastExecution.id)}
-                disabled={cancelling}
-              >
-                {cancelling ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Cancelling...
-                  </>
-                ) : (
-                  <>
-                    <X className="mr-2 h-4 w-4" />
-                    Cancel
-                  </>
+    <div className="flex h-full flex-col">
+      {/* Scrollable content area with padding for sticky panel */}
+      <div className="flex-1 overflow-auto py-6">
+        <div className="mx-auto w-full max-w-7xl space-y-4 px-6 pb-32">
+        {/* Execution Chain Header */}
+        <Card className="p-6">
+          <div className="flex items-start justify-between">
+            <div className="flex-1 space-y-3">
+              {/* Title and Status */}
+              <div className="flex items-center gap-3">
+                <h2 className="text-xl font-semibold">
+                  {isChain ? 'Execution Chain' : 'Execution'}
+                </h2>
+                {isChain && (
+                  <Badge variant="outline" className="text-xs">
+                    {executions.length} execution{executions.length > 1 ? 's' : ''}
+                  </Badge>
                 )}
-              </Button>
-            )}
-            {canDeleteWorktree && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowDeleteWorktree(true)}
-                disabled={deletingWorktree}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete Worktree
-              </Button>
-            )}
+                {renderStatusBadge(lastExecution.status)}
+              </div>
+
+              {/* Metadata Grid - from root execution */}
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Root ID:</span>
+                  <span className="ml-2 font-mono">{rootExecution.id.slice(0, 8)}...</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Issue:</span>
+                  <span className="ml-2 font-mono">{rootExecution.issue_id}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Mode:</span>
+                  <span className="ml-2 capitalize">{rootExecution.mode}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Model:</span>
+                  <span className="ml-2">{rootExecution.model}</span>
+                </div>
+                {rootExecution.target_branch && (
+                  <div>
+                    <span className="text-muted-foreground">Base Branch:</span>
+                    <span className="ml-2 font-mono">{rootExecution.target_branch}</span>
+                  </div>
+                )}
+                {rootExecution.worktree_path && (
+                  <div>
+                    <span className="text-muted-foreground">Worktree:</span>
+                    <span className="ml-2 font-mono text-xs">{rootExecution.worktree_path}</span>
+                    {worktreeExists ? (
+                      <Badge variant="secondary" className="ml-2 text-xs">
+                        exists
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="ml-2 text-xs text-muted-foreground">
+                        deleted
+                      </Badge>
+                    )}
+                  </div>
+                )}
+                {lastExecution.session_id && (
+                  <div className="col-span-2">
+                    <span className="text-muted-foreground">Session:</span>
+                    <code className="ml-2 rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                      {lastExecution.session_id}
+                    </code>
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      (use with{' '}
+                      <code className="rounded bg-muted px-1 py-0.5">
+                        claude --resume {lastExecution.session_id}
+                      </code>
+                      )
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Timestamps - from root */}
+              <div className="flex gap-4 text-xs text-muted-foreground">
+                {rootExecution.created_at && (
+                  <div>
+                    Started:{' '}
+                    {new Date(rootExecution.created_at).toLocaleString('en-US', {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    })}
+                  </div>
+                )}
+                {lastExecution.completed_at && (
+                  <div>
+                    Last completed:{' '}
+                    {new Date(lastExecution.completed_at).toLocaleString('en-US', {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="ml-4 flex gap-2">
+              {canCancelLast && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => handleCancel(lastExecution.id)}
+                  disabled={cancelling}
+                >
+                  {cancelling ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Cancelling...
+                    </>
+                  ) : (
+                    <>
+                      <X className="mr-2 h-4 w-4" />
+                      Cancel
+                    </>
+                  )}
+                </Button>
+              )}
+              {canDeleteWorktree && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowDeleteWorktree(true)}
+                  disabled={deletingWorktree}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Worktree
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
-      </Card>
+        </Card>
 
-      {/* Execution chain contents with boundary */}
-      <Card className="p-6">
-        {executions.map((execution, index) => {
-          const isLast = index === executions.length - 1
-          const showDivider = !isLast
+        {/* Execution chain contents with boundary */}
+        <Card className="p-6">
+          {executions.map((execution, index) => {
+            const isLast = index === executions.length - 1
+            const showDivider = !isLast
 
-          return (
-            <div key={execution.id}>
-              {/* Error message for this execution */}
-              {execution.error && (
-                <div className="mb-2 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm">
-                  <div className="flex items-start gap-2">
-                    <XCircle className="mt-0.5 h-4 w-4 text-destructive" />
-                    <div>
-                      <h5 className="font-medium text-destructive">Execution Error</h5>
-                      <p className="mt-1 text-destructive/90">{execution.error}</p>
+            return (
+              <div key={execution.id}>
+                {/* Error message for this execution */}
+                {execution.error && (
+                  <div className="mb-2 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm">
+                    <div className="flex items-start gap-2">
+                      <XCircle className="mt-0.5 h-4 w-4 text-destructive" />
+                      <div>
+                        <h5 className="font-medium text-destructive">Execution Error</h5>
+                        <p className="mt-1 text-destructive/90">{execution.error}</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Execution Monitor - compact mode for seamless inline display */}
-              <ExecutionMonitor
-                executionId={execution.id}
-                execution={execution}
-                onComplete={() => handleExecutionComplete(execution.id)}
-                onError={handleExecutionError}
-                compact
-              />
+                {/* Execution Monitor - compact mode for seamless inline display */}
+                <ExecutionMonitor
+                  executionId={execution.id}
+                  execution={execution}
+                  onComplete={() => handleExecutionComplete(execution.id)}
+                  onError={handleExecutionError}
+                  compact
+                />
 
-              {/* Visual separator between executions (subtle spacing only) */}
-              {showDivider && <div className="my-6" />}
-            </div>
-          )
-        })}
-      </Card>
-
-      {/* Follow-up Input Panel - appears after last execution */}
-      {showFollowUpPanel && (
-        <Card>
-          <AgentConfigPanel
-            issueId={rootExecution.issue_id!}
-            onStart={handleFollowUpStart}
-            isFollowUp
-            disabled={submittingFollowUp}
-            parentExecution={{
-              id: lastExecution.id,
-              mode: rootExecution.mode || undefined,
-              model: rootExecution.model || undefined,
-              target_branch: rootExecution.target_branch || undefined,
-              agent_type: rootExecution.agent_type || undefined,
-              config: rootExecution.config
-                ? typeof rootExecution.config === 'string'
-                  ? JSON.parse(rootExecution.config)
-                  : rootExecution.config
-                : undefined,
-            }}
-          />
+                {/* Visual separator between executions (subtle spacing only) */}
+                {showDivider && <div className="my-6" />}
+              </div>
+            )
+          })}
         </Card>
+        </div>
+      </div>
+
+      {/* Sticky Follow-up Input Panel - always rendered at bottom */}
+      {rootExecution.issue_id && (
+        <div className="sticky bottom-0 border-t bg-background shadow-lg">
+          <div className="mx-auto w-full max-w-7xl">
+            <AgentConfigPanel
+              issueId={rootExecution.issue_id}
+              onStart={handleFollowUpStart}
+              isFollowUp
+              disabled={!canEnableFollowUp || submittingFollowUp}
+              parentExecution={{
+                id: lastExecution.id,
+                mode: rootExecution.mode || undefined,
+                model: rootExecution.model || undefined,
+                target_branch: rootExecution.target_branch || undefined,
+                agent_type: rootExecution.agent_type || undefined,
+                config: rootExecution.config
+                  ? typeof rootExecution.config === 'string'
+                    ? JSON.parse(rootExecution.config)
+                    : rootExecution.config
+                  : undefined,
+              }}
+            />
+          </div>
+        </div>
       )}
 
       {/* Delete Worktree Dialog */}

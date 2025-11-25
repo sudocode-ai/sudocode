@@ -34,8 +34,8 @@ export default function ExecutionDetailPage() {
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 overflow-auto p-6">
+      {/* Main content - scrollable area with padding bottom for sticky panel */}
+      <div className="flex-1 overflow-auto">
         <ExecutionView executionId={id} />
       </div>
     </div>

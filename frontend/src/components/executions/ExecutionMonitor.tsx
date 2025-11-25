@@ -366,7 +366,7 @@ export function ExecutionMonitor({
       <div className={`space-y-4 ${className}`}>
         {/* User prompt - show what the user asked */}
         {executionProp?.prompt && (
-          <div className="rounded-md bg-muted/30 p-3">
+          <div className="rounded-md bg-primary/30 p-3">
             <div className="flex items-start gap-2">
               <div className="flex-1 whitespace-pre-wrap font-mono text-sm text-foreground">
                 {executionProp.prompt}
