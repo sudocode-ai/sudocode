@@ -1194,7 +1194,7 @@ describe('ExecutionMonitor', () => {
         metadata: null,
       })
 
-      const { container } = render(
+      render(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
       )
 

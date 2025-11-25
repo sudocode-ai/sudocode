@@ -135,7 +135,21 @@ export const issuesApi = {
   create: (data: CreateIssueRequest) => post<Issue>('/issues', data),
   update: (id: string, data: UpdateIssueRequest) => put<Issue>(`/issues/${id}`, data),
   delete: (id: string) => del(`/issues/${id}`),
-  getFeedback: (id: string) => get<IssueFeedback[]>(`/feedback?to_id=${id}`),
+  getFeedback: async (id: string) => {
+    // Fetch both inbound (feedback ON this issue) and outbound (feedback FROM this issue)
+    const [inbound, outbound] = await Promise.all([
+      get<IssueFeedback[]>(`/feedback?to_id=${id}`),
+      get<IssueFeedback[]>(`/feedback?from_id=${id}`),
+    ])
+    // Combine and deduplicate (in case an issue left feedback on itself)
+    const combined = [...inbound, ...outbound]
+    const seen = new Set<string>()
+    return combined.filter((f) => {
+      if (seen.has(f.id)) return false
+      seen.add(f.id)
+      return true
+    })
+  },
 }
 
 /**

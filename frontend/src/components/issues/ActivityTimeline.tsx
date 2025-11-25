@@ -6,7 +6,9 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import {
   MessageSquare,
+  MessageSquareShare,
   PlayCircle,
+  ArrowRight,
 } from 'lucide-react'
 import type { IssueFeedback } from '@/types/api'
 import type { Execution } from '@/types/execution'
@@ -19,6 +21,7 @@ type ActivityItem =
 
 interface ActivityTimelineProps {
   items: ActivityItem[]
+  currentEntityId: string
   className?: string
 }
 
@@ -27,8 +30,19 @@ interface ActivityTimelineProps {
  * Shows feedback, executions, and other activity in chronological order
  * Designed to be inline with issue content, like GitHub/Linear
  */
-export function ActivityTimeline({ items, className = '' }: ActivityTimelineProps) {
+export function ActivityTimeline({ items, currentEntityId, className = '' }: ActivityTimelineProps) {
   const navigate = useNavigate()
+
+  // Helper to determine if feedback is outbound (from this entity) or inbound (to this entity)
+  const isOutboundFeedback = (feedback: IssueFeedback) => feedback.from_id === currentEntityId
+
+  // Helper to get the "other" entity ID for navigation
+  const getOtherEntityId = (feedback: IssueFeedback) =>
+    isOutboundFeedback(feedback) ? feedback.to_id : feedback.from_id
+
+  // Helper to get navigation path based on entity type (spec or issue)
+  const getEntityPath = (entityId: string) =>
+    entityId.startsWith('s-') ? `/specs/${entityId}` : `/issues/${entityId}`
 
   // Sort items chronologically (oldest first)
   const sortedItems = [...items].sort(
@@ -57,26 +71,64 @@ export function ActivityTimeline({ items, className = '' }: ActivityTimelineProp
   }
 
   const renderFeedback = (feedback: IssueFeedback) => {
+    const isOutbound = isOutboundFeedback(feedback)
+    const otherEntityId = getOtherEntityId(feedback)
+    const otherEntityPath = getEntityPath(otherEntityId)
+    const isSpec = otherEntityId.startsWith('s-')
+
+    // Different styles for outbound vs inbound feedback
+    const borderColor = isOutbound
+      ? 'border-l-purple-500/50'
+      : 'border-l-blue-700/50'
+    const bgColor = isOutbound
+      ? 'bg-purple-50/50 dark:bg-purple-950/20'
+      : 'bg-blue-50/50 dark:bg-blue-950/20'
+    const iconColor = isOutbound
+      ? 'text-purple-600 dark:text-purple-400'
+      : 'text-blue-600 dark:text-blue-400'
+
     return (
       <div key={feedback.id} className="group relative">
         <Card
-          className={`flex flex-col gap-2 rounded-r-md border-l-4 border-l-blue-700/50 bg-blue-50/50 p-4 transition-opacity dark:bg-blue-950/20 ${feedback.dismissed ? 'opacity-50' : ''}`}
+          className={`flex flex-col gap-2 rounded-r-md border-l-4 ${borderColor} ${bgColor} p-4 transition-opacity ${feedback.dismissed ? 'opacity-50' : ''}`}
         >
           {/* Header */}
           <div className="mb-2 flex items-start justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <MessageSquare className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              {isOutbound ? (
+                <MessageSquareShare className={`h-4 w-4 ${iconColor}`} />
+              ) : (
+                <MessageSquare className={`h-4 w-4 ${iconColor}`} />
+              )}
               <Badge className={`text-xs ${getFeedbackTypeColor(feedback.feedback_type)}`}>
                 {feedback.feedback_type}
               </Badge>
-              <button onClick={() => navigate(`/issues/${feedback.from_id}`)}>
-                <Badge
-                  variant="issue"
-                  className="cursor-pointer font-mono text-xs hover:opacity-80"
-                >
-                  {feedback.from_id}
-                </Badge>
-              </button>
+              {/* Show direction and linked entity */}
+              {isOutbound ? (
+                <>
+                  <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                  <button onClick={() => navigate(otherEntityPath)}>
+                    <Badge
+                      variant={isSpec ? 'spec' : 'issue'}
+                      className="cursor-pointer font-mono text-xs hover:opacity-80"
+                    >
+                      {otherEntityId}
+                    </Badge>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="text-xs text-muted-foreground">from</span>
+                  <button onClick={() => navigate(otherEntityPath)}>
+                    <Badge
+                      variant={isSpec ? 'spec' : 'issue'}
+                      className="cursor-pointer font-mono text-xs hover:opacity-80"
+                    >
+                      {otherEntityId}
+                    </Badge>
+                  </button>
+                </>
+              )}
               {/* Agent info if present */}
               {feedback.agent ? (
                 <span className="text-xs text-muted-foreground">

@@ -942,6 +942,7 @@ export function IssuePanel({
                   ...feedback.map((f) => ({ ...f, itemType: 'feedback' as const })),
                   ...executions.map((e) => ({ ...e, itemType: 'execution' as const })),
                 ]}
+                currentEntityId={issue.id}
               />
             </div>
           </div>
