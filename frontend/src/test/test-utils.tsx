@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { WebSocketProvider } from '@/contexts/WebSocketContext'
 import { ProjectProvider } from '@/contexts/ProjectContext'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 /**
  * Custom render function that includes all providers
@@ -29,7 +30,9 @@ export function renderWithProviders(
         <ProjectProvider defaultProjectId={defaultProjectId} skipValidation={true}>
           <WebSocketProvider>
             <ThemeProvider>
-              <BrowserRouter>{children}</BrowserRouter>
+              <TooltipProvider>
+                <BrowserRouter>{children}</BrowserRouter>
+              </TooltipProvider>
             </ThemeProvider>
           </WebSocketProvider>
         </ProjectProvider>

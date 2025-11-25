@@ -532,9 +532,13 @@ This spec has no frontmatter and will be deleted.
       const issueMdPath = path.join(tempDir, "issues", "issue-002.md");
       expect(fs.existsSync(issueMdPath)).toBe(false);
 
-      // Verify logs show import but NOT markdown sync
+      // Verify logs show import
       expect(logs.some((log) => log.includes("Imported JSONL"))).toBe(true);
-      expect(logs.some((log) => log.includes("Synced issue"))).toBe(false);
+
+      // Note: "Synced issue" logs now appear when we detect JSONL changes
+      // (part of the new typed callback system), but this doesn't mean
+      // markdown files were created - it just means we tracked which entities changed
+      // The actual test is that markdown file was NOT created (checked above)
     });
   });
 

@@ -237,6 +237,37 @@ HEAD abc123def456
     });
   });
 
+  describe('getCurrentBranch', () => {
+    it('should execute git rev-parse --abbrev-ref HEAD command', async () => {
+      gitCli.mockOutput = 'main\n';
+
+      const branch = await gitCli.getCurrentBranch('/repo');
+
+      expect(gitCli.lastCommand.includes('git rev-parse --abbrev-ref HEAD')).toBeTruthy();
+      expect(gitCli.lastCwd).toBe('/repo');
+      expect(branch).toBe('main');
+    });
+
+    it('should trim whitespace from branch name', async () => {
+      gitCli.mockOutput = '  feature/my-branch  \n  ';
+
+      const branch = await gitCli.getCurrentBranch('/repo');
+
+      expect(branch).toBe('feature/my-branch');
+    });
+
+    it('should return "(detached)" on error', async () => {
+      const error: any = new Error('Command failed');
+      error.stderr = 'fatal: ref HEAD is not a symbolic ref';
+      error.stdout = '';
+      gitCli.shouldThrow = error;
+
+      const branch = await gitCli.getCurrentBranch('/repo');
+
+      expect(branch).toBe('(detached)');
+    });
+  });
+
   describe('error handling', () => {
     it('should throw WorktreeError on git command failure', async () => {
       const error: any = new Error('Command failed');

@@ -23,6 +23,7 @@ import type { TransportManager } from "../execution/transport/transport-manager.
 import { ExecutionLogsStore } from "./execution-logs-store.js";
 import { ExecutionWorkerPool } from "./execution-worker-pool.js";
 import { broadcastExecutionUpdate } from "./websocket.js";
+import { GitCli } from "../execution/worktree/git-cli.js";
 import { createExecutorForAgent } from "../execution/executors/executor-factory.js";
 import type { AgentType } from "@sudocode-ai/types/agents";
 
@@ -193,11 +194,27 @@ export class ExecutionService {
     // 5. Render template
     const renderedPrompt = this.templateEngine.render(template, context);
 
-    // 6. Get default config
+    // 6. Get current branch as default base branch
+    let currentBranch = "main"; // Fallback default
+    try {
+      const gitCli = new GitCli();
+      currentBranch = await gitCli.getCurrentBranch(this.repoPath);
+      // If detached HEAD, try to use 'main' as fallback
+      if (currentBranch === "(detached)") {
+        currentBranch = "main";
+      }
+    } catch (error) {
+      console.warn(
+        "Failed to get current branch, using 'main' as fallback:",
+        error
+      );
+    }
+
+    // 7. Get default config
     const defaultConfig: ExecutionConfig = {
       mode: "worktree",
       model: "claude-sonnet-4",
-      baseBranch: "main",
+      baseBranch: currentBranch,
       checkpointInterval: 1,
       continueOnStepFailure: false,
       captureFileChanges: true,
@@ -205,7 +222,7 @@ export class ExecutionService {
       ...options?.config,
     };
 
-    // 7. Validate
+    // 8. Validate
     const warnings: string[] = [];
     const errors: string[] = [];
 
@@ -244,7 +261,7 @@ export class ExecutionService {
     issueId: string,
     config: ExecutionConfig,
     prompt: string,
-    agentType: AgentType = 'claude-code'
+    agentType: AgentType = "claude-code"
   ): Promise<Execution> {
     // 1. Validate
     if (!prompt.trim()) {
@@ -450,7 +467,7 @@ Please continue working on this issue, taking into account the feedback above.`;
 
     // 5. Create new execution record that references previous execution
     // Default to 'claude-code' if agent_type is null (for backwards compatibility)
-    const agentType = (prevExecution.agent_type || 'claude-code') as AgentType;
+    const agentType = (prevExecution.agent_type || "claude-code") as AgentType;
 
     const newExecutionId = randomUUID();
     const newExecution = createExecution(this.db, {
@@ -525,7 +542,12 @@ Please continue working on this issue, taking into account the feedback above.`;
 
     // Resume with session ID (non-blocking)
     wrapper
-      .resumeWithLifecycle(newExecution.id, sessionId, task, prevExecution.worktree_path)
+      .resumeWithLifecycle(
+        newExecution.id,
+        sessionId,
+        task,
+        prevExecution.worktree_path
+      )
       .catch((error) => {
         console.error(
           `[ExecutionService] Follow-up execution ${newExecution.id} failed:`,
@@ -730,7 +752,9 @@ Please continue working on this issue, taking into account the feedback above.`;
     // For in-process executions, we don't track them anymore
     // Query the database for running executions as a fallback
     const runningExecutions = this.db
-      .prepare("SELECT COUNT(*) as count FROM executions WHERE status = 'running'")
+      .prepare(
+        "SELECT COUNT(*) as count FROM executions WHERE status = 'running'"
+      )
       .get() as { count: number };
 
     return runningExecutions.count > 0;

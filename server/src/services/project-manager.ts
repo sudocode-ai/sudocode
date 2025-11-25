@@ -13,6 +13,9 @@ import { ExecutionLifecycleService } from "./execution-lifecycle.js";
 import { startServerWatcher } from "./watcher.js";
 import type { ProjectError, Result } from "../types/project.js";
 import { Ok, Err } from "../types/project.js";
+import { broadcastIssueUpdate, broadcastSpecUpdate } from "./websocket.js";
+import { getIssueById } from "./issues.js";
+import { getSpecById } from "./specs.js";
 
 interface CachedDatabase {
   db: Database.Database;
@@ -124,8 +127,54 @@ export class ProjectManager {
           db,
           baseDir: sudocodeDir,
           onFileChange: (info) => {
-            // TODO: Broadcast WebSocket updates with projectId
-            console.log(`File change in ${projectId}:`, info);
+            console.log(`[project-manager] File change in ${projectId}:`, info);
+
+            // Broadcast WebSocket updates based on entity type
+            if (info.entityType && info.entityId) {
+              if (info.entityType === "issue") {
+                // Use entity from event if available (optimization)
+                if (info.entity) {
+                  broadcastIssueUpdate(
+                    projectId,
+                    info.entityId,
+                    "updated",
+                    info.entity
+                  );
+                } else {
+                  // Fallback to DB query (for backward compatibility)
+                  const issue = getIssueById(db, info.entityId);
+                  if (issue) {
+                    broadcastIssueUpdate(
+                      projectId,
+                      info.entityId,
+                      "updated",
+                      issue
+                    );
+                  }
+                }
+              } else if (info.entityType === "spec") {
+                // Use entity from event if available (optimization)
+                if (info.entity) {
+                  broadcastSpecUpdate(
+                    projectId,
+                    info.entityId,
+                    "updated",
+                    info.entity
+                  );
+                } else {
+                  // Fallback to DB query (for backward compatibility)
+                  const spec = getSpecById(db, info.entityId);
+                  if (spec) {
+                    broadcastSpecUpdate(
+                      projectId,
+                      info.entityId,
+                      "updated",
+                      spec
+                    );
+                  }
+                }
+              }
+            }
           },
         });
       }

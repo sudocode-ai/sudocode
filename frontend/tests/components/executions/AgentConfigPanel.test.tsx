@@ -75,9 +75,7 @@ describe('AgentConfigPanel', () => {
 
   describe('Initial Rendering', () => {
     it('should render the component', async () => {
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
         expect(screen.getByPlaceholderText('Enter prompt for the agent...')).toBeInTheDocument()
@@ -85,9 +83,7 @@ describe('AgentConfigPanel', () => {
     })
 
     it('should load execution preview on mount', async () => {
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
         expect(executionsApi.prepare).toHaveBeenCalledWith('i-test1')
@@ -95,9 +91,7 @@ describe('AgentConfigPanel', () => {
     })
 
     it('should load available agents on mount', async () => {
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
         expect(agentsApi.getAll).toHaveBeenCalled()
@@ -107,9 +101,7 @@ describe('AgentConfigPanel', () => {
 
   describe('Agent Selection', () => {
     it('should display agent selector with default selection', async () => {
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
         expect(screen.getByText('Claude Code')).toBeInTheDocument()
@@ -119,9 +111,7 @@ describe('AgentConfigPanel', () => {
     it('should show only implemented agents in dropdown when opened', async () => {
       const user = userEvent.setup()
 
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
         expect(screen.getByText('Claude Code')).toBeInTheDocument()
@@ -142,9 +132,7 @@ describe('AgentConfigPanel', () => {
     it('should exclude unimplemented agents from dropdown', async () => {
       const user = userEvent.setup()
 
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
         expect(screen.getByText('Claude Code')).toBeInTheDocument()
@@ -157,11 +145,12 @@ describe('AgentConfigPanel', () => {
         // Only Claude Code should be in the options (it's the only implemented agent in mockAgents)
         const options = screen.getAllByRole('option')
         // Filter to agent selector options (exclude mode and branch options)
-        const agentOptions = options.filter(opt =>
-          opt.textContent?.includes('Claude Code') ||
-          opt.textContent?.includes('Codex') ||
-          opt.textContent?.includes('Copilot') ||
-          opt.textContent?.includes('Cursor')
+        const agentOptions = options.filter(
+          (opt) =>
+            opt.textContent?.includes('Claude Code') ||
+            opt.textContent?.includes('Codex') ||
+            opt.textContent?.includes('Copilot') ||
+            opt.textContent?.includes('Cursor')
         )
         expect(agentOptions.length).toBe(1)
         expect(agentOptions[0].textContent).toBe('Claude Code')
@@ -192,9 +181,7 @@ describe('AgentConfigPanel', () => {
 
   describe('Execution Mode Selection', () => {
     it('should display execution mode selector', async () => {
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
         expect(screen.getByText('Run in worktree')).toBeInTheDocument()
@@ -204,9 +191,7 @@ describe('AgentConfigPanel', () => {
     it('should allow changing execution mode', async () => {
       const user = userEvent.setup()
 
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
         expect(screen.getByText('Run in worktree')).toBeInTheDocument()
@@ -224,9 +209,7 @@ describe('AgentConfigPanel', () => {
 
   describe('Branch Selection', () => {
     it('should show branch selector when in worktree mode', async () => {
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
         const triggers = screen.getAllByRole('combobox')
@@ -238,9 +221,7 @@ describe('AgentConfigPanel', () => {
     it('should display available branches', async () => {
       const user = userEvent.setup()
 
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
         const triggers = screen.getAllByRole('combobox')
@@ -253,8 +234,8 @@ describe('AgentConfigPanel', () => {
 
       await waitFor(() => {
         const options = screen.getAllByRole('option')
-        const branchOptions = options.filter(opt =>
-          opt.textContent === 'main' || opt.textContent === 'develop'
+        const branchOptions = options.filter(
+          (opt) => opt.textContent === 'main' || opt.textContent === 'develop'
         )
         expect(branchOptions.length).toBeGreaterThanOrEqual(2)
       })
@@ -265,9 +246,7 @@ describe('AgentConfigPanel', () => {
     it('should allow entering a prompt', async () => {
       const user = userEvent.setup()
 
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
       await user.type(textarea, 'Test prompt')
@@ -280,9 +259,7 @@ describe('AgentConfigPanel', () => {
         () => new Promise(() => {}) // Never resolves
       )
 
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const textarea = screen.getByPlaceholderText('Loading prompt...')
       expect(textarea).toBeDisabled()
@@ -291,9 +268,7 @@ describe('AgentConfigPanel', () => {
 
   describe('Run Button', () => {
     it('should be disabled when prompt is empty', async () => {
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
         const runButton = screen.getByRole('button', { name: /Run/i })
@@ -304,9 +279,7 @@ describe('AgentConfigPanel', () => {
     it('should be enabled when prompt is filled', async () => {
       const user = userEvent.setup()
 
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
       await user.type(textarea, 'Test prompt')
@@ -334,9 +307,7 @@ describe('AgentConfigPanel', () => {
     it('should call onStart with config, prompt, and agentType when clicked', async () => {
       const user = userEvent.setup()
 
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
       await user.type(textarea, 'Test prompt')
@@ -371,9 +342,7 @@ describe('AgentConfigPanel', () => {
       ]
       vi.mocked(agentsApi.getAll).mockResolvedValue(mockAgentsWithMultiple)
 
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
         expect(screen.getByText('Claude Code')).toBeInTheDocument()
@@ -394,11 +363,7 @@ describe('AgentConfigPanel', () => {
       const runButton = screen.getByRole('button', { name: /Run/i })
       await user.click(runButton)
 
-      expect(mockOnStart).toHaveBeenCalledWith(
-        expect.any(Object),
-        'Test prompt',
-        'cursor'
-      )
+      expect(mockOnStart).toHaveBeenCalledWith(expect.any(Object), 'Test prompt', 'cursor')
     })
   })
 
@@ -406,9 +371,7 @@ describe('AgentConfigPanel', () => {
     it('should open settings dialog when settings button is clicked', async () => {
       const user = userEvent.setup()
 
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
         expect(screen.getByPlaceholderText('Enter prompt for the agent...')).toBeInTheDocument()
@@ -416,7 +379,7 @@ describe('AgentConfigPanel', () => {
 
       // Find settings button by looking for all buttons and finding the one with Settings icon
       const buttons = screen.getAllByRole('button')
-      const settingsButton = buttons.find(btn => btn.className.includes('border-input'))
+      const settingsButton = buttons.find((btn) => btn.className.includes('border-input'))
       expect(settingsButton).toBeDefined()
 
       await user.click(settingsButton!)
@@ -435,9 +398,7 @@ describe('AgentConfigPanel', () => {
       }
       vi.mocked(executionsApi.prepare).mockResolvedValue(errorPrepareResult)
 
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
         expect(screen.getByText('Errors')).toBeInTheDocument()
@@ -454,9 +415,7 @@ describe('AgentConfigPanel', () => {
       }
       vi.mocked(executionsApi.prepare).mockResolvedValue(errorPrepareResult)
 
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
       await user.type(textarea, 'Test prompt')
@@ -474,13 +433,13 @@ describe('AgentConfigPanel', () => {
       }
       vi.mocked(executionsApi.prepare).mockResolvedValue(warningPrepareResult)
 
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
         expect(screen.getByText('Warnings')).toBeInTheDocument()
-        expect(screen.getByText('Warning: Working directory has uncommitted changes')).toBeInTheDocument()
+        expect(
+          screen.getByText('Warning: Working directory has uncommitted changes')
+        ).toBeInTheDocument()
       })
     })
 
@@ -492,9 +451,7 @@ describe('AgentConfigPanel', () => {
       }
       vi.mocked(executionsApi.prepare).mockResolvedValue(warningPrepareResult)
 
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
       await user.type(textarea, 'Test prompt')
@@ -510,9 +467,7 @@ describe('AgentConfigPanel', () => {
         () => new Promise(() => {}) // Never resolves
       )
 
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const textarea = screen.getByPlaceholderText('Loading prompt...')
       expect(textarea).toBeDisabled()
@@ -526,9 +481,7 @@ describe('AgentConfigPanel', () => {
         () => new Promise(() => {}) // Never resolves
       )
 
-      renderWithProviders(
-        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />
-      )
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const triggers = screen.getAllByRole('combobox')
       // Agent selector should be disabled

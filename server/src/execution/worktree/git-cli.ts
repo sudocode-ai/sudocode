@@ -128,6 +128,15 @@ export interface IGitCli {
    * @returns Promise resolving to the current HEAD commit SHA
    */
   getCurrentCommit(repoPath: string): Promise<string>;
+
+  /**
+   * Get current branch name
+   * Equivalent to: git rev-parse --abbrev-ref HEAD
+   *
+   * @param repoPath - Path to the git repository
+   * @returns Promise resolving to the current branch name (or "(detached)" if detached HEAD)
+   */
+  getCurrentBranch(repoPath: string): Promise<string>;
 }
 
 /**
@@ -351,5 +360,15 @@ export class GitCli implements IGitCli {
   async getCurrentCommit(repoPath: string): Promise<string> {
     const output = this.execGit('git rev-parse HEAD', repoPath);
     return output.trim();
+  }
+
+  async getCurrentBranch(repoPath: string): Promise<string> {
+    try {
+      const output = this.execGit('git rev-parse --abbrev-ref HEAD', repoPath);
+      return output.trim();
+    } catch (error) {
+      // If we can't get the branch (detached HEAD, etc.), return '(detached)'
+      return '(detached)';
+    }
   }
 }

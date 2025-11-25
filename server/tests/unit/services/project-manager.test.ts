@@ -391,4 +391,55 @@ describe('ProjectManager', () => {
       expect(summary.totalCached).toBe(0)
     })
   })
+
+  describe('file watcher integration', () => {
+    it('should initialize watcher when watchEnabled is true', async () => {
+      const managerWithWatch = new ProjectManager(registry, { watchEnabled: true })
+
+      const result = await managerWithWatch.openProject(testProjectPath)
+      expect(result.ok).toBe(true)
+
+      if (result.ok) {
+        const project = managerWithWatch.getProject(result.value.id)
+        expect(project).not.toBeNull()
+        expect(project?.watcher).toBeDefined()
+      }
+
+      await managerWithWatch.shutdown()
+    })
+
+    it('should not initialize watcher when watchEnabled is false', async () => {
+      const result = await manager.openProject(testProjectPath)
+      expect(result.ok).toBe(true)
+
+      if (result.ok) {
+        const project = manager.getProject(result.value.id)
+        expect(project).not.toBeNull()
+        expect(project?.watcher).toBeNull()
+      }
+    })
+
+    it('should stop watcher on project close', async () => {
+      const managerWithWatch = new ProjectManager(registry, { watchEnabled: true })
+
+      const result = await managerWithWatch.openProject(testProjectPath)
+      expect(result.ok).toBe(true)
+
+      if (result.ok) {
+        const projectId = result.value.id
+        const project = managerWithWatch.getProject(projectId)
+
+        // Watcher should be defined
+        expect(project?.watcher).toBeDefined()
+
+        // Close project
+        await managerWithWatch.closeProject(projectId)
+
+        // Project should no longer be open
+        expect(managerWithWatch.isProjectOpen(projectId)).toBe(false)
+      }
+
+      await managerWithWatch.shutdown()
+    })
+  })
 })

@@ -123,6 +123,17 @@ export function AgentConfigPanel({
     onStart(config, prompt, selectedAgentType)
   }
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Submit on Enter (without Shift)
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      if (canStart) {
+        handleStart()
+      }
+    }
+    // Shift+Enter creates newline (default behavior, no need to handle)
+  }
+
   const hasErrors = prepareResult?.errors && prepareResult.errors.length > 0
   const hasWarnings = prepareResult?.warnings && prepareResult.warnings.length > 0
   const canStart = !loading && !hasErrors && prompt.trim().length > 0 && !disabled
@@ -186,6 +197,7 @@ export function AgentConfigPanel({
           ref={textareaRef}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={handleKeyDown}
           placeholder={loading ? 'Loading prompt...' : 'Enter prompt for the agent...'}
           disabled={loading}
           className="max-h-[300px] min-h-0 resize-none overflow-y-auto border-none bg-muted/80 py-2 text-sm shadow-none transition-[height] duration-100 focus-visible:ring-0 focus-visible:ring-offset-0"

@@ -227,7 +227,9 @@ describe("ExecutionService", () => {
       // Verify default config
       expect(result.defaultConfig.mode).toBe("worktree");
       expect(result.defaultConfig.model).toBe("claude-sonnet-4");
-      expect(result.defaultConfig.baseBranch).toBe("main");
+      // baseBranch should be set to current branch (not hardcoded to "main")
+      expect(result.defaultConfig.baseBranch).toBeTruthy();
+      expect(typeof result.defaultConfig.baseBranch).toBe("string");
     });
 
     it("should handle issue without related specs", async () => {
