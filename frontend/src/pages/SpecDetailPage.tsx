@@ -242,13 +242,11 @@ export default function SpecDetailPage() {
   const handleLineClick = (lineNumber: number) => {
     setSelectedLine(lineNumber)
     setSelectedText(null) // Clear text selection when clicking line
-    setShowFeedbackPanel(true)
   }
 
   const handleTextSelect = (text: string, lineNumber: number) => {
     setSelectedText(text)
     setSelectedLine(lineNumber)
-    setShowFeedbackPanel(true)
     // TODO: Future enhancement - use selectedText for pre-filling feedback with context
   }
 
