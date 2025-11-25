@@ -1,5 +1,5 @@
 import { Card } from '@/components/ui/card'
-import { TiptapEditor } from './TiptapEditor'
+import { TiptapEditor, type TocItem } from './TiptapEditor'
 import { SpecViewer } from './SpecViewer'
 import type { IssueFeedback } from '@/types/api'
 
@@ -13,6 +13,7 @@ interface SpecViewerTiptapProps {
   onChange?: (markdown: string) => void
   viewMode?: 'formatted' | 'source'
   onViewModeChange?: (mode: 'formatted' | 'source') => void
+  onTocUpdate?: (items: TocItem[]) => void
   className?: string
 }
 
@@ -32,6 +33,7 @@ export function SpecViewerTiptap({
   onChange,
   viewMode = 'formatted',
   onViewModeChange: _onViewModeChange,
+  onTocUpdate,
   className = '',
 }: SpecViewerTiptapProps) {
   return (
@@ -47,6 +49,7 @@ export function SpecViewerTiptap({
           selectedLine={selectedLine}
           onLineClick={onLineClick}
           placeholder="Spec content..."
+          onTocUpdate={onTocUpdate}
         />
       ) : (
         <SpecViewer
