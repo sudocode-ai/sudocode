@@ -2,6 +2,7 @@ import { useEditor, EditorContent, ReactNodeViewRenderer } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import Placeholder from '@tiptap/extension-placeholder'
+import TableOfContents from '@tiptap/extension-table-of-contents'
 import { common, createLowlight } from 'lowlight'
 import { useEffect, useState, useRef } from 'react'
 import { unified } from 'unified'
@@ -41,6 +42,14 @@ import { FeedbackMark } from './extensions/FeedbackMark'
 import { preprocessEntityMentions } from './extensions/markdown-utils'
 import type { IssueFeedback } from '@/types/api'
 import './tiptap.css'
+
+export interface TocItem {
+  id: string
+  level: number
+  textContent: string
+  isActive: boolean
+  isScrolledOver: boolean
+}
 
 // Create lowlight instance with common languages
 const lowlight = createLowlight(common)
@@ -229,6 +238,7 @@ interface TiptapEditorProps {
   selectedLine?: number | null
   onLineClick?: (lineNumber: number) => void
   placeholder?: string
+  onTocUpdate?: (items: TocItem[]) => void
 }
 
 /**
@@ -256,6 +266,7 @@ export function TiptapEditor({
   selectedLine,
   onLineClick,
   placeholder,
+  onTocUpdate,
 }: TiptapEditorProps) {
   const [htmlContent, setHtmlContent] = useState<string>('')
   const [hasChanges, setHasChanges] = useState(false)
@@ -330,6 +341,14 @@ export function TiptapEditor({
       LineNumbers,
       EntityMention,
       FeedbackMark,
+      TableOfContents.configure({
+        onUpdate: (content) => {
+          // Call onTocUpdate callback if provided
+          if (onTocUpdate) {
+            onTocUpdate(content)
+          }
+        },
+      }),
     ],
     editable,
     content: htmlContent,
@@ -386,7 +405,8 @@ export function TiptapEditor({
       // This prevents losing cursor position during auto-save
       if (!editor.isFocused) {
         isLoadingContentRef.current = true
-        editor.commands.setContent(htmlContent)
+        // Set emitUpdate to true to trigger TOC update
+        editor.commands.setContent(htmlContent, { emitUpdate: true })
         // Reset hasChanges since we're loading external content
         setHasChanges(false)
         // Update lastContentRef to the externally loaded content to prevent false positives
