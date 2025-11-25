@@ -323,6 +323,155 @@ describe("NormalizedEntryToAgUiAdapter", () => {
     });
   });
 
+  describe("timestamp preservation", () => {
+    it("should preserve original timestamp from entry for assistant messages", async () => {
+      const originalTimestamp = new Date("2024-01-15T10:30:00.000Z");
+      const entry: NormalizedEntry = {
+        index: 0,
+        type: { kind: "assistant_message" },
+        content: "Test",
+        timestamp: originalTimestamp,
+      };
+
+      await adapter.processEntry(entry);
+
+      const calls = mockAgUiAdapter.emit.mock.calls;
+      // All 3 events (START, CONTENT, END) should have the original timestamp
+      expect(calls[0][0].timestamp).toBe(originalTimestamp.getTime());
+      expect(calls[1][0].timestamp).toBe(originalTimestamp.getTime());
+      expect(calls[2][0].timestamp).toBe(originalTimestamp.getTime());
+    });
+
+    it("should preserve original timestamp from entry for tool calls", async () => {
+      const originalTimestamp = new Date("2024-01-15T10:30:00.000Z");
+      const entry: NormalizedEntry = {
+        index: 0,
+        type: {
+          kind: "tool_use",
+          tool: {
+            toolName: "Bash",
+            action: { kind: "command_run", command: "ls" },
+            status: "success",
+            result: { success: true, data: "output" },
+          },
+        },
+        content: "",
+        timestamp: originalTimestamp,
+      };
+
+      await adapter.processEntry(entry);
+
+      const calls = mockAgUiAdapter.emit.mock.calls;
+      // All events should have the original timestamp
+      calls.forEach((call) => {
+        expect(call[0].timestamp).toBe(originalTimestamp.getTime());
+      });
+    });
+
+    it("should preserve original timestamp from entry for thinking", async () => {
+      const originalTimestamp = new Date("2024-01-15T10:30:00.000Z");
+      const entry: NormalizedEntry = {
+        index: 0,
+        type: { kind: "thinking", reasoning: "Analyzing..." },
+        content: "",
+        timestamp: originalTimestamp,
+      };
+
+      await adapter.processEntry(entry);
+
+      const calls = mockAgUiAdapter.emit.mock.calls;
+      calls.forEach((call) => {
+        expect(call[0].timestamp).toBe(originalTimestamp.getTime());
+      });
+    });
+
+    it("should preserve original timestamp from entry for errors", async () => {
+      const originalTimestamp = new Date("2024-01-15T10:30:00.000Z");
+      const entry: NormalizedEntry = {
+        index: 0,
+        type: {
+          kind: "error",
+          error: { message: "Test error" },
+        },
+        content: "",
+        timestamp: originalTimestamp,
+      };
+
+      await adapter.processEntry(entry);
+
+      const calls = mockAgUiAdapter.emit.mock.calls;
+      expect(calls[0][0].timestamp).toBe(originalTimestamp.getTime());
+    });
+
+    it("should preserve original timestamp from entry for system messages", async () => {
+      const originalTimestamp = new Date("2024-01-15T10:30:00.000Z");
+      const entry: NormalizedEntry = {
+        index: 0,
+        type: { kind: "system_message" },
+        content: "System info",
+        timestamp: originalTimestamp,
+      };
+
+      await adapter.processEntry(entry);
+
+      const calls = mockAgUiAdapter.emit.mock.calls;
+      calls.forEach((call) => {
+        expect(call[0].timestamp).toBe(originalTimestamp.getTime());
+      });
+    });
+
+    it("should handle timestamp as string (JSON deserialized)", async () => {
+      // When loading from DB, timestamps may be strings after JSON.parse
+      const timestampString = "2024-01-15T10:30:00.000Z";
+      const entry: NormalizedEntry = {
+        index: 0,
+        type: { kind: "assistant_message" },
+        content: "Test",
+        timestamp: timestampString as unknown as Date,
+      };
+
+      await adapter.processEntry(entry);
+
+      const calls = mockAgUiAdapter.emit.mock.calls;
+      const expectedTimestamp = new Date(timestampString).getTime();
+      expect(calls[0][0].timestamp).toBe(expectedTimestamp);
+    });
+
+    it("should maintain correct ordering when processing multiple entries", async () => {
+      const entries: NormalizedEntry[] = [
+        {
+          index: 0,
+          type: { kind: "assistant_message" },
+          content: "First",
+          timestamp: new Date("2024-01-15T10:30:00.000Z"),
+        },
+        {
+          index: 1,
+          type: { kind: "assistant_message" },
+          content: "Second",
+          timestamp: new Date("2024-01-15T10:30:01.000Z"),
+        },
+        {
+          index: 2,
+          type: { kind: "assistant_message" },
+          content: "Third",
+          timestamp: new Date("2024-01-15T10:30:02.000Z"),
+        },
+      ];
+
+      for (const entry of entries) {
+        await adapter.processEntry(entry);
+      }
+
+      const calls = mockAgUiAdapter.emit.mock.calls;
+      // Each message emits 3 events, get the CONTENT events (index 1, 4, 7)
+      const contentEvents = calls.filter((call) => call[0].type === "TEXT_MESSAGE_CONTENT");
+
+      expect(contentEvents[0][0].timestamp).toBeLessThan(contentEvents[1][0].timestamp);
+      expect(contentEvents[1][0].timestamp).toBeLessThan(contentEvents[2][0].timestamp);
+    });
+  });
+
   describe("edge cases", () => {
     it("should handle entry with missing timestamp", async () => {
       const entry: NormalizedEntry = {
@@ -332,6 +481,13 @@ describe("NormalizedEntryToAgUiAdapter", () => {
       };
 
       await expect(adapter.processEntry(entry)).resolves.not.toThrow();
+
+      // Should fall back to Date.now()
+      const calls = mockAgUiAdapter.emit.mock.calls;
+      const now = Date.now();
+      // Timestamp should be recent (within last second)
+      expect(calls[0][0].timestamp).toBeGreaterThan(now - 1000);
+      expect(calls[0][0].timestamp).toBeLessThanOrEqual(now);
     });
 
     it("should handle empty content", async () => {

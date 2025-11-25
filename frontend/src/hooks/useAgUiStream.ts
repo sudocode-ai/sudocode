@@ -42,6 +42,8 @@ export interface MessageBuffer {
   content: string
   complete: boolean
   timestamp: number
+  /** Sequential index for stable ordering when timestamps are equal */
+  index?: number
 }
 
 /**
@@ -56,6 +58,8 @@ export interface ToolCallTracking {
   error?: string
   startTime: number
   endTime?: number
+  /** Sequential index for stable ordering when timestamps are equal */
+  index?: number
 }
 
 /**

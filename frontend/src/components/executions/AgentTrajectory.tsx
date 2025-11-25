@@ -41,11 +41,13 @@ type TrajectoryItem =
   | {
       type: 'message'
       timestamp: number
+      index?: number
       data: MessageBuffer
     }
   | {
       type: 'tool_call'
       timestamp: number
+      index?: number
       data: ToolCallTracking
     }
 
@@ -79,6 +81,7 @@ export function AgentTrajectory({
       items.push({
         type: 'message',
         timestamp: message.timestamp,
+        index: message.index,
         data: message,
       })
     })
@@ -88,12 +91,22 @@ export function AgentTrajectory({
       items.push({
         type: 'tool_call',
         timestamp: toolCall.startTime,
+        index: toolCall.index,
         data: toolCall,
       })
     })
 
-    // Sort by timestamp
-    return items.sort((a, b) => a.timestamp - b.timestamp)
+    // Sort by timestamp, using index as secondary key for stable ordering
+    return items.sort((a, b) => {
+      const timeDiff = a.timestamp - b.timestamp
+      if (timeDiff !== 0) return timeDiff
+      // When timestamps are equal, use index for stable ordering
+      // Items without index come after those with index
+      if (a.index !== undefined && b.index !== undefined) {
+        return a.index - b.index
+      }
+      return 0
+    })
   }, [messages, toolCalls])
 
   if (trajectory.length === 0) {

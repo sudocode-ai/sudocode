@@ -1026,5 +1026,122 @@ describe('ExecutionMonitor', () => {
       expect(footer?.textContent).toContain('2')
       expect(footer?.textContent).toContain('messages')
     })
+
+    it('should preserve ordering with timestamps from historical events', () => {
+      mockUseAgUiStream.mockReturnValue({
+        connectionStatus: 'idle',
+        execution: {
+          runId: null,
+          threadId: null,
+          status: 'idle',
+          currentStep: null,
+          error: null,
+          startTime: null,
+          endTime: null,
+        },
+        messages: new Map(),
+        toolCalls: new Map(),
+        state: {},
+        error: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        reconnect: vi.fn(),
+        isConnected: false,
+      })
+
+      // Events with proper timestamps for ordering
+      mockUseExecutionLogs.mockReturnValue({
+        events: [
+          // First message at time 1000
+          { type: 'TEXT_MESSAGE_START', timestamp: 1000, messageId: 'msg-1', role: 'assistant' },
+          { type: 'TEXT_MESSAGE_CONTENT', timestamp: 1000, messageId: 'msg-1', delta: 'First' },
+          { type: 'TEXT_MESSAGE_END', timestamp: 1000, messageId: 'msg-1' },
+          // Tool call at time 2000
+          { type: 'TOOL_CALL_START', timestamp: 2000, toolCallId: 'tool-1', toolCallName: 'Read' },
+          { type: 'TOOL_CALL_END', timestamp: 2500, toolCallId: 'tool-1' },
+          { type: 'TOOL_CALL_RESULT', timestamp: 2500, toolCallId: 'tool-1', result: 'data' },
+          // Second message at time 3000
+          { type: 'TEXT_MESSAGE_START', timestamp: 3000, messageId: 'msg-2', role: 'assistant' },
+          { type: 'TEXT_MESSAGE_CONTENT', timestamp: 3000, messageId: 'msg-2', delta: 'Second' },
+          { type: 'TEXT_MESSAGE_END', timestamp: 3000, messageId: 'msg-2' },
+        ],
+        loading: false,
+        error: null,
+        metadata: null,
+      })
+
+      const { container } = render(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
+      )
+
+      // Verify items are rendered in correct order
+      const items = container.querySelectorAll('.flex.gap-3.items-start')
+      expect(items.length).toBe(3)
+
+      // First: message "First" (timestamp 1000)
+      expect(items[0].textContent).toContain('First')
+      // Second: tool call "Read" (timestamp 2000)
+      expect(items[1].textContent).toContain('Read')
+      // Third: message "Second" (timestamp 3000)
+      expect(items[2].textContent).toContain('Second')
+    })
+
+    it('should assign sequential indices for stable ordering when timestamps are equal', () => {
+      mockUseAgUiStream.mockReturnValue({
+        connectionStatus: 'idle',
+        execution: {
+          runId: null,
+          threadId: null,
+          status: 'idle',
+          currentStep: null,
+          error: null,
+          startTime: null,
+          endTime: null,
+        },
+        messages: new Map(),
+        toolCalls: new Map(),
+        state: {},
+        error: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        reconnect: vi.fn(),
+        isConnected: false,
+      })
+
+      // All events have same timestamp (simulating rapid processing)
+      mockUseExecutionLogs.mockReturnValue({
+        events: [
+          // All at same timestamp - order should be preserved via index
+          { type: 'TEXT_MESSAGE_START', timestamp: 1000, messageId: 'msg-1', role: 'assistant' },
+          { type: 'TEXT_MESSAGE_CONTENT', timestamp: 1000, messageId: 'msg-1', delta: 'Alpha' },
+          { type: 'TEXT_MESSAGE_END', timestamp: 1000, messageId: 'msg-1' },
+          { type: 'TOOL_CALL_START', timestamp: 1000, toolCallId: 'tool-1', toolCallName: 'Bash' },
+          { type: 'TOOL_CALL_END', timestamp: 1000, toolCallId: 'tool-1' },
+          { type: 'TOOL_CALL_RESULT', timestamp: 1000, toolCallId: 'tool-1', result: 'ok' },
+          { type: 'TEXT_MESSAGE_START', timestamp: 1000, messageId: 'msg-2', role: 'assistant' },
+          { type: 'TEXT_MESSAGE_CONTENT', timestamp: 1000, messageId: 'msg-2', delta: 'Beta' },
+          { type: 'TEXT_MESSAGE_END', timestamp: 1000, messageId: 'msg-2' },
+        ],
+        loading: false,
+        error: null,
+        metadata: null,
+      })
+
+      const { container } = render(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
+      )
+
+      // Verify all items rendered
+      const items = container.querySelectorAll('.flex.gap-3.items-start')
+      expect(items.length).toBe(3)
+
+      // With index-based sorting, order should be:
+      // msg-1 (index 0), tool-1 (index 0), msg-2 (index 1)
+      // Messages get their own counter, tool calls get their own counter
+      // So the order depends on timestamp first, then index within same type
+      expect(items[0].textContent).toContain('Alpha')
+      expect(items[1].textContent).toContain('Bash')
+      expect(items[2].textContent).toContain('Beta')
+    })
   })
 })

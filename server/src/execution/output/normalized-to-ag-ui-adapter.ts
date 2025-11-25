@@ -101,7 +101,7 @@ export class NormalizedEntryToAgUiAdapter {
    */
   private async handleAssistantMessage(entry: NormalizedEntry): Promise<void> {
     const messageId = this.generateMessageId();
-    const timestamp = Date.now();
+    const timestamp = this.getTimestamp(entry);
 
     // Emit TEXT_MESSAGE_START
     this.emitEvent<TextMessageStartEvent>({
@@ -138,7 +138,7 @@ export class NormalizedEntryToAgUiAdapter {
 
     const tool = entry.type.tool;
     const toolId = `${tool.toolName}-${entry.index}`;
-    const timestamp = Date.now();
+    const timestamp = this.getTimestamp(entry);
 
     // Check if we've already started this tool call
     let messageId = this.toolCallMap.get(toolId);
@@ -206,7 +206,7 @@ export class NormalizedEntryToAgUiAdapter {
     if (entry.type.kind !== "thinking") return;
 
     const messageId = this.generateMessageId();
-    const timestamp = Date.now();
+    const timestamp = this.getTimestamp(entry);
     const reasoning = entry.type.reasoning || "";
 
     // Emit as a text message with [Thinking] prefix
@@ -243,7 +243,7 @@ export class NormalizedEntryToAgUiAdapter {
 
     this.emitEvent<RunErrorEvent>({
       type: EventType.RUN_ERROR,
-      timestamp: Date.now(),
+      timestamp: this.getTimestamp(entry),
       message: error.message,
       ...(error.stack && { rawEvent: { details: error.stack } }),
     });
@@ -258,7 +258,7 @@ export class NormalizedEntryToAgUiAdapter {
     // System messages can be emitted as custom events or text messages
     // For now, emit as text messages for visibility
     const messageId = this.generateMessageId();
-    const timestamp = Date.now();
+    const timestamp = this.getTimestamp(entry);
 
     this.emitEvent<TextMessageStartEvent>({
       type: EventType.TEXT_MESSAGE_START,
@@ -353,6 +353,21 @@ export class NormalizedEntryToAgUiAdapter {
   private generateMessageId(): string {
     this.messageCounter++;
     return `msg-${Date.now()}-${this.messageCounter}`;
+  }
+
+  /**
+   * Get timestamp from entry, falling back to Date.now() if not available
+   *
+   * Preserves original timestamps from NormalizedEntry for proper ordering
+   * during historical replay.
+   */
+  private getTimestamp(entry: NormalizedEntry): number {
+    if (entry.timestamp) {
+      return entry.timestamp instanceof Date
+        ? entry.timestamp.getTime()
+        : new Date(entry.timestamp).getTime();
+    }
+    return Date.now();
   }
 
   /**

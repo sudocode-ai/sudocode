@@ -117,6 +117,10 @@ export function ExecutionMonitor({
       const toolCalls = new Map()
       const state: any = {}
 
+      // Track sequence indices for stable ordering
+      let messageIndex = 0
+      let toolCallIndex = 0
+
       // Process events from logs (same logic as useAgUiStream)
       if (logsResult.events) {
         logsResult.events.forEach((event: any) => {
@@ -128,6 +132,7 @@ export function ExecutionMonitor({
               content: '',
               complete: false,
               timestamp: event.timestamp || Date.now(),
+              index: messageIndex++,
             })
           } else if (event.type === 'TEXT_MESSAGE_CONTENT') {
             const existing = messages.get(event.messageId)
@@ -154,6 +159,7 @@ export function ExecutionMonitor({
               args: '',
               status: 'started',
               startTime: event.timestamp || Date.now(),
+              index: toolCallIndex++,
             })
           } else if (event.type === 'TOOL_CALL_ARGS') {
             const existing = toolCalls.get(event.toolCallId)
