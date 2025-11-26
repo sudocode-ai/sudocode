@@ -8,7 +8,7 @@
  * Shows execution progress, metrics, messages, and tool calls.
  */
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAgUiStream } from '@/hooks/useAgUiStream'
 import { useExecutionLogs } from '@/hooks/useExecutionLogs'
 import { Card } from '@/components/ui/card'
@@ -44,6 +44,11 @@ export interface ExecutionMonitorProps {
    * Callback when content changes (new messages/tool calls)
    */
   onContentChange?: () => void
+
+  /**
+   * Callback when execution is cancelled (ESC key pressed)
+   */
+  onCancel?: () => void
 
   /**
    * Compact mode - removes card wrapper and header for inline display
@@ -82,6 +87,7 @@ export function ExecutionMonitor({
   onComplete,
   onError,
   onContentChange,
+  onCancel,
   compact = false,
   className = '',
 }: ExecutionMonitorProps) {
@@ -272,6 +278,34 @@ export function ExecutionMonitor({
   const hasCalledOnComplete = useRef(false)
   const previousStatus = useRef<string | undefined>(undefined)
 
+  // Cycling dots for "Running..." indicator
+  const [dots, setDots] = useState(1)
+  useEffect(() => {
+    if (execution.status === 'running') {
+      const interval = setInterval(() => {
+        setDots((prev) => (prev % 3) + 1)
+      }, 500)
+      return () => clearInterval(interval)
+    }
+  }, [execution.status])
+
+  // ESC key to cancel execution
+  useEffect(() => {
+    if (!onCancel) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Only cancel if execution is active (not completed/failed/cancelled)
+      const activeStatuses = ['preparing', 'pending', 'running', 'paused']
+      if (event.key === 'Escape' && activeStatuses.includes(execution.status)) {
+        event.preventDefault()
+        onCancel()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onCancel, execution.status])
+
   // Trigger callbacks when execution status changes TO completed (not when already completed)
   useEffect(() => {
     // Only call onComplete if:
@@ -414,15 +448,18 @@ export function ExecutionMonitor({
           </>
         )}
 
+        {/* Running indicator */}
+        {execution.status === 'running' && (
+          <div className="flex items-center gap-2 text-sm">
+            <span className="w-16 text-muted-foreground">Running{'.'.repeat(dots)}</span>
+            <span className="text-muted-foreground/70">(esc to cancel)</span>
+          </div>
+        )}
+
         {/* Empty state */}
         {messageCount === 0 && toolCallCount === 0 && !error && !execution.error && (
           <div className="flex flex-col items-center justify-center py-2 text-center text-muted-foreground">
-            {isActive || isConnected ? (
-              <>
-                <Loader2 className="mb-2 h-8 w-8 animate-spin" />
-                <p className="text-sm">Waiting for events...</p>
-              </>
-            ) : (
+            {!isActive && !isConnected && (
               <>
                 <AlertCircle className="mb-2 h-8 w-8" />
                 <p className="text-sm">No execution activity</p>

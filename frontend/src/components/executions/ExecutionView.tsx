@@ -533,6 +533,12 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                       onComplete={() => handleExecutionComplete(execution.id)}
                       onError={handleExecutionError}
                       onContentChange={handleContentChange}
+                      onCancel={
+                        isLast &&
+                        ['preparing', 'pending', 'running', 'paused'].includes(execution.status)
+                          ? () => handleCancel(execution.id)
+                          : undefined
+                      }
                       compact
                     />
 
