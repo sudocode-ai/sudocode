@@ -657,4 +657,274 @@ describe('ClaudeCodeTrajectory', () => {
     // Should show regular message
     expect(screen.getByText(/This is a regular message/)).toBeInTheDocument()
   })
+
+  describe('TodoTracker Integration', () => {
+    it('should show TodoTracker by default for Claude Code', () => {
+      const toolCalls = new Map<string, ToolCallTracking>([
+        [
+          'tool-1',
+          {
+            toolCallId: 'tool-1',
+            toolCallName: 'TodoWrite',
+            args: JSON.stringify({
+              toolName: 'TodoWrite',
+              args: {
+                todos: [
+                  { content: 'Task 1', status: 'pending', activeForm: 'Task 1' }
+                ]
+              }
+            }),
+            status: 'completed',
+            result: 'Success',
+            startTime: 1000,
+            endTime: 1100,
+            index: 0,
+          },
+        ],
+      ])
+
+      render(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
+
+      // TodoTracker should be visible by default for Claude Code
+      expect(screen.getByText(/0\/1 completed/)).toBeInTheDocument()
+      expect(screen.getByText('Task 1')).toBeInTheDocument()
+    })
+
+    it('should hide TodoTracker when showTodoTracker is false', () => {
+      const toolCalls = new Map<string, ToolCallTracking>([
+        [
+          'tool-1',
+          {
+            toolCallId: 'tool-1',
+            toolCallName: 'TodoWrite',
+            args: JSON.stringify({
+              toolName: 'TodoWrite',
+              args: {
+                todos: [
+                  { content: 'Task 1', status: 'pending', activeForm: 'Task 1' }
+                ]
+              }
+            }),
+            status: 'completed',
+            result: 'Success',
+            startTime: 1000,
+            endTime: 1100,
+            index: 0,
+          },
+        ],
+      ])
+
+      render(
+        <ClaudeCodeTrajectory
+          messages={new Map()}
+          toolCalls={toolCalls}
+          showTodoTracker={false}
+        />
+      )
+
+      // TodoTracker should not be visible when explicitly disabled
+      expect(screen.queryByText(/\/.*completed/)).not.toBeInTheDocument()
+    })
+
+    it('should show TodoTracker with proper summary stats', () => {
+      const toolCalls = new Map<string, ToolCallTracking>([
+        [
+          'tool-1',
+          {
+            toolCallId: 'tool-1',
+            toolCallName: 'TodoWrite',
+            args: JSON.stringify({
+              toolName: 'TodoWrite',
+              args: {
+                todos: [
+                  { content: 'Task 1', status: 'pending', activeForm: 'Task 1' },
+                  { content: 'Task 2', status: 'in_progress', activeForm: 'Task 2' },
+                  { content: 'Task 3', status: 'completed', activeForm: 'Task 3' },
+                ]
+              }
+            }),
+            status: 'completed',
+            result: 'Success',
+            startTime: 1000,
+            endTime: 1100,
+            index: 0,
+          },
+        ],
+      ])
+
+      render(
+        <ClaudeCodeTrajectory
+          messages={new Map()}
+          toolCalls={toolCalls}
+          
+        />
+      )
+
+      // Should show summary stats
+      expect(screen.getByText(/1\/3 completed/)).toBeInTheDocument()
+    })
+
+    it('should update TodoTracker when todos change', () => {
+      const toolCalls1 = new Map<string, ToolCallTracking>([
+        [
+          'tool-1',
+          {
+            toolCallId: 'tool-1',
+            toolCallName: 'TodoWrite',
+            args: JSON.stringify({
+              toolName: 'TodoWrite',
+              args: {
+                todos: [
+                  { content: 'Task 1', status: 'pending', activeForm: 'Task 1' }
+                ]
+              }
+            }),
+            status: 'completed',
+            result: 'Success',
+            startTime: 1000,
+            endTime: 1100,
+            index: 0,
+          },
+        ],
+      ])
+
+      const { rerender } = render(
+        <ClaudeCodeTrajectory
+          messages={new Map()}
+          toolCalls={toolCalls1}
+          
+        />
+      )
+
+      expect(screen.getByText('Task 1')).toBeInTheDocument()
+      expect(screen.getByText(/0\/1 completed/)).toBeInTheDocument()
+
+      // Add a second todo
+      const toolCalls2 = new Map<string, ToolCallTracking>([
+        [
+          'tool-1',
+          {
+            toolCallId: 'tool-1',
+            toolCallName: 'TodoWrite',
+            args: JSON.stringify({
+              toolName: 'TodoWrite',
+              args: {
+                todos: [
+                  { content: 'Task 1', status: 'completed', activeForm: 'Task 1' },
+                  { content: 'Task 2', status: 'pending', activeForm: 'Task 2' }
+                ]
+              }
+            }),
+            status: 'completed',
+            result: 'Success',
+            startTime: 2000,
+            endTime: 2100,
+            index: 1,
+          },
+        ],
+      ])
+
+      rerender(
+        <ClaudeCodeTrajectory
+          messages={new Map()}
+          toolCalls={toolCalls2}
+          
+        />
+      )
+
+      expect(screen.getByText('Task 1')).toBeInTheDocument()
+      expect(screen.getByText('Task 2')).toBeInTheDocument()
+      expect(screen.getByText(/1\/2 completed/)).toBeInTheDocument()
+    })
+
+    it('should not show TodoTracker when no todos exist', () => {
+      const toolCalls = new Map<string, ToolCallTracking>([
+        [
+          'tool-1',
+          {
+            toolCallId: 'tool-1',
+            toolCallName: 'Bash',
+            args: JSON.stringify({ command: 'npm test' }),
+            status: 'completed',
+            result: 'Tests passed',
+            startTime: 1000,
+            endTime: 1100,
+            index: 0,
+          },
+        ],
+      ])
+
+      render(
+        <ClaudeCodeTrajectory
+          messages={new Map()}
+          toolCalls={toolCalls}
+          
+        />
+      )
+
+      // Should not show TodoTracker when there are no todos
+      expect(screen.queryByText(/\/.*completed/)).not.toBeInTheDocument()
+    })
+
+    it('should render TodoTracker below trajectory items', () => {
+      const messages = new Map<string, MessageBuffer>([
+        [
+          'msg-1',
+          {
+            messageId: 'msg-1',
+            role: 'assistant',
+            content: 'Starting task',
+            complete: true,
+            timestamp: 900,
+            index: 0,
+          },
+        ],
+      ])
+
+      const toolCalls = new Map<string, ToolCallTracking>([
+        [
+          'tool-1',
+          {
+            toolCallId: 'tool-1',
+            toolCallName: 'TodoWrite',
+            args: JSON.stringify({
+              toolName: 'TodoWrite',
+              args: {
+                todos: [
+                  { content: 'Task 1', status: 'in_progress', activeForm: 'Working on Task 1' }
+                ]
+              }
+            }),
+            status: 'completed',
+            result: 'Success',
+            startTime: 1000,
+            endTime: 1100,
+            index: 1,
+          },
+        ],
+      ])
+
+      const { container } = render(
+        <ClaudeCodeTrajectory
+          messages={messages}
+          toolCalls={toolCalls}
+          
+        />
+      )
+
+      // Get all major sections
+      const message = screen.getByText('Starting task')
+      const tracker = screen.getByText(/0\/1 completed/)
+
+      // TodoTracker should appear after the message in DOM
+      const messagePosition = Array.from(container.querySelectorAll('*')).indexOf(
+        message.closest('.group') as Element
+      )
+      const trackerPosition = Array.from(container.querySelectorAll('*')).indexOf(
+        tracker.closest('div') as Element
+      )
+
+      expect(trackerPosition).toBeGreaterThan(messagePosition)
+    })
+  })
 })
