@@ -89,24 +89,19 @@ export function createFeedback(
     toUuid = issue.uuid;
   }
 
-  // Build SQL statement - include timestamps only if provided
-  const hasTimestamps = input.created_at !== undefined || input.updated_at !== undefined;
+  // Always include timestamps to ensure ISO 8601 format with timezone info
+  // SQLite's CURRENT_TIMESTAMP returns local format without timezone, causing parsing issues
+  const now = new Date().toISOString();
+  const created_at = input.created_at || now;
+  const updated_at = input.updated_at || now;
 
-  const stmt = hasTimestamps
-    ? db.prepare(`
-        INSERT INTO issue_feedback (
-          id, from_id, from_uuid, to_id, to_uuid, feedback_type, content, agent, anchor, dismissed, created_at, updated_at
-        ) VALUES (
-          @id, @from_id, @from_uuid, @to_id, @to_uuid, @feedback_type, @content, @agent, @anchor, @dismissed, @created_at, @updated_at
-        )
-      `)
-    : db.prepare(`
-        INSERT INTO issue_feedback (
-          id, from_id, from_uuid, to_id, to_uuid, feedback_type, content, agent, anchor, dismissed
-        ) VALUES (
-          @id, @from_id, @from_uuid, @to_id, @to_uuid, @feedback_type, @content, @agent, @anchor, @dismissed
-        )
-      `);
+  const stmt = db.prepare(`
+    INSERT INTO issue_feedback (
+      id, from_id, from_uuid, to_id, to_uuid, feedback_type, content, agent, anchor, dismissed, created_at, updated_at
+    ) VALUES (
+      @id, @from_id, @from_uuid, @to_id, @to_uuid, @feedback_type, @content, @agent, @anchor, @dismissed, @created_at, @updated_at
+    )
+  `);
 
   try {
     const params: any = {
@@ -120,12 +115,9 @@ export function createFeedback(
       agent: agent,
       anchor: anchorJson,
       dismissed: input.dismissed !== undefined ? (input.dismissed ? 1 : 0) : 0,
+      created_at: created_at,
+      updated_at: updated_at,
     };
-
-    if (hasTimestamps) {
-      params.created_at = input.created_at;
-      params.updated_at = input.updated_at;
-    }
 
     stmt.run(params);
 
@@ -186,7 +178,9 @@ export function updateFeedback(
     params.anchor = JSON.stringify(input.anchor);
   }
 
-  updates.push("updated_at = CURRENT_TIMESTAMP");
+  // Always use ISO 8601 format with timezone for consistency
+  updates.push("updated_at = @updated_at");
+  params.updated_at = new Date().toISOString();
 
   if (updates.length === 1) {
     // Only updated_at changed, return existing

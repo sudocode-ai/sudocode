@@ -18,6 +18,8 @@ import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import type { MessageBuffer } from '@/hooks/useAgUiStream'
 import type { ToolCallTracking } from '@/hooks/useAgUiStream'
+import { TodoTracker } from './TodoTracker'
+import { buildTodoHistory } from '@/utils/todoExtractor'
 
 export interface ClaudeCodeTrajectoryProps {
   /**
@@ -40,6 +42,11 @@ export interface ClaudeCodeTrajectoryProps {
    * System messages are those that start with [System]
    */
   hideSystemMessages?: boolean
+
+  /**
+   * Whether to show the TodoTracker (default: false)
+   */
+  showTodoTracker?: boolean
 
   /**
    * Custom class name
@@ -319,8 +326,12 @@ export function ClaudeCodeTrajectory({
   toolCalls,
   renderMarkdown = true,
   hideSystemMessages = true,
+  showTodoTracker = true,
   className = '',
 }: ClaudeCodeTrajectoryProps) {
+  // Extract todos from tool calls for TodoTracker
+  const todos = useMemo(() => buildTodoHistory(toolCalls), [toolCalls])
+
   // Merge messages and tool calls into a chronological timeline
   const trajectory = useMemo(() => {
     const items: TrajectoryItem[] = []
@@ -474,6 +485,13 @@ export function ClaudeCodeTrajectory({
           return <ToolCallItem key={`tool-${item.data.toolCallId}`} toolCall={item.data} />
         }
       })}
+
+      {/* Todo Tracker - show at bottom if enabled */}
+      {showTodoTracker && todos.length > 0 && (
+        <div className="mt-4">
+          <TodoTracker todos={todos} />
+        </div>
+      )}
     </div>
   )
 }

@@ -8,7 +8,7 @@
  * Shows execution progress, metrics, messages, and tool calls.
  */
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAgUiStream } from '@/hooks/useAgUiStream'
 import { useExecutionLogs } from '@/hooks/useExecutionLogs'
 import { Card } from '@/components/ui/card'
@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { AgentTrajectory } from './AgentTrajectory'
 import { ClaudeCodeTrajectory } from './ClaudeCodeTrajectory'
 import { TodoTracker } from './TodoTracker'
+import { buildTodoHistory } from '@/utils/todoExtractor'
 import { AlertCircle, CheckCircle2, Loader2, XCircle } from 'lucide-react'
 import type { Execution } from '@/types/execution'
 
@@ -46,14 +47,54 @@ export interface ExecutionMonitorProps {
   onContentChange?: () => void
 
   /**
+   * Callback when tool calls are updated (for aggregating todos across executions)
+   */
+  onToolCallsUpdate?: (
+    toolCalls: Map<string, import('@/hooks/useAgUiStream').ToolCallTracking>
+  ) => void
+
+  /**
+   * Callback when execution is cancelled (ESC key pressed)
+   */
+  onCancel?: () => void
+
+  /**
    * Compact mode - removes card wrapper and header for inline display
    */
   compact?: boolean
 
   /**
+   * Hide the TodoTracker in this monitor (for when it's shown elsewhere)
+   */
+  hideTodoTracker?: boolean
+
+  /**
+   * Show running indicator (dots) when execution is running
+   */
+  showRunIndicator?: boolean
+
+  /**
    * Custom class name
    */
   className?: string
+}
+
+export function RunIndicator() {
+  const [dots, setDots] = useState(1)
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDots((prev) => (prev % 3) + 1)
+    }, 500)
+    return () => clearInterval(interval)
+  }, [])
+
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <span className="w-16 text-muted-foreground">Running{'.'.repeat(dots)}</span>
+      <span className="text-muted-foreground/70">(esc to cancel)</span>
+    </div>
+  )
 }
 
 /**
@@ -82,7 +123,11 @@ export function ExecutionMonitor({
   onComplete,
   onError,
   onContentChange,
+  onToolCallsUpdate,
+  onCancel,
   compact = false,
+  hideTodoTracker = false,
+  showRunIndicator = false,
   className = '',
 }: ExecutionMonitorProps) {
   // Determine if execution is active or completed
@@ -272,6 +317,26 @@ export function ExecutionMonitor({
   const hasCalledOnComplete = useRef(false)
   const previousStatus = useRef<string | undefined>(undefined)
 
+  // Track last tool calls hash to detect actual changes (not just size)
+  const lastToolCallsHashRef = useRef<string>('')
+
+  // ESC key to cancel execution
+  useEffect(() => {
+    if (!onCancel) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Only cancel if execution is active (not completed/failed/cancelled)
+      const activeStatuses = ['preparing', 'pending', 'running', 'paused']
+      if (event.key === 'Escape' && activeStatuses.includes(execution.status)) {
+        event.preventDefault()
+        onCancel()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onCancel, execution.status])
+
   // Trigger callbacks when execution status changes TO completed (not when already completed)
   useEffect(() => {
     // Only call onComplete if:
@@ -304,12 +369,38 @@ export function ExecutionMonitor({
     }
   }, [messages.size, toolCalls.size, onContentChange])
 
+  // Notify parent when tool calls update (for aggregating todos)
+  // Create a hash of tool call IDs and statuses to detect actual changes
+  useEffect(() => {
+    if (!onToolCallsUpdate) return
+
+    // Create a simple hash of tool call IDs and their statuses
+    const toolCallsHash = Array.from(toolCalls.entries())
+      .map(([id, tc]) => `${id}:${tc.status}`)
+      .sort()
+      .join('|')
+
+    if (toolCallsHash !== lastToolCallsHashRef.current) {
+      lastToolCallsHashRef.current = toolCallsHash
+      onToolCallsUpdate(toolCalls)
+    }
+  }, [toolCalls, onToolCallsUpdate, executionId])
+
   // Calculate metrics
   const toolCallCount = toolCalls.size
   const completedToolCalls = Array.from(toolCalls.values()).filter(
     (tc) => tc.status === 'completed'
   ).length
   const messageCount = messages.size
+
+  // Extract todos from tool calls for TodoTracker (only for Claude Code agents)
+  const todos = useMemo(() => {
+    // Only extract todos for Claude Code agents
+    if (executionProp?.agent_type === 'claude-code') {
+      return buildTodoHistory(toolCalls)
+    }
+    return []
+  }, [toolCalls, executionProp?.agent_type])
 
   // Render status badge
   const renderStatusBadge = () => {
@@ -407,7 +498,7 @@ export function ExecutionMonitor({
         {(messageCount > 0 || toolCallCount > 0) && (
           <>
             {executionProp?.agent_type === 'claude-code' ? (
-              <ClaudeCodeTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown />
+              <ClaudeCodeTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown showTodoTracker={false} />
             ) : (
               <AgentTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown />
             )}
@@ -417,12 +508,7 @@ export function ExecutionMonitor({
         {/* Empty state */}
         {messageCount === 0 && toolCallCount === 0 && !error && !execution.error && (
           <div className="flex flex-col items-center justify-center py-2 text-center text-muted-foreground">
-            {isActive || isConnected ? (
-              <>
-                <Loader2 className="mb-2 h-8 w-8 animate-spin" />
-                <p className="text-sm">Waiting for events...</p>
-              </>
-            ) : (
+            {!isActive && !isConnected && (
               <>
                 <AlertCircle className="mb-2 h-8 w-8" />
                 <p className="text-sm">No execution activity</p>
@@ -431,8 +517,11 @@ export function ExecutionMonitor({
           </div>
         )}
 
-        {/* Todo Tracker */}
-        <TodoTracker toolCalls={toolCalls} className="mt-4" />
+        {/* Todo Tracker - only show if not hidden */}
+        {!hideTodoTracker && <TodoTracker todos={todos} className="mt-4" />}
+
+        {/* Running indicator */}
+        {showRunIndicator && execution.status === 'running' && <RunIndicator />}
       </div>
     )
   }
@@ -509,7 +598,7 @@ export function ExecutionMonitor({
         {(messageCount > 0 || toolCallCount > 0) && (
           <>
             {executionProp?.agent_type === 'claude-code' ? (
-              <ClaudeCodeTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown />
+              <ClaudeCodeTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown showTodoTracker={false} />
             ) : (
               <AgentTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown />
             )}
@@ -533,8 +622,11 @@ export function ExecutionMonitor({
           </div>
         )}
 
-        {/* Todo Tracker - pinned at bottom of trajectory */}
-        <TodoTracker toolCalls={toolCalls} className="mt-4" />
+        {/* Todo Tracker - pinned at bottom of trajectory - only show if not hidden */}
+        {!hideTodoTracker && <TodoTracker todos={todos} className="mt-4" />}
+
+        {/* Running indicator */}
+        {showRunIndicator && execution.status === 'running' && <RunIndicator />}
       </div>
 
       {/* Footer: Metrics */}

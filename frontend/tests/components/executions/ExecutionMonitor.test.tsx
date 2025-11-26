@@ -1441,12 +1441,10 @@ describe('ExecutionMonitor', () => {
       )
 
       // Should display TodoTracker
-      expect(screen.getByText(/Todo Progress/i)).toBeInTheDocument()
+      expect(screen.getByText(/1\/3 completed/)).toBeInTheDocument()
       expect(screen.getByText('Task 1')).toBeInTheDocument()
       expect(screen.getByText('Task 2')).toBeInTheDocument()
       expect(screen.getByText('Task 3')).toBeInTheDocument()
-      // Should show summary stats
-      expect(screen.getByText(/1 \/ 3 completed/)).toBeInTheDocument()
     })
 
     it('should not display TodoTracker when there are no todo tool calls', () => {
@@ -1490,8 +1488,8 @@ describe('ExecutionMonitor', () => {
         />
       )
 
-      // Should not display TodoTracker
-      expect(screen.queryByText(/Todo Progress/i)).not.toBeInTheDocument()
+      // Should not display TodoTracker (look for the N/M completed pattern)
+      expect(screen.queryByText(/\/.*completed/)).not.toBeInTheDocument()
     })
   })
 

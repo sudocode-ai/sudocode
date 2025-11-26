@@ -589,4 +589,134 @@ describe("Executions API Routes - Agent Type Validation", () => {
       expect(mockExecutionService.createFollowUp).not.toHaveBeenCalled();
     });
   });
+
+  describe("POST /api/executions/:executionId/cancel", () => {
+    beforeEach(() => {
+      mockExecutionService.cancelExecution = vi.fn().mockResolvedValue(undefined);
+    });
+
+    it("should cancel a running execution", async () => {
+      const response = await request(app)
+        .post("/api/executions/exec-123/cancel")
+        .send();
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.message).toBe("Execution cancelled successfully");
+      expect(response.body.data.executionId).toBe("exec-123");
+      expect(mockExecutionService.cancelExecution).toHaveBeenCalledWith("exec-123");
+    });
+
+    it("should return 404 when execution not found", async () => {
+      mockExecutionService.cancelExecution = vi
+        .fn()
+        .mockRejectedValue(new Error("Execution exec-999 not found"));
+
+      const response = await request(app)
+        .post("/api/executions/exec-999/cancel")
+        .send();
+
+      expect(response.status).toBe(404);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe("Failed to cancel execution");
+      expect(response.body.error_data).toContain("not found");
+    });
+
+    it("should return 500 on service error", async () => {
+      mockExecutionService.cancelExecution = vi
+        .fn()
+        .mockRejectedValue(new Error("Service error"));
+
+      const response = await request(app)
+        .post("/api/executions/exec-123/cancel")
+        .send();
+
+      expect(response.status).toBe(500);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe("Failed to cancel execution");
+    });
+  });
+
+  describe("DELETE /api/executions/:executionId", () => {
+    beforeEach(() => {
+      mockExecutionService.cancelExecution = vi.fn().mockResolvedValue(undefined);
+      mockExecutionService.deleteExecution = vi.fn().mockResolvedValue(undefined);
+    });
+
+    it("should delete an execution when no query param provided", async () => {
+      const response = await request(app)
+        .delete("/api/executions/exec-123");
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.message).toBe("Execution deleted successfully");
+      expect(response.body.data.executionId).toBe("exec-123");
+      expect(mockExecutionService.deleteExecution).toHaveBeenCalledWith("exec-123");
+      expect(mockExecutionService.cancelExecution).not.toHaveBeenCalled();
+    });
+
+    it("should cancel execution when cancel=true query param provided", async () => {
+      const response = await request(app)
+        .delete("/api/executions/exec-123?cancel=true");
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.message).toBe("Execution cancelled successfully");
+      expect(response.body.data.executionId).toBe("exec-123");
+      expect(mockExecutionService.cancelExecution).toHaveBeenCalledWith("exec-123");
+      expect(mockExecutionService.deleteExecution).not.toHaveBeenCalled();
+    });
+
+    it("should delete execution when cancel=false query param provided", async () => {
+      const response = await request(app)
+        .delete("/api/executions/exec-123?cancel=false");
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.message).toBe("Execution deleted successfully");
+      expect(mockExecutionService.deleteExecution).toHaveBeenCalledWith("exec-123");
+      expect(mockExecutionService.cancelExecution).not.toHaveBeenCalled();
+    });
+
+    it("should return 404 when execution not found (delete)", async () => {
+      mockExecutionService.deleteExecution = vi
+        .fn()
+        .mockRejectedValue(new Error("Execution exec-999 not found"));
+
+      const response = await request(app)
+        .delete("/api/executions/exec-999");
+
+      expect(response.status).toBe(404);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe("Failed to delete/cancel execution");
+      expect(response.body.error_data).toContain("not found");
+    });
+
+    it("should return 404 when execution not found (cancel via query param)", async () => {
+      mockExecutionService.cancelExecution = vi
+        .fn()
+        .mockRejectedValue(new Error("Execution exec-999 not found"));
+
+      const response = await request(app)
+        .delete("/api/executions/exec-999?cancel=true");
+
+      expect(response.status).toBe(404);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe("Failed to delete/cancel execution");
+      expect(response.body.error_data).toContain("not found");
+    });
+
+    it("should return 500 on service error", async () => {
+      mockExecutionService.deleteExecution = vi
+        .fn()
+        .mockRejectedValue(new Error("Service error"));
+
+      const response = await request(app)
+        .delete("/api/executions/exec-123");
+
+      expect(response.status).toBe(500);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe("Failed to delete/cancel execution");
+    });
+  });
 });

@@ -1,13 +1,17 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { executionsApi, type ExecutionChainResponse } from '@/lib/api'
-import { ExecutionMonitor } from './ExecutionMonitor'
+import { ExecutionMonitor, RunIndicator } from './ExecutionMonitor'
 import { AgentConfigPanel } from './AgentConfigPanel'
 import { DeleteWorktreeDialog } from './DeleteWorktreeDialog'
+import { DeleteExecutionDialog } from './DeleteExecutionDialog'
+import { TodoTracker } from './TodoTracker'
+import { buildTodoHistory } from '@/utils/todoExtractor'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Execution, ExecutionConfig } from '@/types/execution'
+import type { ToolCallTracking } from '@/hooks/useAgUiStream'
 import {
   Loader2,
   XCircle,
@@ -44,10 +48,18 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showDeleteWorktree, setShowDeleteWorktree] = useState(false)
+  const [showDeleteExecution, setShowDeleteExecution] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [deletingWorktree, setDeletingWorktree] = useState(false)
+  const [deletingExecution, setDeletingExecution] = useState(false)
   const [worktreeExists, setWorktreeExists] = useState(false)
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
+
+  // Accumulated tool calls from all executions in the chain
+  const [allToolCalls, setAllToolCalls] = useState<Map<string, ToolCallTracking>>(new Map())
+
+  // Extract todos from accumulated tool calls
+  const allTodos = useMemo(() => buildTodoHistory(allToolCalls), [allToolCalls])
 
   // Auto-scroll state and refs
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -187,6 +199,24 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
     }
   }
 
+  // Handle delete execution action
+  const handleDeleteExecution = async () => {
+    if (!chainData || chainData.executions.length === 0) return
+    const rootExecution = chainData.executions[0]
+
+    setDeletingExecution(true)
+    try {
+      await executionsApi.delete(rootExecution.id)
+      // Navigate back to issue page after deletion
+      if (rootExecution.issue_id) {
+        window.location.href = `/issues/${rootExecution.issue_id}`
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete execution')
+      setDeletingExecution(false)
+    }
+  }
+
   // Handle scroll events to detect manual scrolling
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current
@@ -236,6 +266,63 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
       scrollToBottom()
     }, 0)
   }, [shouldAutoScroll, scrollToBottom])
+
+  // Handle tool calls update from ExecutionMonitor
+  const handleToolCallsUpdate = useCallback(
+    (executionId: string, toolCalls: Map<string, ToolCallTracking>) => {
+      setAllToolCalls((prev) => {
+        // Check if we need to update by comparing content, not just keys
+        let hasChanges = false
+        const executionPrefix = `${executionId}-`
+
+        // Count existing entries for this execution
+        let existingCount = 0
+        prev.forEach((_, key) => {
+          if (key.startsWith(executionPrefix)) {
+            existingCount++
+          }
+        })
+
+        // If sizes don't match, we have changes
+        if (existingCount !== toolCalls.size) {
+          hasChanges = true
+        } else {
+          // Check if any keys are missing or if content changed
+          toolCalls.forEach((toolCall, id) => {
+            const key = `${executionPrefix}${id}`
+            const existing = prev.get(key)
+            if (!existing) {
+              hasChanges = true
+            } else if (
+              existing.status !== toolCall.status ||
+              existing.result !== toolCall.result ||
+              existing.args !== toolCall.args
+            ) {
+              hasChanges = true
+            }
+          })
+        }
+
+        if (!hasChanges) {
+          return prev // No changes, return same reference to prevent re-render
+        }
+
+        const next = new Map(prev)
+        // Remove old entries for this execution
+        Array.from(next.keys()).forEach((key) => {
+          if (key.startsWith(executionPrefix)) {
+            next.delete(key)
+          }
+        })
+        // Add new entries
+        toolCalls.forEach((toolCall, id) => {
+          next.set(`${executionPrefix}${id}`, toolCall)
+        })
+        return next
+      })
+    },
+    []
+  )
 
   // Auto-scroll effect when chain data changes
   useEffect(() => {
@@ -501,6 +588,14 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                       Delete Worktree
                     </Button>
                   )}
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setShowDeleteExecution(true)}
+                    disabled={deletingExecution}
+                  >
+                    Delete
+                  </Button>
                 </div>
               </div>
             </Card>
@@ -533,7 +628,17 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                       onComplete={() => handleExecutionComplete(execution.id)}
                       onError={handleExecutionError}
                       onContentChange={handleContentChange}
+                      onToolCallsUpdate={(toolCalls) =>
+                        handleToolCallsUpdate(execution.id, toolCalls)
+                      }
+                      onCancel={
+                        isLast &&
+                        ['preparing', 'pending', 'running', 'paused'].includes(execution.status)
+                          ? () => handleCancel(execution.id)
+                          : undefined
+                      }
                       compact
+                      hideTodoTracker
                     />
 
                     {/* Visual separator between executions (subtle spacing only) */}
@@ -541,6 +646,22 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                   </div>
                 )
               })}
+
+              {/* Accumulated Todo Tracker - shows todos from all executions in chain */}
+              {allTodos.length > 0 && (
+                <>
+                  <div className="my-6" />
+                  <TodoTracker todos={allTodos} />
+                </>
+              )}
+
+              {/* Running indicator if any executions are running */}
+              {executions.some((exec) => exec.status === 'running') && (
+                <>
+                  <div className="my-6" />
+                  <RunIndicator />
+                </>
+              )}
             </Card>
 
             {/* Scroll to Bottom FAB - shows when auto-scroll is disabled */}
@@ -604,6 +725,16 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
           onClose={() => setShowDeleteWorktree(false)}
           onConfirm={handleDeleteWorktree}
           isDeleting={deletingWorktree}
+        />
+
+        {/* Delete Execution Dialog */}
+        <DeleteExecutionDialog
+          executionId={rootExecution.id}
+          executionCount={executions.length}
+          isOpen={showDeleteExecution}
+          onClose={() => setShowDeleteExecution(false)}
+          onConfirm={handleDeleteExecution}
+          isDeleting={deletingExecution}
         />
       </div>
     </TooltipProvider>

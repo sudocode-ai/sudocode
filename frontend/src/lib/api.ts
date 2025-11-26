@@ -224,7 +224,10 @@ export const executionsApi = {
     post<Execution>(`/executions/${executionId}/follow-up`, request),
 
   // Cancel execution
-  cancel: (executionId: string) => del(`/executions/${executionId}`),
+  cancel: (executionId: string) => post(`/executions/${executionId}/cancel`),
+
+  // Delete execution and its entire chain (including worktree and logs)
+  delete: (executionId: string) => del(`/executions/${executionId}`),
 
   // Check if worktree exists for execution
   worktreeExists: (executionId: string) =>

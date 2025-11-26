@@ -129,6 +129,10 @@ describe("Feedback Operations", () => {
       expect(parsedAnchor.section_heading).toBe("Authentication");
       expect(parsedAnchor.line_number).toBe(45);
       expect(parsedAnchor.anchor_status).toBe("valid");
+
+      // Verify timestamps are in ISO 8601 format with timezone (Z suffix)
+      expect(feedback.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      expect(feedback.updated_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     });
 
     it("should create feedback with defaults", () => {

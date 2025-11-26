@@ -25,17 +25,25 @@ vi.mock('@/lib/api', () => ({
 }))
 
 vi.mock('@/components/executions/ExecutionMonitor', () => ({
-  ExecutionMonitor: ({ executionId, execution, onComplete }: any) => (
-    <div data-testid="execution-monitor">
-      <div>ExecutionMonitor for {executionId}</div>
-      {execution?.prompt && (
-        <div data-testid="user-prompt">
-          <div>{execution.prompt}</div>
-        </div>
-      )}
-      <button onClick={onComplete}>Trigger Complete</button>
-    </div>
-  ),
+  ExecutionMonitor: ({ executionId, execution, onComplete, onToolCallsUpdate }: any) => {
+    // Simulate tool calls being passed back to parent
+    if (onToolCallsUpdate && execution?.mockToolCalls) {
+      // Pass tool calls directly - ExecutionView will add execution ID prefix
+      setTimeout(() => onToolCallsUpdate(execution.mockToolCalls), 0)
+    }
+    return (
+      <div data-testid="execution-monitor">
+        <div>ExecutionMonitor for {executionId}</div>
+        {execution?.prompt && (
+          <div data-testid="user-prompt">
+            <div>{execution.prompt}</div>
+          </div>
+        )}
+        <button onClick={onComplete}>Trigger Complete</button>
+      </div>
+    )
+  },
+  RunIndicator: () => <div data-testid="run-indicator">Running...</div>,
 }))
 
 vi.mock('@/components/executions/AgentConfigPanel', () => ({
@@ -45,6 +53,14 @@ vi.mock('@/components/executions/AgentConfigPanel', () => ({
         <button onClick={() => onStart({}, 'Test feedback', 'claude-code')}>Continue</button>
       </div>
     ) : null,
+}))
+
+vi.mock('@/components/executions/TodoTracker', () => ({
+  TodoTracker: ({ todos }: any) => (
+    <div data-testid="todo-tracker">
+      <div>Todo Tracker with {todos.length} todos</div>
+    </div>
+  ),
 }))
 
 vi.mock('@/components/executions/DeleteWorktreeDialog', () => ({
@@ -785,6 +801,198 @@ describe('ExecutionView', () => {
     await waitFor(() => {
       const fabAfterClick = container.querySelectorAll('button.rounded-full')
       expect(fabAfterClick.length).toBe(0)
+    })
+  })
+
+  describe('Todo Accumulation', () => {
+    // Helper to create TodoWrite tool calls with proper format
+    const createTodoWriteToolCall = (id: string, todos: Array<{content: string, status: string, activeForm: string}>, timestamp: number) => {
+      return {
+        toolCallId: id,
+        toolCallName: 'TodoWrite',
+        args: JSON.stringify({
+          toolName: 'TodoWrite',
+          args: { todos }
+        }),
+        status: 'completed' as const,
+        result: 'Success',
+        startTime: timestamp,
+        endTime: timestamp + 100,
+      }
+    }
+
+    it('should accumulate tool calls from single execution', async () => {
+      const mockToolCalls = new Map([
+        ['tool-1', createTodoWriteToolCall('tool-1', [
+          { content: 'Task 1', status: 'pending', activeForm: 'Task 1' }
+        ], 1000)],
+      ])
+
+      vi.mocked(executionsApi.getChain).mockResolvedValue({
+        rootId: 'exec-123',
+        executions: [{
+          ...mockExecution,
+          status: 'completed',
+          mockToolCalls,
+        } as any],
+      })
+
+      renderWithProviders(
+        <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('todo-tracker')).toBeInTheDocument()
+        expect(screen.getByText('Todo Tracker with 1 todos')).toBeInTheDocument()
+      })
+    })
+
+    it('should accumulate tool calls from multiple executions in chain', async () => {
+      const mockToolCalls1 = new Map([
+        ['tool-1', createTodoWriteToolCall('tool-1', [
+          { content: 'Task 1', status: 'pending', activeForm: 'Task 1' }
+        ], 1000)],
+      ])
+
+      const mockToolCalls2 = new Map([
+        ['tool-2', createTodoWriteToolCall('tool-2', [
+          { content: 'Task 2', status: 'pending', activeForm: 'Task 2' }
+        ], 2000)],
+      ])
+
+      const followUpExecution = {
+        ...mockExecution,
+        id: 'exec-456',
+        parent_execution_id: 'exec-123',
+        status: 'completed' as const,
+        mockToolCalls: mockToolCalls2,
+      }
+
+      vi.mocked(executionsApi.getChain).mockResolvedValue({
+        rootId: 'exec-123',
+        executions: [
+          { ...mockExecution, status: 'completed' as const, mockToolCalls: mockToolCalls1 } as any,
+          followUpExecution as any,
+        ],
+      })
+
+      renderWithProviders(
+        <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('todo-tracker')).toBeInTheDocument()
+        // Should have 2 todos (1 from each execution, with prefixed keys)
+        expect(screen.getByText('Todo Tracker with 2 todos')).toBeInTheDocument()
+      })
+    })
+
+    it('should render single TodoTracker at bottom of chain', async () => {
+      const mockToolCalls = new Map([
+        ['tool-1', createTodoWriteToolCall('tool-1', [
+          { content: 'Task 1', status: 'pending', activeForm: 'Task 1' }
+        ], 1000)],
+      ])
+
+      const followUpExecution = {
+        ...mockExecution,
+        id: 'exec-456',
+        parent_execution_id: 'exec-123',
+        status: 'completed' as const,
+        mockToolCalls,
+      }
+
+      vi.mocked(executionsApi.getChain).mockResolvedValue({
+        rootId: 'exec-123',
+        executions: [
+          { ...mockExecution, status: 'completed' as const, mockToolCalls } as any,
+          followUpExecution as any,
+        ],
+      })
+
+      renderWithProviders(
+        <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      )
+
+      await waitFor(() => {
+        // Should only have one TodoTracker rendered
+        const trackers = screen.getAllByTestId('todo-tracker')
+        expect(trackers).toHaveLength(1)
+      })
+    })
+
+    it('should not render TodoTracker when no tool calls', async () => {
+      vi.mocked(executionsApi.getChain).mockResolvedValue({
+        rootId: 'exec-123',
+        executions: [{
+          ...mockExecution,
+          status: 'completed',
+          // No mockToolCalls
+        }],
+      })
+
+      renderWithProviders(
+        <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('Completed')).toBeInTheDocument()
+      })
+
+      // Should not render TodoTracker when no tool calls
+      expect(screen.queryByTestId('todo-tracker')).not.toBeInTheDocument()
+    })
+
+    it('should update TodoTracker when execution completes and reloads', async () => {
+      const user = userEvent.setup()
+      const initialToolCalls = new Map([
+        ['tool-1', createTodoWriteToolCall('tool-1', [
+          { content: 'Task 1', status: 'pending', activeForm: 'Task 1' }
+        ], 1000)],
+      ])
+
+      const updatedToolCalls = new Map([
+        ['tool-1', createTodoWriteToolCall('tool-1', [
+          { content: 'Task 1', status: 'pending', activeForm: 'Task 1' }
+        ], 1000)],
+        ['tool-2', createTodoWriteToolCall('tool-2', [
+          { content: 'Task 2', status: 'pending', activeForm: 'Task 2' }
+        ], 2000)],
+      ])
+
+      vi.mocked(executionsApi.getChain)
+        .mockResolvedValueOnce({
+          rootId: 'exec-123',
+          executions: [{
+            ...mockExecution,
+            status: 'running',
+            mockToolCalls: initialToolCalls,
+          } as any],
+        })
+        .mockResolvedValueOnce({
+          rootId: 'exec-123',
+          executions: [{
+            ...mockExecution,
+            status: 'completed',
+            mockToolCalls: updatedToolCalls,
+          } as any],
+        })
+
+      renderWithProviders(
+        <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('Todo Tracker with 1 todos')).toBeInTheDocument()
+      })
+
+      // Trigger completion which should reload the chain with updated tool calls
+      const completeButton = screen.getByRole('button', { name: /Trigger Complete/ })
+      await user.click(completeButton)
+
+      await waitFor(() => {
+        expect(screen.getByText('Todo Tracker with 2 todos')).toBeInTheDocument()
+      })
     })
   })
 })

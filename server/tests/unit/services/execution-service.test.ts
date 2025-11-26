@@ -751,6 +751,89 @@ describe("ExecutionService", () => {
     });
   });
 
+  describe("deleteExecution", () => {
+    it("should delete a single execution", async () => {
+      const prepareResult = await service.prepareExecution(testIssueId);
+      const execution = await service.createExecution(
+        testIssueId,
+        prepareResult.defaultConfig,
+        prepareResult.renderedPrompt
+      );
+
+      // Verify execution exists
+      const before = service.getExecution(execution.id);
+      expect(before).toBeDefined();
+      expect(before?.id).toBe(execution.id);
+
+      // Delete execution
+      await service.deleteExecution(execution.id);
+
+      // Verify execution is deleted
+      const after = service.getExecution(execution.id);
+      expect(after).toBeNull();
+    });
+
+    it("should delete entire execution chain", async () => {
+      // Create initial execution
+      const prepareResult = await service.prepareExecution(testIssueId);
+      const rootExecution = await service.createExecution(
+        testIssueId,
+        prepareResult.defaultConfig,
+        prepareResult.renderedPrompt
+      );
+
+      // Create follow-up executions
+      const followUp1 = await service.createFollowUp(
+        rootExecution.id,
+        "Please add tests"
+      );
+      const followUp2 = await service.createFollowUp(
+        followUp1.id,
+        "Please add documentation"
+      );
+
+      // Verify all executions exist
+      expect(service.getExecution(rootExecution.id)).toBeDefined();
+      expect(service.getExecution(followUp1.id)).toBeDefined();
+      expect(service.getExecution(followUp2.id)).toBeDefined();
+
+      // Delete from any point in the chain (should delete entire chain)
+      await service.deleteExecution(followUp1.id);
+
+      // Verify all executions in chain are deleted
+      expect(service.getExecution(rootExecution.id)).toBeNull();
+      expect(service.getExecution(followUp1.id)).toBeNull();
+      expect(service.getExecution(followUp2.id)).toBeNull();
+    });
+
+    it("should throw error when deleting non-existent execution", async () => {
+      await expect(
+        service.deleteExecution("non-existent-id")
+      ).rejects.toThrow("Execution non-existent-id not found");
+    });
+
+    it("should cancel running executions before deletion", async () => {
+      const prepareResult = await service.prepareExecution(testIssueId);
+      const execution = await service.createExecution(
+        testIssueId,
+        prepareResult.defaultConfig,
+        prepareResult.renderedPrompt
+      );
+
+      // Execution should be running or pending
+      const beforeDelete = service.getExecution(execution.id);
+      expect(["running", "pending", "preparing"]).toContain(
+        beforeDelete?.status
+      );
+
+      // Delete should cancel and then delete
+      await service.deleteExecution(execution.id);
+
+      // Execution should be deleted
+      expect(service.getExecution(execution.id)).toBeNull();
+    });
+  });
+
   describe("WebSocket broadcasting", () => {
     it(
       "should broadcast execution_created when creating execution with issue",
@@ -909,6 +992,38 @@ describe("ExecutionService", () => {
           followUpExecution.id,
           "created",
           followUpExecution,
+          testIssueId
+        );
+      }
+    );
+
+    it(
+      "should broadcast execution_deleted when deleting execution",
+
+      async () => {
+        const { broadcastExecutionUpdate } = await import(
+          "../../../src/services/websocket.js"
+        );
+
+        const prepareResult = await service.prepareExecution(testIssueId);
+        const execution = await service.createExecution(
+          testIssueId,
+          prepareResult.defaultConfig,
+          prepareResult.renderedPrompt
+        );
+
+        // Clear creation broadcast
+        vi.clearAllMocks();
+
+        // Delete the execution
+        await service.deleteExecution(execution.id);
+
+        // Should broadcast deletion event
+        expect(broadcastExecutionUpdate).toHaveBeenCalledWith(
+          "test-project",
+          execution.id,
+          "deleted",
+          { executionId: execution.id },
           testIssueId
         );
       }

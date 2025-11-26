@@ -205,35 +205,40 @@ export function createExecutionsRouter(): Router {
    * If the requested execution is a follow-up, finds the root and returns the full chain.
    * Executions are ordered chronologically (oldest first).
    */
-  router.get("/executions/:executionId/chain", (req: Request, res: Response) => {
-    try {
-      const { executionId } = req.params;
-      const db = req.project!.db;
+  router.get(
+    "/executions/:executionId/chain",
+    (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+        const db = req.project!.db;
 
-      // Get the requested execution
-      const execution = req.project!.executionService!.getExecution(executionId);
-      if (!execution) {
-        res.status(404).json({
-          success: false,
-          data: null,
-          message: `Execution not found: ${executionId}`,
-        });
-        return;
-      }
+        // Get the requested execution
+        const execution =
+          req.project!.executionService!.getExecution(executionId);
+        if (!execution) {
+          res.status(404).json({
+            success: false,
+            data: null,
+            message: `Execution not found: ${executionId}`,
+          });
+          return;
+        }
 
-      // Find the root execution by traversing up parent_execution_id
-      let rootId = executionId;
-      let current = execution;
-      while (current.parent_execution_id) {
-        rootId = current.parent_execution_id;
-        const parent = req.project!.executionService!.getExecution(rootId);
-        if (!parent) break;
-        current = parent;
-      }
+        // Find the root execution by traversing up parent_execution_id
+        let rootId = executionId;
+        let current = execution;
+        while (current.parent_execution_id) {
+          rootId = current.parent_execution_id;
+          const parent = req.project!.executionService!.getExecution(rootId);
+          if (!parent) break;
+          current = parent;
+        }
 
-      // Get all executions in the chain (root + all descendants)
-      // Using recursive CTE to get all descendants
-      const chain = db.prepare(`
+        // Get all executions in the chain (root + all descendants)
+        // Using recursive CTE to get all descendants
+        const chain = db
+          .prepare(
+            `
         WITH RECURSIVE execution_chain AS (
           -- Base case: the root execution
           SELECT * FROM executions WHERE id = ?
@@ -244,25 +249,28 @@ export function createExecutionsRouter(): Router {
         )
         SELECT * FROM execution_chain
         ORDER BY created_at ASC
-      `).all(rootId) as any[];
+      `
+          )
+          .all(rootId) as any[];
 
-      res.json({
-        success: true,
-        data: {
-          rootId,
-          executions: chain,
-        },
-      });
-    } catch (error) {
-      console.error("Error getting execution chain:", error);
-      res.status(500).json({
-        success: false,
-        data: null,
-        error_data: error instanceof Error ? error.message : String(error),
-        message: "Failed to get execution chain",
-      });
+        res.json({
+          success: true,
+          data: {
+            rootId,
+            executions: chain,
+          },
+        });
+      } catch (error) {
+        console.error("Error getting execution chain:", error);
+        res.status(500).json({
+          success: false,
+          data: null,
+          error_data: error instanceof Error ? error.message : String(error),
+          message: "Failed to get execution chain",
+        });
+      }
     }
-  });
+  );
 
   /**
    * GET /api/executions/:executionId/logs
@@ -272,73 +280,77 @@ export function createExecutionsRouter(): Router {
    * Fetches NormalizedEntry logs from storage and converts them to AG-UI events on-demand.
    * This preserves full structured data in storage while serving UI-ready events to frontend.
    */
-  router.get("/executions/:executionId/logs", async (req: Request, res: Response) => {
-    try {
-      const { executionId } = req.params;
+  router.get(
+    "/executions/:executionId/logs",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
 
-      // Verify execution exists
-      const execution =
-        req.project!.executionService!.getExecution(executionId);
-      if (!execution) {
-        res.status(404).json({
+        // Verify execution exists
+        const execution =
+          req.project!.executionService!.getExecution(executionId);
+        if (!execution) {
+          res.status(404).json({
+            success: false,
+            data: null,
+            message: `Execution not found: ${executionId}`,
+          });
+          return;
+        }
+
+        // Fetch normalized entries from storage
+        const normalizedEntries =
+          req.project!.logsStore!.getNormalizedEntries(executionId);
+        const metadata = req.project!.logsStore!.getLogMetadata(executionId);
+
+        // Convert NormalizedEntry to AG-UI events on-demand
+        const events: any[] = [];
+
+        // Create a temporary AG-UI adapter to collect events
+        const agUiAdapter = new AgUiEventAdapter(executionId);
+        agUiAdapter.onEvent((event) => {
+          events.push(event);
+        });
+
+        // Create normalized adapter to transform entries
+        const normalizedAdapter = new NormalizedEntryToAgUiAdapter(agUiAdapter);
+
+        // Process all normalized entries through the adapter
+        for (const entry of normalizedEntries) {
+          await normalizedAdapter.processEntry(entry);
+        }
+
+        res.json({
+          success: true,
+          data: {
+            executionId,
+            events,
+            metadata: metadata
+              ? {
+                  lineCount: metadata.line_count,
+                  byteSize: metadata.byte_size,
+                  createdAt: metadata.created_at,
+                  updatedAt: metadata.updated_at,
+                }
+              : {
+                  lineCount: 0,
+                  byteSize: 0,
+                  createdAt: execution.created_at,
+                  updatedAt: execution.updated_at,
+                },
+          },
+        });
+      } catch (error) {
+        console.error("[GET /executions/:id/logs] Error:", error);
+        res.status(500).json({
           success: false,
           data: null,
-          message: `Execution not found: ${executionId}`,
+          error_data: error instanceof Error ? error.message : String(error),
+          message: "Failed to fetch execution logs",
         });
-        return;
       }
-
-      // Fetch normalized entries from storage
-      const normalizedEntries = req.project!.logsStore!.getNormalizedEntries(executionId);
-      const metadata = req.project!.logsStore!.getLogMetadata(executionId);
-
-      // Convert NormalizedEntry to AG-UI events on-demand
-      const events: any[] = [];
-
-      // Create a temporary AG-UI adapter to collect events
-      const agUiAdapter = new AgUiEventAdapter(executionId);
-      agUiAdapter.onEvent((event) => {
-        events.push(event);
-      });
-
-      // Create normalized adapter to transform entries
-      const normalizedAdapter = new NormalizedEntryToAgUiAdapter(agUiAdapter);
-
-      // Process all normalized entries through the adapter
-      for (const entry of normalizedEntries) {
-        await normalizedAdapter.processEntry(entry);
-      }
-
-      res.json({
-        success: true,
-        data: {
-          executionId,
-          events,
-          metadata: metadata
-            ? {
-                lineCount: metadata.line_count,
-                byteSize: metadata.byte_size,
-                createdAt: metadata.created_at,
-                updatedAt: metadata.updated_at,
-              }
-            : {
-                lineCount: 0,
-                byteSize: 0,
-                createdAt: execution.created_at,
-                updatedAt: execution.updated_at,
-              },
-        },
-      });
-    } catch (error) {
-      console.error("[GET /executions/:id/logs] Error:", error);
-      res.status(500).json({
-        success: false,
-        data: null,
-        error_data: error instanceof Error ? error.message : String(error),
-        message: "Failed to fetch execution logs",
-      });
     }
-  });
+  );
 
   /**
    * GET /api/issues/:issueId/executions
@@ -420,12 +432,12 @@ export function createExecutionsRouter(): Router {
   );
 
   /**
-   * DELETE /api/executions/:executionId
+   * POST /api/executions/:executionId/cancel
    *
    * Cancel a running execution
    */
-  router.delete(
-    "/executions/:executionId",
+  router.post(
+    "/executions/:executionId/cancel",
     async (req: Request, res: Response) => {
       try {
         const { executionId } = req.params;
@@ -450,6 +462,59 @@ export function createExecutionsRouter(): Router {
           data: null,
           error_data: errorMessage,
           message: "Failed to cancel execution",
+        });
+      }
+    }
+  );
+
+  /**
+   * DELETE /api/executions/:executionId
+   *
+   * Delete an execution and its entire chain (or cancel if ?cancel=true)
+   *
+   * Query parameters:
+   * - cancel: if "true", cancel the execution instead of deleting it
+   */
+  router.delete(
+    "/executions/:executionId",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+        const { cancel } = req.query;
+
+        // If cancel query param is true, cancel the execution
+        if (cancel === "true") {
+          await req.project!.executionService!.cancelExecution(executionId);
+
+          res.json({
+            success: true,
+            data: { executionId },
+            message: "Execution cancelled successfully",
+          });
+          return;
+        }
+
+        // Otherwise, delete the execution and its chain
+        await req.project!.executionService!.deleteExecution(executionId);
+
+        res.json({
+          success: true,
+          data: { executionId },
+          message: "Execution deleted successfully",
+        });
+      } catch (error) {
+        console.error("Error deleting/cancelling execution:", error);
+
+        // Handle specific error cases
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        const statusCode = errorMessage.includes("not found") ? 404 : 500;
+
+        res.status(statusCode).json({
+          success: false,
+          data: null,
+          error_data: errorMessage,
+          message: "Failed to delete/cancel execution",
         });
       }
     }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Settings, AlertCircle, Info, ArrowDown, StopCircle, Loader2 } from 'lucide-react'
+import { Settings, AlertCircle, Info, ArrowDown, Loader2, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -30,6 +30,17 @@ interface AgentConfigPanelProps {
    * Parent execution for follow-up mode - provides locked config values
    */
   parentExecution?: {
+    id: string
+    mode?: string
+    model?: string
+    target_branch?: string
+    agent_type?: string
+    config?: ExecutionConfig
+  }
+  /**
+   * Previous execution (not for follow-up) - used to default config to last execution's settings
+   */
+  previousExecution?: {
     id: string
     mode?: string
     model?: string
@@ -73,6 +84,74 @@ const DEFAULT_AGENT_CONFIGS: Record<string, any> = {
   } as CopilotConfig,
 }
 
+// localStorage keys for persisting config
+const LAST_EXECUTION_CONFIG_KEY = 'sudocode:lastExecutionConfig'
+const LAST_AGENT_TYPE_KEY = 'sudocode:lastAgentType'
+
+/**
+ * Validates that a config object has the expected shape and valid values.
+ * Returns true if config is safe to use, false otherwise.
+ */
+function isValidExecutionConfig(config: any): config is ExecutionConfig {
+  if (!config || typeof config !== 'object') {
+    return false
+  }
+
+  // Validate mode if present
+  if (config.mode !== undefined && config.mode !== 'worktree' && config.mode !== 'local') {
+    return false
+  }
+
+  // Validate cleanupMode if present
+  if (
+    config.cleanupMode !== undefined &&
+    config.cleanupMode !== 'auto' &&
+    config.cleanupMode !== 'manual' &&
+    config.cleanupMode !== 'never'
+  ) {
+    return false
+  }
+
+  // Validate numeric fields if present
+  if (
+    config.maxTokens !== undefined &&
+    (typeof config.maxTokens !== 'number' || config.maxTokens < 0)
+  ) {
+    return false
+  }
+  if (
+    config.temperature !== undefined &&
+    (typeof config.temperature !== 'number' || config.temperature < 0 || config.temperature > 2)
+  ) {
+    return false
+  }
+  if (config.timeout !== undefined && (typeof config.timeout !== 'number' || config.timeout < 0)) {
+    return false
+  }
+  if (
+    config.checkpointInterval !== undefined &&
+    (typeof config.checkpointInterval !== 'number' || config.checkpointInterval < 0)
+  ) {
+    return false
+  }
+
+  // Validate boolean fields if present
+  if (
+    config.continueOnStepFailure !== undefined &&
+    typeof config.continueOnStepFailure !== 'boolean'
+  ) {
+    return false
+  }
+  if (config.captureFileChanges !== undefined && typeof config.captureFileChanges !== 'boolean') {
+    return false
+  }
+  if (config.captureToolCalls !== undefined && typeof config.captureToolCalls !== 'boolean') {
+    return false
+  }
+
+  return true
+}
+
 export function AgentConfigPanel({
   issueId,
   onStart,
@@ -80,6 +159,7 @@ export function AgentConfigPanel({
   onSelectOpenChange,
   isFollowUp = false,
   parentExecution,
+  previousExecution,
   promptPlaceholder,
   isRunning = false,
   onCancel,
@@ -91,12 +171,52 @@ export function AgentConfigPanel({
   const [config, setConfig] = useState<ExecutionConfig>(() => {
     // For follow-ups, inherit config from parent execution
     if (isFollowUp && parentExecution?.config) {
-      return {
+      const inheritedConfig = {
         ...parentExecution.config,
         mode: (parentExecution.mode as ExecutionMode) || 'worktree',
         baseBranch: parentExecution.target_branch,
       }
+      if (isValidExecutionConfig(inheritedConfig)) {
+        return inheritedConfig
+      }
+      console.warn('Parent execution config is invalid, using defaults')
     }
+
+    // For new executions, try to use previous execution config
+    if (previousExecution?.config) {
+      const previousConfig = {
+        ...previousExecution.config,
+        mode: (previousExecution.mode as ExecutionMode) || 'worktree',
+        baseBranch: previousExecution.target_branch,
+      }
+      if (isValidExecutionConfig(previousConfig)) {
+        return previousConfig
+      }
+      console.warn('Previous execution config is invalid, trying localStorage')
+    }
+
+    // Otherwise, try localStorage
+    try {
+      const savedConfig = localStorage.getItem(LAST_EXECUTION_CONFIG_KEY)
+      if (savedConfig) {
+        const parsed = JSON.parse(savedConfig)
+        if (isValidExecutionConfig(parsed)) {
+          return parsed
+        }
+        console.warn('Saved config is invalid, clearing localStorage and using defaults')
+        localStorage.removeItem(LAST_EXECUTION_CONFIG_KEY)
+      }
+    } catch (error) {
+      console.warn('Failed to load saved execution config:', error)
+      // Clear corrupted data
+      try {
+        localStorage.removeItem(LAST_EXECUTION_CONFIG_KEY)
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    }
+
+    // Final fallback: base defaults
     return {
       mode: 'worktree',
       cleanupMode: 'manual',
@@ -108,6 +228,23 @@ export function AgentConfigPanel({
     if (isFollowUp && parentExecution?.agent_type) {
       return parentExecution.agent_type
     }
+
+    // For new executions, try to use previous execution's agent type
+    if (previousExecution?.agent_type) {
+      return previousExecution.agent_type
+    }
+
+    // Otherwise, try localStorage
+    try {
+      const savedAgentType = localStorage.getItem(LAST_AGENT_TYPE_KEY)
+      if (savedAgentType) {
+        return savedAgentType
+      }
+    } catch (error) {
+      console.warn('Failed to load saved agent type:', error)
+    }
+
+    // Final fallback
     return 'claude-code'
   })
   const [isHoveringButton, setIsHoveringButton] = useState(false)
@@ -115,6 +252,83 @@ export function AgentConfigPanel({
 
   // Fetch available agents
   const { agents, loading: agentsLoading } = useAgents()
+
+  // Reset config when issue or previousExecution changes (issue switching)
+  useEffect(() => {
+    // Skip for follow-ups - they use parent execution
+    if (isFollowUp) return
+
+    // Helper to load config with priority
+    const loadConfigForIssue = (): ExecutionConfig => {
+      // Try previous execution config first
+      if (previousExecution?.config) {
+        const previousConfig = {
+          ...previousExecution.config,
+          mode: (previousExecution.mode as ExecutionMode) || 'worktree',
+          baseBranch: previousExecution.target_branch,
+        }
+        if (isValidExecutionConfig(previousConfig)) {
+          return previousConfig
+        }
+        console.warn('Previous execution config is invalid, trying localStorage')
+      }
+
+      // Otherwise, try localStorage
+      try {
+        const savedConfig = localStorage.getItem(LAST_EXECUTION_CONFIG_KEY)
+        if (savedConfig) {
+          const parsed = JSON.parse(savedConfig)
+          if (isValidExecutionConfig(parsed)) {
+            return parsed
+          }
+          console.warn('Saved config is invalid, clearing localStorage and using defaults')
+          localStorage.removeItem(LAST_EXECUTION_CONFIG_KEY)
+        }
+      } catch (error) {
+        console.warn('Failed to load saved execution config:', error)
+        try {
+          localStorage.removeItem(LAST_EXECUTION_CONFIG_KEY)
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      }
+
+      // Final fallback: base defaults
+      return {
+        mode: 'worktree',
+        cleanupMode: 'manual',
+      }
+    }
+
+    setConfig(loadConfigForIssue())
+  }, [issueId, previousExecution?.id, isFollowUp])
+
+  // Reset agent type when issue or previousExecution changes
+  useEffect(() => {
+    if (isFollowUp) return
+
+    const loadAgentTypeForIssue = (): string => {
+      // Try previous execution's agent type first
+      if (previousExecution?.agent_type) {
+        return previousExecution.agent_type
+      }
+
+      // Otherwise, try localStorage
+      try {
+        const savedAgentType = localStorage.getItem(LAST_AGENT_TYPE_KEY)
+        if (savedAgentType) {
+          return savedAgentType
+        }
+      } catch (error) {
+        console.warn('Failed to load saved agent type:', error)
+      }
+
+      // Final fallback
+      return 'claude-code'
+    }
+
+    setSelectedAgentType(loadAgentTypeForIssue())
+  }, [issueId, previousExecution?.id, isFollowUp])
 
   // Load template preview on mount (skip for follow-ups)
   useEffect(() => {
@@ -177,6 +391,19 @@ export function AgentConfigPanel({
   }, [selectedAgentType])
 
   const handleStart = () => {
+    // Save config and agent type to localStorage for future executions
+    // Only save if config is valid to prevent persisting corrupted data
+    if (isValidExecutionConfig(config)) {
+      try {
+        localStorage.setItem(LAST_EXECUTION_CONFIG_KEY, JSON.stringify(config))
+        localStorage.setItem(LAST_AGENT_TYPE_KEY, selectedAgentType)
+      } catch (error) {
+        console.warn('Failed to save execution config to localStorage:', error)
+      }
+    } else {
+      console.warn('Config is invalid, not saving to localStorage')
+    }
+
     onStart(config, prompt, selectedAgentType)
     setPrompt('') // Clear the prompt after submission
   }
@@ -407,7 +634,7 @@ export function AgentConfigPanel({
               >
                 {isRunning ? (
                   isHoveringButton ? (
-                    <StopCircle className="h-4 w-4" />
+                    <Square className="h-3 w-3" />
                   ) : (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   )

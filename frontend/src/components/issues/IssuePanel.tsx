@@ -541,7 +541,11 @@ export function IssuePanel({
     }
   }
 
-  const handleStartExecution = async (config: ExecutionConfig, prompt: string, agentType?: string) => {
+  const handleStartExecution = async (
+    config: ExecutionConfig,
+    prompt: string,
+    agentType?: string
+  ) => {
     try {
       // Set flag to scroll to activity section when execution appears
       shouldScrollToActivityRef.current = true
@@ -965,6 +969,34 @@ export function IssuePanel({
               issueId={issue.id}
               onStart={handleStartExecution}
               disabled={issue.archived || isUpdating}
+              previousExecution={
+                executions.length > 0
+                  ? (() => {
+                      // Sort executions by created_at to find the most recent one
+                      const sortedExecutions = [...executions].sort(
+                        (a, b) =>
+                          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                      )
+                      const lastExec = sortedExecutions[0]
+                      let parsedConfig: ExecutionConfig | undefined = undefined
+                      if (lastExec.config) {
+                        try {
+                          parsedConfig = JSON.parse(lastExec.config)
+                        } catch (error) {
+                          console.warn('Failed to parse previous execution config:', error)
+                        }
+                      }
+                      return {
+                        id: lastExec.id,
+                        mode: lastExec.mode || undefined,
+                        model: lastExec.model || undefined,
+                        target_branch: lastExec.target_branch,
+                        agent_type: lastExec.agent_type,
+                        config: parsedConfig,
+                      }
+                    })()
+                  : undefined
+              }
               onSelectOpenChange={(open) => {
                 // Clear any pending timeout
                 if (selectCloseTimeoutRef.current) {

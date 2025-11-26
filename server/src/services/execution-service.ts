@@ -703,6 +703,110 @@ Please continue working on this issue, taking into account the feedback above.`;
   }
 
   /**
+   * Delete an execution and its entire chain
+   *
+   * Deletes the execution and all its follow-ups (descendants).
+   * Also attempts to clean up the worktree if one exists.
+   *
+   * @param executionId - ID of execution to delete (can be root or any execution in chain)
+   * @throws Error if execution not found
+   */
+  async deleteExecution(executionId: string): Promise<void> {
+    const execution = getExecution(this.db, executionId);
+    if (!execution) {
+      throw new Error(`Execution ${executionId} not found`);
+    }
+
+    // Find the root execution by traversing up parent_execution_id
+    let rootId = executionId;
+    let current = execution;
+    while (current.parent_execution_id) {
+      rootId = current.parent_execution_id;
+      const parent = getExecution(this.db, rootId);
+      if (!parent) break;
+      current = parent;
+    }
+
+    // Get all executions in the chain (root + all descendants)
+    const chain = this.db
+      .prepare(
+        `
+      WITH RECURSIVE execution_chain AS (
+        -- Base case: the root execution
+        SELECT * FROM executions WHERE id = ?
+        UNION ALL
+        -- Recursive case: children of executions in the chain
+        SELECT e.* FROM executions e
+        INNER JOIN execution_chain ec ON e.parent_execution_id = ec.id
+      )
+      SELECT * FROM execution_chain
+    `
+      )
+      .all(rootId) as Execution[];
+
+    // Cancel any running executions in the chain
+    for (const exec of chain) {
+      if (exec.status === "running" || exec.status === "pending") {
+        try {
+          await this.cancelExecution(exec.id);
+        } catch (err) {
+          console.warn(
+            `Failed to cancel execution ${exec.id} during deletion:`,
+            err
+          );
+          // Continue with deletion even if cancel fails
+        }
+      }
+    }
+
+    // Delete worktree if it exists (only for root execution)
+    const rootExecution = chain.find((e) => e.id === rootId);
+    if (rootExecution?.worktree_path) {
+      try {
+        const fs = await import("fs");
+        if (fs.existsSync(rootExecution.worktree_path)) {
+          await this.deleteWorktree(rootId);
+        }
+      } catch (err) {
+        console.warn(
+          `Failed to delete worktree during execution deletion:`,
+          err
+        );
+        // Continue with deletion even if worktree cleanup fails
+      }
+    }
+
+    // Delete execution logs for all executions in the chain
+    for (const exec of chain) {
+      try {
+        this.logsStore.deleteLogs(exec.id);
+      } catch (err) {
+        console.warn(`Failed to delete logs for execution ${exec.id}:`, err);
+        // Continue with deletion even if log cleanup fails
+      }
+    }
+
+    // Delete all executions in the chain from database
+    // Delete in reverse order (children first) to avoid foreign key issues
+    const chainIds = chain.map((e) => e.id);
+    const placeholders = chainIds.map(() => "?").join(",");
+    this.db
+      .prepare(`DELETE FROM executions WHERE id IN (${placeholders})`)
+      .run(...chainIds);
+
+    // Broadcast deletion event for each execution
+    for (const exec of chain) {
+      broadcastExecutionUpdate(
+        this.projectId,
+        exec.id,
+        "deleted",
+        { executionId: exec.id },
+        exec.issue_id || undefined
+      );
+    }
+  }
+
+  /**
    * Shutdown execution service - cancel all active executions
    *
    * This is called during server shutdown to gracefully terminate
