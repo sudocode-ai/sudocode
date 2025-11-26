@@ -1259,6 +1259,58 @@ describe('ExecutionMonitor', () => {
       expect(screen.getByText('Logs message')).toBeInTheDocument()
       expect(screen.queryByText('SSE message')).not.toBeInTheDocument()
     })
+
+    it('should fall back to saved logs when SSE disconnects unexpectedly during active execution', () => {
+      // Simulate AG-UI adapter disconnect scenario:
+      // SSE connection is disconnected, no SSE data (cleared), but logs are available
+      mockUseAgUiStream.mockReturnValue({
+        connectionStatus: 'disconnected',
+        execution: {
+          runId: null,
+          threadId: null,
+          status: 'idle',
+          currentStep: null,
+          error: null,
+          startTime: null,
+          endTime: null,
+        },
+        messages: new Map(), // Empty - data cleared on disconnect
+        toolCalls: new Map(), // Empty - data cleared on disconnect
+        state: {},
+        error: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        reconnect: vi.fn(),
+        isConnected: false,
+      })
+
+      // Saved logs have the execution history
+      mockUseExecutionLogs.mockReturnValue({
+        events: [
+          { type: 'TEXT_MESSAGE_START', timestamp: 1000, messageId: 'msg-1', role: 'assistant' },
+          { type: 'TEXT_MESSAGE_CONTENT', timestamp: 1001, messageId: 'msg-1', delta: 'Saved message from logs' },
+          { type: 'TEXT_MESSAGE_END', timestamp: 1002, messageId: 'msg-1' },
+          { type: 'TOOL_CALL_START', timestamp: 2000, toolCallId: 'tool-1', toolCallName: 'Read' },
+          { type: 'TOOL_CALL_END', timestamp: 2100, toolCallId: 'tool-1' },
+          { type: 'TOOL_CALL_RESULT', timestamp: 2100, toolCallId: 'tool-1', result: 'File contents' },
+        ],
+        loading: false,
+        error: null,
+        metadata: { lineCount: 6, byteSize: 300, createdAt: '', updatedAt: '' },
+      })
+
+      render(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running' } as any} />
+      )
+
+      // Should show saved logs instead of empty screen
+      expect(screen.getByText('Saved message from logs')).toBeInTheDocument()
+      expect(screen.getByText('Read')).toBeInTheDocument()
+
+      // Should NOT show empty state
+      expect(screen.queryByText('No execution activity')).not.toBeInTheDocument()
+      expect(screen.queryByText('Waiting for events...')).not.toBeInTheDocument()
+    })
   })
 
   describe('Agent-Specific Rendering', () => {

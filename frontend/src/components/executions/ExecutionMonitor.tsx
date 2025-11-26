@@ -146,6 +146,7 @@ export function ExecutionMonitor({
   })
 
   // Use logs API for completed executions
+  // Also preload logs for active executions as a fallback in case SSE disconnects unexpectedly
   const logsResult = useExecutionLogs(executionId)
 
   // Process logs events into messages/toolCalls format
@@ -234,10 +235,45 @@ export function ExecutionMonitor({
   // Select the appropriate data source
   // Key insight: When transitioning from active to completed, keep showing SSE data
   // until logs are fully loaded to prevent flickering
+  // IMPORTANT: If adapter disconnects unexpectedly, fall back to saved logs
   const { connectionStatus, execution, messages, toolCalls, state, error, isConnected } =
     useMemo(() => {
-      // For active executions, always use SSE stream
+      const logsLoaded = !logsResult.loading && logsResult.events && logsResult.events.length > 0
+      const hasSSEData = sseStream.messages.size > 0 || sseStream.toolCalls.size > 0
+      const hasLogsData = processedLogs.messages.size > 0 || processedLogs.toolCalls.size > 0
+
+      // For active executions, use SSE stream if available
+      // BUT: If SSE has disconnected/errored and we have no SSE data, fall back to logs
       if (isActive) {
+        // If SSE disconnected/errored unexpectedly and we have saved logs, use those
+        if (
+          (sseStream.connectionStatus === 'disconnected' ||
+            sseStream.connectionStatus === 'error') &&
+          !hasSSEData &&
+          hasLogsData
+        ) {
+          console.warn(
+            '[ExecutionMonitor] SSE disconnected unexpectedly, falling back to saved logs'
+          )
+          return {
+            connectionStatus: logsLoaded ? 'connected' : 'connecting',
+            execution: {
+              status: executionProp?.status || 'running',
+              runId: executionId,
+              currentStep: undefined,
+              error: logsResult.error?.message,
+              startTime: undefined,
+              endTime: undefined,
+            },
+            messages: processedLogs.messages,
+            toolCalls: processedLogs.toolCalls,
+            state: processedLogs.state,
+            error: logsResult.error,
+            isConnected: false,
+          }
+        }
+
+        // Otherwise use SSE stream normally
         return {
           connectionStatus: sseStream.connectionStatus,
           execution: sseStream.execution,
@@ -251,9 +287,6 @@ export function ExecutionMonitor({
 
       // For completed executions, use logs when available
       // But fall back to SSE data while logs are loading to prevent flicker
-      const logsLoaded = !logsResult.loading && logsResult.events && logsResult.events.length > 0
-      const hasSSEData = sseStream.messages.size > 0 || sseStream.toolCalls.size > 0
-
       // Use logs if loaded, otherwise fall back to SSE data if available
       if (logsLoaded) {
         return {
@@ -287,7 +320,7 @@ export function ExecutionMonitor({
           isConnected: false, // Not live anymore since execution completed
         }
       } else {
-        // No SSE data and logs not loaded yet - show loading state
+        // No SSE data and logs not loaded yet - show loading or saved logs
         return {
           connectionStatus: logsResult.loading
             ? 'connecting'
@@ -498,7 +531,12 @@ export function ExecutionMonitor({
         {(messageCount > 0 || toolCallCount > 0) && (
           <>
             {executionProp?.agent_type === 'claude-code' ? (
-              <ClaudeCodeTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown showTodoTracker={false} />
+              <ClaudeCodeTrajectory
+                messages={messages}
+                toolCalls={toolCalls}
+                renderMarkdown
+                showTodoTracker={false}
+              />
             ) : (
               <AgentTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown />
             )}
@@ -506,16 +544,20 @@ export function ExecutionMonitor({
         )}
 
         {/* Empty state */}
-        {messageCount === 0 && toolCallCount === 0 && !error && !execution.error && (
-          <div className="flex flex-col items-center justify-center py-2 text-center text-muted-foreground">
-            {!isActive && !isConnected && (
-              <>
-                <AlertCircle className="mb-2 h-8 w-8" />
-                <p className="text-sm">No execution activity</p>
-              </>
-            )}
-          </div>
-        )}
+        {messageCount === 0 &&
+          toolCallCount === 0 &&
+          !error &&
+          !execution.error &&
+          execution.status !== 'running' && (
+            <div className="flex flex-col items-center justify-center py-2 text-center text-muted-foreground">
+              {!isActive && !isConnected && (
+                <>
+                  <AlertCircle className="mb-2 h-8 w-8" />
+                  <p className="text-sm">No execution activity</p>
+                </>
+              )}
+            </div>
+          )}
 
         {/* Todo Tracker - only show if not hidden */}
         {!hideTodoTracker && <TodoTracker todos={todos} className="mt-4" />}
@@ -598,7 +640,12 @@ export function ExecutionMonitor({
         {(messageCount > 0 || toolCallCount > 0) && (
           <>
             {executionProp?.agent_type === 'claude-code' ? (
-              <ClaudeCodeTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown showTodoTracker={false} />
+              <ClaudeCodeTrajectory
+                messages={messages}
+                toolCalls={toolCalls}
+                renderMarkdown
+                showTodoTracker={false}
+              />
             ) : (
               <AgentTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown />
             )}
