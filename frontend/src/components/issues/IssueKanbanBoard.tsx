@@ -62,7 +62,7 @@ function IssueKanbanBoard({
             status={status}
             onViewDetails={onViewIssueDetails}
             isOpen={false}
-            showExecutionPreview={true}
+            showExecutionPreview={false}
           />
         )
       }
@@ -101,7 +101,7 @@ function IssueKanbanBoard({
                   status={status}
                   onViewDetails={onViewIssueDetails}
                   isOpen={selectedIssue?.id === issue.id}
-                  showExecutionPreview={true}
+                  showExecutionPreview={false}
                 />
               ))}
             </KanbanCards>
