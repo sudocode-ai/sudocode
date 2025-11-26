@@ -9,6 +9,7 @@ import { useMemo } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, MessageSquare, Wrench } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
+import rehypeHighlight from 'rehype-highlight'
 import type { MessageBuffer } from '@/hooks/useAgUiStream'
 import type { ToolCallTracking } from '@/hooks/useAgUiStream'
 
@@ -29,6 +30,12 @@ export interface AgentTrajectoryProps {
   renderMarkdown?: boolean
 
   /**
+   * Whether to hide system messages (default: true)
+   * System messages are those that start with [System]
+   */
+  hideSystemMessages?: boolean
+
+  /**
    * Custom class name
    */
   className?: string
@@ -41,11 +48,13 @@ type TrajectoryItem =
   | {
       type: 'message'
       timestamp: number
+      index?: number
       data: MessageBuffer
     }
   | {
       type: 'tool_call'
       timestamp: number
+      index?: number
       data: ToolCallTracking
     }
 
@@ -68,17 +77,24 @@ export function AgentTrajectory({
   messages,
   toolCalls,
   renderMarkdown = true,
+  hideSystemMessages = true,
   className = '',
 }: AgentTrajectoryProps) {
   // Merge messages and tool calls into a chronological timeline
   const trajectory = useMemo(() => {
     const items: TrajectoryItem[] = []
 
-    // Add messages
+    // Add messages (filtering out system messages if requested)
     messages.forEach((message) => {
+      // Skip system messages if hideSystemMessages is true
+      if (hideSystemMessages && message.content.trim().startsWith('[System]')) {
+        return
+      }
+
       items.push({
         type: 'message',
         timestamp: message.timestamp,
+        index: message.index,
         data: message,
       })
     })
@@ -88,13 +104,23 @@ export function AgentTrajectory({
       items.push({
         type: 'tool_call',
         timestamp: toolCall.startTime,
+        index: toolCall.index,
         data: toolCall,
       })
     })
 
-    // Sort by timestamp
-    return items.sort((a, b) => a.timestamp - b.timestamp)
-  }, [messages, toolCalls])
+    // Sort by timestamp, using index as secondary key for stable ordering
+    return items.sort((a, b) => {
+      const timeDiff = a.timestamp - b.timestamp
+      if (timeDiff !== 0) return timeDiff
+      // When timestamps are equal, use index for stable ordering
+      // Items without index come after those with index
+      if (a.index !== undefined && b.index !== undefined) {
+        return a.index - b.index
+      }
+      return 0
+    })
+  }, [messages, toolCalls, hideSystemMessages])
 
   if (trajectory.length === 0) {
     return null
@@ -106,10 +132,7 @@ export function AgentTrajectory({
         if (item.type === 'message') {
           const message = item.data
           return (
-            <div
-              key={`msg-${message.messageId}`}
-              className="flex gap-3 items-start"
-            >
+            <div key={`msg-${message.messageId}`} className="flex items-start gap-3">
               {/* Icon */}
               <div className="mt-1 flex-shrink-0">
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10">
@@ -118,8 +141,8 @@ export function AgentTrajectory({
               </div>
 
               {/* Content */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex items-center gap-2">
                   <Badge variant="outline" className="text-xs">
                     {message.role}
                   </Badge>
@@ -130,25 +153,23 @@ export function AgentTrajectory({
                 <div className="rounded-lg bg-muted/50 p-3 text-sm">
                   {renderMarkdown ? (
                     <ReactMarkdown
-                      className="prose prose-sm max-w-none dark:prose-invert"
+                      className="prose prose-sm dark:prose-invert max-w-none"
+                      rehypePlugins={[rehypeHighlight]}
                       components={{
                         p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
                         code: ({ inline, children, ...props }: any) =>
                           inline ? (
-                            <code
-                              className="bg-background px-1 py-0.5 rounded text-xs"
-                              {...props}
-                            >
+                            <code className="rounded bg-background px-1 py-0.5 text-xs" {...props}>
                               {children}
                             </code>
                           ) : (
-                            <pre className="bg-background p-2 rounded overflow-x-auto">
+                            <pre className="overflow-x-auto rounded bg-background p-2">
                               <code {...props}>{children}</code>
                             </pre>
                           ),
-                        ul: ({ children }) => <ul className="list-disc pl-4 mb-2">{children}</ul>,
+                        ul: ({ children }) => <ul className="mb-2 list-disc pl-4">{children}</ul>,
                         ol: ({ children }) => (
-                          <ol className="list-decimal pl-4 mb-2">{children}</ol>
+                          <ol className="mb-2 list-decimal pl-4">{children}</ol>
                         ),
                         li: ({ children }) => <li className="mb-1">{children}</li>,
                         a: ({ children, href }) => (
@@ -176,10 +197,7 @@ export function AgentTrajectory({
           // Tool call
           const toolCall = item.data
           return (
-            <div
-              key={`tool-${toolCall.toolCallId}`}
-              className="flex gap-3 items-start"
-            >
+            <div key={`tool-${toolCall.toolCallId}`} className="flex items-start gap-3">
               {/* Icon */}
               <div className="mt-1 flex-shrink-0">
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500/10">
@@ -188,10 +206,10 @@ export function AgentTrajectory({
               </div>
 
               {/* Content */}
-              <div className="flex-1 min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="rounded-lg border bg-card p-3 text-sm">
                   {/* Header */}
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="mb-2 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{toolCall.toolCallName}</span>
                       <Badge
@@ -199,8 +217,8 @@ export function AgentTrajectory({
                           toolCall.status === 'completed'
                             ? 'default'
                             : toolCall.status === 'error'
-                            ? 'destructive'
-                            : 'secondary'
+                              ? 'destructive'
+                              : 'secondary'
                         }
                         className="text-xs"
                       >
@@ -220,7 +238,7 @@ export function AgentTrajectory({
                       <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
                         Arguments
                       </summary>
-                      <pre className="mt-1 text-xs bg-muted/50 p-2 rounded overflow-x-auto">
+                      <pre className="mt-1 overflow-x-auto rounded bg-muted/50 p-2 text-xs">
                         {toolCall.args}
                       </pre>
                     </details>
@@ -232,7 +250,7 @@ export function AgentTrajectory({
                       <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
                         Result
                       </summary>
-                      <pre className="mt-1 text-xs bg-muted/50 p-2 rounded overflow-x-auto max-h-40">
+                      <pre className="mt-1 max-h-40 overflow-x-auto rounded bg-muted/50 p-2 text-xs">
                         {toolCall.result}
                       </pre>
                     </details>
@@ -240,7 +258,7 @@ export function AgentTrajectory({
 
                   {/* Error */}
                   {toolCall.error && (
-                    <div className="mt-2 text-xs text-destructive bg-destructive/10 p-2 rounded">
+                    <div className="mt-2 rounded bg-destructive/10 p-2 text-xs text-destructive">
                       {toolCall.error}
                     </div>
                   )}

@@ -20,6 +20,7 @@ export interface CreateExecutionInput {
   target_branch: string; // Required for worktree integration
   branch_name: string; // Required for worktree integration
   worktree_path?: string; // Optional, set after worktree creation
+  parent_execution_id?: string; // Optional, set for follow-up executions
 }
 
 /**
@@ -73,9 +74,10 @@ export function createExecution(
       target_branch,
       branch_name,
       worktree_path,
+      parent_execution_id,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -92,6 +94,7 @@ export function createExecution(
     input.target_branch,
     input.branch_name,
     input.worktree_path || null,
+    input.parent_execution_id || null,
     now,
     now
   );

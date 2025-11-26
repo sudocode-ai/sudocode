@@ -1,15 +1,13 @@
 /**
  * useExecutionLogs React Hook
  *
- * Fetches historical execution logs from the backend and transforms them to AG-UI events.
- * Used for displaying execution history and replaying past runs.
+ * Fetches historical AG-UI events from the backend for displaying execution history.
+ * Used for replaying completed executions.
  *
  * @module hooks/useExecutionLogs
  */
 
 import { useState, useEffect } from 'react';
-import { parseExecutionLogs } from '../../../server/src/execution/output/claude-to-ag-ui.js';
-import type { AgUiEvent } from '../../../server/src/execution/output/claude-to-ag-ui.js';
 import api from '../lib/api';
 import { isCancel } from 'axios';
 
@@ -29,7 +27,7 @@ export interface ExecutionLogMetadata {
  */
 interface ExecutionLogsData {
   executionId: string;
-  logs: string[];
+  events: any[]; // AG-UI events
   metadata: ExecutionLogMetadata;
 }
 
@@ -37,23 +35,23 @@ interface ExecutionLogsData {
  * Hook return value
  */
 export interface UseExecutionLogsResult {
-  /** Parsed AG-UI events from execution logs */
-  events: AgUiEvent[];
+  /** AG-UI events from execution logs */
+  events: any[];
   /** Loading state */
   loading: boolean;
-  /** Error if fetch or parse failed */
+  /** Error if fetch failed */
   error: Error | null;
   /** Metadata about the logs */
   metadata: ExecutionLogMetadata | null;
 }
 
 /**
- * Fetch and parse historical execution logs
+ * Fetch historical AG-UI events for execution replay
  *
- * Fetches raw execution logs from the backend API and transforms them
- * to AG-UI events for display in the UI.
+ * Fetches AG-UI events from the backend API for displaying completed executions.
+ * Events are already in AG-UI format and ready for display.
  *
- * @param executionId - ID of execution to fetch logs for
+ * @param executionId - ID of execution to fetch events for
  * @returns Hook result with events, loading state, error, and metadata
  *
  * @example
@@ -66,7 +64,7 @@ export interface UseExecutionLogsResult {
  *
  *   return (
  *     <div>
- *       <div>Lines: {metadata?.lineCount}, Size: {metadata?.byteSize} bytes</div>
+ *       <div>Events: {events.length}, Size: {metadata?.byteSize} bytes</div>
  *       <AgentTrajectory events={events} />
  *     </div>
  *   );
@@ -74,7 +72,7 @@ export interface UseExecutionLogsResult {
  * ```
  */
 export function useExecutionLogs(executionId: string): UseExecutionLogsResult {
-  const [events, setEvents] = useState<AgUiEvent[]>([]);
+  const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
   const [metadata, setMetadata] = useState<ExecutionLogMetadata | null>(null);
@@ -89,9 +87,9 @@ export function useExecutionLogs(executionId: string): UseExecutionLogsResult {
     // Create abort controller for cleanup
     const abortController = new AbortController();
 
-    async function fetchAndParseLogs() {
+    async function fetchEvents() {
       try {
-        // Fetch raw logs from API using axios client (automatically includes X-Project-ID header)
+        // Fetch AG-UI events from API using axios client (automatically includes X-Project-ID header)
         // Note: axios baseURL is already '/api', so we don't include it here
         // The response interceptor unwraps the ApiResponse, so we get ExecutionLogsData directly
         const data = await api.get<ExecutionLogsData, ExecutionLogsData>(
@@ -101,11 +99,9 @@ export function useExecutionLogs(executionId: string): UseExecutionLogsResult {
           }
         );
 
-        // Transform raw logs to AG-UI events
-        const parsedEvents = await parseExecutionLogs(data.logs);
-
-        // Update state
-        setEvents(parsedEvents);
+        // Events are already in AG-UI format, no transformation needed
+        // Ensure events is always an array (handle malformed responses)
+        setEvents(data.events || []);
         setMetadata(data.metadata);
       } catch (err) {
         // Ignore abort/cancel errors (cleanup)
@@ -133,7 +129,7 @@ export function useExecutionLogs(executionId: string): UseExecutionLogsResult {
       }
     }
 
-    fetchAndParseLogs();
+    fetchEvents();
 
     // Cleanup function - abort fetch on unmount or ID change
     return () => {

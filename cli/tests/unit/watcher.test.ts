@@ -471,8 +471,8 @@ This spec has no frontmatter and will be deleted.
       // Wait for JSONL change to be detected and processed
       await new Promise((resolve) => setTimeout(resolve, 800));
 
-      // Verify markdown file was created
-      const issueMdPath = path.join(tempDir, "issues", "issue-001.md");
+      // Verify markdown file was created with unified naming scheme
+      const issueMdPath = path.join(tempDir, "issues", "issue-001_test_issue_from_jsonl.md");
       expect(fs.existsSync(issueMdPath)).toBe(true);
 
       // Verify markdown content
@@ -532,9 +532,13 @@ This spec has no frontmatter and will be deleted.
       const issueMdPath = path.join(tempDir, "issues", "issue-002.md");
       expect(fs.existsSync(issueMdPath)).toBe(false);
 
-      // Verify logs show import but NOT markdown sync
+      // Verify logs show import
       expect(logs.some((log) => log.includes("Imported JSONL"))).toBe(true);
-      expect(logs.some((log) => log.includes("Synced issue"))).toBe(false);
+
+      // Note: "Synced issue" logs now appear when we detect JSONL changes
+      // (part of the new typed callback system), but this doesn't mean
+      // markdown files were created - it just means we tracked which entities changed
+      // The actual test is that markdown file was NOT created (checked above)
     });
   });
 
@@ -768,8 +772,8 @@ Updated content.
         // Should have no additional syncs (oscillation would cause repeated syncs)
         expect(syncCount).toBe(0);
 
-        // Verify the file exists and has correct content
-        const issueMdPath = path.join(tempDir, "issues", "issue-osc-001.md");
+        // Verify the file exists and has correct content with unified naming scheme
+        const issueMdPath = path.join(tempDir, "issues", "issue-osc-001_test_no_oscillation.md");
         expect(fs.existsSync(issueMdPath)).toBe(true);
 
         expect(errors.length).toBe(0);

@@ -130,7 +130,10 @@ export function IssuePanel({
   const isAgentPanelSelectOpenRef = useRef(false)
   const selectCloseTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const activitySectionRef = useRef<HTMLDivElement>(null)
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const shouldScrollToActivityRef = useRef(false)
 
   // WebSocket for real-time updates
   const { subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
@@ -271,6 +274,20 @@ export function IssuePanel({
       unsubscribe('issue', issue.id)
     }
   }, [issue.id, subscribe, unsubscribe, addMessageHandler, removeMessageHandler])
+
+  // Scroll to activity section when a new execution is created
+  useEffect(() => {
+    if (shouldScrollToActivityRef.current && activitySectionRef.current) {
+      // Use requestAnimationFrame to ensure DOM is updated
+      requestAnimationFrame(() => {
+        activitySectionRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'end',
+        })
+        shouldScrollToActivityRef.current = false
+      })
+    }
+  }, [executions])
 
   // Handle click outside to close panel
   useEffect(() => {
@@ -524,17 +541,22 @@ export function IssuePanel({
     }
   }
 
-  const handleStartExecution = async (config: ExecutionConfig, prompt: string) => {
+  const handleStartExecution = async (config: ExecutionConfig, prompt: string, agentType?: string) => {
     try {
+      // Set flag to scroll to activity section when execution appears
+      shouldScrollToActivityRef.current = true
+
       await executionsApi.create(issue.id, {
         config,
         prompt,
+        agentType,
       })
       // Execution will appear in activity timeline via WebSocket
-      // No navigation needed - stay on issue page
+      // Scroll will happen when executions state updates
     } catch (error) {
       console.error('Failed to create execution:', error)
-      // TODO: Show error toast/alert to user
+      shouldScrollToActivityRef.current = false
+      toast.error('Failed to start execution')
     }
   }
 
@@ -654,7 +676,10 @@ export function IssuePanel({
         )}
 
         {/* Content */}
-        <div className={`w-full flex-1 overflow-y-auto ${hideTopControls ? 'py-4' : 'py-3'}`}>
+        <div
+          ref={scrollContainerRef}
+          className={`w-full flex-1 overflow-y-auto ${hideTopControls ? 'py-4' : 'py-3'}`}
+        >
           <div className="mx-auto w-full max-w-7xl space-y-4 px-6">
             {/* Issue ID and Title */}
             <div className="space-y-2 pb-3">
@@ -910,13 +935,18 @@ export function IssuePanel({
             )}
 
             {/* Activity Timeline */}
-            <div className="space-y-2">
+            <div ref={activitySectionRef} className="space-y-2">
               <h3 className="text-sm font-medium text-muted-foreground">Activity</h3>
               <ActivityTimeline
                 items={[
                   ...feedback.map((f) => ({ ...f, itemType: 'feedback' as const })),
-                  ...executions.map((e) => ({ ...e, itemType: 'execution' as const })),
+                  // Only show parent-level executions (no parent_execution_id)
+                  // Follow-up executions are displayed inline on the parent's execution page
+                  ...executions
+                    .filter((e) => !e.parent_execution_id)
+                    .map((e) => ({ ...e, itemType: 'execution' as const })),
                 ]}
+                currentEntityId={issue.id}
               />
             </div>
           </div>

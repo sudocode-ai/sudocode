@@ -19,10 +19,8 @@ export default function ExecutionDetailPage() {
     )
   }
 
-  // Handle follow-up creation - navigate to the new execution
-  const handleFollowUpCreated = (newExecutionId: string) => {
-    navigate(`/executions/${newExecutionId}`)
-  }
+  // Follow-ups are now rendered inline in ExecutionView, no navigation needed
+  // The URL stays on the root execution ID, and the chain is displayed inline
 
   return (
     <div className="flex h-screen flex-col">
@@ -36,9 +34,9 @@ export default function ExecutionDetailPage() {
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 overflow-auto p-6">
-        <ExecutionView executionId={id} onFollowUpCreated={handleFollowUpCreated} />
+      {/* Main content - scrollable area with padding bottom for sticky panel */}
+      <div className="flex-1 overflow-auto">
+        <ExecutionView executionId={id} />
       </div>
     </div>
   )

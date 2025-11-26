@@ -8,74 +8,11 @@
  */
 
 import type { ProcessConfig } from 'agent-execution-engine';
+import type { ClaudeCodeConfig } from '@sudocode-ai/types/agents';
+import { AgentConfigUtils } from '../../adapters/shared/index.js';
 
-/**
- * Configuration options specific to Claude Code CLI
- */
-export interface ClaudeCodeConfig {
-  /**
-   * Path to Claude Code CLI executable
-   * @default 'claude'
-   */
-  claudePath?: string;
-
-  /**
-   * Working directory for the process
-   */
-  workDir: string;
-
-  /**
-   * Run in non-interactive print mode
-   * @default false
-   */
-  print?: boolean;
-
-  /**
-   * Output format (stream-json recommended for parsing)
-   * @default 'text'
-   */
-  outputFormat?: 'stream-json' | 'json' | 'text';
-
-  /**
-   * Enable verbose output (required for stream-json with print mode)
-   * @default false
-   */
-  verbose?: boolean;
-
-  /**
-   * Skip permission prompts
-   * @default false
-   */
-  dangerouslySkipPermissions?: boolean;
-
-  /**
-   * Permission mode setting
-   */
-  permissionMode?: string;
-
-  /**
-   * Environment variables to pass to the process
-   */
-  env?: Record<string, string>;
-
-  /**
-   * Maximum execution time in milliseconds
-   */
-  timeout?: number;
-
-  /**
-   * Maximum idle time before cleanup (pool only)
-   */
-  idleTimeout?: number;
-
-  /**
-   * Retry configuration for failed spawns
-   */
-  retry?: {
-    maxAttempts: number;
-    backoffMs: number;
-  };
-}
+// Re-export the config type for convenience
+export type { ClaudeCodeConfig } from '@sudocode-ai/types/agents';
 
 /**
  * Build a generic ProcessConfig from Claude Code specific configuration
@@ -89,6 +26,8 @@ export interface ClaudeCodeConfig {
  *   workDir: '/path/to/project',
  *   print: true,
  *   outputFormat: 'stream-json',
+ *   model: 'sonnet',
+ *   allowedTools: ['Bash(git:*)', 'Edit', 'Read'],
  *   dangerouslySkipPermissions: true,
  * });
  *
@@ -96,40 +35,221 @@ export interface ClaudeCodeConfig {
  * ```
  */
 export function buildClaudeConfig(config: ClaudeCodeConfig): ProcessConfig {
+  const args = buildClaudeArgs(config);
+
+  return AgentConfigUtils.buildBaseProcessConfig(
+    config.claudePath || 'claude',
+    args,
+    config
+  );
+}
+
+/**
+ * Build Claude Code CLI arguments from configuration
+ *
+ * @param config - Claude Code configuration
+ * @returns Array of command-line arguments
+ */
+export function buildClaudeArgs(config: ClaudeCodeConfig): string[] {
   const args: string[] = [];
 
+  // === Core Execution Mode ===
   // Add --print flag for non-interactive mode
   if (config.print) {
     args.push('--print');
   }
 
-  // Add --output-format flag
-  if (config.outputFormat) {
-    args.push('--output-format', config.outputFormat);
+  // === Output Configuration ===
+  args.push(
+    ...AgentConfigUtils.buildConditionalArgs([
+      { flag: '--output-format', value: config.outputFormat, condition: !!config.outputFormat },
+      { flag: '--verbose', condition: !!config.verbose || (!!config.print && config.outputFormat === 'stream-json') },
+      { flag: '--json-schema', value: config.jsonSchema, condition: !!config.jsonSchema },
+      { flag: '--include-partial-messages', condition: !!config.includePartialMessages },
+    ])
+  );
+
+  // === Permissions ===
+  args.push(
+    ...AgentConfigUtils.buildConditionalArgs([
+      { flag: '--dangerously-skip-permissions', condition: !!config.dangerouslySkipPermissions },
+      { flag: '--allow-dangerously-skip-permissions', condition: !!config.allowDangerouslySkipPermissions },
+      { flag: '--permission-mode', value: config.permissionMode, condition: !!config.permissionMode },
+    ])
+  );
+
+  // === Model Configuration ===
+  args.push(
+    ...AgentConfigUtils.buildConditionalArgs([
+      { flag: '--model', value: config.model, condition: !!config.model },
+      { flag: '--fallback-model', value: config.fallbackModel, condition: !!config.fallbackModel },
+    ])
+  );
+
+  // === Tool Permissions ===
+  // --allowedTools / --allowed-tools accepts multiple values
+  if (config.allowedTools && config.allowedTools.length > 0) {
+    args.push('--allowed-tools', ...config.allowedTools);
   }
 
-  // Add --verbose flag (required for stream-json with print mode)
-  if (config.verbose || (config.print && config.outputFormat === 'stream-json')) {
-    args.push('--verbose');
+  // --tools accepts multiple values
+  if (config.tools && config.tools.length > 0) {
+    args.push('--tools', ...config.tools);
   }
 
-  // Add --dangerously-skip-permissions flag
-  if (config.dangerouslySkipPermissions) {
-    args.push('--dangerously-skip-permissions');
+  // --disallowedTools / --disallowed-tools accepts multiple values
+  if (config.disallowedTools && config.disallowedTools.length > 0) {
+    args.push('--disallowed-tools', ...config.disallowedTools);
   }
 
-  // Add --permission-mode flag if specified
-  if (config.permissionMode) {
-    args.push('--permission-mode', config.permissionMode);
+  // === System Prompt ===
+  args.push(
+    ...AgentConfigUtils.buildConditionalArgs([
+      { flag: '--system-prompt', value: config.systemPrompt, condition: !!config.systemPrompt },
+      { flag: '--append-system-prompt', value: config.appendSystemPrompt, condition: !!config.appendSystemPrompt },
+    ])
+  );
+
+  // === Directory & Context ===
+  // --add-dir accepts multiple directories
+  if (config.addDir && config.addDir.length > 0) {
+    for (const dir of config.addDir) {
+      args.push('--add-dir', dir);
+    }
   }
 
+  // === MCP Configuration ===
+  // --mcp-config accepts multiple configs
+  if (config.mcpConfig && config.mcpConfig.length > 0) {
+    for (const mcpCfg of config.mcpConfig) {
+      args.push('--mcp-config', mcpCfg);
+    }
+  }
+
+  args.push(
+    ...AgentConfigUtils.buildConditionalArgs([
+      { flag: '--strict-mcp-config', condition: !!config.strictMcpConfig },
+    ])
+  );
+
+  // === Session Management ===
+  args.push(
+    ...AgentConfigUtils.buildConditionalArgs([
+      { flag: '--continue', condition: !!config.continue },
+      { flag: '--resume', value: config.resume, condition: !!config.resume },
+      { flag: '--fork-session', condition: !!config.forkSession },
+      { flag: '--session-id', value: config.sessionId, condition: !!config.sessionId },
+    ])
+  );
+
+  // === Advanced Settings ===
+  args.push(
+    ...AgentConfigUtils.buildConditionalArgs([
+      { flag: '--settings', value: config.settings, condition: !!config.settings },
+      { flag: '--setting-sources', value: config.settingSources, condition: !!config.settingSources },
+    ])
+  );
+
+  // Debug mode - can be boolean or string filter
+  if (config.debug) {
+    if (typeof config.debug === 'string') {
+      args.push('--debug', config.debug);
+    } else {
+      args.push('--debug');
+    }
+  }
+
+  // === Prompt (must be last) ===
+  if (config.prompt) {
+    args.push(config.prompt);
+  }
+
+  return args;
+}
+
+/**
+ * Validate Claude Code configuration
+ *
+ * @param config - Configuration to validate
+ * @returns Array of validation error messages (empty if valid)
+ */
+export function validateClaudeConfig(config: ClaudeCodeConfig): string[] {
+  const errors = [
+    ...AgentConfigUtils.validateBaseConfig(config),
+    ...validateClaudeSpecific(config),
+  ];
+
+  return errors;
+}
+
+/**
+ * Validate Claude-specific configuration
+ *
+ * @param config - Configuration to validate
+ * @returns Array of validation errors
+ */
+function validateClaudeSpecific(config: ClaudeCodeConfig): string[] {
+  const errors: string[] = [];
+
+  // Validate output format requirements
+  if (config.outputFormat === 'stream-json' && !config.print) {
+    errors.push('stream-json output format requires print mode to be enabled');
+  }
+
+  // Validate include-partial-messages requirements
+  if (config.includePartialMessages) {
+    if (!config.print) {
+      errors.push('includePartialMessages requires print mode to be enabled');
+    }
+    if (config.outputFormat !== 'stream-json') {
+      errors.push('includePartialMessages requires outputFormat to be stream-json');
+    }
+  }
+
+  // Validate permission mode
+  errors.push(
+    ...AgentConfigUtils.validateEnum(
+      config.permissionMode,
+      ['acceptEdits', 'bypassPermissions', 'default', 'dontAsk', 'plan'] as const,
+      'permissionMode'
+    )
+  );
+
+  // Validate paths
+  errors.push(...AgentConfigUtils.validatePaths(config.addDir, 'addDir'));
+  errors.push(...AgentConfigUtils.validatePaths(config.mcpConfig, 'mcpConfig'));
+
+  // Validate conflicting session options
+  if (config.continue && config.resume) {
+    errors.push('Cannot use both continue and resume options');
+  }
+
+  if (config.sessionId && (config.continue || config.resume)) {
+    errors.push('sessionId cannot be used with continue or resume');
+  }
+
+  // Validate timeouts
+  errors.push(
+    ...AgentConfigUtils.validateTimeouts(config.timeout, config.idleTimeout)
+  );
+
+  // Validate retry config
+  errors.push(...AgentConfigUtils.validateRetryConfig(config.retry));
+
+  return errors;
+}
+
+/**
+ * Get default Claude Code configuration
+ *
+ * @returns Default configuration values
+ */
+export function getDefaultClaudeConfig(): Partial<ClaudeCodeConfig> {
   return {
-    executablePath: config.claudePath || 'claude',
-    args,
-    workDir: config.workDir,
-    env: config.env,
-    timeout: config.timeout,
-    idleTimeout: config.idleTimeout,
-    retry: config.retry,
+    claudePath: 'claude',
+    print: true,
+    outputFormat: 'stream-json',
+    verbose: true, // Required for stream-json with print
+    dangerouslySkipPermissions: false,
   };
 }

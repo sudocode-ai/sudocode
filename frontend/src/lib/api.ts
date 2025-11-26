@@ -14,6 +14,8 @@ import type {
   DeleteRelationshipRequest,
   CreateFeedbackRequest,
   UpdateFeedbackRequest,
+  AgentInfo,
+  GetAgentsResponse,
 } from '@/types/api'
 import type {
   Execution,
@@ -65,8 +67,8 @@ export function getCurrentProjectId(): string | null {
 api.interceptors.request.use(
   (config) => {
     // Inject X-Project-ID header if we have a current project
-    // Skip for /projects endpoints which don't require project context
-    if (currentProjectId && !config.url?.startsWith('/projects')) {
+    // Skip for /projects and /agents endpoints which don't require project context
+    if (currentProjectId && !config.url?.startsWith('/projects') && !config.url?.startsWith('/agents')) {
       config.headers['X-Project-ID'] = currentProjectId
     }
     return config
@@ -133,7 +135,21 @@ export const issuesApi = {
   create: (data: CreateIssueRequest) => post<Issue>('/issues', data),
   update: (id: string, data: UpdateIssueRequest) => put<Issue>(`/issues/${id}`, data),
   delete: (id: string) => del(`/issues/${id}`),
-  getFeedback: (id: string) => get<IssueFeedback[]>(`/feedback?to_id=${id}`),
+  getFeedback: async (id: string) => {
+    // Fetch both inbound (feedback ON this issue) and outbound (feedback FROM this issue)
+    const [inbound, outbound] = await Promise.all([
+      get<IssueFeedback[]>(`/feedback?to_id=${id}`),
+      get<IssueFeedback[]>(`/feedback?from_id=${id}`),
+    ])
+    // Combine and deduplicate (in case an issue left feedback on itself)
+    const combined = [...inbound, ...outbound]
+    const seen = new Set<string>()
+    return combined.filter((f) => {
+      if (seen.has(f.id)) return false
+      seen.add(f.id)
+      return true
+    })
+  },
 }
 
 /**
@@ -177,6 +193,14 @@ export const feedbackApi = {
 /**
  * Executions API
  */
+/**
+ * Execution chain response from /executions/:id/chain
+ */
+export interface ExecutionChainResponse {
+  rootId: string
+  executions: Execution[]
+}
+
 export const executionsApi = {
   // Prepare execution (preview template and gather context)
   prepare: (issueId: string, request?: PrepareExecutionRequest) =>
@@ -188,6 +212,9 @@ export const executionsApi = {
 
   // Get execution by ID
   getById: (executionId: string) => get<Execution>(`/executions/${executionId}`),
+
+  // Get execution chain (root + all follow-ups)
+  getChain: (executionId: string) => get<ExecutionChainResponse>(`/executions/${executionId}/chain`),
 
   // List executions for issue
   list: (issueId: string) => get<Execution[]>(`/issues/${issueId}/executions`),
@@ -212,6 +239,18 @@ export const executionsApi = {
  */
 export const repositoryApi = {
   getInfo: () => get<RepositoryInfo>('/repo-info'),
+}
+
+/**
+ * Agents API
+ */
+export const agentsApi = {
+  getAll: async (): Promise<AgentInfo[]> => {
+    // Use axios directly to bypass the ApiResponse interceptor
+    // The /agents endpoint returns data directly, not wrapped in ApiResponse
+    const response = await axios.get<GetAgentsResponse>('/api/agents')
+    return response.data.agents
+  },
 }
 
 /**

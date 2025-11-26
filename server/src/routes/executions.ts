@@ -7,6 +7,14 @@
  */
 
 import { Router, Request, Response } from "express";
+import { NormalizedEntryToAgUiAdapter } from "../execution/output/normalized-to-ag-ui-adapter.js";
+import { AgUiEventAdapter } from "../execution/output/ag-ui-adapter.js";
+import { agentRegistryService } from "../services/agent-registry.js";
+import {
+  AgentNotFoundError,
+  AgentNotImplementedError,
+  AgentError,
+} from "../errors/agent-errors.js";
 
 /**
  * Create executions router
@@ -61,7 +69,7 @@ export function createExecutionsRouter(): Router {
     async (req: Request, res: Response) => {
       try {
         const { issueId } = req.params;
-        const { config, prompt } = req.body;
+        const { config, prompt, agentType } = req.body;
 
         // Validate required fields
         if (!prompt) {
@@ -73,10 +81,27 @@ export function createExecutionsRouter(): Router {
           return;
         }
 
+        // Validate agentType if provided
+        if (agentType) {
+          // Check if agent exists in registry
+          if (!agentRegistryService.hasAgent(agentType)) {
+            const availableAgents = agentRegistryService
+              .getAvailableAgents()
+              .map((a) => a.name);
+            throw new AgentNotFoundError(agentType, availableAgents);
+          }
+
+          // Check if agent is implemented
+          if (!agentRegistryService.isAgentImplemented(agentType)) {
+            throw new AgentNotImplementedError(agentType);
+          }
+        }
+
         const execution = await req.project!.executionService!.createExecution(
           issueId,
           config || {},
-          prompt
+          prompt,
+          agentType // Optional, defaults to 'claude-code' in service
         );
 
         res.status(201).json({
@@ -86,7 +111,42 @@ export function createExecutionsRouter(): Router {
       } catch (error) {
         console.error("[API Route] ERROR: Failed to create execution:", error);
 
-        // Handle specific error cases
+        // Handle agent-specific errors with enhanced error responses
+        if (error instanceof AgentNotFoundError) {
+          res.status(400).json({
+            success: false,
+            data: null,
+            error: error.message,
+            code: error.code,
+            details: error.details,
+          });
+          return;
+        }
+
+        if (error instanceof AgentNotImplementedError) {
+          res.status(501).json({
+            success: false,
+            data: null,
+            error: error.message,
+            code: error.code,
+            details: error.details,
+          });
+          return;
+        }
+
+        if (error instanceof AgentError) {
+          // Generic agent error (400 by default)
+          res.status(400).json({
+            success: false,
+            data: null,
+            error: error.message,
+            code: error.code,
+            details: error.details,
+          });
+          return;
+        }
+
+        // Handle other errors (backwards compatibility)
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         const statusCode = errorMessage.includes("not found") ? 404 : 500;
@@ -137,11 +197,82 @@ export function createExecutionsRouter(): Router {
   });
 
   /**
+   * GET /api/executions/:executionId/chain
+   *
+   * Get execution chain (root execution + all follow-ups)
+   *
+   * Returns the full chain of executions starting from the root.
+   * If the requested execution is a follow-up, finds the root and returns the full chain.
+   * Executions are ordered chronologically (oldest first).
+   */
+  router.get("/executions/:executionId/chain", (req: Request, res: Response) => {
+    try {
+      const { executionId } = req.params;
+      const db = req.project!.db;
+
+      // Get the requested execution
+      const execution = req.project!.executionService!.getExecution(executionId);
+      if (!execution) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Execution not found: ${executionId}`,
+        });
+        return;
+      }
+
+      // Find the root execution by traversing up parent_execution_id
+      let rootId = executionId;
+      let current = execution;
+      while (current.parent_execution_id) {
+        rootId = current.parent_execution_id;
+        const parent = req.project!.executionService!.getExecution(rootId);
+        if (!parent) break;
+        current = parent;
+      }
+
+      // Get all executions in the chain (root + all descendants)
+      // Using recursive CTE to get all descendants
+      const chain = db.prepare(`
+        WITH RECURSIVE execution_chain AS (
+          -- Base case: the root execution
+          SELECT * FROM executions WHERE id = ?
+          UNION ALL
+          -- Recursive case: children of executions in the chain
+          SELECT e.* FROM executions e
+          INNER JOIN execution_chain ec ON e.parent_execution_id = ec.id
+        )
+        SELECT * FROM execution_chain
+        ORDER BY created_at ASC
+      `).all(rootId) as any[];
+
+      res.json({
+        success: true,
+        data: {
+          rootId,
+          executions: chain,
+        },
+      });
+    } catch (error) {
+      console.error("Error getting execution chain:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to get execution chain",
+      });
+    }
+  });
+
+  /**
    * GET /api/executions/:executionId/logs
    *
-   * Get raw execution logs for historical replay
+   * Get AG-UI events for historical replay
+   *
+   * Fetches NormalizedEntry logs from storage and converts them to AG-UI events on-demand.
+   * This preserves full structured data in storage while serving UI-ready events to frontend.
    */
-  router.get("/executions/:executionId/logs", (req: Request, res: Response) => {
+  router.get("/executions/:executionId/logs", async (req: Request, res: Response) => {
     try {
       const { executionId } = req.params;
 
@@ -157,15 +288,32 @@ export function createExecutionsRouter(): Router {
         return;
       }
 
-      // Fetch raw logs and metadata
-      const logs = req.project!.logsStore!.getRawLogs(executionId);
+      // Fetch normalized entries from storage
+      const normalizedEntries = req.project!.logsStore!.getNormalizedEntries(executionId);
       const metadata = req.project!.logsStore!.getLogMetadata(executionId);
+
+      // Convert NormalizedEntry to AG-UI events on-demand
+      const events: any[] = [];
+
+      // Create a temporary AG-UI adapter to collect events
+      const agUiAdapter = new AgUiEventAdapter(executionId);
+      agUiAdapter.onEvent((event) => {
+        events.push(event);
+      });
+
+      // Create normalized adapter to transform entries
+      const normalizedAdapter = new NormalizedEntryToAgUiAdapter(agUiAdapter);
+
+      // Process all normalized entries through the adapter
+      for (const entry of normalizedEntries) {
+        await normalizedAdapter.processEntry(entry);
+      }
 
       res.json({
         success: true,
         data: {
           executionId,
-          logs,
+          events,
           metadata: metadata
             ? {
                 lineCount: metadata.line_count,

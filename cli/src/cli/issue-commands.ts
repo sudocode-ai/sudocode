@@ -23,6 +23,11 @@ import { getTags, setTags } from "../operations/tags.js";
 import { listFeedback } from "../operations/feedback.js";
 import { exportToJSONL } from "../export.js";
 import { syncJSONLToMarkdown } from "../sync.js";
+import { generateUniqueFilename } from "../filename-generator.js";
+import {
+  isValidIssueStatus,
+  getValidIssueStatuses,
+} from "../validation.js";
 
 export interface CommandContext {
   db: Database.Database;
@@ -68,7 +73,10 @@ export async function handleIssueCreate(
     // Also update the markdown file to keep it in sync
     const issuesDir = path.join(ctx.outputDir, "issues");
     fs.mkdirSync(issuesDir, { recursive: true });
-    const mdPath = path.join(issuesDir, `${issueId}.md`);
+
+    // Generate filename using unified scheme: {id}_{title_slug}.md
+    const fileName = generateUniqueFilename(title, issueId);
+    const mdPath = path.join(issuesDir, fileName);
     await syncJSONLToMarkdown(ctx.db, issueId, 'issue', mdPath);
 
     if (ctx.jsonOutput) {
@@ -78,6 +86,7 @@ export async function handleIssueCreate(
     } else {
       console.log(chalk.green("✓ Created issue"), chalk.cyan(issueId));
       console.log(chalk.gray(`  Title: ${title}`));
+      console.log(chalk.gray(`  File: issues/${fileName}`));
       if (options.assignee) {
         console.log(chalk.gray(`  Assignee: ${options.assignee}`));
       }
@@ -103,6 +112,17 @@ export async function handleIssueList(
   options: IssueListOptions
 ): Promise<void> {
   try {
+    // Validate status if provided
+    if (options.status && !isValidIssueStatus(options.status)) {
+      console.error(
+        chalk.red(`✗ Invalid status filter: ${options.status}`)
+      );
+      console.error(
+        chalk.gray(`Valid statuses: ${getValidIssueStatuses().join(", ")}`)
+      );
+      process.exit(1);
+    }
+
     // Use search if grep is provided, otherwise use list with filters
     const issues = options.grep
       ? searchIssues(ctx.db, options.grep, {
@@ -299,6 +319,17 @@ export async function handleIssueUpdate(
   options: IssueUpdateOptions
 ): Promise<void> {
   try {
+    // Validate status if provided
+    if (options.status && !isValidIssueStatus(options.status)) {
+      console.error(
+        chalk.red(`✗ Invalid status: ${options.status}`)
+      );
+      console.error(
+        chalk.gray(`Valid statuses: ${getValidIssueStatuses().join(", ")}`)
+      );
+      process.exit(1);
+    }
+
     const updates: any = {};
     if (options.status) updates.status = options.status;
     if (options.priority) updates.priority = parseInt(options.priority);

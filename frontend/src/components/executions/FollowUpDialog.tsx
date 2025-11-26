@@ -58,6 +58,17 @@ export function FollowUpDialog({ open, onSubmit, onCancel }: FollowUpDialogProps
     }
   }
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Submit on Enter (without Shift)
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      if (canSubmit) {
+        handleSubmit()
+      }
+    }
+    // Shift+Enter creates newline (default behavior, no need to handle)
+  }
+
   const canSubmit = feedback.trim().length > 0 && !isSubmitting
 
   return (
@@ -75,7 +86,7 @@ export function FollowUpDialog({ open, onSubmit, onCancel }: FollowUpDialogProps
           {error && (
             <div className="rounded-lg border border-destructive bg-destructive/10 p-3">
               <div className="flex items-start gap-2">
-                <AlertCircle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
+                <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-destructive" />
                 <p className="text-sm text-destructive">{error}</p>
               </div>
             </div>
@@ -88,6 +99,7 @@ export function FollowUpDialog({ open, onSubmit, onCancel }: FollowUpDialogProps
               id="feedback"
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
+              onKeyDown={handleKeyDown}
               rows={8}
               placeholder={
                 'Provide feedback or additional instructions for the agent.\n\nExamples:\n• "Please add error handling for edge cases"\n• "Can you explain the approach you took?"\n• "Also add tests for this functionality"'

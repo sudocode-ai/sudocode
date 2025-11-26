@@ -177,6 +177,24 @@ describe("Issue CLI Commands", () => {
       expect(calls).toContain("Issue 2");
       expect(calls).toContain("@user1");
     });
+
+    it("should reject invalid status filter", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const options = {
+        status: "invalid_status",
+        limit: "50",
+      };
+
+      await handleIssueList(ctx, options);
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("✗ Invalid status filter: invalid_status")
+      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Valid statuses: open, in_progress, blocked, needs_review, closed")
+      );
+      expect(processExitSpy).toHaveBeenCalledWith(1);
+    });
   });
 
   describe("handleIssueShow", () => {
@@ -340,6 +358,24 @@ describe("Issue CLI Commands", () => {
       // Verify parent appears in output
       const calls = consoleLogSpy.mock.calls.flat().join(" ");
       expect(calls).toContain(`parent_id: ${parentIssueId}`);
+    });
+
+    it("should reject invalid status values", async () => {
+      const ctx = { db, outputDir: tempDir, jsonOutput: false };
+      const issueId = createdIssueIds[0];
+      const options = {
+        status: "invalid_status",
+      };
+
+      await handleIssueUpdate(ctx, issueId, options);
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("✗ Invalid status: invalid_status")
+      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Valid statuses: open, in_progress, blocked, needs_review, closed")
+      );
+      expect(processExitSpy).toHaveBeenCalledWith(1);
     });
   });
 
@@ -608,8 +644,9 @@ describe("Issue CLI Commands", () => {
       await handleIssueCreate(ctx, "Test Issue for MD", options);
       const issueId = extractIssueId(consoleLogSpy);
 
-      // Check that markdown file was created
-      const mdPath = path.join(tempDir, "issues", `${issueId}.md`);
+      // Check that markdown file was created with unified naming scheme
+      const issuesDir = path.join(tempDir, "issues");
+      const mdPath = path.join(issuesDir, `${issueId}_test_issue_for_md.md`);
       expect(fs.existsSync(mdPath)).toBe(true);
 
       // Verify markdown content

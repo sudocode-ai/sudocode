@@ -206,9 +206,19 @@ export interface Config {
 }
 
 /**
- * Agent types supported for execution
+ * Agent types and configurations
+ * See agents.d.ts for detailed agent configuration types
  */
-export type AgentType = "claude-code" | "codex";
+export type {
+  AgentType,
+  ExecutionMode,
+  BaseAgentConfig,
+  ClaudeCodeConfig,
+  CodexConfig,
+  CopilotConfig,
+  CursorConfig,
+  AgentConfig,
+} from "./agents.js";
 
 /**
  * Execution status

@@ -2,10 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { KanbanCard } from '@/components/ui/kanban'
 import type { Issue } from '@sudocode-ai/types'
+import type { Execution } from '@/types/execution'
 import { Copy, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
+import { ExecutionPreview } from '@/components/executions/ExecutionPreview'
+import { executionsApi } from '@/lib/api'
 
 // Priority badge colors - using darker shades for better contrast with white text
 const priorityColors: Record<number, string> = {
@@ -30,11 +33,14 @@ interface IssueCardProps {
   status: string
   onViewDetails?: (issue: Issue) => void
   isOpen?: boolean
+  showExecutionPreview?: boolean // Whether to show execution preview for running executions
 }
 
-export function IssueCard({ issue, index, status, onViewDetails, isOpen }: IssueCardProps) {
+export function IssueCard({ issue, index, status, onViewDetails, isOpen, showExecutionPreview = false }: IssueCardProps) {
   const navigate = useNavigate()
   const [isCopied, setIsCopied] = useState(false)
+  const [latestExecution, setLatestExecution] = useState<Execution | null>(null)
+  const [loadingExecution, setLoadingExecution] = useState(false)
 
   const handleClick = useCallback(() => {
     // If onViewDetails is provided, use it (for backward compatibility)
@@ -65,6 +71,31 @@ export function IssueCard({ issue, index, status, onViewDetails, isOpen }: Issue
   )
 
   const localRef = useRef<HTMLDivElement>(null)
+
+  // Fetch latest execution if preview is enabled
+  useEffect(() => {
+    if (!showExecutionPreview) return
+
+    const fetchLatestExecution = async () => {
+      try {
+        setLoadingExecution(true)
+        const executions = await executionsApi.list(issue.id)
+        // Get the most recent execution
+        if (executions && executions.length > 0) {
+          const sorted = executions.sort((a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          )
+          setLatestExecution(sorted[0])
+        }
+      } catch (error) {
+        console.error('Failed to fetch executions:', error)
+      } finally {
+        setLoadingExecution(false)
+      }
+    }
+
+    fetchLatestExecution()
+  }, [issue.id, showExecutionPreview])
 
   useEffect(() => {
     if (!isOpen || !localRef.current) return
@@ -123,7 +154,7 @@ export function IssueCard({ issue, index, status, onViewDetails, isOpen }: Issue
         </div>
         <h4 className="text-md line-clamp-2 min-w-0 flex-1 font-medium">{issue.title}</h4>
         {/* Content Preview */}
-        {issue.content && (
+        {issue.content && !latestExecution && (
           <p className="line-clamp-2 break-words text-xs text-muted-foreground">
             {(() => {
               // Simple markdown stripping - remove headers, formatting, etc.
@@ -138,6 +169,18 @@ export function IssueCard({ issue, index, status, onViewDetails, isOpen }: Issue
               return plainText.length > 100 ? `${plainText.substring(0, 100)}...` : plainText
             })()}
           </p>
+        )}
+
+        {/* Execution Preview */}
+        {showExecutionPreview && latestExecution && !loadingExecution && (
+          <div className="w-full border-t pt-2">
+            <ExecutionPreview
+              executionId={latestExecution.id}
+              execution={latestExecution}
+              variant="compact"
+              onViewFull={() => navigate(`/executions/${latestExecution.id}`)}
+            />
+          </div>
         )}
       </div>
     </KanbanCard>

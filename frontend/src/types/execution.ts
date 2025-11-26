@@ -52,6 +52,9 @@ export interface ExecutionConfig {
   // Output settings
   captureFileChanges?: boolean
   captureToolCalls?: boolean
+
+  // Agent-specific configuration (e.g., Codex flags, Copilot settings)
+  agentConfig?: Record<string, any>
 }
 
 /**
@@ -123,6 +126,7 @@ export interface PrepareExecutionRequest {
 export interface CreateExecutionRequest {
   config: ExecutionConfig
   prompt: string
+  agentType?: string
 }
 
 export interface CreateFollowUpRequest {

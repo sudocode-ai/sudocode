@@ -8,6 +8,7 @@
  */
 
 import type Database from "better-sqlite3";
+import type { NormalizedEntry } from "agent-execution-engine/agents";
 
 /**
  * Metadata for execution logs (without the full logs text)
@@ -63,8 +64,8 @@ export class ExecutionLogsStore {
    */
   initializeLogs(executionId: string): void {
     const stmt = this.db.prepare(`
-      INSERT OR IGNORE INTO execution_logs (execution_id, raw_logs, byte_size, line_count)
-      VALUES (?, '', 0, 0)
+      INSERT OR IGNORE INTO execution_logs (execution_id, raw_logs, normalized_entry, byte_size, line_count)
+      VALUES (?, '', NULL, 0, 0)
     `);
     stmt.run(executionId);
   }
@@ -281,5 +282,161 @@ export class ExecutionLogsStore {
           ? result.totalBytes / result.totalExecutions
           : 0,
     };
+  }
+
+  /**
+   * Append a normalized entry to execution logs
+   *
+   * Stores a NormalizedEntry object from agent-execution-engine as JSON.
+   * The entry is stored in the normalized_entry column alongside raw logs.
+   *
+   * @param executionId - Unique execution identifier
+   * @param entry - Normalized entry object from agent-execution-engine
+   *
+   * @example
+   * ```typescript
+   * const entry: NormalizedEntry = {
+   *   index: 0,
+   *   type: { kind: 'assistant_message' },
+   *   content: 'Hello world',
+   *   timestamp: new Date(),
+   * };
+   * store.appendNormalizedEntry('exec-123', entry);
+   * ```
+   */
+  appendNormalizedEntry(executionId: string, entry: NormalizedEntry): void {
+    // Check if execution_logs entry exists
+    const checkStmt = this.db.prepare(`
+      SELECT 1 FROM execution_logs WHERE execution_id = ?
+    `);
+    const exists = checkStmt.get(executionId);
+
+    const serialized = JSON.stringify(entry);
+
+    if (!exists) {
+      // First entry - create new row with NULL raw_logs
+      const insertStmt = this.db.prepare(`
+        INSERT INTO execution_logs (execution_id, raw_logs, normalized_entry, byte_size, line_count)
+        VALUES (?, NULL, ?, 0, 0)
+      `);
+      insertStmt.run(executionId, serialized);
+    } else {
+      // Subsequent entries - append with newline
+      const updateStmt = this.db.prepare(`
+        UPDATE execution_logs
+        SET normalized_entry = COALESCE(normalized_entry, '') || char(10) || ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE execution_id = ?
+      `);
+      updateStmt.run(serialized, executionId);
+    }
+  }
+
+  /**
+   * Get all normalized entries for an execution
+   *
+   * Retrieves and deserializes all normalized entries for an execution.
+   * Entries are returned in the order they were stored.
+   *
+   * @param executionId - Unique execution identifier
+   * @returns Array of normalized entries, or empty array if none found
+   *
+   * @example
+   * ```typescript
+   * const entries = store.getNormalizedEntries('exec-123');
+   * entries.forEach(entry => {
+   *   console.log(entry.type.kind, entry.content);
+   * });
+   * ```
+   */
+  getNormalizedEntries(executionId: string): NormalizedEntry[] {
+    const stmt = this.db.prepare(`
+      SELECT normalized_entry
+      FROM execution_logs
+      WHERE execution_id = ?
+      AND normalized_entry IS NOT NULL
+    `);
+
+    const result = stmt.get(executionId) as
+      | { normalized_entry: string }
+      | undefined;
+
+    if (!result || !result.normalized_entry) {
+      return [];
+    }
+
+    // Split by newline and parse each JSON line
+    const lines = result.normalized_entry
+      .split("\n")
+      .filter((line) => line.trim().length > 0);
+
+    return lines.map((line) => {
+      const entry = JSON.parse(line) as NormalizedEntry;
+
+      // Restore timestamp as Date object if it exists
+      if (entry.timestamp) {
+        entry.timestamp = new Date(entry.timestamp);
+      }
+
+      return entry;
+    });
+  }
+
+  /**
+   * Check if execution has normalized entries
+   *
+   * Useful for determining which log format to use during migration period.
+   *
+   * @param executionId - Unique execution identifier
+   * @returns true if execution has at least one normalized entry
+   *
+   * @example
+   * ```typescript
+   * if (store.hasNormalizedEntries('exec-123')) {
+   *   const entries = store.getNormalizedEntries('exec-123');
+   * } else {
+   *   const logs = store.getRawLogs('exec-123');
+   * }
+   * ```
+   */
+  hasNormalizedEntries(executionId: string): boolean {
+    const stmt = this.db.prepare(`
+      SELECT 1
+      FROM execution_logs
+      WHERE execution_id = ?
+      AND normalized_entry IS NOT NULL
+      AND normalized_entry != ''
+    `);
+
+    const result = stmt.get(executionId);
+    return result !== undefined;
+  }
+
+  /**
+   * Get entry count by kind for an execution
+   *
+   * Analyzes normalized entries and returns statistics about entry types.
+   * Useful for analytics, debugging, and monitoring.
+   *
+   * @param executionId - Unique execution identifier
+   * @returns Object mapping entry kinds to their counts
+   *
+   * @example
+   * ```typescript
+   * const stats = store.getEntryStats('exec-123');
+   * console.log(stats);
+   * // { assistant_message: 5, tool_use: 3, error: 1 }
+   * ```
+   */
+  getEntryStats(executionId: string): Record<string, number> {
+    const entries = this.getNormalizedEntries(executionId);
+    const stats: Record<string, number> = {};
+
+    for (const entry of entries) {
+      const kind = entry.type.kind;
+      stats[kind] = (stats[kind] || 0) + 1;
+    }
+
+    return stats;
   }
 }

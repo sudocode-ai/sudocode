@@ -7,6 +7,7 @@ import { useFeedback } from '@/hooks/useFeedback'
 import { SpecViewerTiptap } from '@/components/specs/SpecViewerTiptap'
 import { AlignedFeedbackPanel } from '@/components/specs/AlignedFeedbackPanel'
 import { AddFeedbackDialog } from '@/components/specs/AddFeedbackDialog'
+import { TableOfContentsPanel } from '@/components/specs/TableOfContentsPanel'
 import { useFeedbackPositions } from '@/hooks/useFeedbackPositions'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -33,11 +34,13 @@ import {
   Trash2,
   Copy,
   Check,
+  List,
 } from 'lucide-react'
 import type { IssueFeedback, Relationship, EntityType, RelationshipType } from '@/types/api'
 import { relationshipsApi } from '@/lib/api'
 import { DeleteSpecDialog } from '@/components/specs/DeleteSpecDialog'
 import { toast } from 'sonner'
+import type { TocItem } from '@/components/specs/TiptapEditor'
 
 const PRIORITY_OPTIONS = [
   { value: '0', label: 'Critical (P0)' },
@@ -49,6 +52,7 @@ const PRIORITY_OPTIONS = [
 
 const SHOW_FEEDBACK_STORAGE_KEY = 'sudocode:specs:showFeedbackPanel'
 const VIEW_MODE_STORAGE_KEY = 'sudocode:details:viewMode'
+const SHOW_TOC_STORAGE_KEY = 'sudocode:specs:showTocPanel'
 
 export default function SpecDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -69,6 +73,11 @@ export default function SpecDetailPage() {
     const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY)
     return stored !== null ? JSON.parse(stored) : 'formatted'
   })
+  const [showTocPanel, setShowTocPanel] = useState(() => {
+    const stored = localStorage.getItem(SHOW_TOC_STORAGE_KEY)
+    return stored !== null ? JSON.parse(stored) : true
+  })
+  const [tocItems, setTocItems] = useState<TocItem[]>([])
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [isCopied, setIsCopied] = useState(false)
@@ -89,6 +98,7 @@ export default function SpecDetailPage() {
   const latestValuesRef = useRef({ title, content, priority, hasChanges })
   const currentIdRef = useRef(id)
   const editorContainerRef = useRef<HTMLDivElement>(null)
+  const scrollableContainerRef = useRef<HTMLDivElement>(null)
 
   // Track feedback positions for aligned panel
   const feedbackPositions = useFeedbackPositions(feedback, editorContainerRef)
@@ -214,6 +224,64 @@ export default function SpecDetailPage() {
     localStorage.setItem(VIEW_MODE_STORAGE_KEY, JSON.stringify(viewMode))
   }, [viewMode])
 
+  // Save TOC panel preference to localStorage
+  useEffect(() => {
+    localStorage.setItem(SHOW_TOC_STORAGE_KEY, JSON.stringify(showTocPanel))
+  }, [showTocPanel])
+
+  // Scroll spy effect to track which heading is in view
+  useEffect(() => {
+    const scrollContainer = scrollableContainerRef.current
+    const editorContainer = editorContainerRef.current
+    if (!scrollContainer || !editorContainer || tocItems.length === 0) return
+
+    const handleScroll = () => {
+      // Get all heading elements with toc-id
+      const headings = editorContainer.querySelectorAll('[data-toc-id]')
+      if (headings.length === 0) return
+
+      // Find the heading that's closest to the top of the viewport (but not above it)
+      let activeId: string | null = null
+      const scrollTop = scrollContainer.scrollTop
+      const containerTop = scrollContainer.getBoundingClientRect().top
+      const offset = 100 // Offset from top to consider "in view"
+
+      for (let i = headings.length - 1; i >= 0; i--) {
+        const heading = headings[i] as HTMLElement
+        const rect = heading.getBoundingClientRect()
+        const relativeTop = rect.top - containerTop + scrollTop
+
+        if (scrollTop >= relativeTop - offset) {
+          activeId = heading.getAttribute('data-toc-id')
+          break
+        }
+      }
+
+      // If no heading found (at the very top), use the first one
+      if (!activeId && headings.length > 0) {
+        activeId = headings[0].getAttribute('data-toc-id')
+      }
+
+      // Update tocItems with the active heading
+      setTocItems((prevItems) => {
+        const hasChanged = prevItems.some((item) => (item.id === activeId) !== item.isActive)
+        if (!hasChanged) return prevItems
+
+        return prevItems.map((item) => ({
+          ...item,
+          isActive: item.id === activeId,
+          isScrolledOver: false, // Could track this separately if needed
+        }))
+      })
+    }
+
+    // Initial check
+    handleScroll()
+
+    scrollContainer.addEventListener('scroll', handleScroll, { passive: true })
+    return () => scrollContainer.removeEventListener('scroll', handleScroll)
+  }, [tocItems.length])
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-12">
@@ -242,13 +310,11 @@ export default function SpecDetailPage() {
   const handleLineClick = (lineNumber: number) => {
     setSelectedLine(lineNumber)
     setSelectedText(null) // Clear text selection when clicking line
-    setShowFeedbackPanel(true)
   }
 
   const handleTextSelect = (text: string, lineNumber: number) => {
     setSelectedText(text)
     setSelectedLine(lineNumber)
-    setShowFeedbackPanel(true)
     // TODO: Future enhancement - use selectedText for pre-filling feedback with context
   }
 
@@ -392,259 +458,333 @@ export default function SpecDetailPage() {
     }
   }
 
+  const handleTocUpdate = (items: TocItem[]) => {
+    // Preserve active state when updating items
+    setTocItems((prevItems) => {
+      const activeId = prevItems.find((item) => item.isActive)?.id
+      return items.map((item) => ({
+        ...item,
+        isActive: item.id === activeId,
+      }))
+    })
+  }
+
+  const handleTocItemClick = (headingId: string) => {
+    // Find the heading element and scroll to it within the scrollable container
+    const headingElement = editorContainerRef.current?.querySelector(`[data-toc-id="${headingId}"]`)
+    const scrollableContainer = scrollableContainerRef.current
+
+    if (headingElement && scrollableContainer) {
+      // Calculate scroll position relative to the scrollable container
+      const elementTop = headingElement.getBoundingClientRect().top
+      const containerTop = scrollableContainer.getBoundingClientRect().top
+      const scrollPosition = scrollableContainer.scrollTop + (elementTop - containerTop)
+
+      scrollableContainer.scrollTo({
+        top: scrollPosition,
+        behavior: 'smooth',
+      })
+    }
+  }
+
   return (
     <div className="flex h-screen flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b bg-background p-2 sm:p-4">
-        <div className="flex items-center gap-2 sm:gap-4">
-          <Button variant="ghost" size="sm" onClick={() => navigate('/specs')}>
-            ← <span className="ml-1 hidden sm:inline">Back to Specs</span>
-          </Button>
-        </div>
-        <div className="flex items-center gap-1 sm:gap-2">
-          {/* View mode toggle */}
-          <div className="flex items-center gap-1 sm:gap-2">
-            <div className="inline-flex rounded-md border border-border bg-muted/30 p-1">
-              <Button
-                variant={viewMode === 'formatted' ? 'outline' : 'ghost'}
-                size="sm"
-                onClick={() => setViewMode('formatted')}
-                className={`h-7 rounded-sm ${viewMode === 'formatted' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
-              >
-                <FileText className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Formatted</span>
-              </Button>
-              <Button
-                variant={viewMode === 'source' ? 'outline' : 'ghost'}
-                size="sm"
-                onClick={() => setViewMode('source')}
-                className={`h-7 rounded-sm ${viewMode === 'source' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
-              >
-                <Code2 className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Markdown</span>
-              </Button>
-            </div>
+      <div className="relative flex flex-shrink-0 flex-col border-b bg-background">
+        <div className="flex items-center justify-between p-2 sm:p-4">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <Button variant="ghost" size="sm" onClick={() => navigate('/specs')}>
+              ← <span className="ml-1 hidden sm:inline">Back to Specs</span>
+            </Button>
           </div>
-
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
+          <div className="flex items-center gap-1 sm:gap-2">
+            {/* View mode toggle */}
+            <div className="flex items-center gap-1 sm:gap-2">
+              <div className="inline-flex rounded-md border border-border bg-muted/30 p-1">
                 <Button
-                  variant="outline"
+                  variant={viewMode === 'formatted' ? 'outline' : 'ghost'}
                   size="sm"
-                  onClick={() => setShowFeedbackPanel(!showFeedbackPanel)}
+                  onClick={() => setViewMode('formatted')}
+                  className={`h-7 rounded-sm ${viewMode === 'formatted' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
                 >
-                  {showFeedbackPanel ? (
-                    <MessageSquareOff className="h-4 w-4" />
-                  ) : (
-                    <MessageSquare className="h-4 w-4" />
-                  )}
-                  {feedback.length > 0 && (
-                    <span className="ml-2 rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
-                      {feedback.length}
-                    </span>
-                  )}
+                  <FileText className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Formatted</span>
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{showFeedbackPanel ? 'Hide' : 'Show'} feedback</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-
-          {spec.archived ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => unarchiveSpec(spec.id)}
-              disabled={isUpdating}
-            >
-              <ArchiveRestore className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Unarchive</span>
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => archiveSpec(spec.id)}
-              disabled={isUpdating}
-            >
-              <Archive className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Archive</span>
-            </Button>
-          )}
-
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
                 <Button
-                  variant="outline"
+                  variant={viewMode === 'source' ? 'outline' : 'ghost'}
                   size="sm"
-                  onClick={() => setShowDeleteDialog(true)}
-                  disabled={isUpdating || isDeleting}
+                  onClick={() => setViewMode('source')}
+                  className={`h-7 rounded-sm ${viewMode === 'source' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Code2 className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Markdown</span>
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent>Delete spec</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+              </div>
+            </div>
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowFeedbackPanel(!showFeedbackPanel)}
+                  >
+                    {showFeedbackPanel ? (
+                      <MessageSquareOff className="h-4 w-4" />
+                    ) : (
+                      <MessageSquare className="h-4 w-4" />
+                    )}
+                    {feedback.length > 0 && (
+                      <span className="ml-2 rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
+                        {feedback.length}
+                      </span>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{showFeedbackPanel ? 'Hide' : 'Show'} feedback</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            {spec.archived ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => unarchiveSpec(spec.id)}
+                disabled={isUpdating}
+              >
+                <ArchiveRestore className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Unarchive</span>
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => archiveSpec(spec.id)}
+                disabled={isUpdating}
+              >
+                <Archive className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Archive</span>
+              </Button>
+            )}
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowDeleteDialog(true)}
+                    disabled={isUpdating || isDeleting}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Delete spec</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
         </div>
+
+        {/* Table of Contents FAB - Only in formatted mode */}
+        {viewMode === 'formatted' && tocItems.length > 0 && !showTocPanel && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setShowTocPanel(!showTocPanel)}
+                  className="absolute left-3 top-full z-50 mt-3 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-secondary shadow-lg transition-colors hover:bg-accent hover:text-accent-foreground"
+                  type="button"
+                >
+                  <List className="h-5 w-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Table of Contents</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
       </div>
 
       {/* Main content */}
-      <div ref={editorContainerRef} className="flex flex-1 overflow-auto xl:justify-center">
-        <div className="flex w-full 2xl:max-w-[128rem]">
-          <div className="flex-1 px-3 py-4 sm:px-6 lg:px-12 xl:px-16">
-            <div className="mx-auto max-w-full space-y-3">
-              {/* Spec ID and Title */}
-              <div className="space-y-2 pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="group relative flex items-center gap-1">
-                      <Badge variant="spec" className="font-mono">
-                        {spec.id}
-                      </Badge>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={handleCopyId}
-                              className="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-                            >
-                              {isCopied ? (
-                                <Check className="h-3.5 w-3.5" />
-                              ) : (
-                                <Copy className="h-3.5 w-3.5" />
-                              )}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>{isCopied ? 'Copied!' : 'Copy ID to Clipboard'}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                    {spec.parent_id && (
-                      <>
-                        <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-sm text-muted-foreground">Parent: </span>
-                        <button onClick={() => navigate(`/specs/${spec.parent_id}`)}>
-                          <Badge variant="spec" className="cursor-pointer hover:opacity-80">
-                            {spec.parent_id}
-                          </Badge>
-                        </button>
-                      </>
-                    )}
-                  </div>
-                  <div className="text-xs italic text-muted-foreground">
-                    {isUpdating
-                      ? 'Saving...'
-                      : hasChanges
-                        ? 'Unsaved changes...'
-                        : 'All changes saved'}
-                  </div>
-                </div>
-                <Input
-                  value={title}
-                  onChange={(e) => handleTitleChange(e.target.value)}
-                  disabled={isUpdating}
-                  placeholder="Spec title..."
-                  className="border-none bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex w-full 2xl:mx-auto 2xl:max-w-[128rem]">
+          {/* Table of Contents Panel - Only on xl+ screens */}
+          {showTocPanel && viewMode === 'formatted' && (
+            <div className="hidden w-64 flex-shrink-0 flex-col border-r bg-background xl:flex">
+              <div
+                className="sticky top-0 overflow-y-auto"
+                style={{ height: '100%', maxHeight: '100%' }}
+              >
+                <TableOfContentsPanel
+                  items={tocItems}
+                  onItemClick={handleTocItemClick}
+                  onCollapse={() => setShowTocPanel(false)}
                 />
               </div>
+            </div>
+          )}
 
-              {/* Metadata Row */}
-              <div className="flex flex-wrap items-center gap-4">
-                {/* Priority */}
-                <div className="flex items-center gap-2">
-                  <Signal className="h-4 w-4 text-muted-foreground" />
-                  <Select
-                    value={String(priority)}
-                    onValueChange={(value) => handlePriorityChange(parseInt(value))}
-                    disabled={isUpdating}
-                  >
-                    <SelectTrigger className="h-8 w-auto gap-3 rounded-md border-none bg-accent px-3 shadow-none hover:bg-accent/80">
-                      <SelectValue placeholder="Priority" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PRIORITY_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Timestamp */}
-                <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
-                  {spec.updated_at && (
-                    <div className="ml-auto flex items-center text-xs text-muted-foreground">
-                      Updated{' '}
-                      {formatDistanceToNow(
-                        new Date(
-                          spec.updated_at.endsWith('Z') ? spec.updated_at : spec.updated_at + 'Z'
-                        ),
-                        { addSuffix: true }
+          <div ref={scrollableContainerRef} className="relative flex-1 overflow-y-auto">
+            <div
+              ref={editorContainerRef}
+              className="px-3 py-4 sm:px-6 lg:px-12 xl:px-16"
+              style={{ paddingRight: showFeedbackPanel ? 'calc(28rem + 1rem)' : undefined }}
+            >
+              <div className="mx-auto max-w-full space-y-3">
+                {/* Spec ID and Title */}
+                <div className="space-y-2 pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="group relative flex items-center gap-1">
+                        <Badge variant="spec" className="font-mono">
+                          {spec.id}
+                        </Badge>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleCopyId}
+                                className="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+                              >
+                                {isCopied ? (
+                                  <Check className="h-3.5 w-3.5" />
+                                ) : (
+                                  <Copy className="h-3.5 w-3.5" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>{isCopied ? 'Copied!' : 'Copy ID to Clipboard'}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                      {spec.parent_id && (
+                        <>
+                          <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-sm text-muted-foreground">Parent: </span>
+                          <button onClick={() => navigate(`/specs/${spec.parent_id}`)}>
+                            <Badge variant="spec" className="cursor-pointer hover:opacity-80">
+                              {spec.parent_id}
+                            </Badge>
+                          </button>
+                        </>
                       )}
                     </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Content */}
-              {content !== undefined ? (
-                <SpecViewerTiptap
-                  content={content}
-                  feedback={feedback}
-                  selectedLine={selectedLine}
-                  onLineClick={handleLineClick}
-                  onTextSelect={handleTextSelect}
-                  onFeedbackClick={handleFeedbackClick}
-                  onChange={handleContentChange}
-                  viewMode={viewMode}
-                  onViewModeChange={setViewMode}
-                />
-              ) : (
-                <Card className="p-8 text-center">
-                  <p className="text-muted-foreground">No content available for this spec.</p>
-                </Card>
-              )}
-            </div>
-          </div>
-
-          {/* Aligned Feedback Panel */}
-          {showFeedbackPanel && (
-            <AlignedFeedbackPanel
-              feedback={feedback}
-              positions={feedbackPositions}
-              relationships={relationships}
-              currentEntityId={id}
-              onFeedbackClick={handleFeedbackClick}
-              onDismiss={handleFeedbackDismiss}
-              onDelete={handleFeedbackDelete}
-              onDeleteRelationship={handleDeleteRelationship}
-              onCreateRelationship={handleCreateRelationship}
-              addFeedbackButton={
-                <div className="flex justify-center">
-                  <AddFeedbackDialog
-                    issues={issues}
-                    lineNumber={selectedLine || undefined}
-                    onSubmit={handleCreateFeedback}
-                    triggerButton={
-                      <Button variant="secondary" size="sm">
-                        <MessageSquarePlus className="mr-2 h-4 w-4" />
-                        Add Feedback
-                      </Button>
-                    }
+                    <div className="text-xs italic text-muted-foreground">
+                      {isUpdating
+                        ? 'Saving...'
+                        : hasChanges
+                          ? 'Unsaved changes...'
+                          : 'All changes saved'}
+                    </div>
+                  </div>
+                  <Input
+                    value={title}
+                    onChange={(e) => handleTitleChange(e.target.value)}
+                    disabled={isUpdating}
+                    placeholder="Spec title..."
+                    className="border-none bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
                   />
                 </div>
-              }
-            />
-          )}
+
+                {/* Metadata Row */}
+                <div className="flex flex-wrap items-center gap-4">
+                  {/* Priority */}
+                  <div className="flex items-center gap-2">
+                    <Signal className="h-4 w-4 text-muted-foreground" />
+                    <Select
+                      value={String(priority)}
+                      onValueChange={(value) => handlePriorityChange(parseInt(value))}
+                      disabled={isUpdating}
+                    >
+                      <SelectTrigger className="h-8 w-auto gap-3 rounded-md border-none bg-accent px-3 shadow-none hover:bg-accent/80">
+                        <SelectValue placeholder="Priority" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PRIORITY_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Timestamp */}
+                  <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
+                    {spec.updated_at && (
+                      <div className="ml-auto flex items-center text-xs text-muted-foreground">
+                        Updated{' '}
+                        {formatDistanceToNow(
+                          new Date(
+                            spec.updated_at.endsWith('Z') ? spec.updated_at : spec.updated_at + 'Z'
+                          ),
+                          { addSuffix: true }
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Content */}
+                {content !== undefined ? (
+                  <SpecViewerTiptap
+                    content={content}
+                    feedback={feedback}
+                    selectedLine={selectedLine}
+                    onLineClick={handleLineClick}
+                    onTextSelect={handleTextSelect}
+                    onFeedbackClick={handleFeedbackClick}
+                    onChange={handleContentChange}
+                    viewMode={viewMode}
+                    onViewModeChange={setViewMode}
+                    onTocUpdate={handleTocUpdate}
+                  />
+                ) : (
+                  <Card className="p-8 text-center">
+                    <p className="text-muted-foreground">No content available for this spec.</p>
+                  </Card>
+                )}
+              </div>
+            </div>
+
+            {/* Aligned Feedback Panel - Absolutely positioned on the right */}
+            {showFeedbackPanel && (
+              <div className="absolute right-0 top-0 h-full">
+                <AlignedFeedbackPanel
+                  feedback={feedback}
+                  positions={feedbackPositions}
+                  relationships={relationships}
+                  currentEntityId={id}
+                  onFeedbackClick={handleFeedbackClick}
+                  onDismiss={handleFeedbackDismiss}
+                  onDelete={handleFeedbackDelete}
+                  onDeleteRelationship={handleDeleteRelationship}
+                  onCreateRelationship={handleCreateRelationship}
+                  addFeedbackButton={
+                    <div className="flex justify-center">
+                      <AddFeedbackDialog
+                        issues={issues}
+                        lineNumber={selectedLine || undefined}
+                        onSubmit={handleCreateFeedback}
+                        triggerButton={
+                          <Button variant="secondary" size="sm">
+                            <MessageSquarePlus className="mr-2 h-4 w-4" />
+                            Add Feedback
+                          </Button>
+                        }
+                      />
+                    </div>
+                  }
+                />
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

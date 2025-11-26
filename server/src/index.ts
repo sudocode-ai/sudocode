@@ -18,6 +18,7 @@ import { createExecutionStreamRoutes } from "./routes/executions-stream.js";
 import { createProjectsRouter } from "./routes/projects.js";
 import { createConfigRouter } from "./routes/config.js";
 import { createRepoInfoRouter } from "./routes/repo-info.js";
+import { createAgentsRouter } from "./routes/agents.js";
 import { TransportManager } from "./execution/transport/transport-manager.js";
 import { ProjectRegistry } from "./services/project-registry.js";
 import { ProjectManager } from "./services/project-manager.js";
@@ -139,6 +140,9 @@ app.use(
 );
 app.use("/api/config", requireProject(projectManager), createConfigRouter());
 app.use("/api/repo-info", requireProject(projectManager), createRepoInfoRouter());
+
+// Agents endpoint - global, not project-specific
+app.use("/api/agents", createAgentsRouter());
 
 // Mount execution routes (must be before stream routes to avoid conflicts)
 app.use("/api", requireProject(projectManager), createExecutionsRouter());

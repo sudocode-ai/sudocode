@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Play, Settings, AlertCircle, Info } from 'lucide-react'
+import { Settings, AlertCircle, Info, ArrowDown, StopCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -12,13 +12,65 @@ import {
 import { executionsApi } from '@/lib/api'
 import type { ExecutionConfig, ExecutionPrepareResult, ExecutionMode } from '@/types/execution'
 import { AgentSettingsDialog } from './AgentSettingsDialog'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
+import { useAgents } from '@/hooks/useAgents'
+import type { CodexConfig } from './CodexConfigForm'
+import type { CopilotConfig } from './CopilotConfigForm'
 
 interface AgentConfigPanelProps {
   issueId: string
-  onStart: (config: ExecutionConfig, prompt: string) => void
+  onStart: (config: ExecutionConfig, prompt: string, agentType?: string) => void
   disabled?: boolean
   onSelectOpenChange?: (isOpen: boolean) => void
+  /**
+   * Follow-up mode: locks config options and shows inherited values
+   */
+  isFollowUp?: boolean
+  /**
+   * Parent execution for follow-up mode - provides locked config values
+   */
+  parentExecution?: {
+    id: string
+    mode?: string
+    model?: string
+    target_branch?: string
+    agent_type?: string
+    config?: ExecutionConfig
+  }
+  /**
+   * Placeholder text for the prompt input
+   */
+  promptPlaceholder?: string
+  /**
+   * Whether an execution is currently running
+   */
+  isRunning?: boolean
+  /**
+   * Handler to cancel the running execution
+   */
+  onCancel?: () => void
+  /**
+   * Whether a cancel operation is in progress
+   */
+  isCancelling?: boolean
+}
+
+// TODO: Move this somewhere more central.
+// Map of default agent-specific configurations
+const DEFAULT_AGENT_CONFIGS: Record<string, any> = {
+  codex: {
+    fullAuto: true,
+    search: true,
+    json: true,
+  } as CodexConfig,
+  cursor: {
+    force: true,
+    model: 'auto',
+  },
+  copilot: {
+    allowAllTools: true,
+    model: 'claude-sonnet-4.5',
+  } as CopilotConfig,
 }
 
 export function AgentConfigPanel({
@@ -26,19 +78,49 @@ export function AgentConfigPanel({
   onStart,
   disabled = false,
   onSelectOpenChange,
+  isFollowUp = false,
+  parentExecution,
+  promptPlaceholder,
+  isRunning = false,
+  onCancel,
+  isCancelling = false,
 }: AgentConfigPanelProps) {
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!isFollowUp) // Skip loading for follow-ups
   const [prepareResult, setPrepareResult] = useState<ExecutionPrepareResult | null>(null)
   const [prompt, setPrompt] = useState('')
-  const [config, setConfig] = useState<ExecutionConfig>({
-    mode: 'worktree',
-    cleanupMode: 'manual',
+  const [config, setConfig] = useState<ExecutionConfig>(() => {
+    // For follow-ups, inherit config from parent execution
+    if (isFollowUp && parentExecution?.config) {
+      return {
+        ...parentExecution.config,
+        mode: (parentExecution.mode as ExecutionMode) || 'worktree',
+        baseBranch: parentExecution.target_branch,
+      }
+    }
+    return {
+      mode: 'worktree',
+      cleanupMode: 'manual',
+    }
   })
   const [showSettingsDialog, setShowSettingsDialog] = useState(false)
+  const [selectedAgentType, setSelectedAgentType] = useState<string>(() => {
+    // For follow-ups, inherit agent type from parent execution
+    if (isFollowUp && parentExecution?.agent_type) {
+      return parentExecution.agent_type
+    }
+    return 'claude-code'
+  })
+  const [isHoveringButton, setIsHoveringButton] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Load template preview on mount
+  // Fetch available agents
+  const { agents, loading: agentsLoading } = useAgents()
+
+  // Load template preview on mount (skip for follow-ups)
   useEffect(() => {
+    // Skip prepare API call for follow-ups - we use parent execution config
+    if (isFollowUp) return
+
     let isMounted = true
 
     const loadPreview = async () => {
@@ -65,7 +147,7 @@ export function AgentConfigPanel({
     return () => {
       isMounted = false
     }
-  }, [issueId])
+  }, [issueId, isFollowUp])
 
   // Auto-resize textarea based on content
   useEffect(() => {
@@ -84,8 +166,30 @@ export function AgentConfigPanel({
     setConfig({ ...config, ...updates })
   }
 
+  // When agent type changes, initialize agentConfig with defaults if not present
+  useEffect(() => {
+    if (selectedAgentType && !config.agentConfig) {
+      const defaultAgentConfig = DEFAULT_AGENT_CONFIGS[selectedAgentType]
+      if (defaultAgentConfig) {
+        updateConfig({ agentConfig: defaultAgentConfig })
+      }
+    }
+  }, [selectedAgentType])
+
   const handleStart = () => {
-    onStart(config, prompt)
+    onStart(config, prompt, selectedAgentType)
+    setPrompt('') // Clear the prompt after submission
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Submit on Enter (without Shift)
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      if (canStart) {
+        handleStart()
+      }
+    }
+    // Shift+Enter creates newline (default behavior, no need to handle)
   }
 
   const hasErrors = prepareResult?.errors && prepareResult.errors.length > 0
@@ -151,7 +255,15 @@ export function AgentConfigPanel({
           ref={textareaRef}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder={loading ? 'Loading prompt...' : 'Enter prompt for the agent...'}
+          onKeyDown={handleKeyDown}
+          placeholder={
+            promptPlaceholder ||
+            (loading
+              ? 'Loading prompt...'
+              : isFollowUp
+                ? 'Enter feedback to continue the execution...'
+                : 'Enter prompt for the agent...')
+          }
           disabled={loading}
           className="max-h-[300px] min-h-0 resize-none overflow-y-auto border-none bg-muted/80 py-2 text-sm shadow-none transition-[height] duration-100 focus-visible:ring-0 focus-visible:ring-offset-0"
           style={{ height: 'auto' }}
@@ -160,98 +272,156 @@ export function AgentConfigPanel({
       </div>
 
       {/* Configuration Row */}
-      <div className="flex items-center gap-2">
-        {/* Model Selection */}
-        {prepareResult?.availableModels && (
-          <Select
-            value={config.model}
-            onValueChange={(value) => updateConfig({ model: value })}
-            onOpenChange={onSelectOpenChange}
-            disabled={loading}
-          >
-            <SelectTrigger className="h-8 w-[140px] text-xs">
-              <SelectValue placeholder="Model" />
-            </SelectTrigger>
-            <SelectContent>
-              {prepareResult.availableModels.map((model) => (
-                <SelectItem key={model} value={model} className="text-xs">
-                  {model}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+      <TooltipProvider>
+        <div className="flex items-center gap-2">
+          {/* Agent Selection - disabled in follow-up mode */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Select
+                  value={selectedAgentType}
+                  onValueChange={setSelectedAgentType}
+                  onOpenChange={onSelectOpenChange}
+                  disabled={loading || agentsLoading || isFollowUp}
+                >
+                  <SelectTrigger className="h-8 w-[140px] text-xs">
+                    <SelectValue placeholder={agentsLoading ? 'Loading...' : 'Agent'}>
+                      {agents?.find((a) => a.type === selectedAgentType)?.displayName ||
+                        'Select agent'}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {agents
+                      ?.filter((agent) => agent.implemented)
+                      .map((agent) => (
+                        <SelectItem key={agent.type} value={agent.type} className="text-xs">
+                          {agent.displayName}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </span>
+            </TooltipTrigger>
+            {isFollowUp && (
+              <TooltipContent>Agent type is inherited from parent execution</TooltipContent>
+            )}
+          </Tooltip>
 
-        {/* Execution Mode */}
-        <Select
-          value={config.mode}
-          onValueChange={(value) => updateConfig({ mode: value as ExecutionMode })}
-          onOpenChange={onSelectOpenChange}
-          disabled={loading}
-        >
-          <SelectTrigger className="h-8 w-[140px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="worktree" className="text-xs">
-              Run in worktree
-            </SelectItem>
-            <SelectItem value="local" className="text-xs">
-              Run directly
-            </SelectItem>
-          </SelectContent>
-        </Select>
+          {/* Execution Mode - disabled in follow-up mode */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Select
+                  value={config.mode}
+                  onValueChange={(value) => updateConfig({ mode: value as ExecutionMode })}
+                  onOpenChange={onSelectOpenChange}
+                  disabled={loading || isFollowUp}
+                >
+                  <SelectTrigger className="h-8 w-[140px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="worktree" className="text-xs">
+                      Run in worktree
+                    </SelectItem>
+                    <SelectItem value="local" className="text-xs">
+                      Run directly
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </span>
+            </TooltipTrigger>
+            {isFollowUp && (
+              <TooltipContent>Execution mode is inherited from parent execution</TooltipContent>
+            )}
+          </Tooltip>
 
-        {/* Base Branch (only for worktree mode) */}
-        {config.mode === 'worktree' && prepareResult?.availableBranches && (
-          <Select
-            value={config.baseBranch}
-            onValueChange={(value) => updateConfig({ baseBranch: value })}
-            onOpenChange={onSelectOpenChange}
-            disabled={loading}
-          >
-            <SelectTrigger className="h-8 w-[120px] text-xs">
-              <SelectValue placeholder="Branch" />
-            </SelectTrigger>
-            <SelectContent>
-              {prepareResult.availableBranches.map((branch) => (
-                <SelectItem key={branch} value={branch} className="text-xs">
-                  {branch}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+          {/* Base Branch (only for worktree mode) - disabled in follow-up mode */}
+          {config.mode === 'worktree' && (prepareResult?.availableBranches || isFollowUp) && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Select
+                    value={config.baseBranch}
+                    onValueChange={(value) => updateConfig({ baseBranch: value })}
+                    onOpenChange={onSelectOpenChange}
+                    disabled={loading || isFollowUp}
+                  >
+                    <SelectTrigger className="h-8 w-[120px] text-xs">
+                      <SelectValue placeholder="Branch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {isFollowUp && config.baseBranch ? (
+                        <SelectItem value={config.baseBranch} className="text-xs">
+                          {config.baseBranch}
+                        </SelectItem>
+                      ) : (
+                        prepareResult?.availableBranches?.map((branch) => (
+                          <SelectItem key={branch} value={branch} className="text-xs">
+                            {branch}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </span>
+              </TooltipTrigger>
+              {isFollowUp && (
+                <TooltipContent>Branch is inherited from parent execution</TooltipContent>
+              )}
+            </Tooltip>
+          )}
 
-        <div className="ml-auto" />
+          <div className="ml-auto" />
 
-        {/* Settings Button */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowSettingsDialog(true)}
-              disabled={loading}
-              className="h-8 px-2"
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Advanced settings</TooltipContent>
-        </Tooltip>
+          {/* Settings Button - disabled in follow-up mode */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowSettingsDialog(true)}
+                disabled={loading || isFollowUp}
+                className="h-8 px-2"
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {isFollowUp ? 'Settings are inherited from parent execution' : 'Advanced settings'}
+            </TooltipContent>
+          </Tooltip>
 
-        {/* Run Button */}
-        <Button
-          onClick={handleStart}
-          disabled={!canStart}
-          size="sm"
-          className="h-8 gap-2 font-semibold"
-        >
-          <Play className="h-4 w-4" />
-          Run
-        </Button>
-      </div>
+          {/* Submit/Cancel Button - Round button that changes based on state */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={isRunning && isHoveringButton ? onCancel : handleStart}
+                disabled={isRunning ? isCancelling : !canStart}
+                size="sm"
+                onMouseEnter={() => setIsHoveringButton(true)}
+                onMouseLeave={() => setIsHoveringButton(false)}
+                className="h-7 w-7 rounded-full p-0"
+                variant={isRunning && isHoveringButton ? 'destructive' : 'default'}
+                aria-label={isRunning ? (isHoveringButton ? 'Cancel' : 'Running...') : 'Submit'}
+              >
+                {isRunning ? (
+                  isHoveringButton ? (
+                    <StopCircle className="h-4 w-4" />
+                  ) : (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )
+                ) : (
+                  <ArrowDown className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {isRunning ? (isHoveringButton ? 'Cancel' : 'Running...') : 'Submit'}
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      </TooltipProvider>
 
       {/* Settings Dialog */}
       <AgentSettingsDialog
@@ -259,6 +429,7 @@ export function AgentConfigPanel({
         config={config}
         onConfigChange={updateConfig}
         onClose={() => setShowSettingsDialog(false)}
+        agentType={selectedAgentType}
       />
     </div>
   )

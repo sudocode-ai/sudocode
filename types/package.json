@@ -9,6 +9,14 @@
       "types": "./src/index.d.ts",
       "default": "./src/index.d.ts"
     },
+    "./events": {
+      "types": "./src/events.d.ts",
+      "default": "./src/events.d.ts"
+    },
+    "./agents": {
+      "types": "./src/agents.d.ts",
+      "default": "./src/agents.d.ts"
+    },
     "./schema": {
       "types": "./dist/schema.d.ts",
       "default": "./dist/schema.js"
@@ -19,7 +27,9 @@
     }
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test": "vitest",
+    "test:run": "vitest --run"
   },
   "keywords": [
     "sudocode",
@@ -42,9 +52,14 @@
   },
   "files": [
     "src/index.d.ts",
+    "src/events.d.ts",
+    "src/agents.d.ts",
     "dist"
   ],
   "devDependencies": {
-    "typescript": "^5.0.0"
+    "@types/better-sqlite3": "^7.6.12",
+    "better-sqlite3": "^11.7.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.2.4"
   }
 }

@@ -25,6 +25,7 @@ import { relocateFeedbackAnchor } from "./operations/feedback-anchors.js";
 import { exportToJSONL } from "./export.js";
 import { generateSpecId, generateIssueId } from "./id-generator.js";
 import type { Spec, Issue, IssueStatus } from "@sudocode-ai/types";
+import { isValidIssueStatus } from "./validation.js";
 
 export interface SyncResult {
   success: boolean;
@@ -501,11 +502,23 @@ async function syncIssue(
 ): Promise<void> {
   const oldIssue = isNew ? null : getIssue(db, id);
 
+  // Validate and sanitize status from frontmatter
+  let status: IssueStatus = "open"; // default
+  if (frontmatter.status) {
+    if (isValidIssueStatus(frontmatter.status)) {
+      status = frontmatter.status as IssueStatus;
+    } else {
+      console.warn(
+        `Warning: Invalid status "${frontmatter.status}" in ${id}, defaulting to "open"`
+      );
+    }
+  }
+
   const issueData: Partial<Issue> = {
     id,
     title: frontmatter.title || "Untitled",
     content,
-    status: (frontmatter.status as IssueStatus) || "open",
+    status,
     priority: frontmatter.priority ?? 2,
     assignee: frontmatter.assignee || undefined,
     parent_id: frontmatter.parent_id || undefined,

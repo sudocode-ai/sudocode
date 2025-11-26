@@ -152,6 +152,137 @@ describe('AgentTrajectory', () => {
       const thirdItem = items[2]
       expect(thirdItem.textContent).toContain('Third message')
     })
+
+    it('should use index as secondary sort key when timestamps are equal', () => {
+      // Simulate historical replay where multiple events have the same timestamp
+      const messages = new Map<string, MessageBuffer>()
+      messages.set('msg-1', {
+        messageId: 'msg-1',
+        timestamp: 1000, // Same timestamp
+        role: 'assistant',
+        content: 'First message',
+        complete: true,
+        index: 0, // Lower index = comes first
+      })
+      messages.set('msg-2', {
+        messageId: 'msg-2',
+        timestamp: 1000, // Same timestamp
+        role: 'assistant',
+        content: 'Second message',
+        complete: true,
+        index: 2, // Higher index = comes later
+      })
+
+      const toolCalls = new Map<string, ToolCallTracking>()
+      toolCalls.set('tool-1', {
+        toolCallId: 'tool-1',
+        toolCallName: 'Read',
+        args: '{}',
+        status: 'completed',
+        startTime: 1000, // Same timestamp
+        endTime: 1500,
+        index: 1, // Middle index
+      })
+
+      const { container } = render(
+        <AgentTrajectory messages={messages} toolCalls={toolCalls} />
+      )
+
+      // Get all trajectory items in order
+      const items = container.querySelectorAll('.flex.gap-3.items-start')
+      expect(items.length).toBe(3)
+
+      // Verify order by index: msg-1 (index 0), tool-1 (index 1), msg-2 (index 2)
+      const firstItem = items[0]
+      expect(firstItem.textContent).toContain('First message')
+
+      const secondItem = items[1]
+      expect(secondItem.textContent).toContain('Read')
+
+      const thirdItem = items[2]
+      expect(thirdItem.textContent).toContain('Second message')
+    })
+
+    it('should maintain order with mixed indexed and non-indexed items', () => {
+      const messages = new Map<string, MessageBuffer>()
+      // Message with index
+      messages.set('msg-1', {
+        messageId: 'msg-1',
+        timestamp: 1000,
+        role: 'assistant',
+        content: 'Indexed message',
+        complete: true,
+        index: 0,
+      })
+      // Message without index (from live streaming)
+      messages.set('msg-2', {
+        messageId: 'msg-2',
+        timestamp: 1000,
+        role: 'assistant',
+        content: 'Non-indexed message',
+        complete: true,
+        // No index field
+      })
+
+      const toolCalls = new Map<string, ToolCallTracking>()
+
+      const { container } = render(
+        <AgentTrajectory messages={messages} toolCalls={toolCalls} />
+      )
+
+      // Both items should render
+      const items = container.querySelectorAll('.flex.gap-3.items-start')
+      expect(items.length).toBe(2)
+
+      // Indexed item should come first (index 0 vs undefined)
+      const firstItem = items[0]
+      expect(firstItem.textContent).toContain('Indexed message')
+    })
+
+    it('should handle historical replay ordering correctly', () => {
+      // Simulate a real historical replay scenario with tool calls between messages
+      const messages = new Map<string, MessageBuffer>()
+      messages.set('msg-1', {
+        messageId: 'msg-1',
+        timestamp: 1705320600000, // 2024-01-15 10:30:00
+        role: 'assistant',
+        content: 'Let me read the file',
+        complete: true,
+        index: 0,
+      })
+      messages.set('msg-2', {
+        messageId: 'msg-2',
+        timestamp: 1705320602000, // 2024-01-15 10:30:02
+        role: 'assistant',
+        content: 'I found the issue',
+        complete: true,
+        index: 2,
+      })
+
+      const toolCalls = new Map<string, ToolCallTracking>()
+      toolCalls.set('tool-1', {
+        toolCallId: 'tool-1',
+        toolCallName: 'Read',
+        args: '{"path": "src/index.ts"}',
+        status: 'completed',
+        result: 'file contents',
+        startTime: 1705320601000, // 2024-01-15 10:30:01
+        endTime: 1705320601500,
+        index: 1,
+      })
+
+      const { container } = render(
+        <AgentTrajectory messages={messages} toolCalls={toolCalls} />
+      )
+
+      const items = container.querySelectorAll('.flex.gap-3.items-start')
+      expect(items.length).toBe(3)
+
+      // Verify correct chronological order
+      expect(items[0].textContent).toContain('Let me read the file')
+      expect(items[1].textContent).toContain('Read')
+      expect(items[2].textContent).toContain('I found the issue')
+    })
   })
 
   describe('Markdown Rendering', () => {
@@ -243,6 +374,64 @@ describe('AgentTrajectory', () => {
       expect(screen.getByText('Second message')).toBeInTheDocument()
       expect(screen.getByText('Read')).toBeInTheDocument()
       expect(screen.getByText('Write')).toBeInTheDocument()
+    })
+  })
+
+  describe('System Message Filtering', () => {
+    it('should hide system messages by default', () => {
+      const messages = new Map<string, MessageBuffer>()
+      messages.set('msg-1', {
+        messageId: 'msg-1',
+        role: 'assistant',
+        content: '[System] This is a system message',
+        complete: true,
+        timestamp: 1000,
+        index: 0,
+      })
+      messages.set('msg-2', {
+        messageId: 'msg-2',
+        role: 'assistant',
+        content: 'This is a regular message',
+        complete: true,
+        timestamp: 2000,
+        index: 1,
+      })
+
+      render(<AgentTrajectory messages={messages} toolCalls={new Map()} />)
+
+      // Should not show system message
+      expect(screen.queryByText(/This is a system message/)).not.toBeInTheDocument()
+      // Should show regular message
+      expect(screen.getByText(/This is a regular message/)).toBeInTheDocument()
+    })
+
+    it('should show system messages when hideSystemMessages is false', () => {
+      const messages = new Map<string, MessageBuffer>()
+      messages.set('msg-1', {
+        messageId: 'msg-1',
+        role: 'assistant',
+        content: '[System] This is a system message',
+        complete: true,
+        timestamp: 1000,
+        index: 0,
+      })
+      messages.set('msg-2', {
+        messageId: 'msg-2',
+        role: 'assistant',
+        content: 'This is a regular message',
+        complete: true,
+        timestamp: 2000,
+        index: 1,
+      })
+
+      render(
+        <AgentTrajectory messages={messages} toolCalls={new Map()} hideSystemMessages={false} />
+      )
+
+      // Should show system message
+      expect(screen.getByText(/This is a system message/)).toBeInTheDocument()
+      // Should show regular message
+      expect(screen.getByText(/This is a regular message/)).toBeInTheDocument()
     })
   })
 })

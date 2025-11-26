@@ -546,5 +546,114 @@ describe('useAgUiStream', () => {
 
       expect(mockEventSourceInstance?.readyState).toBe(2) // CLOSED
     })
+
+    it('should clear state when executionId changes', async () => {
+      const { result, rerender } = renderHook(
+        ({ executionId }) => useAgUiStream({ executionId }),
+        {
+          initialProps: { executionId: 'test-exec-1' },
+        }
+      )
+
+      await waitFor(() => expect(result.current.connectionStatus).toBe('connected'), {
+        timeout: 2000,
+      })
+
+      // Simulate receiving some events for first execution
+      act(() => {
+        mockEventSourceInstance?.simulateEvent(EventType.RUN_STARTED, {
+          type: EventType.RUN_STARTED,
+          runId: 'run-1',
+          threadId: 'thread-1',
+          timestamp: 1000,
+        })
+      })
+
+      act(() => {
+        mockEventSourceInstance?.simulateEvent(EventType.TEXT_MESSAGE_START, {
+          type: EventType.TEXT_MESSAGE_START,
+          messageId: 'msg-1',
+          role: 'assistant',
+          timestamp: 1000,
+        })
+      })
+
+      act(() => {
+        mockEventSourceInstance?.simulateEvent(EventType.TEXT_MESSAGE_CONTENT, {
+          type: EventType.TEXT_MESSAGE_CONTENT,
+          messageId: 'msg-1',
+          delta: 'Hello from execution 1',
+        })
+      })
+
+      act(() => {
+        mockEventSourceInstance?.simulateEvent(EventType.TOOL_CALL_START, {
+          type: EventType.TOOL_CALL_START,
+          toolCallId: 'tool-1',
+          toolCallName: 'Read',
+          timestamp: 1000,
+        })
+      })
+
+      // Verify data is present
+      expect(result.current.execution.runId).toBe('run-1')
+      expect(result.current.messages.size).toBe(1)
+      expect(result.current.messages.get('msg-1')?.content).toBe('Hello from execution 1')
+      expect(result.current.toolCalls.size).toBe(1)
+
+      // Change executionId
+      rerender({ executionId: 'test-exec-2' })
+
+      // Wait for new connection
+      await waitFor(
+        () => expect(result.current.connectionStatus).toBe('connected'),
+        { timeout: 2000 }
+      )
+
+      // Verify all state was cleared
+      expect(result.current.execution.runId).toBeNull()
+      expect(result.current.execution.threadId).toBeNull()
+      expect(result.current.execution.status).toBe('idle')
+      expect(result.current.execution.currentStep).toBeNull()
+      expect(result.current.execution.error).toBeNull()
+      expect(result.current.messages.size).toBe(0)
+      expect(result.current.toolCalls.size).toBe(0)
+      expect(result.current.state).toEqual({})
+      expect(result.current.error).toBeNull()
+
+      // Now simulate events for second execution
+      act(() => {
+        mockEventSourceInstance?.simulateEvent(EventType.RUN_STARTED, {
+          type: EventType.RUN_STARTED,
+          runId: 'run-2',
+          threadId: 'thread-2',
+          timestamp: 2000,
+        })
+      })
+
+      act(() => {
+        mockEventSourceInstance?.simulateEvent(EventType.TEXT_MESSAGE_START, {
+          type: EventType.TEXT_MESSAGE_START,
+          messageId: 'msg-2',
+          role: 'assistant',
+          timestamp: 2000,
+        })
+      })
+
+      act(() => {
+        mockEventSourceInstance?.simulateEvent(EventType.TEXT_MESSAGE_CONTENT, {
+          type: EventType.TEXT_MESSAGE_CONTENT,
+          messageId: 'msg-2',
+          delta: 'Hello from execution 2',
+        })
+      })
+
+      // Verify only new execution data is present
+      expect(result.current.execution.runId).toBe('run-2')
+      expect(result.current.messages.size).toBe(1)
+      expect(result.current.messages.get('msg-1')).toBeUndefined()
+      expect(result.current.messages.get('msg-2')?.content).toBe('Hello from execution 2')
+      expect(result.current.toolCalls.size).toBe(0) // No tool calls for exec 2
+    })
   })
 })

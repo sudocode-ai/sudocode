@@ -8,12 +8,14 @@
  * Shows execution progress, metrics, messages, and tool calls.
  */
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useAgUiStream } from '@/hooks/useAgUiStream'
 import { useExecutionLogs } from '@/hooks/useExecutionLogs'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { AgentTrajectory } from './AgentTrajectory'
+import { ClaudeCodeTrajectory } from './ClaudeCodeTrajectory'
+import { TodoTracker } from './TodoTracker'
 import { AlertCircle, CheckCircle2, Loader2, XCircle } from 'lucide-react'
 import type { Execution } from '@/types/execution'
 
@@ -37,6 +39,16 @@ export interface ExecutionMonitorProps {
    * Callback when execution errors
    */
   onError?: (error: Error) => void
+
+  /**
+   * Callback when content changes (new messages/tool calls)
+   */
+  onContentChange?: () => void
+
+  /**
+   * Compact mode - removes card wrapper and header for inline display
+   */
+  compact?: boolean
 
   /**
    * Custom class name
@@ -69,6 +81,8 @@ export function ExecutionMonitor({
   execution: executionProp,
   onComplete,
   onError,
+  onContentChange,
+  compact = false,
   className = '',
 }: ExecutionMonitorProps) {
   // Determine if execution is active or completed
@@ -89,91 +103,192 @@ export function ExecutionMonitor({
   // Use logs API for completed executions
   const logsResult = useExecutionLogs(executionId)
 
-  // Select the appropriate data source
-  const {
-    connectionStatus,
-    execution,
-    messages,
-    toolCalls,
-    state,
-    error,
-    isConnected,
-  } = useMemo(() => {
-    if (isActive) {
-      // Use SSE stream for active executions
-      return {
-        connectionStatus: sseStream.connectionStatus,
-        execution: sseStream.execution,
-        messages: sseStream.messages,
-        toolCalls: sseStream.toolCalls,
-        state: sseStream.state,
-        error: sseStream.error,
-        isConnected: sseStream.isConnected,
-      }
-    } else {
-      // Use logs API for completed executions
-      // Transform events to messages/toolCalls format
-      const messages = new Map()
-      const toolCalls = new Map()
-      const state: any = {}
+  // Process logs events into messages/toolCalls format
+  const processedLogs = useMemo(() => {
+    const messages = new Map()
+    const toolCalls = new Map()
+    const state: any = {}
 
-      // Process events from logs
-      if (logsResult.events) {
-        logsResult.events.forEach((event: any) => {
-          // Handle different event types
-          if (event.type === 'TEXT_MESSAGE_CONTENT' || event.name === 'TEXT_MESSAGE_CONTENT') {
-            const content = event.value || event
-            messages.set(messages.size, {
-              id: messages.size,
-              content: content.content || content.text,
-              timestamp: event.timestamp || Date.now(),
+    // Track sequence indices for stable ordering
+    let messageIndex = 0
+    let toolCallIndex = 0
+
+    // Process events from logs (same logic as useAgUiStream)
+    if (logsResult.events && logsResult.events.length > 0) {
+      logsResult.events.forEach((event: any) => {
+        // Handle TEXT_MESSAGE events
+        if (event.type === 'TEXT_MESSAGE_START') {
+          messages.set(event.messageId, {
+            messageId: event.messageId,
+            role: event.role || 'assistant',
+            content: '',
+            complete: false,
+            timestamp: event.timestamp || Date.now(),
+            index: messageIndex++,
+          })
+        } else if (event.type === 'TEXT_MESSAGE_CONTENT') {
+          const existing = messages.get(event.messageId)
+          if (existing) {
+            messages.set(event.messageId, {
+              ...existing,
+              content: existing.content + (event.delta || ''),
             })
-          } else if (event.type === 'TOOL_CALL_START' || event.name === 'TOOL_CALL_START') {
-            const value = event.value || event
-            toolCalls.set(value.toolCallId, {
-              id: value.toolCallId,
-              name: value.name,
-              status: 'running',
-              timestamp: event.timestamp || Date.now(),
-            })
-          } else if (event.type === 'TOOL_CALL_RESULT' || event.name === 'TOOL_CALL_RESULT') {
-            const value = event.value || event
-            const existing = toolCalls.get(value.toolCallId)
-            if (existing) {
-              toolCalls.set(value.toolCallId, {
-                ...existing,
-                status: 'completed',
-                result: value.result,
-              })
-            }
           }
-        })
-      }
-
-      return {
-        connectionStatus: logsResult.loading ? 'connecting' : logsResult.error ? 'error' : 'connected',
-        execution: {
-          status: executionProp?.status || 'completed',
-          runId: executionId,
-          currentStep: undefined,
-          error: logsResult.error?.message,
-          startTime: undefined,
-          endTime: undefined,
-        },
-        messages,
-        toolCalls,
-        state,
-        error: logsResult.error,
-        isConnected: false, // Not live for historical
-      }
+        } else if (event.type === 'TEXT_MESSAGE_END') {
+          const existing = messages.get(event.messageId)
+          if (existing) {
+            messages.set(event.messageId, {
+              ...existing,
+              complete: true,
+            })
+          }
+        }
+        // Handle TOOL_CALL events
+        else if (event.type === 'TOOL_CALL_START') {
+          toolCalls.set(event.toolCallId, {
+            toolCallId: event.toolCallId,
+            toolCallName: event.toolCallName || event.toolName,
+            args: '',
+            status: 'started',
+            startTime: event.timestamp || Date.now(),
+            index: toolCallIndex++,
+          })
+        } else if (event.type === 'TOOL_CALL_ARGS') {
+          const existing = toolCalls.get(event.toolCallId)
+          if (existing) {
+            toolCalls.set(event.toolCallId, {
+              ...existing,
+              args: existing.args + (event.delta || ''),
+            })
+          }
+        } else if (event.type === 'TOOL_CALL_END') {
+          const existing = toolCalls.get(event.toolCallId)
+          if (existing) {
+            toolCalls.set(event.toolCallId, {
+              ...existing,
+              status: 'executing',
+            })
+          }
+        } else if (event.type === 'TOOL_CALL_RESULT') {
+          const existing = toolCalls.get(event.toolCallId)
+          if (existing) {
+            toolCalls.set(event.toolCallId, {
+              ...existing,
+              status: 'completed',
+              result: event.result || event.content,
+              endTime: event.timestamp || Date.now(),
+            })
+          }
+        }
+      })
     }
-  }, [isActive, sseStream, logsResult, executionId, executionProp])
 
-  // Trigger callbacks when execution status changes
+    return { messages, toolCalls, state }
+  }, [logsResult.events])
+
+  // Select the appropriate data source
+  // Key insight: When transitioning from active to completed, keep showing SSE data
+  // until logs are fully loaded to prevent flickering
+  const { connectionStatus, execution, messages, toolCalls, state, error, isConnected } =
+    useMemo(() => {
+      // For active executions, always use SSE stream
+      if (isActive) {
+        return {
+          connectionStatus: sseStream.connectionStatus,
+          execution: sseStream.execution,
+          messages: sseStream.messages,
+          toolCalls: sseStream.toolCalls,
+          state: sseStream.state,
+          error: sseStream.error,
+          isConnected: sseStream.isConnected,
+        }
+      }
+
+      // For completed executions, use logs when available
+      // But fall back to SSE data while logs are loading to prevent flicker
+      const logsLoaded = !logsResult.loading && logsResult.events && logsResult.events.length > 0
+      const hasSSEData = sseStream.messages.size > 0 || sseStream.toolCalls.size > 0
+
+      // Use logs if loaded, otherwise fall back to SSE data if available
+      if (logsLoaded) {
+        return {
+          connectionStatus: logsResult.error ? 'error' : 'connected',
+          execution: {
+            status: executionProp?.status || 'completed',
+            runId: executionId,
+            currentStep: undefined,
+            error: logsResult.error?.message,
+            startTime: undefined,
+            endTime: undefined,
+          },
+          messages: processedLogs.messages,
+          toolCalls: processedLogs.toolCalls,
+          state: processedLogs.state,
+          error: logsResult.error,
+          isConnected: false,
+        }
+      } else if (hasSSEData) {
+        // Logs still loading but we have SSE data - keep showing it
+        return {
+          connectionStatus: logsResult.loading ? 'connecting' : sseStream.connectionStatus,
+          execution: {
+            ...sseStream.execution,
+            status: executionProp?.status || sseStream.execution.status,
+          },
+          messages: sseStream.messages,
+          toolCalls: sseStream.toolCalls,
+          state: sseStream.state,
+          error: sseStream.error,
+          isConnected: false, // Not live anymore since execution completed
+        }
+      } else {
+        // No SSE data and logs not loaded yet - show loading state
+        return {
+          connectionStatus: logsResult.loading
+            ? 'connecting'
+            : logsResult.error
+              ? 'error'
+              : 'connected',
+          execution: {
+            status: executionProp?.status || 'completed',
+            runId: executionId,
+            currentStep: undefined,
+            error: logsResult.error?.message,
+            startTime: undefined,
+            endTime: undefined,
+          },
+          messages: processedLogs.messages,
+          toolCalls: processedLogs.toolCalls,
+          state: processedLogs.state,
+          error: logsResult.error,
+          isConnected: false,
+        }
+      }
+    }, [isActive, sseStream, logsResult, processedLogs, executionId, executionProp])
+
+  // Track whether onComplete has already been called to prevent infinite loops
+  // When an execution is already 'completed' on mount, we should not call onComplete
+  // (it's only for when the status transitions TO completed during streaming)
+  const hasCalledOnComplete = useRef(false)
+  const previousStatus = useRef<string | undefined>(undefined)
+
+  // Trigger callbacks when execution status changes TO completed (not when already completed)
   useEffect(() => {
-    if (execution.status === 'completed' && onComplete) {
+    // Only call onComplete if:
+    // 1. Status is now 'completed'
+    // 2. We haven't already called it
+    // 3. Previous status was something other than 'completed' (i.e., a transition happened)
+    if (
+      execution.status === 'completed' &&
+      onComplete &&
+      !hasCalledOnComplete.current &&
+      previousStatus.current !== undefined &&
+      previousStatus.current !== 'completed'
+    ) {
+      hasCalledOnComplete.current = true
       onComplete()
     }
+    previousStatus.current = execution.status
   }, [execution.status, onComplete])
 
   useEffect(() => {
@@ -181,6 +296,13 @@ export function ExecutionMonitor({
       onError(error)
     }
   }, [error, onError])
+
+  // Notify parent when content changes (for auto-scroll)
+  useEffect(() => {
+    if (onContentChange) {
+      onContentChange()
+    }
+  }, [messages.size, toolCalls.size, onContentChange])
 
   // Calculate metrics
   const toolCallCount = toolCalls.size
@@ -237,16 +359,85 @@ export function ExecutionMonitor({
 
   // Render loading state
   if (connectionStatus === 'connecting' && execution.status === 'idle') {
+    const loadingContent = (
+      <div className="flex items-center justify-center gap-2 text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span>Connecting to execution stream...</span>
+      </div>
+    )
+
+    if (compact) {
+      return <div className={`p-6 ${className}`}>{loadingContent}</div>
+    }
+
+    return <Card className={`p-6 ${className}`}>{loadingContent}</Card>
+  }
+
+  // Compact mode: no card wrapper, no header, just content
+  if (compact) {
     return (
-      <Card className={`p-6 ${className}`}>
-        <div className="flex items-center justify-center gap-2 text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span>Connecting to execution stream...</span>
-        </div>
-      </Card>
+      <div className={`space-y-4 ${className}`}>
+        {/* User prompt - show what the user asked */}
+        {executionProp?.prompt && (
+          <div className="rounded-md bg-primary/30 p-3">
+            <div className="flex items-start gap-2">
+              <div className="flex-1 whitespace-pre-wrap font-mono text-sm text-foreground">
+                {executionProp.prompt}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Error display */}
+        {(error || execution.error) && (
+          <div className="rounded-md border border-destructive/20 bg-destructive/10 p-4">
+            <div className="flex items-start gap-2">
+              <XCircle className="mt-0.5 h-5 w-5 text-destructive" />
+              <div className="flex-1">
+                <h4 className="font-semibold text-destructive">Error</h4>
+                <p className="mt-1 text-sm text-destructive/90">
+                  {execution.error || error?.message}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Agent Trajectory */}
+        {(messageCount > 0 || toolCallCount > 0) && (
+          <>
+            {executionProp?.agent_type === 'claude-code' ? (
+              <ClaudeCodeTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown />
+            ) : (
+              <AgentTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown />
+            )}
+          </>
+        )}
+
+        {/* Empty state */}
+        {messageCount === 0 && toolCallCount === 0 && !error && !execution.error && (
+          <div className="flex flex-col items-center justify-center py-2 text-center text-muted-foreground">
+            {isActive || isConnected ? (
+              <>
+                <Loader2 className="mb-2 h-8 w-8 animate-spin" />
+                <p className="text-sm">Waiting for events...</p>
+              </>
+            ) : (
+              <>
+                <AlertCircle className="mb-2 h-8 w-8" />
+                <p className="text-sm">No execution activity</p>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Todo Tracker */}
+        <TodoTracker toolCalls={toolCalls} className="mt-4" />
+      </div>
     )
   }
 
+  // Full mode: card wrapper with header and footer
   return (
     <Card className={`flex flex-col ${className}`}>
       {/* Header: Status and Progress */}
@@ -278,13 +469,13 @@ export function ExecutionMonitor({
         {/* Progress from state */}
         {state.progress !== undefined && state.totalSteps && (
           <div className="mt-3">
-            <div className="flex items-center justify-between text-sm text-muted-foreground mb-1">
+            <div className="mb-1 flex items-center justify-between text-sm text-muted-foreground">
               <span>Progress</span>
               <span>
                 {state.progress} / {state.totalSteps}
               </span>
             </div>
-            <div className="h-2 bg-secondary rounded-full overflow-hidden">
+            <div className="h-2 overflow-hidden rounded-full bg-secondary">
               <div
                 className="h-full bg-primary transition-all duration-300"
                 style={{
@@ -300,12 +491,12 @@ export function ExecutionMonitor({
       <div className="flex-1 overflow-auto px-6 py-4">
         {/* Error display */}
         {(error || execution.error) && (
-          <div className="rounded-md bg-destructive/10 border border-destructive/20 p-4 mb-4">
+          <div className="mb-4 rounded-md border border-destructive/20 bg-destructive/10 p-4">
             <div className="flex items-start gap-2">
-              <XCircle className="h-5 w-5 text-destructive mt-0.5" />
+              <XCircle className="mt-0.5 h-5 w-5 text-destructive" />
               <div className="flex-1">
                 <h4 className="font-semibold text-destructive">Error</h4>
-                <p className="text-sm text-destructive/90 mt-1">
+                <p className="mt-1 text-sm text-destructive/90">
                   {execution.error || error?.message}
                 </p>
               </div>
@@ -314,24 +505,40 @@ export function ExecutionMonitor({
         )}
 
         {/* Agent Trajectory - unified messages and tool calls */}
+        {/* Use Claude Code-specific rendering for claude-code agent type */}
         {(messageCount > 0 || toolCallCount > 0) && (
-          <AgentTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown />
+          <>
+            {executionProp?.agent_type === 'claude-code' ? (
+              <ClaudeCodeTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown />
+            ) : (
+              <AgentTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown />
+            )}
+          </>
         )}
 
         {/* Empty state */}
         {messageCount === 0 && toolCallCount === 0 && !error && !execution.error && (
           <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-            <AlertCircle className="h-8 w-8 mb-2" />
-            <p className="text-sm">No execution activity yet</p>
-            <p className="text-xs mt-1">
-              {isConnected ? 'Waiting for events...' : 'Connecting...'}
-            </p>
+            {isActive || isConnected ? (
+              <>
+                <Loader2 className="mb-2 h-8 w-8 animate-spin" />
+                <p className="text-sm">Waiting for events...</p>
+              </>
+            ) : (
+              <>
+                <AlertCircle className="mb-2 h-8 w-8" />
+                <p className="text-sm">No execution activity</p>
+              </>
+            )}
           </div>
         )}
+
+        {/* Todo Tracker - pinned at bottom of trajectory */}
+        <TodoTracker toolCalls={toolCalls} className="mt-4" />
       </div>
 
       {/* Footer: Metrics */}
-      <div className="border-t px-6 py-3 bg-muted/30">
+      <div className="border-t bg-muted/30 px-6 py-3">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <div className="flex items-center gap-4">
             <span>

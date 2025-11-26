@@ -19,18 +19,14 @@ import Database from "better-sqlite3";
 import type { Execution } from "@sudocode-ai/types";
 import type {
   WorkerToMainMessage,
-  OutputEvent,
   ExecutionResult,
 } from "./worker-ipc.js";
 import { isMainMessage } from "./worker-ipc.js";
-import {
-  SimpleProcessManager,
-  SimpleExecutionEngine,
-  ResilientExecutor,
-  LinearOrchestrator,
-  type WorkflowDefinition,
-} from "agent-execution-engine";
-import { createAgUiSystem } from "../execution/output/ag-ui-integration.js";
+import type { ExecutionTask } from "agent-execution-engine/engine";
+import { createExecutorForAgent } from "../execution/executors/executor-factory.js";
+import { ExecutionLifecycleService } from "../services/execution-lifecycle.js";
+import { ExecutionLogsStore } from "../services/execution-logs-store.js";
+import { IpcTransportManager } from "../execution/transport/ipc-transport-manager.js";
 import { getExecution, updateExecution } from "../services/executions.js";
 
 // Validate required environment variables
@@ -68,14 +64,16 @@ function sendToMain(message: WorkerToMainMessage): void {
 
 /**
  * Send log event to main process
+ * Note: Currently unused as AgentExecutorWrapper handles log storage directly.
+ * Kept for backward compatibility with IPC protocol.
  */
-function sendLog(data: OutputEvent): void {
-  sendToMain({
-    type: "log",
-    executionId: EXECUTION_ID!,
-    data,
-  });
-}
+// function sendLog(data: OutputEvent): void {
+//   sendToMain({
+//     type: "log",
+//     executionId: EXECUTION_ID!,
+//     data,
+//   });
+// }
 
 /**
  * Send status update to main process
@@ -144,7 +142,6 @@ process.on("message", (message: any) => {
  */
 async function runExecution(): Promise<void> {
   let db: Database.Database | null = null;
-  let orchestrator: LinearOrchestrator | null = null;
 
   try {
     // 1. Initialize database connection
@@ -187,193 +184,63 @@ async function runExecution(): Promise<void> {
       workerId: WORKER_ID!,
     });
 
-    // 6. Build workflow definition
-    const workflow: WorkflowDefinition = {
-      id: `workflow-${execution.id}`,
-      steps: [
-        {
-          id: "execute-issue",
-          taskType: "issue",
-          prompt,
-          taskConfig: {
-            model: config.model || "claude-sonnet-4",
-            timeout: config.timeout,
-            captureFileChanges: config.captureFileChanges ?? true,
-            captureToolCalls: config.captureToolCalls ?? true,
-          },
-        },
-      ],
+    // 6. Create services for AgentExecutorWrapper
+    const lifecycleService = new ExecutionLifecycleService(db, REPO_PATH!);
+    const logsStore = new ExecutionLogsStore(db);
+
+    // 7. Create IPC transport manager to forward AG-UI events
+    const ipcTransport = new IpcTransportManager(EXECUTION_ID!);
+
+    // 8. Determine agent type (default to claude-code for backwards compatibility)
+    const agentType = config.agentType || "claude-code";
+
+    // 9. Create executor using factory
+    const wrapper = createExecutorForAgent(
+      agentType,
+      { workDir: REPO_PATH!, ...config },
+      {
+        workDir: REPO_PATH!,
+        lifecycleService,
+        logsStore,
+        projectId: PROJECT_ID!,
+        db,
+        transportManager: ipcTransport as any, // IpcTransportManager matches interface
+      }
+    );
+
+    // 10. Build execution task
+    const task: ExecutionTask = {
+      id: execution.id,
+      type: "issue",
+      entityId: execution.issue_id || undefined,
+      prompt: prompt,
+      workDir: workDir,
       config: {
-        checkpointInterval: config.checkpointInterval ?? 1,
-        continueOnStepFailure: config.continueOnStepFailure ?? false,
         timeout: config.timeout,
       },
       metadata: {
-        workDir,
+        model: config.model || "claude-sonnet-4",
+        captureFileChanges: config.captureFileChanges ?? true,
+        captureToolCalls: config.captureToolCalls ?? true,
         issueId: execution.issue_id,
         executionId: execution.id,
       },
+      priority: 0,
+      dependencies: [],
+      createdAt: new Date(),
     };
 
-    // 7. Create execution engine stack
-    const processManager = new SimpleProcessManager();
+    // 11. Update status to running
+    console.log(`[Worker:${WORKER_ID}] Starting execution with AgentExecutorWrapper (${agentType})`);
+    sendStatus("running");
 
-    // Create AG-UI system for output processing
-    const agUiSystem = createAgUiSystem(execution.id);
-
-    // Bridge AG-UI events to IPC - forward all events from adapter to main process
-    agUiSystem.adapter.onEvent((event) => {
-      console.log(`[Worker:${WORKER_ID}] AG-UI event: ${event.type}`);
-      sendToMain({
-        type: "agui-event",
-        executionId: EXECUTION_ID!,
-        event,
-      });
-    });
-
-    // Buffer for incomplete lines (stream-json can split mid-line)
-    let lineBuffer = "";
-
-    const claudeArgs = [
-      "--print",
-      "--output-format",
-      "stream-json",
-      "--verbose",
-      "--dangerously-skip-permissions",
-    ];
-    console.log(`[Worker:${WORKER_ID}] Claude CLI args:`, claudeArgs);
-
-    // NOTE: The orchestrator is supposed to handle converting workflow steps to tasks
-    // and passing the prompt to the process. The issue is that the generic engine
-    // doesn't know how to pass Claude-specific prompts. We need to add the prompt
-    // as the last CLI argument, which requires modifying the args per task.
-    // For now, we'll add the prompt to defaultProcessConfig args.
-    const argsWithPrompt = [...claudeArgs, prompt];
-    console.log(
-      `[Worker:${WORKER_ID}] Final Claude args (with prompt):`,
-      argsWithPrompt.length,
-      "args"
-    );
-
-    const engine = new SimpleExecutionEngine(processManager, {
-      maxConcurrent: 1,
-      defaultProcessConfig: {
-        executablePath: "claude",
-        args: argsWithPrompt,
-        workDir: workDir,
-      },
-      onOutput: (data, type) => {
-        if (type === "stdout") {
-          const chunk = data.toString();
-          // Append new data to buffer
-          lineBuffer += chunk;
-
-          // Process complete lines (ending with \n)
-          let newlineIndex;
-          while ((newlineIndex = lineBuffer.indexOf("\n")) !== -1) {
-            const line = lineBuffer.slice(0, newlineIndex);
-            lineBuffer = lineBuffer.slice(newlineIndex + 1);
-
-            if (line.trim()) {
-              // Send raw log to main process
-              sendLog({
-                type: "log",
-                data: line,
-                timestamp: new Date().toISOString(),
-              });
-
-              // Process through AG-UI pipeline
-              agUiSystem.processor.processLine(line).catch((err) => {
-                console.error("[Worker] Error processing output line:", err);
-              });
-            }
-          }
-        } else if (type === "stderr") {
-          const stderrData = data.toString();
-          // Send stderr directly
-          sendLog({
-            type: "stderr",
-            data: stderrData,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      },
-    });
-
-    const executor = new ResilientExecutor(engine);
-
-    // 8. Create orchestrator
-    orchestrator = new LinearOrchestrator(
-      executor,
-      undefined, // No storage/checkpointing
-      agUiSystem.adapter,
-      undefined // No lifecycle service in worker
-    );
-
-    // 9. Set up event handlers
-    orchestrator.onWorkflowStart(() => {
-      console.log(`[Worker:${WORKER_ID}] Workflow started`);
-      updateExecution(db!, execution.id, { status: "running" });
-      sendStatus("running");
-
-      // Emit RUN_STARTED event
-      agUiSystem.adapter.emitRunStarted({
-        model: config.model || "claude-sonnet-4",
-        executionId: execution.id,
-      });
-    });
-
-    orchestrator.onWorkflowComplete(() => {
-      console.log(`[Worker:${WORKER_ID}] Workflow completed successfully`);
-
-      // Emit RUN_FINISHED event
-      agUiSystem.adapter.emitRunFinished();
-
-      updateExecution(db!, execution.id, {
-        status: "completed",
-        completed_at: new Date().toISOString(),
-      });
-
-      sendComplete({
-        status: "completed",
-        exitCode: 0,
-        completedAt: new Date().toISOString(),
-      });
-    });
-
-    orchestrator.onWorkflowFailed((_executionId, error) => {
-      console.error(`[Worker:${WORKER_ID}] Workflow failed:`, error);
-      updateExecution(db!, execution.id, {
-        status: "failed",
-        completed_at: new Date().toISOString(),
-        error_message: error.message,
-      });
-
-      sendComplete({
-        status: "failed",
-        exitCode: 1,
-        error: error.message,
-        completedAt: new Date().toISOString(),
-      });
-    });
-
-    // 10. Start workflow execution (blocking)
-    console.log(`[Worker:${WORKER_ID}] Starting workflow execution...`);
-    console.log(`[Worker:${WORKER_ID}] Work directory: ${workDir}`);
-    console.log(
-      `[Worker:${WORKER_ID}] Workflow config:`,
-      JSON.stringify(workflow.config)
-    );
-
+    // 12. Execute with lifecycle management (blocking)
     const startTime = Date.now();
-    await orchestrator.startWorkflow(workflow, workDir, {
-      checkpointInterval: config.checkpointInterval,
-      executionId: execution.id,
-    });
+    await wrapper.executeWithLifecycle(execution.id, task, workDir);
     const duration = Date.now() - startTime;
-    console.log(`[Worker:${WORKER_ID}] Workflow completed in ${duration}ms`);
+    console.log(`[Worker:${WORKER_ID}] Execution completed in ${duration}ms`);
 
-    // 11. Check if cancellation was requested
+    // 13. Check if cancellation was requested
     if (cancelRequested) {
       console.log(`[Worker:${WORKER_ID}] Execution was cancelled`);
       updateExecution(db, execution.id, {
@@ -386,6 +253,13 @@ async function runExecution(): Promise<void> {
         exitCode: 0,
         completedAt: new Date().toISOString(),
       });
+    } else {
+      // Send completion (wrapper already updated DB and broadcast)
+      sendComplete({
+        status: "completed",
+        exitCode: 0,
+        completedAt: new Date().toISOString(),
+      });
     }
 
     console.log(`[Worker:${WORKER_ID}] Execution completed successfully`);
@@ -393,23 +267,7 @@ async function runExecution(): Promise<void> {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`[Worker:${WORKER_ID}] Execution failed:`, errorMessage);
 
-    // Try to update database if connection exists
-    if (db) {
-      try {
-        updateExecution(db, EXECUTION_ID!, {
-          status: "failed",
-          completed_at: new Date().toISOString(),
-          error_message: errorMessage,
-        });
-      } catch (dbError) {
-        console.error(
-          `[Worker:${WORKER_ID}] Failed to update database:`,
-          dbError
-        );
-      }
-    }
-
-    // Send error to main process
+    // Wrapper already updated DB and broadcast, just send IPC message
     sendError(errorMessage, true);
 
     // Exit with failure code

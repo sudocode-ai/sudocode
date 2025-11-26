@@ -323,4 +323,99 @@ describe('FollowUpDialog', () => {
     // Error still visible
     expect(screen.getByText('Network error')).toBeInTheDocument()
   })
+
+  it('should submit on Enter key press', async () => {
+    const user = userEvent.setup()
+    mockOnSubmit.mockResolvedValue(undefined)
+
+    renderWithProviders(
+      <FollowUpDialog open={true} onSubmit={mockOnSubmit} onCancel={mockOnCancel} />
+    )
+
+    const textarea = screen.getByLabelText('Feedback')
+    await user.type(textarea, 'Add tests')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => {
+      expect(mockOnSubmit).toHaveBeenCalledWith('Add tests')
+    })
+  })
+
+  it('should create newline on Shift+Enter key press', async () => {
+    const user = userEvent.setup()
+    mockOnSubmit.mockResolvedValue(undefined)
+
+    renderWithProviders(
+      <FollowUpDialog open={true} onSubmit={mockOnSubmit} onCancel={mockOnCancel} />
+    )
+
+    const textarea = screen.getByLabelText('Feedback')
+    await user.type(textarea, 'Line 1{Shift>}{Enter}{/Shift}Line 2')
+
+    // Should have newline and not submit
+    expect(textarea).toHaveValue('Line 1\nLine 2')
+    expect(mockOnSubmit).not.toHaveBeenCalled()
+  })
+
+  it('should not submit on Enter when feedback is empty', async () => {
+    const user = userEvent.setup()
+    mockOnSubmit.mockResolvedValue(undefined)
+
+    renderWithProviders(
+      <FollowUpDialog open={true} onSubmit={mockOnSubmit} onCancel={mockOnCancel} />
+    )
+
+    const textarea = screen.getByLabelText('Feedback')
+    await user.click(textarea)
+    await user.keyboard('{Enter}')
+
+    // Should not submit when empty
+    expect(mockOnSubmit).not.toHaveBeenCalled()
+  })
+
+  it('should not submit on Enter when feedback is whitespace only', async () => {
+    const user = userEvent.setup()
+    mockOnSubmit.mockResolvedValue(undefined)
+
+    renderWithProviders(
+      <FollowUpDialog open={true} onSubmit={mockOnSubmit} onCancel={mockOnCancel} />
+    )
+
+    const textarea = screen.getByLabelText('Feedback')
+    await user.type(textarea, '   ')
+    await user.keyboard('{Enter}')
+
+    // Should not submit when only whitespace
+    expect(mockOnSubmit).not.toHaveBeenCalled()
+  })
+
+  it('should not submit on Enter while already submitting', async () => {
+    const user = userEvent.setup()
+    let resolveSubmit: () => void
+    mockOnSubmit.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSubmit = resolve as () => void
+      })
+    )
+
+    renderWithProviders(
+      <FollowUpDialog open={true} onSubmit={mockOnSubmit} onCancel={mockOnCancel} />
+    )
+
+    const textarea = screen.getByLabelText('Feedback')
+    await user.type(textarea, 'Add tests')
+    await user.keyboard('{Enter}')
+
+    // Wait for submission to start
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Submitting\.\.\./ })).toBeInTheDocument()
+    })
+
+    // Try pressing Enter again - should not call onSubmit twice
+    await user.keyboard('{Enter}')
+    expect(mockOnSubmit).toHaveBeenCalledTimes(1)
+
+    // Resolve submission
+    resolveSubmit!()
+  })
 })

@@ -20,6 +20,12 @@ import { listIssues, getIssue } from "./operations/issues.js";
 import { parseMarkdownFile } from "./markdown.js";
 import { listFeedback } from "./operations/feedback.js";
 import { getTags } from "./operations/tags.js";
+import {
+  findExistingEntityFile,
+  generateUniqueFilename,
+} from "./filename-generator.js";
+import { getOutgoingRelationships } from "./operations/relationships.js";
+import type { EntitySyncEvent, FileChangeEvent } from "@sudocode-ai/types/events";
 
 export interface WatcherOptions {
   /**
@@ -52,6 +58,18 @@ export interface WatcherOptions {
    * When enabled, changes to JSONL files will update both the database and markdown files
    */
   syncJSONLToMarkdown?: boolean;
+
+  /**
+   * Called when an entity is synced (after successful sync)
+   * Provides typed event data for machine consumption
+   */
+  onEntitySync?: (event: EntitySyncEvent) => void | Promise<void>;
+
+  /**
+   * Called when a file change is detected (before sync)
+   * Provides typed event data for machine consumption
+   */
+  onFileChange?: (event: FileChangeEvent) => void | Promise<void>;
 }
 
 export interface WatcherControl {
@@ -85,6 +103,8 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
     onError = console.error,
     ignoreInitial = true,
     syncJSONLToMarkdown: enableReverseSync = false,
+    onEntitySync,
+    onFileChange,
   } = options;
 
   const stats: WatcherStats = {
@@ -96,6 +116,13 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
 
   // Map of file paths to pending timeout IDs
   const pendingChanges = new Map<string, NodeJS.Timeout>();
+
+  // Cache of previous JSONL state (entity ID -> timestamp)
+  // This allows us to detect changes by comparing new JSONL against cached state
+  const jsonlStateCache = new Map<
+    string,
+    Map<string, string>
+  >(); // jsonlPath -> (entityId -> updated_at)
 
   /**
    * Check if markdown file content matches database content
@@ -236,8 +263,7 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
         const dbTagsSet = new Set(dbTags);
         if (jsonlTags.some((tag: string) => !dbTagsSet.has(tag))) return true;
 
-        // Compare relationships
-        const { getOutgoingRelationships } = require("./operations/relationships.js");
+        // Compare relationships;
         const dbRels = getOutgoingRelationships(db, entityId, entityType);
         const jsonlRels = jsonlEntity.relationships || [];
         if (jsonlRels.length !== dbRels.length) return true;
@@ -387,22 +413,137 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
             onLog(
               `[watch] Synced ${result.entityType} ${result.entityId} (${result.action})`
             );
+
+            // Emit typed callback event for markdown sync
+            if (onEntitySync) {
+              // Get full entity data to include in event
+              const entity =
+                result.entityType === "spec"
+                  ? getSpec(db, result.entityId)
+                  : getIssue(db, result.entityId);
+
+              await onEntitySync({
+                entityType: result.entityType,
+                entityId: result.entityId,
+                action: result.action,
+                filePath,
+                baseDir,
+                source: "markdown",
+                timestamp: new Date(),
+                entity: entity ?? undefined,
+                version: 1,
+              });
+            }
           } else {
             onError(new Error(`Failed to sync ${filePath}: ${result.error}`));
             stats.errors++;
           }
         }
       } else if (basename === "specs.jsonl" || basename === "issues.jsonl") {
-        // JSONL file changed (e.g., from git pull) - check if import is needed
+        // JSONL file changed (e.g., from CLI update or git pull)
         onLog(`[watch] ${event} ${path.relative(baseDir, filePath)}`);
 
         if (event !== "unlink") {
-          // Check if JSONL actually differs from database before importing
-          if (jsonlNeedsImport(filePath)) {
-            await importFromJSONL(db, {
-              inputDir: baseDir,
-            });
-            onLog(`[watch] Imported JSONL changes to database`);
+          const entityType = basename === "specs.jsonl" ? "spec" : "issue";
+
+          // Read JSONL file
+          const jsonlContent = fs.readFileSync(filePath, "utf8");
+          const jsonlLines = jsonlContent
+            .trim()
+            .split("\n")
+            .filter((line) => line.trim());
+
+          // Parse JSONL entities and build new state map
+          const jsonlEntities = jsonlLines.map((line) => JSON.parse(line));
+          const newStateMap = new Map<string, string>();
+          for (const entity of jsonlEntities) {
+            newStateMap.set(entity.id, entity.updated_at);
+          }
+
+          // Get cached state (previous JSONL state)
+          const cachedStateMap = jsonlStateCache.get(filePath) || new Map();
+
+          // Detect changed entities by comparing new state with cached state
+          const changedEntities: Array<{
+            entityId: string;
+            action: "created" | "updated";
+          }> = [];
+
+          for (const jsonlEntity of jsonlEntities) {
+            const entityId = jsonlEntity.id;
+            const newTimestamp = jsonlEntity.updated_at;
+            const cachedTimestamp = cachedStateMap.get(entityId);
+
+            if (!cachedTimestamp) {
+              // Entity not in cache = created
+              changedEntities.push({ entityId, action: "created" });
+            } else if (newTimestamp !== cachedTimestamp) {
+              // Timestamp differs from cache = updated
+              changedEntities.push({ entityId, action: "updated" });
+            }
+          }
+
+          // Update cache with new state
+          jsonlStateCache.set(filePath, newStateMap);
+
+          if (changedEntities.length > 0) {
+            onLog(
+              `[watch] Detected ${changedEntities.length} changed ${entityType}(s) in JSONL`
+            );
+
+            // Import from JSONL to sync database
+            if (jsonlNeedsImport(filePath)) {
+              await importFromJSONL(db, {
+                inputDir: baseDir,
+              });
+              onLog(`[watch] Imported JSONL changes to database`);
+            }
+
+            // Emit events for changed entities (after import, so we have fresh data)
+            for (const { entityId, action } of changedEntities) {
+              onLog(`[watch] Synced ${entityType} ${entityId} (${action})`);
+
+              if (onEntitySync) {
+                // Get fresh entity data from database (after import)
+                const entity =
+                  entityType === "spec"
+                    ? getSpec(db, entityId)
+                    : getIssue(db, entityId);
+
+                // Find markdown file path
+                let entityFilePath: string;
+                if (entityType === "spec" && entity && "file_path" in entity) {
+                  entityFilePath = path.join(baseDir, entity.file_path);
+                } else if (
+                  entityType === "issue" &&
+                  entity &&
+                  "file_path" in entity
+                ) {
+                  entityFilePath = path.join(baseDir, entity.file_path);
+                } else {
+                  // Fallback to default path
+                  entityFilePath = path.join(
+                    baseDir,
+                    entityType === "spec" ? "specs" : "issues",
+                    `${entityId}.md`
+                  );
+                }
+
+                await onEntitySync({
+                  entityType,
+                  entityId: entityId,
+                  action,
+                  filePath: entityFilePath,
+                  baseDir,
+                  source: "jsonl",
+                  timestamp: new Date(),
+                  entity: entity ?? undefined,
+                  version: 1,
+                });
+              }
+            }
+          } else {
+            onLog(`[watch] No entity changes detected in ${basename}`);
           }
 
           // Optionally sync database changes back to markdown files
@@ -449,8 +590,17 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
             const issues = listIssues(db);
             const issuesDir = path.join(baseDir, "issues");
             for (const issue of issues) {
-              const fileName = `${issue.id}.md`;
-              const mdPath = path.join(issuesDir, fileName);
+              // Find existing file or generate new filename using unified scheme
+              let mdPath = findExistingEntityFile(
+                issue.id,
+                issuesDir,
+                issue.title
+              );
+              if (!mdPath) {
+                // File doesn't exist, generate new filename
+                const fileName = generateUniqueFilename(issue.title, issue.id);
+                mdPath = path.join(issuesDir, fileName);
+              }
 
               // Skip if content already matches (prevents unnecessary writes and oscillation)
               if (contentMatches(mdPath, issue.id, "issue")) {
@@ -530,6 +680,46 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
       0
     );
     onLog(`[watch] Watching ${stats.filesWatched} files in ${baseDir}`);
+
+    // Initialize JSONL state cache on startup to avoid broadcasting all entities on first change
+    try {
+      // Initialize specs.jsonl cache
+      const specsJsonlPath = path.join(baseDir, "specs.jsonl");
+      if (fs.existsSync(specsJsonlPath)) {
+        const content = fs.readFileSync(specsJsonlPath, "utf8");
+        const lines = content.trim().split("\n").filter((line) => line.trim());
+        const stateMap = new Map<string, string>();
+        for (const line of lines) {
+          const entity = JSON.parse(line);
+          stateMap.set(entity.id, entity.updated_at);
+        }
+        jsonlStateCache.set(specsJsonlPath, stateMap);
+        onLog(
+          `[watch] Initialized cache for specs.jsonl (${stateMap.size} entities)`
+        );
+      }
+
+      // Initialize issues.jsonl cache
+      const issuesJsonlPath = path.join(baseDir, "issues.jsonl");
+      if (fs.existsSync(issuesJsonlPath)) {
+        const content = fs.readFileSync(issuesJsonlPath, "utf8");
+        const lines = content.trim().split("\n").filter((line) => line.trim());
+        const stateMap = new Map<string, string>();
+        for (const line of lines) {
+          const entity = JSON.parse(line);
+          stateMap.set(entity.id, entity.updated_at);
+        }
+        jsonlStateCache.set(issuesJsonlPath, stateMap);
+        onLog(
+          `[watch] Initialized cache for issues.jsonl (${stateMap.size} entities)`
+        );
+      }
+    } catch (error) {
+      onLog(
+        `[watch] Warning: Failed to initialize JSONL cache: ${error instanceof Error ? error.message : String(error)}`
+      );
+      // Continue anyway - cache will be populated on first change
+    }
   });
 
   watcher.on("error", (error) => {

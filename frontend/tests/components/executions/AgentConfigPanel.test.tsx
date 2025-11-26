@@ -1,0 +1,673 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { renderWithProviders } from '@/test/test-utils'
+import { AgentConfigPanel } from '@/components/executions/AgentConfigPanel'
+import { executionsApi, agentsApi } from '@/lib/api'
+import type { ExecutionPrepareResult } from '@/types/execution'
+import type { AgentInfo } from '@/types/api'
+
+// Mock the API
+vi.mock('@/lib/api', () => ({
+  setCurrentProjectId: vi.fn(),
+  getCurrentProjectId: vi.fn(() => 'test-project-123'),
+  executionsApi: {
+    prepare: vi.fn(),
+    create: vi.fn(),
+    getById: vi.fn(),
+    list: vi.fn(),
+    createFollowUp: vi.fn(),
+    cancel: vi.fn(),
+  },
+  agentsApi: {
+    getAll: vi.fn(),
+  },
+}))
+
+describe('AgentConfigPanel', () => {
+  const mockOnStart = vi.fn()
+  const mockOnSelectOpenChange = vi.fn()
+
+  const mockAgents: AgentInfo[] = [
+    {
+      type: 'claude-code',
+      displayName: 'Claude Code',
+      supportedModes: ['structured', 'interactive', 'hybrid'],
+      supportsStreaming: true,
+      supportsStructuredOutput: true,
+      implemented: true,
+    },
+    {
+      type: 'codex',
+      displayName: 'OpenAI Codex',
+      supportedModes: ['structured'],
+      supportsStreaming: false,
+      supportsStructuredOutput: true,
+      implemented: false,
+    },
+  ]
+
+  const mockPrepareResult: ExecutionPrepareResult = {
+    renderedPrompt: 'Test prompt for i-test1',
+    issue: {
+      id: 'i-test1',
+      title: 'Test Issue',
+      description: 'Test description',
+    },
+    relatedSpecs: [],
+    relatedFeedback: [],
+    defaultConfig: {
+      mode: 'worktree',
+      baseBranch: 'main',
+      cleanupMode: 'manual',
+    },
+    availableModels: ['claude-sonnet-4'],
+    availableBranches: ['main', 'develop'],
+    warnings: [],
+    errors: [],
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(executionsApi.prepare).mockResolvedValue(mockPrepareResult)
+    vi.mocked(agentsApi.getAll).mockResolvedValue(mockAgents)
+  })
+
+  describe('Initial Rendering', () => {
+    it('should render the component', async () => {
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('Enter prompt for the agent...')).toBeInTheDocument()
+      })
+    })
+
+    it('should load execution preview on mount', async () => {
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        expect(executionsApi.prepare).toHaveBeenCalledWith('i-test1')
+      })
+    })
+
+    it('should load available agents on mount', async () => {
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        expect(agentsApi.getAll).toHaveBeenCalled()
+      })
+    })
+  })
+
+  describe('Agent Selection', () => {
+    it('should display agent selector with default selection', async () => {
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Claude Code')).toBeInTheDocument()
+      })
+    })
+
+    it('should show only implemented agents in dropdown when opened', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Claude Code')).toBeInTheDocument()
+      })
+
+      // Find all combobox triggers and click the agent selector (first one)
+      const triggers = screen.getAllByRole('combobox')
+      await user.click(triggers[0])
+
+      await waitFor(() => {
+        // Should show Claude Code (implemented)
+        expect(screen.getAllByText('Claude Code').length).toBeGreaterThan(1)
+        // Should NOT show OpenAI Codex (unimplemented)
+        expect(screen.queryByText('OpenAI Codex')).not.toBeInTheDocument()
+      })
+    })
+
+    it('should exclude unimplemented agents from dropdown', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Claude Code')).toBeInTheDocument()
+      })
+
+      const triggers = screen.getAllByRole('combobox')
+      await user.click(triggers[0])
+
+      await waitFor(() => {
+        // Only Claude Code should be in the options (it's the only implemented agent in mockAgents)
+        const options = screen.getAllByRole('option')
+        // Filter to agent selector options (exclude mode and branch options)
+        const agentOptions = options.filter(
+          (opt) =>
+            opt.textContent?.includes('Claude Code') ||
+            opt.textContent?.includes('Codex') ||
+            opt.textContent?.includes('Copilot') ||
+            opt.textContent?.includes('Cursor')
+        )
+        expect(agentOptions.length).toBe(1)
+        expect(agentOptions[0].textContent).toBe('Claude Code')
+      })
+    })
+
+    it('should call onSelectOpenChange when agent selector opens', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          onSelectOpenChange={mockOnSelectOpenChange}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('Claude Code')).toBeInTheDocument()
+      })
+
+      const triggers = screen.getAllByRole('combobox')
+      await user.click(triggers[0])
+
+      expect(mockOnSelectOpenChange).toHaveBeenCalled()
+    })
+  })
+
+  describe('Execution Mode Selection', () => {
+    it('should display execution mode selector', async () => {
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
+      })
+    })
+
+    it('should allow changing execution mode', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
+      })
+
+      // Find the execution mode selector (second combobox)
+      const triggers = screen.getAllByRole('combobox')
+      await user.click(triggers[1])
+
+      await waitFor(() => {
+        expect(screen.getByText('Run directly')).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('Branch Selection', () => {
+    it('should show branch selector when in worktree mode', async () => {
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        const triggers = screen.getAllByRole('combobox')
+        // Should have: agent selector, mode selector, branch selector
+        expect(triggers.length).toBeGreaterThanOrEqual(3)
+      })
+    })
+
+    it('should display available branches', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        const triggers = screen.getAllByRole('combobox')
+        expect(triggers.length).toBeGreaterThanOrEqual(3)
+      })
+
+      // Click branch selector (third combobox)
+      const triggers = screen.getAllByRole('combobox')
+      await user.click(triggers[2])
+
+      await waitFor(() => {
+        const options = screen.getAllByRole('option')
+        const branchOptions = options.filter(
+          (opt) => opt.textContent === 'main' || opt.textContent === 'develop'
+        )
+        expect(branchOptions.length).toBeGreaterThanOrEqual(2)
+      })
+    })
+  })
+
+  describe('Prompt Input', () => {
+    it('should allow entering a prompt', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
+      await user.type(textarea, 'Test prompt')
+
+      expect(textarea).toHaveValue('Test prompt')
+    })
+
+    it('should disable prompt input while loading', () => {
+      vi.mocked(executionsApi.prepare).mockImplementation(
+        () => new Promise(() => {}) // Never resolves
+      )
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      const textarea = screen.getByPlaceholderText('Loading prompt...')
+      expect(textarea).toBeDisabled()
+    })
+  })
+
+  describe('Run Button', () => {
+    it('should be disabled when prompt is empty', async () => {
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        const runButton = screen.getByRole('button', { name: /Submit/i })
+        expect(runButton).toBeDisabled()
+      })
+    })
+
+    it('should be enabled when prompt is filled', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
+      await user.type(textarea, 'Test prompt')
+
+      await waitFor(() => {
+        const runButton = screen.getByRole('button', { name: /Submit/i })
+        expect(runButton).not.toBeDisabled()
+      })
+    })
+
+    it('should be disabled when component is disabled', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(
+        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} disabled={true} />
+      )
+
+      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
+      await user.type(textarea, 'Test prompt')
+
+      const runButton = screen.getByRole('button', { name: /Submit/i })
+      expect(runButton).toBeDisabled()
+    })
+
+    it('should call onStart with config, prompt, and agentType when clicked', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
+      await user.type(textarea, 'Test prompt')
+
+      const runButton = screen.getByRole('button', { name: /Submit/i })
+      await user.click(runButton)
+
+      expect(mockOnStart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: 'worktree',
+          cleanupMode: 'manual',
+        }),
+        'Test prompt',
+        'claude-code'
+      )
+    })
+
+    it('should pass selected agentType when different agent is selected', async () => {
+      const user = userEvent.setup()
+
+      // Add an implemented agent for testing selection
+      const mockAgentsWithMultiple: AgentInfo[] = [
+        ...mockAgents,
+        {
+          type: 'cursor',
+          displayName: 'Cursor',
+          supportedModes: ['interactive'],
+          supportsStreaming: true,
+          supportsStructuredOutput: false,
+          implemented: true,
+        },
+      ]
+      vi.mocked(agentsApi.getAll).mockResolvedValue(mockAgentsWithMultiple)
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Claude Code')).toBeInTheDocument()
+      })
+
+      // Change agent selection
+      const triggers = screen.getAllByRole('combobox')
+      await user.click(triggers[0])
+
+      const cursorOption = await screen.findByRole('option', { name: /Cursor/ })
+      await user.click(cursorOption)
+
+      // Enter prompt
+      const textarea = screen.getByPlaceholderText('Enter prompt for the agent...')
+      await user.type(textarea, 'Test prompt')
+
+      // Click run
+      const runButton = screen.getByRole('button', { name: /Submit/i })
+      await user.click(runButton)
+
+      expect(mockOnStart).toHaveBeenCalledWith(expect.any(Object), 'Test prompt', 'cursor')
+    })
+  })
+
+  describe('Settings Dialog', () => {
+    it('should open settings dialog when settings button is clicked', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('Enter prompt for the agent...')).toBeInTheDocument()
+      })
+
+      // Find settings button by looking for all buttons and finding the one with Settings icon
+      const buttons = screen.getAllByRole('button')
+      const settingsButton = buttons.find((btn) => btn.className.includes('border-input'))
+      expect(settingsButton).toBeDefined()
+
+      await user.click(settingsButton!)
+
+      await waitFor(() => {
+        expect(screen.getByText('Advanced Agent Settings')).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('Error Handling', () => {
+    it('should display errors from prepare result', async () => {
+      const errorPrepareResult: ExecutionPrepareResult = {
+        ...mockPrepareResult,
+        errors: ['Error 1: Git repository not found', 'Error 2: No base branch'],
+      }
+      vi.mocked(executionsApi.prepare).mockResolvedValue(errorPrepareResult)
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Errors')).toBeInTheDocument()
+        expect(screen.getByText('Error 1: Git repository not found')).toBeInTheDocument()
+        expect(screen.getByText('Error 2: No base branch')).toBeInTheDocument()
+      })
+    })
+
+    it('should disable run button when there are errors', async () => {
+      const user = userEvent.setup()
+      const errorPrepareResult: ExecutionPrepareResult = {
+        ...mockPrepareResult,
+        errors: ['Error 1: Git repository not found'],
+      }
+      vi.mocked(executionsApi.prepare).mockResolvedValue(errorPrepareResult)
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
+      await user.type(textarea, 'Test prompt')
+
+      const runButton = screen.getByRole('button', { name: /Submit/i })
+      expect(runButton).toBeDisabled()
+    })
+  })
+
+  describe('Warnings', () => {
+    it('should display warnings from prepare result', async () => {
+      const warningPrepareResult: ExecutionPrepareResult = {
+        ...mockPrepareResult,
+        warnings: ['Warning: Working directory has uncommitted changes'],
+      }
+      vi.mocked(executionsApi.prepare).mockResolvedValue(warningPrepareResult)
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Warnings')).toBeInTheDocument()
+        expect(
+          screen.getByText('Warning: Working directory has uncommitted changes')
+        ).toBeInTheDocument()
+      })
+    })
+
+    it('should still allow running with warnings', async () => {
+      const user = userEvent.setup()
+      const warningPrepareResult: ExecutionPrepareResult = {
+        ...mockPrepareResult,
+        warnings: ['Warning: Working directory has uncommitted changes'],
+      }
+      vi.mocked(executionsApi.prepare).mockResolvedValue(warningPrepareResult)
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
+      await user.type(textarea, 'Test prompt')
+
+      const runButton = screen.getByRole('button', { name: /Submit/i })
+      expect(runButton).not.toBeDisabled()
+    })
+  })
+
+  describe('Loading States', () => {
+    it('should disable controls while loading execution preview', () => {
+      vi.mocked(executionsApi.prepare).mockImplementation(
+        () => new Promise(() => {}) // Never resolves
+      )
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      const textarea = screen.getByPlaceholderText('Loading prompt...')
+      expect(textarea).toBeDisabled()
+
+      const runButton = screen.getByRole('button', { name: /Submit/i })
+      expect(runButton).toBeDisabled()
+    })
+
+    it('should disable agent selector while loading agents', () => {
+      vi.mocked(agentsApi.getAll).mockImplementation(
+        () => new Promise(() => {}) // Never resolves
+      )
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      const triggers = screen.getAllByRole('combobox')
+      // Agent selector should be disabled
+      expect(triggers[0]).toBeDisabled()
+    })
+  })
+
+  describe('Follow-up Mode', () => {
+    const parentExecution = {
+      id: 'exec-parent-123',
+      mode: 'worktree',
+      model: 'claude-sonnet-4',
+      target_branch: 'main',
+      agent_type: 'claude-code',
+      config: {
+        mode: 'worktree' as const,
+        baseBranch: 'main',
+        cleanupMode: 'manual' as const,
+      },
+    }
+
+    it('should show follow-up placeholder text', async () => {
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          parentExecution={parentExecution}
+        />
+      )
+
+      await waitFor(() => {
+        expect(
+          screen.getByPlaceholderText('Enter feedback to continue the execution...')
+        ).toBeInTheDocument()
+      })
+    })
+
+    it('should not call prepare API in follow-up mode', async () => {
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          parentExecution={parentExecution}
+        />
+      )
+
+      // Wait a tick for any potential API calls
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      expect(executionsApi.prepare).not.toHaveBeenCalled()
+    })
+
+    it('should disable agent selector in follow-up mode', async () => {
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          parentExecution={parentExecution}
+        />
+      )
+
+      await waitFor(() => {
+        const triggers = screen.getAllByRole('combobox')
+        // Agent selector should be disabled
+        expect(triggers[0]).toBeDisabled()
+      })
+    })
+
+    it('should disable mode selector in follow-up mode', async () => {
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          parentExecution={parentExecution}
+        />
+      )
+
+      await waitFor(() => {
+        const triggers = screen.getAllByRole('combobox')
+        // Mode selector should be disabled
+        expect(triggers[1]).toBeDisabled()
+      })
+    })
+
+    it('should disable settings button in follow-up mode', async () => {
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          parentExecution={parentExecution}
+        />
+      )
+
+      await waitFor(() => {
+        // Find settings button by looking for all buttons and finding the one with Settings icon
+        const buttons = screen.getAllByRole('button')
+        const settingsButton = buttons.find((btn) => btn.className.includes('border-input'))
+        expect(settingsButton).toBeDisabled()
+      })
+    })
+
+    it('should show "Submit" as run button label in follow-up mode', async () => {
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          parentExecution={parentExecution}
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Submit/i })).toBeInTheDocument()
+      })
+    })
+
+    it('should inherit agent type from parent execution', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          parentExecution={parentExecution}
+        />
+      )
+
+      // Enter feedback prompt
+      const textarea = await screen.findByPlaceholderText(
+        'Enter feedback to continue the execution...'
+      )
+      await user.type(textarea, 'Continue with this feedback')
+
+      // Click submit
+      const submitButton = screen.getByRole('button', { name: /Submit/i })
+      await user.click(submitButton)
+
+      // Should be called with inherited agent type
+      expect(mockOnStart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: 'worktree',
+          baseBranch: 'main',
+        }),
+        'Continue with this feedback',
+        'claude-code'
+      )
+    })
+
+    it('should allow custom placeholder', async () => {
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          parentExecution={parentExecution}
+          promptPlaceholder="Type your message..."
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('Type your message...')).toBeInTheDocument()
+      })
+    })
+
+    it('should show inherited values in disabled selectors', async () => {
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          parentExecution={parentExecution}
+        />
+      )
+
+      await waitFor(() => {
+        // Should show inherited agent type
+        expect(screen.getByText('Claude Code')).toBeInTheDocument()
+        // Should show inherited mode
+        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
+      })
+    })
+  })
+})

@@ -18,19 +18,14 @@ import {
 } from "./executions.js";
 import { getDefaultTemplate, getTemplateById } from "./prompt-templates.js";
 import { randomUUID } from "crypto";
-import {
-  SimpleProcessManager,
-  SimpleExecutionEngine,
-  ResilientExecutor,
-  LinearOrchestrator,
-  type WorkflowDefinition,
-} from "agent-execution-engine";
-import { createAgUiSystem } from "../execution/output/ag-ui-integration.js";
-import type { AgUiEventAdapter } from "../execution/output/ag-ui-adapter.js";
+import type { ExecutionTask } from "agent-execution-engine/engine";
 import type { TransportManager } from "../execution/transport/transport-manager.js";
 import { ExecutionLogsStore } from "./execution-logs-store.js";
 import { ExecutionWorkerPool } from "./execution-worker-pool.js";
 import { broadcastExecutionUpdate } from "./websocket.js";
+import { GitCli } from "../execution/worktree/git-cli.js";
+import { createExecutorForAgent } from "../execution/executors/executor-factory.js";
+import type { AgentType } from "@sudocode-ai/types/agents";
 
 /**
  * Configuration for creating an execution
@@ -92,7 +87,6 @@ export class ExecutionService {
   private transportManager?: TransportManager;
   private logsStore: ExecutionLogsStore;
   private workerPool?: ExecutionWorkerPool;
-  private activeOrchestrators = new Map<string, LinearOrchestrator>();
 
   /**
    * Create a new ExecutionService
@@ -200,11 +194,27 @@ export class ExecutionService {
     // 5. Render template
     const renderedPrompt = this.templateEngine.render(template, context);
 
-    // 6. Get default config
+    // 6. Get current branch as default base branch
+    let currentBranch = "main"; // Fallback default
+    try {
+      const gitCli = new GitCli();
+      currentBranch = await gitCli.getCurrentBranch(this.repoPath);
+      // If detached HEAD, try to use 'main' as fallback
+      if (currentBranch === "(detached)") {
+        currentBranch = "main";
+      }
+    } catch (error) {
+      console.warn(
+        "Failed to get current branch, using 'main' as fallback:",
+        error
+      );
+    }
+
+    // 7. Get default config
     const defaultConfig: ExecutionConfig = {
       mode: "worktree",
       model: "claude-sonnet-4",
-      baseBranch: "main",
+      baseBranch: currentBranch,
       checkpointInterval: 1,
       continueOnStepFailure: false,
       captureFileChanges: true,
@@ -212,7 +222,7 @@ export class ExecutionService {
       ...options?.config,
     };
 
-    // 7. Validate
+    // 8. Validate
     const warnings: string[] = [];
     const errors: string[] = [];
 
@@ -244,12 +254,14 @@ export class ExecutionService {
    * @param issueId - ID of issue to execute
    * @param config - Execution configuration
    * @param prompt - Rendered prompt to execute
+   * @param agentType - Type of agent to use (defaults to 'claude-code')
    * @returns Created execution record
    */
   async createExecution(
     issueId: string,
     config: ExecutionConfig,
-    prompt: string
+    prompt: string,
+    agentType: AgentType = "claude-code"
   ): Promise<Execution> {
     // 1. Validate
     if (!prompt.trim()) {
@@ -274,7 +286,7 @@ export class ExecutionService {
       const result = await this.lifecycleService.createExecutionWithWorktree({
         issueId,
         issueTitle: issue.title,
-        agentType: "claude-code",
+        agentType: agentType,
         targetBranch: config.baseBranch || "main",
         repoPath: this.repoPath,
         mode: mode,
@@ -290,7 +302,7 @@ export class ExecutionService {
       execution = createExecution(this.db, {
         id: executionId,
         issue_id: issueId,
-        agent_type: "claude-code",
+        agent_type: agentType,
         mode: mode,
         prompt: prompt,
         config: JSON.stringify(config),
@@ -332,244 +344,52 @@ export class ExecutionService {
       return execution;
     }
 
-    // Legacy in-process execution (fallback when no worker pool)
-    // 4. Build WorkflowDefinition
-    const workflow: WorkflowDefinition = {
-      id: `workflow-${execution.id}`,
-      steps: [
-        {
-          id: "execute-issue",
-          taskType: "issue",
-          prompt,
-          taskConfig: {
-            model: config.model || "claude-sonnet-4",
-            timeout: config.timeout,
-            captureFileChanges: config.captureFileChanges ?? true,
-            captureToolCalls: config.captureToolCalls ?? true,
-          },
-        },
-      ],
+    // 4. In-process execution with executor wrapper (fallback when no worker pool)
+    const wrapper = createExecutorForAgent(
+      agentType,
+      { workDir: this.repoPath }, // Agent-specific config (minimal for now)
+      {
+        workDir: this.repoPath,
+        lifecycleService: this.lifecycleService,
+        logsStore: this.logsStore,
+        projectId: this.projectId,
+        db: this.db,
+        transportManager: this.transportManager,
+      }
+    );
+
+    // Build execution task
+    const task: ExecutionTask = {
+      id: execution.id,
+      type: "issue",
+      entityId: issueId,
+      prompt: prompt,
+      workDir: workDir,
       config: {
-        checkpointInterval: config.checkpointInterval ?? 1,
-        continueOnStepFailure: config.continueOnStepFailure ?? false,
         timeout: config.timeout,
       },
       metadata: {
-        workDir,
+        model: config.model || "claude-sonnet-4",
+        captureFileChanges: config.captureFileChanges ?? true,
+        captureToolCalls: config.captureToolCalls ?? true,
         issueId,
         executionId: execution.id,
       },
+      priority: 0,
+      dependencies: [],
+      createdAt: new Date(),
     };
 
-    // 5. Create execution engine stack
-    const processManager = new SimpleProcessManager();
-
-    // Build Claude CLI args with prompt
-    // NOTE: The generic engine doesn't know how to pass Claude-specific prompts,
-    // so we add the prompt as the last CLI argument
-    const claudeArgs = [
-      "--print",
-      "--output-format",
-      "stream-json",
-      "--verbose",
-      "--dangerously-skip-permissions",
-      prompt, // Add prompt as last argument
-    ];
-
-    let engine = new SimpleExecutionEngine(processManager, {
-      maxConcurrent: 1, // One task at a time for issue execution
-      defaultProcessConfig: {
-        executablePath: "claude",
-        args: claudeArgs,
-      },
+    // Execute with full lifecycle management (non-blocking)
+    wrapper.executeWithLifecycle(execution.id, task, workDir).catch((error) => {
+      console.error(
+        `[ExecutionService] Execution ${execution.id} failed:`,
+        error
+      );
+      // Error is already handled by wrapper (status updated, broadcasts sent)
     });
 
-    let executor = new ResilientExecutor(engine);
-
-    // 6. Create AG-UI system (processor + adapter) if transport manager is available
-    let agUiAdapter: AgUiEventAdapter | undefined;
-    if (this.transportManager) {
-      const agUiSystem = createAgUiSystem(execution.id);
-      agUiAdapter = agUiSystem.adapter;
-
-      // Connect adapter to transport for SSE streaming
-      this.transportManager.connectAdapter(agUiAdapter, execution.id);
-
-      // Connect processor to execution engine for real-time output parsing
-      // Buffer for incomplete lines (stream-json can split mid-line)
-      let lineBuffer = "";
-
-      engine = new SimpleExecutionEngine(processManager, {
-        maxConcurrent: 1,
-        defaultProcessConfig: {
-          executablePath: "claude",
-          args: claudeArgs, // Use same args with prompt
-        },
-        // TODO: Factor out this logic for DRY principles.
-        onOutput: (data, type) => {
-          if (type === "stdout") {
-            // Append new data to buffer
-            lineBuffer += data.toString();
-
-            // Process complete lines (ending with \n)
-            let newlineIndex;
-            while ((newlineIndex = lineBuffer.indexOf("\n")) !== -1) {
-              const line = lineBuffer.slice(0, newlineIndex);
-              lineBuffer = lineBuffer.slice(newlineIndex + 1);
-
-              if (line.trim()) {
-                // 1. Persist raw log immediately (before processing)
-                try {
-                  this.logsStore.appendRawLog(execution.id, line);
-                } catch (err) {
-                  console.error(
-                    "[ExecutionService] Failed to persist raw log (non-critical):",
-                    {
-                      executionId: execution.id,
-                      error: err instanceof Error ? err.message : String(err),
-                    }
-                  );
-                  // Don't crash execution - logs are nice-to-have
-                }
-
-                // 2. Process through AG-UI pipeline for live clients
-                agUiSystem.processor.processLine(line).catch((err) => {
-                  console.error(
-                    "[ExecutionService] Error processing output line:",
-                    {
-                      error: err instanceof Error ? err.message : String(err),
-                      line: line.slice(0, 100), // Log first 100 chars for debugging
-                    }
-                  );
-                });
-              }
-            }
-          }
-        },
-      });
-      executor = new ResilientExecutor(engine);
-    }
-
-    // 7. Create LinearOrchestrator
-    const orchestrator = new LinearOrchestrator(
-      executor,
-      undefined, // No storage/checkpointing for now
-      agUiAdapter,
-      this.lifecycleService
-    );
-
-    // 8. Register event handlers to update execution status in database
-    orchestrator.onWorkflowStart(() => {
-      try {
-        updateExecution(this.db, execution.id, {
-          status: "running",
-        });
-        // Broadcast status change
-        const updated = getExecution(this.db, execution.id);
-        if (updated) {
-          broadcastExecutionUpdate(
-            this.projectId,
-            execution.id,
-            "status_changed",
-            updated,
-            updated.issue_id || undefined
-          );
-        }
-      } catch (error) {
-        console.error(
-          "[ExecutionService] Failed to update execution status to running",
-          {
-            executionId: execution.id,
-            error: error instanceof Error ? error.message : String(error),
-          }
-        );
-      }
-    });
-
-    orchestrator.onWorkflowComplete(() => {
-      console.log("[ExecutionService] Workflow completed successfully", {
-        executionId: execution.id,
-      });
-      try {
-        updateExecution(this.db, execution.id, {
-          status: "completed",
-          completed_at: new Date().toISOString(),
-        });
-        // Broadcast status change
-        const updated = getExecution(this.db, execution.id);
-        if (updated) {
-          broadcastExecutionUpdate(
-            this.projectId,
-            execution.id,
-            "status_changed",
-            updated,
-            updated.issue_id || undefined
-          );
-        }
-      } catch (error) {
-        console.error(
-          "[ExecutionService] Failed to update execution status to completed",
-          {
-            executionId: execution.id,
-            error: error instanceof Error ? error.message : String(error),
-            note: "Execution may have been deleted (e.g., due to CASCADE DELETE from issue deletion)",
-          }
-        );
-      }
-      // Remove orchestrator from active map
-      this.activeOrchestrators.delete(execution.id);
-    });
-
-    orchestrator.onWorkflowFailed((_executionId, error) => {
-      console.error("[ExecutionService] Workflow failed", {
-        executionId: execution.id,
-        error: error.message,
-        stack: error.stack,
-      });
-      try {
-        updateExecution(this.db, execution.id, {
-          status: "failed",
-          completed_at: new Date().toISOString(),
-          error_message: error.message,
-        });
-        // Broadcast status change
-        const updated = getExecution(this.db, execution.id);
-        if (updated) {
-          broadcastExecutionUpdate(
-            this.projectId,
-            execution.id,
-            "status_changed",
-            updated,
-            updated.issue_id || undefined
-          );
-        }
-      } catch (updateError) {
-        console.error(
-          "[ExecutionService] Failed to update execution status to failed",
-          {
-            executionId: execution.id,
-            error:
-              updateError instanceof Error
-                ? updateError.message
-                : String(updateError),
-            note: "Execution may have been deleted (e.g., due to CASCADE DELETE from issue deletion)",
-          }
-        );
-      }
-      // Remove orchestrator from active map
-      this.activeOrchestrators.delete(execution.id);
-    });
-
-    // 9. Start workflow execution (non-blocking)
-    orchestrator.startWorkflow(workflow, workDir, {
-      checkpointInterval: config.checkpointInterval,
-      executionId: execution.id,
-    });
-
-    // 10. Store orchestrator for later cancellation
-    this.activeOrchestrators.set(execution.id, orchestrator);
-
-    // 11. Broadcast execution creation
+    // Broadcast execution creation
     broadcastExecutionUpdate(
       this.projectId,
       execution.id,
@@ -582,10 +402,10 @@ export class ExecutionService {
   }
 
   /**
-   * Create follow-up execution - reuse worktree from previous execution
+   * Create follow-up execution
    *
-   * Creates a new execution that reuses the worktree from a previous execution,
-   * appending feedback or additional context to the prompt.
+   * For worktree-based executions: reuses the worktree and resumes the session.
+   * For local/non-worktree executions: creates a new execution with feedback context.
    *
    * @param executionId - ID of previous execution to follow up on
    * @param feedback - Additional feedback/context to append to prompt
@@ -601,16 +421,12 @@ export class ExecutionService {
       throw new Error(`Execution ${executionId} not found`);
     }
 
-    if (!prevExecution.worktree_path) {
-      throw new Error(
-        `Cannot create follow-up: execution ${executionId} has no worktree`
-      );
-    }
+    const hasWorktree = !!prevExecution.worktree_path;
 
-    // Check if worktree still exists on filesystem, recreate if needed
-    if (this.lifecycleService) {
+    // For worktree executions, check if worktree still exists on filesystem, recreate if needed
+    if (hasWorktree && this.lifecycleService) {
       const fs = await import("fs");
-      const worktreeExists = fs.existsSync(prevExecution.worktree_path);
+      const worktreeExists = fs.existsSync(prevExecution.worktree_path!);
 
       if (!worktreeExists) {
         console.log(
@@ -646,16 +462,23 @@ ${feedback}
 Please continue working on this issue, taking into account the feedback above.`;
 
     // 5. Create new execution record that references previous execution
+    // Default to 'claude-code' if agent_type is null (for backwards compatibility)
+    const agentType = (prevExecution.agent_type || "claude-code") as AgentType;
+
+    // Determine working directory: worktree path if available, otherwise repo path (local mode)
+    const workDir = hasWorktree ? prevExecution.worktree_path! : this.repoPath;
+
     const newExecutionId = randomUUID();
     const newExecution = createExecution(this.db, {
       id: newExecutionId,
       issue_id: prevExecution.issue_id,
-      agent_type: "claude-code",
+      agent_type: agentType, // Use same agent as previous execution
       target_branch: prevExecution.target_branch,
       branch_name: prevExecution.branch_name,
-      // TODO: Handle case where worktree has been deleted.
-      worktree_path: prevExecution.worktree_path, // Reuse same worktree
+      worktree_path: prevExecution.worktree_path || undefined, // Reuse same worktree (undefined for local)
       config: prevExecution.config || undefined, // Preserve config (including cleanupMode) from previous execution
+      parent_execution_id: executionId, // Link to parent execution for follow-up chain
+      prompt: feedback, // Store the user's follow-up feedback as the prompt
     });
 
     // Initialize empty logs for this execution
@@ -672,228 +495,83 @@ Please continue working on this issue, taking into account the feedback above.`;
       // Don't fail execution creation - logs are nice-to-have
     }
 
-    // 5. Build WorkflowDefinition
-    const workflow: WorkflowDefinition = {
-      id: `workflow-${newExecution.id}`,
-      steps: [
-        {
-          id: "execute-followup",
-          taskType: "issue",
-          prompt: followUpPrompt,
-          taskConfig: {
-            model: "claude-sonnet-4",
-            captureFileChanges: true,
-            captureToolCalls: true,
-          },
-        },
-      ],
+    // 6. Use executor wrapper with session resumption
+    const wrapper = createExecutorForAgent(
+      agentType,
+      { workDir: this.repoPath },
+      {
+        workDir: this.repoPath,
+        lifecycleService: this.lifecycleService,
+        logsStore: this.logsStore,
+        projectId: this.projectId,
+        db: this.db,
+        transportManager: this.transportManager,
+      }
+    );
+
+    // Use previous execution's session_id (the actual Claude UUID) if available
+    // This enables proper session resumption with Claude Code's --resume-session flag
+    // If no session_id was captured, we can't resume - this would start a new session
+    const sessionId = prevExecution.session_id;
+    if (!sessionId) {
+      console.warn(
+        `[ExecutionService] No session_id found for execution ${executionId}, follow-up will start a new session`
+      );
+    }
+
+    // Parse config to get model and other settings
+    const parsedConfig = prevExecution.config
+      ? JSON.parse(prevExecution.config)
+      : {};
+
+    // Build execution task for follow-up
+    const task: ExecutionTask = {
+      id: newExecution.id,
+      type: "issue",
+      entityId: prevExecution.issue_id,
+      prompt: followUpPrompt,
+      workDir: workDir,
       config: {
-        checkpointInterval: 1,
-        continueOnStepFailure: false,
+        timeout: parsedConfig.timeout,
       },
       metadata: {
-        workDir: prevExecution.worktree_path,
+        model: parsedConfig.model || "claude-sonnet-4",
+        captureFileChanges: parsedConfig.captureFileChanges ?? true,
+        captureToolCalls: parsedConfig.captureToolCalls ?? true,
         issueId: prevExecution.issue_id,
         executionId: newExecution.id,
         followUpOf: executionId,
       },
+      priority: 0,
+      dependencies: [],
+      createdAt: new Date(),
     };
 
-    // 6. Create execution engine stack
-    const processManager = new SimpleProcessManager();
-
-    // Build Claude CLI args with follow-up prompt
-    // NOTE: The generic engine doesn't know how to pass Claude-specific prompts,
-    // so we add the prompt as the last CLI argument
-    const claudeArgs = [
-      "--print",
-      "--output-format",
-      "stream-json",
-      "--verbose",
-      "--dangerously-skip-permissions",
-      followUpPrompt, // Add follow-up prompt as last argument
-    ];
-
-    let engine = new SimpleExecutionEngine(processManager, {
-      maxConcurrent: 1,
-      defaultProcessConfig: {
-        executablePath: "claude",
-        args: claudeArgs,
-      },
-    });
-
-    let executor = new ResilientExecutor(engine);
-
-    // 7. Create AG-UI system (processor + adapter) if transport manager is available
-    let agUiAdapter: AgUiEventAdapter | undefined;
-    if (this.transportManager) {
-      const agUiSystem = createAgUiSystem(newExecution.id);
-      agUiAdapter = agUiSystem.adapter;
-      this.transportManager.connectAdapter(agUiAdapter, newExecution.id);
-
-      // Connect processor to execution engine for real-time output parsing
-      // Buffer for incomplete lines (stream-json can split mid-line)
-      let lineBuffer = "";
-
-      engine = new SimpleExecutionEngine(processManager, {
-        maxConcurrent: 1,
-        defaultProcessConfig: {
-          executablePath: "claude",
-          args: claudeArgs, // Use same args with follow-up prompt
-        },
-        // TODO: Factor out this logic for DRY principles.
-        onOutput: (data, type) => {
-          if (type === "stdout") {
-            // Append new data to buffer
-            lineBuffer += data.toString();
-
-            // Process complete lines (ending with \n)
-            let newlineIndex;
-            while ((newlineIndex = lineBuffer.indexOf("\n")) !== -1) {
-              const line = lineBuffer.slice(0, newlineIndex);
-              lineBuffer = lineBuffer.slice(newlineIndex + 1);
-
-              if (line.trim()) {
-                // 1. Persist raw log immediately (before processing)
-                try {
-                  this.logsStore.appendRawLog(newExecution.id, line);
-                } catch (err) {
-                  console.error(
-                    "[ExecutionService] Failed to persist raw log (non-critical):",
-                    {
-                      executionId: newExecution.id,
-                      error: err instanceof Error ? err.message : String(err),
-                    }
-                  );
-                  // Don't crash execution - logs are nice-to-have
-                }
-
-                // 2. Process through AG-UI pipeline for live clients
-                agUiSystem.processor.processLine(line).catch((err) => {
-                  console.error(
-                    "[ExecutionService] Error processing output line:",
-                    {
-                      error: err instanceof Error ? err.message : String(err),
-                      line: line.slice(0, 100), // Log first 100 chars for debugging
-                    }
-                  );
-                });
-              }
-            }
-          }
-        },
-      });
-      executor = new ResilientExecutor(engine);
+    // Execute follow-up (non-blocking)
+    // If we have a session ID, resume the session; otherwise start a new one
+    if (sessionId) {
+      wrapper
+        .resumeWithLifecycle(newExecution.id, sessionId, task, workDir)
+        .catch((error) => {
+          console.error(
+            `[ExecutionService] Follow-up execution ${newExecution.id} failed:`,
+            error
+          );
+          // Error is already handled by wrapper (status updated, broadcasts sent)
+        });
+    } else {
+      // No session to resume, start a new execution with the follow-up prompt
+      wrapper
+        .executeWithLifecycle(newExecution.id, task, workDir)
+        .catch((error) => {
+          console.error(
+            `[ExecutionService] Follow-up execution ${newExecution.id} failed:`,
+            error
+          );
+        });
     }
 
-    // 8. Create LinearOrchestrator
-    const orchestrator = new LinearOrchestrator(
-      executor,
-      undefined,
-      agUiAdapter,
-      this.lifecycleService
-    );
-
-    // 9. Register event handlers
-    orchestrator.onWorkflowStart(() => {
-      try {
-        updateExecution(this.db, newExecution.id, {
-          status: "running",
-        });
-        // Broadcast status change
-        const updated = getExecution(this.db, newExecution.id);
-        if (updated) {
-          broadcastExecutionUpdate(
-            this.projectId,
-            newExecution.id,
-            "status_changed",
-            updated,
-            updated.issue_id || undefined
-          );
-        }
-      } catch (error) {
-        console.error(
-          "[ExecutionService] Failed to update follow-up execution status to running",
-          {
-            executionId: newExecution.id,
-            error: error instanceof Error ? error.message : String(error),
-          }
-        );
-      }
-    });
-
-    orchestrator.onWorkflowComplete(() => {
-      try {
-        updateExecution(this.db, newExecution.id, {
-          status: "completed",
-          completed_at: new Date().toISOString(),
-        });
-        // Broadcast status change
-        const updated = getExecution(this.db, newExecution.id);
-        if (updated) {
-          broadcastExecutionUpdate(
-            this.projectId,
-            newExecution.id,
-            "status_changed",
-            updated,
-            updated.issue_id || undefined
-          );
-        }
-      } catch (error) {
-        console.error(
-          "[ExecutionService] Failed to update follow-up execution status to completed",
-          {
-            executionId: newExecution.id,
-            error: error instanceof Error ? error.message : String(error),
-          }
-        );
-      }
-      this.activeOrchestrators.delete(newExecution.id);
-    });
-
-    orchestrator.onWorkflowFailed((_execId, error) => {
-      try {
-        updateExecution(this.db, newExecution.id, {
-          status: "failed",
-          completed_at: new Date().toISOString(),
-          error_message: error.message,
-        });
-        // Broadcast status change
-        const updated = getExecution(this.db, newExecution.id);
-        if (updated) {
-          broadcastExecutionUpdate(
-            this.projectId,
-            newExecution.id,
-            "status_changed",
-            updated,
-            updated.issue_id || undefined
-          );
-        }
-      } catch (updateError) {
-        console.error(
-          "[ExecutionService] Failed to update follow-up execution status to failed",
-          {
-            executionId: newExecution.id,
-            error:
-              updateError instanceof Error
-                ? updateError.message
-                : String(updateError),
-          }
-        );
-      }
-      this.activeOrchestrators.delete(newExecution.id);
-    });
-
-    // 10. Start workflow execution (non-blocking)
-    orchestrator.startWorkflow(workflow, prevExecution.worktree_path, {
-      checkpointInterval: 1,
-      executionId: newExecution.id,
-    });
-
-    // 11. Store orchestrator for later cancellation
-    this.activeOrchestrators.set(newExecution.id, orchestrator);
-
-    // 12. Broadcast execution creation
+    // Broadcast execution creation
     broadcastExecutionUpdate(
       this.projectId,
       newExecution.id,
@@ -929,17 +607,13 @@ Please continue working on this issue, taking into account the feedback above.`;
       return; // Worker pool handles DB updates and broadcasts
     }
 
-    // Legacy in-process cancellation
-    // Get orchestrator from active map
-    const orchestrator = this.activeOrchestrators.get(executionId);
-    if (orchestrator) {
-      // Cancel via orchestrator
-      await orchestrator.cancelWorkflow(executionId);
-      // Remove from active map
-      this.activeOrchestrators.delete(executionId);
-    }
+    // For in-process executions using AgentExecutorWrapper:
+    // The wrapper manages its own lifecycle and cancellation.
+    // We update the database status, which the wrapper may check,
+    // or we rely on process termination to stop execution.
+    // TODO: Add cancellation registry in AgentExecutorWrapper for direct process control
 
-    // Update status in database (orchestrator.cancelWorkflow doesn't emit events for DB update)
+    // Update status in database
     updateExecution(this.db, executionId, {
       status: "stopped",
       completed_at: new Date().toISOString(),
@@ -1035,28 +709,15 @@ Please continue working on this issue, taking into account the feedback above.`;
    * all running executions before the server exits.
    */
   async shutdown(): Promise<void> {
-    const cancelPromises: Promise<void>[] = [];
-
-    // Cancel all active orchestrators
-    for (const [
-      executionId,
-      orchestrator,
-    ] of this.activeOrchestrators.entries()) {
-      cancelPromises.push(
-        orchestrator.cancelWorkflow(executionId).catch((error) => {
-          console.error("[ExecutionService] Error canceling execution", {
-            executionId,
-            error: error.message,
-          });
-        })
-      );
+    // Shutdown worker pool if available
+    if (this.workerPool) {
+      await this.workerPool.shutdown();
     }
 
-    // Wait for all cancellations to complete (with timeout)
-    await Promise.race([
-      Promise.all(cancelPromises),
-      new Promise((resolve) => setTimeout(resolve, 5000)), // 5 second timeout
-    ]);
+    // For in-process executions using AgentExecutorWrapper:
+    // The wrapper manages its own lifecycle. Processes will be terminated
+    // when the Node.js process exits.
+    // TODO: Add active execution tracking to AgentExecutorWrapper for graceful shutdown
   }
 
   /**
@@ -1095,9 +756,22 @@ Please continue working on this issue, taking into account the feedback above.`;
   /**
    * Check if there are any active executions
    *
-   * @returns true if there are active in-process executions
+   * @returns true if there are active worker pool executions
    */
   hasActiveExecutions(): boolean {
-    return this.activeOrchestrators.size > 0;
+    // Check worker pool for active executions
+    if (this.workerPool) {
+      return this.workerPool.getActiveWorkerCount() > 0;
+    }
+
+    // For in-process executions, we don't track them anymore
+    // Query the database for running executions as a fallback
+    const runningExecutions = this.db
+      .prepare(
+        "SELECT COUNT(*) as count FROM executions WHERE status = 'running'"
+      )
+      .get() as { count: number };
+
+    return runningExecutions.count > 0;
   }
 }
