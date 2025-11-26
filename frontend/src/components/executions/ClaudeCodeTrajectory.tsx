@@ -14,6 +14,8 @@
 import { useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import rehypeHighlight from 'rehype-highlight'
 import type { MessageBuffer } from '@/hooks/useAgUiStream'
 import type { ToolCallTracking } from '@/hooks/useAgUiStream'
 
@@ -153,12 +155,12 @@ function formatResultSummary(toolName: string, result: string): string | null {
   try {
     // For Bash, extract key info from output
     if (toolName === 'Bash') {
-      const lines = result.split('\n').filter(line => line.trim())
+      const lines = result.split('\n').filter((line) => line.trim())
       if (lines.length === 0) return null
 
       // Look for success indicators
       if (result.includes('✓') || result.includes('✔')) {
-        const successLine = lines.find(l => l.includes('✓') || l.includes('✔'))
+        const successLine = lines.find((l) => l.includes('✓') || l.includes('✔'))
         if (successLine) return successLine.trim()
       }
 
@@ -192,13 +194,13 @@ function formatResultSummary(toolName: string, result: string): string | null {
 
     // For Glob, show file count
     if (toolName === 'Glob') {
-      const lines = result.split('\n').filter(line => line.trim())
+      const lines = result.split('\n').filter((line) => line.trim())
       return `Found ${lines.length} file${lines.length !== 1 ? 's' : ''}`
     }
 
     // For Search/Grep, show match count
     if (toolName === 'Search' || toolName === 'Grep') {
-      const lines = result.split('\n').filter(line => line.trim())
+      const lines = result.split('\n').filter((line) => line.trim())
       return `Found ${lines.length} match${lines.length !== 1 ? 'es' : ''}`
     }
 
@@ -244,7 +246,7 @@ function formatResultSummary(toolName: string, result: string): string | null {
       } catch {
         // Fallback to line count
       }
-      const lines = result.split('\n').filter(line => line.trim())
+      const lines = result.split('\n').filter((line) => line.trim())
       return `${lines.length} todos`
     }
 
@@ -384,22 +386,52 @@ export function ClaudeCodeTrajectory({
                   )}
                   {renderMarkdown ? (
                     <ReactMarkdown
-                      className="prose prose-sm dark:prose-invert max-w-none text-muted-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+                      remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[rehypeHighlight]}
+                      className="max-w-none text-muted-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
                       components={{
-                        p: ({ children }) => <p className="mb-1 leading-relaxed">{children}</p>,
-                        code: ({ inline, children, ...props }: any) =>
-                          inline ? (
-                            <code
-                              className="rounded bg-muted px-1 py-0.5 font-mono text-xs"
-                              {...props}
-                            >
-                              {children}
-                            </code>
-                          ) : (
-                            <pre className="my-1 overflow-x-auto rounded bg-muted p-2 text-xs">
+                        p: ({ children }) => <>{children}</>,
+                        code: ({ inline, children, ...props }: any) => {
+                          // Check if this should be treated as inline code
+                          // ReactMarkdown sometimes mis-detects inline code as blocks
+                          let codeText = ''
+                          if (typeof children === 'string') {
+                            codeText = children
+                          } else if (Array.isArray(children)) {
+                            codeText = children
+                              .map((c) => (typeof c === 'string' ? c : ''))
+                              .join('')
+                          } else {
+                            codeText = String(children)
+                          }
+                          // TODO: Update the parsing for this instead of having to split code blocks like this.
+                          const isShortInline =
+                            codeText.length < 100 &&
+                            !codeText.includes('\n') &&
+                            !codeText.includes('```')
+
+                          if (inline || isShortInline) {
+                            return (
+                              <code
+                                className="!inline rounded bg-muted px-1 py-0.5 font-mono text-xs"
+                                style={{
+                                  display: 'inline',
+                                  whiteSpace: 'nowrap',
+                                  width: 'auto',
+                                  maxWidth: 'none',
+                                }}
+                                {...props}
+                              >
+                                {children}
+                              </code>
+                            )
+                          }
+                          return (
+                            <pre className="m-0 my-1 block overflow-x-auto rounded border text-xs">
                               <code {...props}>{children}</code>
                             </pre>
-                          ),
+                          )
+                        },
                         ul: ({ children }) => <ul className="my-1 list-disc pl-5">{children}</ul>,
                         ol: ({ children }) => (
                           <ol className="my-1 list-decimal pl-5">{children}</ol>
@@ -525,17 +557,21 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCallTracking }) {
                 ) : resultData ? (
                   <div className="text-muted-foreground">
                     {/* Show tool-specific summary or preview */}
-                    {!showFullResult && (() => {
-                      const summary = formatResultSummary(toolCall.toolCallName, toolCall.result || '')
-                      if (summary) {
-                        return <div className="text-xs leading-relaxed">{summary}</div>
-                      }
-                      return (
-                        <pre className="whitespace-pre-wrap text-xs leading-relaxed">
-                          {resultData.truncated}
-                        </pre>
-                      )
-                    })()}
+                    {!showFullResult &&
+                      (() => {
+                        const summary = formatResultSummary(
+                          toolCall.toolCallName,
+                          toolCall.result || ''
+                        )
+                        if (summary) {
+                          return <div className="text-xs leading-relaxed">{summary}</div>
+                        }
+                        return (
+                          <pre className="whitespace-pre-wrap text-xs leading-relaxed">
+                            {resultData.truncated}
+                          </pre>
+                        )
+                      })()}
                     {/* Full result when expanded */}
                     {showFullResult && (
                       <pre className="whitespace-pre-wrap text-xs leading-relaxed">

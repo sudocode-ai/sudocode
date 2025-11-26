@@ -1,4 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
+import githubLight from 'highlight.js/styles/github.css?inline'
+import githubDark from 'highlight.js/styles/github-dark.css?inline'
 
 type Theme = 'light' | 'dark' | 'system'
 
@@ -9,6 +11,15 @@ interface ThemeContextType {
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
+
+// Create style elements for highlight.js themes
+const lightStyle = document.createElement('style')
+lightStyle.id = 'hljs-light'
+lightStyle.textContent = githubLight
+
+const darkStyle = document.createElement('style')
+darkStyle.id = 'hljs-dark'
+darkStyle.textContent = githubDark
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
@@ -28,15 +39,27 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     root.classList.remove('light', 'dark')
 
+    let currentTheme: 'light' | 'dark'
     if (theme === 'system') {
       const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches
         ? 'dark'
         : 'light'
       root.classList.add(systemTheme)
       setActualTheme(systemTheme)
+      currentTheme = systemTheme
     } else {
       root.classList.add(theme)
       setActualTheme(theme)
+      currentTheme = theme
+    }
+
+    // Update highlight.js theme
+    if (currentTheme === 'dark') {
+      document.head.appendChild(darkStyle)
+      lightStyle.remove()
+    } else {
+      document.head.appendChild(lightStyle)
+      darkStyle.remove()
     }
   }, [theme])
 
@@ -53,6 +76,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         setActualTheme(newTheme)
         window.document.documentElement.classList.remove('light', 'dark')
         window.document.documentElement.classList.add(newTheme)
+
+        // Update highlight.js theme
+        if (newTheme === 'dark') {
+          document.head.appendChild(darkStyle)
+          lightStyle.remove()
+        } else {
+          document.head.appendChild(lightStyle)
+          darkStyle.remove()
+        }
       }
     }
 
