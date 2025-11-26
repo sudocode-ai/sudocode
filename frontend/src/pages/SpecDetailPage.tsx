@@ -612,25 +612,23 @@ export default function SpecDetailPage() {
         <div className="flex w-full 2xl:mx-auto 2xl:max-w-[128rem]">
           {/* Table of Contents Panel - Only on xl+ screens */}
           {showTocPanel && viewMode === 'formatted' && (
-            <div className="hidden w-64 flex-shrink-0 flex-col border-r bg-background xl:flex">
-              <div
-                className="sticky top-0 overflow-y-auto"
-                style={{ height: '100%', maxHeight: '100%' }}
-              >
-                <TableOfContentsPanel
-                  items={tocItems}
-                  onItemClick={handleTocItemClick}
-                  onCollapse={() => setShowTocPanel(false)}
-                />
-              </div>
+            <div className="hidden w-64 flex-shrink-0 flex-col overflow-y-auto border-r bg-background xl:flex">
+              <TableOfContentsPanel
+                items={tocItems}
+                onItemClick={handleTocItemClick}
+                onCollapse={() => setShowTocPanel(false)}
+              />
             </div>
           )}
 
           <div ref={scrollableContainerRef} className="relative flex-1 overflow-y-auto">
             <div
               ref={editorContainerRef}
-              className="px-3 py-4 sm:px-6 lg:px-12 xl:px-16"
-              style={{ paddingRight: showFeedbackPanel ? 'calc(28rem + 1rem)' : undefined }}
+              className={`px-3 py-4 sm:px-6 lg:px-12 xl:px-16 ${
+                showFeedbackPanel
+                  ? 'pr-[calc(16rem+1rem)] sm:pr-[calc(20rem+1rem)] md:pr-[calc(24rem+1rem)] lg:pr-[calc(28rem+1rem)] xl:pr-[calc(30rem+1rem)] 2xl:pr-[calc(40rem+1rem)]'
+                  : ''
+              }`}
             >
               <div className="mx-auto max-w-full space-y-3">
                 {/* Spec ID and Title */}
@@ -753,35 +751,37 @@ export default function SpecDetailPage() {
               </div>
             </div>
 
-            {/* Aligned Feedback Panel - Absolutely positioned on the right */}
+            {/* Aligned Feedback Panel - Absolutely positioned, scrolls with page */}
             {showFeedbackPanel && (
-              <div className="absolute right-0 top-0 h-full">
-                <AlignedFeedbackPanel
-                  feedback={feedback}
-                  positions={feedbackPositions}
-                  relationships={relationships}
-                  currentEntityId={id}
-                  onFeedbackClick={handleFeedbackClick}
-                  onDismiss={handleFeedbackDismiss}
-                  onDelete={handleFeedbackDelete}
-                  onDeleteRelationship={handleDeleteRelationship}
-                  onCreateRelationship={handleCreateRelationship}
-                  addFeedbackButton={
-                    <div className="flex justify-center">
-                      <AddFeedbackDialog
-                        issues={issues}
-                        lineNumber={selectedLine || undefined}
-                        onSubmit={handleCreateFeedback}
-                        triggerButton={
-                          <Button variant="secondary" size="sm">
-                            <MessageSquarePlus className="mr-2 h-4 w-4" />
-                            Add Feedback
-                          </Button>
-                        }
-                      />
-                    </div>
-                  }
-                />
+              <div className="pointer-events-none absolute right-0 top-0">
+                <div className="pointer-events-auto sticky top-0">
+                  <AlignedFeedbackPanel
+                    feedback={feedback}
+                    positions={feedbackPositions}
+                    relationships={relationships}
+                    currentEntityId={id}
+                    onFeedbackClick={handleFeedbackClick}
+                    onDismiss={handleFeedbackDismiss}
+                    onDelete={handleFeedbackDelete}
+                    onDeleteRelationship={handleDeleteRelationship}
+                    onCreateRelationship={handleCreateRelationship}
+                    addFeedbackButton={
+                      <div className="flex justify-center">
+                        <AddFeedbackDialog
+                          issues={issues}
+                          lineNumber={selectedLine || undefined}
+                          onSubmit={handleCreateFeedback}
+                          triggerButton={
+                            <Button variant="secondary" size="sm">
+                              <MessageSquarePlus className="mr-2 h-4 w-4" />
+                              Add Feedback
+                            </Button>
+                          }
+                        />
+                      </div>
+                    }
+                  />
+                </div>
               </div>
             )}
           </div>
