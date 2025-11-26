@@ -41,6 +41,11 @@ export interface ExecutionMonitorProps {
   onError?: (error: Error) => void
 
   /**
+   * Callback when content changes (new messages/tool calls)
+   */
+  onContentChange?: () => void
+
+  /**
    * Compact mode - removes card wrapper and header for inline display
    */
   compact?: boolean
@@ -76,6 +81,7 @@ export function ExecutionMonitor({
   execution: executionProp,
   onComplete,
   onError,
+  onContentChange,
   compact = false,
   className = '',
 }: ExecutionMonitorProps) {
@@ -291,6 +297,13 @@ export function ExecutionMonitor({
     }
   }, [error, onError])
 
+  // Notify parent when content changes (for auto-scroll)
+  useEffect(() => {
+    if (onContentChange) {
+      onContentChange()
+    }
+  }, [messages.size, toolCalls.size, onContentChange])
+
   // Calculate metrics
   const toolCallCount = toolCalls.size
   const completedToolCalls = Array.from(toolCalls.values()).filter(
@@ -403,12 +416,18 @@ export function ExecutionMonitor({
 
         {/* Empty state */}
         {messageCount === 0 && toolCallCount === 0 && !error && !execution.error && (
-          <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-            <AlertCircle className="mb-2 h-8 w-8" />
-            <p className="text-sm">No execution activity yet</p>
-            <p className="mt-1 text-xs">
-              {isConnected ? 'Waiting for events...' : 'Connecting...'}
-            </p>
+          <div className="flex flex-col items-center justify-center py-2 text-center text-muted-foreground">
+            {isActive || isConnected ? (
+              <>
+                <Loader2 className="mb-2 h-8 w-8 animate-spin" />
+                <p className="text-sm">Waiting for events...</p>
+              </>
+            ) : (
+              <>
+                <AlertCircle className="mb-2 h-8 w-8" />
+                <p className="text-sm">No execution activity</p>
+              </>
+            )}
           </div>
         )}
 
@@ -500,11 +519,17 @@ export function ExecutionMonitor({
         {/* Empty state */}
         {messageCount === 0 && toolCallCount === 0 && !error && !execution.error && (
           <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-            <AlertCircle className="mb-2 h-8 w-8" />
-            <p className="text-sm">No execution activity yet</p>
-            <p className="mt-1 text-xs">
-              {isConnected ? 'Waiting for events...' : 'Connecting...'}
-            </p>
+            {isActive || isConnected ? (
+              <>
+                <Loader2 className="mb-2 h-8 w-8 animate-spin" />
+                <p className="text-sm">Waiting for events...</p>
+              </>
+            ) : (
+              <>
+                <AlertCircle className="mb-2 h-8 w-8" />
+                <p className="text-sm">No execution activity</p>
+              </>
+            )}
           </div>
         )}
 

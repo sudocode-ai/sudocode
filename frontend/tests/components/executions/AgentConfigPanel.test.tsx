@@ -271,7 +271,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
-        const runButton = screen.getByRole('button', { name: /Run/i })
+        const runButton = screen.getByRole('button', { name: /Submit/i })
         expect(runButton).toBeDisabled()
       })
     })
@@ -285,7 +285,7 @@ describe('AgentConfigPanel', () => {
       await user.type(textarea, 'Test prompt')
 
       await waitFor(() => {
-        const runButton = screen.getByRole('button', { name: /Run/i })
+        const runButton = screen.getByRole('button', { name: /Submit/i })
         expect(runButton).not.toBeDisabled()
       })
     })
@@ -300,7 +300,7 @@ describe('AgentConfigPanel', () => {
       const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
       await user.type(textarea, 'Test prompt')
 
-      const runButton = screen.getByRole('button', { name: /Run/i })
+      const runButton = screen.getByRole('button', { name: /Submit/i })
       expect(runButton).toBeDisabled()
     })
 
@@ -312,7 +312,7 @@ describe('AgentConfigPanel', () => {
       const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
       await user.type(textarea, 'Test prompt')
 
-      const runButton = screen.getByRole('button', { name: /Run/i })
+      const runButton = screen.getByRole('button', { name: /Submit/i })
       await user.click(runButton)
 
       expect(mockOnStart).toHaveBeenCalledWith(
@@ -360,7 +360,7 @@ describe('AgentConfigPanel', () => {
       await user.type(textarea, 'Test prompt')
 
       // Click run
-      const runButton = screen.getByRole('button', { name: /Run/i })
+      const runButton = screen.getByRole('button', { name: /Submit/i })
       await user.click(runButton)
 
       expect(mockOnStart).toHaveBeenCalledWith(expect.any(Object), 'Test prompt', 'cursor')
@@ -420,7 +420,7 @@ describe('AgentConfigPanel', () => {
       const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
       await user.type(textarea, 'Test prompt')
 
-      const runButton = screen.getByRole('button', { name: /Run/i })
+      const runButton = screen.getByRole('button', { name: /Submit/i })
       expect(runButton).toBeDisabled()
     })
   })
@@ -456,7 +456,7 @@ describe('AgentConfigPanel', () => {
       const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
       await user.type(textarea, 'Test prompt')
 
-      const runButton = screen.getByRole('button', { name: /Run/i })
+      const runButton = screen.getByRole('button', { name: /Submit/i })
       expect(runButton).not.toBeDisabled()
     })
   })
@@ -472,7 +472,7 @@ describe('AgentConfigPanel', () => {
       const textarea = screen.getByPlaceholderText('Loading prompt...')
       expect(textarea).toBeDisabled()
 
-      const runButton = screen.getByRole('button', { name: /Run/i })
+      const runButton = screen.getByRole('button', { name: /Submit/i })
       expect(runButton).toBeDisabled()
     })
 
@@ -588,7 +588,7 @@ describe('AgentConfigPanel', () => {
       })
     })
 
-    it('should show "Continue" as run button label in follow-up mode', async () => {
+    it('should show "Submit" as run button label in follow-up mode', async () => {
       renderWithProviders(
         <AgentConfigPanel
           issueId="i-test1"
@@ -599,7 +599,7 @@ describe('AgentConfigPanel', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Continue/i })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /Submit/i })).toBeInTheDocument()
       })
     })
 
@@ -621,9 +621,9 @@ describe('AgentConfigPanel', () => {
       )
       await user.type(textarea, 'Continue with this feedback')
 
-      // Click continue
-      const continueButton = screen.getByRole('button', { name: /Continue/i })
-      await user.click(continueButton)
+      // Click submit
+      const submitButton = screen.getByRole('button', { name: /Submit/i })
+      await user.click(submitButton)
 
       // Should be called with inherited agent type
       expect(mockOnStart).toHaveBeenCalledWith(
@@ -634,22 +634,6 @@ describe('AgentConfigPanel', () => {
         'Continue with this feedback',
         'claude-code'
       )
-    })
-
-    it('should allow custom run button label', async () => {
-      renderWithProviders(
-        <AgentConfigPanel
-          issueId="i-test1"
-          onStart={mockOnStart}
-          isFollowUp
-          parentExecution={parentExecution}
-          runButtonLabel="Send"
-        />
-      )
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Send/i })).toBeInTheDocument()
-      })
     })
 
     it('should allow custom placeholder', async () => {

@@ -591,8 +591,9 @@ describe('ExecutionMonitor', () => {
 
       render(<ExecutionMonitor executionId="test-exec-1" />)
 
-      expect(screen.getByText('No execution activity yet')).toBeInTheDocument()
+      // Should show loading spinner instead of "No execution activity yet" when connected
       expect(screen.getByText('Waiting for events...')).toBeInTheDocument()
+      expect(screen.queryByText('No execution activity yet')).not.toBeInTheDocument()
     })
   })
 

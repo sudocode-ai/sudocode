@@ -654,6 +654,25 @@ export function useAgUiStream(options: UseAgUiStreamOptions): UseAgUiStreamRetur
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoConnect, executionId])
 
+  // Reset state when executionId changes
+  useEffect(() => {
+    // Clear all state when execution ID changes
+    setMessages(new Map())
+    setToolCalls(new Map())
+    setState({})
+    setExecution({
+      runId: null,
+      threadId: null,
+      status: 'idle',
+      currentStep: null,
+      error: null,
+      startTime: null,
+      endTime: null,
+    })
+    setError(null)
+    shouldStayDisconnected.current = false
+  }, [executionId])
+
   return {
     connectionStatus,
     execution,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { executionsApi, type ExecutionChainResponse } from '@/lib/api'
 import { ExecutionMonitor } from './ExecutionMonitor'
 import { AgentConfigPanel } from './AgentConfigPanel'
@@ -6,6 +6,7 @@ import { DeleteWorktreeDialog } from './DeleteWorktreeDialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Execution, ExecutionConfig } from '@/types/execution'
 import {
   Loader2,
@@ -16,6 +17,7 @@ import {
   Trash2,
   Clock,
   PauseCircle,
+  ArrowDown,
 } from 'lucide-react'
 
 export interface ExecutionViewProps {
@@ -46,6 +48,12 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
   const [deletingWorktree, setDeletingWorktree] = useState(false)
   const [worktreeExists, setWorktreeExists] = useState(false)
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
+
+  // Auto-scroll state and refs
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true)
+  const lastScrollTopRef = useRef(0)
+  const contentChangeCounterRef = useRef(0)
 
   // Load execution chain
   useEffect(() => {
@@ -79,30 +87,27 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
   }, [executionId])
 
   // Reload chain when an execution completes
-  const handleExecutionComplete = useCallback(
-    async (completedExecutionId: string) => {
-      try {
-        // Reload the full chain to get updated status
-        const data = await executionsApi.getChain(completedExecutionId)
-        setChainData(data)
+  const handleExecutionComplete = useCallback(async (completedExecutionId: string) => {
+    try {
+      // Reload the full chain to get updated status
+      const data = await executionsApi.getChain(completedExecutionId)
+      setChainData(data)
 
-        // Re-check worktree status
-        const rootExecution = data.executions[0]
-        if (rootExecution?.worktree_path) {
-          try {
-            const worktreeStatus = await executionsApi.worktreeExists(rootExecution.id)
-            setWorktreeExists(worktreeStatus.exists)
-          } catch (err) {
-            console.error('Failed to check worktree status:', err)
-            setWorktreeExists(false)
-          }
+      // Re-check worktree status
+      const rootExecution = data.executions[0]
+      if (rootExecution?.worktree_path) {
+        try {
+          const worktreeStatus = await executionsApi.worktreeExists(rootExecution.id)
+          setWorktreeExists(worktreeStatus.exists)
+        } catch (err) {
+          console.error('Failed to check worktree status:', err)
+          setWorktreeExists(false)
         }
-      } catch (err) {
-        console.error('Failed to reload execution chain:', err)
       }
-    },
-    []
-  )
+    } catch (err) {
+      console.error('Failed to reload execution chain:', err)
+    }
+  }, [])
 
   // Handle execution errors
   const handleExecutionError = useCallback((err: Error) => {
@@ -137,7 +142,9 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
 
     setSubmittingFollowUp(true)
     try {
-      const newExecution = await executionsApi.createFollowUp(lastExecution.id, { feedback: prompt })
+      const newExecution = await executionsApi.createFollowUp(lastExecution.id, {
+        feedback: prompt,
+      })
 
       // Add the new execution to the chain immediately
       setChainData((prev) => {
@@ -179,6 +186,70 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
       setDeletingWorktree(false)
     }
   }
+
+  // Handle scroll events to detect manual scrolling
+  const handleScroll = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const { scrollTop, scrollHeight, clientHeight } = container
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+
+    // Consider "at bottom" if within 50px of the bottom
+    const isAtBottom = distanceFromBottom < 50
+
+    // Detect if user scrolled up (manual scroll)
+    const scrolledUp = scrollTop < lastScrollTopRef.current
+    lastScrollTopRef.current = scrollTop
+
+    if (scrolledUp && !isAtBottom) {
+      // User manually scrolled up - disable auto-scroll
+      setShouldAutoScroll(false)
+    } else if (isAtBottom) {
+      // User scrolled to bottom - enable auto-scroll
+      setShouldAutoScroll(true)
+    }
+  }, [shouldAutoScroll])
+
+  // Scroll to bottom helper
+  const scrollToBottom = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    // Smooth scroll to bottom (with fallback for environments without scrollTo)
+    if (container.scrollTo) {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth',
+      })
+    } else {
+      container.scrollTop = container.scrollHeight
+    }
+  }, [])
+
+  // Handle content changes from ExecutionMonitor
+  const handleContentChange = useCallback(() => {
+    if (!shouldAutoScroll) return
+    contentChangeCounterRef.current += 1
+    // Use setTimeout to ensure DOM has updated
+    setTimeout(() => {
+      scrollToBottom()
+    }, 0)
+  }, [shouldAutoScroll, scrollToBottom])
+
+  // Auto-scroll effect when chain data changes
+  useEffect(() => {
+    if (!shouldAutoScroll) return
+    scrollToBottom()
+  }, [chainData, shouldAutoScroll, scrollToBottom])
+
+  // Initialize scroll position on mount
+  useEffect(() => {
+    if (!scrollContainerRef.current) return
+    const container = scrollContainerRef.current
+    container.scrollTop = container.scrollHeight
+    lastScrollTopRef.current = container.scrollTop
+  }, [loading])
 
   // Render status badge
   const renderStatusBadge = (status: Execution['status']) => {
@@ -294,216 +365,247 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
   const canDeleteWorktree = rootExecution.worktree_path && worktreeExists
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Scrollable content area with padding for sticky panel */}
-      <div className="flex-1 overflow-auto py-6">
-        <div className="mx-auto w-full max-w-7xl space-y-4 px-6 pb-32">
-        {/* Execution Chain Header */}
-        <Card className="p-6">
-          <div className="flex items-start justify-between">
-            <div className="flex-1 space-y-3">
-              {/* Title and Status */}
-              <div className="flex items-center gap-3">
-                <h2 className="text-xl font-semibold">
-                  {isChain ? 'Execution Chain' : 'Execution'}
-                </h2>
-                {isChain && (
-                  <Badge variant="outline" className="text-xs">
-                    {executions.length} execution{executions.length > 1 ? 's' : ''}
-                  </Badge>
-                )}
-                {renderStatusBadge(lastExecution.status)}
-              </div>
-
-              {/* Metadata Grid - from root execution */}
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-muted-foreground">Root ID:</span>
-                  <span className="ml-2 font-mono">{rootExecution.id.slice(0, 8)}...</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Issue:</span>
-                  <span className="ml-2 font-mono">{rootExecution.issue_id}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Mode:</span>
-                  <span className="ml-2 capitalize">{rootExecution.mode}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Model:</span>
-                  <span className="ml-2">{rootExecution.model}</span>
-                </div>
-                {rootExecution.target_branch && (
-                  <div>
-                    <span className="text-muted-foreground">Base Branch:</span>
-                    <span className="ml-2 font-mono">{rootExecution.target_branch}</span>
-                  </div>
-                )}
-                {rootExecution.worktree_path && (
-                  <div>
-                    <span className="text-muted-foreground">Worktree:</span>
-                    <span className="ml-2 font-mono text-xs">{rootExecution.worktree_path}</span>
-                    {worktreeExists ? (
-                      <Badge variant="secondary" className="ml-2 text-xs">
-                        exists
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="ml-2 text-xs text-muted-foreground">
-                        deleted
+    <TooltipProvider>
+      <div className="flex h-full flex-col">
+        {/* Scrollable content area with padding for sticky panel */}
+        <div ref={scrollContainerRef} className="flex-1 overflow-auto py-6" onScroll={handleScroll}>
+          <div className="relative mx-auto w-full max-w-7xl space-y-4 px-6">
+            {/* Execution Chain Header */}
+            <Card className="p-6">
+              <div className="flex items-start justify-between">
+                <div className="flex-1 space-y-3">
+                  {/* Title and Status */}
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-xl font-semibold">
+                      {isChain ? 'Execution Chain' : 'Execution'}
+                    </h2>
+                    {isChain && (
+                      <Badge variant="outline" className="text-xs">
+                        {executions.length} execution{executions.length > 1 ? 's' : ''}
                       </Badge>
                     )}
+                    {renderStatusBadge(lastExecution.status)}
                   </div>
-                )}
-                {lastExecution.session_id && (
-                  <div className="col-span-2">
-                    <span className="text-muted-foreground">Session:</span>
-                    <code className="ml-2 rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                      {lastExecution.session_id}
-                    </code>
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      (use with{' '}
-                      <code className="rounded bg-muted px-1 py-0.5">
-                        claude --resume {lastExecution.session_id}
-                      </code>
-                      )
-                    </span>
-                  </div>
-                )}
-              </div>
 
-              {/* Timestamps - from root */}
-              <div className="flex gap-4 text-xs text-muted-foreground">
-                {rootExecution.created_at && (
-                  <div>
-                    Started:{' '}
-                    {new Date(rootExecution.created_at).toLocaleString('en-US', {
-                      dateStyle: 'short',
-                      timeStyle: 'short',
-                    })}
-                  </div>
-                )}
-                {lastExecution.completed_at && (
-                  <div>
-                    Last completed:{' '}
-                    {new Date(lastExecution.completed_at).toLocaleString('en-US', {
-                      dateStyle: 'short',
-                      timeStyle: 'short',
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="ml-4 flex gap-2">
-              {canCancelLast && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => handleCancel(lastExecution.id)}
-                  disabled={cancelling}
-                >
-                  {cancelling ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Cancelling...
-                    </>
-                  ) : (
-                    <>
-                      <X className="mr-2 h-4 w-4" />
-                      Cancel
-                    </>
-                  )}
-                </Button>
-              )}
-              {canDeleteWorktree && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowDeleteWorktree(true)}
-                  disabled={deletingWorktree}
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete Worktree
-                </Button>
-              )}
-            </div>
-          </div>
-        </Card>
-
-        {/* Execution chain contents with boundary */}
-        <Card className="p-6">
-          {executions.map((execution, index) => {
-            const isLast = index === executions.length - 1
-            const showDivider = !isLast
-
-            return (
-              <div key={execution.id}>
-                {/* Error message for this execution */}
-                {execution.error && (
-                  <div className="mb-2 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm">
-                    <div className="flex items-start gap-2">
-                      <XCircle className="mt-0.5 h-4 w-4 text-destructive" />
-                      <div>
-                        <h5 className="font-medium text-destructive">Execution Error</h5>
-                        <p className="mt-1 text-destructive/90">{execution.error}</p>
-                      </div>
+                  {/* Metadata Grid - from root execution */}
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Root ID:</span>
+                      <span className="ml-2 font-mono">{rootExecution.id.slice(0, 8)}...</span>
                     </div>
+                    <div>
+                      <span className="text-muted-foreground">Issue:</span>
+                      <span className="ml-2 font-mono">{rootExecution.issue_id}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Mode:</span>
+                      <span className="ml-2 capitalize">{rootExecution.mode}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Model:</span>
+                      <span className="ml-2">{rootExecution.model}</span>
+                    </div>
+                    {rootExecution.target_branch && (
+                      <div>
+                        <span className="text-muted-foreground">Base Branch:</span>
+                        <span className="ml-2 font-mono">{rootExecution.target_branch}</span>
+                      </div>
+                    )}
+                    {rootExecution.worktree_path && (
+                      <div>
+                        <span className="text-muted-foreground">Worktree:</span>
+                        <span className="ml-2 font-mono text-xs">
+                          {rootExecution.worktree_path}
+                        </span>
+                        {worktreeExists ? (
+                          <Badge variant="secondary" className="ml-2 text-xs">
+                            exists
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="ml-2 text-xs text-muted-foreground">
+                            deleted
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+                    {lastExecution.session_id && (
+                      <div className="col-span-2">
+                        <span className="text-muted-foreground">Session:</span>
+                        <code className="ml-2 rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                          {lastExecution.session_id}
+                        </code>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          (use with{' '}
+                          <code className="rounded bg-muted px-1 py-0.5">
+                            claude --resume {lastExecution.session_id}
+                          </code>
+                          )
+                        </span>
+                      </div>
+                    )}
                   </div>
-                )}
 
-                {/* Execution Monitor - compact mode for seamless inline display */}
-                <ExecutionMonitor
-                  executionId={execution.id}
-                  execution={execution}
-                  onComplete={() => handleExecutionComplete(execution.id)}
-                  onError={handleExecutionError}
-                  compact
-                />
+                  {/* Timestamps - from root */}
+                  <div className="flex gap-4 text-xs text-muted-foreground">
+                    {rootExecution.created_at && (
+                      <div>
+                        Started:{' '}
+                        {new Date(rootExecution.created_at).toLocaleString('en-US', {
+                          dateStyle: 'short',
+                          timeStyle: 'short',
+                        })}
+                      </div>
+                    )}
+                    {lastExecution.completed_at && (
+                      <div>
+                        Last completed:{' '}
+                        {new Date(lastExecution.completed_at).toLocaleString('en-US', {
+                          dateStyle: 'short',
+                          timeStyle: 'short',
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
 
-                {/* Visual separator between executions (subtle spacing only) */}
-                {showDivider && <div className="my-6" />}
+                {/* Action Buttons */}
+                <div className="ml-4 flex gap-2">
+                  {canCancelLast && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => handleCancel(lastExecution.id)}
+                      disabled={cancelling}
+                    >
+                      {cancelling ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Cancelling...
+                        </>
+                      ) : (
+                        <>
+                          <X className="mr-2 h-4 w-4" />
+                          Cancel
+                        </>
+                      )}
+                    </Button>
+                  )}
+                  {canDeleteWorktree && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowDeleteWorktree(true)}
+                      disabled={deletingWorktree}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete Worktree
+                    </Button>
+                  )}
+                </div>
               </div>
-            )
-          })}
-        </Card>
-        </div>
-      </div>
+            </Card>
 
-      {/* Sticky Follow-up Input Panel - always rendered at bottom */}
-      {rootExecution.issue_id && (
-        <div className="sticky bottom-0 border-t bg-background shadow-lg">
-          <div className="mx-auto w-full max-w-7xl">
-            <AgentConfigPanel
-              issueId={rootExecution.issue_id}
-              onStart={handleFollowUpStart}
-              isFollowUp
-              disabled={!canEnableFollowUp || submittingFollowUp}
-              parentExecution={{
-                id: lastExecution.id,
-                mode: rootExecution.mode || undefined,
-                model: rootExecution.model || undefined,
-                target_branch: rootExecution.target_branch || undefined,
-                agent_type: rootExecution.agent_type || undefined,
-                config: rootExecution.config
-                  ? typeof rootExecution.config === 'string'
-                    ? JSON.parse(rootExecution.config)
-                    : rootExecution.config
-                  : undefined,
-              }}
-            />
+            {/* Execution chain contents with boundary */}
+            <Card className="p-6">
+              {executions.map((execution, index) => {
+                const isLast = index === executions.length - 1
+                const showDivider = !isLast
+
+                return (
+                  <div key={execution.id}>
+                    {/* Error message for this execution */}
+                    {execution.error && (
+                      <div className="mb-2 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm">
+                        <div className="flex items-start gap-2">
+                          <XCircle className="mt-0.5 h-4 w-4 text-destructive" />
+                          <div>
+                            <h5 className="font-medium text-destructive">Execution Error</h5>
+                            <p className="mt-1 text-destructive/90">{execution.error}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Execution Monitor - compact mode for seamless inline display */}
+                    <ExecutionMonitor
+                      executionId={execution.id}
+                      execution={execution}
+                      onComplete={() => handleExecutionComplete(execution.id)}
+                      onError={handleExecutionError}
+                      onContentChange={handleContentChange}
+                      compact
+                    />
+
+                    {/* Visual separator between executions (subtle spacing only) */}
+                    {showDivider && <div className="my-6" />}
+                  </div>
+                )
+              })}
+            </Card>
+
+            {/* Scroll to Bottom FAB - shows when auto-scroll is disabled */}
+            {!shouldAutoScroll && (
+              <div className="fixed bottom-24 right-8 z-10">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => {
+                        setShouldAutoScroll(true)
+                        scrollToBottom()
+                      }}
+                      className="absolute bottom-6 right-8 z-50 mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-secondary shadow-lg transition-colors hover:bg-primary hover:text-accent-foreground"
+                      type="button"
+                    >
+                      <ArrowDown className="h-5 w-5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">
+                    <p>Scroll to Bottom</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            )}
           </div>
         </div>
-      )}
 
-      {/* Delete Worktree Dialog */}
-      <DeleteWorktreeDialog
-        worktreePath={rootExecution.worktree_path}
-        isOpen={showDeleteWorktree}
-        onClose={() => setShowDeleteWorktree(false)}
-        onConfirm={handleDeleteWorktree}
-        isDeleting={deletingWorktree}
-      />
-    </div>
+        {/* Sticky Follow-up Input Panel - always rendered at bottom */}
+        {rootExecution.issue_id && (
+          <div className="sticky bottom-0 border-t bg-background shadow-lg">
+            <div className="mx-auto w-full max-w-7xl">
+              <AgentConfigPanel
+                issueId={rootExecution.issue_id}
+                onStart={handleFollowUpStart}
+                isFollowUp
+                disabled={!canEnableFollowUp || submittingFollowUp}
+                isRunning={!lastExecutionTerminal}
+                onCancel={() => handleCancel(lastExecution.id)}
+                isCancelling={cancelling}
+                parentExecution={{
+                  id: lastExecution.id,
+                  mode: rootExecution.mode || undefined,
+                  model: rootExecution.model || undefined,
+                  target_branch: rootExecution.target_branch || undefined,
+                  agent_type: rootExecution.agent_type || undefined,
+                  config: rootExecution.config
+                    ? typeof rootExecution.config === 'string'
+                      ? JSON.parse(rootExecution.config)
+                      : rootExecution.config
+                    : undefined,
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Delete Worktree Dialog */}
+        <DeleteWorktreeDialog
+          worktreePath={rootExecution.worktree_path}
+          isOpen={showDeleteWorktree}
+          onClose={() => setShowDeleteWorktree(false)}
+          onConfirm={handleDeleteWorktree}
+          isDeleting={deletingWorktree}
+        />
+      </div>
+    </TooltipProvider>
   )
 }

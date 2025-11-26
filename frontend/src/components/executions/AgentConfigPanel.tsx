@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Play, Settings, AlertCircle, Info } from 'lucide-react'
+import { Settings, AlertCircle, Info, ArrowDown, StopCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -42,9 +42,17 @@ interface AgentConfigPanelProps {
    */
   promptPlaceholder?: string
   /**
-   * Label for the run button
+   * Whether an execution is currently running
    */
-  runButtonLabel?: string
+  isRunning?: boolean
+  /**
+   * Handler to cancel the running execution
+   */
+  onCancel?: () => void
+  /**
+   * Whether a cancel operation is in progress
+   */
+  isCancelling?: boolean
 }
 
 // TODO: Move this somewhere more central.
@@ -73,7 +81,9 @@ export function AgentConfigPanel({
   isFollowUp = false,
   parentExecution,
   promptPlaceholder,
-  runButtonLabel,
+  isRunning = false,
+  onCancel,
+  isCancelling = false,
 }: AgentConfigPanelProps) {
   const [loading, setLoading] = useState(!isFollowUp) // Skip loading for follow-ups
   const [prepareResult, setPrepareResult] = useState<ExecutionPrepareResult | null>(null)
@@ -100,6 +110,7 @@ export function AgentConfigPanel({
     }
     return 'claude-code'
   })
+  const [isHoveringButton, setIsHoveringButton] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Fetch available agents
@@ -167,6 +178,7 @@ export function AgentConfigPanel({
 
   const handleStart = () => {
     onStart(config, prompt, selectedAgentType)
+    setPrompt('') // Clear the prompt after submission
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -380,16 +392,34 @@ export function AgentConfigPanel({
             </TooltipContent>
           </Tooltip>
 
-          {/* Run Button */}
-          <Button
-            onClick={handleStart}
-            disabled={!canStart}
-            size="sm"
-            className="h-8 gap-2 font-semibold"
-          >
-            <Play className="h-4 w-4" />
-            {runButtonLabel || (isFollowUp ? 'Continue' : 'Run')}
-          </Button>
+          {/* Submit/Cancel Button - Round button that changes based on state */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={isRunning && isHoveringButton ? onCancel : handleStart}
+                disabled={isRunning ? isCancelling : !canStart}
+                size="sm"
+                onMouseEnter={() => setIsHoveringButton(true)}
+                onMouseLeave={() => setIsHoveringButton(false)}
+                className="h-7 w-7 rounded-full p-0"
+                variant={isRunning && isHoveringButton ? 'destructive' : 'default'}
+                aria-label={isRunning ? (isHoveringButton ? 'Cancel' : 'Running...') : 'Submit'}
+              >
+                {isRunning ? (
+                  isHoveringButton ? (
+                    <StopCircle className="h-4 w-4" />
+                  ) : (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )
+                ) : (
+                  <ArrowDown className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {isRunning ? (isHoveringButton ? 'Cancel' : 'Running...') : 'Submit'}
+            </TooltipContent>
+          </Tooltip>
         </div>
       </TooltipProvider>
 
