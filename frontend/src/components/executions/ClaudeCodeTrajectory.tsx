@@ -23,6 +23,8 @@ import { buildTodoHistory } from '@/utils/todoExtractor'
 import { DiffViewer } from './DiffViewer'
 import { parseClaudeToolArgs } from '@/utils/claude'
 
+const MAX_CHARS_BEFORE_TRUNCATION = 500
+
 export interface ClaudeCodeTrajectoryProps {
   /**
    * Map of messages to display
@@ -160,21 +162,25 @@ function formatToolArgs(toolName: string, args: string): string {
  * Format tool result summary for collapsed view
  * Provides context-aware summaries for different tool types
  */
-function formatResultSummary(toolName: string, result: string): string | null {
+function formatResultSummary(
+  toolName: string,
+  result: string,
+  maxChars: number = 250
+): string | null {
   try {
     // For Bash, extract key info from output
     if (toolName === 'Bash') {
       const lines = result.split('\n').filter((line) => line.trim())
-      if (lines.length === 0) return null
+      if (lines.length === 0) return 'No output'
 
-      // Look for success indicators
-      if (result.includes('✓') || result.includes('✔')) {
-        const successLine = lines.find((l) => l.includes('✓') || l.includes('✔'))
-        if (successLine) return successLine.trim()
+      // For short results (1-2 lines, under 100 chars), don't show summary - let truncation handle it
+      if (lines.length <= 2 && result.length < maxChars) {
+        return null
       }
-
-      // Show first meaningful line
-      return null // Let default truncation handle it
+      if (result.length > maxChars) {
+        return `${result.slice(0, maxChars)}...`
+      }
+      return `${lines.length} line${lines.length !== 1 ? 's' : ''}`
     }
 
     // For Read, show line count if available
@@ -268,38 +274,49 @@ function formatResultSummary(toolName: string, result: string): string | null {
 /**
  * Truncate text with line count and character limit
  * Handles both multi-line text and long single-line text (like compact JSON)
- * Enforces BOTH line limit AND character limit
+ * Enforces BOTH line limit AND character limit strictly
  */
 function truncateText(
   text: string,
   maxLines: number = 2,
-  maxChars: number = 250
+  maxChars: number = MAX_CHARS_BEFORE_TRUNCATION
 ): { truncated: string; hasMore: boolean; lineCount: number; charCount: number } {
   const lines = text.split('\n')
   const lineCount = lines.length
   let truncated = text
   let hasMore = false
 
-  // First apply line limit
-  if (lineCount > maxLines) {
+  // Check if we exceed EITHER limit
+  const exceedsLineLimit = lineCount > maxLines
+  const exceedsCharLimit = text.length > maxChars
+
+  // If we exceed line limit, take only first maxLines
+  if (exceedsLineLimit) {
     truncated = lines.slice(0, maxLines).join('\n')
     hasMore = true
   }
 
-  // Then apply character limit to the result
+  // ALWAYS check character limit after line truncation
+  // This ensures we never exceed maxChars regardless of line count
   if (truncated.length > maxChars) {
-    // Find a good breaking point (try to break at newline, space, or just cut)
+    // Truncate to maxChars, trying to break at a good spot
     let charTruncated = truncated.slice(0, maxChars)
     const lastNewline = charTruncated.lastIndexOf('\n')
     const lastSpace = charTruncated.lastIndexOf(' ')
 
-    if (lastNewline > maxChars * 0.8) {
+    // Try to break at newline or space if close enough
+    if (lastNewline > maxChars * 0.7) {
       charTruncated = charTruncated.slice(0, lastNewline)
-    } else if (lastSpace > maxChars * 0.8) {
+    } else if (lastSpace > maxChars * 0.7) {
       charTruncated = charTruncated.slice(0, lastSpace)
     }
 
     truncated = charTruncated + '...'
+    hasMore = true
+  }
+
+  // Set hasMore if we exceeded EITHER limit
+  if (!hasMore && (exceedsLineLimit || exceedsCharLimit)) {
     hasMore = true
   }
 
@@ -563,7 +580,9 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCallTracking }) {
                     ) : argsData.lineCount > 2 ? (
                       <>{'> +' + (argsData.lineCount - 2) + ' more lines'}</>
                     ) : (
-                      <>{'> +' + (argsData.charCount - 500) + ' more chars'}</>
+                      <>
+                        {'> +' + (argsData.charCount - MAX_CHARS_BEFORE_TRUNCATION) + ' more chars'}
+                      </>
                     )}
                   </button>
                 )}
@@ -656,7 +675,11 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCallTracking }) {
                         ) : resultData.lineCount > 2 ? (
                           <>{'> +' + (resultData.lineCount - 2) + ' more lines'}</>
                         ) : (
-                          <>{'> +' + (resultData.charCount - 250) + ' more chars'}</>
+                          <>
+                            {'> +' +
+                              (resultData.charCount - MAX_CHARS_BEFORE_TRUNCATION) +
+                              ' more chars'}
+                          </>
                         )}
                       </button>
                     )}

@@ -415,8 +415,10 @@ describe('ClaudeCodeTrajectory', () => {
 
     renderWithTheme(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
 
-    // Should show the success line with checkmark
-    expect(screen.getByText(/✓ All tests passed/)).toBeInTheDocument()
+    // Should show line count summary for multi-line results
+    expect(screen.getByText('3 lines')).toBeInTheDocument()
+    // Should have expand button
+    expect(screen.getByText(/\+1 more lines/)).toBeInTheDocument()
   })
 
   it('should show Write tool formatting', () => {
