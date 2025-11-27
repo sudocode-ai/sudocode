@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { feedbackApi } from '@/lib/api'
+import { useProject } from '@/hooks/useProject'
 import type { IssueFeedback, CreateFeedbackRequest, UpdateFeedbackRequest } from '@/types/api'
 
 /**
@@ -7,12 +8,16 @@ import type { IssueFeedback, CreateFeedbackRequest, UpdateFeedbackRequest } from
  */
 export function useFeedback(specId: string) {
   const queryClient = useQueryClient()
+  const { currentProjectId } = useProject()
+
+  // Include projectId in query key to ensure proper cache separation between projects
+  const queryKey = ['feedback', currentProjectId, specId]
 
   const createMutation = useMutation({
     mutationFn: (data: CreateFeedbackRequest) => feedbackApi.create(data),
     onSuccess: () => {
       // Invalidate feedback queries for this spec
-      queryClient.invalidateQueries({ queryKey: ['feedback', specId] })
+      queryClient.invalidateQueries({ queryKey })
     },
   })
 
@@ -21,13 +26,13 @@ export function useFeedback(specId: string) {
       feedbackApi.update(id, data),
     onMutate: async ({ id, data }) => {
       // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ['feedback', specId] })
+      await queryClient.cancelQueries({ queryKey })
 
       // Snapshot previous value
-      const previousFeedback = queryClient.getQueryData<IssueFeedback[]>(['feedback', specId])
+      const previousFeedback = queryClient.getQueryData<IssueFeedback[]>(queryKey)
 
       // Optimistically update - convert anchor to string if needed
-      queryClient.setQueryData<IssueFeedback[]>(['feedback', specId], (old) =>
+      queryClient.setQueryData<IssueFeedback[]>(queryKey, (old) =>
         old?.map((feedback) => {
           if (feedback.id !== id) return feedback
 
@@ -52,12 +57,12 @@ export function useFeedback(specId: string) {
     onError: (_err, _variables, context) => {
       // Rollback on error
       if (context?.previousFeedback) {
-        queryClient.setQueryData(['feedback', specId], context.previousFeedback)
+        queryClient.setQueryData(queryKey, context.previousFeedback)
       }
     },
     onSettled: () => {
       // Refetch to ensure sync
-      queryClient.invalidateQueries({ queryKey: ['feedback', specId] })
+      queryClient.invalidateQueries({ queryKey })
     },
   })
 
@@ -65,13 +70,13 @@ export function useFeedback(specId: string) {
     mutationFn: (id: string) => feedbackApi.delete(id),
     onMutate: async (id) => {
       // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ['feedback', specId] })
+      await queryClient.cancelQueries({ queryKey })
 
       // Snapshot previous value
-      const previousFeedback = queryClient.getQueryData<IssueFeedback[]>(['feedback', specId])
+      const previousFeedback = queryClient.getQueryData<IssueFeedback[]>(queryKey)
 
       // Optimistically remove
-      queryClient.setQueryData<IssueFeedback[]>(['feedback', specId], (old) =>
+      queryClient.setQueryData<IssueFeedback[]>(queryKey, (old) =>
         old?.filter((feedback) => feedback.id !== id)
       )
 
@@ -80,12 +85,12 @@ export function useFeedback(specId: string) {
     onError: (_err, _variables, context) => {
       // Rollback on error
       if (context?.previousFeedback) {
-        queryClient.setQueryData(['feedback', specId], context.previousFeedback)
+        queryClient.setQueryData(queryKey, context.previousFeedback)
       }
     },
     onSettled: () => {
       // Refetch to ensure sync
-      queryClient.invalidateQueries({ queryKey: ['feedback', specId] })
+      queryClient.invalidateQueries({ queryKey })
     },
   })
 

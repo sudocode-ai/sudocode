@@ -11,6 +11,17 @@ import * as useIssuesHook from '@/hooks/useIssues'
 vi.mock('@/hooks/useSpecs')
 vi.mock('@/hooks/useIssues')
 
+// Mock Project context
+vi.mock('@/hooks/useProject', () => ({
+  useProject: () => ({
+    currentProjectId: 'test-project-id',
+    setCurrentProjectId: vi.fn(),
+    currentProject: null,
+    setCurrentProject: vi.fn(),
+    clearProject: vi.fn(),
+  }),
+}))
+
 const mockSpec = {
   id: 'SPEC-001',
   title: 'Test Spec',
