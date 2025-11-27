@@ -6,6 +6,12 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ClaudeCodeTrajectory } from '@/components/executions/ClaudeCodeTrajectory'
 import type { MessageBuffer, ToolCallTracking } from '@/hooks/useAgUiStream'
+import { ThemeProvider } from '@/contexts/ThemeContext'
+
+// Helper to wrap component with ThemeProvider
+const renderWithTheme = (ui: React.ReactElement) => {
+  return render(<ThemeProvider>{ui}</ThemeProvider>)
+}
 
 describe('ClaudeCodeTrajectory', () => {
   it('should render messages in chronological order', () => {
@@ -34,7 +40,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    render(<ClaudeCodeTrajectory messages={messages} toolCalls={new Map()} />)
+    renderWithTheme(<ClaudeCodeTrajectory messages={messages} toolCalls={new Map()} />)
 
     const messageElements = screen.getAllByText(/message/)
     expect(messageElements[0].textContent).toContain('First')
@@ -56,7 +62,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    const { container } = render(<ClaudeCodeTrajectory messages={messages} toolCalls={new Map()} />)
+    const { container } = renderWithTheme(<ClaudeCodeTrajectory messages={messages} toolCalls={new Map()} />)
 
     // Should have the message content
     expect(screen.getByText(/Let me think/)).toBeInTheDocument()
@@ -81,7 +87,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    const { container } = render(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
+    const { container } = renderWithTheme(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
 
     expect(screen.getByText('Bash')).toBeInTheDocument()
     expect(screen.getByText('1.00s')).toBeInTheDocument()
@@ -110,7 +116,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    const { container } = render(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
+    const { container } = renderWithTheme(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
 
     expect(screen.getByText('Read')).toBeInTheDocument()
     // Should show inline args summary
@@ -188,7 +194,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    const { container } = render(<ClaudeCodeTrajectory messages={messages} toolCalls={new Map()} />)
+    const { container } = renderWithTheme(<ClaudeCodeTrajectory messages={messages} toolCalls={new Map()} />)
 
     // Should show loading indicator (Loader2 spinner) for incomplete messages
     expect(container.querySelector('.animate-spin')).toBeInTheDocument()
@@ -268,7 +274,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    const { container } = render(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
+    const { container } = renderWithTheme(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
 
     expect(screen.getByText(/Command not found/)).toBeInTheDocument()
     // Should have red dot for error (⏺)
@@ -330,7 +336,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    render(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
+    renderWithTheme(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
 
     // Should show "Read N lines" summary
     expect(screen.getByText(/Read 5 lines/)).toBeInTheDocument()
@@ -353,7 +359,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    render(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
+    renderWithTheme(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
 
     // Should show Search args inline
     expect(screen.getByText(/pattern: "test"/)).toBeInTheDocument()
@@ -379,7 +385,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    render(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
+    renderWithTheme(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
 
     // Should show Grep args inline with all fields
     expect(screen.getByText(/pattern: "function"/)).toBeInTheDocument()
@@ -407,7 +413,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    render(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
+    renderWithTheme(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
 
     // Should show the success line with checkmark
     expect(screen.getByText(/✓ All tests passed/)).toBeInTheDocument()
@@ -430,7 +436,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    render(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
+    renderWithTheme(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
 
     // Should show file path inline (appears in both the inline summary and args preview)
     const filePathElements = screen.getAllByText(/\/src\/app\.ts/)
@@ -456,7 +462,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    render(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
+    renderWithTheme(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
 
     // Should show file path inline (appears in both the inline summary and args preview)
     const filePathElements = screen.getAllByText(/\/src\/utils\.ts/)
@@ -482,7 +488,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    render(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
+    renderWithTheme(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
 
     // Should show pattern inline
     expect(screen.getByText(/pattern: "\*\*\/\*\.ts"/)).toBeInTheDocument()
@@ -507,7 +513,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    render(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
+    renderWithTheme(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
 
     // Should show query inline
     expect(screen.getByText(/query: "TypeScript best practices"/)).toBeInTheDocument()
@@ -544,7 +550,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    render(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
+    renderWithTheme(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
 
     // Should show todo count inline
     expect(screen.getByText(/3 todos, 1 in progress, 1 completed/)).toBeInTheDocument()
@@ -576,7 +582,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    render(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
+    renderWithTheme(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
 
     // Should show reading todo list
     expect(screen.getByText(/reading todo list/)).toBeInTheDocument()
@@ -610,7 +616,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    render(<ClaudeCodeTrajectory messages={messages} toolCalls={new Map()} />)
+    renderWithTheme(<ClaudeCodeTrajectory messages={messages} toolCalls={new Map()} />)
 
     // Should not show system message
     expect(screen.queryByText(/This is a system message/)).not.toBeInTheDocument()
@@ -683,7 +689,7 @@ describe('ClaudeCodeTrajectory', () => {
         ],
       ])
 
-      render(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
+      renderWithTheme(<ClaudeCodeTrajectory messages={new Map()} toolCalls={toolCalls} />)
 
       // TodoTracker should be visible by default for Claude Code
       expect(screen.getByText(/0\/1 completed/)).toBeInTheDocument()

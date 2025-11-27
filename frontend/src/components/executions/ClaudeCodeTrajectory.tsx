@@ -20,6 +20,8 @@ import type { MessageBuffer } from '@/hooks/useAgUiStream'
 import type { ToolCallTracking } from '@/hooks/useAgUiStream'
 import { TodoTracker } from './TodoTracker'
 import { buildTodoHistory } from '@/utils/todoExtractor'
+import { DiffViewer } from './DiffViewer'
+import { parseClaudeToolArgs } from '@/utils/claude'
 
 export interface ClaudeCodeTrajectoryProps {
   /**
@@ -266,6 +268,7 @@ function formatResultSummary(toolName: string, result: string): string | null {
 /**
  * Truncate text with line count and character limit
  * Handles both multi-line text and long single-line text (like compact JSON)
+ * Enforces BOTH line limit AND character limit
  */
 function truncateText(
   text: string,
@@ -274,36 +277,38 @@ function truncateText(
 ): { truncated: string; hasMore: boolean; lineCount: number; charCount: number } {
   const lines = text.split('\n')
   const lineCount = lines.length
+  let truncated = text
+  let hasMore = false
 
-  // First check if we exceed line limit
+  // First apply line limit
   if (lineCount > maxLines) {
-    const truncated = lines.slice(0, maxLines).join('\n')
-    return { truncated, hasMore: true, lineCount, charCount: text.length }
+    truncated = lines.slice(0, maxLines).join('\n')
+    hasMore = true
   }
 
-  // If under line limit, check character limit
-  if (text.length > maxChars) {
+  // Then apply character limit to the result
+  if (truncated.length > maxChars) {
     // Find a good breaking point (try to break at newline, space, or just cut)
-    let truncated = text.slice(0, maxChars)
-    const lastNewline = truncated.lastIndexOf('\n')
-    const lastSpace = truncated.lastIndexOf(' ')
+    let charTruncated = truncated.slice(0, maxChars)
+    const lastNewline = charTruncated.lastIndexOf('\n')
+    const lastSpace = charTruncated.lastIndexOf(' ')
 
     if (lastNewline > maxChars * 0.8) {
-      truncated = truncated.slice(0, lastNewline)
+      charTruncated = charTruncated.slice(0, lastNewline)
     } else if (lastSpace > maxChars * 0.8) {
-      truncated = truncated.slice(0, lastSpace)
+      charTruncated = charTruncated.slice(0, lastSpace)
     }
 
-    return {
-      truncated: truncated + '...',
-      hasMore: true,
-      lineCount,
-      charCount: text.length,
-    }
+    truncated = charTruncated + '...'
+    hasMore = true
   }
 
-  // Text is short enough, no truncation needed
-  return { truncated: text, hasMore: false, lineCount, charCount: text.length }
+  return {
+    truncated,
+    hasMore,
+    lineCount,
+    charCount: text.length,
+  }
 }
 
 /**
@@ -501,11 +506,11 @@ export function ClaudeCodeTrajectory({
  */
 function ToolCallItem({ toolCall }: { toolCall: ToolCallTracking }) {
   const [showFullArgs, setShowFullArgs] = useState(false)
+  const [showFullResult, setShowFullResult] = useState(false)
   const formattedArgs = formatToolArgs(toolCall.toolCallName, toolCall.args)
 
   const argsData = toolCall.args ? truncateText(toolCall.args, 2) : null
   const resultData = toolCall.result ? truncateText(toolCall.result, 2) : null
-  const [showFullResult, setShowFullResult] = useState(false)
 
   const isSuccess = toolCall.status === 'completed'
   const isError = toolCall.status === 'error'
@@ -532,7 +537,8 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCallTracking }) {
           </div>
 
           {/* Full args - expandable (shown first, before results) */}
-          {argsData && (
+          {/* Hide args for Edit/Write tools - the diff viewer shows this info */}
+          {argsData && toolCall.toolCallName !== 'Edit' && (
             <div className="mt-0.5 flex items-start gap-2">
               <span className="select-none text-muted-foreground">∟</span>
               <div className="min-w-0 flex-1">
@@ -564,6 +570,43 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCallTracking }) {
               </div>
             </div>
           )}
+
+          {/* Diff viewer for Edit and Write tools - show before result */}
+          {toolCall.toolCallName === 'Edit' &&
+            (() => {
+              try {
+                const { oldContent, newContent, filePath } = parseClaudeToolArgs(
+                  toolCall.toolCallName,
+                  toolCall.args
+                )
+                return (
+                  <div className="mt-0.5 flex items-start gap-2">
+                    <span className="select-none text-muted-foreground">∟</span>
+                    <div className="min-w-0 flex-1">
+                      <DiffViewer
+                        oldContent={oldContent}
+                        newContent={newContent}
+                        filePath={filePath}
+                        className="my-1"
+                        maxLines={50}
+                      />
+                    </div>
+                  </div>
+                )
+              } catch (error) {
+                console.error('Failed to parse tool args:', error, toolCall.args)
+                return (
+                  <div className="mt-0.5 flex items-start gap-2">
+                    <span className="select-none text-muted-foreground">∟</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="rounded border border-destructive/20 bg-destructive/5 p-2 text-xs text-destructive">
+                        Unable to display diff
+                      </div>
+                    </div>
+                  </div>
+                )
+              }
+            })()}
 
           {/* Tool result - show summary or first 2 lines when collapsed */}
           {(toolCall.result || toolCall.error) && (
