@@ -17,6 +17,7 @@ import { createExecutionsRouter } from "./routes/executions.js";
 import { createExecutionStreamRoutes } from "./routes/executions-stream.js";
 import { createProjectsRouter } from "./routes/projects.js";
 import { createConfigRouter } from "./routes/config.js";
+import { createFilesRouter } from "./routes/files.js";
 import { createRepoInfoRouter } from "./routes/repo-info.js";
 import { createAgentsRouter } from "./routes/agents.js";
 import { TransportManager } from "./execution/transport/transport-manager.js";
@@ -69,7 +70,9 @@ async function initialize() {
     const hasLocalProject = existsSync(sudocodeDir);
 
     if (hasLocalProject) {
-      console.log(`Found .sudocode in current directory, opening: ${currentDir}`);
+      console.log(
+        `Found .sudocode in current directory, opening: ${currentDir}`
+      );
       const openResult = await projectManager.openProject(currentDir);
       if (!openResult.ok) {
         const errorMsg =
@@ -80,14 +83,18 @@ async function initialize() {
         console.log("Server will start with no projects open");
       } else {
         const projectInfo = projectRegistry.getProject(openResult.value!.id);
-        console.log(`Auto-opened local project: ${projectInfo?.name || path.basename(currentDir)}`);
+        console.log(
+          `Auto-opened local project: ${projectInfo?.name || path.basename(currentDir)}`
+        );
       }
     } else {
       // No local project, try most recent
       const recentProjects = projectRegistry.getRecentProjects();
       if (recentProjects.length > 0) {
         const mostRecent = recentProjects[0];
-        console.log(`Auto-opening most recent project: ${mostRecent.name} (${mostRecent.path})`);
+        console.log(
+          `Auto-opening most recent project: ${mostRecent.name} (${mostRecent.path})`
+        );
         const openResult = await projectManager.openProject(mostRecent.path);
         if (!openResult.ok) {
           const errorMsg =
@@ -100,7 +107,9 @@ async function initialize() {
           console.log(`Auto-opened project: ${mostRecent.name}`);
         }
       } else {
-        console.log("No recent projects found. Server will start with no projects open");
+        console.log(
+          "No recent projects found. Server will start with no projects open"
+        );
       }
     }
 
@@ -139,12 +148,20 @@ app.use(
   createFeedbackRouter()
 );
 app.use("/api/config", requireProject(projectManager), createConfigRouter());
-app.use("/api/repo-info", requireProject(projectManager), createRepoInfoRouter());
+app.use(
+  "/api/repo-info",
+  requireProject(projectManager),
+  createRepoInfoRouter()
+);
+
+// File search endpoint (requires project context)
+app.use("/api/files", requireProject(projectManager), createFilesRouter());
 
 // Agents endpoint - global, not project-specific
 app.use("/api/agents", createAgentsRouter());
 
 // Mount execution routes (must be before stream routes to avoid conflicts)
+// TODO: Make these all relative to /executions
 app.use("/api", requireProject(projectManager), createExecutionsRouter());
 app.use(
   "/api/executions",
