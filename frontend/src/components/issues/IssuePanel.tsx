@@ -62,6 +62,7 @@ interface IssuePanelProps {
   onViewModeChange?: (mode: 'formatted' | 'markdown') => void
   showViewToggleInline?: boolean
   feedback?: IssueFeedback[]
+  autoFocusAgentConfig?: boolean
 }
 
 const STATUS_OPTIONS: { value: IssueStatus; label: string }[] = [
@@ -95,6 +96,7 @@ export function IssuePanel({
   onViewModeChange,
   showViewToggleInline = true,
   feedback = [],
+  autoFocusAgentConfig = false,
 }: IssuePanelProps) {
   const navigate = useNavigate()
   const [title, setTitle] = useState(issue.title)
@@ -969,6 +971,7 @@ export function IssuePanel({
               issueId={issue.id}
               onStart={handleStartExecution}
               disabled={issue.archived || isUpdating}
+              autoFocus={autoFocusAgentConfig}
               previousExecution={
                 executions.length > 0
                   ? (() => {

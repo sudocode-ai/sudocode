@@ -64,6 +64,10 @@ interface AgentConfigPanelProps {
    * Whether a cancel operation is in progress
    */
   isCancelling?: boolean
+  /**
+   * Auto-focus the prompt textarea when the panel mounts or issue changes
+   */
+  autoFocus?: boolean
 }
 
 // TODO: Move this somewhere more central.
@@ -164,6 +168,7 @@ export function AgentConfigPanel({
   isRunning = false,
   onCancel,
   isCancelling = false,
+  autoFocus = false,
 }: AgentConfigPanelProps) {
   const [loading, setLoading] = useState(!isFollowUp) // Skip loading for follow-ups
   const [prepareResult, setPrepareResult] = useState<ExecutionPrepareResult | null>(null)
@@ -375,6 +380,17 @@ export function AgentConfigPanel({
     const newHeight = Math.min(textarea.scrollHeight, 300)
     textarea.style.height = `${newHeight}px`
   }, [prompt])
+
+  // Auto-focus textarea when panel opens or issue changes
+  useEffect(() => {
+    if (autoFocus && textareaRef.current && !loading) {
+      // Small delay to ensure the component is fully rendered
+      const timer = setTimeout(() => {
+        textareaRef.current?.focus()
+      }, 50)
+      return () => clearTimeout(timer)
+    }
+  }, [autoFocus, issueId, loading])
 
   const updateConfig = (updates: Partial<ExecutionConfig>) => {
     setConfig({ ...config, ...updates })
