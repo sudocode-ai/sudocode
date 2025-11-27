@@ -17,3 +17,6 @@ export {
   fileSearchRegistry,
   type StrategyType,
 } from "./registry.js"
+
+// Strategies
+export { GitLsFilesStrategy } from "./git-ls-files-strategy.js"
