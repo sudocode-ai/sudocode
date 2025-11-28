@@ -17,3 +17,9 @@ Run the sudocode companion app with `sudocode server`. You can specify a port wi
 
 The server will start on `http://localhost:3000` by default.
 
+### Environment Variables
+
+The server supports the following environment variables (all prefixed with `SUDOCODE_` to avoid conflicts with project environments):
+
+- `SUDOCODE_PORT` - Server port (default: 3000)
+- `SUDOCODE_WATCH` - Enable/disable file watching (default: enabled, set to `false` to disable)

@@ -81,7 +81,7 @@ export class ProjectContext {
    */
   async initialize(): Promise<void> {
     // File watcher will be started by the caller if needed
-    // (allows for WATCH=false configuration)
+    // (allows for SUDOCODE_WATCH=false configuration)
     console.log(`Project context initialized: ${this.id} at ${this.path}`);
   }
 
