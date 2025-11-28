@@ -1,18 +1,30 @@
 import { formatDistanceToNow } from 'date-fns'
 import { useNavigate } from 'react-router-dom'
+import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   MessageSquare,
   MessageSquareShare,
   PlayCircle,
   ArrowRight,
+  MoreVertical,
+  Trash2,
 } from 'lucide-react'
 import type { IssueFeedback } from '@/types/api'
 import type { Execution } from '@/types/execution'
 import { ExecutionPreview } from '@/components/executions/ExecutionPreview'
+import { DeleteExecutionDialog } from '@/components/executions/DeleteExecutionDialog'
+import { executionsApi } from '@/lib/api'
 
 type ActivityItem =
   | (IssueFeedback & { itemType: 'feedback' })
@@ -23,6 +35,7 @@ interface ActivityTimelineProps {
   items: ActivityItem[]
   currentEntityId: string
   className?: string
+  onExecutionDeleted?: () => void
 }
 
 /**
@@ -30,8 +43,10 @@ interface ActivityTimelineProps {
  * Shows feedback, executions, and other activity in chronological order
  * Designed to be inline with issue content, like GitHub/Linear
  */
-export function ActivityTimeline({ items, currentEntityId, className = '' }: ActivityTimelineProps) {
+export function ActivityTimeline({ items, currentEntityId, className = '', onExecutionDeleted }: ActivityTimelineProps) {
   const navigate = useNavigate()
+  const [executionToDelete, setExecutionToDelete] = useState<string | null>(null)
+  const [deletingExecution, setDeletingExecution] = useState(false)
 
   // Helper to determine if feedback is outbound (from this entity) or inbound (to this entity)
   const isOutboundFeedback = (feedback: IssueFeedback) => feedback.from_id === currentEntityId
@@ -43,6 +58,25 @@ export function ActivityTimeline({ items, currentEntityId, className = '' }: Act
   // Helper to get navigation path based on entity type (spec or issue)
   const getEntityPath = (entityId: string) =>
     entityId.startsWith('s-') ? `/specs/${entityId}` : `/issues/${entityId}`
+
+  // Handle delete execution
+  const handleDeleteExecution = async () => {
+    if (!executionToDelete) return
+
+    setDeletingExecution(true)
+    try {
+      await executionsApi.delete(executionToDelete)
+      setExecutionToDelete(null)
+      // Notify parent to refresh
+      if (onExecutionDeleted) {
+        onExecutionDeleted()
+      }
+    } catch (err) {
+      console.error('Failed to delete execution:', err)
+    } finally {
+      setDeletingExecution(false)
+    }
+  }
 
   // Sort items chronologically (oldest first)
   const sortedItems = [...items].sort(
@@ -249,6 +283,23 @@ export function ActivityTimeline({ items, currentEntityId, className = '' }: Act
               </code>
               <span className="text-xs font-medium">Agent Execution</span>
             </div>
+            {/* Actions Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => setExecutionToDelete(execution.id)}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* Execution Preview */}
@@ -264,15 +315,26 @@ export function ActivityTimeline({ items, currentEntityId, className = '' }: Act
   }
 
   return (
-    <div className={`space-y-3 ${className}`}>
-      {sortedItems.map((item) => {
-        if (item.itemType === 'execution') {
-          return renderExecution(item as Execution & { itemType: 'execution' })
-        } else {
-          // Default to feedback
-          return renderFeedback(item as IssueFeedback & { itemType: 'feedback' })
-        }
-      })}
-    </div>
+    <>
+      <div className={`space-y-3 ${className}`}>
+        {sortedItems.map((item) => {
+          if (item.itemType === 'execution') {
+            return renderExecution(item as Execution & { itemType: 'execution' })
+          } else {
+            // Default to feedback
+            return renderFeedback(item as IssueFeedback & { itemType: 'feedback' })
+          }
+        })}
+      </div>
+
+      {/* Delete Execution Dialog */}
+      <DeleteExecutionDialog
+        executionId={executionToDelete}
+        isOpen={!!executionToDelete}
+        onClose={() => setExecutionToDelete(null)}
+        onConfirm={handleDeleteExecution}
+        isDeleting={deletingExecution}
+      />
+    </>
   )
 }

@@ -982,6 +982,15 @@ export function IssuePanel({
                     .map((e) => ({ ...e, itemType: 'execution' as const })),
                 ]}
                 currentEntityId={issue.id}
+                onExecutionDeleted={async () => {
+                  // Re-fetch executions when an execution is deleted
+                  try {
+                    const data = await executionsApi.list(issue.id)
+                    setExecutions(data)
+                  } catch (error) {
+                    console.error('Failed to fetch executions:', error)
+                  }
+                }}
               />
             </div>
           </div>
