@@ -9,6 +9,12 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { ExecutionMonitor } from '@/components/executions/ExecutionMonitor'
 import * as useAgUiStreamModule from '@/hooks/useAgUiStream'
 import * as useExecutionLogsModule from '@/hooks/useExecutionLogs'
+import { ThemeProvider } from '@/contexts/ThemeContext'
+
+// Helper to wrap component with ThemeProvider
+const renderWithTheme = (ui: React.ReactElement) => {
+  return render(<ThemeProvider>{ui}</ThemeProvider>)
+}
 
 // Mock the hooks
 const mockUseAgUiStream = vi.spyOn(useAgUiStreamModule, 'useAgUiStream')
@@ -50,7 +56,7 @@ describe('ExecutionMonitor', () => {
         isConnected: false,
       })
 
-      render(<ExecutionMonitor executionId="test-exec-1" />)
+      renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
       expect(screen.getByText(/connecting to execution stream/i)).toBeInTheDocument()
     })
@@ -79,7 +85,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      render(<ExecutionMonitor executionId="test-exec-1" />)
+      renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
       expect(screen.getByText('Running')).toBeInTheDocument()
       expect(screen.getByText('process-data')).toBeInTheDocument()
@@ -108,7 +114,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      render(<ExecutionMonitor executionId="test-exec-1" />)
+      renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
       expect(screen.getByText('Completed')).toBeInTheDocument()
       // Check duration display (3000 - 1000 = 2000ms = 2.00s)
@@ -137,7 +143,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      render(<ExecutionMonitor executionId="test-exec-1" />)
+      renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
       // Check for error badge in header
       const errorBadges = screen.getAllByText('Error')
@@ -174,7 +180,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      render(<ExecutionMonitor executionId="test-exec-1" />)
+      renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
       expect(screen.getByText('Progress')).toBeInTheDocument()
       expect(screen.getByText('50 / 100')).toBeInTheDocument()
@@ -213,7 +219,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      render(<ExecutionMonitor executionId="test-exec-1" />)
+      renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
       // In the unified trajectory view, there's no "Messages" header
       // Just verify the message content is displayed
@@ -252,7 +258,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      const { container } = render(<ExecutionMonitor executionId="test-exec-1" />)
+      const { container } = renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
       // Check for spinner by looking for animate-spin class
       const spinners = container.querySelectorAll('.animate-spin')
@@ -294,7 +300,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      render(<ExecutionMonitor executionId="test-exec-1" />)
+      renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
       // In the unified trajectory view, there's no "Tool Calls" header
       // Just verify the tool call is displayed
@@ -338,7 +344,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      const { container } = render(<ExecutionMonitor executionId="test-exec-1" />)
+      const { container } = renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
       expect(screen.getByText('Write')).toBeInTheDocument()
       // Use a more specific selector for the error badge
@@ -397,7 +403,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      const { container } = render(<ExecutionMonitor executionId="test-exec-1" />)
+      const { container } = renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
       // Check metrics footer textContent since text is split across elements
       const footer = container.querySelector('.border-t.px-6.py-3')
@@ -434,7 +440,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      const { container } = render(<ExecutionMonitor executionId="test-exec-1" />)
+      const { container } = renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
       // Check metrics footer textContent since text is split across elements
       const footer = container.querySelector('.border-t.px-6.py-3')
@@ -449,7 +455,7 @@ describe('ExecutionMonitor', () => {
     it('should call onComplete when execution completes', async () => {
       const onComplete = vi.fn()
 
-      const { rerender } = render(
+      const { rerender } = renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" onComplete={onComplete} />
       )
 
@@ -475,7 +481,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      rerender(<ExecutionMonitor executionId="test-exec-1" onComplete={onComplete} />)
+      rerender(<ThemeProvider><ExecutionMonitor executionId="test-exec-1" onComplete={onComplete} /></ThemeProvider>)
 
       // Change to completed
       mockUseAgUiStream.mockReturnValue({
@@ -499,7 +505,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      rerender(<ExecutionMonitor executionId="test-exec-1" onComplete={onComplete} />)
+      rerender(<ThemeProvider><ExecutionMonitor executionId="test-exec-1" onComplete={onComplete} /></ThemeProvider>)
 
       await waitFor(() => {
         expect(onComplete).toHaveBeenCalled()
@@ -510,7 +516,7 @@ describe('ExecutionMonitor', () => {
       const onError = vi.fn()
       const testError = new Error('Test error')
 
-      const { rerender } = render(<ExecutionMonitor executionId="test-exec-1" onError={onError} />)
+      const { rerender } = renderWithTheme(<ExecutionMonitor executionId="test-exec-1" onError={onError} />)
 
       // Initial state - running
       mockUseAgUiStream.mockReturnValue({
@@ -534,7 +540,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      rerender(<ExecutionMonitor executionId="test-exec-1" onError={onError} />)
+      rerender(<ThemeProvider><ExecutionMonitor executionId="test-exec-1" onError={onError} /></ThemeProvider>)
 
       // Change to error
       mockUseAgUiStream.mockReturnValue({
@@ -558,7 +564,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      rerender(<ExecutionMonitor executionId="test-exec-1" onError={onError} />)
+      rerender(<ThemeProvider><ExecutionMonitor executionId="test-exec-1" onError={onError} /></ThemeProvider>)
 
       await waitFor(() => {
         expect(onError).toHaveBeenCalledWith(testError)
@@ -589,7 +595,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      render(<ExecutionMonitor executionId="test-exec-1" />)
+      renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
       // Should show loading spinner instead of "No execution activity yet" when connected
       expect(screen.getByText('Waiting for events...')).toBeInTheDocument()
@@ -630,7 +636,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running' } as any} />
       )
 
@@ -681,7 +687,7 @@ describe('ExecutionMonitor', () => {
         },
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
       )
 
@@ -730,7 +736,7 @@ describe('ExecutionMonitor', () => {
         metadata: null,
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
       )
 
@@ -768,7 +774,7 @@ describe('ExecutionMonitor', () => {
         metadata: null,
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
       )
 
@@ -781,7 +787,7 @@ describe('ExecutionMonitor', () => {
     })
 
     it('should handle transition from active to completed', () => {
-      const { rerender } = render(
+      const { rerender } = renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running' } as any} />
       )
 
@@ -793,7 +799,7 @@ describe('ExecutionMonitor', () => {
 
       // Update to completed
       rerender(
-        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
+        <ThemeProvider><ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} /></ThemeProvider>
       )
 
       // Should now use logs API (autoConnect=false for SSE)
@@ -862,7 +868,7 @@ describe('ExecutionMonitor', () => {
         },
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
       )
 
@@ -934,7 +940,7 @@ describe('ExecutionMonitor', () => {
         },
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
       )
 
@@ -1009,7 +1015,7 @@ describe('ExecutionMonitor', () => {
         },
       })
 
-      const { container } = render(
+      const { container } = renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
       )
 
@@ -1071,7 +1077,7 @@ describe('ExecutionMonitor', () => {
         metadata: null,
       })
 
-      const { container } = render(
+      const { container } = renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
       )
 
@@ -1128,7 +1134,7 @@ describe('ExecutionMonitor', () => {
         metadata: null,
       })
 
-      const { container } = render(
+      const { container } = renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
       )
 
@@ -1195,7 +1201,7 @@ describe('ExecutionMonitor', () => {
         metadata: null,
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
       )
 
@@ -1251,7 +1257,7 @@ describe('ExecutionMonitor', () => {
         metadata: { lineCount: 3, byteSize: 100, createdAt: '', updatedAt: '' },
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
       )
 
@@ -1294,7 +1300,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      const { container } = render(
+      const { container } = renderWithTheme(
         <ExecutionMonitor
           executionId="test-exec-1"
           execution={{ status: 'running', agent_type: 'claude-code' } as any}
@@ -1338,7 +1344,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor
           executionId="test-exec-1"
           execution={{ status: 'running', agent_type: 'codex' } as any}
@@ -1382,7 +1388,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running' } as any} />
       )
 
@@ -1433,7 +1439,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor
           executionId="test-exec-1"
           execution={{ status: 'running', agent_type: 'claude-code' } as any}
@@ -1481,7 +1487,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor
           executionId="test-exec-1"
           execution={{ status: 'running', agent_type: 'claude-code' } as any}
@@ -1526,7 +1532,7 @@ describe('ExecutionMonitor', () => {
         isConnected: false,
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor
           executionId="test-exec-1"
           execution={{ status: 'completed' } as any}
@@ -1574,7 +1580,7 @@ describe('ExecutionMonitor', () => {
         isConnected: false,
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
       )
 
@@ -1606,7 +1612,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor
           executionId="test-exec-1"
           execution={{
@@ -1643,7 +1649,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor
           executionId="test-exec-2"
           execution={{
@@ -1681,7 +1687,7 @@ describe('ExecutionMonitor', () => {
         isConnected: true,
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor
           executionId="test-exec-1"
           execution={{
@@ -1721,7 +1727,7 @@ describe('ExecutionMonitor', () => {
 
       const multilinePrompt = 'Please:\n1. Add tests\n2. Update docs\n3. Fix bugs'
 
-      const { container } = render(
+      const { container } = renderWithTheme(
         <ExecutionMonitor
           executionId="test-exec-1"
           execution={{

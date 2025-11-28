@@ -6,10 +6,13 @@ import { specsApi } from '@/lib/api'
 import type { Spec } from '@/types/api'
 import React from 'react'
 
-// Mock the API module
+// Mock Project context - use a mutable ref so tests can change the projectId
+let mockProjectId: string | null = 'test-project-id'
+
+// Mock the API module - getCurrentProjectId needs to return mockProjectId
 vi.mock('@/lib/api', () => ({
   setCurrentProjectId: vi.fn(),
-  getCurrentProjectId: vi.fn(() => 'test-project-123'),
+  getCurrentProjectId: () => mockProjectId,
   specsApi: {
     getAll: vi.fn(),
     getById: vi.fn(),
@@ -32,6 +35,16 @@ vi.mock('@/contexts/WebSocketContext', () => ({
   }),
 }))
 
+vi.mock('@/hooks/useProject', () => ({
+  useProject: () => ({
+    currentProjectId: mockProjectId,
+    setCurrentProjectId: vi.fn(),
+    currentProject: null,
+    setCurrentProject: vi.fn(),
+    clearProject: vi.fn(),
+  }),
+}))
+
 describe('useSpecs', () => {
   let queryClient: QueryClient
 
@@ -44,6 +57,7 @@ describe('useSpecs', () => {
       },
     })
     vi.clearAllMocks()
+    mockProjectId = 'test-project-id' // Reset to default
   })
 
   const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -282,6 +296,7 @@ describe('useSpec', () => {
       },
     })
     vi.clearAllMocks()
+    mockProjectId = 'test-project-id' // Reset to default
   })
 
   const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -331,5 +346,275 @@ describe('useSpec', () => {
     })
 
     expect(result.current.error).toBeDefined()
+  })
+})
+
+describe('useSpecs - Project Switching', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockProjectId = 'test-project-id'
+  })
+
+  it('should not fetch specs when projectId is null', async () => {
+    mockProjectId = null
+    const mockSpecs: Spec[] = [
+      {
+        id: 'SPEC-001',
+        uuid: 'uuid-1',
+        title: 'Test Spec',
+        content: 'Test content',
+        file_path: '/path/to/spec.md',
+        priority: 1,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+        parent_id: undefined,
+      },
+    ]
+    vi.mocked(specsApi.getAll).mockResolvedValue(mockSpecs)
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    })
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+
+    const { result } = renderHook(() => useSpecs(), { wrapper })
+
+    // Should not be loading because query is disabled
+    expect(result.current.isLoading).toBe(false)
+    expect(result.current.specs).toEqual([])
+    expect(specsApi.getAll).not.toHaveBeenCalled()
+  })
+
+  it('should include projectId in query key for cache separation', async () => {
+    const projectASpecs: Spec[] = [
+      {
+        id: 'PROJECT-A-SPEC',
+        uuid: 'uuid-a',
+        title: 'Project A Spec',
+        content: 'Content A',
+        file_path: '/path/to/spec-a.md',
+        priority: 1,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+        parent_id: undefined,
+      },
+    ]
+    const projectBSpecs: Spec[] = [
+      {
+        id: 'PROJECT-B-SPEC',
+        uuid: 'uuid-b',
+        title: 'Project B Spec',
+        content: 'Content B',
+        file_path: '/path/to/spec-b.md',
+        priority: 2,
+        created_at: '2024-01-02T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+        parent_id: undefined,
+      },
+    ]
+
+    // Create a shared query client to test cache separation
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          gcTime: Infinity, // Keep cache for testing
+          staleTime: Infinity,
+        },
+      },
+    })
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+
+    // Fetch specs for Project A
+    mockProjectId = 'project-a'
+    vi.mocked(specsApi.getAll).mockResolvedValue(projectASpecs)
+
+    const { result: resultA, unmount: unmountA } = renderHook(() => useSpecs(), { wrapper })
+
+    await waitFor(() => {
+      expect(resultA.current.isLoading).toBe(false)
+    })
+
+    expect(resultA.current.specs).toEqual(projectASpecs)
+    unmountA()
+
+    // Switch to Project B
+    mockProjectId = 'project-b'
+    vi.mocked(specsApi.getAll).mockResolvedValue(projectBSpecs)
+
+    const { result: resultB } = renderHook(() => useSpecs(), { wrapper })
+
+    await waitFor(() => {
+      expect(resultB.current.isLoading).toBe(false)
+    })
+
+    // Should have fetched new data for Project B, not used Project A's cache
+    expect(resultB.current.specs).toEqual(projectBSpecs)
+    expect(specsApi.getAll).toHaveBeenCalledTimes(2)
+  })
+
+  it('should refetch when projectId changes', async () => {
+    const mockSpecs: Spec[] = [
+      {
+        id: 'SPEC-001',
+        uuid: 'uuid-1',
+        title: 'Test Spec',
+        content: 'Test content',
+        file_path: '/path/to/spec.md',
+        priority: 1,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+        parent_id: undefined,
+      },
+    ]
+    vi.mocked(specsApi.getAll).mockResolvedValue(mockSpecs)
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          gcTime: 0,
+        },
+      },
+    })
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+
+    mockProjectId = 'project-1'
+    const { result, rerender } = renderHook(() => useSpecs(), { wrapper })
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
+
+    expect(specsApi.getAll).toHaveBeenCalledTimes(1)
+
+    // Change project
+    mockProjectId = 'project-2'
+    rerender()
+
+    await waitFor(() => {
+      expect(specsApi.getAll).toHaveBeenCalledTimes(2)
+    })
+  })
+})
+
+describe('useSpec - Project Switching', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockProjectId = 'test-project-id'
+  })
+
+  it('should not fetch spec when projectId is null', async () => {
+    mockProjectId = null
+    const mockSpec: Spec = {
+      id: 'SPEC-001',
+      uuid: 'uuid-1',
+      title: 'Test Spec',
+      content: 'Test content',
+      file_path: '/path/to/spec.md',
+      priority: 1,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+      parent_id: undefined,
+    }
+    vi.mocked(specsApi.getById).mockResolvedValue(mockSpec)
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    })
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+
+    const { result } = renderHook(() => useSpec('SPEC-001'), { wrapper })
+
+    expect(result.current.spec).toBeUndefined()
+    expect(specsApi.getById).not.toHaveBeenCalled()
+  })
+
+  it('should include projectId in query key', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          gcTime: Infinity,
+          staleTime: Infinity,
+        },
+      },
+    })
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+
+    // Fetch spec for Project A
+    mockProjectId = 'project-a'
+    const specA: Spec = {
+      id: 'SPEC-001',
+      uuid: 'uuid-1',
+      title: 'Spec from Project A',
+      content: 'Content A',
+      file_path: '/path/to/spec.md',
+      priority: 1,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+      parent_id: undefined,
+    }
+    vi.mocked(specsApi.getById).mockResolvedValue(specA)
+
+    const { result: resultA, unmount: unmountA } = renderHook(
+      () => useSpec('SPEC-001'),
+      { wrapper }
+    )
+
+    await waitFor(() => {
+      expect(resultA.current.isLoading).toBe(false)
+    })
+
+    expect(resultA.current.spec).toEqual(specA)
+    unmountA()
+
+    // Switch to Project B - same spec ID but different project
+    mockProjectId = 'project-b'
+    const specB: Spec = {
+      id: 'SPEC-001',
+      uuid: 'uuid-1',
+      title: 'Spec from Project B',
+      content: 'Content B',
+      file_path: '/path/to/spec.md',
+      priority: 1,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+      parent_id: undefined,
+    }
+    vi.mocked(specsApi.getById).mockResolvedValue(specB)
+
+    const { result: resultB } = renderHook(() => useSpec('SPEC-001'), { wrapper })
+
+    await waitFor(() => {
+      expect(resultB.current.isLoading).toBe(false)
+    })
+
+    // Should have fetched new data, not used cached data from Project A
+    expect(resultB.current.spec).toEqual(specB)
+    expect(specsApi.getById).toHaveBeenCalledTimes(2)
   })
 })

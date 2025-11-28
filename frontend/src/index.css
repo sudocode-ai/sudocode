@@ -128,3 +128,96 @@
     scrollbar-width: thin;
   }
 }
+
+/* Monaco Diff Viewer - Terminal Aesthetic */
+.monaco-diff-wrapper {
+  @apply border border-border rounded-md overflow-hidden;
+}
+
+/* Height limiting for collapsed view */
+.monaco-diff-wrapper.diff-collapsed {
+  position: relative;
+}
+
+.monaco-diff-wrapper.diff-collapsed::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: linear-gradient(to top, hsl(var(--background)), transparent);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* JSON Viewer - Custom Color Scheme */
+.json-viewer-wrapper {
+  @apply font-mono;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+/* Override react-json-view-lite colors for better terminal integration */
+.json-viewer-wrapper .react-json-view {
+  font-family: inherit !important;
+}
+
+/* String values - use muted blue/cyan */
+.json-viewer-wrapper [class*="stringValue"] {
+  color: hsl(var(--chart-1)) !important;
+}
+
+/* Number values - use green */
+.json-viewer-wrapper [class*="numberValue"] {
+  color: hsl(var(--chart-2)) !important;
+}
+
+/* Boolean values - use purple */
+.json-viewer-wrapper [class*="booleanValue"] {
+  color: hsl(var(--chart-3)) !important;
+}
+
+/* Null/undefined values - use muted foreground */
+.json-viewer-wrapper [class*="nullValue"],
+.json-viewer-wrapper [class*="undefinedValue"] {
+  color: hsl(var(--muted-foreground)) !important;
+  opacity: 0.7;
+}
+
+/* Labels (object keys) - use primary color */
+.json-viewer-wrapper [class*="label"] {
+  color: hsl(var(--foreground)) !important;
+  font-weight: 500;
+}
+
+/* Punctuation (brackets, commas) - use muted */
+.json-viewer-wrapper [class*="punctuation"] {
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+/* Clickable labels - add hover effect */
+.json-viewer-wrapper [class*="clickableLabel"]:hover {
+  color: hsl(var(--primary)) !important;
+  cursor: pointer;
+}
+
+/* Expand/collapse icons */
+.json-viewer-wrapper [class*="collapseIcon"],
+.json-viewer-wrapper [class*="expandIcon"] {
+  color: hsl(var(--muted-foreground)) !important;
+  opacity: 0.6;
+}
+
+.json-viewer-wrapper [class*="collapseIcon"]:hover,
+.json-viewer-wrapper [class*="expandIcon"]:hover {
+  color: hsl(var(--foreground)) !important;
+  opacity: 1;
+}
+
+/* Collapsed content preview */
+.json-viewer-wrapper [class*="collapsedContent"] {
+  color: hsl(var(--muted-foreground)) !important;
+  font-style: italic;
+  opacity: 0.7;
+}

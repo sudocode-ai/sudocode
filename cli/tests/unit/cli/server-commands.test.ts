@@ -129,7 +129,7 @@ describe("Server Commands", () => {
           stdio: "ignore",
           env: expect.objectContaining({
             SUDOCODE_DIR: "/test/.sudocode",
-            PORT: "3001",
+            SUDOCODE_PORT: "3001",
           }),
         })
       );
@@ -172,7 +172,7 @@ describe("Server Commands", () => {
           stdio: "ignore",
           env: expect.objectContaining({
             SUDOCODE_DIR: "/test/.sudocode",
-            PORT: "3001",
+            SUDOCODE_PORT: "3001",
           }),
         })
       );
@@ -207,7 +207,7 @@ describe("Server Commands", () => {
       processExitSpy.mockRestore();
     });
 
-    it("should not set PORT if not specified (let server scan for available ports)", async () => {
+    it("should not set SUDOCODE_PORT if not specified (let server scan for available ports)", async () => {
       const getUpdateNotificationMock = vi.mocked(
         updateChecker.getUpdateNotification
       );
@@ -221,7 +221,7 @@ describe("Server Commands", () => {
 
       const call = spawnMock.mock.calls[0];
       const options = call?.[2] as any;
-      expect(options?.env?.PORT).toBeUndefined();
+      expect(options?.env?.SUDOCODE_PORT).toBeUndefined();
     });
 
     it("should pass SUDOCODE_DIR environment variable", async () => {

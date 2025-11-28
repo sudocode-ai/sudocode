@@ -245,6 +245,7 @@ export default function ArchivedIssuesPage() {
                 isUpdating={isUpdating}
                 isDeleting={isDeleting}
                 feedback={feedback}
+                autoFocusAgentConfig
               />
             </Panel>
           </PanelGroup>

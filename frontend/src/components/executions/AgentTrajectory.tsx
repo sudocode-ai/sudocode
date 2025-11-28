@@ -10,8 +10,11 @@ import { Badge } from '@/components/ui/badge'
 import { Loader2, MessageSquare, Wrench } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
+import { JsonView, defaultStyles, darkStyles } from 'react-json-view-lite'
+import 'react-json-view-lite/dist/index.css'
 import type { MessageBuffer } from '@/hooks/useAgUiStream'
 import type { ToolCallTracking } from '@/hooks/useAgUiStream'
+import { useTheme } from '@/contexts/ThemeContext'
 
 export interface AgentTrajectoryProps {
   /**
@@ -59,6 +62,18 @@ type TrajectoryItem =
     }
 
 /**
+ * Check if a string is valid JSON
+ */
+function isValidJSON(text: string): boolean {
+  try {
+    JSON.parse(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * AgentTrajectory Component
  *
  * Merges messages and tool calls into a single chronological timeline
@@ -80,6 +95,8 @@ export function AgentTrajectory({
   hideSystemMessages = true,
   className = '',
 }: AgentTrajectoryProps) {
+  const { actualTheme } = useTheme()
+
   // Merge messages and tool calls into a chronological timeline
   const trajectory = useMemo(() => {
     const items: TrajectoryItem[] = []
@@ -238,9 +255,19 @@ export function AgentTrajectory({
                       <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
                         Arguments
                       </summary>
-                      <pre className="mt-1 overflow-x-auto rounded bg-muted/50 p-2 text-xs">
-                        {toolCall.args}
-                      </pre>
+                      {isValidJSON(toolCall.args) ? (
+                        <div className="json-viewer-wrapper mt-1 rounded bg-muted/50 p-2 text-xs">
+                          <JsonView
+                            data={JSON.parse(toolCall.args)}
+                            shouldExpandNode={(level) => level < 2}
+                            style={actualTheme === 'dark' ? darkStyles : defaultStyles}
+                          />
+                        </div>
+                      ) : (
+                        <pre className="mt-1 overflow-x-auto rounded bg-muted/50 p-2 text-xs">
+                          {toolCall.args}
+                        </pre>
+                      )}
                     </details>
                   )}
 
@@ -250,9 +277,19 @@ export function AgentTrajectory({
                       <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
                         Result
                       </summary>
-                      <pre className="mt-1 max-h-40 overflow-x-auto rounded bg-muted/50 p-2 text-xs">
-                        {toolCall.result}
-                      </pre>
+                      {isValidJSON(toolCall.result) ? (
+                        <div className="json-viewer-wrapper mt-1 max-h-40 overflow-auto rounded bg-muted/50 p-2 text-xs">
+                          <JsonView
+                            data={JSON.parse(toolCall.result)}
+                            shouldExpandNode={(level) => level < 1}
+                            style={actualTheme === 'dark' ? darkStyles : defaultStyles}
+                          />
+                        </div>
+                      ) : (
+                        <pre className="mt-1 max-h-40 overflow-x-auto rounded bg-muted/50 p-2 text-xs">
+                          {toolCall.result}
+                        </pre>
+                      )}
                     </details>
                   )}
 

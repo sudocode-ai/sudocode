@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useCallback } from 'react'
-import { relationshipsApi } from '@/lib/api'
+import { relationshipsApi, getCurrentProjectId } from '@/lib/api'
 import { useWebSocketContext } from '@/contexts/WebSocketContext'
+import { useProject } from '@/hooks/useProject'
 import type { Issue, Relationship, WebSocketMessage } from '@/types/api'
 
 /**
@@ -10,10 +11,18 @@ import type { Issue, Relationship, WebSocketMessage } from '@/types/api'
  */
 export function useIssueRelationships(issues: Issue[]) {
   const queryClient = useQueryClient()
+  const { currentProjectId } = useProject()
   const { connected, subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
 
+  // Check if context projectId matches API client projectId
+  const apiProjectId = getCurrentProjectId()
+  const isProjectSynced = currentProjectId === apiProjectId
+
+  // Include projectId in query key to ensure proper cache separation between projects
+  const queryKey = ['issue-relationships', currentProjectId, issues.map((i) => i.id).sort()]
+
   const query = useQuery({
-    queryKey: ['issue-relationships', issues.map((i) => i.id).sort()],
+    queryKey,
     queryFn: async () => {
       // Fetch relationships for all issues in parallel
       const relationshipPromises = issues.map((issue) =>
@@ -43,17 +52,17 @@ export function useIssueRelationships(issues: Issue[]) {
 
       return relationshipsMap
     },
-    enabled: issues.length > 0,
+    enabled: issues.length > 0 && !!currentProjectId && isProjectSynced,
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
 
   // Message handler for relationship updates
   const handleMessage = useCallback((message: WebSocketMessage) => {
     if (message.type === 'relationship_created' || message.type === 'relationship_deleted') {
-      // Invalidate relationship queries to refetch
-      queryClient.invalidateQueries({ queryKey: ['issue-relationships'] })
+      // Invalidate relationship queries to refetch (uses partial key to match all project-specific queries)
+      queryClient.invalidateQueries({ queryKey: ['issue-relationships', currentProjectId] })
     }
-  }, [queryClient])
+  }, [queryClient, currentProjectId])
 
   // Subscribe to all relationship updates when connected
   useEffect(() => {

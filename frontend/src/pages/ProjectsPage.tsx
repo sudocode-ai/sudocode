@@ -426,14 +426,21 @@ interface ProjectCardProps {
 }
 
 function ProjectCard({ project, isOpen, isCurrent, onOpen, onClose, onDelete }: ProjectCardProps) {
+  const navigate = useNavigate()
   const updateProject = useUpdateProject()
   const [isEditing, setIsEditing] = useState(false)
   const [editedName, setEditedName] = useState(project.name)
   const [validationError, setValidationError] = useState<string | null>(null)
 
   const handleCardClick = () => {
-    // If it's the current project or editing, don't do anything
-    if (isCurrent || isEditing) return
+    // If editing, don't do anything
+    if (isEditing) return
+
+    // If it's the current project, navigate to issues
+    if (isCurrent) {
+      navigate('/issues')
+      return
+    }
 
     // Otherwise, open/switch to this project
     onOpen(project)
@@ -603,9 +610,18 @@ function ProjectCard({ project, isOpen, isCurrent, onOpen, onClose, onDelete }: 
             Close
           </Button>
         )}
-        <Button variant="ghost" size="sm" onClick={() => onDelete(project)}>
-          <Trash2 className="h-4 w-4 text-destructive" />
-        </Button>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" onClick={() => onDelete(project)}>
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Delete Project Reference</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
     </div>
   )

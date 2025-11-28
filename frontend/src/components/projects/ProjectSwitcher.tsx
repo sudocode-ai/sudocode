@@ -47,8 +47,10 @@ export function ProjectSwitcher({ className, collapsed = false }: ProjectSwitche
   }, [])
 
   const handleProjectSwitch = async (projectId: string) => {
+    // If clicking on already-selected project, just navigate to issues
     if (projectId === currentProjectId) {
       setOpen(false)
+      navigate('/issues')
       return
     }
 

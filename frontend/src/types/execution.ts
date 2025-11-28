@@ -42,6 +42,7 @@ export interface ExecutionConfig {
 
   // Worktree settings (if mode === 'worktree')
   baseBranch?: string // Branch to base worktree on
+  createBaseBranch?: boolean // If true, create baseBranch from current HEAD
   branchName?: string // Override auto-generated branch name
   cleanupMode?: CleanupMode // When to cleanup worktree
 

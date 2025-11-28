@@ -120,6 +120,28 @@ export interface IWorktreeManager {
    * @returns Promise resolving to array of branch names
    */
   listBranches(repoPath: string): Promise<string[]>;
+
+  /**
+   * Get the current branch name
+   *
+   * @param repoPath - Path to the git repository
+   * @returns Promise resolving to current branch name
+   */
+  getCurrentBranch(repoPath: string): Promise<string>;
+
+  /**
+   * Create a new branch
+   *
+   * @param repoPath - Path to the git repository
+   * @param branchName - Name of the branch to create
+   * @param baseBranch - Branch or commit to base the new branch on
+   * @returns Promise that resolves when branch is created
+   */
+  createBranch(
+    repoPath: string,
+    branchName: string,
+    baseBranch: string
+  ): Promise<void>;
 }
 
 /**
@@ -550,6 +572,18 @@ export class WorktreeManager implements IWorktreeManager {
 
   async listBranches(repoPath: string): Promise<string[]> {
     return this.git.listBranches(repoPath);
+  }
+
+  async getCurrentBranch(repoPath: string): Promise<string> {
+    return this.git.getCurrentBranch(repoPath);
+  }
+
+  async createBranch(
+    repoPath: string,
+    branchName: string,
+    baseBranch: string
+  ): Promise<void> {
+    return this.git.createBranch(repoPath, branchName, baseBranch);
   }
 
   /**

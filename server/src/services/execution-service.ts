@@ -35,6 +35,7 @@ export interface ExecutionConfig {
   model?: string;
   timeout?: number;
   baseBranch?: string;
+  createBaseBranch?: boolean;
   branchName?: string;
   checkpointInterval?: number;
   continueOnStepFailure?: boolean;
@@ -65,6 +66,7 @@ export interface ExecutionPrepareResult {
   };
   relatedSpecs: Array<{ id: string; title: string }>;
   defaultConfig: ExecutionConfig;
+  availableBranches: string[];
   warnings?: string[];
   errors?: string[];
 }
@@ -194,8 +196,9 @@ export class ExecutionService {
     // 5. Render template
     const renderedPrompt = this.templateEngine.render(template, context);
 
-    // 6. Get current branch as default base branch
+    // 6. Get current branch and available branches
     let currentBranch = "main"; // Fallback default
+    let availableBranches: string[] = ["main"];
     try {
       const gitCli = new GitCli();
       currentBranch = await gitCli.getCurrentBranch(this.repoPath);
@@ -203,11 +206,20 @@ export class ExecutionService {
       if (currentBranch === "(detached)") {
         currentBranch = "main";
       }
-    } catch (error) {
-      console.warn(
-        "Failed to get current branch, using 'main' as fallback:",
-        error
+
+      // Get all available branches
+      const branches = await gitCli.listBranches(this.repoPath);
+      // Deduplicate branches (local and remote may have same names)
+      availableBranches = [...new Set(branches)].filter(
+        (b) => b && b !== "HEAD"
       );
+      // Ensure current branch is at the top of the list
+      availableBranches = [
+        currentBranch,
+        ...availableBranches.filter((b) => b !== currentBranch),
+      ];
+    } catch (error) {
+      console.warn("Failed to get branches, using 'main' as fallback:", error);
     }
 
     // 7. Get default config
@@ -239,6 +251,7 @@ export class ExecutionService {
       },
       relatedSpecs,
       defaultConfig,
+      availableBranches,
       warnings,
       errors,
     };
@@ -292,6 +305,7 @@ export class ExecutionService {
         mode: mode,
         prompt: prompt,
         config: JSON.stringify(config),
+        createTargetBranch: config.createBaseBranch || false,
       });
 
       execution = result.execution;

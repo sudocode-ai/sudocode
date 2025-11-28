@@ -1,9 +1,29 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithProviders } from '@/test/test-utils'
 import { IssuePanel } from '@/components/issues/IssuePanel'
 import type { Issue } from '@sudocode-ai/types'
+import { executionsApi } from '@/lib/api'
+
+// Mock the executionsApi
+vi.mock('@/lib/api', async () => {
+  const actual = await vi.importActual('@/lib/api')
+  return {
+    ...actual,
+    executionsApi: {
+      list: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      createFollowUp: vi.fn(),
+      get: vi.fn(),
+      prepare: vi.fn().mockResolvedValue({
+        renderedPrompt: 'test',
+        defaultConfig: { mode: 'worktree', cleanupMode: 'manual' },
+        availableBranches: ['main'],
+      }),
+    },
+  }
+})
 
 const mockIssue: Issue = {
   id: 'ISSUE-001',
@@ -20,6 +40,12 @@ const mockIssue: Issue = {
 }
 
 describe('IssuePanel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // Reset to default empty array for executions
+    vi.mocked(executionsApi.list).mockResolvedValue([])
+  })
+
   it('should render issue details with editable fields', async () => {
     renderWithProviders(<IssuePanel issue={mockIssue} />)
 
@@ -319,5 +345,187 @@ describe('IssuePanel', () => {
     await user.keyboard('{Escape}')
 
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  describe('Follow-up Mode and New Execution Button', () => {
+    it('should show "New execution" button when there is a completed execution', async () => {
+      // Mock executions API to return a completed execution
+      vi.mocked(executionsApi.list).mockResolvedValue([
+        {
+          id: 'exec-123',
+          issue_id: 'ISSUE-001',
+          status: 'completed',
+          created_at: '2024-01-01T10:00:00Z',
+          updated_at: '2024-01-01T11:00:00Z',
+          mode: 'worktree',
+          target_branch: 'main',
+          agent_type: 'claude-code',
+          parent_execution_id: null,
+        } as any,
+      ])
+
+      renderWithProviders(<IssuePanel issue={mockIssue} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('New execution')).toBeInTheDocument()
+      })
+    })
+
+    it('should not show "New execution" button when there are no executions', async () => {
+      vi.mocked(executionsApi.list).mockResolvedValue([])
+
+      renderWithProviders(<IssuePanel issue={mockIssue} />)
+
+      await waitFor(() => {
+        expect(screen.queryByText('New execution')).not.toBeInTheDocument()
+      })
+    })
+
+    it('should not show "New execution" button when execution is still running', async () => {
+      vi.mocked(executionsApi.list).mockResolvedValue([
+        {
+          id: 'exec-123',
+          issue_id: 'ISSUE-001',
+          status: 'running',
+          created_at: '2024-01-01T10:00:00Z',
+          updated_at: '2024-01-01T11:00:00Z',
+          mode: 'worktree',
+          target_branch: 'main',
+          agent_type: 'claude-code',
+          parent_execution_id: null,
+        } as any,
+      ])
+
+      renderWithProviders(<IssuePanel issue={mockIssue} />)
+
+      await waitFor(() => {
+        expect(screen.queryByText('New execution')).not.toBeInTheDocument()
+      })
+    })
+
+    it('should hide "New execution" button after clicking it', async () => {
+      const user = userEvent.setup()
+      vi.mocked(executionsApi.list).mockResolvedValue([
+        {
+          id: 'exec-123',
+          issue_id: 'ISSUE-001',
+          status: 'completed',
+          created_at: '2024-01-01T10:00:00Z',
+          updated_at: '2024-01-01T11:00:00Z',
+          mode: 'worktree',
+          target_branch: 'main',
+          agent_type: 'claude-code',
+          parent_execution_id: null,
+        } as any,
+      ])
+
+      renderWithProviders(<IssuePanel issue={mockIssue} />)
+
+      const newExecutionButton = await screen.findByText('New execution')
+      await user.click(newExecutionButton)
+
+      await waitFor(() => {
+        expect(screen.queryByText('New execution')).not.toBeInTheDocument()
+      })
+    })
+
+    it('should update placeholder text when clicking "New execution" button', async () => {
+      const user = userEvent.setup()
+      vi.mocked(executionsApi.list).mockResolvedValue([
+        {
+          id: 'exec-123',
+          issue_id: 'ISSUE-001',
+          status: 'completed',
+          created_at: '2024-01-01T10:00:00Z',
+          updated_at: '2024-01-01T11:00:00Z',
+          mode: 'worktree',
+          target_branch: 'main',
+          agent_type: 'claude-code',
+          parent_execution_id: null,
+        } as any,
+      ])
+
+      renderWithProviders(<IssuePanel issue={mockIssue} />)
+
+      // Initial placeholder should be for continuing
+      await waitFor(() => {
+        expect(
+          screen.getByPlaceholderText('Continue the previous conversation... (ctrl+k for new)')
+        ).toBeInTheDocument()
+      })
+
+      const newExecutionButton = await screen.findByText('New execution')
+      await user.click(newExecutionButton)
+
+      // After clicking, placeholder should change to new execution mode
+      await waitFor(() => {
+        expect(
+          screen.getByPlaceholderText('Start a new execution... (ctrl+k to continue previous)')
+        ).toBeInTheDocument()
+      })
+    })
+
+    it('should follow the latest execution in chain', async () => {
+      // Parent execution with a follow-up
+      vi.mocked(executionsApi.list).mockResolvedValue([
+        {
+          id: 'exec-parent',
+          issue_id: 'ISSUE-001',
+          status: 'completed',
+          created_at: '2024-01-01T10:00:00Z',
+          updated_at: '2024-01-01T11:00:00Z',
+          mode: 'worktree',
+          target_branch: 'main',
+          agent_type: 'claude-code',
+          parent_execution_id: null,
+        } as any,
+        {
+          id: 'exec-child',
+          issue_id: 'ISSUE-001',
+          status: 'completed',
+          created_at: '2024-01-01T12:00:00Z',
+          updated_at: '2024-01-01T13:00:00Z',
+          mode: 'worktree',
+          target_branch: 'main',
+          agent_type: 'claude-code',
+          parent_execution_id: 'exec-parent',
+        } as any,
+      ])
+
+      renderWithProviders(<IssuePanel issue={mockIssue} />)
+
+      // Should show follow-up placeholder (meaning it found the child execution to continue)
+      await waitFor(() => {
+        expect(
+          screen.getByPlaceholderText('Continue the previous conversation... (ctrl+k for new)')
+        ).toBeInTheDocument()
+      })
+
+      // "New execution" button should be present
+      expect(screen.getByText('New execution')).toBeInTheDocument()
+    })
+
+    it('should disable input when execution is running', async () => {
+      vi.mocked(executionsApi.list).mockResolvedValue([
+        {
+          id: 'exec-123',
+          issue_id: 'ISSUE-001',
+          status: 'running',
+          created_at: '2024-01-01T10:00:00Z',
+          updated_at: '2024-01-01T11:00:00Z',
+          mode: 'worktree',
+          target_branch: 'main',
+          agent_type: 'claude-code',
+          parent_execution_id: null,
+        } as any,
+      ])
+
+      renderWithProviders(<IssuePanel issue={mockIssue} />)
+
+      await waitFor(() => {
+        const textarea = screen.getByPlaceholderText('Enter prompt for the agent...')
+        expect(textarea).toBeDisabled()
+      })
+    })
   })
 })

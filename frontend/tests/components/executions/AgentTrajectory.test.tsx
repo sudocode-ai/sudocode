@@ -8,6 +8,12 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { AgentTrajectory } from '@/components/executions/AgentTrajectory'
 import type { MessageBuffer, ToolCallTracking } from '@/hooks/useAgUiStream'
+import { ThemeProvider } from '@/contexts/ThemeContext'
+
+// Helper to wrap component with ThemeProvider
+const renderWithTheme = (ui: React.ReactElement) => {
+  return render(<ThemeProvider>{ui}</ThemeProvider>)
+}
 
 describe('AgentTrajectory', () => {
   describe('Empty State', () => {
@@ -15,7 +21,7 @@ describe('AgentTrajectory', () => {
       const messages = new Map<string, MessageBuffer>()
       const toolCalls = new Map<string, ToolCallTracking>()
 
-      const { container } = render(
+      const { container } = renderWithTheme(
         <AgentTrajectory messages={messages} toolCalls={toolCalls} />
       )
 
@@ -36,7 +42,7 @@ describe('AgentTrajectory', () => {
 
       const toolCalls = new Map<string, ToolCallTracking>()
 
-      render(<AgentTrajectory messages={messages} toolCalls={toolCalls} />)
+      renderWithTheme(<AgentTrajectory messages={messages} toolCalls={toolCalls} />)
 
       expect(screen.getByText('assistant')).toBeInTheDocument()
       expect(screen.getByText('Hello, this is a test message!')).toBeInTheDocument()
@@ -54,7 +60,7 @@ describe('AgentTrajectory', () => {
 
       const toolCalls = new Map<string, ToolCallTracking>()
 
-      const { container } = render(
+      const { container } = renderWithTheme(
         <AgentTrajectory messages={messages} toolCalls={toolCalls} />
       )
 
@@ -77,7 +83,7 @@ describe('AgentTrajectory', () => {
         endTime: 2000,
       })
 
-      render(<AgentTrajectory messages={messages} toolCalls={toolCalls} />)
+      renderWithTheme(<AgentTrajectory messages={messages} toolCalls={toolCalls} />)
 
       expect(screen.getByText('Read')).toBeInTheDocument()
       const completedBadges = screen.getAllByText('completed')
@@ -98,7 +104,7 @@ describe('AgentTrajectory', () => {
         endTime: 2000,
       })
 
-      render(<AgentTrajectory messages={messages} toolCalls={toolCalls} />)
+      renderWithTheme(<AgentTrajectory messages={messages} toolCalls={toolCalls} />)
 
       expect(screen.getByText('Write')).toBeInTheDocument()
       expect(screen.getByText('File not found')).toBeInTheDocument()
@@ -133,7 +139,7 @@ describe('AgentTrajectory', () => {
         endTime: 2500,
       })
 
-      const { container } = render(
+      const { container } = renderWithTheme(
         <AgentTrajectory messages={messages} toolCalls={toolCalls} />
       )
 
@@ -184,7 +190,7 @@ describe('AgentTrajectory', () => {
         index: 1, // Middle index
       })
 
-      const { container } = render(
+      const { container } = renderWithTheme(
         <AgentTrajectory messages={messages} toolCalls={toolCalls} />
       )
 
@@ -226,7 +232,7 @@ describe('AgentTrajectory', () => {
 
       const toolCalls = new Map<string, ToolCallTracking>()
 
-      const { container } = render(
+      const { container } = renderWithTheme(
         <AgentTrajectory messages={messages} toolCalls={toolCalls} />
       )
 
@@ -271,7 +277,7 @@ describe('AgentTrajectory', () => {
         index: 1,
       })
 
-      const { container } = render(
+      const { container } = renderWithTheme(
         <AgentTrajectory messages={messages} toolCalls={toolCalls} />
       )
 
@@ -298,7 +304,7 @@ describe('AgentTrajectory', () => {
 
       const toolCalls = new Map<string, ToolCallTracking>()
 
-      const { container } = render(
+      const { container } = renderWithTheme(
         <AgentTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown={true} />
       )
 
@@ -319,7 +325,7 @@ describe('AgentTrajectory', () => {
 
       const toolCalls = new Map<string, ToolCallTracking>()
 
-      const { container } = render(
+      const { container } = renderWithTheme(
         <AgentTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown={false} />
       )
 
@@ -367,7 +373,7 @@ describe('AgentTrajectory', () => {
         endTime: 4500,
       })
 
-      render(<AgentTrajectory messages={messages} toolCalls={toolCalls} />)
+      renderWithTheme(<AgentTrajectory messages={messages} toolCalls={toolCalls} />)
 
       // All items should be displayed
       expect(screen.getByText('First message')).toBeInTheDocument()
@@ -397,7 +403,7 @@ describe('AgentTrajectory', () => {
         index: 1,
       })
 
-      render(<AgentTrajectory messages={messages} toolCalls={new Map()} />)
+      renderWithTheme(<AgentTrajectory messages={messages} toolCalls={new Map()} />)
 
       // Should not show system message
       expect(screen.queryByText(/This is a system message/)).not.toBeInTheDocument()
@@ -424,7 +430,7 @@ describe('AgentTrajectory', () => {
         index: 1,
       })
 
-      render(
+      renderWithTheme(
         <AgentTrajectory messages={messages} toolCalls={new Map()} hideSystemMessages={false} />
       )
 

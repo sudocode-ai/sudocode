@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
 import {
@@ -43,6 +43,7 @@ import { ActivityTimeline } from './ActivityTimeline'
 import type { IssueFeedback, WebSocketMessage } from '@/types/api'
 import { useWebSocketContext } from '@/contexts/WebSocketContext'
 import { toast } from 'sonner'
+import { findLatestExecutionInChain } from '@/utils/executions'
 
 const VIEW_MODE_STORAGE_KEY = 'sudocode:details:viewMode'
 const DESCRIPTION_COLLAPSED_STORAGE_KEY = 'sudocode:issue:descriptionCollapsed'
@@ -62,6 +63,7 @@ interface IssuePanelProps {
   onViewModeChange?: (mode: 'formatted' | 'markdown') => void
   showViewToggleInline?: boolean
   feedback?: IssueFeedback[]
+  autoFocusAgentConfig?: boolean
 }
 
 const STATUS_OPTIONS: { value: IssueStatus; label: string }[] = [
@@ -95,6 +97,7 @@ export function IssuePanel({
   onViewModeChange,
   showViewToggleInline = true,
   feedback = [],
+  autoFocusAgentConfig = false,
 }: IssuePanelProps) {
   const navigate = useNavigate()
   const [title, setTitle] = useState(issue.title)
@@ -127,6 +130,9 @@ export function IssuePanel({
   const [hasChanges, setHasChanges] = useState(false)
   const [executions, setExecutions] = useState<Execution[]>([])
   const [isCopied, setIsCopied] = useState(false)
+  const [isFollowUpMode, setIsFollowUpMode] = useState(true)
+  const [forceNewExecution, setForceNewExecution] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const isAgentPanelSelectOpenRef = useRef(false)
   const selectCloseTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -134,9 +140,28 @@ export function IssuePanel({
   const activitySectionRef = useRef<HTMLDivElement>(null)
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
   const shouldScrollToActivityRef = useRef(false)
+  const hasInitializedForIssueRef = useRef<string | null>(null)
 
   // WebSocket for real-time updates
   const { subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
+
+  // Computed values for follow-up mode
+  const latestExecution = useMemo(() => {
+    return findLatestExecutionInChain(executions)
+  }, [executions])
+
+  const canFollowUp = useMemo(() => {
+    if (!latestExecution) return false
+
+    const terminalStatuses: Execution['status'][] = ['completed', 'failed', 'stopped', 'cancelled']
+
+    return terminalStatuses.includes(latestExecution.status)
+  }, [latestExecution])
+
+  const isExecutionRunning = useMemo(() => {
+    if (!latestExecution) return false
+    return latestExecution.status === 'running'
+  }, [latestExecution])
 
   // Relationship mutations with cache invalidation
   const { createRelationshipAsync, deleteRelationshipAsync } = useRelationshipMutations()
@@ -161,7 +186,26 @@ export function IssuePanel({
     }
     // Reset hasChanges to prevent saving old content to new issue
     setHasChanges(false)
+    // Reset executions to prevent stale data affecting auto-collapse logic
+    setExecutions([])
+    // Reset initialization ref so auto-collapse can re-evaluate for new issue
+    hasInitializedForIssueRef.current = null
+    // Reset to follow-up mode when issue changes
+    setIsFollowUpMode(true)
+    // Reset force new execution flag
+    setForceNewExecution(false)
   }, [issue.id])
+
+  // Auto-manage follow-up mode based on whether follow-ups are possible
+  useEffect(() => {
+    if (isFollowUpMode && !canFollowUp) {
+      // Disable follow-up mode when not possible (no terminal executions)
+      setIsFollowUpMode(false)
+    } else if (!isFollowUpMode && canFollowUp) {
+      // Re-enable follow-up mode when it becomes possible
+      setIsFollowUpMode(true)
+    }
+  }, [isFollowUpMode, canFollowUp])
 
   // Save internal view mode preference to localStorage
   useEffect(() => {
@@ -288,6 +332,30 @@ export function IssuePanel({
       })
     }
   }, [executions])
+
+  // Auto-collapse description and scroll to activity when issue has activity
+  useEffect(() => {
+    // Only run once per issue (wait for executions to load)
+    if (hasInitializedForIssueRef.current === issue.id) return
+
+    const hasActivity = executions.length > 0 || feedback.length > 0
+
+    if (hasActivity) {
+      // Mark as initialized for this issue
+      hasInitializedForIssueRef.current = issue.id
+
+      // Collapse the description
+      setIsDescriptionCollapsed(true)
+
+      // Scroll to the activity section after a brief delay to let the collapse happen
+      requestAnimationFrame(() => {
+        activitySectionRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        })
+      })
+    }
+  }, [issue.id, executions, feedback])
 
   // Handle click outside to close panel
   useEffect(() => {
@@ -544,23 +612,48 @@ export function IssuePanel({
   const handleStartExecution = async (
     config: ExecutionConfig,
     prompt: string,
-    agentType?: string
+    agentType?: string,
+    forceNew?: boolean
   ) => {
+    const shouldFollowUp = isFollowUpMode && latestExecution && !forceNew
+
     try {
       // Set flag to scroll to activity section when execution appears
       shouldScrollToActivityRef.current = true
 
-      await executionsApi.create(issue.id, {
-        config,
-        prompt,
-        agentType,
-      })
+      if (shouldFollowUp) {
+        // Follow-up path: create follow-up from latest execution
+        await executionsApi.createFollowUp(latestExecution.id, {
+          feedback: prompt,
+        })
+      } else {
+        // New execution path: create fresh execution
+        await executionsApi.create(issue.id, {
+          config,
+          prompt,
+          agentType,
+        })
+      }
       // Execution will appear in activity timeline via WebSocket
       // Scroll will happen when executions state updates
     } catch (error) {
       console.error('Failed to create execution:', error)
       shouldScrollToActivityRef.current = false
-      toast.error('Failed to start execution')
+      toast.error(shouldFollowUp ? 'Failed to create follow-up' : 'Failed to start execution')
+    }
+  }
+
+  const handleCancel = async (executionId: string) => {
+    setCancelling(true)
+    try {
+      await executionsApi.cancel(executionId)
+      // Execution status will update via WebSocket
+      toast.success('Execution cancelled')
+    } catch (error) {
+      console.error('Failed to cancel execution:', error)
+      toast.error('Failed to cancel execution')
+    } finally {
+      setCancelling(false)
     }
   }
 
@@ -575,6 +668,19 @@ export function IssuePanel({
     } catch (error) {
       console.error('Failed to copy ID:', error)
       toast.error('Failed to copy ID')
+    }
+  }
+
+  /**
+   * Parses execution config JSON string into ExecutionConfig object.
+   */
+  const parseExecutionConfig = (execution: Execution | null): ExecutionConfig | undefined => {
+    if (!execution?.config) return undefined
+    try {
+      return JSON.parse(execution.config)
+    } catch (error) {
+      console.warn('Failed to parse execution config:', error)
+      return undefined
     }
   }
 
@@ -951,7 +1057,30 @@ export function IssuePanel({
                     .map((e) => ({ ...e, itemType: 'execution' as const })),
                 ]}
                 currentEntityId={issue.id}
+                onExecutionDeleted={async () => {
+                  // Re-fetch executions when an execution is deleted
+                  try {
+                    const data = await executionsApi.list(issue.id)
+                    setExecutions(data)
+                  } catch (error) {
+                    console.error('Failed to fetch executions:', error)
+                  }
+                }}
               />
+              {/* New Execution Button - shown when there's a previous execution and we're in follow-up mode */}
+              {isFollowUpMode && canFollowUp && !forceNewExecution && (
+                <div className="flex justify-center pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setForceNewExecution(true)}
+                    className="gap-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    New execution
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -968,35 +1097,26 @@ export function IssuePanel({
             <AgentConfigPanel
               issueId={issue.id}
               onStart={handleStartExecution}
-              disabled={issue.archived || isUpdating}
-              previousExecution={
-                executions.length > 0
-                  ? (() => {
-                      // Sort executions by created_at to find the most recent one
-                      const sortedExecutions = [...executions].sort(
-                        (a, b) =>
-                          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-                      )
-                      const lastExec = sortedExecutions[0]
-                      let parsedConfig: ExecutionConfig | undefined = undefined
-                      if (lastExec.config) {
-                        try {
-                          parsedConfig = JSON.parse(lastExec.config)
-                        } catch (error) {
-                          console.warn('Failed to parse previous execution config:', error)
-                        }
-                      }
-                      return {
-                        id: lastExec.id,
-                        mode: lastExec.mode || undefined,
-                        model: lastExec.model || undefined,
-                        target_branch: lastExec.target_branch,
-                        agent_type: lastExec.agent_type,
-                        config: parsedConfig,
-                      }
-                    })()
+              disabled={issue.archived || isUpdating || isExecutionRunning}
+              autoFocus={autoFocusAgentConfig}
+              isFollowUp={isFollowUpMode && canFollowUp}
+              isRunning={isExecutionRunning}
+              onCancel={latestExecution ? () => handleCancel(latestExecution.id) : undefined}
+              isCancelling={cancelling}
+              lastExecution={
+                latestExecution
+                  ? {
+                      id: latestExecution.id,
+                      mode: latestExecution.mode || undefined,
+                      model: latestExecution.model || undefined,
+                      target_branch: latestExecution.target_branch,
+                      agent_type: latestExecution.agent_type,
+                      config: parseExecutionConfig(latestExecution),
+                    }
                   : undefined
               }
+              forceNewExecution={forceNewExecution}
+              onForceNewToggle={setForceNewExecution}
               onSelectOpenChange={(open) => {
                 // Clear any pending timeout
                 if (selectCloseTimeoutRef.current) {

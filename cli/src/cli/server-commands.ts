@@ -99,9 +99,9 @@ export async function handleServerStart(
     SUDOCODE_DIR: ctx.outputDir,
   };
 
-  // Only set PORT if explicitly provided - otherwise let server scan for available ports
+  // Only set SUDOCODE_PORT if explicitly provided - otherwise let server scan for available ports
   if (options.port) {
-    env.PORT = options.port;
+    env.SUDOCODE_PORT = options.port;
   }
 
   console.log(chalk.blue("Starting sudocode local server..."));
