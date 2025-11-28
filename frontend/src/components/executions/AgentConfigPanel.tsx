@@ -20,7 +20,7 @@ import type { CopilotConfig } from './CopilotConfigForm'
 
 interface AgentConfigPanelProps {
   issueId: string
-  onStart: (config: ExecutionConfig, prompt: string, agentType?: string) => void
+  onStart: (config: ExecutionConfig, prompt: string, agentType?: string, forceNew?: boolean) => void
   disabled?: boolean
   onSelectOpenChange?: (isOpen: boolean) => void
   /**
@@ -28,20 +28,11 @@ interface AgentConfigPanelProps {
    */
   isFollowUp?: boolean
   /**
-   * Parent execution for follow-up mode - provides locked config values
+   * Latest execution to reference.
+   * - In follow-up mode: provides locked config values for continuation
+   * - In new execution mode: used to default config to last execution's settings
    */
-  parentExecution?: {
-    id: string
-    mode?: string
-    model?: string
-    target_branch?: string
-    agent_type?: string
-    config?: ExecutionConfig
-  }
-  /**
-   * Previous execution (not for follow-up) - used to default config to last execution's settings
-   */
-  previousExecution?: {
+  lastExecution?: {
     id: string
     mode?: string
     model?: string
@@ -69,6 +60,22 @@ interface AgentConfigPanelProps {
    * Auto-focus the prompt textarea when the panel mounts or issue changes
    */
   autoFocus?: boolean
+  /**
+   * Whether to allow toggling between follow-up and new execution modes
+   * When false, disables Ctrl+K shortcut and hides toggle UI hints
+   * Defaults to true
+   */
+  allowModeToggle?: boolean
+  /**
+   * Callback to expose the force new execution toggle function
+   * Allows external components to trigger mode switching
+   */
+  onForceNewToggle?: (forceNew: boolean) => void
+  /**
+   * Controlled value for forcing a new execution instead of following up
+   * When true, creates a new execution even in follow-up mode
+   */
+  forceNewExecution?: boolean
 }
 
 // TODO: Move this somewhere more central.
@@ -163,42 +170,45 @@ export function AgentConfigPanel({
   disabled = false,
   onSelectOpenChange,
   isFollowUp = false,
-  parentExecution,
-  previousExecution,
+  lastExecution,
   promptPlaceholder,
   isRunning = false,
   onCancel,
   isCancelling = false,
   autoFocus = false,
+  allowModeToggle = true,
+  onForceNewToggle,
+  forceNewExecution: controlledForceNewExecution,
 }: AgentConfigPanelProps) {
   const [loading, setLoading] = useState(!isFollowUp) // Skip loading for follow-ups
   const [prepareResult, setPrepareResult] = useState<ExecutionPrepareResult | null>(null)
   const [prompt, setPrompt] = useState('')
-  const [config, setConfig] = useState<ExecutionConfig>(() => {
-    // For follow-ups, inherit config from parent execution
-    if (isFollowUp && parentExecution?.config) {
-      const inheritedConfig = {
-        ...parentExecution.config,
-        mode: (parentExecution.mode as ExecutionMode) || 'worktree',
-        baseBranch: parentExecution.target_branch,
-      }
-      if (isValidExecutionConfig(inheritedConfig)) {
-        return inheritedConfig
-      }
-      console.warn('Parent execution config is invalid, using defaults')
-    }
+  const [internalForceNewExecution, setInternalForceNewExecution] = useState(false)
 
-    // For new executions, try to use previous execution config
-    if (previousExecution?.config) {
-      const previousConfig = {
-        ...previousExecution.config,
-        mode: (previousExecution.mode as ExecutionMode) || 'worktree',
-        baseBranch: previousExecution.target_branch,
+  // Use controlled value if provided, otherwise use internal state
+  const forceNewExecution =
+    controlledForceNewExecution !== undefined
+      ? controlledForceNewExecution
+      : internalForceNewExecution
+  const setForceNewExecution = (value: boolean) => {
+    if (controlledForceNewExecution === undefined) {
+      setInternalForceNewExecution(value)
+    }
+    onForceNewToggle?.(value)
+  }
+
+  const [config, setConfig] = useState<ExecutionConfig>(() => {
+    // Try to use last execution config (works for both follow-up and new execution modes)
+    if (lastExecution?.config) {
+      const executionConfig = {
+        ...lastExecution.config,
+        mode: (lastExecution.mode as ExecutionMode) || 'worktree',
+        baseBranch: lastExecution.target_branch,
       }
-      if (isValidExecutionConfig(previousConfig)) {
-        return previousConfig
+      if (isValidExecutionConfig(executionConfig)) {
+        return executionConfig
       }
-      console.warn('Previous execution config is invalid, trying localStorage')
+      console.warn('Last execution config is invalid, trying localStorage')
     }
 
     // Otherwise, try localStorage
@@ -230,14 +240,9 @@ export function AgentConfigPanel({
   })
   const [showSettingsDialog, setShowSettingsDialog] = useState(false)
   const [selectedAgentType, setSelectedAgentType] = useState<string>(() => {
-    // For follow-ups, inherit agent type from parent execution
-    if (isFollowUp && parentExecution?.agent_type) {
-      return parentExecution.agent_type
-    }
-
-    // For new executions, try to use previous execution's agent type
-    if (previousExecution?.agent_type) {
-      return previousExecution.agent_type
+    // Try to use last execution's agent type
+    if (lastExecution?.agent_type) {
+      return lastExecution.agent_type
     }
 
     // Otherwise, try localStorage
@@ -259,24 +264,24 @@ export function AgentConfigPanel({
   // Fetch available agents
   const { agents, loading: agentsLoading } = useAgents()
 
-  // Reset config when issue or previousExecution changes (issue switching)
+  // Reset config when issue or lastExecution changes (issue switching)
   useEffect(() => {
     // Skip for follow-ups - they use parent execution
     if (isFollowUp) return
 
     // Helper to load config with priority
     const loadConfigForIssue = (): ExecutionConfig => {
-      // Try previous execution config first
-      if (previousExecution?.config) {
-        const previousConfig = {
-          ...previousExecution.config,
-          mode: (previousExecution.mode as ExecutionMode) || 'worktree',
-          baseBranch: previousExecution.target_branch,
+      // Try last execution config first
+      if (lastExecution?.config) {
+        const executionConfig = {
+          ...lastExecution.config,
+          mode: (lastExecution.mode as ExecutionMode) || 'worktree',
+          baseBranch: lastExecution.target_branch,
         }
-        if (isValidExecutionConfig(previousConfig)) {
-          return previousConfig
+        if (isValidExecutionConfig(executionConfig)) {
+          return executionConfig
         }
-        console.warn('Previous execution config is invalid, trying localStorage')
+        console.warn('Last execution config is invalid, trying localStorage')
       }
 
       // Otherwise, try localStorage
@@ -307,16 +312,16 @@ export function AgentConfigPanel({
     }
 
     setConfig(loadConfigForIssue())
-  }, [issueId, previousExecution?.id, isFollowUp])
+  }, [issueId, lastExecution?.id, isFollowUp])
 
-  // Reset agent type when issue or previousExecution changes
+  // Reset agent type when issue or lastExecution changes
   useEffect(() => {
     if (isFollowUp) return
 
     const loadAgentTypeForIssue = (): string => {
-      // Try previous execution's agent type first
-      if (previousExecution?.agent_type) {
-        return previousExecution.agent_type
+      // Try last execution's agent type first
+      if (lastExecution?.agent_type) {
+        return lastExecution.agent_type
       }
 
       // Otherwise, try localStorage
@@ -334,7 +339,7 @@ export function AgentConfigPanel({
     }
 
     setSelectedAgentType(loadAgentTypeForIssue())
-  }, [issueId, previousExecution?.id, isFollowUp])
+  }, [issueId, lastExecution?.id, isFollowUp])
 
   // Load template preview on mount (skip for follow-ups)
   useEffect(() => {
@@ -421,11 +426,23 @@ export function AgentConfigPanel({
       console.warn('Config is invalid, not saving to localStorage')
     }
 
-    onStart(config, prompt, selectedAgentType)
+    onStart(config, prompt, selectedAgentType, forceNewExecution)
     setPrompt('') // Clear the prompt after submission
+    setForceNewExecution(false) // Reset the flag after submission
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Toggle between new execution and follow-up mode with Ctrl+K (only if allowed)
+    if (e.key === 'k' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault()
+      if (isFollowUp && allowModeToggle) {
+        const newValue = !forceNewExecution
+        setForceNewExecution(newValue)
+        onForceNewToggle?.(newValue)
+      }
+      return
+    }
+
     // Submit on Enter (without Shift)
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -505,10 +522,16 @@ export function AgentConfigPanel({
             (loading
               ? 'Loading prompt...'
               : isFollowUp
-                ? 'Enter feedback to continue the execution...'
+                ? forceNewExecution
+                  ? allowModeToggle
+                    ? 'Start a new execution... (ctrl+k to continue previous)'
+                    : 'Start a new execution...'
+                  : allowModeToggle
+                    ? 'Continue the previous conversation... (ctrl+k for new)'
+                    : 'Continue the previous conversation...'
                 : 'Enter prompt for the agent...')
           }
-          disabled={loading}
+          disabled={loading || disabled}
           className="max-h-[300px] min-h-0 resize-none overflow-y-auto border-none bg-muted/80 py-2 text-sm shadow-none transition-[height] duration-100 focus-visible:ring-0 focus-visible:ring-offset-0"
           style={{ height: 'auto' }}
           rows={1}
