@@ -141,6 +141,8 @@ export function IssuePanel({
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
   const shouldScrollToActivityRef = useRef(false)
   const hasInitializedForIssueRef = useRef<string | null>(null)
+  const activityBottomRef = useRef<HTMLDivElement>(null)
+  const lastFeedbackRef = useRef<HTMLDivElement>(null)
 
   // WebSocket for real-time updates
   const { subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
@@ -321,10 +323,11 @@ export function IssuePanel({
 
   // Scroll to activity section when a new execution is created
   useEffect(() => {
-    if (shouldScrollToActivityRef.current && activitySectionRef.current) {
+    if (shouldScrollToActivityRef.current && activityBottomRef.current) {
       // Use requestAnimationFrame to ensure DOM is updated
       requestAnimationFrame(() => {
-        activitySectionRef.current?.scrollIntoView({
+        // Scroll to bottom when a new execution is created
+        activityBottomRef.current?.scrollIntoView({
           behavior: 'smooth',
           block: 'end',
         })
@@ -347,12 +350,36 @@ export function IssuePanel({
       // Collapse the description
       setIsDescriptionCollapsed(true)
 
-      // Scroll to the activity section after a brief delay to let the collapse happen
+      // Determine the last activity item type
+      const allActivities = [
+        ...executions.map((e) => ({ ...e, itemType: 'execution' as const, created_at: e.created_at })),
+        ...feedback.map((f) => ({ ...f, itemType: 'feedback' as const, created_at: f.created_at })),
+      ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+
+      const lastActivity = allActivities[allActivities.length - 1]
+      const isLastItemExecution = lastActivity?.itemType === 'execution'
+
+      // Scroll to the most recent activity after a brief delay to let the collapse happen
       requestAnimationFrame(() => {
-        activitySectionRef.current?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'start',
-        })
+        if (isLastItemExecution && activityBottomRef.current) {
+          // If last item is an execution, scroll to bottom
+          activityBottomRef.current.scrollIntoView({
+            behavior: 'smooth',
+            block: 'end',
+          })
+        } else if (lastFeedbackRef.current) {
+          // If last item is feedback, scroll to the last feedback item
+          lastFeedbackRef.current.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+          })
+        } else if (activitySectionRef.current) {
+          // Fallback: scroll to the start of the activity section
+          activitySectionRef.current.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+          })
+        }
       })
     } else {
       // No activity - expand the description
@@ -1060,6 +1087,7 @@ export function IssuePanel({
                     .map((e) => ({ ...e, itemType: 'execution' as const })),
                 ]}
                 currentEntityId={issue.id}
+                lastFeedbackRef={lastFeedbackRef}
               />
               {/* New Execution Button - shown when there's a previous execution and we're in follow-up mode */}
               {isFollowUpMode && canFollowUp && !forceNewExecution && (
@@ -1075,6 +1103,8 @@ export function IssuePanel({
                   </Button>
                 </div>
               )}
+              {/* Scroll marker for bottom of activity */}
+              <div ref={activityBottomRef} />
             </div>
           </div>
         </div>

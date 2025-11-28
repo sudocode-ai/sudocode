@@ -26,6 +26,7 @@ interface ActivityTimelineProps {
   items: ActivityItem[]
   currentEntityId: string
   className?: string
+  lastFeedbackRef?: React.RefObject<HTMLDivElement>
 }
 
 /**
@@ -37,6 +38,7 @@ export function ActivityTimeline({
   items,
   currentEntityId,
   className = '',
+  lastFeedbackRef,
 }: ActivityTimelineProps) {
   const navigate = useNavigate()
   const [collapsedFeedback, setCollapsedFeedback] = useState<Set<string>>(new Set())
@@ -96,6 +98,12 @@ export function ActivityTimeline({
     return lastItem?.id === itemId
   }
 
+  // Find the last feedback item ID for ref attachment
+  const lastFeedbackItemId = useMemo(() => {
+    const feedbackItems = sortedItems.filter((item) => item.itemType === 'feedback')
+    return feedbackItems[feedbackItems.length - 1]?.id
+  }, [sortedItems])
+
   if (sortedItems.length === 0) {
     return (
       <div className={`text-center text-sm text-muted-foreground ${className}`}>
@@ -132,7 +140,7 @@ export function ActivityTimeline({
     })
   }
 
-  const renderFeedback = (feedback: IssueFeedback) => {
+  const renderFeedback = (feedback: IssueFeedback, isLastFeedback: boolean) => {
     const isOutbound = isOutboundFeedback(feedback)
     const otherEntityId = getOtherEntityId(feedback)
     const otherEntityPath = getEntityPath(otherEntityId)
@@ -145,7 +153,7 @@ export function ActivityTimeline({
       : 'text-blue-600 dark:text-blue-400'
 
     return (
-      <div key={feedback.id}>
+      <div key={feedback.id} ref={isLastFeedback ? lastFeedbackRef : undefined}>
         <Card
           className={`overflow-hidden rounded-md border ${feedback.dismissed ? 'opacity-50' : ''}`}
         >
@@ -373,7 +381,8 @@ export function ActivityTimeline({
           return renderExecution(item as Execution & { itemType: 'execution' })
         } else {
           // Default to feedback
-          return renderFeedback(item as IssueFeedback & { itemType: 'feedback' })
+          const isLastFeedback = item.id === lastFeedbackItemId
+          return renderFeedback(item as IssueFeedback & { itemType: 'feedback' }, isLastFeedback)
         }
       })}
     </div>
