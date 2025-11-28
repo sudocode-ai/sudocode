@@ -170,7 +170,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    const { container } = render(
+    const { container } = renderWithTheme(
       <ClaudeCodeTrajectory messages={messages} toolCalls={toolCalls} />
     )
 
@@ -652,7 +652,7 @@ describe('ClaudeCodeTrajectory', () => {
       ],
     ])
 
-    render(
+    renderWithTheme(
       <ClaudeCodeTrajectory
         messages={messages}
         toolCalls={new Map()}
@@ -722,7 +722,7 @@ describe('ClaudeCodeTrajectory', () => {
         ],
       ])
 
-      render(
+      renderWithTheme(
         <ClaudeCodeTrajectory
           messages={new Map()}
           toolCalls={toolCalls}
@@ -760,11 +760,11 @@ describe('ClaudeCodeTrajectory', () => {
         ],
       ])
 
-      render(
+      renderWithTheme(
         <ClaudeCodeTrajectory
           messages={new Map()}
           toolCalls={toolCalls}
-          
+
         />
       )
 
@@ -796,11 +796,11 @@ describe('ClaudeCodeTrajectory', () => {
         ],
       ])
 
-      const { rerender } = render(
+      const { rerender } = renderWithTheme(
         <ClaudeCodeTrajectory
           messages={new Map()}
           toolCalls={toolCalls1}
-          
+
         />
       )
 
@@ -833,11 +833,13 @@ describe('ClaudeCodeTrajectory', () => {
       ])
 
       rerender(
-        <ClaudeCodeTrajectory
-          messages={new Map()}
-          toolCalls={toolCalls2}
-          
-        />
+        <ThemeProvider>
+          <ClaudeCodeTrajectory
+            messages={new Map()}
+            toolCalls={toolCalls2}
+
+          />
+        </ThemeProvider>
       )
 
       expect(screen.getByText('Task 1')).toBeInTheDocument()
@@ -862,11 +864,11 @@ describe('ClaudeCodeTrajectory', () => {
         ],
       ])
 
-      render(
+      renderWithTheme(
         <ClaudeCodeTrajectory
           messages={new Map()}
           toolCalls={toolCalls}
-          
+
         />
       )
 
@@ -912,11 +914,11 @@ describe('ClaudeCodeTrajectory', () => {
         ],
       ])
 
-      const { container } = render(
+      const { container } = renderWithTheme(
         <ClaudeCodeTrajectory
           messages={messages}
           toolCalls={toolCalls}
-          
+
         />
       )
 

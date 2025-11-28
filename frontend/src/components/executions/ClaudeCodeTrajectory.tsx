@@ -16,12 +16,15 @@ import { Loader2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
+import { JsonView, defaultStyles, darkStyles } from 'react-json-view-lite'
+import 'react-json-view-lite/dist/index.css'
 import type { MessageBuffer } from '@/hooks/useAgUiStream'
 import type { ToolCallTracking } from '@/hooks/useAgUiStream'
 import { TodoTracker } from './TodoTracker'
 import { buildTodoHistory } from '@/utils/todoExtractor'
 import { DiffViewer } from './DiffViewer'
 import { parseClaudeToolArgs } from '@/utils/claude'
+import { useTheme } from '@/contexts/ThemeContext'
 
 const MAX_CHARS_BEFORE_TRUNCATION = 500
 
@@ -268,6 +271,18 @@ function formatResultSummary(
     return null
   } catch {
     return null
+  }
+}
+
+/**
+ * Check if a string is valid JSON
+ */
+function isValidJSON(text: string): boolean {
+  try {
+    JSON.parse(text)
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -522,6 +537,7 @@ export function ClaudeCodeTrajectory({
  * ToolCallItem - Terminal-style tool call rendering
  */
 function ToolCallItem({ toolCall }: { toolCall: ToolCallTracking }) {
+  const { actualTheme } = useTheme()
   const [showFullArgs, setShowFullArgs] = useState(false)
   const [showFullResult, setShowFullResult] = useState(false)
   const formattedArgs = formatToolArgs(toolCall.toolCallName, toolCall.args)
@@ -559,10 +575,25 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCallTracking }) {
             <div className="mt-0.5 flex items-start gap-2">
               <span className="select-none text-muted-foreground">∟</span>
               <div className="min-w-0 flex-1">
-                {/* Preview of first 2 lines */}
-                <pre className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
-                  {showFullArgs ? toolCall.args : argsData.truncated}
-                </pre>
+                {/* Preview or full content */}
+                {!showFullArgs ? (
+                  <pre className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
+                    {argsData.truncated}
+                  </pre>
+                ) : // Full args - use JSON viewer for JSON, plain text otherwise
+                isValidJSON(toolCall.args || '') ? (
+                  <div className="json-viewer-wrapper my-1 rounded border border-border bg-background/50 p-2 text-xs">
+                    <JsonView
+                      data={JSON.parse(toolCall.args || '')}
+                      clickToExpandNode={true}
+                      style={actualTheme === 'dark' ? darkStyles : defaultStyles}
+                    />
+                  </div>
+                ) : (
+                  <pre className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
+                    {toolCall.args}
+                  </pre>
+                )}
                 {/* Expand/collapse button */}
                 {argsData.hasMore && (
                   <button
@@ -652,12 +683,42 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCallTracking }) {
                           </pre>
                         )
                       })()}
-                    {/* Full result when expanded */}
-                    {showFullResult && (
-                      <pre className="whitespace-pre-wrap text-xs leading-relaxed">
-                        {toolCall.result}
-                      </pre>
-                    )}
+                    {/* Full result when expanded - use JSON viewer for JSON outputs */}
+                    {showFullResult &&
+                      (() => {
+                        // Check if result is JSON and no special rendering scheme applies
+                        const hasSpecialRendering =
+                          toolCall.toolCallName === 'Edit' || toolCall.toolCallName === 'Write'
+                        const isJSON = !hasSpecialRendering && isValidJSON(toolCall.result || '')
+
+                        if (isJSON) {
+                          try {
+                            const jsonData = JSON.parse(toolCall.result || '')
+                            return (
+                              <div className="json-viewer-wrapper my-1 rounded border border-border bg-background/50 p-2 text-xs">
+                                <JsonView
+                                  data={jsonData}
+                                  clickToExpandNode={true}
+                                  style={actualTheme === 'dark' ? darkStyles : defaultStyles}
+                                />
+                              </div>
+                            )
+                          } catch {
+                            // Fallback to plain text if JSON parsing fails
+                            return (
+                              <pre className="whitespace-pre-wrap text-xs leading-relaxed">
+                                {toolCall.result}
+                              </pre>
+                            )
+                          }
+                        }
+
+                        return (
+                          <pre className="whitespace-pre-wrap text-xs leading-relaxed">
+                            {toolCall.result}
+                          </pre>
+                        )
+                      })()}
                     {/* Expand/collapse button */}
                     {resultData.hasMore && (
                       <button
