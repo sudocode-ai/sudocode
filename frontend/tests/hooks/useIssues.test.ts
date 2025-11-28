@@ -6,7 +6,10 @@ import { issuesApi } from '@/lib/api'
 import type { Issue } from '@/types/api'
 import { createElement, type ReactNode } from 'react'
 
-// Mock the API
+// Mock Project context - use a mutable ref so tests can change the projectId
+let mockProjectId: string | null = 'test-project-id'
+
+// Mock the API - needs to be before imports that use it
 vi.mock('@/lib/api', () => ({
   issuesApi: {
     getAll: vi.fn(),
@@ -15,6 +18,7 @@ vi.mock('@/lib/api', () => ({
     create: vi.fn(),
     delete: vi.fn(),
   },
+  getCurrentProjectId: () => mockProjectId,
 }))
 
 // Mock WebSocket context
@@ -26,6 +30,16 @@ vi.mock('@/contexts/WebSocketContext', () => ({
     addMessageHandler: vi.fn(),
     removeMessageHandler: vi.fn(),
     lastMessage: null,
+  }),
+}))
+
+vi.mock('@/hooks/useProject', () => ({
+  useProject: () => ({
+    currentProjectId: mockProjectId,
+    setCurrentProjectId: vi.fn(),
+    currentProject: null,
+    setCurrentProject: vi.fn(),
+    clearProject: vi.fn(),
   }),
 }))
 
@@ -76,6 +90,7 @@ function createWrapper() {
 describe('useIssues', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockProjectId = 'test-project-id' // Reset to default
   })
 
   it('should fetch and return issues', async () => {
@@ -318,5 +333,227 @@ describe('useUpdateIssueStatus', () => {
     })
 
     expect(result.current.error).toBeTruthy()
+  })
+})
+
+describe('useIssues - Project Switching', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockProjectId = 'test-project-id'
+  })
+
+  it('should not fetch issues when projectId is null', async () => {
+    mockProjectId = null
+    vi.mocked(issuesApi.getAll).mockResolvedValue(mockIssues)
+
+    const { result } = renderHook(() => useIssues(), {
+      wrapper: createWrapper(),
+    })
+
+    // Should not be loading because query is disabled
+    expect(result.current.isLoading).toBe(false)
+    expect(result.current.issues).toEqual([])
+    expect(issuesApi.getAll).not.toHaveBeenCalled()
+  })
+
+  it('should include projectId in query key for cache separation', async () => {
+    const projectAIssues: Issue[] = [
+      { ...mockIssues[0], id: 'PROJECT-A-ISSUE', title: 'Project A Issue' },
+    ]
+    const projectBIssues: Issue[] = [
+      { ...mockIssues[0], id: 'PROJECT-B-ISSUE', title: 'Project B Issue' },
+    ]
+
+    // Create a shared query client to test cache separation
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          gcTime: Infinity, // Keep cache for testing
+          staleTime: Infinity,
+        },
+      },
+    })
+
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children)
+
+    // Fetch issues for Project A
+    mockProjectId = 'project-a'
+    vi.mocked(issuesApi.getAll).mockResolvedValue(projectAIssues)
+
+    const { result: resultA, unmount: unmountA } = renderHook(() => useIssues(), { wrapper })
+
+    await waitFor(() => {
+      expect(resultA.current.isLoading).toBe(false)
+    })
+
+    expect(resultA.current.issues).toEqual(projectAIssues)
+    unmountA()
+
+    // Switch to Project B
+    mockProjectId = 'project-b'
+    vi.mocked(issuesApi.getAll).mockResolvedValue(projectBIssues)
+
+    const { result: resultB } = renderHook(() => useIssues(), { wrapper })
+
+    await waitFor(() => {
+      expect(resultB.current.isLoading).toBe(false)
+    })
+
+    // Should have fetched new data for Project B, not used Project A's cache
+    expect(resultB.current.issues).toEqual(projectBIssues)
+    expect(issuesApi.getAll).toHaveBeenCalledTimes(2)
+  })
+
+  it('should refetch when projectId changes', async () => {
+    vi.mocked(issuesApi.getAll).mockResolvedValue(mockIssues)
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          gcTime: 0,
+        },
+      },
+    })
+
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children)
+
+    mockProjectId = 'project-1'
+    const { result, rerender } = renderHook(() => useIssues(), { wrapper })
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
+
+    expect(issuesApi.getAll).toHaveBeenCalledTimes(1)
+
+    // Change project
+    mockProjectId = 'project-2'
+    rerender()
+
+    await waitFor(() => {
+      expect(issuesApi.getAll).toHaveBeenCalledTimes(2)
+    })
+  })
+})
+
+describe('useIssue - Project Switching', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockProjectId = 'test-project-id'
+  })
+
+  it('should not fetch issue when projectId is null', async () => {
+    mockProjectId = null
+    vi.mocked(issuesApi.getById).mockResolvedValue(mockIssues[0])
+
+    const { result } = renderHook(() => useIssue('ISSUE-001'), {
+      wrapper: createWrapper(),
+    })
+
+    expect(result.current.data).toBeUndefined()
+    expect(issuesApi.getById).not.toHaveBeenCalled()
+  })
+
+  it('should include projectId in query key', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          gcTime: Infinity,
+          staleTime: Infinity,
+        },
+      },
+    })
+
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children)
+
+    // Fetch issue for Project A
+    mockProjectId = 'project-a'
+    const issueA = { ...mockIssues[0], title: 'Issue from Project A' }
+    vi.mocked(issuesApi.getById).mockResolvedValue(issueA)
+
+    const { result: resultA, unmount: unmountA } = renderHook(
+      () => useIssue('ISSUE-001'),
+      { wrapper }
+    )
+
+    await waitFor(() => {
+      expect(resultA.current.isLoading).toBe(false)
+    })
+
+    expect(resultA.current.data).toEqual(issueA)
+    unmountA()
+
+    // Switch to Project B - same issue ID but different project
+    mockProjectId = 'project-b'
+    const issueB = { ...mockIssues[0], title: 'Issue from Project B' }
+    vi.mocked(issuesApi.getById).mockResolvedValue(issueB)
+
+    const { result: resultB } = renderHook(() => useIssue('ISSUE-001'), { wrapper })
+
+    await waitFor(() => {
+      expect(resultB.current.isLoading).toBe(false)
+    })
+
+    // Should have fetched new data, not used cached data from Project A
+    expect(resultB.current.data).toEqual(issueB)
+    expect(issuesApi.getById).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('useUpdateIssueStatus - Project Switching', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockProjectId = 'test-project-id'
+  })
+
+  it('should use project-scoped query key for optimistic updates', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          gcTime: Infinity,
+          staleTime: Infinity,
+        },
+      },
+    })
+
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children)
+
+    // First, populate the issues cache
+    mockProjectId = 'project-a'
+    vi.mocked(issuesApi.getAll).mockResolvedValue(mockIssues)
+    vi.mocked(issuesApi.update).mockResolvedValue({
+      ...mockIssues[0],
+      status: 'in_progress',
+    })
+
+    const { result: issuesResult } = renderHook(() => useIssues(), { wrapper })
+
+    await waitFor(() => {
+      expect(issuesResult.current.isLoading).toBe(false)
+    })
+
+    // Now use the status update hook
+    const { result: updateResult } = renderHook(() => useUpdateIssueStatus(), { wrapper })
+
+    updateResult.current.mutate({
+      id: 'ISSUE-001',
+      status: 'in_progress',
+    })
+
+    await waitFor(() => {
+      expect(updateResult.current.isSuccess).toBe(true)
+    })
+
+    expect(issuesApi.update).toHaveBeenCalledWith('ISSUE-001', {
+      status: 'in_progress',
+    })
   })
 })

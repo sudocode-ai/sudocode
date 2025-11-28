@@ -16,6 +16,10 @@ import { Ok, Err } from "../types/project.js";
 import { broadcastIssueUpdate, broadcastSpecUpdate } from "./websocket.js";
 import { getIssueById } from "./issues.js";
 import { getSpecById } from "./specs.js";
+import {
+  performInitialization,
+  isInitialized,
+} from "@sudocode-ai/cli/dist/cli/init-commands.js";
 
 interface CachedDatabase {
   db: Database.Database;
@@ -211,6 +215,70 @@ export class ProjectManager {
       return Ok(context);
     } catch (error: any) {
       console.error(`Failed to open project at ${projectPath}:`, error);
+      return Err({
+        type: "UNKNOWN",
+        message: error.message || String(error),
+      });
+    }
+  }
+
+  /**
+   * Initialize a new sudocode project in an existing directory
+   * @param projectPath - Absolute path to project root directory
+   * @param name - Optional custom project name
+   * @returns ProjectContext for the initialized and opened project
+   */
+  async initializeProject(
+    projectPath: string,
+    name?: string
+  ): Promise<Result<ProjectContext, ProjectError>> {
+    try {
+      // 1. Check that path exists
+      if (!fs.existsSync(projectPath)) {
+        return Err({
+          type: "PATH_NOT_FOUND",
+          path: projectPath,
+        });
+      }
+
+      // 2. Check that it's a directory
+      const stats = fs.statSync(projectPath);
+      if (!stats.isDirectory()) {
+        return Err({
+          type: "INVALID_PROJECT",
+          message: `Path is not a directory: ${projectPath}`,
+        });
+      }
+
+      // 3. Check if already initialized
+      const sudocodeDir = path.join(projectPath, ".sudocode");
+      if (isInitialized(sudocodeDir)) {
+        // Already initialized, just open it
+        console.log(
+          `Project already initialized at ${projectPath}, opening...`
+        );
+        return this.openProject(projectPath);
+      }
+
+      // 4. Perform initialization using CLI's performInitialization
+      console.log(`Initializing new project at ${projectPath}`);
+      await performInitialization({
+        dir: sudocodeDir,
+        jsonOutput: true, // Suppress CLI console output
+      });
+
+      // 5. Update project name in registry if provided
+      const projectId = this.registry.generateProjectId(projectPath);
+      if (name) {
+        this.registry.registerProject(projectPath);
+        this.registry.updateProject(projectId, { name });
+        await this.registry.save();
+      }
+
+      // 6. Open the newly initialized project
+      return this.openProject(projectPath);
+    } catch (error: any) {
+      console.error(`Failed to initialize project at ${projectPath}:`, error);
       return Err({
         type: "UNKNOWN",
         message: error.message || String(error),

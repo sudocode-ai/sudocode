@@ -195,6 +195,89 @@ describe("ExecutionLifecycleService", () => {
         status: "completed",
       });
     });
+
+    it("should create target branch when createTargetBranch is true", async () => {
+      const mockWorktreeManager = createMockWorktreeManager();
+
+      const service = new ExecutionLifecycleService(
+        db,
+        testDir,
+        mockWorktreeManager
+      );
+
+      const result = await service.createExecutionWithWorktree({
+        issueId: testIssueId,
+        issueTitle: testIssueTitle,
+        agentType: "claude-code",
+        targetBranch: "new-feature-branch",
+        repoPath: testDir,
+        createTargetBranch: true,
+      });
+
+      // Verify execution was created
+      expect(result.execution).toBeTruthy();
+      expect(result.execution.target_branch).toBe("new-feature-branch");
+
+      // Verify createBranch was called
+      expect(mockWorktreeManager.createBranchCalls.length).toBe(1);
+      expect(mockWorktreeManager.createBranchCalls[0].branchName).toBe(
+        "new-feature-branch"
+      );
+      expect(mockWorktreeManager.createBranchCalls[0].baseBranch).toBe("main"); // current branch
+
+      // Cleanup: Mark execution as completed to allow subsequent tests
+      updateExecution(db, result.execution.id, {
+        status: "completed",
+      });
+    });
+
+    it("should not create target branch when createTargetBranch is false", async () => {
+      const mockWorktreeManager = createMockWorktreeManager();
+
+      const service = new ExecutionLifecycleService(
+        db,
+        testDir,
+        mockWorktreeManager
+      );
+
+      const result = await service.createExecutionWithWorktree({
+        issueId: testIssueId,
+        issueTitle: testIssueTitle,
+        agentType: "claude-code",
+        targetBranch: "main",
+        repoPath: testDir,
+        createTargetBranch: false,
+      });
+
+      // Verify createBranch was NOT called
+      expect(mockWorktreeManager.createBranchCalls.length).toBe(0);
+
+      // Cleanup: Mark execution as completed to allow subsequent tests
+      updateExecution(db, result.execution.id, {
+        status: "completed",
+      });
+    });
+
+    it("should throw error for non-existent branch when createTargetBranch is false", async () => {
+      const mockWorktreeManager = createMockWorktreeManager();
+
+      const service = new ExecutionLifecycleService(
+        db,
+        testDir,
+        mockWorktreeManager
+      );
+
+      await expect(
+        service.createExecutionWithWorktree({
+          issueId: testIssueId,
+          issueTitle: testIssueTitle,
+          agentType: "claude-code",
+          targetBranch: "non-existent-branch",
+          repoPath: testDir,
+          createTargetBranch: false,
+        })
+      ).rejects.toThrow("Target branch does not exist: non-existent-branch");
+    });
   });
 
   describe("cleanupExecution", () => {
@@ -452,10 +535,14 @@ describe("ExecutionLifecycleService", () => {
  */
 function createMockWorktreeManager(options?: {
   worktrees?: WorktreeInfo[];
+  currentBranch?: string;
+  branches?: string[];
 }): IWorktreeManager & {
   createWorktreeCalls: WorktreeCreateParams[];
   cleanupWorktreeCalls: { worktreePath: string; repoPath?: string }[];
+  createBranchCalls: { branchName: string; baseBranch: string }[];
   worktrees: WorktreeInfo[];
+  branches: string[];
 } {
   const mockConfig: WorktreeConfig = {
     worktreeStoragePath: ".sudocode/worktrees",
@@ -470,7 +557,10 @@ function createMockWorktreeManager(options?: {
   const mock = {
     createWorktreeCalls: [] as WorktreeCreateParams[],
     cleanupWorktreeCalls: [] as { worktreePath: string; repoPath?: string }[],
+    createBranchCalls: [] as { branchName: string; baseBranch: string }[],
     worktrees: options?.worktrees || ([] as WorktreeInfo[]),
+    branches: options?.branches || ["main", "develop", "feature/test"],
+    currentBranch: options?.currentBranch || "main",
 
     async createWorktree(params: WorktreeCreateParams): Promise<void> {
       mock.createWorktreeCalls.push(params);
@@ -510,7 +600,21 @@ function createMockWorktreeManager(options?: {
     },
 
     async listBranches(): Promise<string[]> {
-      return ["main", "develop", "feature/test"];
+      return [...mock.branches];
+    },
+
+    async getCurrentBranch(): Promise<string> {
+      return mock.currentBranch;
+    },
+
+    async createBranch(
+      _repoPath: string,
+      branchName: string,
+      baseBranch: string
+    ): Promise<void> {
+      mock.createBranchCalls.push({ branchName, baseBranch });
+      // Add to branches list
+      mock.branches.push(branchName);
     },
   };
 

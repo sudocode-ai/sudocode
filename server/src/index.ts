@@ -1,6 +1,5 @@
 import express, { Request, Response } from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import * as path from "path";
 import * as http from "http";
 import { fileURLToPath } from "url";
@@ -31,9 +30,6 @@ import {
   getWebSocketServer,
 } from "./services/websocket.js";
 
-// Load environment variables
-dotenv.config();
-
 const app = express();
 const DEFAULT_PORT = 3000;
 const MAX_PORT_ATTEMPTS = 20;
@@ -45,8 +41,8 @@ let transportManager!: TransportManager;
 let projectRegistry!: ProjectRegistry;
 let projectManager!: ProjectManager;
 
-// Start file watcher (enabled by default, disable with WATCH=false)
-const WATCH_ENABLED = process.env.WATCH !== "false";
+// Start file watcher (enabled by default, disable with SUDOCODE_WATCH=false)
+const WATCH_ENABLED = process.env.SUDOCODE_WATCH !== "false";
 
 // Async initialization function
 async function initialize() {
@@ -269,7 +265,7 @@ async function startServer(
   initialPort: number,
   maxAttempts: number
 ): Promise<number> {
-  const explicitPort = process.env.PORT;
+  const explicitPort = process.env.SUDOCODE_PORT;
   const shouldScan = !explicitPort;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const port = initialPort + attempt;
@@ -345,7 +341,7 @@ async function startServer(
         if (!shouldScan) {
           // Explicit port was specified and it's in use - fail immediately
           throw new Error(
-            `Port ${port} is already in use or WebSocket initialization failed. Please specify a different PORT.`
+            `Port ${port} is already in use or WebSocket initialization failed. Please specify a different SUDOCODE_PORT.`
           );
         }
 
@@ -376,8 +372,8 @@ async function startServer(
 }
 
 // Start listening with port scanning (includes both HTTP and WebSocket)
-const startPort = process.env.PORT
-  ? parseInt(process.env.PORT, 10)
+const startPort = process.env.SUDOCODE_PORT
+  ? parseInt(process.env.SUDOCODE_PORT, 10)
   : DEFAULT_PORT;
 const actualPort = await startServer(startPort, MAX_PORT_ATTEMPTS);
 

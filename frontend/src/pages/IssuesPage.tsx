@@ -438,6 +438,7 @@ export default function IssuesPage() {
                 isDeleting={isDeleting}
                 showOpenDetail={true}
                 feedback={feedback}
+                autoFocusAgentConfig
               />
             </Panel>
           </PanelGroup>

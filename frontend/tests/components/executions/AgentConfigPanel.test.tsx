@@ -184,7 +184,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
-        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
+        expect(screen.getByText('New worktree')).toBeInTheDocument()
       })
     })
 
@@ -194,7 +194,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
-        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
+        expect(screen.getByText('New worktree')).toBeInTheDocument()
       })
 
       // Find the execution mode selector (second combobox)
@@ -202,13 +202,13 @@ describe('AgentConfigPanel', () => {
       await user.click(triggers[1])
 
       await waitFor(() => {
-        expect(screen.getByText('Run directly')).toBeInTheDocument()
+        expect(screen.getByText('Run local')).toBeInTheDocument()
       })
     })
   })
 
   describe('Branch Selection', () => {
-    it('should show branch selector when in worktree mode', async () => {
+    it('should always show branch selector when baseBranch is set', async () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
@@ -218,7 +218,7 @@ describe('AgentConfigPanel', () => {
       })
     })
 
-    it('should display available branches', async () => {
+    it('should display available branches in worktree mode', async () => {
       const user = userEvent.setup()
 
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
@@ -228,17 +228,80 @@ describe('AgentConfigPanel', () => {
         expect(triggers.length).toBeGreaterThanOrEqual(3)
       })
 
-      // Click branch selector (third combobox)
+      // Branch selector should be enabled in worktree mode
       const triggers = screen.getAllByRole('combobox')
-      await user.click(triggers[2])
+      const branchSelector = triggers[2]
+      expect(branchSelector).not.toBeDisabled()
+
+      // Click branch selector (third combobox)
+      await user.click(branchSelector)
+
+      // BranchSelector uses a Popover with buttons, not Select with options
+      await waitFor(() => {
+        // Should show the search input
+        expect(screen.getByPlaceholderText('Search or create branch...')).toBeInTheDocument()
+        // Should show available branches (main appears in trigger + list)
+        expect(screen.getAllByText('main').length).toBeGreaterThanOrEqual(2)
+        expect(screen.getByText('develop')).toBeInTheDocument()
+      })
+    })
+
+    it('should disable branch selector in local mode', async () => {
+      // Override prepare result to set mode to local
+      vi.mocked(executionsApi.prepare).mockResolvedValue({
+        ...mockPrepareResult,
+        defaultConfig: {
+          mode: 'local',
+          baseBranch: 'main',
+          cleanupMode: 'manual',
+        },
+      })
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
-        const options = screen.getAllByRole('option')
-        const branchOptions = options.filter(
-          (opt) => opt.textContent === 'main' || opt.textContent === 'develop'
-        )
-        expect(branchOptions.length).toBeGreaterThanOrEqual(2)
+        // Wait for mode to be set to local
+        expect(screen.getByText('Run local')).toBeInTheDocument()
       })
+
+      const triggers = screen.getAllByRole('combobox')
+      const branchSelector = triggers[2]
+
+      // Branch selector should be disabled in local mode
+      expect(branchSelector).toBeDisabled()
+    })
+
+    it('should show current branch in local mode', async () => {
+      // Override prepare result to set mode to local
+      vi.mocked(executionsApi.prepare).mockResolvedValue({
+        ...mockPrepareResult,
+        defaultConfig: {
+          mode: 'local',
+          baseBranch: 'develop',
+          cleanupMode: 'manual',
+        },
+      })
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        // Should show the current branch
+        expect(screen.getByText('develop')).toBeInTheDocument()
+      })
+    })
+
+    it('should show GitBranch icon in branch selector', async () => {
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        const triggers = screen.getAllByRole('combobox')
+        expect(triggers.length).toBeGreaterThanOrEqual(3)
+      })
+
+      // Branch selector should have GitBranch icon (rendered as svg)
+      const branchSelector = screen.getAllByRole('combobox')[2]
+      const svgIcon = branchSelector.querySelector('svg')
+      expect(svgIcon).toBeInTheDocument()
     })
   })
 
@@ -321,7 +384,8 @@ describe('AgentConfigPanel', () => {
           cleanupMode: 'manual',
         }),
         'Test prompt',
-        'claude-code'
+        'claude-code',
+        false
       )
     })
 
@@ -363,7 +427,7 @@ describe('AgentConfigPanel', () => {
       const runButton = screen.getByRole('button', { name: /Submit/i })
       await user.click(runButton)
 
-      expect(mockOnStart).toHaveBeenCalledWith(expect.any(Object), 'Test prompt', 'cursor')
+      expect(mockOnStart).toHaveBeenCalledWith(expect.any(Object), 'Test prompt', 'cursor', false)
     })
   })
 
@@ -496,7 +560,7 @@ describe('AgentConfigPanel', () => {
     })
 
     it('should use previous execution config when provided', async () => {
-      const previousExecution = {
+      const lastExecution = {
         id: 'exec-prev-123',
         mode: 'local',
         model: 'claude-sonnet-4',
@@ -513,13 +577,13 @@ describe('AgentConfigPanel', () => {
         <AgentConfigPanel
           issueId="i-test1"
           onStart={mockOnStart}
-          previousExecution={previousExecution}
+          lastExecution={lastExecution}
         />
       )
 
       await waitFor(() => {
         // Should show inherited mode from previous execution
-        expect(screen.getByText('Run directly')).toBeInTheDocument()
+        expect(screen.getByText('Run local')).toBeInTheDocument()
       })
     })
 
@@ -581,7 +645,7 @@ describe('AgentConfigPanel', () => {
       await waitFor(() => {
         // Should use saved mode from localStorage (before prepare API merge)
         // After prepare merges, the mode should still be 'local' since prepare doesn't set it
-        expect(screen.getByText('Run directly')).toBeInTheDocument()
+        expect(screen.getByText('Run local')).toBeInTheDocument()
         // Should use saved agent type from localStorage
         expect(screen.getByText('Cursor')).toBeInTheDocument()
       })
@@ -603,7 +667,7 @@ describe('AgentConfigPanel', () => {
 
       await waitFor(() => {
         // Should fall back to default mode
-        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
+        expect(screen.getByText('New worktree')).toBeInTheDocument()
       })
 
       // Should have warned about invalid config
@@ -627,7 +691,7 @@ describe('AgentConfigPanel', () => {
 
       await waitFor(() => {
         // Should fall back to default config
-        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
+        expect(screen.getByText('New worktree')).toBeInTheDocument()
       })
 
       // Should have warned about parse error
@@ -669,7 +733,7 @@ describe('AgentConfigPanel', () => {
         })
       )
 
-      const previousExecution = {
+      const lastExecution = {
         id: 'exec-prev-123',
         mode: 'worktree',
         model: 'claude-sonnet-4',
@@ -686,13 +750,13 @@ describe('AgentConfigPanel', () => {
         <AgentConfigPanel
           issueId="i-test1"
           onStart={mockOnStart}
-          previousExecution={previousExecution}
+          lastExecution={lastExecution}
         />
       )
 
       await waitFor(() => {
         // Should use previous execution config, not localStorage
-        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
+        expect(screen.getByText('New worktree')).toBeInTheDocument()
       })
     })
 
@@ -715,17 +779,17 @@ describe('AgentConfigPanel', () => {
         <AgentConfigPanel
           issueId="i-test1"
           onStart={mockOnStart}
-          previousExecution={invalidPreviousExecution}
+          lastExecution={invalidPreviousExecution}
         />
       )
 
       await waitFor(() => {
         // Should fall back to defaults
-        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
+        expect(screen.getByText('New worktree')).toBeInTheDocument()
       })
 
       expect(consoleWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Previous execution config is invalid')
+        expect.stringContaining('Last execution config is invalid')
       )
 
       consoleWarnSpy.mockRestore()
@@ -733,7 +797,7 @@ describe('AgentConfigPanel', () => {
   })
 
   describe('Follow-up Mode', () => {
-    const parentExecution = {
+    const lastExecution = {
       id: 'exec-parent-123',
       mode: 'worktree',
       model: 'claude-sonnet-4',
@@ -752,13 +816,13 @@ describe('AgentConfigPanel', () => {
           issueId="i-test1"
           onStart={mockOnStart}
           isFollowUp
-          parentExecution={parentExecution}
+          lastExecution={lastExecution}
         />
       )
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText('Enter feedback to continue the execution...')
+          screen.getByPlaceholderText('Continue the previous conversation... (ctrl+k for new)')
         ).toBeInTheDocument()
       })
     })
@@ -769,7 +833,7 @@ describe('AgentConfigPanel', () => {
           issueId="i-test1"
           onStart={mockOnStart}
           isFollowUp
-          parentExecution={parentExecution}
+          lastExecution={lastExecution}
         />
       )
 
@@ -785,7 +849,7 @@ describe('AgentConfigPanel', () => {
           issueId="i-test1"
           onStart={mockOnStart}
           isFollowUp
-          parentExecution={parentExecution}
+          lastExecution={lastExecution}
         />
       )
 
@@ -802,7 +866,7 @@ describe('AgentConfigPanel', () => {
           issueId="i-test1"
           onStart={mockOnStart}
           isFollowUp
-          parentExecution={parentExecution}
+          lastExecution={lastExecution}
         />
       )
 
@@ -813,20 +877,56 @@ describe('AgentConfigPanel', () => {
       })
     })
 
+    it('should disable branch selector in follow-up mode', async () => {
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          lastExecution={lastExecution}
+        />
+      )
+
+      await waitFor(() => {
+        const triggers = screen.getAllByRole('combobox')
+        // Branch selector should be disabled
+        expect(triggers[2]).toBeDisabled()
+      })
+    })
+
+    it('should show inherited branch in follow-up mode', async () => {
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          lastExecution={lastExecution}
+        />
+      )
+
+      await waitFor(() => {
+        // Should show inherited branch from parent execution
+        expect(screen.getByText('main')).toBeInTheDocument()
+      })
+    })
+
     it('should disable settings button in follow-up mode', async () => {
       renderWithProviders(
         <AgentConfigPanel
           issueId="i-test1"
           onStart={mockOnStart}
           isFollowUp
-          parentExecution={parentExecution}
+          lastExecution={lastExecution}
         />
       )
 
       await waitFor(() => {
-        // Find settings button by looking for all buttons and finding the one with Settings icon
+        // Find settings button by its tooltip text
         const buttons = screen.getAllByRole('button')
-        const settingsButton = buttons.find((btn) => btn.className.includes('border-input'))
+        // Settings button should be the one that's disabled and has border-input class
+        const settingsButton = buttons.find(
+          (btn) => btn.className.includes('border-input') && btn.hasAttribute('disabled')
+        )
         expect(settingsButton).toBeDisabled()
       })
     })
@@ -837,7 +937,7 @@ describe('AgentConfigPanel', () => {
           issueId="i-test1"
           onStart={mockOnStart}
           isFollowUp
-          parentExecution={parentExecution}
+          lastExecution={lastExecution}
         />
       )
 
@@ -854,13 +954,13 @@ describe('AgentConfigPanel', () => {
           issueId="i-test1"
           onStart={mockOnStart}
           isFollowUp
-          parentExecution={parentExecution}
+          lastExecution={lastExecution}
         />
       )
 
       // Enter feedback prompt
       const textarea = await screen.findByPlaceholderText(
-        'Enter feedback to continue the execution...'
+        'Continue the previous conversation... (ctrl+k for new)'
       )
       await user.type(textarea, 'Continue with this feedback')
 
@@ -875,7 +975,8 @@ describe('AgentConfigPanel', () => {
           baseBranch: 'main',
         }),
         'Continue with this feedback',
-        'claude-code'
+        'claude-code',
+        false
       )
     })
 
@@ -885,7 +986,7 @@ describe('AgentConfigPanel', () => {
           issueId="i-test1"
           onStart={mockOnStart}
           isFollowUp
-          parentExecution={parentExecution}
+          lastExecution={lastExecution}
           promptPlaceholder="Type your message..."
         />
       )
@@ -895,13 +996,213 @@ describe('AgentConfigPanel', () => {
       })
     })
 
+    it('should toggle to new execution mode with Ctrl+K', async () => {
+      const user = userEvent.setup()
+      const mockOnForceNewToggle = vi.fn()
+
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          lastExecution={lastExecution}
+          onForceNewToggle={mockOnForceNewToggle}
+        />
+      )
+
+      const textarea = await screen.findByPlaceholderText(
+        'Continue the previous conversation... (ctrl+k for new)'
+      )
+
+      // Press Ctrl+K to toggle to new execution mode
+      await user.click(textarea)
+      await user.keyboard('{Control>}k{/Control}')
+
+      await waitFor(() => {
+        expect(mockOnForceNewToggle).toHaveBeenCalledWith(true)
+      })
+    })
+
+    it('should toggle back to continue mode with Ctrl+K when forcing new', async () => {
+      const user = userEvent.setup()
+      const mockOnForceNewToggle = vi.fn()
+
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          lastExecution={lastExecution}
+          forceNewExecution={true}
+          onForceNewToggle={mockOnForceNewToggle}
+        />
+      )
+
+      const textarea = await screen.findByPlaceholderText(
+        'Start a new execution... (ctrl+k to continue previous)'
+      )
+
+      // Press Ctrl+K to toggle back to continue mode
+      await user.click(textarea)
+      await user.keyboard('{Control>}k{/Control}')
+
+      await waitFor(() => {
+        expect(mockOnForceNewToggle).toHaveBeenCalledWith(false)
+      })
+    })
+
+    it('should show correct placeholder when forcing new execution', async () => {
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          lastExecution={lastExecution}
+          forceNewExecution={true}
+        />
+      )
+
+      await waitFor(() => {
+        expect(
+          screen.getByPlaceholderText('Start a new execution... (ctrl+k to continue previous)')
+        ).toBeInTheDocument()
+      })
+    })
+
+    it('should pass forceNew parameter to onStart when forcing new execution', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          lastExecution={lastExecution}
+          forceNewExecution={true}
+        />
+      )
+
+      const textarea = await screen.findByPlaceholderText(
+        'Start a new execution... (ctrl+k to continue previous)'
+      )
+      await user.type(textarea, 'Create a new execution')
+
+      const submitButton = screen.getByRole('button', { name: /Submit/i })
+      await user.click(submitButton)
+
+      expect(mockOnStart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: 'worktree',
+          baseBranch: 'main',
+        }),
+        'Create a new execution',
+        'claude-code',
+        true // forceNew should be true
+      )
+    })
+
+    it('should not toggle mode with Ctrl+K when not in follow-up mode', async () => {
+      const user = userEvent.setup()
+      const mockOnForceNewToggle = vi.fn()
+
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp={false}
+          onForceNewToggle={mockOnForceNewToggle}
+        />
+      )
+
+      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
+
+      await user.click(textarea)
+      await user.keyboard('{Control>}k{/Control}')
+
+      // Should not call the toggle callback when not in follow-up mode
+      expect(mockOnForceNewToggle).not.toHaveBeenCalled()
+    })
+
+    it('should not toggle mode with Ctrl+K when allowModeToggle is false', async () => {
+      const user = userEvent.setup()
+      const mockOnForceNewToggle = vi.fn()
+
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          lastExecution={lastExecution}
+          allowModeToggle={false}
+          onForceNewToggle={mockOnForceNewToggle}
+        />
+      )
+
+      const textarea = await screen.findByPlaceholderText(
+        'Continue the previous conversation...'
+      )
+
+      await user.click(textarea)
+      await user.keyboard('{Control>}k{/Control}')
+
+      // Should not call the toggle callback when allowModeToggle is false
+      expect(mockOnForceNewToggle).not.toHaveBeenCalled()
+    })
+
+    it('should not show ctrl+k hint in placeholder when allowModeToggle is false', async () => {
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          lastExecution={lastExecution}
+          allowModeToggle={false}
+        />
+      )
+
+      await waitFor(() => {
+        expect(
+          screen.getByPlaceholderText('Continue the previous conversation...')
+        ).toBeInTheDocument()
+      })
+
+      // Should not show the ctrl+k hint
+      expect(
+        screen.queryByPlaceholderText('Continue the previous conversation... (ctrl+k for new)')
+      ).not.toBeInTheDocument()
+    })
+
+    it('should not show ctrl+k hint when forcing new and allowModeToggle is false', async () => {
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          lastExecution={lastExecution}
+          forceNewExecution={true}
+          allowModeToggle={false}
+        />
+      )
+
+      await waitFor(() => {
+        expect(
+          screen.getByPlaceholderText('Start a new execution...')
+        ).toBeInTheDocument()
+      })
+
+      // Should not show the ctrl+k hint
+      expect(
+        screen.queryByPlaceholderText('Start a new execution... (ctrl+k to continue previous)')
+      ).not.toBeInTheDocument()
+    })
+
     it('should show inherited values in disabled selectors', async () => {
       renderWithProviders(
         <AgentConfigPanel
           issueId="i-test1"
           onStart={mockOnStart}
           isFollowUp
-          parentExecution={parentExecution}
+          lastExecution={lastExecution}
         />
       )
 
@@ -909,7 +1210,9 @@ describe('AgentConfigPanel', () => {
         // Should show inherited agent type
         expect(screen.getByText('Claude Code')).toBeInTheDocument()
         // Should show inherited mode
-        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
+        expect(screen.getByText('New worktree')).toBeInTheDocument()
+        // Should show inherited branch
+        expect(screen.getByText('main')).toBeInTheDocument()
       })
     })
   })

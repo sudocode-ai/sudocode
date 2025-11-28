@@ -30,6 +30,7 @@ export interface CreateExecutionWithWorktreeParams {
   mode?: string;
   prompt?: string;
   config?: string; // JSON string of execution configuration
+  createTargetBranch?: boolean; // If true, create targetBranch from current HEAD
 }
 
 /**
@@ -92,7 +93,14 @@ export class ExecutionLifecycleService {
   async createExecutionWithWorktree(
     params: CreateExecutionWithWorktreeParams
   ): Promise<CreateExecutionWithWorktreeResult> {
-    const { issueId, issueTitle, agentType, targetBranch, repoPath } = params;
+    const {
+      issueId,
+      issueTitle,
+      agentType,
+      targetBranch,
+      repoPath,
+      createTargetBranch,
+    } = params;
 
     // Validation 1: Check for existing active execution for this issue
     const existingExecution = this.db
@@ -116,10 +124,25 @@ export class ExecutionLifecycleService {
       throw new Error(`Not a git repository: ${repoPath}`);
     }
 
-    // Validation 3: Validate target branch exists
+    // Validation 3: Validate target branch exists (or create it if requested)
     const branches = await this.worktreeManager.listBranches(repoPath);
     if (!branches.includes(targetBranch)) {
-      throw new Error(`Target branch does not exist: ${targetBranch}`);
+      if (createTargetBranch) {
+        // Create the branch from current HEAD
+        const currentBranch = await this.worktreeManager.getCurrentBranch(
+          repoPath
+        );
+        await this.worktreeManager.createBranch(
+          repoPath,
+          targetBranch,
+          currentBranch
+        );
+        console.log(
+          `[ExecutionLifecycle] Created new branch '${targetBranch}' from '${currentBranch}'`
+        );
+      } else {
+        throw new Error(`Target branch does not exist: ${targetBranch}`);
+      }
     }
 
     const config = this.worktreeManager.getConfig();

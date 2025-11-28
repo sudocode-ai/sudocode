@@ -697,11 +697,12 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                 issueId={rootExecution.issue_id}
                 onStart={handleFollowUpStart}
                 isFollowUp
+                allowModeToggle={false}
                 disabled={!canEnableFollowUp || submittingFollowUp}
                 isRunning={!lastExecutionTerminal}
                 onCancel={() => handleCancel(lastExecution.id)}
                 isCancelling={cancelling}
-                parentExecution={{
+                lastExecution={{
                   id: lastExecution.id,
                   mode: rootExecution.mode || undefined,
                   model: rootExecution.model || undefined,
