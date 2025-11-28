@@ -1023,7 +1023,7 @@ export function IssuePanel({
                           e.stopPropagation()
                           setIsDescriptionCollapsed(false)
                         }}
-                        className="gap-1 shadow-sm"
+                        className="gap-1 text-muted-foreground shadow-sm"
                       >
                         <ChevronDown className="h-4 w-4" />
                         Expand
@@ -1057,15 +1057,6 @@ export function IssuePanel({
                     .map((e) => ({ ...e, itemType: 'execution' as const })),
                 ]}
                 currentEntityId={issue.id}
-                onExecutionDeleted={async () => {
-                  // Re-fetch executions when an execution is deleted
-                  try {
-                    const data = await executionsApi.list(issue.id)
-                    setExecutions(data)
-                  } catch (error) {
-                    console.error('Failed to fetch executions:', error)
-                  }
-                }}
               />
               {/* New Execution Button - shown when there's a previous execution and we're in follow-up mode */}
               {isFollowUpMode && canFollowUp && !forceNewExecution && (
@@ -1074,7 +1065,7 @@ export function IssuePanel({
                     variant="outline"
                     size="sm"
                     onClick={() => setForceNewExecution(true)}
-                    className="gap-2"
+                    className="gap-2 text-muted-foreground"
                   >
                     <Plus className="h-4 w-4" />
                     New execution

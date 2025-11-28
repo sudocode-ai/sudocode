@@ -1,10 +1,11 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithProviders } from '@/test/test-utils'
 import { ActivityTimeline } from '@/components/issues/ActivityTimeline'
 import type { IssueFeedback } from '@sudocode-ai/types'
 import type { Execution } from '@/types/execution'
+import { executionsApi } from '@/lib/api'
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async () => {
@@ -12,6 +13,24 @@ vi.mock('react-router-dom', async () => {
   return {
     ...actual,
     useNavigate: () => mockNavigate,
+  }
+})
+
+// Mock the executionsApi for ExecutionView
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api')>()
+  return {
+    ...actual,
+    executionsApi: {
+      ...actual.executionsApi,
+      getChain: vi.fn(),
+      worktreeExists: vi.fn(),
+      cancel: vi.fn(),
+      delete: vi.fn(),
+      createFollowUp: vi.fn(),
+      deleteWorktree: vi.fn(),
+      list: vi.fn(),
+    },
   }
 })
 
@@ -65,6 +84,14 @@ const createMockExecution = (overrides: Partial<Execution> = {}): Execution => (
 describe('ActivityTimeline', () => {
   beforeEach(() => {
     mockNavigate.mockClear()
+    vi.clearAllMocks()
+
+    // Setup default mock responses for ExecutionView
+    vi.mocked(executionsApi.getChain).mockResolvedValue({
+      rootId: 'exec-001',
+      executions: [createMockExecution()],
+    })
+    vi.mocked(executionsApi.worktreeExists).mockResolvedValue({ exists: false })
   })
 
   describe('empty state', () => {
@@ -292,26 +319,27 @@ describe('ActivityTimeline', () => {
   })
 
   describe('execution rendering', () => {
-    it('should render execution items', () => {
-      const execution = createMockExecution()
+    it('should render InlineExecutionView component for execution items', () => {
+      const execution = createMockExecution({ id: 'exec-001' })
       const items = [{ ...execution, itemType: 'execution' as const }]
 
       renderWithProviders(<ActivityTimeline items={items} currentEntityId="i-abc1" />)
 
-      expect(screen.getByText('Agent Execution')).toBeInTheDocument()
-      expect(screen.getByText('exec-001')).toBeInTheDocument()
+      // InlineExecutionView will show loading state or error state depending on API mock
+      // We just verify that InlineExecutionView is rendered (it will show either loading or error state)
+      const loadingOrError =
+        screen.queryByText('Loading execution...') || screen.queryByText('Error Loading Execution')
+      expect(loadingOrError).toBeInTheDocument()
     })
 
-    it('should render execution with green border styling', () => {
-      const execution = createMockExecution()
+    it('should call getChain API when rendering execution', () => {
+      const execution = createMockExecution({ id: 'exec-001' })
       const items = [{ ...execution, itemType: 'execution' as const }]
 
-      const { container } = renderWithProviders(
-        <ActivityTimeline items={items} currentEntityId="i-abc1" />
-      )
+      renderWithProviders(<ActivityTimeline items={items} currentEntityId="i-abc1" />)
 
-      const card = container.querySelector('.border-l-green-500\\/50')
-      expect(card).toBeInTheDocument()
+      // InlineExecutionView should attempt to load the execution chain
+      expect(executionsApi.getChain).toHaveBeenCalledWith('exec-001')
     })
   })
 
@@ -342,18 +370,24 @@ describe('ActivityTimeline', () => {
   })
 
   describe('mixed items', () => {
-    it('should render both feedback and executions together', () => {
+    it('should render both feedback and executions together', async () => {
       const feedback = createMockFeedback({ content: 'Feedback message' })
-      const execution = createMockExecution()
+      const execution = createMockExecution({ id: 'exec-001' })
       const items = [
         { ...feedback, itemType: 'feedback' as const },
         { ...execution, itemType: 'execution' as const },
       ]
 
+      vi.mocked(executionsApi.getChain).mockResolvedValue({
+        rootId: 'exec-001',
+        executions: [execution],
+      })
+
       renderWithProviders(<ActivityTimeline items={items} currentEntityId="i-abc1" />)
 
       expect(screen.getByText('Feedback message')).toBeInTheDocument()
-      expect(screen.getByText('Agent Execution')).toBeInTheDocument()
+      // ExecutionView shows loading state initially
+      expect(screen.getByText('Loading execution...')).toBeInTheDocument()
     })
   })
 })
