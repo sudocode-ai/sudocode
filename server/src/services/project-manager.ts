@@ -131,7 +131,7 @@ export class ProjectManager {
           db,
           baseDir: sudocodeDir,
           onFileChange: (info) => {
-            console.log(`[project-manager] File change in ${projectId}:`, info);
+            console.log(`[project-manager] File change in ${projectId}`);
 
             // Broadcast WebSocket updates based on entity type
             if (info.entityType && info.entityId) {

@@ -26,6 +26,45 @@ import {
 } from "./filename-generator.js";
 import { getOutgoingRelationships } from "./operations/relationships.js";
 import type { EntitySyncEvent, FileChangeEvent } from "@sudocode-ai/types/events";
+import * as crypto from "crypto";
+
+// Guard against processing our own file writes (oscillation prevention)
+// Track files currently being processed to prevent same-file oscillation
+const filesBeingProcessed = new Set<string>();
+
+// Content hash cache for detecting actual content changes (oscillation prevention)
+const contentHashCache = new Map<string, string>();
+
+/**
+ * Compute SHA256 hash of file content for change detection
+ */
+function computeContentHash(filePath: string): string {
+  try {
+    const content = fs.readFileSync(filePath, "utf8");
+    return crypto.createHash("sha256").update(content).digest("hex");
+  } catch (error) {
+    // File doesn't exist or can't be read
+    return "";
+  }
+}
+
+/**
+ * Check if file content has actually changed since last processing
+ * Returns true if content changed, false if unchanged
+ */
+function hasContentChanged(filePath: string): boolean {
+  const currentHash = computeContentHash(filePath);
+  const cachedHash = contentHashCache.get(filePath);
+
+  if (cachedHash && cachedHash === currentHash) {
+    // Content unchanged - skip processing
+    return false;
+  }
+
+  // Update cache with new hash
+  contentHashCache.set(filePath, currentHash);
+  return true;
+}
 
 export interface WatcherOptions {
   /**
@@ -36,10 +75,6 @@ export interface WatcherOptions {
    * Base directory to watch (e.g., .sudocode)
    */
   baseDir: string;
-  /**
-   * Debounce delay in milliseconds (default: 2000)
-   */
-  debounceDelay?: number;
   /**
    * Callback for logging events
    */
@@ -85,7 +120,6 @@ export interface WatcherControl {
 
 export interface WatcherStats {
   filesWatched: number;
-  changesPending: number;
   changesProcessed: number;
   errors: number;
 }
@@ -98,7 +132,6 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
   const {
     db,
     baseDir,
-    debounceDelay = 2000,
     onLog = console.log,
     onError = console.error,
     ignoreInitial = true,
@@ -109,20 +142,45 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
 
   const stats: WatcherStats = {
     filesWatched: 0,
-    changesPending: 0,
     changesProcessed: 0,
     errors: 0,
   };
-
-  // Map of file paths to pending timeout IDs
-  const pendingChanges = new Map<string, NodeJS.Timeout>();
 
   // Cache of previous JSONL state (entity ID -> timestamp)
   // This allows us to detect changes by comparing new JSONL against cached state
   const jsonlStateCache = new Map<
     string,
     Map<string, string>
-  >(); // jsonlPath -> (entityId -> updated_at)
+  >(); // jsonlPath -> (entityId -> content_hash)
+
+  /**
+   * Compute a canonical content hash for an entity that's invariant to key ordering
+   * This ensures that {"id":"x","title":"y"} and {"title":"y","id":"x"} produce the same hash
+   */
+  function computeCanonicalHash(entity: any): string {
+    // Sort keys recursively to ensure consistent ordering
+    const sortKeys = (obj: any): any => {
+      if (obj === null || typeof obj !== "object") {
+        return obj;
+      }
+      if (Array.isArray(obj)) {
+        return obj.map(sortKeys);
+      }
+      const sorted: any = {};
+      Object.keys(obj)
+        .sort()
+        .forEach((key) => {
+          sorted[key] = sortKeys(obj[key]);
+        });
+      return sorted;
+    };
+
+    const canonical = sortKeys(entity);
+    return crypto
+      .createHash("sha256")
+      .update(JSON.stringify(canonical))
+      .digest("hex");
+  }
 
   /**
    * Check if markdown file content matches database content
@@ -328,8 +386,12 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
     event: "add" | "change" | "unlink"
   ) {
     try {
-      const ext = path.extname(filePath);
-      const basename = path.basename(filePath);
+      // Set re-entry guard for this specific file to prevent oscillation
+      filesBeingProcessed.add(filePath);
+
+      try {
+        const ext = path.extname(filePath);
+        const basename = path.basename(filePath);
 
       if (ext === ".md") {
         // Markdown file changed - sync to database and JSONL
@@ -457,7 +519,10 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
           const jsonlEntities = jsonlLines.map((line) => JSON.parse(line));
           const newStateMap = new Map<string, string>();
           for (const entity of jsonlEntities) {
-            newStateMap.set(entity.id, entity.updated_at);
+            // Use canonical content hash to detect any content changes
+            // Canonical hash is invariant to JSON key ordering
+            const contentHash = computeCanonicalHash(entity);
+            newStateMap.set(entity.id, contentHash);
           }
 
           // Get cached state (previous JSONL state)
@@ -471,14 +536,14 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
 
           for (const jsonlEntity of jsonlEntities) {
             const entityId = jsonlEntity.id;
-            const newTimestamp = jsonlEntity.updated_at;
-            const cachedTimestamp = cachedStateMap.get(entityId);
+            const newHash = newStateMap.get(entityId);
+            const cachedHash = cachedStateMap.get(entityId);
 
-            if (!cachedTimestamp) {
+            if (!cachedHash) {
               // Entity not in cache = created
               changedEntities.push({ entityId, action: "created" });
-            } else if (newTimestamp !== cachedTimestamp) {
-              // Timestamp differs from cache = updated
+            } else if (newHash !== cachedHash) {
+              // Content hash differs = entity changed
               changedEntities.push({ entityId, action: "updated" });
             }
           }
@@ -492,12 +557,14 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
             );
 
             // Import from JSONL to sync database
-            if (jsonlNeedsImport(filePath)) {
-              await importFromJSONL(db, {
-                inputDir: baseDir,
-              });
-              onLog(`[watch] Imported JSONL changes to database`);
-            }
+            // Pass changed entity IDs to force update even if timestamp hasn't changed
+            // (user may have manually edited JSONL content without updating timestamp)
+            const changedIds = changedEntities.map((e) => e.entityId);
+            await importFromJSONL(db, {
+              inputDir: baseDir,
+              forceUpdateIds: changedIds,
+            });
+            onLog(`[watch] Imported JSONL changes to database`);
 
             // Emit events for changed entities (after import, so we have fresh data)
             for (const { entityId, action } of changedEntities) {
@@ -635,37 +702,34 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
         }
       }
 
-      stats.changesProcessed++;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      onError(new Error(`Error processing ${filePath}: ${message}`));
-      stats.errors++;
+        stats.changesProcessed++;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        onError(new Error(`Error processing ${filePath}: ${message}`));
+        stats.errors++;
+      }
+    } finally {
+      // Always clear re-entry guard for this file, even on errors
+      filesBeingProcessed.delete(filePath);
     }
   }
 
   /**
-   * Debounced file change handler
+   * File change handler with oscillation guards
+   * Processes changes immediately (no debounce)
    */
   function handleFileChange(
     filePath: string,
     event: "add" | "change" | "unlink"
   ) {
-    // Cancel pending change for this file
-    const existingTimeout = pendingChanges.get(filePath);
-    if (existingTimeout) {
-      clearTimeout(existingTimeout);
-      stats.changesPending--;
+    // Guard: Skip if we're currently processing this specific file (prevents oscillation)
+    // This is the primary defense against the oscillation loop
+    if (filesBeingProcessed.has(filePath)) {
+      return;
     }
 
-    // Schedule new change
-    stats.changesPending++;
-    const timeout = setTimeout(() => {
-      pendingChanges.delete(filePath);
-      stats.changesPending--;
-      processChange(filePath, event);
-    }, debounceDelay);
-
-    pendingChanges.set(filePath, timeout);
+    // Process change immediately
+    processChange(filePath, event);
   }
 
   // Set up event handlers
@@ -691,7 +755,9 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
         const stateMap = new Map<string, string>();
         for (const line of lines) {
           const entity = JSON.parse(line);
-          stateMap.set(entity.id, entity.updated_at);
+          // Use canonical content hash to match the change detection logic
+          const contentHash = computeCanonicalHash(entity);
+          stateMap.set(entity.id, contentHash);
         }
         jsonlStateCache.set(specsJsonlPath, stateMap);
         onLog(
@@ -707,7 +773,9 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
         const stateMap = new Map<string, string>();
         for (const line of lines) {
           const entity = JSON.parse(line);
-          stateMap.set(entity.id, entity.updated_at);
+          // Use canonical content hash to match the change detection logic
+          const contentHash = computeCanonicalHash(entity);
+          stateMap.set(entity.id, contentHash);
         }
         jsonlStateCache.set(issuesJsonlPath, stateMap);
         onLog(
@@ -731,13 +799,6 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
   return {
     stop: async () => {
       onLog("[watch] Stopping watcher...");
-
-      // Cancel all pending changes
-      for (const timeout of pendingChanges.values()) {
-        clearTimeout(timeout);
-      }
-      pendingChanges.clear();
-      stats.changesPending = 0;
 
       // Close watcher
       await watcher.close();
