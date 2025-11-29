@@ -153,12 +153,8 @@ describe('ExecutionPreview', () => {
       // Should show status
       expect(screen.getByText('Running')).toBeInTheDocument()
 
-      // Should show tool call count
-      expect(screen.getByText(/tool calls/)).toBeInTheDocument()
-
-      // Should show files changed
-      const filesText = screen.getAllByText(/files/)
-      expect(filesText.length).toBeGreaterThan(0)
+      // Should show agent type
+      expect(screen.getByText('claude-code')).toBeInTheDocument()
 
       // Should show timestamp
       expect(screen.getByText(/ago/)).toBeInTheDocument()
@@ -194,6 +190,26 @@ describe('ExecutionPreview', () => {
       )
 
       expect(screen.queryByRole('button', { name: /view/i })).not.toBeInTheDocument()
+    })
+
+    it('should render compact preview without status label when showStatusLabel is false', () => {
+      render(
+        <ExecutionPreview
+          executionId="exec-123"
+          execution={mockExecution}
+          variant="compact"
+          showStatusLabel={false}
+        />
+      )
+
+      // Should NOT show status label text
+      expect(screen.queryByText('Running')).not.toBeInTheDocument()
+
+      // Should show agent type
+      expect(screen.getByText('claude-code')).toBeInTheDocument()
+
+      // Should show timestamp
+      expect(screen.getByText(/ago/)).toBeInTheDocument()
     })
   })
 
