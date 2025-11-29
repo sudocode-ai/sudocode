@@ -17,12 +17,22 @@ import { createTestDatabase } from "../../integration/execution/helpers/test-set
 import * as fs from "fs";
 import * as path from "path";
 import { execSync } from "child_process";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
 import type Database from "better-sqlite3";
+
+/**
+ * Create a unique worktree path (outside the test repo to avoid polluting working tree)
+ */
+function createWorktreePath(): string {
+  return mkdtempSync(path.join(tmpdir(), 'test-worktree-'));
+}
 
 describe("WorktreeSyncService Foundation", () => {
   let testRepo: string;
   let db: Database.Database;
   let service: WorktreeSyncService;
+  let worktreePaths: string[] = [];
 
   beforeEach(() => {
     // Create test repo
@@ -33,9 +43,21 @@ describe("WorktreeSyncService Foundation", () => {
 
     // Create service
     service = new WorktreeSyncService(db, testRepo);
+
+    // Reset worktree paths tracker
+    worktreePaths = [];
   });
 
   afterEach(() => {
+    // Clean up worktree paths
+    worktreePaths.forEach((worktreePath) => {
+      try {
+        rmSync(worktreePath, { recursive: true, force: true });
+      } catch {
+        // Ignore errors
+      }
+    });
+
     if (testRepo) {
       cleanupTestRepo(testRepo);
     }
@@ -87,8 +109,9 @@ describe("WorktreeSyncService Foundation", () => {
 
   describe("_validateSyncPreconditions", () => {
     it("should pass validation for valid execution", async () => {
-      // Create worktree
-      const worktreePath = path.join(testRepo, "../worktree");
+      // Create worktree (use unique path outside test repo)
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
       execSync(`git worktree add ${worktreePath} -b worktree-branch`, {
         cwd: testRepo,
         stdio: "pipe",
@@ -144,7 +167,8 @@ describe("WorktreeSyncService Foundation", () => {
 
     it("should throw BRANCH_MISSING if worktree branch does not exist", async () => {
       // Create worktree with valid path but don't create the branch
-      const worktreePath = path.join(testRepo, "../worktree");
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
       fs.mkdirSync(worktreePath, { recursive: true });
 
       const execution = {
@@ -166,7 +190,8 @@ describe("WorktreeSyncService Foundation", () => {
 
     it("should throw TARGET_BRANCH_MISSING if target branch does not exist", async () => {
       // Create worktree
-      const worktreePath = path.join(testRepo, "../worktree");
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
       execSync(`git worktree add ${worktreePath} -b worktree-branch`, {
         cwd: testRepo,
         stdio: "pipe",
@@ -191,7 +216,8 @@ describe("WorktreeSyncService Foundation", () => {
 
     it("should throw DIRTY_WORKING_TREE if local tree has uncommitted changes", async () => {
       // Create worktree
-      const worktreePath = path.join(testRepo, "../worktree");
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
       execSync(`git worktree add ${worktreePath} -b worktree-branch`, {
         cwd: testRepo,
         stdio: "pipe",
@@ -252,7 +278,8 @@ describe("WorktreeSyncService Foundation", () => {
   describe("_getUncommittedJSONLFiles", () => {
     it("should detect uncommitted JSONL files", () => {
       // Create worktree
-      const worktreePath = path.join(testRepo, "../worktree");
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
       execSync(`git worktree add ${worktreePath} -b worktree-branch`, {
         cwd: testRepo,
         stdio: "pipe",
@@ -286,7 +313,8 @@ describe("WorktreeSyncService Foundation", () => {
 
     it("should filter out non-JSONL files", () => {
       // Create worktree
-      const worktreePath = path.join(testRepo, "../worktree");
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
       execSync(`git worktree add ${worktreePath} -b worktree-branch`, {
         cwd: testRepo,
         stdio: "pipe",
@@ -305,7 +333,8 @@ describe("WorktreeSyncService Foundation", () => {
 
     it("should return empty array if no uncommitted JSONL", () => {
       // Create worktree
-      const worktreePath = path.join(testRepo, "../worktree");
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
       execSync(`git worktree add ${worktreePath} -b worktree-branch`, {
         cwd: testRepo,
         stdio: "pipe",
@@ -368,7 +397,8 @@ describe("WorktreeSyncService Foundation", () => {
   describe("previewSync", () => {
     it("should preview clean merge with no conflicts", async () => {
       // Create worktree with changes
-      const worktreePath = path.join(testRepo, "../worktree");
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
       execSync(`git worktree add ${worktreePath} -b worktree-branch`, {
         cwd: testRepo,
         stdio: "pipe",
@@ -403,7 +433,8 @@ describe("WorktreeSyncService Foundation", () => {
 
     it("should detect code conflicts and set canSync=false", async () => {
       // Create worktree
-      const worktreePath = path.join(testRepo, "../worktree");
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
       execSync(`git worktree add ${worktreePath} -b worktree-branch`, {
         cwd: testRepo,
         stdio: "pipe",
@@ -449,7 +480,8 @@ describe("WorktreeSyncService Foundation", () => {
 
     it("should detect uncommitted JSONL files", async () => {
       // Create worktree
-      const worktreePath = path.join(testRepo, "../worktree");
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
       execSync(`git worktree add ${worktreePath} -b worktree-branch`, {
         cwd: testRepo,
         stdio: "pipe",
@@ -495,7 +527,8 @@ describe("WorktreeSyncService Foundation", () => {
 
     it("should warn when execution is running", async () => {
       // Create worktree
-      const worktreePath = path.join(testRepo, "../worktree");
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
       execSync(`git worktree add ${worktreePath} -b worktree-branch`, {
         cwd: testRepo,
         stdio: "pipe",
@@ -537,7 +570,8 @@ describe("WorktreeSyncService Foundation", () => {
 
     it("should handle JSONL conflicts as auto-resolvable", async () => {
       // Create worktree
-      const worktreePath = path.join(testRepo, "../worktree");
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
       execSync(`git worktree add ${worktreePath} -b worktree-branch`, {
         cwd: testRepo,
         stdio: "pipe",
@@ -616,7 +650,8 @@ describe("WorktreeSyncService Foundation", () => {
       execSync('git commit -m "Add base issue"', { cwd: testRepo, stdio: "pipe" });
 
       // Create worktree branch and add new issue
-      const worktreePath = path.join(testRepo, "../worktree");
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
       execSync(`git worktree add ${worktreePath} -b worktree-branch`, {
         cwd: testRepo,
         stdio: "pipe",

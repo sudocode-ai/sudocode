@@ -4,8 +4,11 @@ import { ExecutionMonitor, RunIndicator } from './ExecutionMonitor'
 import { AgentConfigPanel } from './AgentConfigPanel'
 import { DeleteWorktreeDialog } from './DeleteWorktreeDialog'
 import { DeleteExecutionDialog } from './DeleteExecutionDialog'
+import { SyncPreviewDialog } from './SyncPreviewDialog'
+import { SyncProgressDialog } from './SyncProgressDialog'
 import { TodoTracker } from './TodoTracker'
 import { buildTodoHistory } from '@/utils/todoExtractor'
+import { useExecutionSync } from '@/hooks/useExecutionSync'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -22,6 +25,8 @@ import {
   Clock,
   PauseCircle,
   ArrowDown,
+  FolderOpen,
+  GitMerge,
 } from 'lucide-react'
 
 export interface ExecutionViewProps {
@@ -54,6 +59,23 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
   const [deletingExecution, setDeletingExecution] = useState(false)
   const [worktreeExists, setWorktreeExists] = useState(false)
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
+
+  // Sync state management
+  const {
+    syncPreview,
+    syncStatus,
+    syncResult,
+    syncError,
+    isSyncPreviewOpen,
+    isSyncProgressOpen,
+    fetchSyncPreview,
+    performSync,
+    openWorktreeInIDE,
+    cleanupWorktree,
+    setIsSyncPreviewOpen,
+    setIsSyncProgressOpen,
+    isPreviewing,
+  } = useExecutionSync()
 
   // Accumulated tool calls from all executions in the chain
   const [allToolCalls, setAllToolCalls] = useState<Map<string, ToolCallTracking>>(new Map())
@@ -216,6 +238,42 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
       setDeletingExecution(false)
     }
   }
+
+  // Handle Sync Worktree to Local button click
+  const handleSyncToLocal = useCallback(() => {
+    if (!chainData || chainData.executions.length === 0) return
+    const rootExecution = chainData.executions[0]
+    fetchSyncPreview(rootExecution.id)
+  }, [chainData, fetchSyncPreview])
+
+  // Handle open in IDE button click
+  const handleOpenInIDE = useCallback(() => {
+    if (!chainData || chainData.executions.length === 0) return
+    const rootExecution = chainData.executions[0]
+    openWorktreeInIDE(rootExecution)
+  }, [chainData, openWorktreeInIDE])
+
+  // Handle sync confirmation (wrapper for dialog)
+  const handleConfirmSync = useCallback(
+    (mode: 'squash' | 'preserve', commitMessage?: string) => {
+      if (!chainData || chainData.executions.length === 0) return
+      const rootExecution = chainData.executions[0]
+      performSync(rootExecution.id, mode, commitMessage)
+    },
+    [chainData, performSync]
+  )
+
+  // Handle cleanup worktree after sync
+  const handleCleanupWorktree = useCallback(() => {
+    if (!chainData || chainData.executions.length === 0) return
+    const rootExecution = chainData.executions[0]
+    cleanupWorktree(rootExecution.id)
+  }, [chainData, cleanupWorktree])
+
+  // Handle retry sync
+  const handleRetrySync = useCallback(() => {
+    handleSyncToLocal()
+  }, [handleSyncToLocal])
 
   // Handle scroll events to detect manual scrolling
   const handleScroll = useCallback(() => {
@@ -583,6 +641,46 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                       )}
                     </Button>
                   )}
+                  {rootExecution.worktree_path && (
+                    <>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="outline" size="sm" onClick={handleOpenInIDE}>
+                            <FolderOpen className="mr-2 h-4 w-4" />
+                            Open in IDE
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Open worktree directory in configured IDE</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleSyncToLocal}
+                            disabled={isPreviewing || syncStatus === 'syncing'}
+                          >
+                            {isPreviewing ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Loading...
+                              </>
+                            ) : (
+                              <>
+                                <GitMerge className="mr-2 h-4 w-4" />
+                                Sync Worktree to Local
+                              </>
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Sync worktree changes to local branch</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </>
+                  )}
                   {canDeleteWorktree && (
                     <Button
                       variant="outline"
@@ -742,6 +840,31 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
           onClose={() => setShowDeleteExecution(false)}
           onConfirm={handleDeleteExecution}
           isDeleting={deletingExecution}
+        />
+
+        {/* Sync Preview Dialog */}
+        {syncPreview && (
+          <SyncPreviewDialog
+            execution={rootExecution}
+            preview={syncPreview}
+            isOpen={isSyncPreviewOpen}
+            onClose={() => setIsSyncPreviewOpen(false)}
+            onConfirmSync={handleConfirmSync}
+            onOpenIDE={handleOpenInIDE}
+            isPreviewing={isPreviewing}
+          />
+        )}
+
+        {/* Sync Progress Dialog */}
+        <SyncProgressDialog
+          execution={rootExecution}
+          syncStatus={syncStatus === 'previewing' ? 'idle' : syncStatus}
+          syncResult={syncResult}
+          syncError={syncError}
+          isOpen={isSyncProgressOpen}
+          onClose={() => setIsSyncProgressOpen(false)}
+          onCleanupWorktree={handleCleanupWorktree}
+          onRetry={handleRetrySync}
         />
       </div>
     </TooltipProvider>

@@ -18,6 +18,9 @@ vi.mock('@/lib/api', () => ({
     deleteWorktree: vi.fn(),
     worktreeExists: vi.fn(),
     prepare: vi.fn(),
+    syncPreview: vi.fn(),
+    syncSquash: vi.fn(),
+    syncPreserve: vi.fn(),
   },
   agentsApi: {
     getAll: vi.fn(),
@@ -69,6 +72,25 @@ vi.mock('@/components/executions/DeleteWorktreeDialog', () => ({
       <div data-testid="delete-worktree-dialog">
         <button onClick={onConfirm}>Delete</button>
         <button onClick={onClose}>Cancel</button>
+      </div>
+    ) : null,
+}))
+
+vi.mock('@/components/executions/SyncPreviewDialog', () => ({
+  SyncPreviewDialog: ({ isOpen, onClose, onConfirmSync }: any) =>
+    isOpen ? (
+      <div data-testid="sync-preview-dialog">
+        <button onClick={() => onConfirmSync('squash', 'Test commit')}>Sync</button>
+        <button onClick={onClose}>Cancel</button>
+      </div>
+    ) : null,
+}))
+
+vi.mock('@/components/executions/SyncProgressDialog', () => ({
+  SyncProgressDialog: ({ isOpen, onClose }: any) =>
+    isOpen ? (
+      <div data-testid="sync-progress-dialog">
+        <button onClick={onClose}>Done</button>
       </div>
     ) : null,
 }))
@@ -1050,6 +1072,104 @@ describe('ExecutionView', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Todo Tracker with 2 todos')).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('Sync Buttons', () => {
+    it('should show "Open in IDE" and "Sync Worktree to Local" buttons when execution has worktree_path', async () => {
+      vi.mocked(executionsApi.getChain).mockResolvedValue(
+        mockChainResponse({
+          ...mockExecution,
+          status: 'completed',
+          worktree_path: '/tmp/worktree-123',
+        })
+      )
+
+      renderWithProviders(
+        <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Open in IDE/ })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /Sync Worktree to Local/ })).toBeInTheDocument()
+      })
+    })
+
+    it('should not show sync buttons when execution has no worktree_path', async () => {
+      vi.mocked(executionsApi.getChain).mockResolvedValue(
+        mockChainResponse({
+          ...mockExecution,
+          status: 'completed',
+          worktree_path: null,
+        })
+      )
+
+      renderWithProviders(
+        <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('Completed')).toBeInTheDocument()
+      })
+
+      expect(screen.queryByRole('button', { name: /Open in IDE/ })).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: /Sync Worktree to Local/ })
+      ).not.toBeInTheDocument()
+    })
+
+    it('should show sync buttons for all execution states', async () => {
+      const statuses = ['running', 'completed', 'failed', 'paused'] as const
+
+      for (const status of statuses) {
+        vi.mocked(executionsApi.getChain).mockResolvedValue(
+          mockChainResponse({
+            ...mockExecution,
+            status,
+            worktree_path: '/tmp/worktree-123',
+          })
+        )
+
+        const { unmount } = renderWithProviders(
+          <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+        )
+
+        await waitFor(() => {
+          expect(screen.getByRole('button', { name: /Open in IDE/ })).toBeInTheDocument()
+          expect(screen.getByRole('button', { name: /Sync Worktree to Local/ })).toBeInTheDocument()
+        })
+
+        unmount()
+        vi.clearAllMocks()
+      }
+    })
+
+    it('should disable "Sync Worktree to Local" button when preview is loading', async () => {
+      vi.mocked(executionsApi.getChain).mockResolvedValue(
+        mockChainResponse({
+          ...mockExecution,
+          status: 'completed',
+          worktree_path: '/tmp/worktree-123',
+        })
+      )
+      vi.mocked(executionsApi.syncPreview).mockReturnValue(new Promise(() => {})) // Never resolves
+
+      const user = userEvent.setup()
+      renderWithProviders(
+        <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Sync Worktree to Local/ })).toBeInTheDocument()
+      })
+
+      const syncButton = screen.getByRole('button', { name: /Sync Worktree to Local/ })
+      await user.click(syncButton)
+
+      // Button should show loading state
+      await waitFor(() => {
+        expect(screen.getByText('Loading...')).toBeInTheDocument()
       })
     })
   })

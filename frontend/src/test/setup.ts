@@ -71,6 +71,13 @@ if (typeof Element.prototype.scrollIntoView === 'undefined') {
   Element.prototype.scrollIntoView = vi.fn()
 }
 
+// Polyfill for ResizeObserver (missing in jsdom)
+global.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
 // Cleanup after each test
 afterEach(() => {
   cleanup()
