@@ -6,7 +6,63 @@ import chalk from "chalk";
 import { execSync } from "child_process";
 import { checkForUpdates, dismissUpdate } from "../update-checker.js";
 
-const PACKAGE_NAME = "@sudocode-ai/cli";
+/**
+ * Detect which sudocode package is globally installed
+ * Returns the package name to update
+ */
+async function detectInstalledPackage(): Promise<string> {
+  try {
+    // Check if metapackage is installed
+    execSync("npm list -g sudocode --depth=0", {
+      stdio: "pipe",
+      encoding: "utf8",
+    });
+    return "sudocode"; // Metapackage is installed
+  } catch {
+    // Metapackage not found, fall back to CLI
+    return "@sudocode-ai/cli";
+  }
+}
+
+/**
+ * Install package with smart force retry
+ * Tries without --force first, retries with --force only on EEXIST
+ */
+function installPackageWithRetry(packageName: string): void {
+  const baseCommand = `npm install -g ${packageName}`;
+
+  console.log();
+  console.log(chalk.cyan(`Running: ${baseCommand}`));
+  console.log();
+
+  try {
+    // First attempt: without --force
+    execSync(baseCommand, { stdio: "inherit" });
+  } catch (error) {
+    // Check if it's an EEXIST error
+    if (error instanceof Error && error.message.includes("EEXIST")) {
+      console.log();
+      console.log(
+        chalk.yellow("File already exists, retrying with --force...")
+      );
+      console.log();
+
+      try {
+        // Retry with --force
+        const forceCommand = `${baseCommand} --force`;
+        console.log(chalk.cyan(`Running: ${forceCommand}`));
+        console.log();
+        execSync(forceCommand, { stdio: "inherit" });
+      } catch (retryError) {
+        // If retry also fails, throw the error to be handled by caller
+        throw retryError;
+      }
+    } else {
+      // Not an EEXIST error, re-throw
+      throw error;
+    }
+  }
+}
 
 /**
  * Handle update check command
@@ -19,20 +75,26 @@ export async function handleUpdateCheck(): Promise<void> {
   if (!info) {
     console.log(chalk.yellow("Unable to check for updates"));
     console.log("Please try again later or check manually:");
-    console.log(`  npm view ${PACKAGE_NAME} version`);
+    const packageName = await detectInstalledPackage();
+    console.log(`  npm view ${packageName} version`);
     return;
   }
 
+  const packageName = await detectInstalledPackage();
+
   console.log(`Current version: ${chalk.cyan(info.current)}`);
   console.log(`Latest version:  ${chalk.cyan(info.latest)}`);
+  console.log(`Package: ${chalk.dim(packageName)}`);
 
   if (info.updateAvailable) {
     console.log();
     console.log(chalk.green("✓ Update available!"));
     console.log();
     console.log("To update, run:");
-    console.log(chalk.yellow(`  npm install -g ${PACKAGE_NAME}`));
     console.log(chalk.yellow(`  sudocode update`));
+    console.log();
+    console.log("Or manually:");
+    console.log(chalk.yellow(`  npm install -g ${packageName} --force`));
   } else {
     console.log();
     console.log(chalk.green("✓ You are using the latest version"));
@@ -57,14 +119,19 @@ export async function handleUpdate(): Promise<void> {
     console.log(`Updating from ${info.current} to ${info.latest}...`);
   }
 
-  try {
-    console.log();
-    console.log(chalk.cyan("Running: npm install -g " + PACKAGE_NAME));
-    console.log();
+  // Detect which package to update
+  const packageToUpdate = await detectInstalledPackage();
 
-    execSync(`npm install -g ${PACKAGE_NAME}`, {
-      stdio: "inherit",
-    });
+  if (packageToUpdate === "sudocode") {
+    console.log(
+      chalk.dim("Detected metapackage installation - updating all components")
+    );
+  } else {
+    console.log(chalk.dim("Detected standalone CLI installation"));
+  }
+
+  try {
+    installPackageWithRetry(packageToUpdate);
 
     console.log();
     console.log(chalk.green("✓ Update completed successfully!"));
@@ -75,7 +142,7 @@ export async function handleUpdate(): Promise<void> {
     console.error(chalk.red("✗ Update failed"));
     console.log();
     console.log("Please try updating manually:");
-    console.log(chalk.yellow(`  npm install -g ${PACKAGE_NAME}`));
+    console.log(chalk.yellow(`  npm install -g ${packageToUpdate} --force`));
     console.log();
 
     if (error instanceof Error) {

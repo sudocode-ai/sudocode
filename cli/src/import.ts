@@ -54,6 +54,11 @@ export interface ImportOptions {
    * Path to meta.json for collision logging
    */
   metaPath?: string;
+  /**
+   * Force update these entity IDs even if timestamp hasn't changed
+   * Useful when file watcher detects content hash changes
+   */
+  forceUpdateIds?: string[];
 }
 
 export interface ImportResult {
@@ -96,10 +101,11 @@ export interface ChangeDetection {
  */
 export function detectChanges<
   T extends { id: string; uuid: string; updated_at: string },
->(existing: T[], incoming: T[]): ChangeDetection {
+>(existing: T[], incoming: T[], forceUpdateIds: string[] = []): ChangeDetection {
   // Map by UUID (the true identity)
   const existingByUUID = new Map(existing.map((e) => [e.uuid, e]));
   const incomingUUIDs = new Set(incoming.map((e) => e.uuid));
+  const forceUpdateSet = new Set(forceUpdateIds);
 
   const added = incoming
     .filter((e) => !existingByUUID.has(e.uuid))
@@ -115,8 +121,8 @@ export function detectChanges<
   for (const inc of incoming) {
     const ex = existingByUUID.get(inc.uuid);
     if (ex) {
-      // Same entity (same UUID), check if content changed
-      if (hasChanged(ex, inc)) {
+      // Same entity (same UUID), check if content changed or force update requested
+      if (forceUpdateSet.has(inc.id) || hasChanged(ex, inc)) {
         updated.push(inc.id);
       } else {
         unchanged.push(inc.id);
@@ -673,6 +679,7 @@ export async function importFromJSONL(
     issuesFile = "issues.jsonl",
     dryRun = false,
     resolveCollisions: shouldResolve = true,
+    forceUpdateIds = [],
   } = options;
 
   const specsPath = path.join(inputDir, specsFile);
@@ -769,8 +776,8 @@ export async function importFromJSONL(
   }
 
   // Detect changes (after collision resolution has modified incoming data)
-  const specChanges = detectChanges(existingSpecs, incomingSpecs);
-  const issueChanges = detectChanges(existingIssues, incomingIssues);
+  const specChanges = detectChanges(existingSpecs, incomingSpecs, forceUpdateIds);
+  const issueChanges = detectChanges(existingIssues, incomingIssues, forceUpdateIds);
 
   // Apply changes in transaction
   const result: ImportResult = {

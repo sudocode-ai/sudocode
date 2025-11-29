@@ -178,7 +178,7 @@ export function IssueCard({ issue, index, status, onViewDetails, isOpen, showExe
               executionId={latestExecution.id}
               execution={latestExecution}
               variant="compact"
-              onViewFull={() => navigate(`/executions/${latestExecution.id}`)}
+              showStatusLabel={false}
             />
           </div>
         )}

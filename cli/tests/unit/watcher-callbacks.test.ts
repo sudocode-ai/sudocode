@@ -73,7 +73,6 @@ describe("Watcher Typed Callbacks", () => {
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
         onEntitySync: (event) => events.push(event),
         ignoreInitial: true,
       });
@@ -130,7 +129,6 @@ describe("Watcher Typed Callbacks", () => {
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
         onEntitySync: (event) => events.push(event),
         ignoreInitial: true,
       });
@@ -179,7 +177,6 @@ describe("Watcher Typed Callbacks", () => {
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
         onEntitySync: (event) => events.push(event),
         ignoreInitial: true,
       });
@@ -208,6 +205,64 @@ describe("Watcher Typed Callbacks", () => {
       expect(events.find((e) => e.entityId === "i-multi2")).toBeDefined();
     });
 
+    it("should detect content changes even without timestamp update", async () => {
+      const events: EntitySyncEvent[] = [];
+
+      // Create an issue in DB and export
+      createIssue(db, {
+        id: "i-content-test",
+        uuid: "uuid-content-test",
+        title: "Original Title",
+        content: "Original content",
+        status: "open",
+        priority: 2,
+      });
+      await exportToJSONL(db, { outputDir: tempDir });
+
+      // Start watcher with callback
+      control = startWatcher({
+        db,
+        baseDir: tempDir,
+        onEntitySync: (event) => events.push(event),
+        ignoreInitial: true,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Modify JSONL content WITHOUT changing timestamp
+      const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
+      const issueData = JSON.parse(fs.readFileSync(issuesJsonlPath, "utf8").trim());
+      const originalTimestamp = issueData.updated_at;
+
+      // Change content but keep same timestamp
+      issueData.title = "Modified Title";
+      issueData.content = "Modified content";
+      // Don't update timestamp - this is the key test case
+      // issueData.updated_at stays the same
+
+      fs.writeFileSync(issuesJsonlPath, JSON.stringify(issueData) + "\n");
+
+      // Wait for watcher to process
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Verify change was detected and imported
+      expect(events.length).toBeGreaterThan(0);
+      const event = events.find((e) => e.entityId === "i-content-test");
+      expect(event).toBeDefined();
+      expect(event?.action).toBe("updated");
+      expect(event?.entity).toBeDefined();
+
+      // Most importantly: verify database was updated with NEW content
+      expect(event?.entity).toMatchObject({
+        id: "i-content-test",
+        title: "Modified Title",
+        content: "Modified content",
+      });
+
+      // Verify timestamp was preserved
+      expect(event?.entity?.updated_at).toBe(originalTimestamp);
+    });
+
     it.skip("should support async callbacks", async () => {
       const events: EntitySyncEvent[] = [];
       let asyncCompleted = false;
@@ -225,7 +280,6 @@ describe("Watcher Typed Callbacks", () => {
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
         onEntitySync: async (event) => {
           events.push(event);
           // Simulate async operation
@@ -256,7 +310,6 @@ describe("Watcher Typed Callbacks", () => {
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
         onEntitySync: (event) => events.push(event),
         ignoreInitial: true,
       });
@@ -296,7 +349,6 @@ This is test content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
         onEntitySync: (event) => events.push(event),
         ignoreInitial: true,
       });
@@ -346,7 +398,6 @@ Content here.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
         onLog: (msg) => logs.push(msg),
         onEntitySync: (event) => events.push(event),
         ignoreInitial: true,
@@ -383,7 +434,6 @@ Content here.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
         onLog: (msg) => logs.push(msg),
         ignoreInitial: true,
       });
@@ -419,7 +469,6 @@ Content here.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
         onEntitySync: (event) => events.push(event),
         ignoreInitial: true,
       });

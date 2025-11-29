@@ -78,7 +78,6 @@ describe("JSONL File Changes - WebSocket Broadcasts", () => {
     watcherControl = startServerWatcher({
       db,
       baseDir: testDir,
-      debounceDelay: 500,
       syncJSONLToMarkdown: false,
       onFileChange: (info) => {
         // Simulate project-manager.ts onFileChange callback
@@ -171,7 +170,6 @@ describe("JSONL File Changes - WebSocket Broadcasts", () => {
     watcherControl = startServerWatcher({
       db,
       baseDir: testDir,
-      debounceDelay: 500,
       syncJSONLToMarkdown: false,
       onFileChange: (info) => {
         if (info.entityType && info.entityId && info.entityId !== "*") {
@@ -244,7 +242,6 @@ describe("JSONL File Changes - WebSocket Broadcasts", () => {
     watcherControl = startServerWatcher({
       db,
       baseDir: testDir,
-      debounceDelay: 500,
       syncJSONLToMarkdown: false,
       onFileChange: (info) => {
         if (
@@ -299,6 +296,89 @@ describe("JSONL File Changes - WebSocket Broadcasts", () => {
       expect.objectContaining({
         id: spec.id,
         title: "Updated Spec Title via JSONL",
+      })
+    );
+  });
+
+  it("should broadcast fresh content when JSONL changes without timestamp update", async () => {
+    const projectId = "test-content-without-timestamp";
+
+    // Create an issue and export to JSONL
+    const issue = createNewIssue(db, {
+      id: "i-fresh-content",
+      uuid: "uuid-fresh-content",
+      title: "Original Title",
+      content: "Original content",
+      status: "open",
+      priority: 2,
+    });
+
+    await exportToJSONL(db, { outputDir: testDir });
+
+    // Start watcher
+    watcherControl = startServerWatcher({
+      db,
+      baseDir: testDir,
+      syncJSONLToMarkdown: false,
+      onFileChange: (info) => {
+        if (
+          info.entityType === "issue" &&
+          info.entityId &&
+          info.entityId !== "*"
+        ) {
+          if (info.entity) {
+            websocketModule.broadcastIssueUpdate(
+              projectId,
+              info.entityId,
+              "updated",
+              info.entity
+            );
+          } else {
+            const updatedIssue = getIssueById(db, info.entityId);
+            if (updatedIssue) {
+              websocketModule.broadcastIssueUpdate(
+                projectId,
+                info.entityId,
+                "updated",
+                updatedIssue
+              );
+            }
+          }
+        }
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    // Modify the JSONL file WITHOUT changing timestamp
+    const issuesJsonlPath = path.join(testDir, "issues.jsonl");
+    const jsonlContent = fs.readFileSync(issuesJsonlPath, "utf8");
+    const issueData = JSON.parse(jsonlContent.trim());
+
+    // Save original timestamp
+    const originalTimestamp = issueData.updated_at;
+
+    // Change content but DON'T update timestamp
+    issueData.title = "Modified Title Without Timestamp Change";
+    issueData.content = "Modified content without timestamp change";
+    // Note: NOT updating issueData.updated_at
+
+    fs.writeFileSync(issuesJsonlPath, JSON.stringify(issueData) + "\n");
+
+    // Wait for file watcher to process the change
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    // Verify broadcast was called with FRESH content (not stale)
+    expect(broadcastIssueUpdateSpy).toHaveBeenCalled();
+    expect(broadcastIssueUpdateSpy).toHaveBeenCalledWith(
+      projectId,
+      issue.id,
+      "updated",
+      expect.objectContaining({
+        id: issue.id,
+        title: "Modified Title Without Timestamp Change",
+        content: "Modified content without timestamp change",
+        updated_at: originalTimestamp, // Timestamp should be preserved
       })
     );
   });

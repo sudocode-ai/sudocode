@@ -330,6 +330,61 @@ describe('IssuePanel', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('should cancel execution on first ESC press, then close panel on second ESC press', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+
+    // Mock a running execution
+    vi.mocked(executionsApi.list).mockResolvedValue([
+      {
+        id: 'exec-123',
+        issue_id: 'ISSUE-001',
+        status: 'running',
+        created_at: '2024-01-01T10:00:00Z',
+        updated_at: '2024-01-01T11:00:00Z',
+        mode: 'worktree',
+        target_branch: 'main',
+        agent_type: 'claude-code',
+        parent_execution_id: null,
+      } as any,
+    ])
+
+    // Mock cancel API
+    const mockCancel = vi.fn().mockResolvedValue({})
+    vi.mocked(executionsApi).cancel = mockCancel
+
+    renderWithProviders(<IssuePanel issue={mockIssue} onClose={onClose} />)
+
+    // Wait for execution to load
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Enter prompt for the agent...')).toBeDisabled()
+    })
+
+    // First ESC press should cancel the execution
+    await user.keyboard('{Escape}')
+    expect(mockCancel).toHaveBeenCalledWith('exec-123')
+    expect(onClose).not.toHaveBeenCalled()
+
+    // Mock the execution as stopped after cancel
+    vi.mocked(executionsApi.list).mockResolvedValue([
+      {
+        id: 'exec-123',
+        issue_id: 'ISSUE-001',
+        status: 'cancelled',
+        created_at: '2024-01-01T10:00:00Z',
+        updated_at: '2024-01-01T11:00:00Z',
+        mode: 'worktree',
+        target_branch: 'main',
+        agent_type: 'claude-code',
+        parent_execution_id: null,
+      } as any,
+    ])
+
+    // Second ESC press should close the panel
+    await user.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
   it('should not call onClose when ESC is pressed while delete dialog is open', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()

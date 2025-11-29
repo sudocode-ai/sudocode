@@ -37,9 +37,11 @@ export function TableOfContentsPanel({
 
   if (!items || items.length === 0) {
     return (
-      <div className={cn('p-4', className)}>
-        <h3 className="mb-3 text-sm font-semibold text-foreground">Contents</h3>
-        <p className="text-xs text-muted-foreground">No headings found in this spec.</p>
+      <div className={cn('', className)}>
+        <div className="sticky top-0 z-10 mb-3 border-b bg-background px-4 py-2">
+          <h3 className="text-sm font-semibold text-foreground">Contents</h3>
+        </div>
+        <p className="px-4 text-xs text-muted-foreground">No headings found in this spec.</p>
       </div>
     )
   }
@@ -73,8 +75,8 @@ export function TableOfContentsPanel({
   const effectiveActiveId = getEffectiveActiveId()
 
   return (
-    <div className={cn('p-4', className)}>
-      <div className="mb-3 flex items-center justify-between">
+    <div className={cn('', className)}>
+      <div className="sticky top-0 z-10 mb-3 flex items-center justify-between border-b bg-background px-4 py-2">
         <h3 className="text-sm font-semibold text-foreground">Contents</h3>
         <div className="flex items-center gap-1">
           {onCollapse && (
@@ -108,7 +110,7 @@ export function TableOfContentsPanel({
           </TooltipProvider>
         </div>
       </div>
-      <nav className="space-y-0">
+      <nav className="space-y-0 px-4 pb-4">
         {visibleItems.map((item) => {
           const indent = (item.level - 1) * 10
 

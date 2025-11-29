@@ -287,14 +287,24 @@ export class ExecutionLifecycleService {
           execution.worktree_path,
           this.repoPath
         );
+        console.log(
+          `Successfully cleaned up worktree for execution ${executionId}`
+        );
         // NOTE: We do NOT set worktree_path to null in the database
         // Follow-up executions need this path to recreate the worktree
-      } catch (error) {
-        // Log error but don't fail - cleanup is best-effort
-        console.error(
-          `Failed to cleanup worktree for execution ${executionId}:`,
-          error
-        );
+      } catch (error: any) {
+        // Check if error is due to worktree already being deleted
+        if (error.code === "ENOENT" || error.message?.includes("does not exist")) {
+          console.log(
+            `Worktree already deleted for execution ${executionId}, skipping cleanup`
+          );
+        } else {
+          // Log other errors but don't fail - cleanup is best-effort
+          console.error(
+            `Failed to cleanup worktree for execution ${executionId}:`,
+            error
+          );
+        }
       }
     }
   }

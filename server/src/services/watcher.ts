@@ -20,10 +20,6 @@ export interface ServerWatcherOptions {
    */
   baseDir: string;
   /**
-   * Debounce delay in milliseconds (default: 2000)
-   */
-  debounceDelay?: number;
-  /**
    * Enable reverse sync (JSONL → Markdown) when JSONL files change (default: false)
    */
   syncJSONLToMarkdown?: boolean;
@@ -63,13 +59,11 @@ export function startServerWatcher(
   const {
     db,
     baseDir,
-    debounceDelay = 2000,
     syncJSONLToMarkdown = false,
     onFileChange,
   } = options;
 
   console.log(`[watcher] Starting file watcher for ${baseDir}`);
-  console.log(`[watcher] Debounce delay: ${debounceDelay}ms`);
   if (syncJSONLToMarkdown) {
     console.log(`[watcher] Reverse sync (JSONL → Markdown) enabled`);
   }
@@ -78,7 +72,6 @@ export function startServerWatcher(
   const control = startCliWatcher({
     db,
     baseDir,
-    debounceDelay,
     syncJSONLToMarkdown,
 
     // NEW PATH: Use typed callback (preferred)

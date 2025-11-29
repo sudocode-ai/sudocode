@@ -141,6 +141,10 @@ export function IssuePanel({
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
   const shouldScrollToActivityRef = useRef(false)
   const hasInitializedForIssueRef = useRef<string | null>(null)
+  const executionsLoadedRef = useRef(false)
+  const activityBottomRef = useRef<HTMLDivElement>(null)
+  const lastFeedbackRef = useRef<HTMLDivElement>(null)
+  const escPressedWhileRunningRef = useRef(false)
 
   // WebSocket for real-time updates
   const { subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
@@ -190,10 +194,14 @@ export function IssuePanel({
     setExecutions([])
     // Reset initialization ref so auto-collapse can re-evaluate for new issue
     hasInitializedForIssueRef.current = null
+    // Reset executions loaded flag
+    executionsLoadedRef.current = false
     // Reset to follow-up mode when issue changes
     setIsFollowUpMode(true)
     // Reset force new execution flag
     setForceNewExecution(false)
+    // Reset ESC pressed flag
+    escPressedWhileRunningRef.current = false
   }, [issue.id])
 
   // Auto-manage follow-up mode based on whether follow-ups are possible
@@ -206,6 +214,13 @@ export function IssuePanel({
       setIsFollowUpMode(true)
     }
   }, [isFollowUpMode, canFollowUp])
+
+  // Reset ESC pressed flag when execution stops running
+  useEffect(() => {
+    if (!isExecutionRunning) {
+      escPressedWhileRunningRef.current = false
+    }
+  }, [isExecutionRunning])
 
   // Save internal view mode preference to localStorage
   useEffect(() => {
@@ -281,11 +296,13 @@ export function IssuePanel({
         const data = await executionsApi.list(issue.id)
         if (isMounted) {
           setExecutions(data)
+          executionsLoadedRef.current = true
         }
       } catch (error) {
         console.error('Failed to fetch executions:', error)
         if (isMounted) {
           setExecutions([])
+          executionsLoadedRef.current = true
         }
       }
     }
@@ -321,10 +338,11 @@ export function IssuePanel({
 
   // Scroll to activity section when a new execution is created
   useEffect(() => {
-    if (shouldScrollToActivityRef.current && activitySectionRef.current) {
+    if (shouldScrollToActivityRef.current && activityBottomRef.current) {
       // Use requestAnimationFrame to ensure DOM is updated
       requestAnimationFrame(() => {
-        activitySectionRef.current?.scrollIntoView({
+        // Scroll to bottom when a new execution is created
+        activityBottomRef.current?.scrollIntoView({
           behavior: 'smooth',
           block: 'end',
         })
@@ -338,22 +356,52 @@ export function IssuePanel({
     // Only run once per issue (wait for executions to load)
     if (hasInitializedForIssueRef.current === issue.id) return
 
+    // Wait for executions to load before making the initial decision
+    if (!executionsLoadedRef.current) return
+
     const hasActivity = executions.length > 0 || feedback.length > 0
 
-    if (hasActivity) {
-      // Mark as initialized for this issue
-      hasInitializedForIssueRef.current = issue.id
+    // Mark as initialized for this issue
+    hasInitializedForIssueRef.current = issue.id
 
+    if (hasActivity) {
       // Collapse the description
       setIsDescriptionCollapsed(true)
 
-      // Scroll to the activity section after a brief delay to let the collapse happen
+      // Determine the last activity item type
+      const allActivities = [
+        ...executions.map((e) => ({ ...e, itemType: 'execution' as const, created_at: e.created_at })),
+        ...feedback.map((f) => ({ ...f, itemType: 'feedback' as const, created_at: f.created_at })),
+      ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+
+      const lastActivity = allActivities[allActivities.length - 1]
+      const isLastItemExecution = lastActivity?.itemType === 'execution'
+
+      // Scroll to the most recent activity after a brief delay to let the collapse happen
       requestAnimationFrame(() => {
-        activitySectionRef.current?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'start',
-        })
+        if (isLastItemExecution && activityBottomRef.current) {
+          // If last item is an execution, scroll to bottom
+          activityBottomRef.current.scrollIntoView({
+            behavior: 'smooth',
+            block: 'end',
+          })
+        } else if (lastFeedbackRef.current) {
+          // If last item is feedback, scroll to the last feedback item
+          lastFeedbackRef.current.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+          })
+        } else if (activitySectionRef.current) {
+          // Fallback: scroll to the start of the activity section
+          activitySectionRef.current.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+          })
+        }
       })
+    } else {
+      // No activity - expand the description
+      setIsDescriptionCollapsed(false)
     }
   }, [issue.id, executions, feedback])
 
@@ -477,6 +525,16 @@ export function IssuePanel({
       if (showDeleteDialog || showAddRelationship) return
 
       if (event.key === 'Escape') {
+        // If execution is running, first ESC press stops the execution
+        if (isExecutionRunning && !escPressedWhileRunningRef.current) {
+          escPressedWhileRunningRef.current = true
+          if (latestExecution) {
+            handleCancel(latestExecution.id)
+          }
+          return
+        }
+
+        // Second ESC press (or no execution running) closes the panel
         onClose()
       }
     }
@@ -485,7 +543,7 @@ export function IssuePanel({
     return () => {
       document.removeEventListener('keydown', handleEscKey)
     }
-  }, [onClose, showDeleteDialog, showAddRelationship])
+  }, [onClose, showDeleteDialog, showAddRelationship, isExecutionRunning, latestExecution])
 
   // Auto-save effect with debounce
   useEffect(() => {
@@ -1023,7 +1081,7 @@ export function IssuePanel({
                           e.stopPropagation()
                           setIsDescriptionCollapsed(false)
                         }}
-                        className="gap-1 shadow-sm"
+                        className="gap-1 text-muted-foreground shadow-sm"
                       >
                         <ChevronDown className="h-4 w-4" />
                         Expand
@@ -1057,15 +1115,7 @@ export function IssuePanel({
                     .map((e) => ({ ...e, itemType: 'execution' as const })),
                 ]}
                 currentEntityId={issue.id}
-                onExecutionDeleted={async () => {
-                  // Re-fetch executions when an execution is deleted
-                  try {
-                    const data = await executionsApi.list(issue.id)
-                    setExecutions(data)
-                  } catch (error) {
-                    console.error('Failed to fetch executions:', error)
-                  }
-                }}
+                lastFeedbackRef={lastFeedbackRef}
               />
               {/* New Execution Button - shown when there's a previous execution and we're in follow-up mode */}
               {isFollowUpMode && canFollowUp && !forceNewExecution && (
@@ -1074,13 +1124,15 @@ export function IssuePanel({
                     variant="outline"
                     size="sm"
                     onClick={() => setForceNewExecution(true)}
-                    className="gap-2"
+                    className="gap-2 text-muted-foreground"
                   >
                     <Plus className="h-4 w-4" />
                     New execution
                   </Button>
                 </div>
               )}
+              {/* Scroll marker for bottom of activity */}
+              <div ref={activityBottomRef} />
             </div>
           </div>
         </div>
