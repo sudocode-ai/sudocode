@@ -233,17 +233,34 @@ describe('InlineExecutionView', () => {
 
   describe('navigation', () => {
     it('should navigate to execution page when clicking execution ID', async () => {
+      // Clear mock to ensure clean state
+      mockNavigate.mockClear()
+      vi.clearAllMocks()
+
       const user = userEvent.setup()
-      vi.mocked(executionsApi.getChain).mockResolvedValue({
+      const mockExecution = createMockExecution({ id: 'exec-001' })
+      const mockResponse = {
         rootId: 'exec-001',
-        executions: [createMockExecution({ id: 'exec-001' })],
-      })
+        executions: [mockExecution],
+      }
+
+      // Ensure mock persists for multiple calls (WebSocket will trigger reloads)
+      vi.mocked(executionsApi.getChain).mockResolvedValue(mockResponse)
+      vi.mocked(executionsApi.worktreeExists).mockResolvedValue({ exists: false })
 
       const { container } = renderWithProviders(<InlineExecutionView executionId="exec-001" />)
 
-      await waitFor(() => {
-        expect(screen.getByText(/Execution exec-001/)).toBeInTheDocument()
-      })
+      // Wait for the execution to fully load (not in error state)
+      await waitFor(
+        () => {
+          expect(screen.queryByText(/Error Loading Execution/)).not.toBeInTheDocument()
+          expect(screen.getByText(/Execution exec-001/)).toBeInTheDocument()
+        },
+        { timeout: 3000 }
+      )
+
+      // Ensure mockNavigate hasn't been called yet
+      expect(mockNavigate).not.toHaveBeenCalled()
 
       // Find the execution ID button - it has specific classes and contains the execution ID text
       const idButton = container.querySelector('button.font-mono.text-xs.text-muted-foreground')

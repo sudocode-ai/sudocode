@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
 import { executionsApi, type ExecutionChainResponse } from '@/lib/api'
@@ -7,6 +7,7 @@ import { DeleteWorktreeDialog } from './DeleteWorktreeDialog'
 import { DeleteExecutionDialog } from './DeleteExecutionDialog'
 import { TodoTracker } from './TodoTracker'
 import { buildTodoHistory } from '@/utils/todoExtractor'
+import { useWebSocketContext } from '@/contexts/WebSocketContext'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -31,6 +32,7 @@ import {
   MoreVertical,
   Trash2,
   PlayCircle,
+  GitBranch,
 } from 'lucide-react'
 
 export interface InlineExecutionViewProps {
@@ -56,8 +58,13 @@ export interface InlineExecutionViewProps {
  * Displays an execution chain inline without header metadata or follow-up controls.
  * Designed to be embedded in activity timelines and other compact contexts.
  */
-export function InlineExecutionView({ executionId, onExecutionDeleted, defaultExpanded = true }: InlineExecutionViewProps) {
+export function InlineExecutionView({
+  executionId,
+  onExecutionDeleted,
+  defaultExpanded = true,
+}: InlineExecutionViewProps) {
   const navigate = useNavigate()
+  const { subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
   const [chainData, setChainData] = useState<ExecutionChainResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -67,6 +74,7 @@ export function InlineExecutionView({ executionId, onExecutionDeleted, defaultEx
   const [deletingWorktree, setDeletingWorktree] = useState(false)
   const [deletingExecution, setDeletingExecution] = useState(false)
   const [worktreeExists, setWorktreeExists] = useState(false)
+  const rootExecutionIdRef = useRef<string | null>(null)
 
   // Accumulated tool calls from all executions in the chain
   const [allToolCalls, setAllToolCalls] = useState<Map<string, ToolCallTracking>>(new Map())
@@ -84,8 +92,13 @@ export function InlineExecutionView({ executionId, onExecutionDeleted, defaultEx
         const data = await executionsApi.getChain(executionId)
         setChainData(data)
 
-        // Check worktree status for the root execution
+        // Store the root execution ID for WebSocket subscription
         const rootExecution = data.executions[0]
+        if (rootExecution) {
+          rootExecutionIdRef.current = rootExecution.id
+        }
+
+        // Check worktree status for the root execution
         if (rootExecution?.worktree_path) {
           try {
             const worktreeStatus = await executionsApi.worktreeExists(rootExecution.id)
@@ -104,6 +117,41 @@ export function InlineExecutionView({ executionId, onExecutionDeleted, defaultEx
 
     loadChain()
   }, [executionId])
+
+  // Subscribe to WebSocket updates for the root execution to detect status changes and new follow-ups
+  useEffect(() => {
+    const rootExecutionId = rootExecutionIdRef.current
+    if (!rootExecutionId) return
+
+    // Subscribe to the root execution
+    subscribe('execution', rootExecutionId)
+
+    // Handle execution updates
+    const handlerId = `inline-execution-view-${rootExecutionId}`
+    const handleMessage = async (message: any) => {
+      if (
+        message.type === 'execution_created' ||
+        message.type === 'execution_updated' ||
+        message.type === 'execution_status_changed'
+      ) {
+        // Reload the chain to get the latest status
+        try {
+          const data = await executionsApi.getChain(rootExecutionId)
+          setChainData(data)
+        } catch (err) {
+          // Don't show error on WebSocket reload failures - keep existing data
+          console.error('Failed to reload execution chain:', err)
+        }
+      }
+    }
+
+    addMessageHandler(handlerId, handleMessage)
+
+    return () => {
+      removeMessageHandler(handlerId)
+      unsubscribe('execution', rootExecutionId)
+    }
+  }, [executionId, subscribe, unsubscribe, addMessageHandler, removeMessageHandler])
 
   // Reload chain when an execution completes
   const handleExecutionComplete = useCallback(async (completedExecutionId: string) => {
@@ -393,6 +441,15 @@ export function InlineExecutionView({ executionId, onExecutionDeleted, defaultEx
                   Execution {truncateId(rootExecution.id)}
                 </button>
                 {renderStatusBadge(lastExecution.status)}
+                {rootExecution.branch_name && (
+                  <div className="flex items-center gap-1 rounded bg-muted px-2 py-0.5">
+                    <GitBranch className="h-3 w-3 text-muted-foreground" />
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {rootExecution.branch_name}
+                      {rootExecution.worktree_path ? ' (worktree)' : ''}
+                    </span>
+                  </div>
+                )}
                 {mostRecentTime && (
                   <span className="text-xs text-muted-foreground">
                     {formatDistanceToNow(new Date(mostRecentTime), { addSuffix: true })}

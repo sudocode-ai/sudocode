@@ -141,6 +141,7 @@ export function IssuePanel({
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
   const shouldScrollToActivityRef = useRef(false)
   const hasInitializedForIssueRef = useRef<string | null>(null)
+  const executionsLoadedRef = useRef(false)
   const activityBottomRef = useRef<HTMLDivElement>(null)
   const lastFeedbackRef = useRef<HTMLDivElement>(null)
 
@@ -192,6 +193,8 @@ export function IssuePanel({
     setExecutions([])
     // Reset initialization ref so auto-collapse can re-evaluate for new issue
     hasInitializedForIssueRef.current = null
+    // Reset executions loaded flag
+    executionsLoadedRef.current = false
     // Reset to follow-up mode when issue changes
     setIsFollowUpMode(true)
     // Reset force new execution flag
@@ -283,11 +286,13 @@ export function IssuePanel({
         const data = await executionsApi.list(issue.id)
         if (isMounted) {
           setExecutions(data)
+          executionsLoadedRef.current = true
         }
       } catch (error) {
         console.error('Failed to fetch executions:', error)
         if (isMounted) {
           setExecutions([])
+          executionsLoadedRef.current = true
         }
       }
     }
@@ -340,6 +345,9 @@ export function IssuePanel({
   useEffect(() => {
     // Only run once per issue (wait for executions to load)
     if (hasInitializedForIssueRef.current === issue.id) return
+
+    // Wait for executions to load before making the initial decision
+    if (!executionsLoadedRef.current) return
 
     const hasActivity = executions.length > 0 || feedback.length > 0
 
