@@ -33,6 +33,58 @@ vi.mock('@/lib/api', async (importOriginal) => {
   }
 })
 
+// Mock ExecutionMonitor to avoid additional API calls
+vi.mock('@/components/executions/ExecutionMonitor', () => ({
+  ExecutionMonitor: ({ executionId, execution, onComplete, onToolCallsUpdate }: any) => {
+    // Simulate tool calls being passed back to parent
+    if (onToolCallsUpdate && execution?.mockToolCalls) {
+      setTimeout(() => onToolCallsUpdate(execution.mockToolCalls), 0)
+    }
+    return (
+      <div data-testid="execution-monitor">
+        <div>ExecutionMonitor for {executionId}</div>
+        {execution?.prompt && (
+          <div data-testid="user-prompt">
+            <div>{execution.prompt}</div>
+          </div>
+        )}
+        {onComplete && <button onClick={onComplete}>Trigger Complete</button>}
+      </div>
+    )
+  },
+  RunIndicator: () => <div data-testid="run-indicator">Running...</div>,
+}))
+
+// Mock delete dialogs
+vi.mock('@/components/executions/DeleteWorktreeDialog', () => ({
+  DeleteWorktreeDialog: ({ isOpen, onConfirm, onClose }: any) =>
+    isOpen ? (
+      <div data-testid="delete-worktree-dialog">
+        <button onClick={onConfirm}>Delete</button>
+        <button onClick={onClose}>Cancel</button>
+      </div>
+    ) : null,
+}))
+
+vi.mock('@/components/executions/DeleteExecutionDialog', () => ({
+  DeleteExecutionDialog: ({ isOpen, onConfirm, onClose }: any) =>
+    isOpen ? (
+      <div data-testid="delete-execution-dialog">
+        <button onClick={onConfirm}>Delete</button>
+        <button onClick={onClose}>Cancel</button>
+      </div>
+    ) : null,
+}))
+
+// Mock TodoTracker
+vi.mock('@/components/executions/TodoTracker', () => ({
+  TodoTracker: ({ todos }: any) => (
+    <div data-testid="todo-tracker">
+      <div>Todo Tracker with {todos.length} todos</div>
+    </div>
+  ),
+}))
+
 const createMockExecution = (overrides: Partial<Execution> = {}): Execution => ({
   id: 'exec-001',
   issue_id: 'i-abc1',

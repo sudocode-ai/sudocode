@@ -437,7 +437,6 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
   const executions = chainData.executions
   const rootExecution = executions[0]
   const lastExecution = executions[executions.length - 1]
-  const isChain = executions.length > 1
 
   // Determine if we can enable follow-up panel (last execution must be terminal)
   const lastExecutionTerminal =
@@ -451,6 +450,8 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
   const canCancelLast = lastExecution.status === 'running'
   const canDeleteWorktree = rootExecution.worktree_path && worktreeExists
 
+  const truncateId = (id: string, length = 8) => id.substring(0, length)
+
   return (
     <TooltipProvider>
       <div className="flex h-full flex-col">
@@ -458,79 +459,84 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
         <div ref={scrollContainerRef} className="flex-1 overflow-auto py-6" onScroll={handleScroll}>
           <div className="relative mx-auto w-full max-w-7xl space-y-4 px-6">
             {/* Execution Chain Header */}
-            <Card className="p-6">
+            <Card className="px-6 pt-6">
               <div className="flex items-start justify-between">
                 <div className="flex-1 space-y-3">
                   {/* Title and Status */}
                   <div className="flex items-center gap-3">
                     <h2 className="text-xl font-semibold">
-                      {isChain ? 'Execution Chain' : 'Execution'}
+                      Execution {truncateId(rootExecution.id)}
                     </h2>
-                    {isChain && (
-                      <Badge variant="outline" className="text-xs">
-                        {executions.length} execution{executions.length > 1 ? 's' : ''}
-                      </Badge>
-                    )}
                     {renderStatusBadge(lastExecution.status)}
                   </div>
 
-                  {/* Metadata Grid - from root execution */}
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Root ID:</span>
-                      <span className="ml-2 font-mono">{rootExecution.id.slice(0, 8)}...</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Issue:</span>
-                      <span className="ml-2 font-mono">{rootExecution.issue_id}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Mode:</span>
-                      <span className="ml-2 capitalize">{rootExecution.mode}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Model:</span>
-                      <span className="ml-2">{rootExecution.model}</span>
-                    </div>
-                    {rootExecution.target_branch && (
-                      <div>
-                        <span className="text-muted-foreground">Base Branch:</span>
-                        <span className="ml-2 font-mono">{rootExecution.target_branch}</span>
+                  {/* Compact Metadata - single or few lines */}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                    {/* Issue */}
+                    {rootExecution.issue_id && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Issue:</span>
+                        <span className="font-mono">{rootExecution.issue_id}</span>
                       </div>
                     )}
+                    {/* Mode */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">Mode:</span>
+                      <span className="capitalize">{rootExecution.mode}</span>
+                    </div>
+                    {/* Model */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">Model:</span>
+                      <span>{rootExecution.model}</span>
+                    </div>
+                    {/* Base Branch */}
+                    {rootExecution.target_branch && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Base:</span>
+                        <span className="font-mono">{rootExecution.target_branch}</span>
+                      </div>
+                    )}
+                    {/* New Branch */}
+                    {rootExecution.branch_name && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Branch:</span>
+                        <span className="font-mono">{rootExecution.branch_name}</span>
+                      </div>
+                    )}
+                    {/* Worktree with status */}
                     {rootExecution.worktree_path && (
-                      <div>
+                      <div className="flex items-center gap-2">
                         <span className="text-muted-foreground">Worktree:</span>
-                        <span className="ml-2 font-mono text-xs">
-                          {rootExecution.worktree_path}
-                        </span>
+                        <span className="font-mono text-xs">{rootExecution.worktree_path}</span>
                         {worktreeExists ? (
-                          <Badge variant="secondary" className="ml-2 text-xs">
+                          <Badge variant="secondary" className="text-xs">
                             exists
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="ml-2 text-xs text-muted-foreground">
+                          <Badge variant="outline" className="text-xs text-muted-foreground">
                             deleted
                           </Badge>
                         )}
                       </div>
                     )}
-                    {lastExecution.session_id && (
-                      <div className="col-span-2">
-                        <span className="text-muted-foreground">Session:</span>
-                        <code className="ml-2 rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                          {lastExecution.session_id}
-                        </code>
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          (use with{' '}
-                          <code className="rounded bg-muted px-1 py-0.5">
-                            claude --resume {lastExecution.session_id}
-                          </code>
-                          )
-                        </span>
-                      </div>
-                    )}
                   </div>
+
+                  {/* Session info - separate line if exists */}
+                  {lastExecution.session_id && (
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">Session:</span>
+                      <code className="ml-2 rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                        {lastExecution.session_id}
+                      </code>
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        (use with{' '}
+                        <code className="rounded bg-muted px-1 py-0.5">
+                          claude --resume {lastExecution.session_id}
+                        </code>
+                        )
+                      </span>
+                    </div>
+                  )}
 
                   {/* Timestamps - from root */}
                   <div className="flex gap-4 text-xs text-muted-foreground">
