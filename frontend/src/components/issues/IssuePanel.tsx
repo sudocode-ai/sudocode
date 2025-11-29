@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
 import {
@@ -17,6 +17,7 @@ import {
   ChevronUp,
   Copy,
   Check,
+  ArrowDown,
 } from 'lucide-react'
 import type { Issue, Relationship, EntityType, RelationshipType, IssueStatus } from '@/types/api'
 import { Card } from '@/components/ui/card'
@@ -146,6 +147,11 @@ export function IssuePanel({
   const lastFeedbackRef = useRef<HTMLDivElement>(null)
   const escPressedWhileRunningRef = useRef(false)
 
+  // Auto-scroll state and refs (enabled when execution is running)
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(false)
+  const [isScrollable, setIsScrollable] = useState(false)
+  const lastScrollTopRef = useRef(0)
+
   // WebSocket for real-time updates
   const { subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
 
@@ -166,6 +172,68 @@ export function IssuePanel({
     if (!latestExecution) return false
     return latestExecution.status === 'running'
   }, [latestExecution])
+
+  // Scroll to bottom helper
+  const scrollToBottom = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    // Smooth scroll to bottom (with fallback for environments without scrollTo)
+    if (container.scrollTo) {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth',
+      })
+    } else {
+      container.scrollTop = container.scrollHeight
+    }
+  }, [])
+
+  // Handle scroll events to detect manual scrolling
+  const handleScroll = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const { scrollTop, scrollHeight, clientHeight } = container
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+
+    // Check if container has scrollable content
+    const hasScrollableContent = scrollHeight > clientHeight
+    setIsScrollable(hasScrollableContent)
+
+    // Consider "at bottom" if within 50px of the bottom
+    const isAtBottom = distanceFromBottom < 50
+
+    // Detect if user scrolled up (manual scroll)
+    const scrolledUp = scrollTop < lastScrollTopRef.current
+    lastScrollTopRef.current = scrollTop
+
+    if (scrolledUp && !isAtBottom) {
+      // User manually scrolled up - disable auto-scroll
+      setShouldAutoScroll(false)
+    } else if (isAtBottom) {
+      // User scrolled to bottom - enable auto-scroll
+      setShouldAutoScroll(true)
+    }
+  }, [])
+
+  // Check if container is scrollable whenever content changes
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const checkScrollable = () => {
+      const hasScrollableContent = container.scrollHeight > container.clientHeight
+      setIsScrollable(hasScrollableContent)
+    }
+
+    checkScrollable()
+    // Also check on resize
+    const resizeObserver = new ResizeObserver(checkScrollable)
+    resizeObserver.observe(container)
+
+    return () => resizeObserver.disconnect()
+  }, [executions])
 
   // Relationship mutations with cache invalidation
   const { createRelationshipAsync, deleteRelationshipAsync } = useRelationshipMutations()
@@ -221,6 +289,63 @@ export function IssuePanel({
       escPressedWhileRunningRef.current = false
     }
   }, [isExecutionRunning])
+
+  // Enable auto-scroll when execution is running
+  useEffect(() => {
+    if (isExecutionRunning) {
+      setShouldAutoScroll(true)
+    }
+  }, [isExecutionRunning])
+
+  // Auto-scroll when executions update and auto-scroll is enabled
+  useEffect(() => {
+    if (!shouldAutoScroll || !isExecutionRunning) return
+
+    // Use setTimeout to ensure DOM has updated
+    setTimeout(() => {
+      scrollToBottom()
+    }, 100)
+  }, [executions, shouldAutoScroll, isExecutionRunning, scrollToBottom])
+
+  // Watch for content changes in scroll container (for real-time execution updates)
+  useEffect(() => {
+    if (!shouldAutoScroll || !isExecutionRunning) return
+
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    let scrollTimeout: NodeJS.Timeout | null = null
+
+    // Use MutationObserver to detect content changes
+    const observer = new MutationObserver(() => {
+      if (!shouldAutoScroll || !isExecutionRunning) return
+
+      // Throttle scroll calls to avoid excessive scrolling
+      if (scrollTimeout) {
+        clearTimeout(scrollTimeout)
+      }
+
+      scrollTimeout = setTimeout(() => {
+        scrollToBottom()
+        scrollTimeout = null
+      }, 100)
+    })
+
+    // Observe the container for changes to its descendants
+    observer.observe(container, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: false,
+    })
+
+    return () => {
+      observer.disconnect()
+      if (scrollTimeout) {
+        clearTimeout(scrollTimeout)
+      }
+    }
+  }, [shouldAutoScroll, isExecutionRunning, scrollToBottom])
 
   // Save internal view mode preference to localStorage
   useEffect(() => {
@@ -370,7 +495,11 @@ export function IssuePanel({
 
       // Determine the last activity item type
       const allActivities = [
-        ...executions.map((e) => ({ ...e, itemType: 'execution' as const, created_at: e.created_at })),
+        ...executions.map((e) => ({
+          ...e,
+          itemType: 'execution' as const,
+          created_at: e.created_at,
+        })),
         ...feedback.map((f) => ({ ...f, itemType: 'feedback' as const, created_at: f.created_at })),
       ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
 
@@ -685,7 +814,7 @@ export function IssuePanel({
           feedback: prompt,
         })
       } else {
-        // New execution path: create fresh execution
+        // New conversation path: create fresh execution
         await executionsApi.create(issue.id, {
           config,
           prompt,
@@ -847,6 +976,7 @@ export function IssuePanel({
         <div
           ref={scrollContainerRef}
           className={`w-full flex-1 overflow-y-auto ${hideTopControls ? 'py-4' : 'py-3'}`}
+          onScroll={handleScroll}
         >
           <div className="mx-auto w-full max-w-7xl space-y-4 px-6">
             {/* Issue ID and Title */}
@@ -1117,7 +1247,7 @@ export function IssuePanel({
                 currentEntityId={issue.id}
                 lastFeedbackRef={lastFeedbackRef}
               />
-              {/* New Execution Button - shown when there's a previous execution and we're in follow-up mode */}
+              {/* New conversation button - shown when there's a previous execution and we're in follow-up mode */}
               {isFollowUpMode && canFollowUp && !forceNewExecution && (
                 <div className="flex justify-center pt-2">
                   <Button
@@ -1127,13 +1257,38 @@ export function IssuePanel({
                     className="gap-2 text-muted-foreground"
                   >
                     <Plus className="h-4 w-4" />
-                    New execution
+                    New conversation
                   </Button>
                 </div>
               )}
               {/* Scroll marker for bottom of activity */}
               <div ref={activityBottomRef} />
             </div>
+
+            {/* Scroll to Bottom FAB - shows when container is scrollable */}
+            {isScrollable && (
+              <div className="fixed bottom-32 right-10 z-10">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => {
+                        setShouldAutoScroll(true)
+                        scrollToBottom()
+                      }}
+                      className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-secondary shadow-lg transition-colors hover:bg-primary hover:text-accent-foreground"
+                      type="button"
+                      data-testid="scroll-to-bottom-fab"
+                      aria-label="Scroll to Bottom"
+                    >
+                      <ArrowDown className="h-5 w-5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">
+                    <p>Scroll to Bottom</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            )}
           </div>
         </div>
 
