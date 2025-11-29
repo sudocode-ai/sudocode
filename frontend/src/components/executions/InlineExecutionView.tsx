@@ -253,7 +253,10 @@ export function InlineExecutionView({
         )
       case 'completed':
         return (
-          <Badge variant="default" className="flex items-center gap-1 bg-green-600">
+          <Badge
+            variant="default"
+            className="flex items-center gap-1 bg-green-600 hover:bg-green-600"
+          >
             <CheckCircle2 className="h-3 w-3" />
             Completed
           </Badge>
