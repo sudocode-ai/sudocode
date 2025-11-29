@@ -594,6 +594,17 @@ Please continue working on this issue, taking into account the feedback above.`;
       newExecution.issue_id || undefined
     );
 
+    // Also broadcast to parent execution channel
+    if (newExecution.parent_execution_id) {
+      broadcastExecutionUpdate(
+        this.projectId,
+        newExecution.parent_execution_id,
+        "updated",
+        newExecution,
+        newExecution.issue_id || undefined
+      );
+    }
+
     return newExecution;
   }
 

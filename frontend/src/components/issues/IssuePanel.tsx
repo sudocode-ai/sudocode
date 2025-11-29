@@ -144,6 +144,7 @@ export function IssuePanel({
   const executionsLoadedRef = useRef(false)
   const activityBottomRef = useRef<HTMLDivElement>(null)
   const lastFeedbackRef = useRef<HTMLDivElement>(null)
+  const escPressedWhileRunningRef = useRef(false)
 
   // WebSocket for real-time updates
   const { subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
@@ -199,6 +200,8 @@ export function IssuePanel({
     setIsFollowUpMode(true)
     // Reset force new execution flag
     setForceNewExecution(false)
+    // Reset ESC pressed flag
+    escPressedWhileRunningRef.current = false
   }, [issue.id])
 
   // Auto-manage follow-up mode based on whether follow-ups are possible
@@ -211,6 +214,13 @@ export function IssuePanel({
       setIsFollowUpMode(true)
     }
   }, [isFollowUpMode, canFollowUp])
+
+  // Reset ESC pressed flag when execution stops running
+  useEffect(() => {
+    if (!isExecutionRunning) {
+      escPressedWhileRunningRef.current = false
+    }
+  }, [isExecutionRunning])
 
   // Save internal view mode preference to localStorage
   useEffect(() => {
@@ -515,6 +525,16 @@ export function IssuePanel({
       if (showDeleteDialog || showAddRelationship) return
 
       if (event.key === 'Escape') {
+        // If execution is running, first ESC press stops the execution
+        if (isExecutionRunning && !escPressedWhileRunningRef.current) {
+          escPressedWhileRunningRef.current = true
+          if (latestExecution) {
+            handleCancel(latestExecution.id)
+          }
+          return
+        }
+
+        // Second ESC press (or no execution running) closes the panel
         onClose()
       }
     }
@@ -523,7 +543,7 @@ export function IssuePanel({
     return () => {
       document.removeEventListener('keydown', handleEscKey)
     }
-  }, [onClose, showDeleteDialog, showAddRelationship])
+  }, [onClose, showDeleteDialog, showAddRelationship, isExecutionRunning, latestExecution])
 
   // Auto-save effect with debounce
   useEffect(() => {

@@ -82,8 +82,11 @@ export function InlineExecutionView({
   // Extract todos from accumulated tool calls
   const allTodos = useMemo(() => buildTodoHistory(allToolCalls), [allToolCalls])
 
-  // Load execution chain
+  // Load execution chain and set up WebSocket subscription
   useEffect(() => {
+    let rootExecutionId: string | null = null
+    let handlerId: string | null = null
+
     const loadChain = async () => {
       setLoading(true)
       setError(null)
@@ -96,6 +99,31 @@ export function InlineExecutionView({
         const rootExecution = data.executions[0]
         if (rootExecution) {
           rootExecutionIdRef.current = rootExecution.id
+          rootExecutionId = rootExecution.id
+
+          // Subscribe to the root execution for updates
+          subscribe('execution', rootExecutionId)
+
+          // Handle execution updates
+          handlerId = `inline-execution-view-${rootExecutionId}`
+          const handleMessage = async (message: any) => {
+            if (
+              message.type === 'execution_created' ||
+              message.type === 'execution_updated' ||
+              message.type === 'execution_status_changed'
+            ) {
+              // Reload the chain to get the latest status
+              try {
+                const data = await executionsApi.getChain(rootExecutionId!)
+                setChainData(data)
+              } catch (err) {
+                // Don't show error on WebSocket reload failures - keep existing data
+                console.error('Failed to reload execution chain:', err)
+              }
+            }
+          }
+
+          addMessageHandler(handlerId, handleMessage)
         }
 
         // Check worktree status for the root execution
@@ -116,40 +144,15 @@ export function InlineExecutionView({
     }
 
     loadChain()
-  }, [executionId])
 
-  // Subscribe to WebSocket updates for the root execution to detect status changes and new follow-ups
-  useEffect(() => {
-    const rootExecutionId = rootExecutionIdRef.current
-    if (!rootExecutionId) return
-
-    // Subscribe to the root execution
-    subscribe('execution', rootExecutionId)
-
-    // Handle execution updates
-    const handlerId = `inline-execution-view-${rootExecutionId}`
-    const handleMessage = async (message: any) => {
-      if (
-        message.type === 'execution_created' ||
-        message.type === 'execution_updated' ||
-        message.type === 'execution_status_changed'
-      ) {
-        // Reload the chain to get the latest status
-        try {
-          const data = await executionsApi.getChain(rootExecutionId)
-          setChainData(data)
-        } catch (err) {
-          // Don't show error on WebSocket reload failures - keep existing data
-          console.error('Failed to reload execution chain:', err)
-        }
-      }
-    }
-
-    addMessageHandler(handlerId, handleMessage)
-
+    // Cleanup function
     return () => {
-      removeMessageHandler(handlerId)
-      unsubscribe('execution', rootExecutionId)
+      if (handlerId) {
+        removeMessageHandler(handlerId)
+      }
+      if (rootExecutionId) {
+        unsubscribe('execution', rootExecutionId)
+      }
     }
   }, [executionId, subscribe, unsubscribe, addMessageHandler, removeMessageHandler])
 
