@@ -431,7 +431,10 @@ export function AgentConfigPanel({
       console.warn('Config is invalid, not saving to localStorage')
     }
 
-    onStart(config, prompt, selectedAgentType, forceNewExecution)
+    // Use default prompt for first messages when no prompt is provided
+    const finalPrompt = prompt.trim() || (!isFollowUp ? `Implement issue [[${issueId}]]` : '')
+
+    onStart(config, finalPrompt, selectedAgentType, forceNewExecution)
     setPrompt('') // Clear the prompt after submission
     setForceNewExecution(false) // Reset the flag after submission
   }
@@ -458,7 +461,9 @@ export function AgentConfigPanel({
     // Shift+Enter creates newline (default behavior, no need to handle)
   }
 
-  const canStart = !loading && prompt.trim().length > 0 && !disabled
+  // Allow empty prompts for first messages (not follow-ups)
+  // For follow-ups, require a prompt
+  const canStart = !loading && (prompt.trim().length > 0 || !isFollowUp) && !disabled
 
   return (
     <div className="space-y-3 p-4">
@@ -483,7 +488,7 @@ export function AgentConfigPanel({
                       : allowModeToggle
                         ? 'Continue the previous conversation... (ctrl+k for new, @ for context)'
                         : 'Continue the previous conversation... (@ for context)'
-                    : 'Enter prompt for the agent... (@ for context)')
+                    : 'Add additional context (optional) for the agent... (@ for context)')
           }
           disabled={loading || disabled}
           className="max-h-[300px] min-h-0 resize-none overflow-y-auto border-none bg-muted/80 py-2 text-sm shadow-none transition-[height] duration-100 focus-visible:ring-0 focus-visible:ring-offset-0"

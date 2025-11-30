@@ -102,7 +102,11 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Enter prompt for the agent... (@ for context)')).toBeInTheDocument()
+        expect(
+          screen.getByPlaceholderText(
+            'Add additional context (optional) for the agent... (@ for context)'
+          )
+        ).toBeInTheDocument()
       })
     })
 
@@ -305,7 +309,9 @@ describe('AgentConfigPanel', () => {
 
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
-      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent... (@ for context)')
+      const textarea = await screen.findByPlaceholderText(
+        'Add additional context (optional) for the agent... (@ for context)'
+      )
       await user.type(textarea, 'Test prompt')
 
       expect(textarea).toHaveValue('Test prompt')
@@ -326,14 +332,45 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} isRunning />)
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Execution is running (esc to cancel)')).toBeInTheDocument()
+        expect(
+          screen.getByPlaceholderText('Execution is running (esc to cancel)')
+        ).toBeInTheDocument()
       })
     })
   })
 
   describe('Run Button', () => {
-    it('should be disabled when prompt is empty', async () => {
+    it('should be enabled when prompt is empty for first messages', async () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        const runButton = screen.getByRole('button', { name: /Submit/i })
+        expect(runButton).not.toBeDisabled()
+      })
+    })
+
+    it('should be disabled when prompt is empty for follow-ups', async () => {
+      const lastExecution = {
+        id: 'exec-parent-123',
+        mode: 'worktree',
+        model: 'claude-sonnet-4',
+        target_branch: 'main',
+        agent_type: 'claude-code',
+        config: {
+          mode: 'worktree' as const,
+          baseBranch: 'main',
+          cleanupMode: 'manual' as const,
+        },
+      }
+
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          lastExecution={lastExecution}
+        />
+      )
 
       await waitFor(() => {
         const runButton = screen.getByRole('button', { name: /Submit/i })
@@ -346,7 +383,9 @@ describe('AgentConfigPanel', () => {
 
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
-      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent... (@ for context)')
+      const textarea = await screen.findByPlaceholderText(
+        'Add additional context (optional) for the agent... (@ for context)'
+      )
       await user.type(textarea, 'Test prompt')
 
       await waitFor(() => {
@@ -362,7 +401,9 @@ describe('AgentConfigPanel', () => {
         <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} disabled={true} />
       )
 
-      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent... (@ for context)')
+      const textarea = await screen.findByPlaceholderText(
+        'Add additional context (optional) for the agent... (@ for context)'
+      )
       await user.type(textarea, 'Test prompt')
 
       const runButton = screen.getByRole('button', { name: /Submit/i })
@@ -374,7 +415,9 @@ describe('AgentConfigPanel', () => {
 
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
-      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent... (@ for context)')
+      const textarea = await screen.findByPlaceholderText(
+        'Add additional context (optional) for the agent... (@ for context)'
+      )
       await user.type(textarea, 'Test prompt')
 
       const runButton = screen.getByRole('button', { name: /Submit/i })
@@ -422,7 +465,9 @@ describe('AgentConfigPanel', () => {
       await user.click(cursorOption)
 
       // Enter prompt
-      const textarea = screen.getByPlaceholderText('Enter prompt for the agent... (@ for context)')
+      const textarea = screen.getByPlaceholderText(
+        'Add additional context (optional) for the agent... (@ for context)'
+      )
       await user.type(textarea, 'Test prompt')
 
       // Click run
@@ -430,6 +475,67 @@ describe('AgentConfigPanel', () => {
       await user.click(runButton)
 
       expect(mockOnStart).toHaveBeenCalledWith(expect.any(Object), 'Test prompt', 'cursor', false)
+    })
+
+    it('should use default prompt "Implement issue [[issueId]]" when submitting empty prompt for first message', async () => {
+      const user = userEvent.setup()
+
+      // Clear localStorage to ensure clean state
+      localStorage.clear()
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test123" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        const runButton = screen.getByRole('button', { name: /Submit/i })
+        expect(runButton).not.toBeDisabled()
+      })
+
+      const runButton = screen.getByRole('button', { name: /Submit/i })
+      await user.click(runButton)
+
+      expect(mockOnStart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: 'worktree',
+          cleanupMode: 'manual',
+        }),
+        'Implement issue [[i-test123]]',
+        expect.any(String), // Allow any agent type since it might vary based on test order
+        false
+      )
+    })
+
+    it('should not use default prompt for follow-ups with empty prompt', async () => {
+      userEvent.setup()
+
+      const lastExecution = {
+        id: 'exec-parent-123',
+        mode: 'worktree',
+        model: 'claude-sonnet-4',
+        target_branch: 'main',
+        agent_type: 'claude-code',
+        config: {
+          mode: 'worktree' as const,
+          baseBranch: 'main',
+          cleanupMode: 'manual' as const,
+        },
+      }
+
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          isFollowUp
+          lastExecution={lastExecution}
+        />
+      )
+
+      await waitFor(() => {
+        const runButton = screen.getByRole('button', { name: /Submit/i })
+        // Should be disabled for empty follow-up prompts
+        expect(runButton).toBeDisabled()
+      })
+
+      // Can't click disabled button, so no need to test onStart call
     })
   })
 
@@ -440,7 +546,11 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Enter prompt for the agent... (@ for context)')).toBeInTheDocument()
+        expect(
+          screen.getByPlaceholderText(
+            'Add additional context (optional) for the agent... (@ for context)'
+          )
+        ).toBeInTheDocument()
       })
 
       // Find settings button by looking for all buttons and finding the one with Settings icon
@@ -505,11 +615,7 @@ describe('AgentConfigPanel', () => {
       }
 
       renderWithProviders(
-        <AgentConfigPanel
-          issueId="i-test1"
-          onStart={mockOnStart}
-          lastExecution={lastExecution}
-        />
+        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} lastExecution={lastExecution} />
       )
 
       await waitFor(() => {
@@ -523,7 +629,9 @@ describe('AgentConfigPanel', () => {
 
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
-      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent... (@ for context)')
+      const textarea = await screen.findByPlaceholderText(
+        'Add additional context (optional) for the agent... (@ for context)'
+      )
       await user.type(textarea, 'Test prompt')
 
       const runButton = screen.getByRole('button', { name: /Submit/i })
@@ -632,7 +740,9 @@ describe('AgentConfigPanel', () => {
 
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
-      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent... (@ for context)')
+      const textarea = await screen.findByPlaceholderText(
+        'Add additional context (optional) for the agent... (@ for context)'
+      )
       await user.type(textarea, 'Test prompt')
 
       // Manually corrupt the config state (simulating a bug or future schema change)
@@ -668,11 +778,7 @@ describe('AgentConfigPanel', () => {
       }
 
       renderWithProviders(
-        <AgentConfigPanel
-          issueId="i-test1"
-          onStart={mockOnStart}
-          lastExecution={lastExecution}
-        />
+        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} lastExecution={lastExecution} />
       )
 
       await waitFor(() => {
@@ -743,7 +849,9 @@ describe('AgentConfigPanel', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText('Continue the previous conversation... (ctrl+k for new, @ for context)')
+          screen.getByPlaceholderText(
+            'Continue the previous conversation... (ctrl+k for new, @ for context)'
+          )
         ).toBeInTheDocument()
       })
     })
@@ -968,7 +1076,9 @@ describe('AgentConfigPanel', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText('Start a new execution... (ctrl+k to continue previous, @ for context)')
+          screen.getByPlaceholderText(
+            'Start a new execution... (ctrl+k to continue previous, @ for context)'
+          )
         ).toBeInTheDocument()
       })
     })
@@ -1018,7 +1128,9 @@ describe('AgentConfigPanel', () => {
         />
       )
 
-      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent... (@ for context)')
+      const textarea = await screen.findByPlaceholderText(
+        'Add additional context (optional) for the agent... (@ for context)'
+      )
 
       await user.click(textarea)
       await user.keyboard('{Control>}k{/Control}')
@@ -1072,7 +1184,9 @@ describe('AgentConfigPanel', () => {
 
       // Should not show the ctrl+k hint
       expect(
-        screen.queryByPlaceholderText('Continue the previous conversation... (ctrl+k for new, @ for context)')
+        screen.queryByPlaceholderText(
+          'Continue the previous conversation... (ctrl+k for new, @ for context)'
+        )
       ).not.toBeInTheDocument()
     })
 
@@ -1096,7 +1210,9 @@ describe('AgentConfigPanel', () => {
 
       // Should not show the ctrl+k hint
       expect(
-        screen.queryByPlaceholderText('Start a new execution... (ctrl+k to continue previous, @ for context)')
+        screen.queryByPlaceholderText(
+          'Start a new execution... (ctrl+k to continue previous, @ for context)'
+        )
       ).not.toBeInTheDocument()
     })
 
