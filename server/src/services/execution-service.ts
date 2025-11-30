@@ -159,8 +159,13 @@ export class ExecutionService {
     }
 
     // 3. Resolve prompt references for execution (done after storing original)
+    // Pass the issue ID so the issue content is automatically included even if not explicitly mentioned
     const resolver = new PromptResolver(this.db);
-    const { resolvedPrompt, errors } = await resolver.resolve(prompt);
+    const { resolvedPrompt, errors } = await resolver.resolve(
+      prompt,
+      new Set(),
+      issueId
+    );
     if (errors.length > 0) {
       console.warn(`[ExecutionService] Prompt resolution warnings:`, errors);
     }
@@ -364,14 +369,21 @@ ${feedback}`;
     }
 
     // Collect already-expanded entities from parent execution chain
-    const alreadyExpandedIds = await this.collectExpandedEntitiesFromChain(executionId);
+    const alreadyExpandedIds =
+      await this.collectExpandedEntitiesFromChain(executionId);
 
     // Resolve prompt references for execution (done after storing original)
     // Skip entities that were already expanded in parent executions
     const resolver = new PromptResolver(this.db);
-    const { resolvedPrompt, errors } = await resolver.resolve(followUpPrompt, alreadyExpandedIds);
+    const { resolvedPrompt, errors } = await resolver.resolve(
+      followUpPrompt,
+      alreadyExpandedIds
+    );
     if (errors.length > 0) {
-      console.warn(`[ExecutionService] Follow-up prompt resolution warnings:`, errors);
+      console.warn(
+        `[ExecutionService] Follow-up prompt resolution warnings:`,
+        errors
+      );
     }
 
     // 4. Use executor wrapper with session resumption
@@ -793,9 +805,11 @@ ${feedback}`;
 
       // Resolve the prompt to extract what entities were referenced
       // Pass empty set so we expand everything in this pass (just to collect IDs)
+      // Pass the execution's issue_id as implicit to track if it was auto-included
       const { expandedEntityIds } = await resolver.resolve(
         execution.prompt,
-        new Set()
+        new Set(),
+        execution.issue_id || undefined
       );
 
       // Add all expanded entity IDs from this execution
