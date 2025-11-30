@@ -15,6 +15,8 @@ import { execSync } from "child_process";
 import type {
   ExecutionChangesResult,
   FileChangeStat,
+  ChangesSnapshot,
+  Execution,
 } from "@sudocode-ai/types";
 import { getExecution } from "./executions.js";
 import { existsSync } from "fs";
@@ -31,8 +33,11 @@ export class ExecutionChangesService {
   /**
    * Get code changes for an execution
    *
+   * For execution chains (follow-ups), automatically calculates accumulated changes
+   * from the root execution to the current execution.
+   *
    * @param executionId - Execution ID
-   * @returns ExecutionChangesResult with files and summary, or unavailable reason
+   * @returns ExecutionChangesResult with both captured and current states
    */
   async getChanges(executionId: string): Promise<ExecutionChangesResult> {
     // 1. Load execution from database
@@ -52,29 +57,163 @@ export class ExecutionChangesService {
       };
     }
 
-    // 3. Check for before_commit
-    if (!execution.before_commit) {
+    // 3. Find root execution (for execution chains)
+    const rootExecution = this.getRootExecution(execution);
+    const beforeCommit = rootExecution.before_commit || execution.before_commit;
+
+    // 3a. Validate before_commit exists (required for calculating any changes)
+    if (!beforeCommit) {
       return {
         available: false,
         reason: "missing_commits",
       };
     }
 
-    // 4. Determine which diff scenario to use
+    // 4. Get branch and worktree information
+    const branchName = execution.branch_name;
+    const worktreeExists = execution.worktree_path
+      ? existsSync(execution.worktree_path)
+      : false;
+
+    // 5. Check if branch exists and get current HEAD
+    // Always check the main repo for branch info (branches exist in main repo, not just worktrees)
+    let branchExists = false;
+    let currentBranchHead: string | null = null;
+
+    if (branchName) {
+      const branchInfo = this.getBranchInfo(branchName, this.repoPath);
+      branchExists = branchInfo.exists;
+      currentBranchHead = branchInfo.head;
+    }
+
+    // 6. Compute captured state (from root to current execution)
+    let captured: ChangesSnapshot | undefined;
     const hasCommittedChanges =
+      beforeCommit &&
       execution.after_commit &&
-      execution.after_commit !== execution.before_commit;
+      execution.after_commit !== beforeCommit;
 
     if (hasCommittedChanges) {
-      // Scenario A: Committed changes
-      return this.getCommittedChanges(
-        execution.before_commit,
+      // Captured: committed changes (requires beforeCommit from root)
+      const capturedResult = await this.getCommittedChanges(
+        beforeCommit!,
         execution.after_commit!
       );
+      if (!capturedResult.available) {
+        // Preserve specific error reason (commits_not_found, etc.)
+        return capturedResult;
+      }
+      if (capturedResult.changes) {
+        captured = {
+          files: capturedResult.changes.files,
+          summary: capturedResult.changes.summary,
+          commitRange: capturedResult.commitRange!,
+          uncommitted: false,
+        };
+      }
     } else {
-      // Scenario B: Uncommitted changes (or no changes)
-      return this.getUncommittedChanges(execution.worktree_path);
+      // Captured: uncommitted changes (or no changes at completion)
+      const capturedResult = await this.getUncommittedChanges(
+        execution.worktree_path
+      );
+      if (!capturedResult.available) {
+        // Preserve specific error reason (worktree_deleted_with_uncommitted_changes, etc.)
+        return capturedResult;
+      }
+      if (capturedResult.changes) {
+        captured = {
+          files: capturedResult.changes.files,
+          summary: capturedResult.changes.summary,
+          commitRange: null,
+          uncommitted: true,
+        };
+      }
     }
+
+    // 7. Compute current state (if branch exists and differs from captured)
+    // Requires beforeCommit to calculate diff
+    // Note: Use main repo for git operations (worktree may be deleted)
+    let current: ChangesSnapshot | undefined;
+    let additionalCommits = 0;
+
+    if (branchExists && currentBranchHead && beforeCommit) {
+      // Check if current HEAD is different from captured after_commit
+      const isDifferent = currentBranchHead !== execution.after_commit;
+
+      if (isDifferent && execution.after_commit) {
+        // Count commits between captured and current
+        // Always use main repo path (worktree may be deleted)
+        additionalCommits = this.countCommitsBetween(
+          execution.after_commit,
+          currentBranchHead,
+          this.repoPath
+        );
+
+        // Compute current changes (from root to current HEAD)
+        const currentResult = await this.getCommittedChanges(
+          beforeCommit,
+          currentBranchHead
+        );
+
+        if (currentResult.available && currentResult.changes) {
+          current = {
+            files: currentResult.changes.files,
+            summary: currentResult.changes.summary,
+            commitRange: {
+              before: beforeCommit,
+              after: currentBranchHead,
+            },
+            uncommitted: false,
+          };
+        }
+      }
+    }
+
+    // 8. Return result with both states
+    if (!captured) {
+      return {
+        available: false,
+        reason: "git_error",
+      };
+    }
+
+    return {
+      available: true,
+      captured,
+      current,
+      branchName,
+      branchExists,
+      worktreeExists,
+      additionalCommits,
+      // Legacy compatibility
+      changes: captured,
+      commitRange: captured.commitRange,
+      uncommitted: captured.uncommitted,
+    };
+  }
+
+  /**
+   * Get root execution by traversing parent_execution_id chain
+   *
+   * For execution chains (follow-ups), this finds the original root execution.
+   * This allows us to calculate accumulated changes from the start of the chain.
+   */
+  private getRootExecution(execution: Execution): Execution {
+    let current = execution;
+    let maxDepth = 100; // Safety limit to prevent infinite loops
+    let depth = 0;
+
+    while (current.parent_execution_id && depth < maxDepth) {
+      const parent = getExecution(this.db, current.parent_execution_id);
+      if (!parent) {
+        // Parent not found, return current as root
+        break;
+      }
+      current = parent;
+      depth++;
+    }
+
+    return current;
   }
 
   /**
@@ -122,10 +261,18 @@ export class ExecutionChangesService {
         changes: {
           files,
           summary: this.calculateSummary(files),
+          commitRange: {
+            before: beforeCommit,
+            after: afterCommit,
+          },
+          uncommitted: false,
         },
       };
     } catch (error) {
-      console.error("[ExecutionChangesService] Error getting committed changes:", error);
+      console.error(
+        "[ExecutionChangesService] Error getting committed changes:",
+        error
+      );
       return {
         available: false,
         reason: "git_error",
@@ -168,6 +315,8 @@ export class ExecutionChangesService {
               totalAdditions: 0,
               totalDeletions: 0,
             },
+            commitRange: null,
+            uncommitted: true,
           },
         };
       }
@@ -179,10 +328,15 @@ export class ExecutionChangesService {
         changes: {
           files,
           summary: this.calculateSummary(files),
+          commitRange: null,
+          uncommitted: true,
         },
       };
     } catch (error) {
-      console.error("[ExecutionChangesService] Error getting uncommitted changes:", error);
+      console.error(
+        "[ExecutionChangesService] Error getting uncommitted changes:",
+        error
+      );
       return {
         available: false,
         reason: "git_error",
@@ -236,7 +390,15 @@ export class ExecutionChangesService {
     const statusData = this.parseNameStatus(nameStatusOutput);
 
     // Combine numstat and status data
-    return this.combineFileData(numstatData, statusData);
+    let files = this.combineFileData(numstatData, statusData);
+
+    // For uncommitted changes, also include untracked files
+    if (!beforeCommit && !afterCommit) {
+      const untrackedFiles = this.getUntrackedFiles(workDir);
+      files = files.concat(untrackedFiles);
+    }
+
+    return files;
   }
 
   /**
@@ -245,7 +407,9 @@ export class ExecutionChangesService {
    * Format: "additions\tdeletions\tfilepath"
    * Binary files: "-\t-\tfilepath"
    */
-  private parseNumstat(output: string): Map<string, { additions: number; deletions: number }> {
+  private parseNumstat(
+    output: string
+  ): Map<string, { additions: number; deletions: number }> {
     const data = new Map<string, { additions: number; deletions: number }>();
 
     if (!output) {
@@ -275,8 +439,8 @@ export class ExecutionChangesService {
    * Format: "STATUS\tfilepath"
    * Renamed files: "R100\toldpath\tnewpath"
    */
-  private parseNameStatus(output: string): Map<string, 'A' | 'M' | 'D' | 'R'> {
-    const data = new Map<string, 'A' | 'M' | 'D' | 'R'>();
+  private parseNameStatus(output: string): Map<string, "A" | "M" | "D" | "R"> {
+    const data = new Map<string, "A" | "M" | "D" | "R">();
 
     if (!output) {
       return data;
@@ -290,7 +454,7 @@ export class ExecutionChangesService {
       if (parts.length < 2) continue;
 
       const statusCode = parts[0];
-      let status: 'A' | 'M' | 'D' | 'R';
+      let status: "A" | "M" | "D" | "R";
 
       if (statusCode.startsWith("A")) {
         status = "A";
@@ -318,7 +482,7 @@ export class ExecutionChangesService {
    */
   private combineFileData(
     numstatData: Map<string, { additions: number; deletions: number }>,
-    statusData: Map<string, 'A' | 'M' | 'D' | 'R'>
+    statusData: Map<string, "A" | "M" | "D" | "R">
   ): FileChangeStat[] {
     const files: FileChangeStat[] = [];
 
@@ -350,5 +514,112 @@ export class ExecutionChangesService {
       totalAdditions: files.reduce((sum, file) => sum + file.additions, 0),
       totalDeletions: files.reduce((sum, file) => sum + file.deletions, 0),
     };
+  }
+
+  /**
+   * Get branch information (existence and current HEAD)
+   */
+  private getBranchInfo(
+    branchName: string,
+    workDir: string
+  ): { exists: boolean; head: string | null } {
+    try {
+      // Try to get the commit SHA for the branch
+      const head = execSync(`git rev-parse ${branchName}`, {
+        cwd: workDir,
+        encoding: "utf-8",
+        stdio: "pipe",
+      }).trim();
+
+      return {
+        exists: true,
+        head,
+      };
+    } catch (error) {
+      // Branch doesn't exist
+      return {
+        exists: false,
+        head: null,
+      };
+    }
+  }
+
+  /**
+   * Count commits between two commit SHAs
+   */
+  private countCommitsBetween(
+    fromCommit: string,
+    toCommit: string,
+    workDir: string
+  ): number {
+    try {
+      const output = execSync(
+        `git rev-list --count ${fromCommit}..${toCommit}`,
+        {
+          cwd: workDir,
+          encoding: "utf-8",
+          stdio: "pipe",
+        }
+      ).trim();
+
+      return parseInt(output, 10) || 0;
+    } catch (error) {
+      console.error("[ExecutionChangesService] Error counting commits:", error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get untracked files (respecting .gitignore)
+   */
+  private getUntrackedFiles(workDir: string): FileChangeStat[] {
+    try {
+      // Get untracked files, excluding .gitignore patterns
+      const output = execSync("git ls-files --others --exclude-standard", {
+        cwd: workDir,
+        encoding: "utf-8",
+        stdio: "pipe",
+      }).trim();
+
+      if (!output) {
+        return [];
+      }
+
+      const files: FileChangeStat[] = [];
+      const lines = output.split("\n");
+
+      for (const filePath of lines) {
+        if (!filePath.trim()) continue;
+
+        // Count lines in the file for additions
+        const fullPath = `${workDir}/${filePath}`;
+        let additions = 0;
+
+        try {
+          if (existsSync(fullPath)) {
+            const content = require("fs").readFileSync(fullPath, "utf-8");
+            additions = content.split("\n").length;
+          }
+        } catch (error) {
+          // If we can't read the file (binary, etc.), just set additions to 1
+          additions = 1;
+        }
+
+        files.push({
+          path: filePath,
+          additions,
+          deletions: 0,
+          status: "A", // Untracked files are "Added"
+        });
+      }
+
+      return files;
+    } catch (error) {
+      console.error(
+        "[ExecutionChangesService] Error getting untracked files:",
+        error
+      );
+      return [];
+    }
   }
 }

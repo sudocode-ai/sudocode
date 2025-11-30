@@ -62,7 +62,9 @@ describe('CodeChangesPanel', () => {
 
       render(<CodeChangesPanel executionId="exec-123" />)
 
-      expect(screen.getByText('Changes unavailable: Commit information not captured')).toBeInTheDocument()
+      expect(
+        screen.getByText('Changes unavailable: Commit information not captured')
+      ).toBeInTheDocument()
     })
 
     it('should display message for commits not found', () => {
@@ -79,7 +81,9 @@ describe('CodeChangesPanel', () => {
 
       render(<CodeChangesPanel executionId="exec-123" />)
 
-      expect(screen.getByText('Changes unavailable: Commits no longer exist in repository')).toBeInTheDocument()
+      expect(
+        screen.getByText('Changes unavailable: Commits no longer exist in repository')
+      ).toBeInTheDocument()
     })
 
     it('should display message for incomplete execution', () => {
@@ -96,7 +100,9 @@ describe('CodeChangesPanel', () => {
 
       render(<CodeChangesPanel executionId="exec-123" />)
 
-      expect(screen.getByText('Changes unavailable: Execution did not complete successfully')).toBeInTheDocument()
+      expect(
+        screen.getByText('Changes unavailable: Execution did not complete successfully')
+      ).toBeInTheDocument()
     })
 
     it('should display message for git error', () => {
@@ -157,7 +163,7 @@ describe('CodeChangesPanel', () => {
     it('should display file list with status badges', () => {
       const data: ExecutionChangesResult = {
         available: true,
-        changes: {
+        captured: {
           files: [
             { path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' },
             { path: 'src/file2.ts', additions: 20, deletions: 0, status: 'A' },
@@ -169,6 +175,8 @@ describe('CodeChangesPanel', () => {
             totalAdditions: 35,
             totalDeletions: 23,
           },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
         },
       }
 
@@ -196,13 +204,15 @@ describe('CodeChangesPanel', () => {
     it('should display file statistics (additions and deletions)', () => {
       const data: ExecutionChangesResult = {
         available: true,
-        changes: {
+        captured: {
           files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
           summary: {
             totalFiles: 1,
             totalAdditions: 10,
             totalDeletions: 5,
           },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
         },
       }
 
@@ -222,13 +232,15 @@ describe('CodeChangesPanel', () => {
     it('should not display statistics for files with zero changes', () => {
       const data: ExecutionChangesResult = {
         available: true,
-        changes: {
+        captured: {
           files: [{ path: 'src/file1.ts', additions: 0, deletions: 0, status: 'M' }],
           summary: {
             totalFiles: 1,
             totalAdditions: 0,
             totalDeletions: 0,
           },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
         },
       }
 
@@ -251,7 +263,7 @@ describe('CodeChangesPanel', () => {
     it('should display summary statistics in header', () => {
       const data: ExecutionChangesResult = {
         available: true,
-        changes: {
+        captured: {
           files: [
             { path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' },
             { path: 'src/file2.ts', additions: 20, deletions: 8, status: 'A' },
@@ -261,6 +273,8 @@ describe('CodeChangesPanel', () => {
             totalAdditions: 30,
             totalDeletions: 13,
           },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
         },
       }
 
@@ -280,13 +294,15 @@ describe('CodeChangesPanel', () => {
     it('should use singular form for single file', () => {
       const data: ExecutionChangesResult = {
         available: true,
-        changes: {
+        captured: {
           files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
           summary: {
             totalFiles: 1,
             totalAdditions: 10,
             totalDeletions: 5,
           },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
         },
       }
 
@@ -304,13 +320,15 @@ describe('CodeChangesPanel', () => {
     it('should not display summary stats when zero', () => {
       const data: ExecutionChangesResult = {
         available: true,
-        changes: {
+        captured: {
           files: [{ path: 'src/file1.ts', additions: 0, deletions: 0, status: 'M' }],
           summary: {
             totalFiles: 1,
             totalAdditions: 0,
             totalDeletions: 0,
           },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
         },
       }
 
@@ -334,13 +352,15 @@ describe('CodeChangesPanel', () => {
       const data: ExecutionChangesResult = {
         available: true,
         uncommitted: true,
-        changes: {
+        captured: {
           files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
           summary: {
             totalFiles: 1,
             totalAdditions: 10,
             totalDeletions: 5,
           },
+          commitRange: null,
+          uncommitted: true,
         },
       }
 
@@ -359,13 +379,15 @@ describe('CodeChangesPanel', () => {
       const data: ExecutionChangesResult = {
         available: true,
         uncommitted: true,
-        changes: {
+        captured: {
           files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
           summary: {
             totalFiles: 1,
             totalAdditions: 10,
             totalDeletions: 5,
           },
+          commitRange: null,
+          uncommitted: true,
         },
       }
 
@@ -378,7 +400,9 @@ describe('CodeChangesPanel', () => {
       render(<CodeChangesPanel executionId="exec-123" />)
 
       expect(
-        screen.getByText(/These changes were not committed. They may be lost if the worktree was deleted./)
+        screen.getByText(
+          /These changes were not committed. They may be lost if the worktree was deleted./
+        )
       ).toBeInTheDocument()
     })
 
@@ -386,13 +410,15 @@ describe('CodeChangesPanel', () => {
       const data: ExecutionChangesResult = {
         available: true,
         uncommitted: false,
-        changes: {
+        captured: {
           files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
           summary: {
             totalFiles: 1,
             totalAdditions: 10,
             totalDeletions: 5,
           },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
         },
       }
 
@@ -411,13 +437,15 @@ describe('CodeChangesPanel', () => {
       const data: ExecutionChangesResult = {
         available: true,
         uncommitted: true,
-        changes: {
+        captured: {
           files: [],
           summary: {
             totalFiles: 0,
             totalAdditions: 0,
             totalDeletions: 0,
           },
+          commitRange: null,
+          uncommitted: true,
         },
       }
 
@@ -429,9 +457,7 @@ describe('CodeChangesPanel', () => {
 
       render(<CodeChangesPanel executionId="exec-123" />)
 
-      expect(
-        screen.queryByText(/These changes were not committed/)
-      ).not.toBeInTheDocument()
+      expect(screen.queryByText(/These changes were not committed/)).not.toBeInTheDocument()
     })
   })
 
@@ -439,13 +465,15 @@ describe('CodeChangesPanel', () => {
     it('should display message when no files changed', () => {
       const data: ExecutionChangesResult = {
         available: true,
-        changes: {
+        captured: {
           files: [],
           summary: {
             totalFiles: 0,
             totalAdditions: 0,
             totalDeletions: 0,
           },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
         },
       }
 
@@ -472,6 +500,241 @@ describe('CodeChangesPanel', () => {
       const { container } = render(<CodeChangesPanel executionId="exec-123" />)
 
       expect(container.firstChild).toBeNull()
+    })
+  })
+
+  describe('Deleted Resources', () => {
+    it('should display "Branch deleted" badge when branch is deleted', () => {
+      const data: ExecutionChangesResult = {
+        available: true,
+        branchName: 'deleted-branch',
+        branchExists: false,
+        captured: {
+          files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
+          summary: {
+            totalFiles: 1,
+            totalAdditions: 10,
+            totalDeletions: 5,
+          },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
+        },
+      }
+
+      mockUseExecutionChanges.mockReturnValue({
+        data,
+        loading: false,
+        error: null,
+      })
+
+      render(<CodeChangesPanel executionId="exec-123" />)
+
+      expect(screen.getByText('Branch deleted')).toBeInTheDocument()
+    })
+
+    it('should display "Worktree deleted" badge when worktree is deleted', () => {
+      const data: ExecutionChangesResult = {
+        available: true,
+        worktreeExists: false,
+        captured: {
+          files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
+          summary: {
+            totalFiles: 1,
+            totalAdditions: 10,
+            totalDeletions: 5,
+          },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
+        },
+      }
+
+      mockUseExecutionChanges.mockReturnValue({
+        data,
+        loading: false,
+        error: null,
+      })
+
+      render(<CodeChangesPanel executionId="exec-123" />)
+
+      expect(screen.getByText('Worktree deleted')).toBeInTheDocument()
+    })
+
+    it('should display both badges when both branch and worktree are deleted', () => {
+      const data: ExecutionChangesResult = {
+        available: true,
+        branchName: 'deleted-branch',
+        branchExists: false,
+        worktreeExists: false,
+        captured: {
+          files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
+          summary: {
+            totalFiles: 1,
+            totalAdditions: 10,
+            totalDeletions: 5,
+          },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
+        },
+      }
+
+      mockUseExecutionChanges.mockReturnValue({
+        data,
+        loading: false,
+        error: null,
+      })
+
+      render(<CodeChangesPanel executionId="exec-123" />)
+
+      expect(screen.getByText('Branch deleted')).toBeInTheDocument()
+      expect(screen.getByText('Worktree deleted')).toBeInTheDocument()
+    })
+
+    it('should not display badges when branch and worktree exist', () => {
+      const data: ExecutionChangesResult = {
+        available: true,
+        branchName: 'feature-branch',
+        branchExists: true,
+        worktreeExists: true,
+        captured: {
+          files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
+          summary: {
+            totalFiles: 1,
+            totalAdditions: 10,
+            totalDeletions: 5,
+          },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
+        },
+      }
+
+      mockUseExecutionChanges.mockReturnValue({
+        data,
+        loading: false,
+        error: null,
+      })
+
+      render(<CodeChangesPanel executionId="exec-123" />)
+
+      expect(screen.queryByText('Branch deleted')).not.toBeInTheDocument()
+      expect(screen.queryByText('Worktree deleted')).not.toBeInTheDocument()
+    })
+
+    it('should display additional commits badge when current state exists', () => {
+      const data: ExecutionChangesResult = {
+        available: true,
+        branchName: 'feature-branch',
+        branchExists: true,
+        additionalCommits: 3,
+        captured: {
+          files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
+          summary: {
+            totalFiles: 1,
+            totalAdditions: 10,
+            totalDeletions: 5,
+          },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
+        },
+        current: {
+          files: [
+            { path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' },
+            { path: 'src/file2.ts', additions: 5, deletions: 0, status: 'A' },
+          ],
+          summary: {
+            totalFiles: 2,
+            totalAdditions: 15,
+            totalDeletions: 5,
+          },
+          commitRange: { before: 'abc123', after: 'ghi789' },
+          uncommitted: false,
+        },
+      }
+
+      mockUseExecutionChanges.mockReturnValue({
+        data,
+        loading: false,
+        error: null,
+      })
+
+      render(<CodeChangesPanel executionId="exec-123" />)
+
+      expect(screen.getByText('+3 commits since completion')).toBeInTheDocument()
+    })
+
+    it('should use singular form for 1 additional commit', () => {
+      const data: ExecutionChangesResult = {
+        available: true,
+        branchName: 'feature-branch',
+        additionalCommits: 1,
+        captured: {
+          files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
+          summary: {
+            totalFiles: 1,
+            totalAdditions: 10,
+            totalDeletions: 5,
+          },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
+        },
+        current: {
+          files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
+          summary: {
+            totalFiles: 1,
+            totalAdditions: 10,
+            totalDeletions: 5,
+          },
+          commitRange: { before: 'abc123', after: 'ghi789' },
+          uncommitted: false,
+        },
+      }
+
+      mockUseExecutionChanges.mockReturnValue({
+        data,
+        loading: false,
+        error: null,
+      })
+
+      render(<CodeChangesPanel executionId="exec-123" />)
+
+      expect(screen.getByText('+1 commit since completion')).toBeInTheDocument()
+    })
+
+    it('should show current state info when current state exists', () => {
+      const data: ExecutionChangesResult = {
+        available: true,
+        branchName: 'feature-branch',
+        current: {
+          files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
+          summary: {
+            totalFiles: 1,
+            totalAdditions: 10,
+            totalDeletions: 5,
+          },
+          commitRange: { before: 'abc123', after: 'ghi789' },
+          uncommitted: false,
+        },
+        captured: {
+          files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
+          summary: {
+            totalFiles: 1,
+            totalAdditions: 10,
+            totalDeletions: 5,
+          },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
+        },
+      }
+
+      mockUseExecutionChanges.mockReturnValue({
+        data,
+        loading: false,
+        error: null,
+      })
+
+      render(<CodeChangesPanel executionId="exec-123" />)
+
+      expect(screen.getByText(/Showing current state of branch:/)).toBeInTheDocument()
+      expect(screen.getByText('feature-branch')).toBeInTheDocument()
     })
   })
 })

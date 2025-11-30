@@ -375,4 +375,172 @@ describe("ExecutionChangesService", () => {
       expect(result.changes!.summary.totalDeletions).toBe(0);
     });
   });
+
+  describe("Deleted Resources", () => {
+    it("should handle deleted branch gracefully", async () => {
+      const beforeCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Make a commit
+      commitFile(testRepo, "file1.ts", "content", "Add file");
+      const afterCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Create execution with branch that doesn't exist
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit, after_commit)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run("exec-13", "claude-code", "main", "deleted-branch", "completed", beforeCommit, afterCommit);
+
+      const result = await service.getChanges("exec-13");
+
+      // Should still show captured changes
+      expect(result.available).toBe(true);
+      expect(result.captured).toBeDefined();
+      expect(result.branchName).toBe("deleted-branch");
+      expect(result.branchExists).toBe(false);
+      expect(result.current).toBeUndefined(); // No current state since branch is deleted
+    });
+
+    it("should track worktree existence", async () => {
+      const beforeCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Make a commit to have different before and after
+      commitFile(testRepo, "file1.ts", "content", "Add file");
+      const afterCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Create execution with worktree path that doesn't exist
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit, after_commit, worktree_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run("exec-14", "claude-code", "main", "main", "completed", beforeCommit, afterCommit, "/nonexistent/worktree");
+
+      const result = await service.getChanges("exec-14");
+
+      expect(result.worktreeExists).toBe(false);
+    });
+
+    it("should calculate current state from main repo when worktree is deleted", async () => {
+      // Create a test branch
+      execSync("git checkout -b test-branch", { cwd: testRepo, stdio: "pipe" });
+
+      const beforeCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Make a commit on the branch
+      commitFile(testRepo, "file1.ts", "content", "Add file");
+      const afterCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Make additional commit
+      commitFile(testRepo, "file2.ts", "more content", "Add another file");
+      const currentHead = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Switch back to main
+      execSync("git checkout main", { cwd: testRepo, stdio: "pipe" });
+
+      // Create execution with deleted worktree
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit, after_commit, worktree_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run("exec-15", "claude-code", "main", "test-branch", "completed", beforeCommit, afterCommit, "/nonexistent/worktree");
+
+      const result = await service.getChanges("exec-15");
+
+      // Should calculate current state from main repo
+      expect(result.available).toBe(true);
+      expect(result.worktreeExists).toBe(false);
+      expect(result.branchExists).toBe(true);
+      expect(result.branchName).toBe("test-branch");
+
+      // Should have both captured and current states
+      expect(result.captured).toBeDefined();
+      expect(result.captured!.files).toHaveLength(1); // Only file1.ts at completion time
+
+      expect(result.current).toBeDefined();
+      expect(result.current!.files).toHaveLength(2); // Both file1.ts and file2.ts now
+      expect(result.additionalCommits).toBe(1); // One commit since completion
+    });
+
+    it("should show only captured state when both branch and worktree are deleted", async () => {
+      const beforeCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Make a commit
+      commitFile(testRepo, "file1.ts", "content", "Add file");
+      const afterCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Create execution with deleted branch and worktree
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit, after_commit, worktree_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run("exec-16", "claude-code", "main", "deleted-branch", "completed", beforeCommit, afterCommit, "/nonexistent/worktree");
+
+      const result = await service.getChanges("exec-16");
+
+      expect(result.available).toBe(true);
+      expect(result.captured).toBeDefined();
+      expect(result.branchExists).toBe(false);
+      expect(result.worktreeExists).toBe(false);
+      expect(result.current).toBeUndefined(); // No current state
+      expect(result.additionalCommits).toBe(0);
+    });
+
+    it("should use main repo path for branch operations even with deleted worktree", async () => {
+      // Create a test branch
+      execSync("git checkout -b feature-branch", { cwd: testRepo, stdio: "pipe" });
+
+      const beforeCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Make commits
+      commitFile(testRepo, "feature.ts", "feature code", "Add feature");
+      const afterCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Switch back to main
+      execSync("git checkout main", { cwd: testRepo, stdio: "pipe" });
+
+      // Create execution with non-existent worktree but existing branch
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit, after_commit, worktree_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run("exec-17", "claude-code", "main", "feature-branch", "completed", beforeCommit, afterCommit, "/deleted/worktree");
+
+      const result = await service.getChanges("exec-17");
+
+      // Should successfully get changes using main repo path
+      expect(result.available).toBe(true);
+      expect(result.worktreeExists).toBe(false);
+      expect(result.branchExists).toBe(true);
+      expect(result.captured).toBeDefined();
+      expect(result.captured!.files.some(f => f.path === "feature.ts")).toBe(true);
+    });
+  });
 });

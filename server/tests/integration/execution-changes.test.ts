@@ -45,6 +45,9 @@ function createTestRepo(dir: string): void {
   runMigrations(cacheDb)
   cacheDb.close()
 
+  // Create .gitignore to exclude SQLite temporary files
+  fs.writeFileSync(path.join(dir, '.gitignore'), '.sudocode/cache.db-shm\n.sudocode/cache.db-wal\n')
+
   // Create initial commit
   fs.writeFileSync(path.join(dir, 'README.md'), '# Test Repo\n')
   execSync('git add .', { cwd: dir })
@@ -137,6 +140,18 @@ describe('Execution Changes Integration Tests', () => {
     // Remove test directory
     if (testDir && fs.existsSync(testDir)) {
       fs.rmSync(testDir, { recursive: true, force: true })
+    }
+  })
+
+  beforeEach(() => {
+    // Clean up executions table before each test to prevent UNIQUE constraint failures
+    const projectDb = projectManager.getProject(projectId)?.db
+    if (projectDb) {
+      try {
+        projectDb.prepare('DELETE FROM executions').run()
+      } catch (e) {
+        // Ignore errors if table doesn't exist yet
+      }
     }
   })
 

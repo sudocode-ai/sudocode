@@ -32,6 +32,8 @@ function getReasonMessage(reason?: string): string {
       return 'Git operation failed';
     case 'worktree_deleted_with_uncommitted_changes':
       return 'Worktree was deleted before changes were committed';
+    case 'branch_deleted':
+      return 'Branch no longer exists, showing captured state';
     default:
       return 'Unknown reason';
   }
@@ -131,7 +133,13 @@ export function CodeChangesPanel({ executionId }: CodeChangesPanelProps) {
     );
   }
 
-  const { files, summary } = data.changes!;
+  // Use current state if available, otherwise use captured state
+  const snapshot = data.current || data.captured;
+  if (!snapshot) {
+    return null;
+  }
+
+  const { files, summary } = snapshot;
 
   return (
     <Card className="overflow-hidden">
@@ -140,9 +148,24 @@ export function CodeChangesPanel({ executionId }: CodeChangesPanelProps) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h3 className="text-lg font-semibold">Code Changes</h3>
-            {data.uncommitted && (
+            {snapshot.uncommitted && (
               <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
                 Uncommitted
+              </Badge>
+            )}
+            {data.current && data.additionalCommits && data.additionalCommits > 0 && (
+              <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                +{data.additionalCommits} commit{data.additionalCommits !== 1 ? 's' : ''} since completion
+              </Badge>
+            )}
+            {data.branchName && data.branchExists === false && (
+              <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                Branch deleted
+              </Badge>
+            )}
+            {data.worktreeExists === false && (
+              <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                Worktree deleted
               </Badge>
             )}
           </div>
@@ -158,6 +181,12 @@ export function CodeChangesPanel({ executionId }: CodeChangesPanelProps) {
             )}
           </div>
         </div>
+        {/* Show current state info */}
+        {data.current && (
+          <div className="mt-2 text-xs text-muted-foreground">
+            Showing current state of branch: <span className="font-mono">{data.branchName}</span>
+          </div>
+        )}
       </div>
 
       {/* File list */}
@@ -174,7 +203,7 @@ export function CodeChangesPanel({ executionId }: CodeChangesPanelProps) {
       )}
 
       {/* Uncommitted warning */}
-      {data.uncommitted && files.length > 0 && (
+      {snapshot.uncommitted && files.length > 0 && (
         <div className="px-6 py-3 border-t bg-yellow-50/50 text-sm text-yellow-800">
           <div className="flex items-start gap-2">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />

@@ -289,4 +289,5 @@ export interface Execution {
 export type {
   FileChangeStat,
   ExecutionChangesResult,
+  ChangesSnapshot,
 } from './artifacts.js';
