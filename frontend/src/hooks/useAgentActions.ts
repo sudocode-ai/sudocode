@@ -144,7 +144,8 @@ export function useAgentActions(options: UseAgentActionsOptions) {
     let parsedConfig: any = null
     if (execution.config) {
       try {
-        parsedConfig = typeof execution.config === 'string' ? JSON.parse(execution.config) : execution.config
+        parsedConfig =
+          typeof execution.config === 'string' ? JSON.parse(execution.config) : execution.config
       } catch (error) {
         console.warn('Failed to parse execution config:', error)
       }
@@ -154,9 +155,10 @@ export function useAgentActions(options: UseAgentActionsOptions) {
     let filesChanged: string[] = []
     if (execution.files_changed) {
       try {
-        filesChanged = typeof execution.files_changed === 'string'
-          ? JSON.parse(execution.files_changed)
-          : execution.files_changed
+        filesChanged =
+          typeof execution.files_changed === 'string'
+            ? JSON.parse(execution.files_changed)
+            : execution.files_changed
       } catch (error) {
         // If it's not JSON, treat it as a single file path
         filesChanged = [execution.files_changed]
@@ -167,9 +169,7 @@ export function useAgentActions(options: UseAgentActionsOptions) {
     // Show when execution completed and has file changes
     // Note: We assume changes are uncommitted if after_commit is null
     const hasUncommittedChanges =
-      execution.status === 'completed' &&
-      filesChanged.length > 0 &&
-      !execution.after_commit
+      execution.status === 'completed' && filesChanged.length > 0 && !execution.after_commit
 
     if (hasUncommittedChanges) {
       const fileCount = filesChanged.length
@@ -185,38 +185,41 @@ export function useAgentActions(options: UseAgentActionsOptions) {
       })
     }
 
-    // Action: Sync worktree
-    // Show when execution completed in worktree mode and has changes
+    // Determine if execution is in worktree mode
     const isWorktreeMode = execution.mode === 'worktree' || parsedConfig?.mode === 'worktree'
-    const hasUnsyncedWorktree =
-      execution.worktree_path &&
-      execution.status === 'completed' &&
-      isWorktreeMode &&
-      filesChanged.length > 0
+    const hasWorktreePath = !!execution.worktree_path
 
-    if (hasUnsyncedWorktree) {
-      availableActions.push({
-        id: 'sync-worktree',
-        label: 'Sync to Main',
-        icon: GitBranch,
-        description: 'Merge worktree changes into target branch',
-        onClick: handleSyncWorktree,
-        variant: 'outline',
-        disabled,
-      })
+    // Debug logging for worktree actions
+    if (hasWorktreePath || filesChanged.length > 0) {
     }
 
     // Action: Open worktree in IDE
     // Show when execution has an active worktree (regardless of status)
-    const hasActiveWorktree = execution.worktree_path && isWorktreeMode
-
-    if (hasActiveWorktree) {
+    // Per i-xdp0: Available when execution has worktree_path
+    if (hasWorktreePath && isWorktreeMode) {
       availableActions.push({
         id: 'open-worktree',
         label: 'Open in IDE',
         icon: FolderOpen,
         description: 'Open worktree directory in your IDE',
         onClick: handleOpenWorktree,
+        variant: 'outline',
+        disabled,
+      })
+    }
+
+    // Action: Sync worktree to local
+    // Show when execution has worktree and there are code changes
+    // Per i-xdp0: Available for ALL execution states when worktree_path exists
+    const hasSyncableWorktree = hasWorktreePath && isWorktreeMode && filesChanged.length > 0
+
+    if (hasSyncableWorktree) {
+      availableActions.push({
+        id: 'sync-worktree',
+        label: 'Sync to Local',
+        icon: GitBranch,
+        description: 'Sync worktree changes to local branch',
+        onClick: handleSyncWorktree,
         variant: 'outline',
         disabled,
       })

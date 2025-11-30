@@ -14,6 +14,7 @@ import SpecDetailPage from '@/pages/SpecDetailPage'
 import ArchivedIssuesPage from '@/pages/ArchivedIssuesPage'
 import ArchivedSpecsPage from '@/pages/ArchivedSpecsPage'
 import ExecutionDetailPage from '@/pages/ExecutionDetailPage'
+import WorktreesPage from '@/pages/WorktreesPage'
 import ProjectsPage from '@/pages/ProjectsPage'
 
 // Configure TanStack Query
@@ -84,6 +85,14 @@ function App() {
                     element={
                       <ProtectedRoute>
                         <SpecDetailPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="worktrees"
+                    element={
+                      <ProtectedRoute>
+                        <WorktreesPage />
                       </ProtectedRoute>
                     }
                   />

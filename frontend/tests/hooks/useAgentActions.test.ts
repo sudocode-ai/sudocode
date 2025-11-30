@@ -142,7 +142,8 @@ describe('useAgentActions', () => {
 
       const syncAction = result.current.actions.find((a) => a.id === 'sync-worktree')
       expect(syncAction).toBeDefined()
-      expect(syncAction?.label).toBe('Sync to Main')
+      expect(syncAction?.label).toBe('Sync to Local')
+      expect(syncAction?.description).toBe('Sync worktree changes to local branch')
     })
 
     it('should not show sync action for local mode executions', () => {
@@ -179,6 +180,41 @@ describe('useAgentActions', () => {
 
       const syncAction = result.current.actions.find((a) => a.id === 'sync-worktree')
       expect(syncAction).toBeUndefined()
+    })
+
+    it('should show sync action for running executions with worktree and changes', () => {
+      const runningExecution: Execution = {
+        ...mockExecution,
+        status: 'running',
+      }
+
+      const { result } = renderHook(() =>
+        useAgentActions({
+          execution: runningExecution,
+          issueId: 'i-test1',
+        })
+      )
+
+      const syncAction = result.current.actions.find((a) => a.id === 'sync-worktree')
+      expect(syncAction).toBeDefined()
+      expect(syncAction?.label).toBe('Sync to Local')
+    })
+
+    it('should show sync action for paused executions with worktree and changes', () => {
+      const pausedExecution: Execution = {
+        ...mockExecution,
+        status: 'paused',
+      }
+
+      const { result } = renderHook(() =>
+        useAgentActions({
+          execution: pausedExecution,
+          issueId: 'i-test1',
+        })
+      )
+
+      const syncAction = result.current.actions.find((a) => a.id === 'sync-worktree')
+      expect(syncAction).toBeDefined()
     })
 
     it('should detect open worktree action when worktree exists', () => {

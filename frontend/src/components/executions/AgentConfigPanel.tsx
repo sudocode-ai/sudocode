@@ -9,13 +9,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { repositoryApi, executionsApi } from '@/lib/api'
-import type {
-  ExecutionConfig,
-  ExecutionPrepareResult,
-  ExecutionMode,
-  Execution,
-} from '@/types/execution'
+import { repositoryApi } from '@/lib/api'
+import type { ExecutionConfig, ExecutionMode, Execution } from '@/types/execution'
 import { AgentSettingsDialog } from './AgentSettingsDialog'
 import { BranchSelector } from './BranchSelector'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
@@ -375,7 +370,10 @@ export function AgentConfigPanel({
   // Load branches and repository info (skip for follow-ups)
   useEffect(() => {
     // Skip for follow-ups - we use parent execution config
-    if (isFollowUp) return
+    if (isFollowUp) {
+      setLoading(false) // Ensure loading is false for follow-ups
+      return
+    }
 
     let isMounted = true
 
@@ -493,57 +491,6 @@ export function AgentConfigPanel({
 
   return (
     <div className="space-y-2 py-2">
-      {/* Errors */}
-      {hasErrors && (
-        <div className="rounded-lg border border-destructive bg-destructive/10 p-2">
-          <div className="flex items-start gap-2">
-            <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-destructive" />
-            <div className="flex-1 space-y-1">
-              <p className="text-xs font-medium text-destructive">Errors</p>
-              {prepareResult!.errors!.map((error, i) => (
-                <p key={i} className="text-xs text-destructive/90">
-                  {error}
-                </p>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Warnings */}
-      {hasWarnings && (
-        <div className="rounded-lg border border-yellow-500 bg-yellow-500/10 p-2">
-          <div className="flex items-start gap-2">
-            <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-yellow-600" />
-            <div className="flex-1 space-y-1">
-              <p className="text-xs font-medium text-yellow-600">Warnings</p>
-              {prepareResult!.warnings!.map((warning, i) => (
-                <p key={i} className="text-xs text-yellow-600/90">
-                  {warning}
-                </p>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Related Context Info */}
-      {/* TODO: Re-enable */}
-      {/* {prepareResult &&
-          ((prepareResult.relatedSpecs?.length ?? 0) > 0 ||
-            (prepareResult.relatedFeedback?.length ?? 0) > 0) && (
-            <div className="rounded-lg border bg-muted/50 p-2 text-xs text-muted-foreground">
-              {(prepareResult.relatedSpecs?.length ?? 0) > 0 && (
-                <span>{prepareResult.relatedSpecs.length} spec(s)</span>
-              )}
-              {(prepareResult.relatedSpecs?.length ?? 0) > 0 &&
-                (prepareResult.relatedFeedback?.length ?? 0) > 0 && <span> • </span>}
-              {(prepareResult.relatedFeedback?.length ?? 0) > 0 && (
-                <span>{prepareResult.relatedFeedback.length} feedback item(s)</span>
-              )}
-            </div>
-          )} */}
-
       {/* Contextual Actions */}
       {hasActions && (
         <div className="flex items-center justify-center gap-2">

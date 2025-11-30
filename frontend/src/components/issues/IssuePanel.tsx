@@ -1310,6 +1310,7 @@ export function IssuePanel({
               isRunning={isExecutionRunning}
               onCancel={latestExecution ? () => handleCancel(latestExecution.id) : undefined}
               isCancelling={cancelling}
+              currentExecution={latestExecution || undefined}
               lastExecution={
                 latestExecution
                   ? {

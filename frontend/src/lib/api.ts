@@ -71,7 +71,11 @@ api.interceptors.request.use(
   (config) => {
     // Inject X-Project-ID header if we have a current project
     // Skip for /projects and /agents endpoints which don't require project context
-    if (currentProjectId && !config.url?.startsWith('/projects') && !config.url?.startsWith('/agents')) {
+    if (
+      currentProjectId &&
+      !config.url?.startsWith('/projects') &&
+      !config.url?.startsWith('/agents')
+    ) {
       config.headers['X-Project-ID'] = currentProjectId
     }
     return config
@@ -213,7 +217,8 @@ export const executionsApi = {
   getById: (executionId: string) => get<Execution>(`/executions/${executionId}`),
 
   // Get execution chain (root + all follow-ups)
-  getChain: (executionId: string) => get<ExecutionChainResponse>(`/executions/${executionId}/chain`),
+  getChain: (executionId: string) =>
+    get<ExecutionChainResponse>(`/executions/${executionId}/chain`),
 
   // List executions for issue
   list: (issueId: string) => get<Execution[]>(`/issues/${issueId}/executions`),
@@ -236,7 +241,8 @@ export const executionsApi = {
   deleteWorktree: (executionId: string) => del(`/executions/${executionId}/worktree`),
 
   // Worktree sync operations
-  syncPreview: (executionId: string) => get<SyncPreviewResult>(`/executions/${executionId}/sync/preview`),
+  syncPreview: (executionId: string) =>
+    get<SyncPreviewResult>(`/executions/${executionId}/sync/preview`),
 
   syncSquash: (executionId: string, request?: PerformSyncRequest) =>
     post<SyncResult>(`/executions/${executionId}/sync/squash`, request),
@@ -251,6 +257,7 @@ export const executionsApi = {
 export const repositoryApi = {
   getInfo: () => get<RepositoryInfo>('/repo-info'),
   getBranches: () => get<BranchInfo>('/repo-info/branches'),
+  listWorktrees: () => get<Execution[]>('/repo-info/worktrees'),
 }
 
 /**
@@ -261,6 +268,7 @@ export const filesApi = {
     get<{ results: FileSearchResult[] }>(
       `/files/search?q=${encodeURIComponent(query)}${options?.limit ? `&limit=${options.limit}` : ''}${options?.includeDirectories ? `&includeDirectories=${options.includeDirectories}` : ''}`
     ).then((res) => res.results),
+  listWorktrees: () => get<Execution[]>('/repo-info/worktrees'),
 }
 
 /**
@@ -292,7 +300,8 @@ export const projectsApi = {
   getById: (projectId: string) => get<ProjectInfo | OpenProjectInfo>(`/projects/${projectId}`),
 
   // Validate a project path
-  validate: (data: ValidateProjectRequest) => post<ValidateProjectResponse>('/projects/validate', data),
+  validate: (data: ValidateProjectRequest) =>
+    post<ValidateProjectResponse>('/projects/validate', data),
 
   // Open a project by path
   open: (data: OpenProjectRequest) => post<ProjectInfo>('/projects/open', data),
