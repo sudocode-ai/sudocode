@@ -26,6 +26,7 @@ import type {
   SyncPreviewResult,
   SyncResult,
   PerformSyncRequest,
+  ExecutionChangesResult,
 } from '@/types/execution'
 import type {
   ProjectInfo,
@@ -249,6 +250,10 @@ export const executionsApi = {
 
   syncPreserve: (executionId: string, request?: PerformSyncRequest) =>
     post<SyncResult>(`/executions/${executionId}/sync/preserve`, request),
+
+  // Get code changes for execution
+  getChanges: (executionId: string) =>
+    get<ExecutionChangesResult>(`/executions/${executionId}/changes`),
 }
 
 /**

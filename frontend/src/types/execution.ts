@@ -2,13 +2,19 @@
  * Execution system types
  */
 
-import type { ExecutionStatus, AgentType, Execution } from '@sudocode-ai/types'
+import type {
+  ExecutionStatus,
+  AgentType,
+  Execution,
+  ExecutionChangesResult,
+  FileChangeStat,
+} from '@sudocode-ai/types'
 
 // TODO: Remove this re-export and fully migrate to @sudocode-ai/types
 /**
  * Re-export types from @sudocode-ai/types
  */
-export type { ExecutionStatus, AgentType, Execution }
+export type { ExecutionStatus, AgentType, Execution, ExecutionChangesResult, FileChangeStat }
 
 /**
  * Execution mode - where the agent runs

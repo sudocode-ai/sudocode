@@ -6,6 +6,7 @@ import { DeleteWorktreeDialog } from './DeleteWorktreeDialog'
 import { DeleteExecutionDialog } from './DeleteExecutionDialog'
 import { SyncPreviewDialog } from './SyncPreviewDialog'
 import { SyncProgressDialog } from './SyncProgressDialog'
+import { CodeChangesPanel } from './CodeChangesPanel'
 import { TodoTracker } from './TodoTracker'
 import { buildTodoHistory } from '@/utils/todoExtractor'
 import { useExecutionSync } from '@/hooks/useExecutionSync'
@@ -744,6 +745,13 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                       compact
                       hideTodoTracker
                     />
+
+                    {/* Code changes panel for completed/stopped executions */}
+                    {['completed', 'stopped'].includes(execution.status) && (
+                      <div className="mt-6">
+                        <CodeChangesPanel executionId={execution.id} />
+                      </div>
+                    )}
 
                     {/* Visual separator between executions (subtle spacing only) */}
                     {showDivider && <div className="my-6" />}
