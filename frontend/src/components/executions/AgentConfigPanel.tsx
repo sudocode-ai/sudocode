@@ -10,11 +10,17 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { executionsApi } from '@/lib/api'
-import type { ExecutionConfig, ExecutionPrepareResult, ExecutionMode } from '@/types/execution'
+import type {
+  ExecutionConfig,
+  ExecutionPrepareResult,
+  ExecutionMode,
+  Execution,
+} from '@/types/execution'
 import { AgentSettingsDialog } from './AgentSettingsDialog'
 import { BranchSelector } from './BranchSelector'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { useAgents } from '@/hooks/useAgents'
+import { useAgentActions } from '@/hooks/useAgentActions'
 import type { CodexConfig } from './CodexConfigForm'
 import type { CopilotConfig } from './CopilotConfigForm'
 
@@ -76,6 +82,11 @@ interface AgentConfigPanelProps {
    * When true, creates a new execution even in follow-up mode
    */
   forceNewExecution?: boolean
+  /**
+   * Current execution to analyze for contextual actions
+   * Used by useAgentActions hook to determine available actions
+   */
+  currentExecution?: Execution | null
 }
 
 // TODO: Move this somewhere more central.
@@ -179,6 +190,7 @@ export function AgentConfigPanel({
   allowModeToggle = true,
   onForceNewToggle,
   forceNewExecution: controlledForceNewExecution,
+  currentExecution,
 }: AgentConfigPanelProps) {
   const [loading, setLoading] = useState(!isFollowUp) // Skip loading for follow-ups
   const [prepareResult, setPrepareResult] = useState<ExecutionPrepareResult | null>(null)
@@ -263,6 +275,20 @@ export function AgentConfigPanel({
 
   // Fetch available agents
   const { agents, loading: agentsLoading } = useAgents()
+
+  // Get contextual actions based on execution state
+  // Actions are handled internally by the hook
+  const { actions, hasActions } = useAgentActions({
+    execution: currentExecution,
+    issueId,
+    disabled: disabled || isRunning,
+    // Optional: provide onStart to create follow-up executions
+    onStartExecution: (verificationPrompt: string) => {
+      setPrompt(verificationPrompt)
+      // Optionally auto-focus the textarea
+      textareaRef.current?.focus()
+    },
+  })
 
   // Reset config when issue or lastExecution changes (issue switching)
   useEffect(() => {
@@ -458,7 +484,7 @@ export function AgentConfigPanel({
   const canStart = !loading && !hasErrors && prompt.trim().length > 0 && !disabled
 
   return (
-    <div className="space-y-3 p-4">
+    <div className="space-y-2 py-2">
       {/* Errors */}
       {hasErrors && (
         <div className="rounded-lg border border-destructive bg-destructive/10 p-2">
@@ -509,6 +535,34 @@ export function AgentConfigPanel({
               )}
             </div>
           )} */}
+
+      {/* Contextual Actions */}
+      {hasActions && (
+        <div className="flex items-center justify-center gap-2">
+          {actions.map((action) => {
+            const Icon = action.icon
+            return (
+              <Button
+                key={action.id}
+                variant={action.variant || 'outline'}
+                size="sm"
+                onClick={action.onClick}
+                disabled={action.disabled}
+                className="h-8 text-xs"
+                title={action.description}
+              >
+                <Icon className="mr-1.5 h-3.5 w-3.5" />
+                {action.label}
+                {action.badge && (
+                  <span className="ml-1.5 rounded-full bg-muted px-1.5 text-xs">
+                    {action.badge}
+                  </span>
+                )}
+              </Button>
+            )
+          })}
+        </div>
+      )}
 
       {/* Prompt Input */}
       <div>
