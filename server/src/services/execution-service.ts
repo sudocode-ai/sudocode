@@ -16,6 +16,7 @@ import {
   updateExecution,
 } from "./executions.js";
 import { randomUUID } from "crypto";
+import { execSync } from "child_process";
 import type { ExecutionTask } from "agent-execution-engine/engine";
 import type { TransportManager } from "../execution/transport/transport-manager.js";
 import { ExecutionLogsStore } from "./execution-logs-store.js";
@@ -156,6 +157,23 @@ export class ExecutionService {
         branch_name: config.baseBranch || "main",
       });
       workDir = this.repoPath;
+
+      // Capture current commit as before_commit for local mode
+      try {
+        const beforeCommit = execSync("git rev-parse HEAD", {
+          cwd: this.repoPath,
+          encoding: "utf-8",
+        }).trim();
+        updateExecution(this.db, executionId, {
+          before_commit: beforeCommit,
+        });
+      } catch (error) {
+        console.warn(
+          "[ExecutionService] Failed to capture before_commit for local mode:",
+          error instanceof Error ? error.message : String(error)
+        );
+        // Continue - this is supplementary data
+      }
     }
 
     // 3. Resolve prompt references for execution (done after storing original)

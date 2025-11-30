@@ -28,6 +28,7 @@ import {
   getExecution,
 } from '../../services/executions.js';
 import { broadcastExecutionUpdate } from '../../services/websocket.js';
+import { execSync } from 'child_process';
 
 /**
  * Base executor interface that all agent executors implement
@@ -529,8 +530,27 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
       );
     }
 
+    // Capture final commit before marking stopped
+    const dbExecution = getExecution(this.db, executionId);
+    const repoPath = dbExecution?.worktree_path || this.processConfig.workDir;
+
+    let afterCommit: string | undefined;
+    try {
+      afterCommit = execSync('git rev-parse HEAD', {
+        cwd: repoPath,
+        encoding: 'utf-8',
+      }).trim();
+    } catch (error) {
+      console.warn(
+        `[AgentExecutorWrapper] Failed to capture after_commit for cancelled execution ${executionId}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      // Continue - this is supplementary data
+    }
+
     // Update database status
     updateExecution(this.db, executionId, {
+      after_commit: afterCommit,
       status: 'stopped',
       completed_at: new Date().toISOString(),
     });
@@ -648,7 +668,26 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
   private async handleSuccess(executionId: string): Promise<void> {
     console.log(`[AgentExecutorWrapper] Execution ${executionId} completed successfully`);
 
+    // Capture final commit before marking complete
+    const execution = getExecution(this.db, executionId);
+    const repoPath = execution?.worktree_path || this.processConfig.workDir;
+
+    let afterCommit: string | undefined;
+    try {
+      afterCommit = execSync('git rev-parse HEAD', {
+        cwd: repoPath,
+        encoding: 'utf-8',
+      }).trim();
+    } catch (error) {
+      console.warn(
+        `[AgentExecutorWrapper] Failed to capture after_commit for execution ${executionId}:`,
+        error instanceof Error ? error.message : String(error)
+      );
+      // Continue - this is supplementary data
+    }
+
     updateExecution(this.db, executionId, {
+      after_commit: afterCommit,
       status: 'completed',
       completed_at: new Date().toISOString(),
       exit_code: 0,

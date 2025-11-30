@@ -31,6 +31,7 @@ export interface UpdateExecutionInput {
   completed_at?: string | null;
   exit_code?: number | null;
   error_message?: string | null;
+  before_commit?: string | null;
   after_commit?: string | null;
   target_branch?: string | null;
   worktree_path?: string | null;
@@ -172,6 +173,11 @@ export function updateExecution(
   if (input.error_message !== undefined) {
     updates.push("error_message = ?");
     values.push(input.error_message);
+  }
+
+  if (input.before_commit !== undefined) {
+    updates.push("before_commit = ?");
+    values.push(input.before_commit);
   }
 
   if (input.after_commit !== undefined) {
