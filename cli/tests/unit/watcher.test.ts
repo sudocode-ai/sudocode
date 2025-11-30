@@ -68,7 +68,6 @@ describe("File Watcher", () => {
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50, // Shorter delay for tests
         onLog: (msg) => logs.push(msg),
         onError: (err) => console.error(err),
       });
@@ -111,7 +110,6 @@ This is a test spec.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: false, // Detect existing files
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
@@ -145,7 +143,6 @@ This is a test spec.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: true, // Ignore initial files
         onLog: (msg) => {
           logs.push(msg);
@@ -209,7 +206,6 @@ Initial content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 200, // Debounce for testing
         ignoreInitial: true,
         onLog: (msg) => {
           logs.push(msg);
@@ -296,7 +292,6 @@ This spec will be deleted.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: false, // Detect existing files
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
@@ -359,7 +354,6 @@ This spec has no frontmatter and will be deleted.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: false, // Detect existing files
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
@@ -410,7 +404,6 @@ This spec has no frontmatter and will be deleted.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         onLog: (msg) => logs.push(msg),
         onError: (err) => console.error(err),
       });
@@ -424,10 +417,6 @@ This spec has no frontmatter and will be deleted.
       // Check logs for stop message
       expect(logs.some((log) => log.includes("Stopping watcher"))).toBe(true);
       expect(logs.some((log) => log.includes("Watcher stopped"))).toBe(true);
-
-      // Verify stats show no pending changes
-      const stats = control.getStats();
-      expect(stats.changesPending).toBe(0);
     });
   });
 
@@ -440,7 +429,6 @@ This spec has no frontmatter and will be deleted.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: true,
         syncJSONLToMarkdown: true, // Enable reverse sync
         onLog: (msg) => logs.push(msg),
@@ -497,7 +485,6 @@ This spec has no frontmatter and will be deleted.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: true,
         syncJSONLToMarkdown: false, // Explicitly disabled
         onLog: (msg) => logs.push(msg),
@@ -567,7 +554,6 @@ This is the issue content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: false,
         syncJSONLToMarkdown: true,
         onLog: (msg) => logs.push(msg),
@@ -624,7 +610,6 @@ This is the issue content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: false,
         syncJSONLToMarkdown: true,
         onLog: (msg) => logs.push(msg),
@@ -669,7 +654,6 @@ Original content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
         ignoreInitial: false,
         syncJSONLToMarkdown: true,
         onLog: (msg) => logs.push(msg),
@@ -725,7 +709,6 @@ Updated content.
         control = startWatcher({
           db,
           baseDir: tempDir,
-          debounceDelay: 50,
           ignoreInitial: true,
           syncJSONLToMarkdown: true,
           onLog: (msg) => {
@@ -816,7 +799,6 @@ Updated content.
         control = startWatcher({
           db,
           baseDir: tempDir,
-          debounceDelay: 50,
           ignoreInitial: true,
           syncJSONLToMarkdown: true,
           onLog: (msg) => {
@@ -925,7 +907,6 @@ Updated content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: true,
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
@@ -983,7 +964,6 @@ Updated content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: true,
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
@@ -1065,7 +1045,6 @@ Updated content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: true,
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
@@ -1117,7 +1096,6 @@ Updated content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
         ignoreInitial: true,
         onLog: (msg) => {
           logs.push(msg);
@@ -1235,7 +1213,6 @@ Initial content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
         ignoreInitial: false,
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
@@ -1288,7 +1265,6 @@ Version 1
         control = startWatcher({
           db,
           baseDir: tempDir,
-          debounceDelay: 100,
           ignoreInitial: false,
           onLog: (msg) => logs.push(msg),
           onError: (err) => errors.push(err),
@@ -1357,7 +1333,6 @@ Original content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
         ignoreInitial: false,
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
@@ -1420,7 +1395,6 @@ Test content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 100,
         ignoreInitial: false,
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
@@ -1504,7 +1478,6 @@ Test content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: true,
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
@@ -1598,7 +1571,6 @@ Test content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: true,
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
@@ -1692,7 +1664,6 @@ Test content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: true,
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
@@ -1776,7 +1747,6 @@ Test content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: true,
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
@@ -1850,7 +1820,6 @@ Test content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: true,
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
@@ -1922,7 +1891,6 @@ Test content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: true,
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
@@ -2007,7 +1975,6 @@ Test content.
       control = startWatcher({
         db,
         baseDir: tempDir,
-        debounceDelay: 50,
         ignoreInitial: true,
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),

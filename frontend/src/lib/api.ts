@@ -21,6 +21,9 @@ import type {
   Execution,
   CreateExecutionRequest,
   CreateFollowUpRequest,
+  SyncPreviewResult,
+  SyncResult,
+  PerformSyncRequest,
 } from '@/types/execution'
 import type {
   ProjectInfo,
@@ -229,6 +232,15 @@ export const executionsApi = {
 
   // Delete worktree for execution
   deleteWorktree: (executionId: string) => del(`/executions/${executionId}/worktree`),
+
+  // Worktree sync operations
+  syncPreview: (executionId: string) => get<SyncPreviewResult>(`/executions/${executionId}/sync/preview`),
+
+  syncSquash: (executionId: string, request?: PerformSyncRequest) =>
+    post<SyncResult>(`/executions/${executionId}/sync/squash`, request),
+
+  syncPreserve: (executionId: string, request?: PerformSyncRequest) =>
+    post<SyncResult>(`/executions/${executionId}/sync/preserve`, request),
 }
 
 /**

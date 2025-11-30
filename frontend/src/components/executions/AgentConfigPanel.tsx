@@ -488,7 +488,7 @@ export function AgentConfigPanel({
       {/* Configuration Row */}
       <TooltipProvider>
         <div className="flex items-center gap-2">
-          {/* Agent Selection - disabled in follow-up mode */}
+          {/* Agent Selection - disabled in follow-up mode (unless forcing new execution) */}
           <Tooltip>
             <TooltipTrigger asChild>
               <span>
@@ -496,7 +496,7 @@ export function AgentConfigPanel({
                   value={selectedAgentType}
                   onValueChange={setSelectedAgentType}
                   onOpenChange={onSelectOpenChange}
-                  disabled={loading || agentsLoading || isFollowUp}
+                  disabled={loading || agentsLoading || (isFollowUp && !forceNewExecution)}
                 >
                   <SelectTrigger className="h-8 w-[140px] text-xs">
                     <SelectValue placeholder={agentsLoading ? 'Loading...' : 'Agent'}>
@@ -516,12 +516,12 @@ export function AgentConfigPanel({
                 </Select>
               </span>
             </TooltipTrigger>
-            {isFollowUp && (
+            {isFollowUp && !forceNewExecution && (
               <TooltipContent>Agent type is inherited from parent execution</TooltipContent>
             )}
           </Tooltip>
 
-          {/* Execution Mode - disabled in follow-up mode */}
+          {/* Execution Mode - disabled in follow-up mode (unless forcing new execution) */}
           <Tooltip>
             <TooltipTrigger asChild>
               <span>
@@ -529,7 +529,7 @@ export function AgentConfigPanel({
                   value={config.mode}
                   onValueChange={(value) => updateConfig({ mode: value as ExecutionMode })}
                   onOpenChange={onSelectOpenChange}
-                  disabled={loading || isFollowUp}
+                  disabled={loading || (isFollowUp && !forceNewExecution)}
                 >
                   <SelectTrigger className="h-8 w-[140px] text-xs">
                     <SelectValue />
@@ -545,13 +545,13 @@ export function AgentConfigPanel({
                 </Select>
               </span>
             </TooltipTrigger>
-            {isFollowUp && (
+            {isFollowUp && !forceNewExecution && (
               <TooltipContent>Execution mode is inherited from parent execution</TooltipContent>
             )}
           </Tooltip>
 
-          {/* Branch Display - shows current branch, disabled in local mode or follow-up */}
-          {config.baseBranch && config.mode === 'worktree' && (
+          {/* Branch Selector - always shown, disabled in local mode or follow-up */}
+          {config.baseBranch && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <div className="flex h-8 w-[160px] items-center rounded-md border border-input bg-muted/50 px-3 text-xs text-muted-foreground">
@@ -560,25 +560,42 @@ export function AgentConfigPanel({
               </TooltipTrigger>
               <TooltipContent>Base branch for worktree</TooltipContent>
             </Tooltip>
+            // TODO: Re-enable branch selector when ready
+            // <BranchSelector
+            //   branches={prepareResult?.availableBranches || [config.baseBranch]}
+            //   value={config.baseBranch}
+            //   onChange={(branch, isNew) => {
+            //     updateConfig({
+            //       baseBranch: branch,
+            //       createBaseBranch: isNew || false,
+            //     })
+            //   }}
+            //   disabled={loading || isFollowUp || config.mode === 'local'}
+            //   allowCreate={!isFollowUp && config.mode !== 'local'}
+            //   className="w-[160px]"
+            //   currentBranch={prepareResult?.availableBranches?.[0]}
+            // />
           )}
 
           <div className="ml-auto" />
 
-          {/* Settings Button - disabled in follow-up mode */}
+          {/* Settings Button - disabled in follow-up mode (unless forcing new execution) */}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setShowSettingsDialog(true)}
-                disabled={loading || isFollowUp}
+                disabled={loading || (isFollowUp && !forceNewExecution)}
                 className="h-8 px-2"
               >
                 <Settings className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {isFollowUp ? 'Settings are inherited from parent execution' : 'Advanced settings'}
+              {isFollowUp && !forceNewExecution
+                ? 'Settings are inherited from parent execution'
+                : 'Advanced settings'}
             </TooltipContent>
           </Tooltip>
 

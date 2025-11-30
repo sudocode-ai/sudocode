@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, render } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ThemeProvider } from '@/contexts/ThemeContext'
+import { WebSocketProvider } from '@/contexts/WebSocketContext'
+import { ProjectProvider } from '@/contexts/ProjectContext'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { renderWithProviders } from '@/test/test-utils'
 import IssuesPage from '@/pages/IssuesPage'
 import { issuesApi } from '@/lib/api'
@@ -399,6 +405,141 @@ describe('IssuesPage', () => {
         const issueIds = Array.from(issueCards).map((card) => card.getAttribute('data-issue-id'))
         expect(issueIds).toContain('ISSUE-011')
       }
+    })
+  })
+
+  describe('URL Hash Navigation', () => {
+    // Helper function to render with a specific hash
+    const renderWithHash = (hash: string) => {
+      const queryClient = new QueryClient({
+        defaultOptions: {
+          queries: {
+            retry: false,
+            gcTime: 0,
+          },
+        },
+      })
+
+      return render(
+        <QueryClientProvider client={queryClient}>
+          <ProjectProvider defaultProjectId="test-project-123" skipValidation={true}>
+            <WebSocketProvider>
+              <ThemeProvider>
+                <TooltipProvider>
+                  <MemoryRouter initialEntries={[`/issues${hash}`]}>
+                    <IssuesPage />
+                  </MemoryRouter>
+                </TooltipProvider>
+              </ThemeProvider>
+            </WebSocketProvider>
+          </ProjectProvider>
+        </QueryClientProvider>
+      )
+    }
+
+    it('should open issue panel when hash matches an issue ID', async () => {
+      vi.mocked(issuesApi.getAll).mockResolvedValue(mockIssues)
+
+      renderWithHash('#ISSUE-001')
+
+      // Wait for issues to load
+      await waitFor(() => {
+        expect(screen.getByText('Test Issue 1')).toBeInTheDocument()
+      })
+
+      // Issue panel should be open and show the issue ID
+      await waitFor(() => {
+        const issueIds = screen.getAllByText('ISSUE-001')
+        // Should appear in both the card and the panel
+        expect(issueIds.length).toBeGreaterThanOrEqual(1)
+      })
+    })
+
+    it('should not open panel when hash does not match any issue', async () => {
+      vi.mocked(issuesApi.getAll).mockResolvedValue(mockIssues)
+
+      renderWithHash('#NONEXISTENT-ISSUE')
+
+      // Wait for issues to load
+      await waitFor(() => {
+        expect(screen.getByText('Test Issue 1')).toBeInTheDocument()
+      })
+
+      // Panel should not be open - there should only be one instance of ISSUE-001 (in the card)
+      const issueIds = screen.getAllByText('ISSUE-001')
+      expect(issueIds).toHaveLength(1) // Only in kanban card, not in panel
+    })
+
+    it('should not open panel when hash is empty', async () => {
+      vi.mocked(issuesApi.getAll).mockResolvedValue(mockIssues)
+
+      renderWithHash('')
+
+      // Wait for issues to load
+      await waitFor(() => {
+        expect(screen.getByText('Test Issue 1')).toBeInTheDocument()
+      })
+
+      // Panel should not be open
+      const issueIds = screen.getAllByText('ISSUE-001')
+      expect(issueIds).toHaveLength(1) // Only in kanban card
+    })
+
+    it('should handle bare hash without clearing it', async () => {
+      vi.mocked(issuesApi.getAll).mockResolvedValue(mockIssues)
+
+      renderWithHash('#')
+
+      // Wait for issues to load
+      await waitFor(() => {
+        expect(screen.getByText('Test Issue 1')).toBeInTheDocument()
+      })
+
+      // Panel should not be open (bare hash should be ignored)
+      const issueIds = screen.getAllByText('ISSUE-001')
+      expect(issueIds).toHaveLength(1) // Only in kanban card
+    })
+
+    it('should update hash when issue is clicked', async () => {
+      const user = await import('@testing-library/user-event').then((m) => m.default.setup())
+      vi.mocked(issuesApi.getAll).mockResolvedValue(mockIssues)
+
+      renderWithHash('')
+
+      // Wait for issues to load
+      await waitFor(() => {
+        expect(screen.getByText('Test Issue 1')).toBeInTheDocument()
+      })
+
+      // Click on an issue
+      const issueCard = screen.getByText('Test Issue 1')
+      await user.click(issueCard)
+
+      // Panel should open
+      await waitFor(() => {
+        const issueIds = screen.getAllByText('ISSUE-001')
+        expect(issueIds.length).toBeGreaterThanOrEqual(1)
+      })
+
+      // Note: We can't directly test window.location.hash in MemoryRouter,
+      // but we can verify the panel is open which is the important behavior
+    })
+
+    it('should open correct issue when multiple issues exist', async () => {
+      vi.mocked(issuesApi.getAll).mockResolvedValue(mockIssues)
+
+      renderWithHash('#ISSUE-002')
+
+      // Wait for issues to load
+      await waitFor(() => {
+        expect(screen.getByText('Test Issue 2')).toBeInTheDocument()
+      })
+
+      // Issue panel should show ISSUE-002, not ISSUE-001
+      await waitFor(() => {
+        const issue2Ids = screen.getAllByText('ISSUE-002')
+        expect(issue2Ids.length).toBeGreaterThanOrEqual(1)
+      })
     })
   })
 })

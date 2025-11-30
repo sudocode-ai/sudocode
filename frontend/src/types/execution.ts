@@ -133,3 +133,71 @@ export interface CreateExecutionRequest {
 export interface CreateFollowUpRequest {
   feedback: string
 }
+
+/**
+ * Worktree Sync types
+ */
+
+export interface SyncConflict {
+  filePath: string
+  conflictType: 'content' | 'delete' | 'rename' | 'mode'
+  description: string
+  canAutoResolve: boolean
+  resolutionStrategy?: string
+}
+
+export interface JSONLConflict {
+  filePath: string
+  entityType: 'issue' | 'spec'
+  conflictCount: number
+  canAutoResolve: boolean
+}
+
+export interface ConflictReport {
+  hasConflicts: boolean
+  codeConflicts: SyncConflict[]
+  jsonlConflicts: JSONLConflict[]
+  totalFiles: number
+  summary: string
+}
+
+export interface DiffSummary {
+  files: string[]
+  additions: number
+  deletions: number
+}
+
+export interface Commit {
+  sha: string
+  message: string
+  author: string
+  timestamp: string
+}
+
+export interface SyncPreviewResult {
+  canSync: boolean
+  conflicts: ConflictReport
+  diff: DiffSummary
+  commits: Commit[]
+  mergeBase: string
+  uncommittedJSONLChanges: boolean
+  executionStatus: ExecutionStatus
+  warnings: string[]
+}
+
+export interface SyncResult {
+  success: boolean
+  finalCommit?: string
+  filesChanged: number
+  conflictsResolved: number
+  uncommittedJSONLIncluded: boolean
+  error?: string
+  cleanupOffered?: boolean
+}
+
+export type SyncMode = 'squash' | 'preserve'
+
+export interface PerformSyncRequest {
+  mode: SyncMode
+  commitMessage?: string
+}

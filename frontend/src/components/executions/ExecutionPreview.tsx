@@ -76,6 +76,11 @@ export interface ExecutionPreviewProps {
   showStatus?: boolean
 
   /**
+   * Show status label text in badge (only icon if false)
+   */
+  showStatusLabel?: boolean
+
+  /**
    * Callback to view full execution
    */
   onViewFull?: () => void
@@ -149,6 +154,7 @@ export function ExecutionPreview({
   maxToolCalls: maxToolCallsProp,
   showMetrics: showMetricsProp,
   showStatus: showStatusProp,
+  showStatusLabel = true,
   onViewFull,
   className = '',
 }: ExecutionPreviewProps) {
@@ -309,33 +315,31 @@ export function ExecutionPreview({
     return (
       <div className={`flex items-center gap-2 text-sm ${className}`}>
         {showStatus && (
-          <Badge variant="outline" className="flex items-center gap-1">
-            <StatusIcon
-              className={`h-3 w-3 ${statusInfo.color} ${statusInfo.spin ? 'animate-spin' : ''}`}
-            />
-            {statusInfo.label}
-          </Badge>
+          <>
+            {showStatusLabel ? (
+              <Badge variant="outline" className="flex items-center gap-1">
+                <StatusIcon
+                  className={`h-3 w-3 ${statusInfo.color} ${statusInfo.spin ? 'animate-spin' : ''}`}
+                />
+                {statusInfo.label}
+              </Badge>
+            ) : (
+              <StatusIcon
+                className={`h-3.5 w-3.5 ${statusInfo.color} ${statusInfo.spin ? 'animate-spin' : ''}`}
+              />
+            )}
+          </>
         )}
-        {toolCallCount > 0 && (
-          <span className="text-muted-foreground">
-            {toolCallCount} tool call{toolCallCount !== 1 ? 's' : ''}
-          </span>
-        )}
-        {filesChanged > 0 && (
-          <span className="text-muted-foreground">{filesChanged} files</span>
+        {executionProp?.agent_type && (
+          <span className="text-xs text-muted-foreground">{executionProp.agent_type}</span>
         )}
         {executionProp?.created_at && (
-          <span className="text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             {formatDistanceToNow(new Date(executionProp.created_at), { addSuffix: true })}
           </span>
         )}
         {onViewFull && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onViewFull}
-            className="h-6 px-2 text-xs"
-          >
+          <Button variant="ghost" size="sm" onClick={onViewFull} className="h-6 px-2 text-xs">
             View
           </Button>
         )}
@@ -410,7 +414,7 @@ export function ExecutionPreview({
               ) : toolCall.status === 'error' ? (
                 <XCircle className="h-3 w-3 text-red-600" />
               ) : (
-                <Loader2 className="h-3 w-3 text-blue-600 animate-spin" />
+                <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
               )
 
             const duration =
@@ -420,16 +424,12 @@ export function ExecutionPreview({
 
             return (
               <div key={toolCall.toolCallId} className="flex items-start gap-2 text-xs">
-                <Wrench className="h-3 w-3 text-muted-foreground mt-0.5 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
+                <Wrench className="mt-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     {statusBadge}
-                    <span className="font-mono font-medium truncate">
-                      {toolCall.toolCallName}
-                    </span>
-                    {duration && (
-                      <span className="text-muted-foreground">({duration})</span>
-                    )}
+                    <span className="truncate font-mono font-medium">{toolCall.toolCallName}</span>
+                    {duration && <span className="text-muted-foreground">({duration})</span>}
                   </div>
                   {variant === 'detailed' && toolCall.result && (
                     <div className="mt-1 text-muted-foreground">
@@ -441,7 +441,7 @@ export function ExecutionPreview({
             )
           })}
           {toolCallCount > maxToolCalls && (
-            <div className="text-xs text-muted-foreground italic">
+            <div className="text-xs italic text-muted-foreground">
               +{toolCallCount - maxToolCalls} more tool call
               {toolCallCount - maxToolCalls !== 1 ? 's' : ''}...
             </div>
@@ -456,18 +456,16 @@ export function ExecutionPreview({
             const { text, truncated } = truncateText(message.content, maxLines)
             return (
               <div key={message.messageId} className="flex items-start gap-2 text-xs">
-                <MessageSquare className="h-3 w-3 text-muted-foreground mt-0.5 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
+                <MessageSquare className="mt-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
                   <div className="whitespace-pre-wrap break-words">{text}</div>
-                  {truncated && (
-                    <span className="text-muted-foreground italic">...</span>
-                  )}
+                  {truncated && <span className="italic text-muted-foreground">...</span>}
                 </div>
               </div>
             )
           })}
           {messageCount > maxMessages && (
-            <div className="text-xs text-muted-foreground italic">
+            <div className="text-xs italic text-muted-foreground">
               +{messageCount - maxMessages} more message
               {messageCount - maxMessages !== 1 ? 's' : ''}...
             </div>
@@ -478,7 +476,7 @@ export function ExecutionPreview({
       {/* Error Display */}
       {error && (
         <div className="flex items-start gap-2 text-xs text-red-600">
-          <XCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+          <XCircle className="mt-0.5 h-3 w-3 flex-shrink-0" />
           <span>{error.message}</span>
         </div>
       )}
@@ -489,7 +487,7 @@ export function ExecutionPreview({
           variant="ghost"
           size="sm"
           onClick={onViewFull}
-          className="h-7 text-xs gap-1 w-full justify-center"
+          className="h-7 w-full justify-center gap-1 text-xs"
         >
           View Full Execution
           <ChevronRight className="h-3 w-3" />

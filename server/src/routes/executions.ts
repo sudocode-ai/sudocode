@@ -15,6 +15,53 @@ import {
   AgentNotImplementedError,
   AgentError,
 } from "../errors/agent-errors.js";
+import {
+  WorktreeSyncService,
+  WorktreeSyncError,
+  WorktreeSyncErrorCode,
+} from "../services/worktree-sync-service.js";
+
+/**
+ * Get WorktreeSyncService instance for a request
+ *
+ * @param req - Express request with project context
+ * @returns WorktreeSyncService instance
+ */
+function getWorktreeSyncService(req: Request): WorktreeSyncService {
+  const db = req.project!.db;
+  const repoPath = req.project!.path;
+  return new WorktreeSyncService(db, repoPath);
+}
+
+/**
+ * Get HTTP status code for WorktreeSyncError
+ *
+ * @param error - WorktreeSyncError instance
+ * @returns HTTP status code
+ */
+function getStatusCodeForSyncError(error: WorktreeSyncError): number {
+  switch (error.code) {
+    case WorktreeSyncErrorCode.NO_WORKTREE:
+    case WorktreeSyncErrorCode.WORKTREE_MISSING:
+    case WorktreeSyncErrorCode.BRANCH_MISSING:
+    case WorktreeSyncErrorCode.TARGET_BRANCH_MISSING:
+    case WorktreeSyncErrorCode.EXECUTION_NOT_FOUND:
+      return 404; // Not found
+
+    case WorktreeSyncErrorCode.DIRTY_WORKING_TREE:
+    case WorktreeSyncErrorCode.CODE_CONFLICTS:
+    case WorktreeSyncErrorCode.NO_COMMON_BASE:
+      return 400; // Bad request (user must fix)
+
+    case WorktreeSyncErrorCode.MERGE_FAILED:
+    case WorktreeSyncErrorCode.JSONL_RESOLUTION_FAILED:
+    case WorktreeSyncErrorCode.DATABASE_SYNC_FAILED:
+      return 500; // Internal error
+
+    default:
+      return 500;
+  }
+}
 
 /**
  * Create executions router
@@ -560,6 +607,124 @@ export function createExecutionsRouter(): Router {
           error_data: errorMessage,
           message: "Failed to delete worktree",
         });
+      }
+    }
+  );
+
+  /**
+   * GET /api/executions/:executionId/sync/preview
+   *
+   * Preview sync changes and detect conflicts
+   *
+   * Returns preview of what would happen if sync is performed,
+   * including conflicts, diff, commits, and warnings.
+   */
+  router.get(
+    "/executions/:executionId/sync/preview",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+
+        // Get worktree sync service
+        const syncService = getWorktreeSyncService(req);
+
+        // Preview sync
+        const preview = await syncService.previewSync(executionId);
+
+        res.json({
+          success: true,
+          data: preview,
+        });
+      } catch (error) {
+        console.error(
+          `Failed to preview sync for execution ${req.params.executionId}:`,
+          error
+        );
+
+        if (error instanceof WorktreeSyncError) {
+          const statusCode = getStatusCodeForSyncError(error);
+          res.status(statusCode).json({
+            success: false,
+            data: null,
+            error: error.message,
+            code: error.code,
+          });
+        } else {
+          res.status(500).json({
+            success: false,
+            data: null,
+            error: "Internal server error",
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+  );
+
+  /**
+   * POST /api/executions/:executionId/sync/squash
+   *
+   * Perform squash sync operation
+   *
+   * Combines all worktree changes into a single commit on the target branch.
+   * Automatically resolves JSONL conflicts using merge-resolver.
+   *
+   * Request body:
+   * - commitMessage?: string - Optional custom commit message
+   */
+  router.post(
+    "/executions/:executionId/sync/squash",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+        const { commitMessage } = req.body || {};
+
+        // Get worktree sync service
+        const syncService = getWorktreeSyncService(req);
+
+        // Check if squashSync method exists
+        if (typeof (syncService as any).squashSync !== "function") {
+          res.status(501).json({
+            success: false,
+            data: null,
+            error: "Squash sync not yet implemented",
+            message: "The squashSync operation is not available yet",
+          });
+          return;
+        }
+
+        // Perform squash sync
+        const result = await (syncService as any).squashSync(
+          executionId,
+          commitMessage
+        );
+
+        res.json({
+          success: true,
+          data: result,
+        });
+      } catch (error) {
+        console.error(
+          `Failed to squash sync execution ${req.params.executionId}:`,
+          error
+        );
+
+        if (error instanceof WorktreeSyncError) {
+          const statusCode = getStatusCodeForSyncError(error);
+          res.status(statusCode).json({
+            success: false,
+            data: null,
+            error: error.message,
+            code: error.code,
+          });
+        } else {
+          res.status(500).json({
+            success: false,
+            data: null,
+            error: "Internal server error",
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     }
   );

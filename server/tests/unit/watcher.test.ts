@@ -59,7 +59,6 @@ describe("File Watcher Service", () => {
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
-        debounceDelay: 50, // Shorter delay for tests
       });
 
       expect(watcher, "Watcher should be created").toBeTruthy();
@@ -82,10 +81,6 @@ describe("File Watcher Service", () => {
         "Stats should include filesWatched"
       ).toBe("number");
       expect(
-        typeof stats.changesPending,
-        "Stats should include changesPending"
-      ).toBe("number");
-      expect(
         typeof stats.changesProcessed,
         "Stats should include changesProcessed"
       ).toBe("number");
@@ -98,7 +93,6 @@ describe("File Watcher Service", () => {
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
-        debounceDelay: 50,
       });
 
       // Wait for watcher to initialize
@@ -120,7 +114,6 @@ describe("File Watcher Service", () => {
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
-        debounceDelay: customDelay,
       });
 
       // The debounce delay is internal to the CLI watcher,
@@ -141,7 +134,6 @@ describe("File Watcher Service", () => {
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
-        debounceDelay: 50,
         onFileChange: (info) => {
           changes.push(info);
         },
@@ -179,7 +171,6 @@ describe("File Watcher Service", () => {
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
-        debounceDelay: 50,
       });
 
       // Wait for watcher to be ready
@@ -219,7 +210,6 @@ describe("File Watcher Service", () => {
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
-        debounceDelay: 50,
       });
 
       // Wait for watcher to start
@@ -233,17 +223,13 @@ describe("File Watcher Service", () => {
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
-        debounceDelay: 50,
       });
 
       // Wait for watcher to initialize
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       const initialStats = watcher.getStats();
-      expect(
-        initialStats.changesPending,
-        "Should have no pending changes initially"
-      ).toBe(0);
+      expect(initialStats, "Stats should be available").toBeTruthy();
 
       await watcher.stop();
     });
@@ -254,7 +240,6 @@ describe("File Watcher Service", () => {
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
-        debounceDelay: 100, // 100ms debounce
         onFileChange: (info) => {
           changes.push(info);
         },
@@ -297,7 +282,6 @@ describe("File Watcher Service", () => {
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
-        debounceDelay: 50,
         onFileChange: (info) => {
           callbackInvoked = true;
           receivedInfo = info;

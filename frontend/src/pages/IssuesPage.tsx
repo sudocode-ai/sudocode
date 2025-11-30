@@ -1,5 +1,5 @@
-import { useMemo, useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useMemo, useState, useCallback, useEffect } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useIssues, useUpdateIssueStatus, useIssueFeedback } from '@/hooks/useIssues'
 import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
 import { useProject } from '@/hooks/useProject'
@@ -38,6 +38,7 @@ const SORT_STORAGE_KEY = 'sudocode:issues:sortOption'
 
 export default function IssuesPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const {
     issues,
     isLoading,
@@ -88,6 +89,43 @@ export default function IssuesPage() {
     }
     return new Set()
   })
+
+  // Track if we've initialized from URL hash yet
+  const [hasInitializedFromUrl, setHasInitializedFromUrl] = useState(false)
+
+  // Initialize selected issue from URL hash on mount
+  useEffect(() => {
+    if (!issues.length || hasInitializedFromUrl) return
+
+    const hash = location.hash
+    if (hash && hash.startsWith('#') && hash.length > 1) {
+      const issueId = hash.substring(1) // Remove the '#'
+      const issue = issues.find((i) => i.id === issueId)
+      if (issue) {
+        setSelectedIssue(issue)
+      }
+    }
+    setHasInitializedFromUrl(true)
+    // Only run once when issues are loaded
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issues.length > 0])
+
+  // Update URL hash when selected issue changes (but only after initialization)
+  useEffect(() => {
+    if (!hasInitializedFromUrl) return
+
+    if (selectedIssue) {
+      // Update the hash without adding to history
+      if (location.hash !== `#${selectedIssue.id}`) {
+        navigate(`#${selectedIssue.id}`, { replace: true })
+      }
+    } else {
+      // Clear the hash when no issue is selected
+      if (location.hash && location.hash !== '#') {
+        navigate('#', { replace: true })
+      }
+    }
+  }, [selectedIssue, navigate, location.hash, hasInitializedFromUrl])
 
   // Save sort preference to localStorage when it changes
   const handleSortChange = useCallback((value: string) => {

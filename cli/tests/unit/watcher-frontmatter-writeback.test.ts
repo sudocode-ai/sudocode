@@ -79,7 +79,6 @@ The watcher should auto-generate an ID and write it back.
     control = startWatcher({
       db,
       baseDir: tempDir,
-      debounceDelay: 50,
       ignoreInitial: false,
       onLog: (msg) => logs.push(msg),
       onError: (err) => errors.push(err),
@@ -139,7 +138,6 @@ This spec already has frontmatter.
     control = startWatcher({
       db,
       baseDir: tempDir,
-      debounceDelay: 50,
       ignoreInitial: false,
       onLog: (msg) => logs.push(msg),
       onError: (err) => errors.push(err),

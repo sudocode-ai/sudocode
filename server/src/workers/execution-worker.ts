@@ -177,6 +177,65 @@ async function runExecution(): Promise<void> {
 
     console.log(`[Worker:${WORKER_ID}] Work directory: ${workDir}`);
 
+    // 4.5. Validate worktree exists for worktree mode
+    if (execution.mode === "worktree" && execution.worktree_path) {
+      const fs = await import("fs/promises");
+      const path = await import("path");
+
+      try {
+        // Check if worktree path exists
+        const stats = await fs.stat(execution.worktree_path);
+        if (!stats.isDirectory()) {
+          throw new Error(
+            `Worktree path is not a directory: ${execution.worktree_path}`
+          );
+        }
+
+        // Check if it's a valid git directory
+        const gitPath = path.join(execution.worktree_path, ".git");
+        await fs.access(gitPath);
+
+        console.log(`[Worker:${WORKER_ID}] Worktree validation passed`);
+      } catch (error: any) {
+        // Provide clear error messages based on error code
+        let errorMessage: string;
+
+        if (error.code === "ENOENT") {
+          errorMessage = `Worktree was deleted or does not exist at: ${execution.worktree_path}`;
+        } else if (error.code === "ENOTDIR") {
+          errorMessage = `Worktree path is not a valid directory: ${execution.worktree_path}`;
+        } else if (error.code === "EACCES") {
+          errorMessage = `Permission denied accessing worktree: ${execution.worktree_path}`;
+        } else {
+          errorMessage = `Failed to access worktree: ${error.message}`;
+        }
+
+        console.error(`[Worker:${WORKER_ID}] ${errorMessage}`);
+
+        // Attempt to recreate worktree
+        console.log(`[Worker:${WORKER_ID}] Attempting to recreate worktree...`);
+        try {
+          const lifecycleService = new ExecutionLifecycleService(db, REPO_PATH!);
+          const worktreeManager = (lifecycleService as any).worktreeManager;
+
+          await worktreeManager.createWorktree({
+            repoPath: REPO_PATH!,
+            branchName: execution.branch_name,
+            worktreePath: execution.worktree_path,
+            baseBranch: execution.target_branch,
+            createBranch: false, // Branch should already exist
+          });
+
+          console.log(`[Worker:${WORKER_ID}] Successfully recreated worktree`);
+        } catch (recreateError: any) {
+          // Failed to recreate - this is a fatal error
+          throw new Error(
+            `${errorMessage}. Failed to recreate worktree: ${recreateError.message}`
+          );
+        }
+      }
+    }
+
     // 5. Send ready signal
     sendToMain({
       type: "ready",
