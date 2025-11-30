@@ -18,12 +18,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { repositoryApi } from '@/lib/api'
-import type { ExecutionConfig, ExecutionMode } from '@/types/execution'
+import type { ExecutionConfig, ExecutionMode, Execution } from '@/types/execution'
 import { AgentSettingsDialog } from './AgentSettingsDialog'
 import { BranchSelector } from './BranchSelector'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { useAgents } from '@/hooks/useAgents'
 import { useProject } from '@/hooks/useProject'
+import { useAgentActions } from '@/hooks/useAgentActions'
+import { useWorktrees } from '@/hooks/useWorktrees'
 import type { CodexConfig } from './CodexConfigForm'
 import type { CopilotConfig } from './CopilotConfigForm'
 
@@ -85,6 +87,11 @@ interface AgentConfigPanelProps {
    * When true, creates a new execution even in follow-up mode
    */
   forceNewExecution?: boolean
+  /**
+   * Current execution to analyze for contextual actions
+   * Used by useAgentActions hook to determine available actions
+   */
+  currentExecution?: Execution | null
 }
 
 // TODO: Move this somewhere more central.
@@ -228,6 +235,7 @@ export function AgentConfigPanel({
   allowModeToggle = true,
   onForceNewToggle,
   forceNewExecution: controlledForceNewExecution,
+  currentExecution,
 }: AgentConfigPanelProps) {
   const [loading, setLoading] = useState(false)
   const [prompt, setPrompt] = useState('')
@@ -314,8 +322,25 @@ export function AgentConfigPanel({
   // Fetch available agents
   const { agents, loading: agentsLoading } = useAgents()
 
+  // Get contextual actions based on execution state
+  // Actions are handled internally by the hook
+  const { actions, hasActions } = useAgentActions({
+    execution: currentExecution,
+    issueId,
+    disabled: disabled || isRunning,
+    // Optional: provide onStart to create follow-up executions
+    onStartExecution: (verificationPrompt: string) => {
+      setPrompt(verificationPrompt)
+      // Optionally auto-focus the textarea
+      textareaRef.current?.focus()
+    },
+  })
+
   // Get current project ID for context search
   const { currentProjectId } = useProject()
+
+  // Fetch available worktrees for worktree-based creation
+  const { worktrees } = useWorktrees()
 
   // Reset config when issue or lastExecution changes (issue switching)
   useEffect(() => {
@@ -397,7 +422,10 @@ export function AgentConfigPanel({
   // Load branches and repository info (skip for follow-ups)
   useEffect(() => {
     // Skip for follow-ups - we use parent execution config
-    if (isFollowUp) return
+    if (isFollowUp) {
+      setLoading(false) // Ensure loading is false for follow-ups
+      return
+    }
 
     let isMounted = true
 
@@ -516,7 +544,35 @@ export function AgentConfigPanel({
   const canStart = !loading && (prompt.trim().length > 0 || !isFollowUp) && !disabled
 
   return (
-    <div className="space-y-3 p-4">
+    <div className="space-y-2 py-2">
+      {/* Contextual Actions */}
+      {hasActions && (
+        <div className="flex items-center justify-center gap-2">
+          {actions.map((action) => {
+            const Icon = action.icon
+            return (
+              <Button
+                key={action.id}
+                variant={action.variant || 'outline'}
+                size="sm"
+                onClick={action.onClick}
+                disabled={action.disabled}
+                className="h-8 text-xs"
+                title={action.description}
+              >
+                <Icon className="mr-1.5 h-3.5 w-3.5" />
+                {action.label}
+                {action.badge && (
+                  <span className="ml-1.5 rounded-full bg-muted px-1.5 text-xs">
+                    {action.badge}
+                  </span>
+                )}
+              </Button>
+            )
+          })}
+        </div>
+      )}
+
       {/* Prompt Input */}
       <div>
         <ContextSearchTextarea
@@ -636,7 +692,7 @@ export function AgentConfigPanel({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="worktree" className="text-xs">
-                      New worktree
+                      Run in worktree
                     </SelectItem>
                     <SelectItem value="local" className="text-xs">
                       Run local
@@ -660,16 +716,18 @@ export function AgentConfigPanel({
                       availableBranches.length > 0 ? availableBranches : [config.baseBranch]
                     }
                     value={config.baseBranch}
-                    onChange={(branch, isNew) => {
+                    onChange={(branch, isNew, worktreeId) => {
                       updateConfig({
                         baseBranch: branch,
                         createBaseBranch: isNew || false,
+                        reuseWorktreeId: worktreeId, // If worktreeId is set, reuse that worktree
                       })
                     }}
                     disabled={loading || (isFollowUp && !forceNewExecution)}
                     allowCreate={!isFollowUp || forceNewExecution}
-                    className="w-[160px]"
+                    className="w-[180px]"
                     currentBranch={currentBranch}
+                    worktrees={worktrees}
                   />
                 </span>
               </TooltipTrigger>

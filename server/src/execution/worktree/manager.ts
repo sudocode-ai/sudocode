@@ -191,7 +191,7 @@ export class WorktreeManager implements IWorktreeManager {
       repoPath,
       branchName,
       worktreePath,
-      baseBranch: _baseBranch,
+      baseBranch,
       createBranch,
       commitSha,
     } = params;
@@ -199,9 +199,9 @@ export class WorktreeManager implements IWorktreeManager {
     try {
       // 1. Create branch if requested
       if (createBranch) {
-        // Use the specified commit SHA or the current HEAD commit SHA to branch from
+        // Use the specified commit SHA, or base branch, or current HEAD commit to branch from
         const targetCommit =
-          commitSha || (await this.git.getCurrentCommit(repoPath));
+          commitSha || baseBranch || (await this.git.getCurrentCommit(repoPath));
         await this.git.createBranch(repoPath, branchName, targetCommit);
       }
 

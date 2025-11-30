@@ -36,6 +36,7 @@ export interface ExecutionConfig {
   baseBranch?: string;
   createBaseBranch?: boolean;
   branchName?: string;
+  reuseWorktreeId?: string; // If set, reuse existing worktree instead of creating new one
   checkpointInterval?: number;
   continueOnStepFailure?: boolean;
   captureFileChanges?: boolean;
@@ -128,21 +129,51 @@ export class ExecutionService {
     let workDir: string;
 
     if (mode === "worktree") {
-      // Create execution with isolated worktree
-      const result = await this.lifecycleService.createExecutionWithWorktree({
-        issueId,
-        issueTitle: issue.title,
-        agentType: agentType,
-        targetBranch: config.baseBranch || "main",
-        repoPath: this.repoPath,
-        mode: mode,
-        prompt: prompt, // Store original (unexpanded) prompt
-        config: JSON.stringify(config),
-        createTargetBranch: config.createBaseBranch || false,
-      });
+      // Check if we're reusing an existing worktree
+      if (config.reuseWorktreeId) {
+        // Reuse existing worktree
+        const existingExecution = this.db
+          .prepare("SELECT * FROM executions WHERE id = ?")
+          .get(config.reuseWorktreeId) as Execution | undefined;
 
-      execution = result.execution;
-      workDir = result.worktreePath;
+        if (!existingExecution || !existingExecution.worktree_path) {
+          throw new Error(
+            `Cannot reuse worktree: execution ${config.reuseWorktreeId} not found or has no worktree`
+          );
+        }
+
+        // Create execution record with the same worktree path
+        const executionId = randomUUID();
+        execution = createExecution(this.db, {
+          id: executionId,
+          issue_id: issueId,
+          agent_type: agentType,
+          mode: mode,
+          prompt: prompt,
+          config: JSON.stringify(config),
+          target_branch: existingExecution.target_branch,
+          branch_name: existingExecution.branch_name,
+          worktree_path: existingExecution.worktree_path, // Reuse the same worktree path
+        });
+
+        workDir = existingExecution.worktree_path;
+      } else {
+        // Create execution with isolated worktree
+        const result = await this.lifecycleService.createExecutionWithWorktree({
+          issueId,
+          issueTitle: issue.title,
+          agentType: agentType,
+          targetBranch: config.baseBranch || "main",
+          repoPath: this.repoPath,
+          mode: mode,
+          prompt: prompt, // Store original (unexpanded) prompt
+          config: JSON.stringify(config),
+          createTargetBranch: config.createBaseBranch || false,
+        });
+
+        execution = result.execution;
+        workDir = result.worktreePath;
+      }
     } else {
       // Local mode - create execution without worktree
       const executionId = randomUUID();

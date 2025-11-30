@@ -442,7 +442,7 @@ describe('IssuePanel', () => {
   })
 
   describe('Follow-up Mode and New Execution Button', () => {
-    it('should show "New execution" button when there is a completed execution', async () => {
+    it('should show "New conversation" button when there is a completed execution', async () => {
       // Mock executions API to return a completed execution
       vi.mocked(executionsApi.list).mockResolvedValue([
         {
@@ -461,21 +461,21 @@ describe('IssuePanel', () => {
       renderWithProviders(<IssuePanel issue={mockIssue} />)
 
       await waitFor(() => {
-        expect(screen.getByText('New execution')).toBeInTheDocument()
+        expect(screen.getByText('New conversation')).toBeInTheDocument()
       })
     })
 
-    it('should not show "New execution" button when there are no executions', async () => {
+    it('should not show "New conversation" button when there are no executions', async () => {
       vi.mocked(executionsApi.list).mockResolvedValue([])
 
       renderWithProviders(<IssuePanel issue={mockIssue} />)
 
       await waitFor(() => {
-        expect(screen.queryByText('New execution')).not.toBeInTheDocument()
+        expect(screen.queryByText('New conversation')).not.toBeInTheDocument()
       })
     })
 
-    it('should not show "New execution" button when execution is still running', async () => {
+    it('should not show "New conversation" button when execution is still running', async () => {
       vi.mocked(executionsApi.list).mockResolvedValue([
         {
           id: 'exec-123',
@@ -493,11 +493,11 @@ describe('IssuePanel', () => {
       renderWithProviders(<IssuePanel issue={mockIssue} />)
 
       await waitFor(() => {
-        expect(screen.queryByText('New execution')).not.toBeInTheDocument()
+        expect(screen.queryByText('New conversation')).not.toBeInTheDocument()
       })
     })
 
-    it('should hide "New execution" button after clicking it', async () => {
+    it('should hide "New conversation" button after clicking it', async () => {
       const user = userEvent.setup()
       vi.mocked(executionsApi.list).mockResolvedValue([
         {
@@ -515,15 +515,15 @@ describe('IssuePanel', () => {
 
       renderWithProviders(<IssuePanel issue={mockIssue} />)
 
-      const newExecutionButton = await screen.findByText('New execution')
+      const newExecutionButton = await screen.findByText('New conversation')
       await user.click(newExecutionButton)
 
       await waitFor(() => {
-        expect(screen.queryByText('New execution')).not.toBeInTheDocument()
+        expect(screen.queryByText('New conversation')).not.toBeInTheDocument()
       })
     })
 
-    it('should update placeholder text when clicking "New execution" button', async () => {
+    it('should update placeholder text when clicking "New conversation" button', async () => {
       const user = userEvent.setup()
       vi.mocked(executionsApi.list).mockResolvedValue([
         {
@@ -548,7 +548,7 @@ describe('IssuePanel', () => {
         ).toBeInTheDocument()
       })
 
-      const newExecutionButton = await screen.findByText('New execution')
+      const newExecutionButton = await screen.findByText('New conversation')
       await user.click(newExecutionButton)
 
       // After clicking, placeholder should change to new execution mode
@@ -595,8 +595,8 @@ describe('IssuePanel', () => {
         ).toBeInTheDocument()
       })
 
-      // "New execution" button should be present
-      expect(screen.getByText('New execution')).toBeInTheDocument()
+      // "New conversation" button should be present
+      expect(screen.getByText('New conversation')).toBeInTheDocument()
     })
 
     it('should disable input when execution is running', async () => {
