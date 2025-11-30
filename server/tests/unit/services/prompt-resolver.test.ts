@@ -57,7 +57,7 @@ describe("PromptResolver", () => {
         found: true,
       })
 
-      expect(result.resolvedPrompt).toContain("# Spec: Test Spec (s-abc123)")
+      // Now returns raw content only, not formatted headers
       expect(result.resolvedPrompt).toContain("This is the spec content.")
       expect(mockGetSpecById).toHaveBeenCalledWith(mockDb, "s-abc123")
     })
@@ -87,8 +87,7 @@ describe("PromptResolver", () => {
         found: true,
       })
 
-      expect(result.resolvedPrompt).toContain("# Issue: Test Issue (i-xyz789)")
-      expect(result.resolvedPrompt).toContain("**Status:** open")
+      // Now returns raw content only, not formatted headers
       expect(result.resolvedPrompt).toContain("This is the issue description.")
       expect(mockGetIssueById).toHaveBeenCalledWith(mockDb, "i-xyz789")
     })
@@ -158,10 +157,8 @@ describe("PromptResolver", () => {
       expect(issueRefs).toHaveLength(1)
       expect(fileRefs).toHaveLength(1)
 
-      expect(result.resolvedPrompt).toContain("# Spec: API Spec (s-abc123)")
-      expect(result.resolvedPrompt).toContain(
-        "# Issue: Implement API (i-xyz789)"
-      )
+      // Now returns raw content only
+      expect(result.resolvedPrompt).toContain("Implement the API endpoints.")
       expect(result.resolvedPrompt).toContain("@src/api/routes.ts")
     })
 
@@ -227,8 +224,8 @@ describe("PromptResolver", () => {
       expect(result.references).toHaveLength(1) // Deduplicated
       expect(mockGetSpecById).toHaveBeenCalledTimes(1) // Only fetched once
 
-      // Both occurrences should be replaced
-      const occurrences = (result.resolvedPrompt.match(/# Spec: Test Spec/g) || [])
+      // Both occurrences should be replaced with raw content
+      const occurrences = (result.resolvedPrompt.match(/Spec content\./g) || [])
         .length
       expect(occurrences).toBe(2)
     })
@@ -254,8 +251,8 @@ describe("PromptResolver", () => {
       expect(result.references).toHaveLength(1) // Deduplicated (both lowercase)
       expect(result.references[0].id).toBe("s-abc123")
 
-      // Both occurrences should be replaced
-      const occurrences = (result.resolvedPrompt.match(/# Spec: Test Spec/g) || [])
+      // Both occurrences should be replaced with raw content
+      const occurrences = (result.resolvedPrompt.match(/Spec content\./g) || [])
         .length
       expect(occurrences).toBe(2)
     })
@@ -322,7 +319,7 @@ describe("PromptResolver", () => {
       expect(result.resolvedPrompt).toContain("`code block`")
     })
 
-    it("should include metadata in formatted output", async () => {
+    it("should return raw content without metadata", async () => {
       const mockSpec: Spec = {
         id: "s-abc123",
         uuid: "uuid-spec",
@@ -339,9 +336,10 @@ describe("PromptResolver", () => {
       const prompt = "Review [[s-abc123]]"
       const result = await resolver.resolve(prompt)
 
-      expect(result.resolvedPrompt).toContain("Priority: 3")
-      expect(result.resolvedPrompt).toContain("Created: 2025-01-01T10:00:00Z")
-      expect(result.resolvedPrompt).toContain("Updated: 2025-01-02T15:30:00Z")
+      // Now returns raw content only, no metadata formatting
+      expect(result.resolvedPrompt).toContain("Content")
+      expect(result.resolvedPrompt).not.toContain("Created:")
+      expect(result.resolvedPrompt).not.toContain("Updated:")
     })
 
     it("should handle file mentions with various formats", async () => {
@@ -443,7 +441,6 @@ describe("PromptResolver", () => {
       )
 
       // Only found spec should be replaced
-      expect(result.resolvedPrompt).toContain("# Spec: Found Spec")
       expect(result.resolvedPrompt).toContain("[[s-missing]]")
     })
   })
@@ -474,7 +471,6 @@ describe("PromptResolver", () => {
         found: true,
       })
 
-      expect(result.resolvedPrompt).toContain("# Spec: Test Spec (s-abc123)")
       expect(result.resolvedPrompt).not.toContain("@s-abc123")
     })
 
@@ -503,7 +499,6 @@ describe("PromptResolver", () => {
         found: true,
       })
 
-      expect(result.resolvedPrompt).toContain("# Issue: Test Issue (i-xyz789)")
       expect(result.resolvedPrompt).not.toContain("@i-xyz789")
     })
 
@@ -539,8 +534,6 @@ describe("PromptResolver", () => {
       expect(result.errors).toHaveLength(0)
       expect(result.references).toHaveLength(2)
 
-      expect(result.resolvedPrompt).toContain("# Spec: Spec 1")
-      expect(result.resolvedPrompt).toContain("# Issue: Issue 1")
     })
 
     it("should not confuse @entity-id with @file paths", async () => {
@@ -571,7 +564,6 @@ describe("PromptResolver", () => {
       expect(fileRefs[0].id).toBe("src/components/App.tsx")
 
       // Spec should be replaced, file should not
-      expect(result.resolvedPrompt).toContain("# Spec: Test Spec")
       expect(result.resolvedPrompt).toContain("@src/components/App.tsx")
     })
 
@@ -594,7 +586,6 @@ describe("PromptResolver", () => {
 
       expect(result.errors).toHaveLength(0)
       expect(result.references).toHaveLength(1)
-      expect(result.resolvedPrompt).toContain("# Spec: Test Spec")
     })
 
     it("should deduplicate same entity mentioned with different syntaxes", async () => {
@@ -618,8 +609,8 @@ describe("PromptResolver", () => {
       expect(result.references).toHaveLength(1) // Deduplicated
       expect(mockGetSpecById).toHaveBeenCalledTimes(1) // Only fetched once
 
-      // Both occurrences should be replaced
-      const occurrences = (result.resolvedPrompt.match(/# Spec: Test Spec/g) || [])
+      // Both occurrences should be replaced with raw content
+      const occurrences = (result.resolvedPrompt.match(/Content/g) || [])
         .length
       expect(occurrences).toBe(2)
     })
@@ -643,7 +634,6 @@ describe("PromptResolver", () => {
 
       expect(result.errors).toHaveLength(0)
       expect(result.references).toHaveLength(1)
-      expect(result.resolvedPrompt).toContain("# Issue: Test Issue")
     })
   })
 })

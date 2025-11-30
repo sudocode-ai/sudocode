@@ -34,7 +34,6 @@ vi.mock('@/lib/api', async () => {
       delete: vi.fn(),
     },
     executionsApi: {
-      prepare: vi.fn(),
       create: vi.fn(),
       getById: vi.fn(),
       list: vi.fn(),
@@ -167,23 +166,11 @@ describe('API Module', () => {
 
   describe('executionsApi', () => {
     it('should have all required methods', () => {
-      expect(executionsApi).toHaveProperty('prepare')
       expect(executionsApi).toHaveProperty('create')
       expect(executionsApi).toHaveProperty('getById')
       expect(executionsApi).toHaveProperty('list')
       expect(executionsApi).toHaveProperty('createFollowUp')
       expect(executionsApi).toHaveProperty('cancel')
-    })
-
-    it('should call prepare with issue id', () => {
-      executionsApi.prepare('ISSUE-001')
-      expect(executionsApi.prepare).toHaveBeenCalledWith('ISSUE-001')
-    })
-
-    it('should call prepare with issue id and config', () => {
-      const config = { mode: 'worktree' as const }
-      executionsApi.prepare('ISSUE-001', { config })
-      expect(executionsApi.prepare).toHaveBeenCalledWith('ISSUE-001', { config })
     })
 
     it('should call create with issue id and request data', () => {

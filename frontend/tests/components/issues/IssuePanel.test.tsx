@@ -6,7 +6,7 @@ import { IssuePanel } from '@/components/issues/IssuePanel'
 import type { Issue } from '@sudocode-ai/types'
 import { executionsApi } from '@/lib/api'
 
-// Mock the executionsApi
+// Mock the executionsApi, repositoryApi, and agentsApi
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual('@/lib/api')
   return {
@@ -16,11 +16,25 @@ vi.mock('@/lib/api', async () => {
       create: vi.fn(),
       createFollowUp: vi.fn(),
       get: vi.fn(),
-      prepare: vi.fn().mockResolvedValue({
-        renderedPrompt: 'test',
-        defaultConfig: { mode: 'worktree', cleanupMode: 'manual' },
-        availableBranches: ['main'],
+    },
+    repositoryApi: {
+      getInfo: vi.fn().mockResolvedValue({
+        name: 'test-repo',
+        path: '/test/path',
+        branch: 'main',
       }),
+    },
+    agentsApi: {
+      getAll: vi.fn().mockResolvedValue([
+        {
+          type: 'claude-code',
+          displayName: 'Claude Code',
+          supportedModes: ['structured', 'interactive', 'hybrid'],
+          supportsStreaming: true,
+          supportsStructuredOutput: true,
+          implemented: true,
+        },
+      ]),
     },
   }
 })

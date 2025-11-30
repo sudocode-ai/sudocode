@@ -19,8 +19,6 @@ import type {
 } from '@/types/api'
 import type {
   Execution,
-  ExecutionPrepareResult,
-  PrepareExecutionRequest,
   CreateExecutionRequest,
   CreateFollowUpRequest,
 } from '@/types/execution'
@@ -202,10 +200,6 @@ export interface ExecutionChainResponse {
 }
 
 export const executionsApi = {
-  // Prepare execution (preview template and gather context)
-  prepare: (issueId: string, request?: PrepareExecutionRequest) =>
-    post<ExecutionPrepareResult>(`/issues/${issueId}/executions/prepare`, request),
-
   // Create and start execution
   create: (issueId: string, request: CreateExecutionRequest) =>
     post<Execution>(`/issues/${issueId}/executions`, request),

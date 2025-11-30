@@ -9,23 +9,21 @@
 
 import type Database from "better-sqlite3";
 import type { Execution } from "@sudocode-ai/types";
-import { PromptTemplateEngine } from "./prompt-template-engine.js";
 import { ExecutionLifecycleService } from "./execution-lifecycle.js";
 import {
   createExecution,
   getExecution,
   updateExecution,
 } from "./executions.js";
-import { getDefaultTemplate, getTemplateById } from "./prompt-templates.js";
 import { randomUUID } from "crypto";
 import type { ExecutionTask } from "agent-execution-engine/engine";
 import type { TransportManager } from "../execution/transport/transport-manager.js";
 import { ExecutionLogsStore } from "./execution-logs-store.js";
 import { ExecutionWorkerPool } from "./execution-worker-pool.js";
 import { broadcastExecutionUpdate } from "./websocket.js";
-import { GitCli } from "../execution/worktree/git-cli.js";
 import { createExecutorForAgent } from "../execution/executors/executor-factory.js";
 import type { AgentType } from "@sudocode-ai/types/agents";
+import { PromptResolver } from "./prompt-resolver.js";
 
 /**
  * Configuration for creating an execution
@@ -44,38 +42,9 @@ export interface ExecutionConfig {
 }
 
 /**
- * Template variable context for rendering
- */
-export interface TemplateContext {
-  issueId: string;
-  title: string;
-  description: string;
-  relatedSpecs?: Array<{ id: string; title: string }>;
-  feedback?: Array<{ issueId: string; content: string }>;
-}
-
-/**
- * Result from prepareExecution - preview before starting
- */
-export interface ExecutionPrepareResult {
-  renderedPrompt: string;
-  issue: {
-    id: string;
-    title: string;
-    content: string;
-  };
-  relatedSpecs: Array<{ id: string; title: string }>;
-  defaultConfig: ExecutionConfig;
-  availableBranches: string[];
-  warnings?: string[];
-  errors?: string[];
-}
-
-/**
  * ExecutionService
  *
  * Manages the full lifecycle of issue-based executions:
- * - Preparing execution with template rendering
  * - Creating and starting executions with worktree isolation
  * - Creating follow-up executions that reuse worktrees
  * - Canceling and cleaning up executions
@@ -83,7 +52,6 @@ export interface ExecutionPrepareResult {
 export class ExecutionService {
   private db: Database.Database;
   private projectId: string;
-  private templateEngine: PromptTemplateEngine;
   private lifecycleService: ExecutionLifecycleService;
   private repoPath: string;
   private transportManager?: TransportManager;
@@ -113,148 +81,11 @@ export class ExecutionService {
     this.db = db;
     this.projectId = projectId;
     this.repoPath = repoPath;
-    this.templateEngine = new PromptTemplateEngine();
     this.lifecycleService =
       lifecycleService || new ExecutionLifecycleService(db, repoPath);
     this.transportManager = transportManager;
     this.logsStore = logsStore || new ExecutionLogsStore(db);
     this.workerPool = workerPool;
-  }
-
-  /**
-   * Prepare execution - load issue, render template, return preview
-   *
-   * This method loads the issue and related context, renders the template,
-   * and returns a preview for the user to review before starting execution.
-   *
-   * @param issueId - ID of issue to prepare execution for
-   * @param options - Optional template and config overrides
-   * @returns Execution prepare result with rendered prompt and context
-   */
-  async prepareExecution(
-    issueId: string,
-    options?: {
-      templateId?: string;
-      config?: Partial<ExecutionConfig>;
-    }
-  ): Promise<ExecutionPrepareResult> {
-    // 1. Load issue
-    const issue = this.db
-      .prepare("SELECT * FROM issues WHERE id = ?")
-      .get(issueId) as
-      | { id: string; title: string; content: string }
-      | undefined;
-
-    if (!issue) {
-      throw new Error(`Issue ${issueId} not found`);
-    }
-
-    // 2. Load related specs (via implements/references relationships)
-    const relatedSpecs = this.db
-      .prepare(
-        `
-      SELECT DISTINCT s.id, s.title
-      FROM specs s
-      JOIN relationships r ON r.to_id = s.id AND r.to_type = 'spec'
-      WHERE r.from_id = ? AND r.from_type = 'issue'
-        AND r.relationship_type IN ('implements', 'references')
-      ORDER BY s.title
-    `
-      )
-      .all(issueId) as Array<{ id: string; title: string }>;
-
-    // 3. Build context for template rendering
-    const context: TemplateContext = {
-      issueId: issue.id,
-      title: issue.title,
-      description: issue.content,
-      relatedSpecs:
-        relatedSpecs.length > 0
-          ? relatedSpecs.map((s) => ({
-              id: s.id,
-              title: s.title,
-            }))
-          : undefined,
-    };
-
-    // 4. Get template (use custom template if provided, otherwise default)
-    let template: string;
-    if (options?.templateId) {
-      const customTemplate = getTemplateById(this.db, options.templateId);
-      if (!customTemplate) {
-        throw new Error(`Template ${options.templateId} not found`);
-      }
-      template = customTemplate.template;
-    } else {
-      const defaultTemplate = getDefaultTemplate(this.db, "issue");
-      if (!defaultTemplate) {
-        throw new Error("Default issue template not found");
-      }
-      template = defaultTemplate.template;
-    }
-
-    // 5. Render template
-    const renderedPrompt = this.templateEngine.render(template, context);
-
-    // 6. Get current branch and available branches
-    let currentBranch = "main"; // Fallback default
-    let availableBranches: string[] = ["main"];
-    try {
-      const gitCli = new GitCli();
-      currentBranch = await gitCli.getCurrentBranch(this.repoPath);
-      // If detached HEAD, try to use 'main' as fallback
-      if (currentBranch === "(detached)") {
-        currentBranch = "main";
-      }
-
-      // Get all available branches
-      const branches = await gitCli.listBranches(this.repoPath);
-      // Deduplicate branches (local and remote may have same names)
-      availableBranches = [...new Set(branches)].filter(
-        (b) => b && b !== "HEAD"
-      );
-      // Ensure current branch is at the top of the list
-      availableBranches = [
-        currentBranch,
-        ...availableBranches.filter((b) => b !== currentBranch),
-      ];
-    } catch (error) {
-      console.warn("Failed to get branches, using 'main' as fallback:", error);
-    }
-
-    // 7. Get default config
-    const defaultConfig: ExecutionConfig = {
-      mode: "worktree",
-      model: "claude-sonnet-4",
-      baseBranch: currentBranch,
-      checkpointInterval: 1,
-      continueOnStepFailure: false,
-      captureFileChanges: true,
-      captureToolCalls: true,
-      ...options?.config,
-    };
-
-    // 8. Validate
-    const warnings: string[] = [];
-    const errors: string[] = [];
-
-    if (!renderedPrompt.trim()) {
-      errors.push("Rendered prompt is empty");
-    }
-
-    return {
-      renderedPrompt,
-      issue: {
-        id: issue.id,
-        title: issue.title,
-        content: issue.content,
-      },
-      relatedSpecs,
-      defaultConfig,
-      availableBranches,
-      warnings,
-      errors,
-    };
   }
 
   /**
@@ -289,7 +120,14 @@ export class ExecutionService {
       throw new Error(`Issue ${issueId} not found`);
     }
 
-    // 2. Determine execution mode and create execution with worktree
+    // 2. Resolve prompt references before creating execution
+    const resolver = new PromptResolver(this.db);
+    const { resolvedPrompt, errors } = await resolver.resolve(prompt);
+    if (errors.length > 0) {
+      console.warn(`[ExecutionService] Prompt resolution warnings:`, errors);
+    }
+
+    // 3. Determine execution mode and create execution with worktree
     const mode = config.mode || "worktree";
     let execution: Execution;
     let workDir: string;
@@ -303,7 +141,8 @@ export class ExecutionService {
         targetBranch: config.baseBranch || "main",
         repoPath: this.repoPath,
         mode: mode,
-        prompt: prompt,
+        // TODO: Separate original prompt from resolved prompt (?)
+        prompt: resolvedPrompt, // Store resolved prompt
         config: JSON.stringify(config),
         createTargetBranch: config.createBaseBranch || false,
       });
@@ -318,7 +157,7 @@ export class ExecutionService {
         issue_id: issueId,
         agent_type: agentType,
         mode: mode,
-        prompt: prompt,
+        prompt: resolvedPrompt, // Store resolved prompt
         config: JSON.stringify(config),
         target_branch: config.baseBranch || "main",
         branch_name: config.baseBranch || "main",
@@ -372,12 +211,12 @@ export class ExecutionService {
       }
     );
 
-    // Build execution task
+    // Build execution task (prompt already resolved above)
     const task: ExecutionTask = {
       id: execution.id,
       type: "issue",
       entityId: issueId,
-      prompt: prompt,
+      prompt: resolvedPrompt,
       workDir: workDir,
       config: {
         timeout: config.timeout,
@@ -423,11 +262,16 @@ export class ExecutionService {
    *
    * @param executionId - ID of previous execution to follow up on
    * @param feedback - Additional feedback/context to append to prompt
+   * @param options - Optional configuration
+   * @param options.includeOriginalPrompt - Whether to prepend the original issue content (default: false, assumes session resumption with full history)
    * @returns Created follow-up execution record
    */
   async createFollowUp(
     executionId: string,
-    feedback: string
+    feedback: string,
+    options?: {
+      includeOriginalPrompt?: boolean;
+    }
   ): Promise<Execution> {
     // 1. Get previous execution
     const prevExecution = getExecution(this.db, executionId);
@@ -459,23 +303,33 @@ export class ExecutionService {
       }
     }
 
-    // 2. Validate that previous execution has an issue_id
-    if (!prevExecution.issue_id) {
-      throw new Error("Previous execution must have an issue_id for follow-up");
+    // TODO: Make it so follow-ups don't require an issue id.
+    // 2. Build follow-up prompt (default: just feedback, assumes session resumption)
+    let followUpPrompt = feedback;
+
+    if (options?.includeOriginalPrompt) {
+      // Optional: include original issue content if explicitly requested
+      if (!prevExecution.issue_id) {
+        throw new Error(
+          "Previous execution must have an issue_id to include original prompt"
+        );
+      }
+
+      // Get issue content directly from database
+      const issue = this.db
+        .prepare("SELECT content FROM issues WHERE id = ?")
+        .get(prevExecution.issue_id) as { content: string } | undefined;
+
+      if (!issue) {
+        throw new Error(`Issue ${prevExecution.issue_id} not found`);
+      }
+
+      followUpPrompt = `${issue.content}
+
+${feedback}`;
     }
 
-    // 3. Prepare execution to get rendered prompt
-    const prepareResult = await this.prepareExecution(prevExecution.issue_id);
-
-    // 4. Append feedback to prompt
-    const followUpPrompt = `${prepareResult.renderedPrompt}
-
-## Follow-up Feedback
-${feedback}
-
-Please continue working on this issue, taking into account the feedback above.`;
-
-    // 5. Create new execution record that references previous execution
+    // 3. Create new execution record that references previous execution
     // Default to 'claude-code' if agent_type is null (for backwards compatibility)
     const agentType = (prevExecution.agent_type || "claude-code") as AgentType;
 
@@ -492,7 +346,7 @@ Please continue working on this issue, taking into account the feedback above.`;
       worktree_path: prevExecution.worktree_path || undefined, // Reuse same worktree (undefined for local)
       config: prevExecution.config || undefined, // Preserve config (including cleanupMode) from previous execution
       parent_execution_id: executionId, // Link to parent execution for follow-up chain
-      prompt: feedback, // Store the user's follow-up feedback as the prompt
+      prompt: followUpPrompt, // Store the follow-up prompt (feedback or combined with original)
     });
 
     // Initialize empty logs for this execution
@@ -509,7 +363,7 @@ Please continue working on this issue, taking into account the feedback above.`;
       // Don't fail execution creation - logs are nice-to-have
     }
 
-    // 6. Use executor wrapper with session resumption
+    // 4. Use executor wrapper with session resumption
     const wrapper = createExecutorForAgent(
       agentType,
       { workDir: this.repoPath },
@@ -542,7 +396,7 @@ Please continue working on this issue, taking into account the feedback above.`;
     const task: ExecutionTask = {
       id: newExecution.id,
       type: "issue",
-      entityId: prevExecution.issue_id,
+      entityId: prevExecution.issue_id ?? undefined,
       prompt: followUpPrompt,
       workDir: workDir,
       config: {
@@ -552,7 +406,7 @@ Please continue working on this issue, taking into account the feedback above.`;
         model: parsedConfig.model || "claude-sonnet-4",
         captureFileChanges: parsedConfig.captureFileChanges ?? true,
         captureToolCalls: parsedConfig.captureToolCalls ?? true,
-        issueId: prevExecution.issue_id,
+        issueId: prevExecution.issue_id ?? undefined,
         executionId: newExecution.id,
         followUpOf: executionId,
       },

@@ -1305,7 +1305,7 @@ describe('ExecutionMonitor', () => {
         metadata: { lineCount: 6, byteSize: 300, createdAt: '', updatedAt: '' },
       })
 
-      render(
+      renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running' } as any} />
       )
 

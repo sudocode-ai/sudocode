@@ -3,8 +3,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithProviders } from '@/test/test-utils'
 import { AgentConfigPanel } from '@/components/executions/AgentConfigPanel'
-import { executionsApi, agentsApi } from '@/lib/api'
-import type { ExecutionPrepareResult } from '@/types/execution'
+import { agentsApi, repositoryApi } from '@/lib/api'
 import type { AgentInfo } from '@/types/api'
 
 // Mock the API
@@ -12,7 +11,6 @@ vi.mock('@/lib/api', () => ({
   setCurrentProjectId: vi.fn(),
   getCurrentProjectId: vi.fn(() => 'test-project-123'),
   executionsApi: {
-    prepare: vi.fn(),
     create: vi.fn(),
     getById: vi.fn(),
     list: vi.fn(),
@@ -21,6 +19,9 @@ vi.mock('@/lib/api', () => ({
   },
   agentsApi: {
     getAll: vi.fn(),
+  },
+  repositoryApi: {
+    getInfo: vi.fn(),
   },
 }))
 
@@ -47,29 +48,13 @@ describe('AgentConfigPanel', () => {
     },
   ]
 
-  const mockPrepareResult: ExecutionPrepareResult = {
-    renderedPrompt: 'Test prompt for i-test1',
-    issue: {
-      id: 'i-test1',
-      title: 'Test Issue',
-      description: 'Test description',
-    },
-    relatedSpecs: [],
-    relatedFeedback: [],
-    defaultConfig: {
-      mode: 'worktree',
-      baseBranch: 'main',
-      cleanupMode: 'manual',
-    },
-    availableModels: ['claude-sonnet-4'],
-    availableBranches: ['main', 'develop'],
-    warnings: [],
-    errors: [],
-  }
-
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(executionsApi.prepare).mockResolvedValue(mockPrepareResult)
+    vi.mocked(repositoryApi.getInfo).mockResolvedValue({
+      name: 'test-repo',
+      path: '/test/path',
+      branch: 'main',
+    })
     vi.mocked(agentsApi.getAll).mockResolvedValue(mockAgents)
   })
 
@@ -82,11 +67,11 @@ describe('AgentConfigPanel', () => {
       })
     })
 
-    it('should load execution preview on mount', async () => {
+    it('should load repository info on mount', async () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
-        expect(executionsApi.prepare).toHaveBeenCalledWith('i-test1')
+        expect(repositoryApi.getInfo).toHaveBeenCalled()
       })
     })
 
@@ -207,79 +192,63 @@ describe('AgentConfigPanel', () => {
     })
   })
 
-  describe('Branch Selection', () => {
-    it('should always show branch selector when baseBranch is set', async () => {
+  describe('Branch Display', () => {
+    it('should show branch display when baseBranch is set', async () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
+        // Should only have agent selector and mode selector (2 comboboxes)
         const triggers = screen.getAllByRole('combobox')
-        // Should have: agent selector, mode selector, branch selector
-        expect(triggers.length).toBeGreaterThanOrEqual(3)
+        expect(triggers.length).toBe(2)
+      })
+
+      // Should show current branch from repositoryApi in worktree mode
+      await waitFor(() => {
+        expect(screen.getByText('main')).toBeInTheDocument()
       })
     })
 
-    it('should display available branches in worktree mode', async () => {
+    it('should display current branch in worktree mode', async () => {
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        // Should show current branch from repositoryApi
+        expect(screen.getByText('main')).toBeInTheDocument()
+      })
+    })
+
+    it('should hide branch display in local mode', async () => {
       const user = userEvent.setup()
 
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
+      // Wait for initial render
       await waitFor(() => {
-        const triggers = screen.getAllByRole('combobox')
-        expect(triggers.length).toBeGreaterThanOrEqual(3)
+        expect(screen.getByText('New worktree')).toBeInTheDocument()
       })
 
-      // Branch selector should be enabled in worktree mode
+      // Initially should show branch in worktree mode
+      expect(screen.getByText('main')).toBeInTheDocument()
+
+      // Switch to local mode
       const triggers = screen.getAllByRole('combobox')
-      const branchSelector = triggers[2]
-      expect(branchSelector).not.toBeDisabled()
+      await user.click(triggers[1]) // Mode selector
 
-      // Click branch selector (third combobox)
-      await user.click(branchSelector)
+      const localOption = await screen.findByText('Run local')
+      await user.click(localOption)
 
-      // BranchSelector uses a Popover with buttons, not Select with options
       await waitFor(() => {
-        // Should show the search input
-        expect(screen.getByPlaceholderText('Search or create branch...')).toBeInTheDocument()
-        // Should show available branches (main appears in trigger + list)
-        expect(screen.getAllByText('main').length).toBeGreaterThanOrEqual(2)
-        expect(screen.getByText('develop')).toBeInTheDocument()
+        // Branch display should be hidden in local mode
+        expect(screen.queryByText('main')).not.toBeInTheDocument()
       })
     })
 
-    it('should disable branch selector in local mode', async () => {
-      // Override prepare result to set mode to local
-      vi.mocked(executionsApi.prepare).mockResolvedValue({
-        ...mockPrepareResult,
-        defaultConfig: {
-          mode: 'local',
-          baseBranch: 'main',
-          cleanupMode: 'manual',
-        },
-      })
-
-      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
-
-      await waitFor(() => {
-        // Wait for mode to be set to local
-        expect(screen.getByText('Run local')).toBeInTheDocument()
-      })
-
-      const triggers = screen.getAllByRole('combobox')
-      const branchSelector = triggers[2]
-
-      // Branch selector should be disabled in local mode
-      expect(branchSelector).toBeDisabled()
-    })
-
-    it('should show current branch in local mode', async () => {
-      // Override prepare result to set mode to local
-      vi.mocked(executionsApi.prepare).mockResolvedValue({
-        ...mockPrepareResult,
-        defaultConfig: {
-          mode: 'local',
-          baseBranch: 'develop',
-          cleanupMode: 'manual',
-        },
+    it('should show current branch from repository', async () => {
+      // Override repo info to return a different branch
+      vi.mocked(repositoryApi.getInfo).mockResolvedValue({
+        name: 'test-repo',
+        path: '/test/path',
+        branch: 'develop',
       })
 
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
@@ -288,20 +257,6 @@ describe('AgentConfigPanel', () => {
         // Should show the current branch
         expect(screen.getByText('develop')).toBeInTheDocument()
       })
-    })
-
-    it('should show GitBranch icon in branch selector', async () => {
-      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
-
-      await waitFor(() => {
-        const triggers = screen.getAllByRole('combobox')
-        expect(triggers.length).toBeGreaterThanOrEqual(3)
-      })
-
-      // Branch selector should have GitBranch icon (rendered as svg)
-      const branchSelector = screen.getAllByRole('combobox')[2]
-      const svgIcon = branchSelector.querySelector('svg')
-      expect(svgIcon).toBeInTheDocument()
     })
   })
 
@@ -318,7 +273,7 @@ describe('AgentConfigPanel', () => {
     })
 
     it('should disable prompt input while loading', () => {
-      vi.mocked(executionsApi.prepare).mockImplementation(
+      vi.mocked(repositoryApi.getInfo).mockImplementation(
         () => new Promise(() => {}) // Never resolves
       )
 
@@ -454,80 +409,9 @@ describe('AgentConfigPanel', () => {
     })
   })
 
-  describe('Error Handling', () => {
-    it('should display errors from prepare result', async () => {
-      const errorPrepareResult: ExecutionPrepareResult = {
-        ...mockPrepareResult,
-        errors: ['Error 1: Git repository not found', 'Error 2: No base branch'],
-      }
-      vi.mocked(executionsApi.prepare).mockResolvedValue(errorPrepareResult)
-
-      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Errors')).toBeInTheDocument()
-        expect(screen.getByText('Error 1: Git repository not found')).toBeInTheDocument()
-        expect(screen.getByText('Error 2: No base branch')).toBeInTheDocument()
-      })
-    })
-
-    it('should disable run button when there are errors', async () => {
-      const user = userEvent.setup()
-      const errorPrepareResult: ExecutionPrepareResult = {
-        ...mockPrepareResult,
-        errors: ['Error 1: Git repository not found'],
-      }
-      vi.mocked(executionsApi.prepare).mockResolvedValue(errorPrepareResult)
-
-      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
-
-      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
-      await user.type(textarea, 'Test prompt')
-
-      const runButton = screen.getByRole('button', { name: /Submit/i })
-      expect(runButton).toBeDisabled()
-    })
-  })
-
-  describe('Warnings', () => {
-    it('should display warnings from prepare result', async () => {
-      const warningPrepareResult: ExecutionPrepareResult = {
-        ...mockPrepareResult,
-        warnings: ['Warning: Working directory has uncommitted changes'],
-      }
-      vi.mocked(executionsApi.prepare).mockResolvedValue(warningPrepareResult)
-
-      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Warnings')).toBeInTheDocument()
-        expect(
-          screen.getByText('Warning: Working directory has uncommitted changes')
-        ).toBeInTheDocument()
-      })
-    })
-
-    it('should still allow running with warnings', async () => {
-      const user = userEvent.setup()
-      const warningPrepareResult: ExecutionPrepareResult = {
-        ...mockPrepareResult,
-        warnings: ['Warning: Working directory has uncommitted changes'],
-      }
-      vi.mocked(executionsApi.prepare).mockResolvedValue(warningPrepareResult)
-
-      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
-
-      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
-      await user.type(textarea, 'Test prompt')
-
-      const runButton = screen.getByRole('button', { name: /Submit/i })
-      expect(runButton).not.toBeDisabled()
-    })
-  })
-
   describe('Loading States', () => {
-    it('should disable controls while loading execution preview', () => {
-      vi.mocked(executionsApi.prepare).mockImplementation(
+    it('should disable controls while loading repository info', () => {
+      vi.mocked(repositoryApi.getInfo).mockImplementation(
         () => new Promise(() => {}) // Never resolves
       )
 
@@ -631,20 +515,10 @@ describe('AgentConfigPanel', () => {
       ]
       vi.mocked(agentsApi.getAll).mockResolvedValue(mockAgentsWithCursor)
 
-      // Override prepare to return config without baseBranch so localStorage mode is visible
-      vi.mocked(executionsApi.prepare).mockResolvedValue({
-        ...mockPrepareResult,
-        defaultConfig: {
-          // Don't override mode - let localStorage value persist
-          cleanupMode: 'manual',
-        },
-      })
-
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
-        // Should use saved mode from localStorage (before prepare API merge)
-        // After prepare merges, the mode should still be 'local' since prepare doesn't set it
+        // Should use saved mode from localStorage
         expect(screen.getByText('Run local')).toBeInTheDocument()
         // Should use saved agent type from localStorage
         expect(screen.getByText('Cursor')).toBeInTheDocument()
@@ -827,7 +701,7 @@ describe('AgentConfigPanel', () => {
       })
     })
 
-    it('should not call prepare API in follow-up mode', async () => {
+    it('should not call repository API in follow-up mode', async () => {
       renderWithProviders(
         <AgentConfigPanel
           issueId="i-test1"
@@ -840,7 +714,7 @@ describe('AgentConfigPanel', () => {
       // Wait a tick for any potential API calls
       await new Promise((resolve) => setTimeout(resolve, 100))
 
-      expect(executionsApi.prepare).not.toHaveBeenCalled()
+      expect(repositoryApi.getInfo).not.toHaveBeenCalled()
     })
 
     it('should disable agent selector in follow-up mode', async () => {
@@ -874,23 +748,6 @@ describe('AgentConfigPanel', () => {
         const triggers = screen.getAllByRole('combobox')
         // Mode selector should be disabled
         expect(triggers[1]).toBeDisabled()
-      })
-    })
-
-    it('should disable branch selector in follow-up mode', async () => {
-      renderWithProviders(
-        <AgentConfigPanel
-          issueId="i-test1"
-          onStart={mockOnStart}
-          isFollowUp
-          lastExecution={lastExecution}
-        />
-      )
-
-      await waitFor(() => {
-        const triggers = screen.getAllByRole('combobox')
-        // Branch selector should be disabled
-        expect(triggers[2]).toBeDisabled()
       })
     })
 

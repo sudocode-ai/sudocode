@@ -108,6 +108,7 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
   let testIssueId: string;
   let testSpecId: string;
   let executionService: ExecutionService;
+  const issueContent = "Add OAuth2 authentication with JWT tokens";
 
   beforeAll(() => {
     // Create temporary directory
@@ -347,14 +348,12 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
 
   describe("ExecutionService Multi-Agent Integration", () => {
     it("should create execution with default claude-code agent", async () => {
-      const prepareResult =
-        await executionService.prepareExecution(testIssueId);
 
       // Create without specifying agentType
       const execution = await executionService.createExecution(
         testIssueId,
-        prepareResult.defaultConfig,
-        prepareResult.renderedPrompt
+        { mode: "worktree" as const },
+        issueContent
       );
 
       expect(execution).toBeDefined();
@@ -363,13 +362,11 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
     });
 
     it("should create execution with explicit agent type", async () => {
-      const prepareResult =
-        await executionService.prepareExecution(testIssueId);
 
       const execution = await executionService.createExecution(
         testIssueId,
-        prepareResult.defaultConfig,
-        prepareResult.renderedPrompt,
+        { mode: "worktree" as const },
+        issueContent,
         "claude-code"
       );
 
@@ -378,13 +375,11 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
     });
 
     it("should create execution with codex agent", async () => {
-      const prepareResult =
-        await executionService.prepareExecution(testIssueId);
 
       const execution = await executionService.createExecution(
         testIssueId,
-        prepareResult.defaultConfig,
-        prepareResult.renderedPrompt,
+        { mode: "worktree" as const },
+        issueContent,
         "codex"
       );
 
@@ -393,13 +388,11 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
     });
 
     it("should create execution for copilot agent", async () => {
-      const prepareResult =
-        await executionService.prepareExecution(testIssueId);
 
       const execution = await executionService.createExecution(
         testIssueId,
-        prepareResult.defaultConfig,
-        prepareResult.renderedPrompt,
+        { mode: "worktree" as const },
+        issueContent,
         "copilot"
       );
 
@@ -409,13 +402,11 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
     });
 
     it("should persist agent_type to database", async () => {
-      const prepareResult =
-        await executionService.prepareExecution(testIssueId);
 
       const execution = await executionService.createExecution(
         testIssueId,
-        prepareResult.defaultConfig,
-        prepareResult.renderedPrompt,
+        { mode: "worktree" as const },
+        issueContent,
         "claude-code"
       );
 
@@ -428,14 +419,12 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
     });
 
     it("should handle NULL agent_type in database gracefully", async () => {
-      const prepareResult =
-        await executionService.prepareExecution(testIssueId);
 
       // Create execution
       const execution = await executionService.createExecution(
         testIssueId,
-        prepareResult.defaultConfig,
-        prepareResult.renderedPrompt
+        { mode: "worktree" as const },
+        issueContent
       );
 
       // Manually set agent_type to NULL in database
@@ -516,13 +505,11 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
 
   describe("Regression Testing - Claude Code Functionality", () => {
     it("should create Claude Code execution without breaking changes", async () => {
-      const prepareResult =
-        await executionService.prepareExecution(testIssueId);
 
       const execution = await executionService.createExecution(
         testIssueId,
-        prepareResult.defaultConfig,
-        prepareResult.renderedPrompt
+        { mode: "worktree" as const },
+        issueContent
       );
 
       expect(execution).toBeDefined();
@@ -536,12 +523,10 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
 
     it("should list executions correctly", async () => {
       // Create an execution to ensure we have data
-      const prepareResult =
-        await executionService.prepareExecution(testIssueId);
       const newExecution = await executionService.createExecution(
         testIssueId,
-        prepareResult.defaultConfig,
-        prepareResult.renderedPrompt
+        { mode: "worktree" as const },
+        issueContent
       );
 
       const executions = executionService.listExecutions(testIssueId);
@@ -555,17 +540,7 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
       expect(createdExec!.agent_type).toBe("claude-code");
     });
 
-    it("should prepare execution with template rendering", async () => {
-      const result = await executionService.prepareExecution(testIssueId);
-
-      expect(result.renderedPrompt).toBeTruthy();
-      expect(result.issue).toBeDefined();
-      expect(result.issue.id).toBe(testIssueId);
-      expect(result.relatedSpecs).toHaveLength(1);
-      expect(result.relatedSpecs[0].id).toBe(testSpecId);
-      expect(result.defaultConfig).toBeDefined();
-      expect(result.defaultConfig.mode).toBe("worktree");
-    });
+    // prepareExecution was removed - prompts are now passed directly to createExecution
   });
 
   describe("Multiple and Concurrent Executions", () => {

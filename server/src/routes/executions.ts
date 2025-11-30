@@ -28,38 +28,6 @@ export function createExecutionsRouter(): Router {
   const router = Router();
 
   /**
-   * POST /api/issues/:issueId/executions/prepare
-   *
-   * Prepare an execution - render template and show preview
-   */
-  router.post(
-    "/issues/:issueId/executions/prepare",
-    async (req: Request, res: Response) => {
-      try {
-        const { issueId } = req.params;
-        const options = req.body || {};
-        const result = await req.project!.executionService!.prepareExecution(
-          issueId,
-          options
-        );
-
-        res.json({
-          success: true,
-          data: result,
-        });
-      } catch (error) {
-        console.error("[API Route] ERROR: Failed to prepare execution:", error);
-        res.status(500).json({
-          success: false,
-          data: null,
-          error_data: error instanceof Error ? error.message : String(error),
-          message: "Failed to prepare execution",
-        });
-      }
-    }
-  );
-
-  /**
    * POST /api/issues/:issueId/executions
    *
    * Create and start a new execution

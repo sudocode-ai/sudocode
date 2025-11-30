@@ -192,120 +192,147 @@ describe("ExecutionService", () => {
     }
   });
 
-  describe("prepareExecution", () => {
-    it("should load issue and render template", async () => {
-      const result = await service.prepareExecution(testIssueId);
+  describe("prompt resolution", () => {
+    it("should resolve [[s-xxxxx]] spec references in prompt", async () => {
+      const promptWithSpec = `Implement authentication as per [[${testSpecId}]]`;
 
-      // Verify structure
-      expect(result.renderedPrompt, "Should have rendered prompt").toBeTruthy();
-      expect(result.issue, "Should have issue").toBeTruthy();
-      expect(result.relatedSpecs, "Should have related specs").toBeTruthy();
-      expect(result.defaultConfig, "Should have default config").toBeTruthy();
-
-      // Verify issue data
-      expect(result.issue.id).toBe(testIssueId);
-      expect(result.issue.title).toBe("Implement user authentication");
-      expect(result.issue.content).toBe(
-        "Add OAuth2 authentication with JWT tokens"
+      const execution = await service.createExecution(
+        testIssueId,
+        { mode: "local" },
+        promptWithSpec
       );
 
-      // Verify related specs
-      expect(result.relatedSpecs.length).toBe(1);
-      expect(result.relatedSpecs[0].id).toBe(testSpecId);
-      expect(result.relatedSpecs[0].title).toBe("Authentication System Design");
+      // Verify execution was created
+      expect(execution.id).toBeTruthy();
 
-      // Verify rendered prompt contains issue info
-      expect(result.renderedPrompt.includes(testIssueId)).toBeTruthy();
-      expect(
-        result.renderedPrompt.includes("Implement user authentication")
-      ).toBeTruthy();
-      expect(
-        result.renderedPrompt.includes("OAuth2 authentication with JWT tokens")
-      ).toBeTruthy();
-      expect(result.renderedPrompt.includes(testSpecId)).toBeTruthy();
-
-      // Verify default config
-      expect(result.defaultConfig.mode).toBe("worktree");
-      expect(result.defaultConfig.model).toBe("claude-sonnet-4");
-      // baseBranch should be set to current branch (not hardcoded to "main")
-      expect(result.defaultConfig.baseBranch).toBeTruthy();
-      expect(typeof result.defaultConfig.baseBranch).toBe("string");
+      // Verify prompt was resolved (should contain spec content without formatting)
+      expect(execution.prompt).toContain("OAuth2 with JWT tokens");
+      expect(execution.prompt).not.toContain(`[[${testSpecId}]]`);
     });
 
-    it("should handle issue without related specs", async () => {
-      // Create issue without relationships
-      const { id: isolatedIssueId, uuid: isolatedIssueUuid } = generateIssueId(
-        db,
-        testDir
+    it("should resolve @s-xxxxx spec references in prompt", async () => {
+      const promptWithSpec = `Implement authentication as per @${testSpecId}`;
+
+      const execution = await service.createExecution(
+        testIssueId,
+        { mode: "local" },
+        promptWithSpec
       );
-      createIssue(db, {
-        id: isolatedIssueId,
-        uuid: isolatedIssueUuid,
-        title: "Fix bug",
-        content: "Fix the bug",
-      });
 
-      const result = await service.prepareExecution(isolatedIssueId);
-
-      expect(result.renderedPrompt).toBeTruthy();
-      expect(result.relatedSpecs.length).toBe(0);
-
-      // Verify prompt doesn't include Related Specifications section
-      expect(
-        !result.renderedPrompt.includes("Related Specifications")
-      ).toBeTruthy();
+      // Verify prompt was resolved (no formatting)
+      expect(execution.prompt).toContain("OAuth2 with JWT tokens");
+      expect(execution.prompt).not.toContain(`@${testSpecId}`);
     });
 
-    it("should throw error for non-existent issue", async () => {
-      await expect(service.prepareExecution("ISSUE-999")).rejects.toThrow(
-        /Issue ISSUE-999 not found/
+    it("should resolve [[i-xxxxx]] issue references in prompt", async () => {
+      const promptWithIssue = `Fix the bug from [[${testIssueId}]]`;
+
+      const execution = await service.createExecution(
+        testIssueId,
+        { mode: "local" },
+        promptWithIssue
       );
+
+      // Verify prompt was resolved (no formatting)
+      expect(execution.prompt).toContain("Add OAuth2 authentication with JWT tokens");
+      expect(execution.prompt).not.toContain(`[[${testIssueId}]]`);
     });
 
-    it("should render template even with empty issue content", async () => {
-      // Create issue with empty content
-      const { id: emptyIssueId, uuid: emptyIssueUuid } = generateIssueId(
-        db,
-        testDir
+    it("should resolve @i-xxxxx issue references in prompt", async () => {
+      const promptWithIssue = `Fix the bug from @${testIssueId}`;
+
+      const execution = await service.createExecution(
+        testIssueId,
+        { mode: "local" },
+        promptWithIssue
       );
-      createIssue(db, {
-        id: emptyIssueId,
-        uuid: emptyIssueUuid,
-        title: "",
-        content: "",
-      });
 
-      const result = await service.prepareExecution(emptyIssueId);
-
-      // Template should still render with structure
-      expect(result.renderedPrompt).toBeTruthy();
-      expect(result.renderedPrompt.trim().length > 0).toBeTruthy();
-      // Should include the template structure even if issue is empty
-      expect(result.renderedPrompt.includes("## Description")).toBeTruthy();
+      // Verify prompt was resolved (no formatting)
+      expect(execution.prompt).toContain("Add OAuth2 authentication with JWT tokens");
+      expect(execution.prompt).not.toContain(`@${testIssueId}`);
     });
 
-    it("should allow config overrides", async () => {
-      const result = await service.prepareExecution(testIssueId, {
-        config: {
-          mode: "local",
-          model: "claude-opus-4",
-          baseBranch: "develop",
-        },
-      });
+    it("should resolve multiple references in one prompt", async () => {
+      const promptWithMultiple = `Implement [[${testSpecId}]] and fix @${testIssueId}`;
 
-      expect(result.defaultConfig.mode).toBe("local");
-      expect(result.defaultConfig.model).toBe("claude-opus-4");
-      expect(result.defaultConfig.baseBranch).toBe("develop");
+      const execution = await service.createExecution(
+        testIssueId,
+        { mode: "local" },
+        promptWithMultiple
+      );
+
+      // Should contain both resolved contents (no formatting)
+      expect(execution.prompt).toContain("OAuth2 with JWT tokens");
+      expect(execution.prompt).toContain("Add OAuth2 authentication with JWT tokens");
+      expect(execution.prompt).not.toContain(`[[${testSpecId}]]`);
+      expect(execution.prompt).not.toContain(`@${testIssueId}`);
+    });
+
+    it("should pass through @file mentions unchanged", async () => {
+      const promptWithFile = `Review @src/auth.ts and implement [[${testSpecId}]]`;
+
+      const execution = await service.createExecution(
+        testIssueId,
+        { mode: "local" },
+        promptWithFile
+      );
+
+      // File mention should remain unchanged
+      expect(execution.prompt).toContain("@src/auth.ts");
+      // Spec reference should be resolved (no formatting)
+      expect(execution.prompt).toContain("OAuth2 with JWT tokens");
+    });
+
+    it("should handle missing spec references gracefully", async () => {
+      const promptWithMissing = `Implement [[s-nonexistent]]`;
+
+      // Should not throw error
+      const execution = await service.createExecution(
+        testIssueId,
+        { mode: "local" },
+        promptWithMissing
+      );
+
+      // Missing reference should remain unchanged
+      expect(execution.prompt).toContain("[[s-nonexistent]]");
+    });
+
+    it("should handle missing issue references gracefully", async () => {
+      const promptWithMissing = `Fix @i-nonexistent`;
+
+      // Should not throw error
+      const execution = await service.createExecution(
+        testIssueId,
+        { mode: "local" },
+        promptWithMissing
+      );
+
+      // Missing reference should remain unchanged
+      expect(execution.prompt).toContain("@i-nonexistent");
+    });
+
+    it("should resolve references in worktree mode", async () => {
+      const promptWithSpec = `Implement [[${testSpecId}]]`;
+
+      const execution = await service.createExecution(
+        testIssueId,
+        { mode: "worktree" },
+        promptWithSpec
+      );
+
+      // Should work in worktree mode too (no formatting)
+      expect(execution.prompt).toContain("OAuth2 with JWT tokens");
+      expect(execution.prompt).not.toContain(`[[${testSpecId}]]`);
     });
   });
 
   describe("createExecution", () => {
     it("should create execution in worktree mode", async () => {
-        const prepareResult = await service.prepareExecution(testIssueId);
+        const issueContent = "Add OAuth2 authentication with JWT tokens";
         const execution = await service.createExecution(
           testIssueId,
-          prepareResult.defaultConfig,
-          prepareResult.renderedPrompt
+          { mode: "worktree" as const },
+          issueContent
         );
 
         // Verify execution was created
@@ -327,14 +354,12 @@ describe("ExecutionService", () => {
       });
 
     it("should create execution in local mode", async () => {
-        const prepareResult = await service.prepareExecution(testIssueId, {
-          config: { mode: "local" },
-        });
+        const issueContent = "Add OAuth2 authentication with JWT tokens";
 
         const execution = await service.createExecution(
           testIssueId,
-          { ...prepareResult.defaultConfig, mode: "local" },
-          prepareResult.renderedPrompt
+          { mode: "local" },
+          issueContent
         );
 
         // Verify execution was created in local mode
@@ -369,11 +394,11 @@ describe("ExecutionService", () => {
       "should default to claude-code agent when agentType not specified",
       
       async () => {
-        const prepareResult = await service.prepareExecution(testIssueId);
+        const issueContent = "Add OAuth2 authentication with JWT tokens";
         const execution = await service.createExecution(
           testIssueId,
-          prepareResult.defaultConfig,
-          prepareResult.renderedPrompt
+          { mode: "worktree" as const },
+          issueContent
           // agentType not specified, should default to 'claude-code'
         );
 
@@ -385,11 +410,11 @@ describe("ExecutionService", () => {
       "should create execution with specified agent type",
       
       async () => {
-        const prepareResult = await service.prepareExecution(testIssueId);
+        const issueContent = "Add OAuth2 authentication with JWT tokens";
         const execution = await service.createExecution(
           testIssueId,
-          prepareResult.defaultConfig,
-          prepareResult.renderedPrompt,
+          { mode: "worktree" as const },
+          issueContent,
           "claude-code" // Explicitly specify claude-code
         );
 
@@ -401,12 +426,12 @@ describe("ExecutionService", () => {
       "should create execution for codex agent",
       
       async () => {
-        const prepareResult = await service.prepareExecution(testIssueId);
+        const issueContent = "Add OAuth2 authentication with JWT tokens";
 
         const execution = await service.createExecution(
           testIssueId,
-          prepareResult.defaultConfig,
-          prepareResult.renderedPrompt,
+          { mode: "worktree" as const },
+          issueContent,
           "codex"
         );
 
@@ -432,13 +457,13 @@ describe("ExecutionService", () => {
           content: "Test copilot agent",
         });
 
-        const prepareResult = await service.prepareExecution(copilotIssueId);
+        const copilotIssueContent = "Implement GitHub Copilot integration";
 
         // Copilot is now implemented
         const execution = await service.createExecution(
           copilotIssueId,
-          prepareResult.defaultConfig,
-          prepareResult.renderedPrompt,
+          { mode: "worktree" as const },
+          copilotIssueContent,
           "copilot"
         );
 
@@ -464,12 +489,12 @@ describe("ExecutionService", () => {
           content: "Test cursor agent",
         });
 
-        const prepareResult = await service.prepareExecution(cursorIssueId);
+        const cursorIssueContent = "Integrate Cursor features";
 
         const execution = await service.createExecution(
           cursorIssueId,
-          prepareResult.defaultConfig,
-          prepareResult.renderedPrompt,
+          { mode: "worktree" as const },
+          cursorIssueContent,
           "cursor"
         );
 
@@ -486,11 +511,11 @@ describe("ExecutionService", () => {
       
       async () => {
         // Create initial execution
-        const prepareResult = await service.prepareExecution(testIssueId);
+        const issueContent = "Add OAuth2 authentication with JWT tokens";
         const initialExecution = await service.createExecution(
           testIssueId,
-          prepareResult.defaultConfig,
-          prepareResult.renderedPrompt
+          { mode: "worktree" as const },
+          issueContent
         );
 
         // Create follow-up
@@ -517,11 +542,11 @@ describe("ExecutionService", () => {
 
       async () => {
         // Create initial execution with explicit agent type
-        const prepareResult = await service.prepareExecution(testIssueId);
+        const issueContent = "Add OAuth2 authentication with JWT tokens";
         const initialExecution = await service.createExecution(
           testIssueId,
-          prepareResult.defaultConfig,
-          prepareResult.renderedPrompt,
+          { mode: "worktree" as const },
+          issueContent,
           "claude-code"
         );
 
@@ -543,15 +568,16 @@ describe("ExecutionService", () => {
 
       async () => {
         // Create initial execution
-        const prepareResult = await service.prepareExecution(testIssueId);
+        const issueContent = "Add OAuth2 authentication with JWT tokens";
         const initialExecution = await service.createExecution(
           testIssueId,
-          prepareResult.defaultConfig,
-          prepareResult.renderedPrompt
+          { mode: "worktree" as const },
+          issueContent
         );
 
-        // Verify initial execution has a prompt
-        expect(initialExecution.prompt).toBe(prepareResult.renderedPrompt);
+        // Verify initial execution has a prompt (may be resolved if it had references)
+        expect(initialExecution.prompt).toBeTruthy();
+        expect(typeof initialExecution.prompt).toBe("string");
 
         // Create follow-up with specific feedback
         const feedbackText = "Please add unit tests for the authentication flow";
@@ -573,18 +599,41 @@ describe("ExecutionService", () => {
       ).rejects.toThrow(/Execution non-existent-id not found/);
     });
 
+    it("should include original prompt when option is enabled", async () => {
+      // Create initial execution
+      const issueContent = "Add OAuth2 authentication with JWT tokens";
+      const initialExecution = await service.createExecution(
+        testIssueId,
+        { mode: "worktree" as const },
+        issueContent
+      );
+
+      // Create follow-up with includeOriginalPrompt option
+      const feedbackText = "Please add tests";
+      const followUpExecution = await service.createFollowUp(
+        initialExecution.id,
+        feedbackText,
+        { includeOriginalPrompt: true }
+      );
+
+      // Verify prompt includes both original content and feedback
+      expect(followUpExecution.prompt).toContain(issueContent);
+      expect(followUpExecution.prompt).toContain(feedbackText);
+      expect(followUpExecution.prompt).toBe(
+        `${issueContent}\n\n${feedbackText}`
+      );
+    });
+
     it(
       "should support follow-ups for local mode executions (no worktree)",
 
       async () => {
         // Create local execution (no worktree)
-        const prepareResult = await service.prepareExecution(testIssueId, {
-          config: { mode: "local" },
-        });
+        const issueContent = "Add OAuth2 authentication with JWT tokens";
         const localExecution = await service.createExecution(
           testIssueId,
-          { ...prepareResult.defaultConfig, mode: "local" },
-          prepareResult.renderedPrompt
+          { mode: "local" },
+          issueContent
         );
 
         // Follow-ups should work for local mode (uses repo path instead of worktree)
@@ -601,11 +650,11 @@ describe("ExecutionService", () => {
   describe("cancelExecution", () => {
     it("should cancel running execution", async () => {
       // Create execution
-      const prepareResult = await service.prepareExecution(testIssueId);
+      const issueContent = "Add OAuth2 authentication with JWT tokens";
       const execution = await service.createExecution(
         testIssueId,
-        prepareResult.defaultConfig,
-        prepareResult.renderedPrompt
+        { mode: "worktree" as const },
+        issueContent
       );
 
       // Cancel it
@@ -634,11 +683,11 @@ describe("ExecutionService", () => {
       
       async () => {
         // Create and immediately cancel
-        const prepareResult = await service.prepareExecution(testIssueId);
+        const issueContent = "Add OAuth2 authentication with JWT tokens";
         const execution = await service.createExecution(
           testIssueId,
-          prepareResult.defaultConfig,
-          prepareResult.renderedPrompt
+          { mode: "worktree" as const },
+          issueContent
         );
 
         await service.cancelExecution(execution.id);
@@ -654,11 +703,11 @@ describe("ExecutionService", () => {
   describe("cleanupExecution", () => {
     it("should cleanup execution resources", async () => {
       // Create execution
-      const prepareResult = await service.prepareExecution(testIssueId);
+      const issueContent = "Add OAuth2 authentication with JWT tokens";
       const execution = await service.createExecution(
         testIssueId,
-        prepareResult.defaultConfig,
-        prepareResult.renderedPrompt
+        { mode: "worktree" as const },
+        issueContent
       );
 
       // Cleanup
@@ -681,83 +730,13 @@ describe("ExecutionService", () => {
     });
   });
 
-  describe("template rendering", () => {
-    it("should handle variables in template", async () => {
-      const result = await service.prepareExecution(testIssueId);
-
-      // Verify variable substitution worked
-      expect(result.renderedPrompt.includes(testIssueId)).toBeTruthy();
-      expect(
-        result.renderedPrompt.includes("Implement user authentication")
-      ).toBeTruthy();
-      expect(
-        result.renderedPrompt.includes("OAuth2 authentication with JWT tokens")
-      ).toBeTruthy();
-    });
-
-    it("should handle conditionals in template", async () => {
-      // Issue with related specs should show Related Specifications section
-      const withSpecs = await service.prepareExecution(testIssueId);
-      expect(
-        withSpecs.renderedPrompt.includes("Related Specifications")
-      ).toBeTruthy();
-
-      // Issue without related specs should not show section
-      const { id: isolatedIssueId, uuid: isolatedIssueUuid } = generateIssueId(
-        db,
-        testDir
-      );
-      createIssue(db, {
-        id: isolatedIssueId,
-        uuid: isolatedIssueUuid,
-        title: "Isolated issue",
-        content: "No related specs",
-      });
-
-      const withoutSpecs = await service.prepareExecution(isolatedIssueId);
-      expect(
-        !withoutSpecs.renderedPrompt.includes("Related Specifications")
-      ).toBeTruthy();
-    });
-
-    it("should handle loops in template", async () => {
-      // Create multiple related specs
-      const { id: spec2Id, uuid: spec2Uuid } = generateSpecId(db, testDir);
-      createSpec(db, {
-        id: spec2Id,
-        uuid: spec2Uuid,
-        title: "Database Design",
-        content: "User table schema",
-        file_path: path.join(testDir, "specs", "db.md"),
-      });
-
-      addRelationship(db, {
-        from_id: testIssueId,
-        from_type: "issue",
-        to_id: spec2Id,
-        to_type: "spec",
-        relationship_type: "references",
-      });
-
-      const result = await service.prepareExecution(testIssueId);
-
-      // Verify both specs are listed
-      expect(result.renderedPrompt.includes(testSpecId)).toBeTruthy();
-      expect(result.renderedPrompt.includes(spec2Id)).toBeTruthy();
-      expect(
-        result.renderedPrompt.includes("Authentication System Design")
-      ).toBeTruthy();
-      expect(result.renderedPrompt.includes("Database Design")).toBeTruthy();
-    });
-  });
-
   describe("deleteExecution", () => {
     it("should delete a single execution", async () => {
-      const prepareResult = await service.prepareExecution(testIssueId);
+      const issueContent = "Add OAuth2 authentication with JWT tokens";
       const execution = await service.createExecution(
         testIssueId,
-        prepareResult.defaultConfig,
-        prepareResult.renderedPrompt
+        { mode: "worktree" as const },
+        issueContent
       );
 
       // Verify execution exists
@@ -775,11 +754,11 @@ describe("ExecutionService", () => {
 
     it("should delete entire execution chain", async () => {
       // Create initial execution
-      const prepareResult = await service.prepareExecution(testIssueId);
+      const issueContent = "Add OAuth2 authentication with JWT tokens";
       const rootExecution = await service.createExecution(
         testIssueId,
-        prepareResult.defaultConfig,
-        prepareResult.renderedPrompt
+        { mode: "worktree" as const },
+        issueContent
       );
 
       // Create follow-up executions
@@ -813,11 +792,11 @@ describe("ExecutionService", () => {
     });
 
     it("should cancel running executions before deletion", async () => {
-      const prepareResult = await service.prepareExecution(testIssueId);
+      const issueContent = "Add OAuth2 authentication with JWT tokens";
       const execution = await service.createExecution(
         testIssueId,
-        prepareResult.defaultConfig,
-        prepareResult.renderedPrompt
+        { mode: "worktree" as const },
+        issueContent
       );
 
       // Execution should be running or pending
@@ -843,11 +822,11 @@ describe("ExecutionService", () => {
           "../../../src/services/websocket.js"
         );
 
-        const prepareResult = await service.prepareExecution(testIssueId);
+        const issueContent = "Add OAuth2 authentication with JWT tokens";
         const execution = await service.createExecution(
           testIssueId,
-          prepareResult.defaultConfig,
-          prepareResult.renderedPrompt
+          { mode: "worktree" as const },
+          issueContent
         );
 
         // Should broadcast execution created event
@@ -869,11 +848,11 @@ describe("ExecutionService", () => {
           "../../../src/services/websocket.js"
         );
 
-        const prepareResult = await service.prepareExecution(testIssueId);
+        const issueContent = "Add OAuth2 authentication with JWT tokens";
         const execution = await service.createExecution(
           testIssueId,
-          prepareResult.defaultConfig,
-          prepareResult.renderedPrompt
+          { mode: "worktree" as const },
+          issueContent
         );
 
         // Clear creation broadcast
@@ -913,11 +892,11 @@ describe("ExecutionService", () => {
           "../../../src/services/websocket.js"
         );
 
-        const prepareResult = await service.prepareExecution(testIssueId);
+        const issueContent = "Add OAuth2 authentication with JWT tokens";
         const execution = await service.createExecution(
           testIssueId,
-          prepareResult.defaultConfig,
-          prepareResult.renderedPrompt
+          { mode: "worktree" as const },
+          issueContent
         );
 
         // Clear creation and any workflow broadcasts
@@ -948,11 +927,11 @@ describe("ExecutionService", () => {
           "../../../src/services/websocket.js"
         );
 
-        const prepareResult = await service.prepareExecution(testIssueId);
+        const issueContent = "Add OAuth2 authentication with JWT tokens";
         await service.createExecution(
           testIssueId,
-          prepareResult.defaultConfig,
-          prepareResult.renderedPrompt
+          { mode: "worktree" as const },
+          issueContent
         );
 
         // Verify that issueId is passed for dual broadcast
@@ -970,11 +949,11 @@ describe("ExecutionService", () => {
         );
 
         // Create initial execution
-        const prepareResult = await service.prepareExecution(testIssueId);
+        const issueContent = "Add OAuth2 authentication with JWT tokens";
         const initialExecution = await service.createExecution(
           testIssueId,
-          prepareResult.defaultConfig,
-          prepareResult.renderedPrompt
+          { mode: "worktree" as const },
+          issueContent
         );
 
         // Clear initial broadcast
@@ -1005,11 +984,11 @@ describe("ExecutionService", () => {
           "../../../src/services/websocket.js"
         );
 
-        const prepareResult = await service.prepareExecution(testIssueId);
+        const issueContent = "Add OAuth2 authentication with JWT tokens";
         const execution = await service.createExecution(
           testIssueId,
-          prepareResult.defaultConfig,
-          prepareResult.renderedPrompt
+          { mode: "worktree" as const },
+          issueContent
         );
 
         // Clear creation broadcast
@@ -1037,11 +1016,11 @@ describe("ExecutionService", () => {
           "../../../src/services/websocket.js"
         );
 
-        const prepareResult = await service.prepareExecution(testIssueId);
+        const issueContent = "Add OAuth2 authentication with JWT tokens";
         await service.createExecution(
           testIssueId,
-          prepareResult.defaultConfig,
-          prepareResult.renderedPrompt
+          { mode: "worktree" as const },
+          issueContent
         );
 
         // Verify all broadcasts include the project ID

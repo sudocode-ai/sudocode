@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Settings, AlertCircle, Info, ArrowDown, Loader2, Square } from 'lucide-react'
+import { Settings, ArrowDown, Loader2, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -9,10 +9,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { executionsApi } from '@/lib/api'
-import type { ExecutionConfig, ExecutionPrepareResult, ExecutionMode } from '@/types/execution'
+import { repositoryApi } from '@/lib/api'
+import type { ExecutionConfig, ExecutionMode } from '@/types/execution'
 import { AgentSettingsDialog } from './AgentSettingsDialog'
-import { BranchSelector } from './BranchSelector'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { useAgents } from '@/hooks/useAgents'
 import type { CodexConfig } from './CodexConfigForm'
@@ -180,8 +179,7 @@ export function AgentConfigPanel({
   onForceNewToggle,
   forceNewExecution: controlledForceNewExecution,
 }: AgentConfigPanelProps) {
-  const [loading, setLoading] = useState(!isFollowUp) // Skip loading for follow-ups
-  const [prepareResult, setPrepareResult] = useState<ExecutionPrepareResult | null>(null)
+  const [loading, setLoading] = useState(false)
   const [prompt, setPrompt] = useState('')
   const [internalForceNewExecution, setInternalForceNewExecution] = useState(false)
 
@@ -341,25 +339,27 @@ export function AgentConfigPanel({
     setSelectedAgentType(loadAgentTypeForIssue())
   }, [issueId, lastExecution?.id, isFollowUp])
 
-  // Load template preview on mount (skip for follow-ups)
+  // Load current branch for baseBranch default (skip for follow-ups)
   useEffect(() => {
-    // Skip prepare API call for follow-ups - we use parent execution config
+    // Skip for follow-ups - we use parent execution config
     if (isFollowUp) return
 
     let isMounted = true
 
-    const loadPreview = async () => {
+    const loadRepoInfo = async () => {
       if (!isMounted) return
       setLoading(true)
       try {
-        const result = await executionsApi.prepare(issueId)
-        if (isMounted) {
-          setPrepareResult(result)
-          // setPrompt(result.renderedPrompt)
-          setConfig({ ...config, ...result.defaultConfig })
+        const repoInfo = await repositoryApi.getInfo()
+        if (isMounted && repoInfo.branch) {
+          // Set baseBranch to current branch if not already set
+          setConfig((prev) => ({
+            ...prev,
+            baseBranch: prev.baseBranch || repoInfo.branch,
+          }))
         }
       } catch (error) {
-        console.error('Failed to prepare execution:', error)
+        console.error('Failed to get repository info:', error)
       } finally {
         if (isMounted) {
           setLoading(false)
@@ -367,7 +367,7 @@ export function AgentConfigPanel({
       }
     }
 
-    loadPreview()
+    loadRepoInfo()
 
     return () => {
       isMounted = false
@@ -453,63 +453,10 @@ export function AgentConfigPanel({
     // Shift+Enter creates newline (default behavior, no need to handle)
   }
 
-  const hasErrors = prepareResult?.errors && prepareResult.errors.length > 0
-  const hasWarnings = prepareResult?.warnings && prepareResult.warnings.length > 0
-  const canStart = !loading && !hasErrors && prompt.trim().length > 0 && !disabled
+  const canStart = !loading && prompt.trim().length > 0 && !disabled
 
   return (
     <div className="space-y-3 p-4">
-      {/* Errors */}
-      {hasErrors && (
-        <div className="rounded-lg border border-destructive bg-destructive/10 p-2">
-          <div className="flex items-start gap-2">
-            <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-destructive" />
-            <div className="flex-1 space-y-1">
-              <p className="text-xs font-medium text-destructive">Errors</p>
-              {prepareResult!.errors!.map((error, i) => (
-                <p key={i} className="text-xs text-destructive/90">
-                  {error}
-                </p>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Warnings */}
-      {hasWarnings && (
-        <div className="rounded-lg border border-yellow-500 bg-yellow-500/10 p-2">
-          <div className="flex items-start gap-2">
-            <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-yellow-600" />
-            <div className="flex-1 space-y-1">
-              <p className="text-xs font-medium text-yellow-600">Warnings</p>
-              {prepareResult!.warnings!.map((warning, i) => (
-                <p key={i} className="text-xs text-yellow-600/90">
-                  {warning}
-                </p>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Related Context Info */}
-      {/* TODO: Re-enable */}
-      {/* {prepareResult &&
-          ((prepareResult.relatedSpecs?.length ?? 0) > 0 ||
-            (prepareResult.relatedFeedback?.length ?? 0) > 0) && (
-            <div className="rounded-lg border bg-muted/50 p-2 text-xs text-muted-foreground">
-              {(prepareResult.relatedSpecs?.length ?? 0) > 0 && (
-                <span>{prepareResult.relatedSpecs.length} spec(s)</span>
-              )}
-              {(prepareResult.relatedSpecs?.length ?? 0) > 0 &&
-                (prepareResult.relatedFeedback?.length ?? 0) > 0 && <span> • </span>}
-              {(prepareResult.relatedFeedback?.length ?? 0) > 0 && (
-                <span>{prepareResult.relatedFeedback.length} feedback item(s)</span>
-              )}
-            </div>
-          )} */}
-
       {/* Prompt Input */}
       <div>
         <Textarea
@@ -603,22 +550,16 @@ export function AgentConfigPanel({
             )}
           </Tooltip>
 
-          {/* Branch Selector - always shown, disabled in local mode or follow-up */}
-          {config.baseBranch && (
-            <BranchSelector
-              branches={prepareResult?.availableBranches || [config.baseBranch]}
-              value={config.baseBranch}
-              onChange={(branch, isNew) => {
-                updateConfig({
-                  baseBranch: branch,
-                  createBaseBranch: isNew || false,
-                })
-              }}
-              disabled={loading || isFollowUp || config.mode === 'local'}
-              allowCreate={!isFollowUp && config.mode !== 'local'}
-              className="w-[160px]"
-              currentBranch={prepareResult?.availableBranches?.[0]}
-            />
+          {/* Branch Display - shows current branch, disabled in local mode or follow-up */}
+          {config.baseBranch && config.mode === 'worktree' && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex h-8 w-[160px] items-center rounded-md border border-input bg-muted/50 px-3 text-xs text-muted-foreground">
+                  {config.baseBranch}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>Base branch for worktree</TooltipContent>
+            </Tooltip>
           )}
 
           <div className="ml-auto" />

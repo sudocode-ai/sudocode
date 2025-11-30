@@ -249,34 +249,16 @@ export class PromptResolver {
   }
 
   /**
-   * Format spec as markdown
+   * Format spec - returns raw content only
    */
   private formatSpec(spec: Spec): string {
-    const lines = [
-      `# Spec: ${spec.title} (${spec.id})`,
-      "",
-      spec.content,
-      "",
-      `---`,
-      `*Priority: ${spec.priority} | Created: ${spec.created_at} | Updated: ${spec.updated_at}*`,
-    ]
-    return lines.join("\n")
+    return spec.content
   }
 
   /**
-   * Format issue as markdown
+   * Format issue - returns raw content only
    */
   private formatIssue(issue: Issue): string {
-    const lines = [
-      `# Issue: ${issue.title} (${issue.id})`,
-      "",
-      `**Status:** ${issue.status}`,
-      "",
-      issue.content,
-      "",
-      `---`,
-      `*Priority: ${issue.priority} | Created: ${issue.created_at} | Updated: ${issue.updated_at}*`,
-    ]
-    return lines.join("\n")
+    return issue.content
   }
 }
