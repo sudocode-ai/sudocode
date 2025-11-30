@@ -7,6 +7,7 @@ import type {
   IssueFeedback,
   RepositoryInfo,
   BranchInfo,
+  FileSearchResult,
   CreateIssueRequest,
   UpdateIssueRequest,
   CreateSpecRequest,
@@ -250,6 +251,16 @@ export const executionsApi = {
 export const repositoryApi = {
   getInfo: () => get<RepositoryInfo>('/repo-info'),
   getBranches: () => get<BranchInfo>('/repo-info/branches'),
+}
+
+/**
+ * Files API
+ */
+export const filesApi = {
+  search: (query: string, options?: { limit?: number; includeDirectories?: boolean }) =>
+    get<{ results: FileSearchResult[] }>(
+      `/files/search?q=${encodeURIComponent(query)}${options?.limit ? `&limit=${options.limit}` : ''}${options?.includeDirectories ? `&includeDirectories=${options.includeDirectories}` : ''}`
+    ).then((res) => res.results),
 }
 
 /**

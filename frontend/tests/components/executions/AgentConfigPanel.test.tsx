@@ -3,7 +3,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithProviders } from '@/test/test-utils'
 import { AgentConfigPanel } from '@/components/executions/AgentConfigPanel'
-import { repositoryApi, agentsApi } from '@/lib/api'
+import { repositoryApi, agentsApi, filesApi, specsApi, issuesApi } from '@/lib/api'
 import type { AgentInfo } from '@/types/api'
 
 // Mock the API
@@ -24,6 +24,35 @@ vi.mock('@/lib/api', () => ({
     getInfo: vi.fn(),
     getBranches: vi.fn(),
   },
+  filesApi: {
+    search: vi.fn(),
+  },
+  specsApi: {
+    getAll: vi.fn(),
+  },
+  issuesApi: {
+    getAll: vi.fn(),
+  },
+}))
+
+// Mock useProject hook
+vi.mock('@/hooks/useProject', () => ({
+  useProject: vi.fn(() => ({
+    currentProjectId: 'test-project-123',
+    setCurrentProjectId: vi.fn(),
+  })),
+}))
+
+// Mock caret position utility
+vi.mock('@/lib/caret-position', () => ({
+  getCaretClientRect: vi.fn(() => ({
+    top: 100,
+    left: 100,
+    bottom: 120,
+    right: 200,
+    width: 100,
+    height: 20,
+  })),
 }))
 
 describe('AgentConfigPanel', () => {
@@ -61,6 +90,11 @@ describe('AgentConfigPanel', () => {
       branches: ['main', 'develop', 'feature/test'],
     })
     vi.mocked(agentsApi.getAll).mockResolvedValue(mockAgents)
+
+    // Mock context search API responses (for @ mention functionality)
+    vi.mocked(filesApi.search).mockResolvedValue([])
+    vi.mocked(specsApi.getAll).mockResolvedValue([])
+    vi.mocked(issuesApi.getAll).mockResolvedValue([])
   })
 
   describe('Initial Rendering', () => {
@@ -68,7 +102,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Enter prompt for the agent...')).toBeInTheDocument()
+        expect(screen.getByPlaceholderText('Enter prompt for the agent... (@ for context)')).toBeInTheDocument()
       })
     })
 
@@ -271,7 +305,7 @@ describe('AgentConfigPanel', () => {
 
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
-      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
+      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent... (@ for context)')
       await user.type(textarea, 'Test prompt')
 
       expect(textarea).toHaveValue('Test prompt')
@@ -286,6 +320,14 @@ describe('AgentConfigPanel', () => {
 
       const textarea = screen.getByPlaceholderText('Loading prompt...')
       expect(textarea).toBeDisabled()
+    })
+
+    it('should show running placeholder when execution is running', async () => {
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} isRunning />)
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('Execution is running (esc to cancel)')).toBeInTheDocument()
+      })
     })
   })
 
@@ -304,7 +346,7 @@ describe('AgentConfigPanel', () => {
 
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
-      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
+      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent... (@ for context)')
       await user.type(textarea, 'Test prompt')
 
       await waitFor(() => {
@@ -320,7 +362,7 @@ describe('AgentConfigPanel', () => {
         <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} disabled={true} />
       )
 
-      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
+      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent... (@ for context)')
       await user.type(textarea, 'Test prompt')
 
       const runButton = screen.getByRole('button', { name: /Submit/i })
@@ -332,7 +374,7 @@ describe('AgentConfigPanel', () => {
 
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
-      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
+      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent... (@ for context)')
       await user.type(textarea, 'Test prompt')
 
       const runButton = screen.getByRole('button', { name: /Submit/i })
@@ -380,7 +422,7 @@ describe('AgentConfigPanel', () => {
       await user.click(cursorOption)
 
       // Enter prompt
-      const textarea = screen.getByPlaceholderText('Enter prompt for the agent...')
+      const textarea = screen.getByPlaceholderText('Enter prompt for the agent... (@ for context)')
       await user.type(textarea, 'Test prompt')
 
       // Click run
@@ -398,7 +440,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Enter prompt for the agent...')).toBeInTheDocument()
+        expect(screen.getByPlaceholderText('Enter prompt for the agent... (@ for context)')).toBeInTheDocument()
       })
 
       // Find settings button by looking for all buttons and finding the one with Settings icon
@@ -481,7 +523,7 @@ describe('AgentConfigPanel', () => {
 
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
-      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
+      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent... (@ for context)')
       await user.type(textarea, 'Test prompt')
 
       const runButton = screen.getByRole('button', { name: /Submit/i })
@@ -590,7 +632,7 @@ describe('AgentConfigPanel', () => {
 
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
-      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
+      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent... (@ for context)')
       await user.type(textarea, 'Test prompt')
 
       // Manually corrupt the config state (simulating a bug or future schema change)
@@ -701,7 +743,7 @@ describe('AgentConfigPanel', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText('Continue the previous conversation... (ctrl+k for new)')
+          screen.getByPlaceholderText('Continue the previous conversation... (ctrl+k for new, @ for context)')
         ).toBeInTheDocument()
       })
     })
@@ -822,7 +864,7 @@ describe('AgentConfigPanel', () => {
 
       // Enter feedback prompt
       const textarea = await screen.findByPlaceholderText(
-        'Continue the previous conversation... (ctrl+k for new)'
+        'Continue the previous conversation... (ctrl+k for new, @ for context)'
       )
       await user.type(textarea, 'Continue with this feedback')
 
@@ -873,7 +915,7 @@ describe('AgentConfigPanel', () => {
       )
 
       const textarea = await screen.findByPlaceholderText(
-        'Continue the previous conversation... (ctrl+k for new)'
+        'Continue the previous conversation... (ctrl+k for new, @ for context)'
       )
 
       // Press Ctrl+K to toggle to new execution mode
@@ -901,7 +943,7 @@ describe('AgentConfigPanel', () => {
       )
 
       const textarea = await screen.findByPlaceholderText(
-        'Start a new execution... (ctrl+k to continue previous)'
+        'Start a new execution... (ctrl+k to continue previous, @ for context)'
       )
 
       // Press Ctrl+K to toggle back to continue mode
@@ -926,7 +968,7 @@ describe('AgentConfigPanel', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText('Start a new execution... (ctrl+k to continue previous)')
+          screen.getByPlaceholderText('Start a new execution... (ctrl+k to continue previous, @ for context)')
         ).toBeInTheDocument()
       })
     })
@@ -945,7 +987,7 @@ describe('AgentConfigPanel', () => {
       )
 
       const textarea = await screen.findByPlaceholderText(
-        'Start a new execution... (ctrl+k to continue previous)'
+        'Start a new execution... (ctrl+k to continue previous, @ for context)'
       )
       await user.type(textarea, 'Create a new execution')
 
@@ -976,7 +1018,7 @@ describe('AgentConfigPanel', () => {
         />
       )
 
-      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent...')
+      const textarea = await screen.findByPlaceholderText('Enter prompt for the agent... (@ for context)')
 
       await user.click(textarea)
       await user.keyboard('{Control>}k{/Control}')
@@ -1001,7 +1043,7 @@ describe('AgentConfigPanel', () => {
       )
 
       const textarea = await screen.findByPlaceholderText(
-        'Continue the previous conversation...'
+        'Continue the previous conversation... (@ for context)'
       )
 
       await user.click(textarea)
@@ -1024,13 +1066,13 @@ describe('AgentConfigPanel', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText('Continue the previous conversation...')
+          screen.getByPlaceholderText('Continue the previous conversation... (@ for context)')
         ).toBeInTheDocument()
       })
 
       // Should not show the ctrl+k hint
       expect(
-        screen.queryByPlaceholderText('Continue the previous conversation... (ctrl+k for new)')
+        screen.queryByPlaceholderText('Continue the previous conversation... (ctrl+k for new, @ for context)')
       ).not.toBeInTheDocument()
     })
 
@@ -1048,13 +1090,13 @@ describe('AgentConfigPanel', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText('Start a new execution...')
+          screen.getByPlaceholderText('Start a new execution... (@ for context)')
         ).toBeInTheDocument()
       })
 
       // Should not show the ctrl+k hint
       expect(
-        screen.queryByPlaceholderText('Start a new execution... (ctrl+k to continue previous)')
+        screen.queryByPlaceholderText('Start a new execution... (ctrl+k to continue previous, @ for context)')
       ).not.toBeInTheDocument()
     })
 

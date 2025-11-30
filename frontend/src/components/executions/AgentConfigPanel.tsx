@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Settings, ArrowDown, Loader2, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
+import { ContextSearchTextarea } from '@/components/ui/context-search-textarea'
 import {
   Select,
   SelectContent,
@@ -15,6 +15,7 @@ import { AgentSettingsDialog } from './AgentSettingsDialog'
 import { BranchSelector } from './BranchSelector'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { useAgents } from '@/hooks/useAgents'
+import { useProject } from '@/hooks/useProject'
 import type { CodexConfig } from './CodexConfigForm'
 import type { CopilotConfig } from './CopilotConfigForm'
 
@@ -265,6 +266,9 @@ export function AgentConfigPanel({
   // Fetch available agents
   const { agents, loading: agentsLoading } = useAgents()
 
+  // Get current project ID for context search
+  const { currentProjectId } = useProject()
+
   // Reset config when issue or lastExecution changes (issue switching)
   useEffect(() => {
     // Skip for follow-ups - they use parent execution
@@ -388,19 +392,6 @@ export function AgentConfigPanel({
     }
   }, [issueId, isFollowUp])
 
-  // Auto-resize textarea based on content
-  useEffect(() => {
-    const textarea = textareaRef.current
-    if (!textarea) return
-
-    // Reset height to auto to get the correct scrollHeight
-    textarea.style.height = 'auto'
-
-    // Calculate new height (max 300px to prevent it from getting too tall)
-    const newHeight = Math.min(textarea.scrollHeight, 300)
-    textarea.style.height = `${newHeight}px`
-  }, [prompt])
-
   // Auto-focus textarea when panel opens or issue changes
   useEffect(() => {
     if (autoFocus && textareaRef.current && !loading) {
@@ -473,29 +464,32 @@ export function AgentConfigPanel({
     <div className="space-y-3 p-4">
       {/* Prompt Input */}
       <div>
-        <Textarea
+        <ContextSearchTextarea
           ref={textareaRef}
           value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
+          onChange={setPrompt}
           onKeyDown={handleKeyDown}
           placeholder={
-            promptPlaceholder ||
-            (loading
-              ? 'Loading prompt...'
-              : isFollowUp
-                ? forceNewExecution
-                  ? allowModeToggle
-                    ? 'Start a new execution... (ctrl+k to continue previous)'
-                    : 'Start a new execution...'
-                  : allowModeToggle
-                    ? 'Continue the previous conversation... (ctrl+k for new)'
-                    : 'Continue the previous conversation...'
-                : 'Enter prompt for the agent...')
+            isRunning
+              ? 'Execution is running (esc to cancel)'
+              : promptPlaceholder ||
+                (loading
+                  ? 'Loading prompt...'
+                  : isFollowUp
+                    ? forceNewExecution
+                      ? allowModeToggle
+                        ? 'Start a new execution... (ctrl+k to continue previous, @ for context)'
+                        : 'Start a new execution... (@ for context)'
+                      : allowModeToggle
+                        ? 'Continue the previous conversation... (ctrl+k for new, @ for context)'
+                        : 'Continue the previous conversation... (@ for context)'
+                    : 'Enter prompt for the agent... (@ for context)')
           }
           disabled={loading || disabled}
           className="max-h-[300px] min-h-0 resize-none overflow-y-auto border-none bg-muted/80 py-2 text-sm shadow-none transition-[height] duration-100 focus-visible:ring-0 focus-visible:ring-offset-0"
-          style={{ height: 'auto' }}
-          rows={1}
+          projectId={currentProjectId || ''}
+          autoResize
+          maxHeight={300}
         />
       </div>
 
@@ -570,7 +564,9 @@ export function AgentConfigPanel({
               <TooltipTrigger asChild>
                 <span>
                   <BranchSelector
-                    branches={availableBranches.length > 0 ? availableBranches : [config.baseBranch]}
+                    branches={
+                      availableBranches.length > 0 ? availableBranches : [config.baseBranch]
+                    }
                     value={config.baseBranch}
                     onChange={(branch, isNew) => {
                       updateConfig({
