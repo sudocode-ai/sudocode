@@ -178,17 +178,39 @@ describe("WorktreeManager", () => {
 
       await manager.createWorktree(params);
 
-      // Should get current commit first
-      expect(mockGit.getCallCount("getCurrentCommit")).toBe(1);
-      const commitCall = mockGit.getCall("getCurrentCommit", 0);
-      expect(commitCall[0]).toBe("/repo");
+      // Should NOT get current commit when baseBranch is provided
+      expect(mockGit.getCallCount("getCurrentCommit")).toBe(0);
 
-      // Should create branch from current commit SHA, not base branch
+      // Should create branch from base branch
       expect(mockGit.getCallCount("createBranch")).toBe(1);
       const branchCall = mockGit.getCall("createBranch", 0);
       expect(branchCall[0]).toBe("/repo");
       expect(branchCall[1]).toBe("feature-branch");
-      expect(branchCall[2]).toBe("abc123def456789"); // commit SHA, not 'main'
+      expect(branchCall[2]).toBe("main"); // Uses baseBranch
+    });
+
+    it("should create branch from HEAD when baseBranch is not provided", async () => {
+      const params: WorktreeCreateParams = {
+        repoPath: "/repo",
+        branchName: "feature-branch",
+        worktreePath: "/worktree/feature",
+        // No baseBranch provided
+        createBranch: true,
+      };
+
+      await manager.createWorktree(params);
+
+      // Should get current commit when baseBranch is not provided
+      expect(mockGit.getCallCount("getCurrentCommit")).toBe(1);
+      const commitCall = mockGit.getCall("getCurrentCommit", 0);
+      expect(commitCall[0]).toBe("/repo");
+
+      // Should create branch from current commit SHA
+      expect(mockGit.getCallCount("createBranch")).toBe(1);
+      const branchCall = mockGit.getCall("createBranch", 0);
+      expect(branchCall[0]).toBe("/repo");
+      expect(branchCall[1]).toBe("feature-branch");
+      expect(branchCall[2]).toBe("abc123def456789"); // commit SHA from HEAD
     });
 
     it("should not create branch if createBranch is false", async () => {

@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/comp
 import { useAgents } from '@/hooks/useAgents'
 import { useProject } from '@/hooks/useProject'
 import { useAgentActions } from '@/hooks/useAgentActions'
+import { useWorktrees } from '@/hooks/useWorktrees'
 import type { CodexConfig } from './CodexConfigForm'
 import type { CopilotConfig } from './CopilotConfigForm'
 
@@ -289,6 +290,9 @@ export function AgentConfigPanel({
 
   // Get current project ID for context search
   const { currentProjectId } = useProject()
+
+  // Fetch available worktrees for worktree-based creation
+  const { worktrees } = useWorktrees()
 
   // Reset config when issue or lastExecution changes (issue switching)
   useEffect(() => {
@@ -601,7 +605,7 @@ export function AgentConfigPanel({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="worktree" className="text-xs">
-                      New worktree
+                      Run in worktree
                     </SelectItem>
                     <SelectItem value="local" className="text-xs">
                       Run local
@@ -625,16 +629,18 @@ export function AgentConfigPanel({
                       availableBranches.length > 0 ? availableBranches : [config.baseBranch]
                     }
                     value={config.baseBranch}
-                    onChange={(branch, isNew) => {
+                    onChange={(branch, isNew, worktreeId) => {
                       updateConfig({
                         baseBranch: branch,
                         createBaseBranch: isNew || false,
+                        reuseWorktreeId: worktreeId, // If worktreeId is set, reuse that worktree
                       })
                     }}
                     disabled={loading || (isFollowUp && !forceNewExecution)}
                     allowCreate={!isFollowUp || forceNewExecution}
-                    className="w-[160px]"
+                    className="w-[180px]"
                     currentBranch={currentBranch}
+                    worktrees={worktrees}
                   />
                 </span>
               </TooltipTrigger>

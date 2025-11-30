@@ -28,8 +28,33 @@ vi.mock('@/lib/api', async () => {
       create: vi.fn(),
       delete: vi.fn(),
     },
+    repositoryApi: {
+      getBranches: vi.fn().mockResolvedValue({ branches: ['main'], currentBranch: 'main' }),
+      getInfo: vi.fn().mockResolvedValue({ currentBranch: 'main', repoPath: '/test' }),
+    },
   }
 })
+
+// Mock useWorktrees
+vi.mock('@/hooks/useWorktrees', () => ({
+  useWorktrees: () => ({
+    worktrees: [],
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
+}))
+
+// Mock useAgents
+vi.mock('@/hooks/useAgents', () => ({
+  useAgents: () => ({
+    agents: [
+      { id: 'claude-code', name: 'Claude Code', isImplemented: true },
+      { id: 'codex', name: 'Codex', isImplemented: true },
+    ],
+    loading: false,
+  }),
+}))
 
 const mockIssue: Issue = {
   id: 'ISSUE-001',
@@ -126,9 +151,9 @@ describe('IssuePanel - Auto-scroll', () => {
 
       const { container } = renderWithProviders(<IssuePanel issue={mockIssue} />)
 
-      // Wait a bit to ensure component is fully rendered
+      // Wait a bit to ensure component is fully rendered - when running, placeholder is different
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Enter prompt for the agent...')).toBeInTheDocument()
+        expect(screen.getByPlaceholderText(/Execution is running/i)).toBeInTheDocument()
       })
 
       // Get scroll container
@@ -216,9 +241,9 @@ describe('IssuePanel - Auto-scroll', () => {
 
       const { container } = renderWithProviders(<IssuePanel issue={mockIssue} />)
 
-      // Wait for execution to load
+      // Wait for execution to load - when running, placeholder is different
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Enter prompt for the agent...')).toBeInTheDocument()
+        expect(screen.getByPlaceholderText(/Execution is running/i)).toBeInTheDocument()
       })
 
       // Get the scroll container
@@ -278,9 +303,9 @@ describe('IssuePanel - Auto-scroll', () => {
 
       const { container } = renderWithProviders(<IssuePanel issue={mockIssue} />)
 
-      // Wait for execution to load
+      // Wait for execution to load - when running, placeholder is different
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Enter prompt for the agent...')).toBeInTheDocument()
+        expect(screen.getByPlaceholderText(/Execution is running/i)).toBeInTheDocument()
       })
 
       // Get the scroll container
@@ -350,9 +375,9 @@ describe('IssuePanel - Auto-scroll', () => {
 
       const { container } = renderWithProviders(<IssuePanel issue={mockIssue} />)
 
-      // Wait for execution to load
+      // Wait for execution to load - when running, placeholder is different
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Enter prompt for the agent...')).toBeInTheDocument()
+        expect(screen.getByPlaceholderText(/Execution is running/i)).toBeInTheDocument()
       })
 
       // Get the scroll container and simulate scrolling up
@@ -440,9 +465,9 @@ describe('IssuePanel - Auto-scroll', () => {
 
       const { container } = renderWithProviders(<IssuePanel issue={mockIssue} />)
 
-      // Wait for execution to load
+      // Wait for execution to load - when running, placeholder is different
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Enter prompt for the agent...')).toBeInTheDocument()
+        expect(screen.getByPlaceholderText(/Execution is running/i)).toBeInTheDocument()
       })
 
       // Simulate scrolling up to disable auto-scroll
@@ -510,9 +535,9 @@ describe('IssuePanel - Auto-scroll', () => {
 
       const { container } = renderWithProviders(<IssuePanel issue={mockIssue} />)
 
-      // Wait for execution to load
+      // Wait for execution to load - when running, placeholder is different
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Enter prompt for the agent...')).toBeInTheDocument()
+        expect(screen.getByPlaceholderText(/Execution is running/i)).toBeInTheDocument()
       })
 
       // Clear previous scrollTo calls
@@ -550,9 +575,9 @@ describe('IssuePanel - Auto-scroll', () => {
 
       const { container } = renderWithProviders(<IssuePanel issue={mockIssue} />)
 
-      // Wait for execution to load
+      // Wait for execution to load - when running, placeholder is different
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Enter prompt for the agent...')).toBeInTheDocument()
+        expect(screen.getByPlaceholderText(/Execution is running/i)).toBeInTheDocument()
       })
 
       // Simulate scrolling up to disable auto-scroll

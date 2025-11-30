@@ -71,6 +71,16 @@ vi.mock('@/hooks/useAgents', () => ({
   }),
 }))
 
+// Mock useWorktrees
+vi.mock('@/hooks/useWorktrees', () => ({
+  useWorktrees: () => ({
+    worktrees: [],
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
+}))
+
 describe('AgentConfigPanel - Contextual Actions', () => {
   const queryClient = new QueryClient({
     defaultOptions: {

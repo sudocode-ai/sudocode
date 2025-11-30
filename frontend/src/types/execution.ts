@@ -45,6 +45,7 @@ export interface ExecutionConfig {
   createBaseBranch?: boolean // If true, create baseBranch from current HEAD
   branchName?: string // Override auto-generated branch name
   cleanupMode?: CleanupMode // When to cleanup worktree
+  reuseWorktreeId?: string // If set, reuse existing worktree instead of creating new one
 
   // Workflow settings
   checkpointInterval?: number // Steps between checkpoints

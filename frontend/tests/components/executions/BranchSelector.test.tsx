@@ -248,7 +248,7 @@ describe('BranchSelector', () => {
     expect(screen.queryByText(/Create/)).not.toBeInTheDocument()
   })
 
-  it('shows "No branches found" when filter returns empty and create is not allowed', async () => {
+  it('shows "No branches or worktrees found" when filter returns empty and create is not allowed', async () => {
     const user = userEvent.setup()
 
     renderWithProviders(
@@ -265,6 +265,6 @@ describe('BranchSelector', () => {
     const searchInput = screen.getByPlaceholderText('Search or create branch...')
     await user.type(searchInput, 'nonexistent-xyz')
 
-    expect(screen.getByText('No branches found')).toBeInTheDocument()
+    expect(screen.getByText('No branches or worktrees found')).toBeInTheDocument()
   })
 })

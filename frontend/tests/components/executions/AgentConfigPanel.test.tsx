@@ -212,7 +212,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
-        expect(screen.getByText('New worktree')).toBeInTheDocument()
+        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
       })
     })
 
@@ -222,7 +222,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
-        expect(screen.getByText('New worktree')).toBeInTheDocument()
+        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
       })
 
       // Find the execution mode selector (second combobox)
@@ -267,7 +267,7 @@ describe('AgentConfigPanel', () => {
 
       // Wait for initial render
       await waitFor(() => {
-        expect(screen.getByText('New worktree')).toBeInTheDocument()
+        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
       })
 
       // Initially should show branch in worktree mode
@@ -696,7 +696,7 @@ describe('AgentConfigPanel', () => {
 
       await waitFor(() => {
         // Should fall back to default mode
-        expect(screen.getByText('New worktree')).toBeInTheDocument()
+        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
       })
 
       // Should have warned about invalid config
@@ -720,7 +720,7 @@ describe('AgentConfigPanel', () => {
 
       await waitFor(() => {
         // Should fall back to default config
-        expect(screen.getByText('New worktree')).toBeInTheDocument()
+        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
       })
 
       // Should have warned about parse error
@@ -783,7 +783,7 @@ describe('AgentConfigPanel', () => {
 
       await waitFor(() => {
         // Should use previous execution config, not localStorage
-        expect(screen.getByText('New worktree')).toBeInTheDocument()
+        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
       })
     })
 
@@ -812,7 +812,7 @@ describe('AgentConfigPanel', () => {
 
       await waitFor(() => {
         // Should fall back to defaults
-        expect(screen.getByText('New worktree')).toBeInTheDocument()
+        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
       })
 
       expect(consoleWarnSpy).toHaveBeenCalledWith(
@@ -1230,7 +1230,7 @@ describe('AgentConfigPanel', () => {
         // Should show inherited agent type
         expect(screen.getByText('Claude Code')).toBeInTheDocument()
         // Should show inherited mode
-        expect(screen.getByText('New worktree')).toBeInTheDocument()
+        expect(screen.getByText('Run in worktree')).toBeInTheDocument()
         // Should show inherited branch
         expect(screen.getByText('main')).toBeInTheDocument()
       })

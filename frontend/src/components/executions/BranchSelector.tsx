@@ -2,20 +2,24 @@ import { useState, useMemo } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Check, ChevronsUpDown, GitBranch, Plus } from 'lucide-react'
+import { Check, ChevronsUpDown, GitBranch, Plus, FolderGit2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Checkbox } from '@/components/ui/checkbox'
+import type { Execution } from '@/types/execution'
 
 interface BranchSelectorProps {
   branches: string[]
   value: string
-  onChange: (value: string, isNew?: boolean) => void
+  onChange: (value: string, isNew?: boolean, worktreeId?: string) => void
   disabled?: boolean
   placeholder?: string
   allowCreate?: boolean
   className?: string
   /** Current branch name - shown when creating a new branch ("from X") */
   currentBranch?: string
+  /** Optional worktrees to show alongside branches */
+  worktrees?: Execution[]
 }
 
 export function BranchSelector({
@@ -27,32 +31,79 @@ export function BranchSelector({
   allowCreate = true,
   className,
   currentBranch,
+  worktrees = [],
 }: BranchSelectorProps) {
   const [open, setOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [showBranches, setShowBranches] = useState(true)
+  const [showWorktrees, setShowWorktrees] = useState(true)
+
+  // Filter worktrees to only show .sudocode/worktrees
+  const sudocodeWorktrees = useMemo(() => {
+    return worktrees.filter((wt) => wt.worktree_path?.includes('.sudocode/worktrees'))
+  }, [worktrees])
+
+  // Combine branches with worktree branches
+  const allBranches = useMemo(() => {
+    const worktreeBranches = sudocodeWorktrees
+      .map((wt) => wt.branch_name)
+      .filter((branch): branch is string => !!branch)
+
+    // Add worktree branches to the list, removing duplicates
+    const combined = [...branches]
+    for (const wtBranch of worktreeBranches) {
+      if (!combined.includes(wtBranch)) {
+        combined.push(wtBranch)
+      }
+    }
+    return combined
+  }, [branches, sudocodeWorktrees])
 
   // Filter branches based on search term
   const filteredBranches = useMemo(() => {
     if (!searchTerm.trim()) {
-      return branches
+      return allBranches
     }
     const search = searchTerm.toLowerCase()
-    return branches.filter((branch) => branch.toLowerCase().includes(search))
-  }, [branches, searchTerm])
+    return allBranches.filter((branch) => branch.toLowerCase().includes(search))
+  }, [allBranches, searchTerm])
+
+  // Filter worktrees based on search term
+  const filteredWorktrees = useMemo(() => {
+    if (!searchTerm.trim()) {
+      return sudocodeWorktrees
+    }
+    const search = searchTerm.toLowerCase()
+    return sudocodeWorktrees.filter(
+      (wt) =>
+        wt.branch_name?.toLowerCase().includes(search) || wt.id?.toLowerCase().includes(search)
+    )
+  }, [sudocodeWorktrees, searchTerm])
 
   // Check if search term is a valid new branch name (not existing)
   const canCreateNew = useMemo(() => {
     if (!allowCreate || !searchTerm.trim()) return false
     const trimmed = searchTerm.trim()
     // Check if it doesn't already exist (case-insensitive)
-    const exists = branches.some((b) => b.toLowerCase() === trimmed.toLowerCase())
+    const exists = allBranches.some((b) => b.toLowerCase() === trimmed.toLowerCase())
     // Basic validation for branch name (no spaces, doesn't start with -)
     const isValidName = /^[^\s][^\s]*$/.test(trimmed) && !trimmed.startsWith('-')
     return !exists && isValidName
-  }, [allowCreate, searchTerm, branches])
+  }, [allowCreate, searchTerm, allBranches])
 
   const handleSelect = (branch: string, isNew: boolean = false) => {
     onChange(branch, isNew)
+    setOpen(false)
+    setSearchTerm('')
+  }
+
+  const handleWorktreeSelect = (worktree: Execution) => {
+    if (!worktree.branch_name) {
+      console.error('Selected worktree has no branch name')
+      return
+    }
+    // Pass worktree ID to indicate we want to reuse this worktree
+    onChange(worktree.branch_name, false, worktree.id)
     setOpen(false)
     setSearchTerm('')
   }
@@ -92,6 +143,29 @@ export function BranchSelector({
               autoFocus
             />
           </div>
+          {/* Visibility toggles */}
+          {sudocodeWorktrees.length > 0 && (
+            <div className="flex items-center gap-3 border-b px-3 py-2">
+              <label className="flex cursor-pointer items-center gap-2 text-xs">
+                <Checkbox
+                  checked={showBranches}
+                  onCheckedChange={(checked) => setShowBranches(checked === true)}
+                  className="h-4 w-4"
+                />
+                <span className="font-medium">branches</span>
+              </label>
+              {sudocodeWorktrees.length > 0 && (
+                <label className="flex cursor-pointer items-center gap-2 text-xs">
+                  <Checkbox
+                    checked={showWorktrees}
+                    onCheckedChange={(checked) => setShowWorktrees(checked === true)}
+                    className="h-4 w-4"
+                  />
+                  <span className="font-medium">worktrees</span>
+                </label>
+              )}
+            </div>
+          )}
           <div className="max-h-60 overflow-auto">
             {/* Create new branch option */}
             {canCreateNew && (
@@ -108,31 +182,82 @@ export function BranchSelector({
               </button>
             )}
 
-            {/* Existing branches */}
-            {filteredBranches.length === 0 && !canCreateNew ? (
+            {/* No results */}
+            {(showBranches ? filteredBranches.length : 0) === 0 &&
+            (showWorktrees ? filteredWorktrees.length : 0) === 0 &&
+            !canCreateNew ? (
               <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-                No branches found
+                {!showBranches && !showWorktrees
+                  ? 'Enable branches or worktrees to see results'
+                  : 'No branches or worktrees found'}
               </div>
             ) : (
-              filteredBranches.map((branch) => (
-                <button
-                  key={branch}
-                  type="button"
-                  className={cn(
-                    'flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground',
-                    value === branch && 'bg-accent text-accent-foreground'
-                  )}
-                  onClick={() => handleSelect(branch)}
-                >
-                  <Check
-                    className={cn(
-                      'h-3.5 w-3.5 shrink-0',
-                      value === branch ? 'opacity-100' : 'opacity-0'
-                    )}
-                  />
-                  <span className="truncate">{branch}</span>
-                </button>
-              ))
+              <>
+                {/* Existing branches */}
+                {showBranches && filteredBranches.length > 0 && (
+                  <>
+                    <div className="bg-muted/50 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                      Branches
+                    </div>
+                    {filteredBranches.map((branch) => (
+                      <button
+                        key={branch}
+                        type="button"
+                        className={cn(
+                          'flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground',
+                          value === branch && 'bg-accent text-accent-foreground'
+                        )}
+                        onClick={() => handleSelect(branch)}
+                      >
+                        <Check
+                          className={cn(
+                            'h-3.5 w-3.5 shrink-0',
+                            value === branch ? 'opacity-100' : 'opacity-0'
+                          )}
+                        />
+                        <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{branch}</span>
+                      </button>
+                    ))}
+                  </>
+                )}
+
+                {/* Worktrees */}
+                {showWorktrees && filteredWorktrees.length > 0 && (
+                  <>
+                    <div className="bg-muted/50 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                      Worktrees
+                    </div>
+                    {filteredWorktrees.map((worktree) => (
+                      <button
+                        key={worktree.id}
+                        type="button"
+                        className={cn(
+                          'flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground',
+                          value === worktree.branch_name && 'bg-accent text-accent-foreground'
+                        )}
+                        onClick={() => handleWorktreeSelect(worktree)}
+                      >
+                        <Check
+                          className={cn(
+                            'h-3.5 w-3.5 shrink-0',
+                            value === worktree.branch_name ? 'opacity-100' : 'opacity-0'
+                          )}
+                        />
+                        <FolderGit2 className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="truncate font-medium">{worktree.branch_name}</span>
+                          {worktree.issue_id && (
+                            <span className="truncate text-[10px] text-muted-foreground">
+                              {worktree.issue_id}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </>
+                )}
+              </>
             )}
           </div>
         </div>
