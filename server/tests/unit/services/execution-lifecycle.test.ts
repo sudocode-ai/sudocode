@@ -132,6 +132,65 @@ describe("ExecutionLifecycleService", () => {
       });
     });
 
+    it("should capture before_commit when creating execution", async () => {
+      // Create a real git repo for this test
+      const gitTestDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), "sudocode-test-git-")
+      );
+
+      try {
+        // Initialize git repo
+        const { execSync } = await import("child_process");
+        execSync("git init", { cwd: gitTestDir });
+        execSync('git config user.email "test@example.com"', {
+          cwd: gitTestDir,
+        });
+        execSync('git config user.name "Test User"', { cwd: gitTestDir });
+
+        // Create initial commit
+        fs.writeFileSync(path.join(gitTestDir, "README.md"), "# Test\n");
+        execSync("git add .", { cwd: gitTestDir });
+        execSync('git commit -m "Initial commit"', { cwd: gitTestDir });
+
+        // Get the current commit SHA
+        const expectedCommit = execSync("git rev-parse HEAD", {
+          cwd: gitTestDir,
+          encoding: "utf-8",
+        }).trim();
+
+        // Create mock worktree manager
+        const mockWorktreeManager = createMockWorktreeManager();
+
+        const service = new ExecutionLifecycleService(
+          db,
+          gitTestDir,
+          mockWorktreeManager
+        );
+
+        const result = await service.createExecutionWithWorktree({
+          issueId: testIssueId,
+          issueTitle: testIssueTitle,
+          agentType: "claude-code",
+          targetBranch: "main",
+          repoPath: gitTestDir,
+        });
+
+        // Verify before_commit was captured
+        expect(result.execution.before_commit).toBe(expectedCommit);
+        expect(result.execution.before_commit).toMatch(/^[0-9a-f]{40}$/);
+
+        // Cleanup: Mark execution as completed
+        updateExecution(db, result.execution.id, {
+          status: "completed",
+        });
+      } finally {
+        // Clean up git test directory
+        if (fs.existsSync(gitTestDir)) {
+          fs.rmSync(gitTestDir, { recursive: true, force: true });
+        }
+      }
+    });
+
     it("should cleanup worktree if execution creation fails", async () => {
       // Create mock that succeeds worktree creation
       const mockWorktreeManager = createMockWorktreeManager();

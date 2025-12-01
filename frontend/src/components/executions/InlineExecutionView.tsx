@@ -5,6 +5,7 @@ import { executionsApi, type ExecutionChainResponse } from '@/lib/api'
 import { ExecutionMonitor, RunIndicator } from './ExecutionMonitor'
 import { DeleteWorktreeDialog } from './DeleteWorktreeDialog'
 import { DeleteExecutionDialog } from './DeleteExecutionDialog'
+import { CodeChangesPanel } from './CodeChangesPanel'
 import { TodoTracker } from './TodoTracker'
 import { buildTodoHistory } from '@/utils/todoExtractor'
 import { useWebSocketContext } from '@/contexts/WebSocketContext'
@@ -549,6 +550,14 @@ export function InlineExecutionView({
               <>
                 <div className="my-6" />
                 <TodoTracker todos={allTodos} />
+              </>
+            )}
+
+            {/* Accumulated Code Changes - shows changes from the entire chain */}
+            {(rootExecution.before_commit || rootExecution.after_commit) && (
+              <>
+                <div className="my-6" />
+                <CodeChangesPanel executionId={rootExecution.id} />
               </>
             )}
 

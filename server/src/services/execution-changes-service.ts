@@ -43,14 +43,23 @@ export class ExecutionChangesService {
     // 1. Load execution from database
     const execution = getExecution(this.db, executionId);
     if (!execution) {
+      console.log(`[ExecutionChangesService] Execution not found: ${executionId}`);
       return {
         available: false,
         reason: "incomplete_execution",
       };
     }
 
+    console.log(`[ExecutionChangesService] Execution ${executionId}:`, {
+      status: execution.status,
+      before_commit: execution.before_commit,
+      after_commit: execution.after_commit,
+      parent_execution_id: execution.parent_execution_id,
+    });
+
     // 2. Validate status (must be completed or stopped)
     if (execution.status !== "completed" && execution.status !== "stopped") {
+      console.log(`[ExecutionChangesService] Invalid status: ${execution.status}`);
       return {
         available: false,
         reason: "incomplete_execution",
@@ -61,8 +70,15 @@ export class ExecutionChangesService {
     const rootExecution = this.getRootExecution(execution);
     const beforeCommit = rootExecution.before_commit || execution.before_commit;
 
+    console.log(`[ExecutionChangesService] Root execution ${rootExecution.id}:`, {
+      before_commit: rootExecution.before_commit,
+      after_commit: rootExecution.after_commit,
+    });
+    console.log(`[ExecutionChangesService] Computed beforeCommit: ${beforeCommit}`);
+
     // 3a. Validate before_commit exists (required for calculating any changes)
     if (!beforeCommit) {
+      console.log(`[ExecutionChangesService] Missing before_commit - cannot calculate changes`);
       return {
         available: false,
         reason: "missing_commits",

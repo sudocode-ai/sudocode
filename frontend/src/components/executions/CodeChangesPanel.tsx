@@ -10,7 +10,8 @@
 import { useExecutionChanges } from '@/hooks/useExecutionChanges';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { FileText, Plus, Minus, AlertCircle, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { FileText, Plus, Minus, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 import type { FileChangeStat } from '@/types/execution';
 
 interface CodeChangesPanelProps {
@@ -94,7 +95,7 @@ function FileChangeRow({ file }: { file: FileChangeStat }) {
  * Code changes panel component
  */
 export function CodeChangesPanel({ executionId }: CodeChangesPanelProps) {
-  const { data, loading, error } = useExecutionChanges(executionId);
+  const { data, loading, error, refresh } = useExecutionChanges(executionId);
 
   if (loading) {
     return (
@@ -179,6 +180,16 @@ export function CodeChangesPanel({ executionId }: CodeChangesPanelProps) {
             {summary.totalDeletions > 0 && (
               <span className="text-red-600 font-mono">-{summary.totalDeletions}</span>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={refresh}
+              disabled={loading}
+              className="h-8 w-8 p-0"
+              title="Refresh changes"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
         </div>
         {/* Show current state info */}

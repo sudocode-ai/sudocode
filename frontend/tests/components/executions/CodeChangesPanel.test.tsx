@@ -24,6 +24,7 @@ describe('CodeChangesPanel', () => {
         data: null,
         loading: true,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -38,6 +39,7 @@ describe('CodeChangesPanel', () => {
         data: null,
         loading: false,
         error: new Error('Network error'),
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -58,6 +60,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -77,6 +80,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -96,6 +100,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -115,6 +120,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -132,6 +138,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -151,6 +158,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -184,6 +192,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -220,6 +229,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -248,6 +258,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -282,6 +293,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -310,6 +322,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -336,6 +349,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -368,6 +382,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -395,6 +410,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -426,6 +442,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -453,6 +470,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -481,6 +499,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -495,6 +514,7 @@ describe('CodeChangesPanel', () => {
         data: null,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       const { container } = render(<CodeChangesPanel executionId="exec-123" />)
@@ -525,6 +545,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -552,6 +573,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -581,6 +603,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -611,6 +634,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -654,6 +678,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -692,6 +717,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)
@@ -729,6 +755,7 @@ describe('CodeChangesPanel', () => {
         data,
         loading: false,
         error: null,
+        refresh: vi.fn(),
       })
 
       render(<CodeChangesPanel executionId="exec-123" />)

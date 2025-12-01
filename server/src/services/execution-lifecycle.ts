@@ -10,6 +10,7 @@
 import path from "path";
 import type Database from "better-sqlite3";
 import type { AgentType, Execution } from "@sudocode-ai/types";
+import { execSync } from "child_process";
 import {
   WorktreeManager,
   type IWorktreeManager,
@@ -171,7 +172,23 @@ export class ExecutionLifecycleService {
     let worktreeCreated = false;
 
     try {
-      // Step 1: Create worktree
+      // Step 1: Capture current commit before creating worktree
+      let beforeCommit: string | undefined;
+      try {
+        beforeCommit = execSync("git rev-parse HEAD", {
+          cwd: repoPath,
+          encoding: "utf-8",
+        }).trim();
+        console.log(`[ExecutionLifecycle] Captured before_commit: ${beforeCommit}`);
+      } catch (error) {
+        console.warn(
+          "[ExecutionLifecycle] Failed to capture before_commit:",
+          error instanceof Error ? error.message : String(error)
+        );
+        // Continue - this is supplementary data
+      }
+
+      // Step 2: Create worktree
       await this.worktreeManager.createWorktree({
         repoPath,
         branchName,
@@ -182,7 +199,7 @@ export class ExecutionLifecycleService {
 
       worktreeCreated = true;
 
-      // Step 2: Create execution record in database
+      // Step 3: Create execution record in database
       const execution = createExecution(this.db, {
         id: executionId,
         issue_id: issueId,
@@ -190,6 +207,7 @@ export class ExecutionLifecycleService {
         mode: params.mode,
         prompt: params.prompt,
         config: params.config,
+        before_commit: beforeCommit,
         target_branch: targetBranch,
         branch_name: branchName,
         worktree_path: worktreePath,

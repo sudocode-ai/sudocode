@@ -366,6 +366,88 @@ describe("ExecutionService", () => {
       expect(execution.worktree_path).toBe(null);
     });
 
+    it("should capture before_commit in local mode", async () => {
+      // Create a real git repo for this test
+      const gitTestDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), "sudocode-test-git-local-")
+      );
+
+      try {
+        // Initialize git repo
+        const { execSync } = await import("child_process");
+        execSync("git init", { cwd: gitTestDir });
+        execSync('git config user.email "test@example.com"', {
+          cwd: gitTestDir,
+        });
+        execSync('git config user.name "Test User"', { cwd: gitTestDir });
+
+        // Create initial commit
+        fs.writeFileSync(path.join(gitTestDir, "README.md"), "# Test\n");
+        execSync("git add .", { cwd: gitTestDir });
+        execSync('git commit -m "Initial commit"', { cwd: gitTestDir });
+
+        // Get the current commit SHA
+        const expectedCommit = execSync("git rev-parse HEAD", {
+          cwd: gitTestDir,
+          encoding: "utf-8",
+        }).trim();
+
+        // Initialize database in git test directory
+        const gitTestDbPath = path.join(gitTestDir, ".sudocode", "cache.db");
+        fs.mkdirSync(path.join(gitTestDir, ".sudocode"), { recursive: true });
+        const gitTestDb = initCliDatabase({ path: gitTestDbPath });
+        gitTestDb.exec(EXECUTIONS_TABLE);
+        gitTestDb.exec(EXECUTIONS_INDEXES);
+        gitTestDb.exec(PROMPT_TEMPLATES_TABLE);
+        gitTestDb.exec(PROMPT_TEMPLATES_INDEXES);
+        initializeDefaultTemplates(gitTestDb);
+
+        // Create test issue in git test db
+        const { id: gitIssueId, uuid: gitIssueUuid } = generateIssueId(
+          gitTestDb,
+          gitTestDir
+        );
+        const gitIssue = createIssue(gitTestDb, {
+          id: gitIssueId,
+          uuid: gitIssueUuid,
+          title: "Test Issue for Git",
+          content: "This is a test issue",
+        });
+
+        // Create execution service with git test directory
+        const gitLifecycleService = new ExecutionLifecycleService(
+          gitTestDb,
+          gitTestDir,
+          createMockWorktreeManager()
+        );
+        const gitService = new ExecutionService(
+          gitTestDb,
+          "test-project-git",
+          gitTestDir,
+          gitLifecycleService
+        );
+
+        const issueContent = "Add OAuth2 authentication";
+        const execution = await gitService.createExecution(
+          gitIssue.id,
+          { mode: "local" },
+          issueContent
+        );
+
+        // Verify before_commit was captured
+        expect(execution.before_commit).toBe(expectedCommit);
+        expect(execution.before_commit).toMatch(/^[0-9a-f]{40}$/);
+
+        // Cleanup
+        gitTestDb.close();
+      } finally {
+        // Clean up git test directory
+        if (fs.existsSync(gitTestDir)) {
+          fs.rmSync(gitTestDir, { recursive: true, force: true });
+        }
+      }
+    });
+
     it("should throw error for empty prompt", async () => {
       await expect(
         service.createExecution(testIssueId, { mode: "worktree" }, "")

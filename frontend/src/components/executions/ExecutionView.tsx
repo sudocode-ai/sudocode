@@ -746,13 +746,6 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                       hideTodoTracker
                     />
 
-                    {/* Code changes panel for completed/stopped executions */}
-                    {['completed', 'stopped'].includes(execution.status) && (
-                      <div className="mt-6">
-                        <CodeChangesPanel executionId={execution.id} />
-                      </div>
-                    )}
-
                     {/* Visual separator between executions (subtle spacing only) */}
                     {showDivider && <div className="my-6" />}
                   </div>
@@ -764,6 +757,14 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                 <>
                   <div className="my-6" />
                   <TodoTracker todos={allTodos} />
+                </>
+              )}
+
+              {/* Accumulated Code Changes - shows changes from the entire chain */}
+              {(rootExecution.before_commit || rootExecution.after_commit) && (
+                <>
+                  <div className="my-6" />
+                  <CodeChangesPanel executionId={rootExecution.id} />
                 </>
               )}
 

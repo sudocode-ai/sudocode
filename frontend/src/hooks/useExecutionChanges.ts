@@ -22,6 +22,8 @@ export interface UseExecutionChangesResult {
   loading: boolean;
   /** Error if fetch failed */
   error: Error | null;
+  /** Manually refresh changes */
+  refresh: () => void;
 }
 
 /**
@@ -57,6 +59,12 @@ export function useExecutionChanges(
   const [data, setData] = useState<ExecutionChangesResult | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
+
+  // Manual refresh function
+  const refresh = () => {
+    setRefreshTrigger((prev) => prev + 1);
+  };
 
   useEffect(() => {
     // Skip fetching if no execution ID
@@ -73,7 +81,6 @@ export function useExecutionChanges(
     // Reset state when execution ID changes
     setLoading(true);
     setError(null);
-    setData(null);
 
     // Create abort controller for cleanup
     const abortController = new AbortController();
@@ -121,11 +128,12 @@ export function useExecutionChanges(
     return () => {
       abortController.abort();
     };
-  }, [executionId]);
+  }, [executionId, refreshTrigger]);
 
   return {
     data,
     loading,
     error,
+    refresh,
   };
 }

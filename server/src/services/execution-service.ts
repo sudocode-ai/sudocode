@@ -198,6 +198,11 @@ export class ExecutionService {
         updateExecution(this.db, executionId, {
           before_commit: beforeCommit,
         });
+        // Reload execution to get updated before_commit
+        const updatedExecution = getExecution(this.db, executionId);
+        if (updatedExecution) {
+          execution = updatedExecution;
+        }
       } catch (error) {
         console.warn(
           "[ExecutionService] Failed to capture before_commit for local mode:",
