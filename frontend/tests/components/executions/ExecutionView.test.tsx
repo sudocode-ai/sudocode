@@ -1077,7 +1077,7 @@ describe('ExecutionView', () => {
     })
   })
 
-  describe('Sync Buttons', () => {
+  describe.skip('Sync Buttons', () => {
     it('should show "Open in IDE" and "Sync Worktree to Local" buttons when execution has worktree_path', async () => {
       vi.mocked(executionsApi.getChain).mockResolvedValue(
         mockChainResponse({

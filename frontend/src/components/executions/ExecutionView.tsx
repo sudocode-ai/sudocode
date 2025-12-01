@@ -27,7 +27,6 @@ import {
   PauseCircle,
   ArrowDown,
   FolderOpen,
-  GitMerge,
 } from 'lucide-react'
 
 export interface ExecutionViewProps {
@@ -655,7 +654,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                           <p>Open worktree directory in configured IDE</p>
                         </TooltipContent>
                       </Tooltip>
-                      <Tooltip>
+                      {/* <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
                             variant="outline"
@@ -679,7 +678,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                         <TooltipContent>
                           <p>Sync worktree changes to local branch</p>
                         </TooltipContent>
-                      </Tooltip>
+                      </Tooltip> */}
                     </>
                   )}
                   {canDeleteWorktree && (

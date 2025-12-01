@@ -47,7 +47,7 @@ vi.mock('@/components/executions/DeleteExecutionDialog', () => ({
   DeleteExecutionDialog: () => null,
 }))
 
-describe('Sync Workflow Integration Tests', () => {
+describe.skip('Sync Workflow Integration Tests', () => {
   const mockExecution: Execution = {
     id: 'exec-123',
     issue_id: 'ISSUE-001',
