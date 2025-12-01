@@ -77,6 +77,106 @@ export function createExecutionsRouter(): Router {
   const router = Router();
 
   /**
+   * GET /api/executions
+   *
+   * List all executions with filtering and pagination
+   *
+   * Query parameters:
+   * - limit?: number (default: 50)
+   * - offset?: number (default: 0)
+   * - status?: ExecutionStatus | ExecutionStatus[] (comma-separated for multiple)
+   * - issueId?: string
+   * - sortBy?: 'created_at' | 'updated_at' (default: 'created_at')
+   * - order?: 'asc' | 'desc' (default: 'desc')
+   */
+  router.get("/executions", (req: Request, res: Response) => {
+    try {
+      // Parse query parameters
+      const limit = req.query.limit
+        ? parseInt(req.query.limit as string, 10)
+        : undefined;
+      const offset = req.query.offset
+        ? parseInt(req.query.offset as string, 10)
+        : undefined;
+
+      // Parse status (can be single value or comma-separated array)
+      let status: any = undefined;
+      if (req.query.status) {
+        const statusParam = req.query.status as string;
+        status = statusParam.includes(",")
+          ? statusParam.split(",").map((s) => s.trim())
+          : statusParam;
+      }
+
+      const issueId = req.query.issueId as string | undefined;
+      const sortBy = (req.query.sortBy as "created_at" | "updated_at") || undefined;
+      const order = (req.query.order as "asc" | "desc") || undefined;
+
+      // Validate limit and offset
+      if (limit !== undefined && (isNaN(limit) || limit < 0)) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "Invalid limit parameter",
+        });
+        return;
+      }
+
+      if (offset !== undefined && (isNaN(offset) || offset < 0)) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "Invalid offset parameter",
+        });
+        return;
+      }
+
+      // Validate sortBy
+      if (sortBy && sortBy !== "created_at" && sortBy !== "updated_at") {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "Invalid sortBy parameter. Must be 'created_at' or 'updated_at'",
+        });
+        return;
+      }
+
+      // Validate order
+      if (order && order !== "asc" && order !== "desc") {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "Invalid order parameter. Must be 'asc' or 'desc'",
+        });
+        return;
+      }
+
+      // Call service method
+      const result = req.project!.executionService!.listAll({
+        limit,
+        offset,
+        status,
+        issueId,
+        sortBy,
+        order,
+      });
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      console.error("Error listing executions:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to list executions",
+      });
+    }
+  });
+
+  /**
    * POST /api/issues/:issueId/executions
    *
    * Create and start a new execution

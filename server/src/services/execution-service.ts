@@ -8,7 +8,7 @@
  */
 
 import type Database from "better-sqlite3";
-import type { Execution } from "@sudocode-ai/types";
+import type { Execution, ExecutionStatus } from "@sudocode-ai/types";
 import { ExecutionLifecycleService } from "./execution-lifecycle.js";
 import {
   createExecution,
@@ -896,6 +896,95 @@ ${feedback}`;
    */
   getExecution(executionId: string): Execution | null {
     return getExecution(this.db, executionId);
+  }
+
+  /**
+   * List all executions with filtering and pagination
+   *
+   * Returns executions across all issues with support for filtering
+   * by status, issueId, and pagination.
+   *
+   * @param options - Filtering and pagination options
+   * @param options.limit - Maximum number of executions to return (default: 50)
+   * @param options.offset - Number of executions to skip (default: 0)
+   * @param options.status - Filter by execution status (single or array)
+   * @param options.issueId - Filter by issue ID
+   * @param options.sortBy - Field to sort by (default: 'created_at')
+   * @param options.order - Sort order (default: 'desc')
+   * @returns Object containing executions array, total count, and hasMore flag
+   */
+  listAll(options: {
+    limit?: number;
+    offset?: number;
+    status?: ExecutionStatus | ExecutionStatus[];
+    issueId?: string;
+    sortBy?: "created_at" | "updated_at";
+    order?: "asc" | "desc";
+  } = {}): {
+    executions: Execution[];
+    total: number;
+    hasMore: boolean;
+  } {
+    const limit = options.limit ?? 50;
+    const offset = options.offset ?? 0;
+    const sortBy = options.sortBy ?? "created_at";
+    const order = options.order ?? "desc";
+
+    // Validate inputs
+    if (limit < 0 || offset < 0) {
+      throw new Error("Limit and offset must be non-negative");
+    }
+
+    // Build WHERE clause dynamically
+    const whereClauses: string[] = [];
+    const params: any[] = [];
+
+    // Filter by status (single or array)
+    if (options.status) {
+      const statuses = Array.isArray(options.status)
+        ? options.status
+        : [options.status];
+      const placeholders = statuses.map(() => "?").join(",");
+      whereClauses.push(`status IN (${placeholders})`);
+      params.push(...statuses);
+    }
+
+    // Filter by issueId
+    if (options.issueId) {
+      whereClauses.push("issue_id = ?");
+      params.push(options.issueId);
+    }
+
+    // Build WHERE clause
+    const whereClause =
+      whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+
+    // Get total count
+    const countQuery = `SELECT COUNT(*) as count FROM executions ${whereClause}`;
+    const countResult = this.db.prepare(countQuery).get(...params) as {
+      count: number;
+    };
+    const total = countResult.count;
+
+    // Get executions with pagination
+    const query = `
+      SELECT * FROM executions
+      ${whereClause}
+      ORDER BY ${sortBy} ${order.toUpperCase()}
+      LIMIT ? OFFSET ?
+    `;
+    const executions = this.db
+      .prepare(query)
+      .all(...params, limit, offset) as Execution[];
+
+    // Calculate hasMore
+    const hasMore = offset + executions.length < total;
+
+    return {
+      executions,
+      total,
+      hasMore,
+    };
   }
 
   /**
