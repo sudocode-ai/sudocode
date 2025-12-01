@@ -467,7 +467,7 @@ program
 program
   .command("server")
   .description("Start the sudocode local server")
-  .option("-p, --port <port>", "Port to run server on", "3000")
+  .option("-p, --port <port>", "Port to run server on")
   .option("-d, --detach", "Run server in background")
   .action(async (options) => {
     await handleServerStart(getContext(), options);
