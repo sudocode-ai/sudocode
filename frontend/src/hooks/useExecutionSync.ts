@@ -1,12 +1,8 @@
 import { useState, useCallback } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { executionsApi } from '@/lib/api'
-import type {
-  SyncPreviewResult,
-  SyncResult,
-  SyncMode,
-  Execution
-} from '@/types/execution'
+import type { SyncPreviewResult, SyncResult, SyncMode, Execution } from '@/types/execution'
 
 export type SyncStatus = 'idle' | 'previewing' | 'syncing' | 'success' | 'error'
 
@@ -59,7 +55,7 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
     mutationFn: ({
       executionId,
       mode,
-      commitMessage
+      commitMessage,
     }: {
       executionId: string
       mode: SyncMode
@@ -127,21 +123,16 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
    */
   const openWorktreeInIDE = useCallback(async (execution: Execution) => {
     if (!execution.worktree_path) {
-      console.error('No worktree path available')
+      toast.error('No worktree path available')
       return
     }
 
     try {
-      // Note: In browser context, we can't execute shell commands directly
-      // This would need to be handled via an API endpoint that executes on the server
-      // For now, we'll copy the path to clipboard and notify user
-      await navigator.clipboard.writeText(execution.worktree_path)
-
-      console.log('Worktree path copied to clipboard:', execution.worktree_path)
-      // TODO: Show toast notification to user
-      alert(`Worktree path copied to clipboard:\n${execution.worktree_path}\n\nOpen it manually in your IDE.`)
+      await executionsApi.openInIde(execution.worktree_path)
+      toast.success('Opening worktree in IDE...')
     } catch (error) {
-      console.error('Failed to open worktree in IDE:', error)
+      const message = error instanceof Error ? error.message : 'Failed to open IDE'
+      toast.error(message)
     }
   }, [])
 

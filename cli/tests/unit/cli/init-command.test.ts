@@ -65,6 +65,7 @@ describe("Init Command", () => {
       expect(gitignoreContent).toContain("issues/");
       expect(gitignoreContent).toContain("specs/");
       expect(gitignoreContent).toContain("worktrees/");
+      expect(gitignoreContent).toContain("config.local.json");
     });
 
   });
