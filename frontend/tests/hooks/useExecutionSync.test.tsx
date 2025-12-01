@@ -383,7 +383,8 @@ describe('useExecutionSync', () => {
         await result.current.cleanupWorktree('exec-123')
       })
 
-      expect(executionsApi.deleteWorktree).toHaveBeenCalledWith('exec-123')
+      // Now uses centralized mutation hook which passes (executionId, deleteBranch)
+      expect(executionsApi.deleteWorktree).toHaveBeenCalledWith('exec-123', undefined)
       expect(result.current.isSyncProgressOpen).toBe(false)
     })
 

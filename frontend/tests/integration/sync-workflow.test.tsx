@@ -591,9 +591,9 @@ describe('Sync Workflow Integration Tests', () => {
       const doneButton = screen.getByRole('button', { name: /Done/i })
       await user.click(doneButton)
 
-      // Verify cleanup was called
+      // Verify cleanup was called (now uses centralized mutation hook)
       await waitFor(() => {
-        expect(executionsApi.deleteWorktree).toHaveBeenCalledWith('exec-123')
+        expect(executionsApi.deleteWorktree).toHaveBeenCalledWith('exec-123', undefined)
       })
     })
   })

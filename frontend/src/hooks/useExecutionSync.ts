@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { executionsApi } from '@/lib/api'
+import { useWorktreeMutations } from './useWorktreeMutations'
 import type { SyncPreviewResult, SyncResult, SyncMode, Execution } from '@/types/execution'
 
 export type SyncStatus = 'idle' | 'previewing' | 'syncing' | 'success' | 'error'
@@ -22,6 +23,7 @@ export interface UseExecutionSyncOptions {
  */
 export function useExecutionSync(options?: UseExecutionSyncOptions) {
   const queryClient = useQueryClient()
+  const { deleteWorktree: deleteWorktreeMutation } = useWorktreeMutations()
 
   // Sync state
   const [syncPreview, setSyncPreview] = useState<SyncPreviewResult | null>(null)
@@ -137,15 +139,13 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
   }, [])
 
   /**
-   * Cleanup worktree (stub for now)
+   * Cleanup worktree
    */
   const cleanupWorktree = useCallback(
     async (executionId: string) => {
       try {
-        await executionsApi.deleteWorktree(executionId)
-
-        // Invalidate execution queries to refresh data
-        queryClient.invalidateQueries({ queryKey: ['executions'] })
+        // Use centralized mutation which handles cache invalidation
+        await deleteWorktreeMutation({ executionId })
 
         // Close progress dialog
         setIsSyncProgressOpen(false)
@@ -154,7 +154,7 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
         setSyncError(error instanceof Error ? error.message : 'Failed to cleanup worktree')
       }
     },
-    [queryClient]
+    [deleteWorktreeMutation]
   )
 
   /**
