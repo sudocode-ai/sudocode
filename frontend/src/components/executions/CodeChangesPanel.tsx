@@ -7,13 +7,12 @@
  * @module components/executions/CodeChangesPanel
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useExecutionChanges } from '@/hooks/useExecutionChanges';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { FileText, Plus, Minus, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { FileText, AlertCircle, Loader2, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import type { FileChangeStat } from '@/types/execution';
+
+const CODE_CHANGES_STORAGE_KEY = 'codeChanges.isCollapsed';
 
 interface CodeChangesPanelProps {
   executionId: string;
@@ -68,29 +67,23 @@ function FileChangeRow({ file }: { file: FileChangeStat }) {
   const statusBadge = getStatusBadge(file.status);
 
   return (
-    <div className="flex items-center justify-between py-2 px-3 hover:bg-muted/50 rounded-md transition-colors">
-      <div className="flex items-center gap-3 flex-1 min-w-0">
-        <Badge variant={statusBadge.variant} className="shrink-0 w-[70px] justify-center">
-          {statusBadge.label}
-        </Badge>
-        <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-        <span className="text-sm font-mono truncate" title={file.path}>
+    <div className="flex items-start gap-2">
+      <FileText className="mt-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground" />
+      <div className="flex flex-1 items-baseline gap-2">
+        <span className={`text-[10px] ${statusBadge.color} shrink-0`}>
+          {file.status}
+        </span>
+        <span className="flex-1 truncate leading-relaxed" title={file.path}>
           {file.path}
         </span>
-      </div>
-      <div className="flex items-center gap-3 text-xs font-mono shrink-0">
-        {file.additions > 0 && (
-          <span className="text-green-600 flex items-center gap-1">
-            <Plus className="h-3 w-3" />
-            {file.additions}
-          </span>
-        )}
-        {file.deletions > 0 && (
-          <span className="text-red-600 flex items-center gap-1">
-            <Minus className="h-3 w-3" />
-            {file.deletions}
-          </span>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {file.additions > 0 && (
+            <span className="text-green-600">+{file.additions}</span>
+          )}
+          {file.deletions > 0 && (
+            <span className="text-red-600">-{file.deletions}</span>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -102,6 +95,25 @@ function FileChangeRow({ file }: { file: FileChangeStat }) {
 export function CodeChangesPanel({ executionId, autoRefreshInterval, executionStatus }: CodeChangesPanelProps) {
   const { data, loading, error, refresh } = useExecutionChanges(executionId);
   const previousStatusRef = useRef<string | undefined>(executionStatus);
+
+  // Initialize state from localStorage
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    try {
+      const stored = localStorage.getItem(CODE_CHANGES_STORAGE_KEY);
+      return stored ? JSON.parse(stored) : true;
+    } catch {
+      return true;
+    }
+  });
+
+  // Save to localStorage whenever collapse state changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(CODE_CHANGES_STORAGE_KEY, JSON.stringify(isCollapsed));
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, [isCollapsed]);
 
   // Set up auto-refresh interval if provided
   useEffect(() => {
@@ -141,24 +153,24 @@ export function CodeChangesPanel({ executionId, autoRefreshInterval, executionSt
   // Show loading state only on initial load (when we have no data yet)
   if (loading && !data) {
     return (
-      <Card className="p-6">
+      <div className="rounded-md border border-border bg-muted/30 p-3 font-mono text-xs">
         <div className="flex items-center justify-center gap-2 text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
+          <Loader2 className="h-3 w-3 animate-spin" />
           <span>Loading code changes...</span>
         </div>
-      </Card>
+      </div>
     );
   }
 
   // Show error only if we have no data to display
   if (error && !data) {
     return (
-      <Card className="p-6">
+      <div className="rounded-md border border-border bg-muted/30 p-3 font-mono text-xs">
         <div className="flex items-center gap-2 text-destructive">
-          <AlertCircle className="h-4 w-4" />
+          <AlertCircle className="h-3 w-3" />
           <span>Failed to load changes: {error.message}</span>
         </div>
-      </Card>
+      </div>
     );
   }
 
@@ -168,12 +180,12 @@ export function CodeChangesPanel({ executionId, autoRefreshInterval, executionSt
 
   if (!data.available) {
     return (
-      <Card className="p-6">
+      <div className="rounded-md border border-border bg-muted/30 p-3 font-mono text-xs">
         <div className="flex items-center gap-2 text-muted-foreground">
-          <AlertCircle className="h-4 w-4" />
+          <AlertCircle className="h-3 w-3" />
           <span>Changes unavailable: {getReasonMessage(data.reason)}</span>
         </div>
-      </Card>
+      </div>
     );
   }
 
@@ -183,90 +195,102 @@ export function CodeChangesPanel({ executionId, autoRefreshInterval, executionSt
     return null;
   }
 
-  const { files, summary } = snapshot;
+  // Calculate total stats from all sources
+  // If snapshot is uncommitted and there's no uncommittedSnapshot, use snapshot.files as uncommitted
+  // Otherwise, use uncommittedSnapshot for uncommitted files
+  const uncommittedFiles = data.uncommittedSnapshot?.files || (snapshot.uncommitted ? snapshot.files : []);
+  const committedFiles = snapshot.uncommitted ? [] : snapshot.files;
+  const totalFiles = committedFiles.length + uncommittedFiles.length;
+  const totalAdditions = snapshot.summary.totalAdditions + (data.uncommittedSnapshot?.summary.totalAdditions || 0);
+  const totalDeletions = snapshot.summary.totalDeletions + (data.uncommittedSnapshot?.summary.totalDeletions || 0);
+
+  // Don't render if there are no file changes
+  if (totalFiles === 0) {
+    return null;
+  }
 
   return (
-    <Card className="overflow-hidden">
+    <div className="rounded-md border border-border bg-muted/30 p-3 font-mono text-xs">
       {/* Header */}
-      <div className="px-6 py-4 border-b bg-muted/30">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h3 className="text-lg font-semibold">Code Changes</h3>
-            {snapshot.uncommitted && (
-              <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
-                Uncommitted
-              </Badge>
+      <div className="flex w-full items-center gap-2">
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="flex flex-1 items-center gap-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          title={isCollapsed ? 'Expand code changes' : 'Collapse code changes'}
+        >
+          {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+          <div className="flex flex-1 flex-row items-center gap-4 text-left">
+            <span className="font-semibold uppercase tracking-wide">
+              {totalFiles} {totalFiles === 1 ? 'FILE' : 'FILES'}
+            </span>
+            {totalAdditions > 0 && (
+              <span className="text-green-600">+{totalAdditions}</span>
+            )}
+            {totalDeletions > 0 && (
+              <span className="text-red-600">-{totalDeletions}</span>
             )}
             {data.current && data.additionalCommits && data.additionalCommits > 0 && (
-              <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                +{data.additionalCommits} commit{data.additionalCommits !== 1 ? 's' : ''} since completion
-              </Badge>
-            )}
-            {data.branchName && data.branchExists === false && (
-              <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
-                Branch deleted
-              </Badge>
-            )}
-            {data.worktreeExists === false && (
-              <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
-                Worktree deleted
-              </Badge>
+              <span className="text-blue-600">+{data.additionalCommits} new</span>
             )}
           </div>
-          <div className="flex items-center gap-4 text-sm">
-            <span className="text-muted-foreground">
-              {summary.totalFiles} {summary.totalFiles === 1 ? 'file' : 'files'} changed
-            </span>
-            {summary.totalAdditions > 0 && (
-              <span className="text-green-600 font-mono">+{summary.totalAdditions}</span>
-            )}
-            {summary.totalDeletions > 0 && (
-              <span className="text-red-600 font-mono">-{summary.totalDeletions}</span>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={refresh}
-              disabled={loading}
-              className="h-8 w-8 p-0"
-              title="Refresh changes"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </Button>
-          </div>
-        </div>
-        {/* Show current state info */}
-        {data.current && (
-          <div className="mt-2 text-xs text-muted-foreground">
-            Showing current state of branch: <span className="font-mono">{data.branchName}</span>
-          </div>
-        )}
+        </button>
+        <button
+          onClick={refresh}
+          disabled={loading}
+          className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+          title="Refresh changes"
+        >
+          <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
+        </button>
       </div>
 
-      {/* File list */}
-      {files.length > 0 ? (
-        <div className="divide-y">
-          {files.map((file) => (
-            <FileChangeRow key={file.path} file={file} />
-          ))}
-        </div>
-      ) : (
-        <div className="p-6 text-center text-muted-foreground">
-          No file changes detected
-        </div>
-      )}
+      {/* Expanded content */}
+      {!isCollapsed && (
+        <>
+          {/* Metadata info */}
+          {(data.current || data.branchName || (data.worktreeExists === false && data.executionMode === 'worktree')) && (
+            <div className="mt-3 space-y-1 text-muted-foreground">
+              {data.current && (
+                <div>Showing current state of branch: {data.branchName}</div>
+              )}
+              {data.branchName && data.branchExists === false && (
+                <div className="text-orange-600">Branch no longer exists</div>
+              )}
+              {data.worktreeExists === false && data.executionMode === 'worktree' && (
+                <div className="text-orange-600">Worktree deleted</div>
+              )}
+            </div>
+          )}
 
-      {/* Uncommitted warning */}
-      {snapshot.uncommitted && files.length > 0 && (
-        <div className="px-6 py-3 border-t bg-yellow-50/50 text-sm text-yellow-800">
-          <div className="flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-            <span>
-              These changes were not committed. They may be lost if the worktree was deleted.
-            </span>
-          </div>
-        </div>
+          {/* Committed changes section */}
+          {committedFiles.length > 0 && (
+            <div className="mt-4">
+              <div className="mb-2 text-muted-foreground">
+                Committed ({committedFiles.length} {committedFiles.length === 1 ? 'file' : 'files'})
+              </div>
+              <div className="space-y-1">
+                {committedFiles.map((file) => (
+                  <FileChangeRow key={file.path} file={file} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Uncommitted changes section */}
+          {uncommittedFiles.length > 0 && (
+            <div className="mt-4">
+              <div className="mb-2 text-yellow-600">
+                Uncommitted ({uncommittedFiles.length} {uncommittedFiles.length === 1 ? 'file' : 'files'})
+              </div>
+              <div className="space-y-1">
+                {uncommittedFiles.map((file) => (
+                  <FileChangeRow key={`uncommitted-${file.path}`} file={file} />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
-    </Card>
+    </div>
   );
 }

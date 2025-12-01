@@ -89,6 +89,7 @@ export class ExecutionChangesService {
 
     // 5. Get branch and worktree information
     const branchName = execution.branch_name;
+    const executionMode = execution.mode as 'worktree' | 'local' | null;
     const worktreeExists = execution.worktree_path
       ? existsSync(execution.worktree_path)
       : false;
@@ -106,6 +107,7 @@ export class ExecutionChangesService {
 
     // 7. Compute captured state (from root to current execution)
     let captured: ChangesSnapshot | undefined;
+    let uncommittedSnapshot: ChangesSnapshot | undefined;
     const hasCommittedChanges =
       beforeCommit &&
       execution.after_commit &&
@@ -129,8 +131,21 @@ export class ExecutionChangesService {
           uncommitted: false,
         };
       }
+
+      // Additionally check for uncommitted changes on top of committed changes
+      const uncommittedResult = await this.getUncommittedChanges(
+        execution.worktree_path
+      );
+      if (uncommittedResult.available && uncommittedResult.changes && uncommittedResult.changes.files.length > 0) {
+        uncommittedSnapshot = {
+          files: uncommittedResult.changes.files,
+          summary: uncommittedResult.changes.summary,
+          commitRange: null,
+          uncommitted: true,
+        };
+      }
     } else {
-      // Captured: uncommitted changes (or no changes at completion)
+      // Captured: uncommitted changes only (or no changes at completion)
       const capturedResult = await this.getUncommittedChanges(
         execution.worktree_path
       );
@@ -198,10 +213,12 @@ export class ExecutionChangesService {
     return {
       available: true,
       captured,
+      uncommittedSnapshot,
       current,
       branchName,
       branchExists,
       worktreeExists,
+      executionMode,
       additionalCommits,
       // Legacy compatibility
       changes: captured,

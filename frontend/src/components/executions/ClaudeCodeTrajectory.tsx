@@ -436,7 +436,7 @@ export function ClaudeCodeTrajectory({
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       rehypePlugins={[rehypeHighlight]}
-                      className="max-w-none text-muted-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+                      className="max-w-none text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
                       components={{
                         p: ({ children }) => <>{children}</>,
                         code: ({ inline, children, ...props }: any) => {

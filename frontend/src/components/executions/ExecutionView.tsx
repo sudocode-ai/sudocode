@@ -747,7 +747,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                     />
 
                     {/* Visual separator between executions (subtle spacing only) */}
-                    {showDivider && <div className="my-6" />}
+                    {showDivider && <div className="my-4" />}
                   </div>
                 )
               })}
@@ -755,7 +755,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
               {/* Accumulated Todo Tracker - shows todos from all executions in chain */}
               {allTodos.length > 0 && (
                 <>
-                  <div className="my-6" />
+                  <div className="my-3" />
                   <TodoTracker todos={allTodos} />
                 </>
               )}
@@ -763,10 +763,12 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
               {/* Accumulated Code Changes - shows changes from the entire chain */}
               {(rootExecution.before_commit || rootExecution.after_commit) && (
                 <>
-                  <div className="my-6" />
+                  <div className="my-3" />
                   <CodeChangesPanel
                     executionId={rootExecution.id}
-                    autoRefreshInterval={executions.some((exec) => exec.status === 'running') ? 30000 : undefined}
+                    autoRefreshInterval={
+                      executions.some((exec) => exec.status === 'running') ? 30000 : undefined
+                    }
                     executionStatus={lastExecution.status}
                   />
                 </>
@@ -775,7 +777,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
               {/* Running indicator if any executions are running */}
               {executions.some((exec) => exec.status === 'running') && (
                 <>
-                  <div className="my-6" />
+                  <div className="my-3" />
                   <RunIndicator />
                 </>
               )}
