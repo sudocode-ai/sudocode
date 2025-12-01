@@ -3,7 +3,7 @@ import cors from "cors";
 import * as path from "path";
 import * as http from "http";
 import { fileURLToPath } from "url";
-import { readFileSync, existsSync } from "fs";
+import { existsSync } from "fs";
 
 // ES Module __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
@@ -20,6 +20,7 @@ import { createConfigRouter } from "./routes/config.js";
 import { createFilesRouter } from "./routes/files.js";
 import { createRepoInfoRouter } from "./routes/repo-info.js";
 import { createAgentsRouter } from "./routes/agents.js";
+import { createVersionRouter } from "./routes/version.js";
 import { TransportManager } from "./execution/transport/transport-manager.js";
 import { ProjectRegistry } from "./services/project-registry.js";
 import { ProjectManager } from "./services/project-manager.js";
@@ -191,37 +192,7 @@ app.get("/health", (_req: Request, res: Response) => {
 });
 
 // Version endpoint - returns versions of all packages
-app.get("/api/version", (_req: Request, res: Response) => {
-  try {
-    // Read package.json files - going up from server/dist to project root
-    const projectRoot = path.join(__dirname, "../..");
-    const cliPackagePath = path.join(projectRoot, "cli/package.json");
-    const serverPackagePath = path.join(projectRoot, "server/package.json");
-    const frontendPackagePath = path.join(projectRoot, "frontend/package.json");
-
-    const cliPackage = JSON.parse(readFileSync(cliPackagePath, "utf-8"));
-    const serverPackage = JSON.parse(readFileSync(serverPackagePath, "utf-8"));
-    const frontendPackage = JSON.parse(
-      readFileSync(frontendPackagePath, "utf-8")
-    );
-
-    res.status(200).json({
-      success: true,
-      data: {
-        cli: cliPackage.version,
-        server: serverPackage.version,
-        frontend: frontendPackage.version,
-      },
-    });
-  } catch (error) {
-    console.error("Failed to read version information:", error);
-    res.status(500).json({
-      success: false,
-      data: null,
-      message: "Failed to read version information",
-    });
-  }
-});
+app.use("/api/version", createVersionRouter());
 
 // WebSocket stats endpoint
 app.get("/ws/stats", (_req: Request, res: Response) => {
