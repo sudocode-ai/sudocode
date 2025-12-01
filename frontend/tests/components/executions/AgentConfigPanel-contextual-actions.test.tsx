@@ -186,20 +186,33 @@ describe('AgentConfigPanel - Contextual Actions', () => {
   })
 
   describe('Action Visibility', () => {
-    it('should not show actions when no execution is provided', async () => {
-      renderComponent()
+    it('should not show actions by default (disableContextualActions defaults to true)', async () => {
+      renderComponent({
+        currentExecution: mockCompletedExecution,
+      })
 
       await waitFor(() => {
         expect(screen.queryByText('Commit Changes')).not.toBeInTheDocument()
         expect(screen.queryByText('Squash & Merge')).not.toBeInTheDocument()
-        expect(screen.queryByText('Open in IDE')).not.toBeInTheDocument()
-        expect(screen.queryByText('Verify Code')).not.toBeInTheDocument()
+        expect(screen.queryByText('Cleanup Worktree')).not.toBeInTheDocument()
       })
     })
 
-    it('should show commit action when execution has uncommitted files', async () => {
+    it('should not show actions when no execution is provided', async () => {
+      renderComponent({
+        disableContextualActions: false,
+      })
+
+      await waitFor(() => {
+        expect(screen.queryByText('Commit Changes')).not.toBeInTheDocument()
+        expect(screen.queryByText('Squash & Merge')).not.toBeInTheDocument()
+      })
+    })
+
+    it('should show commit action when execution has uncommitted files and actions are enabled', async () => {
       renderComponent({
         currentExecution: mockCompletedExecution,
+        disableContextualActions: false,
       })
 
       await waitFor(() => {
@@ -210,6 +223,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
     it('should show file count badge on commit button', async () => {
       renderComponent({
         currentExecution: mockCompletedExecution,
+        disableContextualActions: false,
       })
 
       await waitFor(() => {
@@ -223,6 +237,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
     it('should show sync action for worktree executions', async () => {
       renderComponent({
         currentExecution: mockCompletedExecution,
+        disableContextualActions: false,
       })
 
       await waitFor(() => {
@@ -233,6 +248,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
     it('should show cleanup action for worktree executions', async () => {
       renderComponent({
         currentExecution: mockCompletedExecution,
+        disableContextualActions: false,
       })
 
       await waitFor(() => {
@@ -248,6 +264,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
 
       renderComponent({
         currentExecution: committedExecution,
+        disableContextualActions: false,
       })
 
       await waitFor(() => {
@@ -255,18 +272,19 @@ describe('AgentConfigPanel - Contextual Actions', () => {
       })
     })
 
-    it('should not show actions for running executions when disabled', async () => {
+    it('should not show actions for running executions even when enabled', async () => {
       renderComponent({
         currentExecution: {
           ...mockCompletedExecution,
           status: 'running',
         },
         isRunning: true,
+        disableContextualActions: false,
       })
 
       await waitFor(() => {
-        // Verify action should be hidden since execution is not completed
-        expect(screen.queryByText('Verify Code')).not.toBeInTheDocument()
+        // Commit action should be hidden since execution is not in terminal state
+        expect(screen.queryByText('Commit Changes')).not.toBeInTheDocument()
       })
     })
   })
@@ -277,6 +295,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
 
       renderComponent({
         currentExecution: mockCompletedExecution,
+        disableContextualActions: false,
       })
 
       await waitFor(() => {
@@ -295,6 +314,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
       renderComponent({
         currentExecution: mockCompletedExecution,
         disabled: true,
+        disableContextualActions: false,
       })
 
       await waitFor(() => {
@@ -312,6 +332,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
       renderComponent({
         currentExecution: mockCompletedExecution,
         isRunning: true,
+        disableContextualActions: false,
       })
 
       await waitFor(() => {
@@ -334,6 +355,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
       renderComponent({
         currentExecution: mockCompletedExecution,
         disabled: false,
+        disableContextualActions: false,
       })
 
       await waitFor(() => {
@@ -352,6 +374,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
     it('should update actions when execution changes', async () => {
       const { rerender } = renderComponent({
         currentExecution: mockCompletedExecution,
+        disableContextualActions: false,
       })
 
       await waitFor(() => {
@@ -372,6 +395,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
                 issueId="i-test1"
                 onStart={mockOnStart}
                 currentExecution={committedExecution}
+                disableContextualActions={false}
               />
             </ProjectProvider>
           </WebSocketProvider>
@@ -386,6 +410,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
     it('should clear actions when execution becomes null', async () => {
       const { rerender } = renderComponent({
         currentExecution: mockCompletedExecution,
+        disableContextualActions: false,
       })
 
       await waitFor(() => {
@@ -397,7 +422,12 @@ describe('AgentConfigPanel - Contextual Actions', () => {
         <QueryClientProvider client={queryClient}>
           <WebSocketProvider>
             <ProjectProvider>
-              <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} currentExecution={null} />
+              <AgentConfigPanel
+                issueId="i-test1"
+                onStart={mockOnStart}
+                currentExecution={null}
+                disableContextualActions={false}
+              />
             </ProjectProvider>
           </WebSocketProvider>
         </QueryClientProvider>
@@ -414,6 +444,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
     it('should render actions in a flex container', async () => {
       renderComponent({
         currentExecution: mockCompletedExecution,
+        disableContextualActions: false,
       })
 
       await waitFor(() => {
@@ -426,6 +457,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
     it('should render action buttons with correct styling', async () => {
       renderComponent({
         currentExecution: mockCompletedExecution,
+        disableContextualActions: false,
       })
 
       await waitFor(() => {

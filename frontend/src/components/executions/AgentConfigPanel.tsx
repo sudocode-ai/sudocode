@@ -95,6 +95,12 @@ interface AgentConfigPanelProps {
    * Used by useAgentActions hook to determine available actions
    */
   currentExecution?: Execution | null
+  /**
+   * Whether to disable contextual actions (Commit Changes, Squash & Merge, Cleanup Worktree)
+   * When true, contextual action buttons will not be rendered
+   * Defaults to false
+   */
+  disableContextualActions?: boolean
 }
 
 // TODO: Move this somewhere more central.
@@ -239,6 +245,7 @@ export function AgentConfigPanel({
   onForceNewToggle,
   forceNewExecution: controlledForceNewExecution,
   currentExecution,
+  disableContextualActions = true,
 }: AgentConfigPanelProps) {
   const [loading, setLoading] = useState(false)
   const [prompt, setPrompt] = useState('')
@@ -560,7 +567,7 @@ export function AgentConfigPanel({
   return (
     <div className="space-y-2 py-2">
       {/* Contextual Actions */}
-      {hasActions && (
+      {!disableContextualActions && hasActions && (
         <div className="flex items-center justify-end gap-2">
           {actions.map((action) => {
             const Icon = action.icon
@@ -849,7 +856,9 @@ export function AgentConfigPanel({
             // Open worktree path in IDE (copy to clipboard for now)
             if (currentExecution.worktree_path) {
               navigator.clipboard.writeText(currentExecution.worktree_path)
-              alert(`Worktree path copied to clipboard:\n${currentExecution.worktree_path}\n\nOpen it manually in your IDE.`)
+              alert(
+                `Worktree path copied to clipboard:\n${currentExecution.worktree_path}\n\nOpen it manually in your IDE.`
+              )
             }
           }}
           isPreviewing={isPreviewing}

@@ -152,19 +152,8 @@ export function useAgentActions(options: UseAgentActionsOptions) {
 
     // No actions if no execution
     if (!execution) {
-      console.log('[useAgentActions] No execution provided')
       return availableActions
     }
-
-    console.log('[useAgentActions] Analyzing execution:', {
-      id: execution.id,
-      mode: execution.mode,
-      status: execution.status,
-      files_changed: execution.files_changed,
-      after_commit: execution.after_commit,
-      worktree_path: execution.worktree_path,
-      branch_name: execution.branch_name,
-    })
 
     // Parse config if it's a JSON string
     let parsedConfig: any = null
@@ -200,19 +189,8 @@ export function useAgentActions(options: UseAgentActionsOptions) {
       execution.status
     )
 
-    // Action: Commit Changes
-    // Available when there are uncommitted changes and execution is in terminal state
-    console.log('[useAgentActions] Commit Changes check:', {
-      hasUncommittedChanges,
-      isTerminalState,
-      filesChangedCount: filesChanged.length,
-      after_commit: execution.after_commit,
-      status: execution.status,
-    })
-
     if (hasUncommittedChanges && isTerminalState) {
       const fileCount = filesChanged.length
-      console.log('[useAgentActions] ✅ Adding Commit Changes action')
       availableActions.push({
         id: 'commit-changes',
         label: 'Commit Changes',
@@ -229,15 +207,7 @@ export function useAgentActions(options: UseAgentActionsOptions) {
     // Available for worktree mode with file changes
     const hasSyncableWorktree = hasWorktreePath && isWorktreeMode && filesChanged.length > 0
 
-    console.log('[useAgentActions] Squash & Merge check:', {
-      hasSyncableWorktree,
-      hasWorktreePath,
-      isWorktreeMode,
-      filesChangedCount: filesChanged.length,
-    })
-
     if (hasSyncableWorktree) {
-      console.log('[useAgentActions] ✅ Adding Squash & Merge action')
       availableActions.push({
         id: 'squash-merge',
         label: 'Squash & Merge',
@@ -253,14 +223,7 @@ export function useAgentActions(options: UseAgentActionsOptions) {
     // Available whenever there's a worktree (user can clean up at any time)
     const canCleanup = isWorktreeMode && hasWorktreePath
 
-    console.log('[useAgentActions] Cleanup Worktree check:', {
-      canCleanup,
-      isWorktreeMode,
-      hasWorktreePath,
-    })
-
     if (canCleanup) {
-      console.log('[useAgentActions] ✅ Adding Cleanup Worktree action')
       availableActions.push({
         id: 'cleanup-worktree',
         label: 'Cleanup Worktree',
@@ -271,8 +234,6 @@ export function useAgentActions(options: UseAgentActionsOptions) {
         disabled,
       })
     }
-
-    console.log(`[useAgentActions] Total actions available: ${availableActions.length}`, availableActions.map(a => a.id))
 
     return availableActions
   }, [execution, issueId, disabled, handleSyncWorktree])
