@@ -10,6 +10,8 @@ import { CodeChangesPanel } from './CodeChangesPanel'
 import { TodoTracker } from './TodoTracker'
 import { buildTodoHistory } from '@/utils/todoExtractor'
 import { useExecutionSync } from '@/hooks/useExecutionSync'
+import { useWorktreeMutations } from '@/hooks/useWorktreeMutations'
+import { useExecutionMutations } from '@/hooks/useExecutionMutations'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -49,6 +51,8 @@ export interface ExecutionViewProps {
  * The follow-up input panel appears after the last execution.
  */
 export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewProps) {
+  const { deleteWorktree } = useWorktreeMutations()
+  const { deleteExecution } = useExecutionMutations()
   const [chainData, setChainData] = useState<ExecutionChainResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -208,8 +212,9 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
 
     setDeletingWorktree(true)
     try {
-      await executionsApi.deleteWorktree(rootExecution.id, deleteBranch)
+      await deleteWorktree({ executionId: rootExecution.id, deleteBranch })
       setWorktreeExists(false)
+
       // Reload chain
       const data = await executionsApi.getChain(executionId)
       setChainData(data)
@@ -222,13 +227,18 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
   }
 
   // Handle delete execution action
-  const handleDeleteExecution = async (deleteBranch: boolean, deleteWorktree: boolean) => {
+  const handleDeleteExecution = async (deleteBranch: boolean, deleteWorktreeFlag: boolean) => {
     if (!chainData || chainData.executions.length === 0) return
     const rootExecution = chainData.executions[0]
 
     setDeletingExecution(true)
     try {
-      await executionsApi.delete(rootExecution.id, deleteBranch, deleteWorktree)
+      await deleteExecution({
+        executionId: rootExecution.id,
+        deleteBranch,
+        deleteWorktree: deleteWorktreeFlag,
+      })
+
       // Navigate back to issue page after deletion
       if (rootExecution.issue_id) {
         window.location.href = `/issues/${rootExecution.issue_id}`
@@ -769,6 +779,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                       executions.some((exec) => exec.status === 'running') ? 30000 : undefined
                     }
                     executionStatus={lastExecution.status}
+                    worktreePath={rootExecution.worktree_path}
                   />
                 </>
               )}

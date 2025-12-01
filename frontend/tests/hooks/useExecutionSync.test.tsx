@@ -12,18 +12,17 @@ vi.mock('@/lib/api', () => ({
     syncSquash: vi.fn(),
     syncPreserve: vi.fn(),
     deleteWorktree: vi.fn(),
+    openInIde: vi.fn(),
   },
 }))
 
-// Mock clipboard API
-Object.assign(navigator, {
-  clipboard: {
-    writeText: vi.fn().mockResolvedValue(undefined),
+// Mock toast notifications
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
   },
-})
-
-// Mock alert
-global.alert = vi.fn()
+}))
 
 describe('useExecutionSync', () => {
   let queryClient: QueryClient
@@ -294,7 +293,10 @@ describe('useExecutionSync', () => {
   })
 
   describe('openWorktreeInIDE', () => {
-    it('should copy worktree path to clipboard', async () => {
+    it('should call API to open worktree in IDE', async () => {
+      const { toast } = await import('sonner')
+      vi.mocked(executionsApi.openInIde).mockResolvedValue(undefined as any)
+
       const execution: Partial<Execution> = {
         id: 'exec-123',
         issue_id: 'i-test',
@@ -312,11 +314,13 @@ describe('useExecutionSync', () => {
         await result.current.openWorktreeInIDE(execution as Execution)
       })
 
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith('/path/to/worktree')
-      expect(global.alert).toHaveBeenCalled()
+      expect(executionsApi.openInIde).toHaveBeenCalledWith('/path/to/worktree')
+      expect(toast.success).toHaveBeenCalledWith('Opening worktree in IDE...')
     })
 
     it('should handle missing worktree path', async () => {
+      const { toast } = await import('sonner')
+
       const execution: Partial<Execution> = {
         id: 'exec-123',
         issue_id: 'i-test',
@@ -328,7 +332,31 @@ describe('useExecutionSync', () => {
         created_at: '2024-01-01T00:00:00Z',
       }
 
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const { result } = renderHook(() => useExecutionSync(), { wrapper })
+
+      await act(async () => {
+        await result.current.openWorktreeInIDE(execution as Execution)
+      })
+
+      expect(toast.error).toHaveBeenCalledWith('No worktree path available')
+      expect(executionsApi.openInIde).not.toHaveBeenCalled()
+    })
+
+    it('should handle API errors', async () => {
+      const { toast } = await import('sonner')
+      const error = new Error('Failed to open IDE')
+      vi.mocked(executionsApi.openInIde).mockRejectedValue(error)
+
+      const execution: Partial<Execution> = {
+        id: 'exec-123',
+        issue_id: 'i-test',
+        worktree_path: '/path/to/worktree',
+        status: 'completed',
+        mode: 'worktree',
+        agent_type: 'claude-code',
+        model: 'claude-sonnet-4',
+        created_at: '2024-01-01T00:00:00Z',
+      }
 
       const { result } = renderHook(() => useExecutionSync(), { wrapper })
 
@@ -336,10 +364,7 @@ describe('useExecutionSync', () => {
         await result.current.openWorktreeInIDE(execution as Execution)
       })
 
-      expect(consoleSpy).toHaveBeenCalledWith('No worktree path available')
-      expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
-
-      consoleSpy.mockRestore()
+      expect(toast.error).toHaveBeenCalledWith('Failed to open IDE')
     })
   })
 
@@ -358,7 +383,8 @@ describe('useExecutionSync', () => {
         await result.current.cleanupWorktree('exec-123')
       })
 
-      expect(executionsApi.deleteWorktree).toHaveBeenCalledWith('exec-123')
+      // Now uses centralized mutation hook which passes (executionId, deleteBranch)
+      expect(executionsApi.deleteWorktree).toHaveBeenCalledWith('exec-123', undefined)
       expect(result.current.isSyncProgressOpen).toBe(false)
     })
 

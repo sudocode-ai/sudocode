@@ -14,6 +14,7 @@ import { createRelationshipsRouter } from "./routes/relationships.js";
 import { createFeedbackRouter } from "./routes/feedback.js";
 import { createExecutionsRouter } from "./routes/executions.js";
 import { createExecutionStreamRoutes } from "./routes/executions-stream.js";
+import { createEditorsRouter } from "./routes/editors.js";
 import { createProjectsRouter } from "./routes/projects.js";
 import { createConfigRouter } from "./routes/config.js";
 import { createFilesRouter } from "./routes/files.js";
@@ -164,6 +165,9 @@ app.use(
   requireProject(projectManager),
   createExecutionStreamRoutes()
 );
+
+// Mount editor routes
+app.use("/api", requireProject(projectManager), createEditorsRouter());
 
 // Health check endpoint
 app.get("/health", (_req: Request, res: Response) => {

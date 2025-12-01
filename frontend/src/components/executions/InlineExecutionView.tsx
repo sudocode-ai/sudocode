@@ -9,6 +9,8 @@ import { CodeChangesPanel } from './CodeChangesPanel'
 import { TodoTracker } from './TodoTracker'
 import { buildTodoHistory } from '@/utils/todoExtractor'
 import { useWebSocketContext } from '@/contexts/WebSocketContext'
+import { useWorktreeMutations } from '@/hooks/useWorktreeMutations'
+import { useExecutionMutations } from '@/hooks/useExecutionMutations'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -66,6 +68,8 @@ export function InlineExecutionView({
   defaultExpanded = true,
 }: InlineExecutionViewProps) {
   const navigate = useNavigate()
+  const { deleteWorktree } = useWorktreeMutations()
+  const { deleteExecution } = useExecutionMutations()
   const { subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
   const [chainData, setChainData] = useState<ExecutionChainResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -193,8 +197,10 @@ export function InlineExecutionView({
 
     setDeletingWorktree(true)
     try {
-      await executionsApi.deleteWorktree(rootExecution.id)
+      // Use centralized mutation which handles cache invalidation
+      await deleteWorktree({ executionId: rootExecution.id })
       setWorktreeExists(false)
+
       // Reload chain
       const data = await executionsApi.getChain(executionId)
       setChainData(data)
@@ -207,13 +213,19 @@ export function InlineExecutionView({
   }
 
   // Handle delete execution action
-  const handleDeleteExecution = async (deleteBranch: boolean, deleteWorktree: boolean) => {
+  const handleDeleteExecution = async (deleteBranch: boolean, deleteWorktreeFlag: boolean) => {
     if (!chainData || chainData.executions.length === 0) return
     const rootExecution = chainData.executions[0]
 
     setDeletingExecution(true)
     try {
-      await executionsApi.delete(rootExecution.id, deleteBranch, deleteWorktree)
+      // Use centralized mutation which handles cache invalidation
+      await deleteExecution({
+        executionId: rootExecution.id,
+        deleteBranch,
+        deleteWorktree: deleteWorktreeFlag,
+      })
+
       setShowDeleteExecution(false)
       // Notify parent to refresh
       if (onExecutionDeleted) {
@@ -563,6 +575,7 @@ export function InlineExecutionView({
                     executions.some((exec) => exec.status === 'running') ? 30000 : undefined
                   }
                   executionStatus={lastExecution.status}
+                  worktreePath={rootExecution.worktree_path}
                 />
               </>
             )}

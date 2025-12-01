@@ -19,9 +19,18 @@ vi.mock('@/lib/api', () => ({
     cancel: vi.fn(),
     createFollowUp: vi.fn(),
     deleteWorktree: vi.fn(),
+    openInIde: vi.fn(),
   },
   agentsApi: {
     getAll: vi.fn(),
+  },
+}))
+
+// Mock toast notifications
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
   },
 }))
 
@@ -582,28 +591,20 @@ describe.skip('Sync Workflow Integration Tests', () => {
       const doneButton = screen.getByRole('button', { name: /Done/i })
       await user.click(doneButton)
 
-      // Verify cleanup was called
+      // Verify cleanup was called (now uses centralized mutation hook)
       await waitFor(() => {
-        expect(executionsApi.deleteWorktree).toHaveBeenCalledWith('exec-123')
+        expect(executionsApi.deleteWorktree).toHaveBeenCalledWith('exec-123', undefined)
       })
     })
   })
 
   describe('Scenario 8: Open Worktree in IDE', () => {
-    it('should copy worktree path to clipboard when Open in IDE clicked', async () => {
+    it('should call API to open worktree in IDE when Open in IDE clicked', async () => {
       const user = userEvent.setup()
-
-      // Mock clipboard API
-      const mockWriteText = vi.fn().mockResolvedValue(undefined)
-      Object.defineProperty(navigator, 'clipboard', {
-        value: {
-          writeText: mockWriteText,
-        },
-        writable: true,
-        configurable: true,
-      })
+      const { toast } = await import('sonner')
 
       vi.mocked(executionsApi.getChain).mockResolvedValue(mockChainResponse(mockExecution))
+      vi.mocked(executionsApi.openInIde).mockResolvedValue(undefined as any)
 
       renderWithProviders(<ExecutionView executionId="exec-123" />)
 
@@ -614,9 +615,10 @@ describe.skip('Sync Workflow Integration Tests', () => {
       const openIDEButton = screen.getByRole('button', { name: /Open in IDE/ })
       await user.click(openIDEButton)
 
-      // Verify clipboard API was called with worktree path
+      // Verify API was called with worktree path
       await waitFor(() => {
-        expect(mockWriteText).toHaveBeenCalledWith('/tmp/worktree-123')
+        expect(executionsApi.openInIde).toHaveBeenCalledWith('/tmp/worktree-123')
+        expect(toast.success).toHaveBeenCalledWith('Opening worktree in IDE...')
       })
     })
   })

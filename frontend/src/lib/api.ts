@@ -270,6 +270,10 @@ export const executionsApi = {
   // Get code changes for execution
   getChanges: (executionId: string) =>
     get<ExecutionChangesResult>(`/executions/${executionId}/changes`),
+
+  // Open worktree in IDE
+  openInIde: (worktreePath: string, request?: { editorType?: string }) =>
+    post(`/open-in-ide`, { worktreePath, ...request }),
 }
 
 /**
