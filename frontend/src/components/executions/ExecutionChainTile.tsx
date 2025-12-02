@@ -1,12 +1,18 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { EntityBadge } from '@/components/entities/EntityBadge'
-import { ExecutionMonitor } from './ExecutionMonitor'
+import { ExecutionMonitor, RunIndicator } from './ExecutionMonitor'
 import { AgentConfigPanel } from './AgentConfigPanel'
+import { TodoTracker } from './TodoTracker'
+import { CodeChangesPanel } from './CodeChangesPanel'
+import { buildTodoHistory } from '@/utils/todoExtractor'
 import { executionsApi, type ExecutionChainResponse } from '@/lib/api'
+import { useWebSocketContext } from '@/contexts/WebSocketContext'
 import type { Execution, ExecutionConfig } from '@/types/execution'
+import type { WebSocketMessage } from '@/types/api'
+import type { ToolCallTracking } from '@/hooks/useAgUiStream'
 import { Loader2, Clock, CheckCircle2, XCircle, AlertCircle, X, PauseCircle } from 'lucide-react'
 
 export interface ExecutionChainTileProps {
@@ -110,16 +116,41 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
   const [loading, setLoading] = useState(true)
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
 
+  // Accumulated tool calls from all executions in the chain (for TodoTracker)
+  const [allToolCalls, setAllToolCalls] = useState<Map<string, ToolCallTracking>>(new Map())
+
+  // Extract todos from accumulated tool calls
+  const allTodos = useMemo(() => buildTodoHistory(allToolCalls), [allToolCalls])
+
+  // WebSocket context for real-time updates
+  const { connected, subscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
+
+  // Track known execution IDs in this chain to detect relevant updates
+  const chainExecutionIdsRef = useRef<Set<string>>(new Set())
+
   // Load execution chain
+  const loadChain = useCallback(async () => {
+    try {
+      const data = await executionsApi.getChain(executionId)
+      setChainData(data)
+      // Update the set of known execution IDs in this chain
+      chainExecutionIdsRef.current = new Set(data.executions.map((e) => e.id))
+    } catch (err) {
+      console.error('Failed to load execution chain:', err)
+    }
+  }, [executionId])
+
+  // Initial load
   useEffect(() => {
     let cancelled = false
 
-    const loadChain = async () => {
+    const initialLoad = async () => {
       setLoading(true)
       try {
         const data = await executionsApi.getChain(executionId)
         if (!cancelled) {
           setChainData(data)
+          chainExecutionIdsRef.current = new Set(data.executions.map((e) => e.id))
         }
       } catch (err) {
         if (!cancelled) {
@@ -132,12 +163,55 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
       }
     }
 
-    loadChain()
+    initialLoad()
 
     return () => {
       cancelled = true
     }
   }, [executionId])
+
+  // WebSocket subscription for real-time updates
+  useEffect(() => {
+    const handlerId = `ExecutionChainTile-${executionId}`
+
+    const handleMessage = (message: WebSocketMessage) => {
+      // Only handle execution-related messages
+      if (
+        message.type !== 'execution_created' &&
+        message.type !== 'execution_updated' &&
+        message.type !== 'execution_status_changed'
+      ) {
+        return
+      }
+
+      // Extract execution data from message
+      const executionData = message.data as Execution | undefined
+      if (!executionData?.id) return
+
+      // Reload if:
+      // 1. The message is about an execution in our chain
+      // 2. The message is about a new execution with our root as parent (new follow-up)
+      const isInChain = chainExecutionIdsRef.current.has(executionData.id)
+      const isNewFollowUp =
+        message.type === 'execution_created' &&
+        executionData.parent_execution_id &&
+        chainExecutionIdsRef.current.has(executionData.parent_execution_id)
+
+      if (isInChain || isNewFollowUp) {
+        loadChain()
+      }
+    }
+
+    addMessageHandler(handlerId, handleMessage)
+
+    if (connected) {
+      subscribe('execution')
+    }
+
+    return () => {
+      removeMessageHandler(handlerId)
+    }
+  }, [executionId, connected, subscribe, addMessageHandler, removeMessageHandler, loadChain])
 
   // Handle follow-up submission
   const handleFollowUpStart = useCallback(
@@ -151,16 +225,71 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
         await executionsApi.createFollowUp(lastExecution.id, {
           feedback: prompt,
         })
-        // Reload the chain
-        const data = await executionsApi.getChain(executionId)
-        setChainData(data)
+        // Reload the chain (WebSocket will also trigger this, but we do it immediately for responsiveness)
+        await loadChain()
       } catch (err) {
         console.error('Failed to create follow-up:', err)
       } finally {
         setSubmittingFollowUp(false)
       }
     },
-    [chainData, executionId]
+    [chainData, loadChain]
+  )
+
+  // Handle tool calls update from ExecutionMonitor (for TodoTracker)
+  const handleToolCallsUpdate = useCallback(
+    (execId: string, toolCalls: Map<string, ToolCallTracking>) => {
+      setAllToolCalls((prev) => {
+        // Check if we need to update by comparing content
+        let hasChanges = false
+        const executionPrefix = `${execId}-`
+
+        // Count existing entries for this execution
+        let existingCount = 0
+        prev.forEach((_, key) => {
+          if (key.startsWith(executionPrefix)) {
+            existingCount++
+          }
+        })
+
+        // If sizes don't match, we have changes
+        if (existingCount !== toolCalls.size) {
+          hasChanges = true
+        } else {
+          // Check if any content changed
+          toolCalls.forEach((toolCall, id) => {
+            const key = `${executionPrefix}${id}`
+            const existing = prev.get(key)
+            if (!existing) {
+              hasChanges = true
+            } else if (
+              existing.status !== toolCall.status ||
+              existing.result !== toolCall.result
+            ) {
+              hasChanges = true
+            }
+          })
+        }
+
+        if (!hasChanges) {
+          return prev
+        }
+
+        const next = new Map(prev)
+        // Remove old entries for this execution
+        Array.from(next.keys()).forEach((key) => {
+          if (key.startsWith(executionPrefix)) {
+            next.delete(key)
+          }
+        })
+        // Add new entries
+        toolCalls.forEach((toolCall, id) => {
+          next.set(`${executionPrefix}${id}`, toolCall)
+        })
+        return next
+      })
+    },
+    []
   )
 
   // Handle close button
@@ -248,11 +377,40 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
               execution={execution}
               compact={true}
               hideTodoTracker={true}
+              onToolCallsUpdate={(toolCalls) => handleToolCallsUpdate(execution.id, toolCalls)}
             />
             {/* Separator between executions */}
             {index < executions.length - 1 && <div className="mx-4 my-2" />}
           </div>
         ))}
+
+        {/* Accumulated Todo Tracker - shows todos from all executions in chain */}
+        {allTodos.length > 0 && (
+          <div className="mt-2 px-2">
+            <TodoTracker todos={allTodos} />
+          </div>
+        )}
+
+        {/* Code Changes Panel - shows file changes from the execution */}
+        {(rootExecution.before_commit || rootExecution.after_commit) && (
+          <div className="mt-2 px-2">
+            <CodeChangesPanel
+              executionId={rootExecution.id}
+              autoRefreshInterval={
+                executions.some((exec) => exec.status === 'running') ? 30000 : undefined
+              }
+              executionStatus={lastExecution.status}
+              worktreePath={rootExecution.worktree_path}
+            />
+          </div>
+        )}
+
+        {/* Running indicator if any executions are running */}
+        {executions.some((exec) => exec.status === 'running') && (
+          <div className="mt-2 px-2">
+            <RunIndicator />
+          </div>
+        )}
       </div>
 
       {/* Sticky Footer - AgentConfigPanel for follow-ups (compact mode) */}
