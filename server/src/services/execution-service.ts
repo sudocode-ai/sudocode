@@ -911,6 +911,8 @@ ${feedback}`;
    * @param options.issueId - Filter by issue ID
    * @param options.sortBy - Field to sort by (default: 'created_at')
    * @param options.order - Sort order (default: 'desc')
+   * @param options.since - Only return executions created after this ISO date
+   * @param options.includeRunning - When used with 'since', also include running executions regardless of age
    * @returns Object containing executions array, total count, and hasMore flag
    */
   listAll(options: {
@@ -920,6 +922,8 @@ ${feedback}`;
     issueId?: string;
     sortBy?: "created_at" | "updated_at";
     order?: "asc" | "desc";
+    since?: string;
+    includeRunning?: boolean;
   } = {}): {
     executions: Execution[];
     total: number;
@@ -953,6 +957,19 @@ ${feedback}`;
     if (options.issueId) {
       whereClauses.push("issue_id = ?");
       params.push(options.issueId);
+    }
+
+    // Filter by since date (with optional includeRunning)
+    if (options.since) {
+      if (options.includeRunning) {
+        // Include executions created after 'since' OR that are currently running
+        whereClauses.push("(created_at >= ? OR status = 'running')");
+        params.push(options.since);
+      } else {
+        // Only include executions created after 'since'
+        whereClauses.push("created_at >= ?");
+        params.push(options.since);
+      }
     }
 
     // Build WHERE clause

@@ -1,10 +1,14 @@
 import { useMemo, useState, useCallback, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useIssues, useUpdateIssueStatus, useIssueFeedback } from '@/hooks/useIssues'
+import { useWebSocketContext } from '@/contexts/WebSocketContext'
 import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
 import { useProject } from '@/hooks/useProject'
 import { useProjectById } from '@/hooks/useProjects'
+import { executionsApi } from '@/lib/api'
 import type { Issue, IssueStatus } from '@/types/api'
+import type { Execution } from '@/types/execution'
 import type { DragEndEvent } from '@/components/ui/kanban'
 import IssueKanbanBoard from '@/components/issues/IssueKanbanBoard'
 import IssuePanel from '@/components/issues/IssuePanel'
@@ -89,6 +93,72 @@ export default function IssuesPage() {
     }
     return new Set()
   })
+
+  // Fetch recent executions (last 24h) and running executions for kanban preview
+  // Instead of querying by issue IDs, we fetch recent/active executions and map them back
+  const queryClient = useQueryClient()
+  const { connected, subscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
+
+  const since24h = useMemo(() => {
+    const date = new Date()
+    date.setHours(date.getHours() - 24)
+    return date.toISOString()
+  }, [])
+
+  // Query key follows pattern ['executions', projectId, ...] for consistent invalidation
+  const recentExecutionsQueryKey = ['executions', currentProjectId, 'recent', since24h]
+
+  const { data: recentExecutionsData } = useQuery({
+    queryKey: recentExecutionsQueryKey,
+    queryFn: () =>
+      executionsApi.listAll({
+        since: since24h,
+        includeRunning: true,
+        limit: 500, // Reasonable limit for recent executions
+        sortBy: 'created_at',
+        order: 'desc',
+      }),
+    enabled: !!currentProjectId,
+    staleTime: 30000, // Consider data fresh for 30 seconds
+  })
+
+  // Subscribe to WebSocket execution events and invalidate query on updates
+  useEffect(() => {
+    const handlerId = 'IssuesPage-executions'
+
+    addMessageHandler(handlerId, (message) => {
+      if (
+        message.type === 'execution_created' ||
+        message.type === 'execution_updated' ||
+        message.type === 'execution_status_changed'
+      ) {
+        // Invalidate recent executions query to refetch
+        queryClient.invalidateQueries({ queryKey: ['executions', currentProjectId] })
+      }
+    })
+
+    if (connected) {
+      subscribe('execution')
+    }
+
+    return () => {
+      removeMessageHandler(handlerId)
+    }
+  }, [connected, subscribe, addMessageHandler, removeMessageHandler, queryClient, currentProjectId])
+
+  // Map executions by issue ID, keeping only the latest execution per issue
+  const latestExecutions = useMemo(() => {
+    if (!recentExecutionsData?.executions) return undefined
+
+    const byIssueId: Record<string, Execution | null> = {}
+    for (const execution of recentExecutionsData.executions) {
+      if (execution.issue_id && !byIssueId[execution.issue_id]) {
+        // Since results are sorted by created_at desc, first one is the latest
+        byIssueId[execution.issue_id] = execution
+      }
+    }
+    return byIssueId
+  }, [recentExecutionsData?.executions])
 
   // Track if we've initialized from URL hash yet
   const [hasInitializedFromUrl, setHasInitializedFromUrl] = useState(false)
@@ -431,6 +501,7 @@ export default function IssuesPage() {
                 onArchiveAllClosed={handleArchiveAllClosed}
                 collapsedColumns={collapsedColumns}
                 onToggleColumnCollapse={handleToggleColumnCollapse}
+                latestExecutions={latestExecutions}
               />
             </Panel>
 
@@ -490,6 +561,7 @@ export default function IssuesPage() {
               onArchiveAllClosed={handleArchiveAllClosed}
               collapsedColumns={collapsedColumns}
               onToggleColumnCollapse={handleToggleColumnCollapse}
+              latestExecutions={latestExecutions}
             />
           </div>
         )}

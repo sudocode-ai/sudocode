@@ -220,6 +220,10 @@ export interface ListExecutionsParams {
   issueId?: string
   sortBy?: 'created_at' | 'updated_at'
   order?: 'asc' | 'desc'
+  /** Only return executions created after this ISO date */
+  since?: string
+  /** When used with 'since', also include running executions regardless of age */
+  includeRunning?: boolean
 }
 
 /**
@@ -262,6 +266,8 @@ export const executionsApi = {
     if (params?.issueId) queryParams.append('issueId', params.issueId)
     if (params?.sortBy) queryParams.append('sortBy', params.sortBy)
     if (params?.order) queryParams.append('order', params.order)
+    if (params?.since) queryParams.append('since', params.since)
+    if (params?.includeRunning) queryParams.append('includeRunning', 'true')
 
     const query = queryParams.toString() ? `?${queryParams.toString()}` : ''
     return get<ListExecutionsResponse>(`/executions${query}`)

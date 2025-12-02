@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { ExecutionPreview } from '@/components/executions/ExecutionPreview'
-import { executionsApi } from '@/lib/api'
 
 // Priority badge colors - using darker shades for better contrast with white text
 const priorityColors: Record<number, string> = {
@@ -34,13 +33,20 @@ interface IssueCardProps {
   onViewDetails?: (issue: Issue) => void
   isOpen?: boolean
   showExecutionPreview?: boolean // Whether to show execution preview for running executions
+  latestExecution?: Execution | null // Pre-fetched execution from parent
 }
 
-export function IssueCard({ issue, index, status, onViewDetails, isOpen, showExecutionPreview = false }: IssueCardProps) {
+export function IssueCard({
+  issue,
+  index,
+  status,
+  onViewDetails,
+  isOpen,
+  showExecutionPreview = false,
+  latestExecution,
+}: IssueCardProps) {
   const navigate = useNavigate()
   const [isCopied, setIsCopied] = useState(false)
-  const [latestExecution, setLatestExecution] = useState<Execution | null>(null)
-  const [loadingExecution, setLoadingExecution] = useState(false)
 
   const handleClick = useCallback(() => {
     // If onViewDetails is provided, use it (for backward compatibility)
@@ -71,31 +77,6 @@ export function IssueCard({ issue, index, status, onViewDetails, isOpen, showExe
   )
 
   const localRef = useRef<HTMLDivElement>(null)
-
-  // Fetch latest execution if preview is enabled
-  useEffect(() => {
-    if (!showExecutionPreview) return
-
-    const fetchLatestExecution = async () => {
-      try {
-        setLoadingExecution(true)
-        const executions = await executionsApi.list(issue.id)
-        // Get the most recent execution
-        if (executions && executions.length > 0) {
-          const sorted = executions.sort((a, b) =>
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          )
-          setLatestExecution(sorted[0])
-        }
-      } catch (error) {
-        console.error('Failed to fetch executions:', error)
-      } finally {
-        setLoadingExecution(false)
-      }
-    }
-
-    fetchLatestExecution()
-  }, [issue.id, showExecutionPreview])
 
   useEffect(() => {
     if (!isOpen || !localRef.current) return
@@ -172,7 +153,7 @@ export function IssueCard({ issue, index, status, onViewDetails, isOpen, showExe
         )}
 
         {/* Execution Preview */}
-        {showExecutionPreview && latestExecution && !loadingExecution && (
+        {showExecutionPreview && latestExecution && (
           <div className="w-full border-t pt-2">
             <ExecutionPreview
               executionId={latestExecution.id}

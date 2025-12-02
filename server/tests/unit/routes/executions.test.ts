@@ -831,6 +831,8 @@ describe("Executions API Routes - Agent Type Validation", () => {
         issueId: undefined,
         sortBy: undefined,
         order: undefined,
+        since: undefined,
+        includeRunning: false,
       });
     });
 
@@ -863,6 +865,8 @@ describe("Executions API Routes - Agent Type Validation", () => {
         issueId: undefined,
         sortBy: undefined,
         order: undefined,
+        since: undefined,
+        includeRunning: false,
       });
     });
 
@@ -891,6 +895,8 @@ describe("Executions API Routes - Agent Type Validation", () => {
         issueId: undefined,
         sortBy: undefined,
         order: undefined,
+        since: undefined,
+        includeRunning: false,
       });
     });
 
@@ -925,6 +931,8 @@ describe("Executions API Routes - Agent Type Validation", () => {
         issueId: "i-abc",
         sortBy: undefined,
         order: undefined,
+        since: undefined,
+        includeRunning: false,
       });
     });
 
@@ -956,6 +964,8 @@ describe("Executions API Routes - Agent Type Validation", () => {
         issueId: undefined,
         sortBy: undefined,
         order: undefined,
+        since: undefined,
+        includeRunning: false,
       });
     });
 
@@ -984,6 +994,8 @@ describe("Executions API Routes - Agent Type Validation", () => {
         issueId: undefined,
         sortBy: "created_at",
         order: "desc",
+        since: undefined,
+        includeRunning: false,
       });
     });
 
@@ -1012,6 +1024,8 @@ describe("Executions API Routes - Agent Type Validation", () => {
         issueId: undefined,
         sortBy: "updated_at",
         order: "asc",
+        since: undefined,
+        includeRunning: false,
       });
     });
 
@@ -1043,6 +1057,8 @@ describe("Executions API Routes - Agent Type Validation", () => {
         issueId: "i-abc",
         sortBy: "created_at",
         order: "desc",
+        since: undefined,
+        includeRunning: false,
       });
     });
 

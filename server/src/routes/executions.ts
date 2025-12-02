@@ -88,6 +88,8 @@ export function createExecutionsRouter(): Router {
    * - issueId?: string
    * - sortBy?: 'created_at' | 'updated_at' (default: 'created_at')
    * - order?: 'asc' | 'desc' (default: 'desc')
+   * - since?: ISO date string - only return executions created after this date
+   * - includeRunning?: 'true' - when used with 'since', also include running executions regardless of age
    */
   router.get("/executions", (req: Request, res: Response) => {
     try {
@@ -112,6 +114,8 @@ export function createExecutionsRouter(): Router {
       const sortBy =
         (req.query.sortBy as "created_at" | "updated_at") || undefined;
       const order = (req.query.order as "asc" | "desc") || undefined;
+      const since = req.query.since as string | undefined;
+      const includeRunning = req.query.includeRunning === "true";
 
       // Validate limit and offset
       if (limit !== undefined && (isNaN(limit) || limit < 0)) {
@@ -153,6 +157,19 @@ export function createExecutionsRouter(): Router {
         return;
       }
 
+      // Validate since (should be valid ISO date)
+      if (since) {
+        const sinceDate = new Date(since);
+        if (isNaN(sinceDate.getTime())) {
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: "Invalid since parameter. Must be a valid ISO date string",
+          });
+          return;
+        }
+      }
+
       // Call service method
       const result = req.project!.executionService!.listAll({
         limit,
@@ -161,6 +178,8 @@ export function createExecutionsRouter(): Router {
         issueId,
         sortBy,
         order,
+        since,
+        includeRunning,
       });
 
       res.json({
