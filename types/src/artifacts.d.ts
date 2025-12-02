@@ -53,6 +53,7 @@ export interface ExecutionChangesResult {
   branchExists?: boolean; // Whether branch still exists
   worktreeExists?: boolean; // Whether worktree still exists
   additionalCommits?: number; // Number of commits since execution completed (current - captured)
+  commitsAhead?: number; // Number of commits the branch is ahead of target branch (for merge action visibility)
   executionMode?: 'worktree' | 'local' | null; // Execution mode - helps distinguish between local and worktree executions
 
   // Legacy compatibility (deprecated - use captured instead)

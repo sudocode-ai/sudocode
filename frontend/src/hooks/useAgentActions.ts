@@ -64,6 +64,13 @@ interface UseAgentActionsOptions {
    * Defaults to undefined (uses files_changed as fallback)
    */
   hasUncommittedChanges?: boolean
+
+  /**
+   * Number of commits the worktree branch is ahead of the target branch
+   * If 0, the Merge Changes action will be hidden (nothing to merge)
+   * Defaults to undefined (assumes there are commits to merge)
+   */
+  commitsAhead?: number
 }
 
 /**
@@ -92,6 +99,7 @@ export function useAgentActions(options: UseAgentActionsOptions) {
     onCleanupComplete,
     onCommitComplete,
     hasUncommittedChanges,
+    commitsAhead,
   } = options
 
   // Query client for invalidating queries
@@ -259,9 +267,10 @@ export function useAgentActions(options: UseAgentActionsOptions) {
     }
 
     // Action: Merge Changes
-    // Available for worktree mode when worktree exists
-    // The sync preview will determine if there's actually anything to merge
-    const hasSyncableWorktree = hasWorktreePath && isWorktreeMode && worktreeExists
+    // Available for worktree mode when worktree exists and has commits to merge
+    // If commitsAhead is provided and is 0, don't show the action (nothing to merge)
+    const hasCommitsToMerge = commitsAhead === undefined || commitsAhead > 0
+    const hasSyncableWorktree = hasWorktreePath && isWorktreeMode && worktreeExists && hasCommitsToMerge
 
     if (hasSyncableWorktree) {
       availableActions.push({
@@ -292,7 +301,7 @@ export function useAgentActions(options: UseAgentActionsOptions) {
     }
 
     return availableActions
-  }, [execution, issueId, disabled, handleSyncWorktree, worktreeExists, hasUncommittedChanges])
+  }, [execution, issueId, disabled, handleSyncWorktree, worktreeExists, hasUncommittedChanges, commitsAhead])
 
   return {
     /**

@@ -85,6 +85,7 @@ export function InlineExecutionView({
   const [deletingExecution, setDeletingExecution] = useState(false)
   const [worktreeExists, setWorktreeExists] = useState(false)
   const [hasUncommittedChanges, setHasUncommittedChanges] = useState<boolean | undefined>(undefined)
+  const [commitsAhead, setCommitsAhead] = useState<number | undefined>(undefined)
   const rootExecutionIdRef = useRef<string | null>(null)
 
   // Accumulated tool calls from all executions in the chain
@@ -118,6 +119,7 @@ export function InlineExecutionView({
             ((changes.uncommittedSnapshot?.files?.length ?? 0) > 0 ||
               (changes.captured?.uncommitted && (changes.captured?.files?.length ?? 0) > 0))
           setHasUncommittedChanges(hasUncommitted)
+          setCommitsAhead(changes.commitsAhead)
 
           // Also re-check worktree status
           const worktreeStatus = await executionsApi.worktreeExists(rootExecution.id)
@@ -125,11 +127,13 @@ export function InlineExecutionView({
         } catch (err) {
           console.error('Failed to check changes after action:', err)
           setHasUncommittedChanges(false)
+          setCommitsAhead(undefined)
           setWorktreeExists(false)
         }
       } else {
         // Local mode: check for uncommitted changes in main repo
         setWorktreeExists(false)
+        setCommitsAhead(undefined) // Not applicable for local mode
         try {
           const changes = await executionsApi.getChanges(rootExecution.id)
           const hasUncommitted =
@@ -169,6 +173,7 @@ export function InlineExecutionView({
     issueId: rootExecutionForIssue?.issue_id ?? '',
     worktreeExists,
     hasUncommittedChanges,
+    commitsAhead,
     onCleanupComplete: handleActionComplete,
     onCommitComplete: handleActionComplete,
   })
@@ -236,20 +241,25 @@ export function InlineExecutionView({
                   ((changes.uncommittedSnapshot?.files?.length ?? 0) > 0 ||
                     (changes.captured?.uncommitted && (changes.captured?.files?.length ?? 0) > 0))
                 setHasUncommittedChanges(hasUncommitted)
+                setCommitsAhead(changes.commitsAhead)
               } catch (err) {
                 console.error('Failed to check uncommitted changes:', err)
                 setHasUncommittedChanges(undefined) // Fall back to files_changed
+                setCommitsAhead(undefined)
               }
             } else {
               setHasUncommittedChanges(false)
+              setCommitsAhead(undefined)
             }
           } catch (err) {
             console.error('Failed to check worktree status:', err)
             setWorktreeExists(false)
             setHasUncommittedChanges(false)
+            setCommitsAhead(undefined)
           }
         } else {
           // Local mode: check for uncommitted changes in main repo
+          setCommitsAhead(undefined) // Not applicable for local mode
           try {
             const changes = await executionsApi.getChanges(rootExecution.id)
             const hasUncommitted =

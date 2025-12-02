@@ -102,11 +102,10 @@ export class WorktreeSyncService {
     // 1. Load execution and validate
     const execution = await this._loadAndValidateExecution(executionId);
 
-    // 2. Validate preconditions
-    try {
-      await this._validateSyncPreconditions(execution);
-    } catch (error: any) {
-      // Return preview with error details
+    // 2. Validate critical preconditions (ones that prevent us from getting any info)
+    // These are "hard" failures - we can't get diff/commits if these fail
+    const criticalPreconditionError = await this._validateCriticalPreconditions(execution);
+    if (criticalPreconditionError) {
       return {
         canSync: false,
         conflicts: {
@@ -121,7 +120,7 @@ export class WorktreeSyncService {
         mergeBase: "",
         uncommittedJSONLChanges: [],
         executionStatus: execution.status,
-        warnings: [error.message],
+        warnings: [criticalPreconditionError],
       };
     }
 
@@ -148,8 +147,17 @@ export class WorktreeSyncService {
       execution.worktree_path!
     );
 
-    // 8. Generate warnings
+    // 8. Generate warnings and check "soft" preconditions
     const warnings: string[] = [];
+    let canSync = true;
+
+    // Check if local working tree is clean (soft precondition - we can still show preview)
+    if (!this.gitSync.isWorkingTreeClean()) {
+      warnings.push(
+        "Local working tree has uncommitted changes. Stash or commit them first."
+      );
+      canSync = false;
+    }
 
     // Warn if execution is running/paused
     if (
@@ -166,6 +174,7 @@ export class WorktreeSyncService {
       warnings.push(
         `${conflicts.codeConflicts.length} code conflict(s) detected. Manual resolution required.`
       );
+      canSync = false;
     }
 
     // Warn about uncommitted JSONL
@@ -174,9 +183,6 @@ export class WorktreeSyncService {
         `${uncommittedJSONL.length} uncommitted JSONL file(s) will be included in sync.`
       );
     }
-
-    // 9. Determine if sync can proceed
-    const canSync = conflicts.codeConflicts.length === 0;
 
     return {
       canSync,
@@ -188,6 +194,51 @@ export class WorktreeSyncService {
       executionStatus: execution.status,
       warnings,
     };
+  }
+
+  /**
+   * Validate critical preconditions that prevent us from getting any sync info
+   *
+   * These are "hard" failures - if these fail, we can't get diff/commits info.
+   * Returns an error message if validation fails, null if validation passes.
+   *
+   * @param execution - Execution to validate
+   * @returns Error message if validation fails, null if validation passes
+   */
+  private async _validateCriticalPreconditions(
+    execution: Execution
+  ): Promise<string | null> {
+    // 1. Check worktree path exists
+    if (!execution.worktree_path) {
+      return "No worktree path for execution";
+    }
+
+    // 2. Check worktree still exists on filesystem
+    if (!fs.existsSync(execution.worktree_path)) {
+      return "Worktree no longer exists";
+    }
+
+    // 3. Get list of branches
+    const branches = this._getBranches();
+
+    // 4. Check worktree branch exists
+    if (!branches.includes(execution.branch_name)) {
+      return `Worktree branch '${execution.branch_name}' not found`;
+    }
+
+    // 5. Check target branch exists
+    if (!branches.includes(execution.target_branch)) {
+      return `Target branch '${execution.target_branch}' not found`;
+    }
+
+    // 6. Verify branches have common base
+    try {
+      this.gitSync.getMergeBase(execution.branch_name, execution.target_branch);
+    } catch (error: any) {
+      return "Worktree and target branch have diverged without common history";
+    }
+
+    return null;
   }
 
   /**

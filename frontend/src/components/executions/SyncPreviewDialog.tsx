@@ -54,9 +54,9 @@ export function SyncPreviewDialog({
 
   // Get button text based on mode
   const getButtonText = () => {
-    if (selectedMode === 'squash') return 'Squash & Sync'
+    if (selectedMode === 'squash') return 'Squash and Merge'
     if (selectedMode === 'stage') return 'Stage Changes'
-    return 'Preserve & Sync'
+    return 'Merge Commits'
   }
 
   const handleConfirm = () => {
@@ -195,7 +195,7 @@ export function SyncPreviewDialog({
                 )}
 
                 {/* Mode Selector */}
-                <div className="rounded-lg border p-4">
+                <div className="rounded-lg p-1">
                   <div className="mb-3 flex items-center gap-2">
                     <GitBranch className="h-4 w-4" />
                     <h3 className="font-medium">Sync Mode</h3>
@@ -205,39 +205,42 @@ export function SyncPreviewDialog({
                     onValueChange={(v) => setSelectedMode(v as SyncMode)}
                   >
                     <div className="space-y-3">
-                      <div className="flex items-start space-x-3 rounded-md border p-3 hover:bg-muted/50">
+                      <Label
+                        htmlFor="stage"
+                        className="flex cursor-pointer items-start space-x-3 rounded-md border p-3 hover:bg-muted/50"
+                      >
+                        <RadioGroupItem value="stage" id="stage" className="mt-1" />
+                        <div className="flex-1">
+                          <span className="font-medium">Stage changes only</span>
+                          <p className="mt-1 text-sm font-normal text-muted-foreground">
+                            Merge all changes to working directory without committing
+                          </p>
+                        </div>
+                      </Label>
+                      <Label
+                        htmlFor="squash"
+                        className="flex cursor-pointer items-start space-x-3 rounded-md border p-3 hover:bg-muted/50"
+                      >
                         <RadioGroupItem value="squash" id="squash" className="mt-1" />
                         <div className="flex-1">
-                          <Label htmlFor="squash" className="cursor-pointer font-medium">
-                            Squash Merge (Recommended)
-                          </Label>
-                          <p className="mt-1 text-sm text-muted-foreground">
+                          <span className="font-medium">Squash and merge</span>
+                          <p className="mt-1 text-sm font-normal text-muted-foreground">
                             Combine all worktree changes into a single commit on your local branch
                           </p>
                         </div>
-                      </div>
-                      <div className="flex items-start space-x-3 rounded-md border p-3 hover:bg-muted/50">
+                      </Label>
+                      <Label
+                        htmlFor="preserve"
+                        className="flex cursor-pointer items-start space-x-3 rounded-md border p-3 hover:bg-muted/50"
+                      >
                         <RadioGroupItem value="preserve" id="preserve" className="mt-1" />
                         <div className="flex-1">
-                          <Label htmlFor="preserve" className="cursor-pointer font-medium">
-                            Preserve Commits
-                          </Label>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            Cherry-pick all commits individually to preserve commit history
+                          <span className="font-medium">Merge all commits</span>
+                          <p className="mt-1 text-sm font-normal text-muted-foreground">
+                            Merge all commits to your local branch and preserve commit history
                           </p>
                         </div>
-                      </div>
-                      <div className="flex items-start space-x-3 rounded-md border p-3 hover:bg-muted/50">
-                        <RadioGroupItem value="stage" id="stage" className="mt-1" />
-                        <div className="flex-1">
-                          <Label htmlFor="stage" className="cursor-pointer font-medium">
-                            Stage Only
-                          </Label>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            Apply changes to working directory without committing
-                          </p>
-                        </div>
-                      </div>
+                      </Label>
                     </div>
                   </RadioGroup>
 
