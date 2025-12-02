@@ -537,6 +537,74 @@ describe('CodeChangesPanel', () => {
       expect(screen.getByText('src/committed2.ts')).toBeInTheDocument()
       expect(screen.getByText('src/uncommitted1.ts')).toBeInTheDocument()
     })
+
+    it('should display both when current has committed files and captured has uncommitted files', async () => {
+      const user = userEvent.setup()
+      // This scenario: execution completed with uncommitted changes (captured),
+      // then additional commits were made (current shows branch state)
+      const data: ExecutionChangesResult = {
+        available: true,
+        uncommitted: true,
+        branchName: 'sudocode/test-branch',
+        branchExists: true,
+        worktreeExists: true,
+        executionMode: 'worktree',
+        additionalCommits: 1,
+        captured: {
+          files: [{ path: 'yo4', additions: 1, deletions: 0, status: 'A' }],
+          summary: {
+            totalFiles: 1,
+            totalAdditions: 1,
+            totalDeletions: 0,
+          },
+          commitRange: null,
+          uncommitted: true,
+        },
+        current: {
+          files: [
+            { path: '.sudocode/issues.jsonl', additions: 1, deletions: 0, status: 'M' },
+            { path: '.sudocode/specs.jsonl', additions: 1, deletions: 0, status: 'M' },
+            { path: 'yo4.txt', additions: 1, deletions: 0, status: 'A' },
+          ],
+          summary: {
+            totalFiles: 3,
+            totalAdditions: 3,
+            totalDeletions: 0,
+          },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
+        },
+        // Note: uncommittedSnapshot is NOT present - this is the key scenario
+      }
+
+      mockUseExecutionChanges.mockReturnValue({
+        data,
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      })
+
+      render(<CodeChangesPanel executionId="exec-123" />)
+
+      // Should show combined totals in header (3 committed + 1 uncommitted = 4)
+      expect(screen.getByText('4 FILES')).toBeInTheDocument()
+      expect(screen.getByText('+4')).toBeInTheDocument()
+
+      // Expand to see both sections
+      await user.click(screen.getByTitle('Expand code changes'))
+
+      // Should show both sections
+      expect(screen.getByText(/Committed \(3 files\)/)).toBeInTheDocument()
+      expect(screen.getByText(/Uncommitted \(1 file\)/)).toBeInTheDocument()
+
+      // Check committed files from current
+      expect(screen.getByText('.sudocode/issues.jsonl')).toBeInTheDocument()
+      expect(screen.getByText('.sudocode/specs.jsonl')).toBeInTheDocument()
+      expect(screen.getByText('yo4.txt')).toBeInTheDocument()
+
+      // Check uncommitted file from captured
+      expect(screen.getByText('yo4')).toBeInTheDocument()
+    })
   })
 
   describe('Empty State', () => {

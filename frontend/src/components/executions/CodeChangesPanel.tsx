@@ -353,28 +353,53 @@ export function CodeChangesPanel({
     )
   }
 
-  // Use current state if available, otherwise use captured state
-  const snapshot = data.current || data.captured
-  if (!snapshot) {
+  // Determine committed and uncommitted files from all available sources
+  // Priority for committed: current > captured (if not uncommitted)
+  // Priority for uncommitted: uncommittedSnapshot > captured (if uncommitted and we have current) > captured (if only uncommitted)
+
+  let committedFiles: FileChangeStat[] = []
+  let uncommittedFiles: FileChangeStat[] = []
+
+  if (data.current) {
+    // We have current branch state - use it for committed files
+    committedFiles = data.current.files
+    // Check for uncommitted files from uncommittedSnapshot or captured
+    if (data.uncommittedSnapshot?.files) {
+      uncommittedFiles = data.uncommittedSnapshot.files
+    } else if (data.captured?.uncommitted) {
+      // Captured state was uncommitted - these are still uncommitted relative to current
+      uncommittedFiles = data.captured.files
+    }
+  } else if (data.captured) {
+    // No current state, use captured
+    if (data.captured.uncommitted) {
+      // Captured is uncommitted
+      uncommittedFiles = data.captured.files
+      // Check if there's also an uncommittedSnapshot (shouldn't happen, but be safe)
+      if (data.uncommittedSnapshot?.files) {
+        uncommittedFiles = [...uncommittedFiles, ...data.uncommittedSnapshot.files]
+      }
+    } else {
+      // Captured is committed
+      committedFiles = data.captured.files
+      if (data.uncommittedSnapshot?.files) {
+        uncommittedFiles = data.uncommittedSnapshot.files
+      }
+    }
+  }
+
+  if (committedFiles.length === 0 && uncommittedFiles.length === 0) {
     return null
   }
 
-  // Calculate total stats from all sources
-  // If snapshot is uncommitted and there's no uncommittedSnapshot, use snapshot.files as uncommitted
-  // Otherwise, use uncommittedSnapshot for uncommitted files
-  const uncommittedFiles =
-    data.uncommittedSnapshot?.files || (snapshot.uncommitted ? snapshot.files : [])
-  const committedFiles = snapshot.uncommitted ? [] : snapshot.files
+  // Calculate totals from actual files
   const totalFiles = committedFiles.length + uncommittedFiles.length
   const totalAdditions =
-    snapshot.summary.totalAdditions + (data.uncommittedSnapshot?.summary.totalAdditions || 0)
+    committedFiles.reduce((sum, f) => sum + f.additions, 0) +
+    uncommittedFiles.reduce((sum, f) => sum + f.additions, 0)
   const totalDeletions =
-    snapshot.summary.totalDeletions + (data.uncommittedSnapshot?.summary.totalDeletions || 0)
-
-  // Don't render if there are no file changes
-  if (totalFiles === 0) {
-    return null
-  }
+    committedFiles.reduce((sum, f) => sum + f.deletions, 0) +
+    uncommittedFiles.reduce((sum, f) => sum + f.deletions, 0)
 
   return (
     <div className="rounded-md border border-border bg-muted/30 p-3 font-mono text-xs">
