@@ -3,20 +3,12 @@ import { formatDistanceToNow } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { EntityBadge } from '@/components/entities/EntityBadge'
 import type { Execution, ExecutionStatus } from '@/types/execution'
 import type { WebSocketMessage } from '@/types/api'
 import { useWebSocketContext } from '@/contexts/WebSocketContext'
 import {
   Loader2,
-  RefreshCw,
   Clock,
   CheckCircle2,
   XCircle,
@@ -24,9 +16,6 @@ import {
   X,
   PauseCircle,
   ListIcon,
-  Filter,
-  Eye,
-  EyeOff,
   ChevronLeft,
 } from 'lucide-react'
 
@@ -47,29 +36,14 @@ export interface ExecutionsSidebarProps {
   onToggleVisibility: (executionId: string) => void
 
   /**
-   * Optional callback to refresh executions list
+   * Whether all executions are checked
    */
-  onRefresh?: () => void
+  allChecked: boolean
 
   /**
-   * Status filters (multi-select)
+   * Callback to toggle all executions
    */
-  statusFilters: Set<ExecutionStatus>
-
-  /**
-   * Callback when user changes status filters
-   */
-  onStatusFilterChange: (statuses: Set<ExecutionStatus>) => void
-
-  /**
-   * Callback to show all executions
-   */
-  onShowAll: () => void
-
-  /**
-   * Callback to hide all executions
-   */
-  onHideAll: () => void
+  onToggleAll: () => void
 
   /**
    * Whether the sidebar is collapsed
@@ -83,111 +57,80 @@ export interface ExecutionsSidebarProps {
 }
 
 /**
- * Render status badge for execution
+ * Render status icon with tooltip for execution (icon-only, more compact)
  */
-function renderStatusBadge(status: ExecutionStatus) {
-  switch (status) {
-    case 'preparing':
-      return (
-        <Badge variant="secondary" className="flex items-center gap-1 text-xs">
-          <Clock className="h-3 w-3" />
-          Preparing
-        </Badge>
-      )
-    case 'pending':
-      return (
-        <Badge variant="secondary" className="flex items-center gap-1 text-xs">
-          <Clock className="h-3 w-3" />
-          Pending
-        </Badge>
-      )
-    case 'running':
-      return (
-        <Badge variant="default" className="flex items-center gap-1 bg-blue-600 text-xs">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          Running
-        </Badge>
-      )
-    case 'paused':
-      return (
-        <Badge variant="outline" className="flex items-center gap-1 text-xs">
-          <PauseCircle className="h-3 w-3" />
-          Paused
-        </Badge>
-      )
-    case 'completed':
-      return (
-        <Badge variant="default" className="flex items-center gap-1 bg-green-600 text-xs">
-          <CheckCircle2 className="h-3 w-3" />
-          Completed
-        </Badge>
-      )
-    case 'failed':
-      return (
-        <Badge variant="destructive" className="flex items-center gap-1 text-xs">
-          <XCircle className="h-3 w-3" />
-          Failed
-        </Badge>
-      )
-    case 'cancelled':
-      return (
-        <Badge variant="secondary" className="flex items-center gap-1 text-xs">
-          <X className="h-3 w-3" />
-          Cancelled
-        </Badge>
-      )
-    case 'stopped':
-      return (
-        <Badge variant="secondary" className="flex items-center gap-1 text-xs">
-          <X className="h-3 w-3" />
-          Stopped
-        </Badge>
-      )
-    default:
-      return (
-        <Badge variant="secondary" className="flex items-center gap-1 text-xs">
-          <AlertCircle className="h-3 w-3" />
-          {String(status).charAt(0).toUpperCase() + String(status).slice(1)}
-        </Badge>
-      )
+function renderStatusIcon(status: ExecutionStatus) {
+  const getStatusConfig = () => {
+    switch (status) {
+      case 'preparing':
+        return {
+          icon: <Clock className="h-3.5 w-3.5 text-muted-foreground" />,
+          label: 'Preparing',
+        }
+      case 'pending':
+        return {
+          icon: <Clock className="h-3.5 w-3.5 text-muted-foreground" />,
+          label: 'Pending',
+        }
+      case 'running':
+        return {
+          icon: <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" />,
+          label: 'Running',
+        }
+      case 'paused':
+        return {
+          icon: <PauseCircle className="h-3.5 w-3.5 text-muted-foreground" />,
+          label: 'Paused',
+        }
+      case 'completed':
+        return {
+          icon: <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />,
+          label: 'Completed',
+        }
+      case 'failed':
+        return {
+          icon: <XCircle className="h-3.5 w-3.5 text-destructive" />,
+          label: 'Failed',
+        }
+      case 'cancelled':
+        return {
+          icon: <X className="h-3.5 w-3.5 text-muted-foreground" />,
+          label: 'Cancelled',
+        }
+      case 'stopped':
+        return {
+          icon: <X className="h-3.5 w-3.5 text-muted-foreground" />,
+          label: 'Stopped',
+        }
+      default:
+        return {
+          icon: <AlertCircle className="h-3.5 w-3.5 text-muted-foreground" />,
+          label: String(status).charAt(0).toUpperCase() + String(status).slice(1),
+        }
+    }
   }
-}
 
-/**
- * Truncate execution ID for display
- */
-function truncateId(id: string, length = 8): string {
-  if (id.length <= length) return id
-  return id.slice(0, length) + '...'
-}
+  const { icon, label } = getStatusConfig()
 
-// All possible execution statuses
-const ALL_STATUSES: ExecutionStatus[] = [
-  'preparing',
-  'pending',
-  'running',
-  'paused',
-  'completed',
-  'failed',
-  'cancelled',
-  'stopped',
-]
+  return (
+    <div className="flex items-center justify-center" title={label}>
+      {icon}
+    </div>
+  )
+}
 
 /**
  * ExecutionsSidebar Component
  *
  * Displays a list of all executions with checkboxes to toggle visibility in the grid.
- * Supports real-time updates via WebSocket and status filtering.
+ * Supports real-time updates via WebSocket.
  */
 export function ExecutionsSidebar({
   executions: initialExecutions,
   visibleExecutionIds,
   onToggleVisibility,
-  onRefresh,
-  statusFilters,
-  onStatusFilterChange,
-  onShowAll,
-  onHideAll,
+  allChecked,
+  onToggleAll,
   onToggleCollapse,
 }: ExecutionsSidebarProps) {
   const [executions, setExecutions] = useState<Execution[]>(initialExecutions)
@@ -250,24 +193,6 @@ export function ExecutionsSidebar({
     [onToggleVisibility]
   )
 
-  // Handle status filter toggle
-  const handleStatusToggle = useCallback(
-    (status: ExecutionStatus) => {
-      const newFilters = new Set(statusFilters)
-      if (newFilters.has(status)) {
-        newFilters.delete(status)
-      } else {
-        newFilters.add(status)
-      }
-      onStatusFilterChange(newFilters)
-    },
-    [statusFilters, onStatusFilterChange]
-  )
-
-  // Filter executions by status
-  const filteredExecutions =
-    statusFilters.size === 0 ? executions : executions.filter((e) => statusFilters.has(e.status))
-
   // Empty state
   if (executions.length === 0) {
     return (
@@ -276,33 +201,25 @@ export function ExecutionsSidebar({
         <div className="border-b p-3">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <ListIcon className="h-4 w-4 text-muted-foreground" />
-              <h3 className="text-sm font-semibold">Executions</h3>
+              <Checkbox
+                checked={allChecked}
+                onCheckedChange={onToggleAll}
+                className="h-4 w-4"
+              />
+              <span className="text-sm text-muted-foreground">All</span>
             </div>
-            <div className="flex items-center gap-1">
-              {onRefresh && (
-                <Button variant="ghost" size="sm" onClick={onRefresh} className="h-7 w-7 p-0">
-                  <RefreshCw className="h-3.5 w-3.5" />
-                </Button>
-              )}
-              {onToggleCollapse && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onToggleCollapse}
-                  className="h-7 w-7 p-0"
-                >
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            </div>
+            {onToggleCollapse && (
+              <Button variant="ghost" size="sm" onClick={onToggleCollapse} className="h-7 w-7 p-0">
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </div>
 
         {/* Empty state */}
         <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
           <ListIcon className="mb-4 h-12 w-12 text-muted-foreground/50" />
-          <p className="text-sm text-muted-foreground">No executions yet.</p>
+          <p className="text-sm text-muted-foreground">No executions yet</p>
           <p className="mt-2 text-xs text-muted-foreground/70">
             Start by creating an execution from an issue.
           </p>
@@ -316,84 +233,29 @@ export function ExecutionsSidebar({
       {/* Header */}
       <div className="border-b p-3">
         {/* Title row */}
-        <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <ListIcon className="h-4 w-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold">Executions</h3>
+            <Checkbox
+              checked={allChecked}
+              onCheckedChange={onToggleAll}
+              className="h-4 w-4"
+            />
+            <span className="text-sm text-muted-foreground">All</span>
             <Badge variant="secondary" className="text-xs">
-              {filteredExecutions.length}
+              {executions.length}
             </Badge>
           </div>
-          <div className="flex items-center gap-1">
-            {onRefresh && (
-              <Button variant="ghost" size="sm" onClick={onRefresh} className="h-7 w-7 p-0">
-                <RefreshCw className="h-3.5 w-3.5" />
-              </Button>
-            )}
-            {onToggleCollapse && (
-              <Button variant="ghost" size="sm" onClick={onToggleCollapse} className="h-7 w-7 p-0">
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {/* Controls row */}
-        <div className="flex items-center gap-2">
-          {/* Status filter dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="h-7 gap-1 text-xs">
-                <Filter className="h-3 w-3" />
-                Filter
-                {statusFilters.size > 0 && (
-                  <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
-                    {statusFilters.size}
-                  </Badge>
-                )}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48">
-              <DropdownMenuLabel className="text-xs">Status Filters</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {ALL_STATUSES.map((status) => (
-                <DropdownMenuCheckboxItem
-                  key={status}
-                  checked={statusFilters.has(status)}
-                  onCheckedChange={() => handleStatusToggle(status)}
-                  className="text-xs capitalize"
-                >
-                  {status}
-                </DropdownMenuCheckboxItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Show all / Hide all buttons */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onShowAll}
-            className="h-7 flex-1 gap-1 text-xs"
-          >
-            <Eye className="h-3 w-3" />
-            Show All
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onHideAll}
-            className="h-7 flex-1 gap-1 text-xs"
-          >
-            <EyeOff className="h-3 w-3" />
-            Hide All
-          </Button>
+          {onToggleCollapse && (
+            <Button variant="ghost" size="sm" onClick={onToggleCollapse} className="h-7 w-7 p-0">
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </div>
 
       {/* Execution list */}
       <div className="flex-1 overflow-y-auto">
-        {filteredExecutions.map((execution) => {
+        {executions.map((execution) => {
           const isVisible = visibleExecutionIds.has(execution.id)
           const createdAt = new Date(execution.created_at)
           const relativeTime = formatDistanceToNow(createdAt, { addSuffix: true })
@@ -416,33 +278,32 @@ export function ExecutionsSidebar({
                 {/* Execution info */}
                 <div className="min-w-0 flex-1">
                   {/* Execution ID + Status */}
-                  <div className="mb-1 flex items-center gap-2">
-                    <span className="truncate font-mono text-sm font-medium">
-                      {truncateId(execution.id, 10)}
+                  <div className="mb-1 flex min-w-0 items-center gap-2">
+                    <span className="min-w-0 truncate font-mono text-sm font-medium">
+                      {execution.id}
                     </span>
-                    {renderStatusBadge(execution.status)}
+                    {renderStatusIcon(execution.status)}
                   </div>
 
                   {/* Issue ID (if available) */}
                   {execution.issue_id && (
-                    <div className="mb-1 flex items-center gap-1">
-                      <span className="text-xs text-muted-foreground">Issue:</span>
-                      <a
-                        href={`/issues/${execution.issue_id}`}
-                        className="text-xs text-blue-600 hover:underline"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {execution.issue_id}
-                      </a>
+                    <div className="mb-1" onClick={(e) => e.stopPropagation()}>
+                      <EntityBadge
+                        entityId={execution.issue_id}
+                        entityType="issue"
+                        showHoverCard={true}
+                        linkToEntity={true}
+                        className="text-xs"
+                      />
                     </div>
                   )}
 
                   {/* Branch name */}
                   {execution.branch_name && (
-                    <div className="mb-1 flex items-center gap-1">
-                      <span className="text-xs text-muted-foreground">Branch:</span>
-                      <span className="truncate font-mono text-xs">
-                        {truncateId(execution.branch_name, 20)}
+                    <div className="mb-1 flex min-w-0 items-center gap-1">
+                      <span className="flex-shrink-0 text-xs text-muted-foreground">Branch:</span>
+                      <span className="min-w-0 truncate font-mono text-xs">
+                        {execution.branch_name}
                       </span>
                     </div>
                   )}

@@ -1,10 +1,10 @@
-import { ExecutionGridTile } from './ExecutionGridTile'
+import { ExecutionChainTile } from './ExecutionChainTile'
 import type { Execution } from '@/types/execution'
 import { Grid2x2 } from 'lucide-react'
 
 export interface ExecutionsGridProps {
   /**
-   * Executions to display in the grid
+   * Root executions to display in the grid (will load full chains)
    */
   executions: Execution[]
 
@@ -19,12 +19,12 @@ export interface ExecutionsGridProps {
   rows?: number
 
   /**
-   * Callback when user wants to hide an execution from the grid
+   * Callback when user wants to hide an execution chain from the grid
    */
   onToggleVisibility: (executionId: string) => void
 
   /**
-   * Optional callback when user wants to delete an execution
+   * Optional callback when user wants to delete an execution chain
    */
   onDeleteExecution?: (executionId: string) => void
 }
@@ -32,8 +32,8 @@ export interface ExecutionsGridProps {
 /**
  * ExecutionsGrid Component
  *
- * Displays multiple executions in a fixed CSS Grid layout that fills the viewport.
- * No scrolling - use pagination to navigate between executions.
+ * Displays multiple execution chains in a fixed CSS Grid layout that fills the viewport.
+ * No scrolling - use pagination to navigate between chains.
  * All tiles have uniform width and height.
  */
 export function ExecutionsGrid({
@@ -43,13 +43,13 @@ export function ExecutionsGrid({
   onToggleVisibility,
   onDeleteExecution,
 }: ExecutionsGridProps) {
-  // Empty state when no executions are visible
+  // Empty state when no execution chains are visible
   if (executions.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-8">
         <div className="text-center">
           <Grid2x2 className="mx-auto mb-4 h-12 w-12 text-muted-foreground/50" />
-          <p className="text-lg font-medium text-muted-foreground">No executions visible</p>
+          <p className="text-lg font-medium text-muted-foreground">No execution chains visible</p>
           <p className="mt-2 text-sm text-muted-foreground/70">
             Check executions in the sidebar to display them here
           </p>
@@ -58,7 +58,7 @@ export function ExecutionsGrid({
     )
   }
 
-  // Use explicit columns/rows if provided, otherwise fall back to gridLayout
+  // Use explicit columns/rows if provided, otherwise fall back to defaults
   const actualColumns = columns || 3
   const actualRows = rows || 2
 
@@ -77,8 +77,8 @@ export function ExecutionsGrid({
       >
         {executions.map((execution) => (
           <div key={execution.id} className="h-full min-h-0 w-full min-w-0">
-            <ExecutionGridTile
-              execution={execution}
+            <ExecutionChainTile
+              executionId={execution.id}
               onToggleVisibility={onToggleVisibility}
               onDelete={onDeleteExecution}
             />

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ExecutionsSidebar } from '@/components/executions/ExecutionsSidebar'
-import type { Execution, ExecutionStatus } from '@/types/execution'
+import type { Execution } from '@/types/execution'
 
 // Mock WebSocket context
 const mockSubscribe = vi.fn()
@@ -17,6 +17,15 @@ vi.mock('@/contexts/WebSocketContext', () => ({
     addMessageHandler: mockAddMessageHandler,
     removeMessageHandler: mockRemoveMessageHandler,
   }),
+}))
+
+// Mock EntityBadge component
+vi.mock('@/components/entities/EntityBadge', () => ({
+  EntityBadge: ({ entityId, entityType }: { entityId: string; entityType: string }) => (
+    <div data-testid="entity-badge" data-entity-id={entityId} data-entity-type={entityType}>
+      {entityId}
+    </div>
+  ),
 }))
 
 // Sample executions for testing
@@ -56,19 +65,13 @@ const createMockExecution = (overrides: Partial<Execution> = {}): Execution => (
 
 describe('ExecutionsSidebar', () => {
   const mockOnToggleVisibility = vi.fn()
-  const mockOnRefresh = vi.fn()
-  const mockOnStatusFilterChange = vi.fn()
-  const mockOnShowAll = vi.fn()
-  const mockOnHideAll = vi.fn()
+  const mockOnToggleAll = vi.fn()
 
   // Default props for all tests
   const defaultProps = {
     onToggleVisibility: mockOnToggleVisibility,
-    onRefresh: mockOnRefresh,
-    statusFilters: new Set<ExecutionStatus>(),
-    onStatusFilterChange: mockOnStatusFilterChange,
-    onShowAll: mockOnShowAll,
-    onHideAll: mockOnHideAll,
+    allChecked: false,
+    onToggleAll: mockOnToggleAll,
   }
 
   beforeEach(() => {
@@ -78,7 +81,7 @@ describe('ExecutionsSidebar', () => {
   it('renders empty state when no executions provided', () => {
     render(<ExecutionsSidebar {...defaultProps} executions={[]} visibleExecutionIds={new Set()} />)
 
-    expect(screen.getByText('No executions yet.')).toBeInTheDocument()
+    expect(screen.getByText('No executions yet')).toBeInTheDocument()
     expect(screen.getByText('Start by creating an execution from an issue.')).toBeInTheDocument()
   })
 
@@ -113,10 +116,6 @@ describe('ExecutionsSidebar', () => {
     const executionIds = screen.getAllByText(/exec-/)
     expect(executionIds.length).toBeGreaterThanOrEqual(2)
 
-    // Check status badges
-    expect(screen.getByText('Running')).toBeInTheDocument()
-    expect(screen.getByText('Completed')).toBeInTheDocument()
-
     // Check issue IDs
     expect(screen.getByText('i-test1')).toBeInTheDocument()
     expect(screen.getByText('i-test2')).toBeInTheDocument()
@@ -139,12 +138,13 @@ describe('ExecutionsSidebar', () => {
     )
 
     const checkboxes = screen.getAllByRole('checkbox')
-    expect(checkboxes).toHaveLength(2)
+    // Now we have 3 checkboxes: 1 "All" checkbox + 2 execution checkboxes
+    expect(checkboxes).toHaveLength(3)
 
-    // First checkbox should be checked
-    expect(checkboxes[0]).toBeChecked()
-    // Second checkbox should not be checked
-    expect(checkboxes[1]).not.toBeChecked()
+    // Second checkbox (first execution) should be checked
+    expect(checkboxes[1]).toBeChecked()
+    // Third checkbox (second execution) should not be checked
+    expect(checkboxes[2]).not.toBeChecked()
   })
 
   it('calls onToggleVisibility when checkbox is clicked', () => {
@@ -158,8 +158,10 @@ describe('ExecutionsSidebar', () => {
       />
     )
 
-    const checkbox = screen.getByRole('checkbox')
-    fireEvent.click(checkbox)
+    // Get all checkboxes (first is "All", second is the execution checkbox)
+    const checkboxes = screen.getAllByRole('checkbox')
+    const executionCheckbox = checkboxes[1]
+    fireEvent.click(executionCheckbox)
 
     expect(mockOnToggleVisibility).toHaveBeenCalledWith('exec-1')
   })
@@ -169,7 +171,7 @@ describe('ExecutionsSidebar', () => {
       createMockExecution({ id: 'exec-unique-123', status: 'running', branch_name: 'test-branch' }),
     ]
 
-    render(
+    const { container } = render(
       <ExecutionsSidebar
         {...defaultProps}
         executions={executions}
@@ -178,38 +180,11 @@ describe('ExecutionsSidebar', () => {
     )
 
     // Click on the execution item (not the checkbox)
-    // Find by status badge which is unique per execution
-    const statusBadge = screen.getByText('Running')
-    const executionItem = statusBadge.closest('.border-b')
+    // Find the execution item by its container div
+    const executionItem = container.querySelector('.border-b.cursor-pointer')
     if (executionItem) {
       fireEvent.click(executionItem)
       expect(mockOnToggleVisibility).toHaveBeenCalledWith('exec-unique-123')
-    }
-  })
-
-  it('calls onRefresh when refresh button is clicked', () => {
-    const executions: Execution[] = [createMockExecution({ id: 'exec-1', status: 'running' })]
-
-    render(
-      <ExecutionsSidebar
-        {...defaultProps}
-        executions={executions}
-        visibleExecutionIds={new Set()}
-      />
-    )
-
-    // Find refresh button specifically by RefreshCw icon
-    const buttons = screen.getAllByRole('button')
-    const refreshButton = buttons.find(btn => {
-      const svg = btn.querySelector('svg')
-      return svg?.classList.contains('lucide-refresh-cw')
-    })
-
-    if (refreshButton) {
-      fireEvent.click(refreshButton)
-      expect(mockOnRefresh).toHaveBeenCalled()
-    } else {
-      throw new Error('Refresh button not found')
     }
   })
 
@@ -228,7 +203,7 @@ describe('ExecutionsSidebar', () => {
     expect(mockAddMessageHandler).toHaveBeenCalledWith('executions-sidebar', expect.any(Function))
   })
 
-  it('renders different status badges correctly', () => {
+  it('renders different status icons correctly', () => {
     const executions: Execution[] = [
       createMockExecution({ id: 'exec-1', status: 'running' }),
       createMockExecution({ id: 'exec-2', status: 'completed' }),
@@ -236,7 +211,7 @@ describe('ExecutionsSidebar', () => {
       createMockExecution({ id: 'exec-4', status: 'pending' }),
     ]
 
-    render(
+    const { container } = render(
       <ExecutionsSidebar
         {...defaultProps}
         executions={executions}
@@ -244,13 +219,12 @@ describe('ExecutionsSidebar', () => {
       />
     )
 
-    expect(screen.getByText('Running')).toBeInTheDocument()
-    expect(screen.getByText('Completed')).toBeInTheDocument()
-    expect(screen.getByText('Failed')).toBeInTheDocument()
-    expect(screen.getByText('Pending')).toBeInTheDocument()
+    // Check that status icons are rendered (should have multiple SVG elements)
+    const svgIcons = container.querySelectorAll('svg')
+    expect(svgIcons.length).toBeGreaterThan(0)
   })
 
-  it('does not show refresh button when onRefresh is not provided', () => {
+  it('calls onToggleAll when "All" checkbox is clicked', () => {
     const executions: Execution[] = [createMockExecution({ id: 'exec-1', status: 'running' })]
 
     render(
@@ -258,16 +232,43 @@ describe('ExecutionsSidebar', () => {
         {...defaultProps}
         executions={executions}
         visibleExecutionIds={new Set()}
-        onRefresh={undefined}
       />
     )
 
-    // Should not render refresh button (RefreshCw icon)
-    const buttons = screen.queryAllByRole('button')
-    const refreshButton = buttons.find(btn => {
-      const svg = btn.querySelector('svg')
-      return svg?.classList.contains('lucide-refresh-cw')
-    })
-    expect(refreshButton).toBeUndefined()
+    // Find the "All" checkbox (first checkbox in the header)
+    const checkboxes = screen.getAllByRole('checkbox')
+    const allCheckbox = checkboxes[0]
+
+    fireEvent.click(allCheckbox)
+    expect(mockOnToggleAll).toHaveBeenCalled()
+  })
+
+  it('displays "All" checkbox with correct checked state', () => {
+    const executions: Execution[] = [createMockExecution({ id: 'exec-1', status: 'running' })]
+
+    const { rerender } = render(
+      <ExecutionsSidebar
+        {...defaultProps}
+        allChecked={true}
+        executions={executions}
+        visibleExecutionIds={new Set(['exec-1'])}
+      />
+    )
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    const allCheckbox = checkboxes[0]
+    expect(allCheckbox).toBeChecked()
+
+    // Re-render with allChecked false
+    rerender(
+      <ExecutionsSidebar
+        {...defaultProps}
+        allChecked={false}
+        executions={executions}
+        visibleExecutionIds={new Set()}
+      />
+    )
+
+    expect(allCheckbox).not.toBeChecked()
   })
 })

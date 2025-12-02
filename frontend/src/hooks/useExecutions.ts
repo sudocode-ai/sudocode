@@ -33,7 +33,19 @@ export function useExecutions(params?: ListExecutionsParams) {
 
   const query = useQuery({
     queryKey,
-    queryFn: () => executionsApi.listAll(params),
+    queryFn: async () => {
+      const response = await executionsApi.listAll(params)
+      // Filter to only include root executions (those without parent_execution_id)
+      // This ensures we display execution chains rather than individual executions
+      const rootExecutions = response.executions.filter(
+        (execution) => !execution.parent_execution_id
+      )
+      return {
+        ...response,
+        executions: rootExecutions,
+        total: rootExecutions.length,
+      }
+    },
     enabled: !!currentProjectId && isProjectSynced,
     staleTime: 30000, // 30 seconds - WebSocket handles real-time updates
     refetchInterval: false, // Rely on WebSocket for updates, not polling

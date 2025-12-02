@@ -1,7 +1,24 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { PanelGroup, Panel, PanelResizeHandle, ImperativePanelHandle } from 'react-resizable-panels'
-import { Minus, Plus, ChevronLeft, ChevronRight } from 'lucide-react'
+import {
+  Minus,
+  Plus,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  PanelLeft,
+  PanelLeftClose,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ExecutionsSidebar } from '@/components/executions/ExecutionsSidebar'
 import { ExecutionsGrid } from '@/components/executions/ExecutionsGrid'
@@ -17,17 +34,20 @@ const MAX_COLUMNS = 5
 const MIN_ROWS = 1
 const MAX_ROWS = 3
 
+// All possible execution statuses
+const ALL_STATUSES: ExecutionStatus[] = ['running', 'completed', 'failed', 'cancelled', 'stopped']
+
 /**
  * ExecutionsPage Component
  *
- * Multi-execution monitoring page with:
- * - Resizable sidebar (ExecutionsSidebar) for execution selection and filtering
- * - Grid view (ExecutionsGrid) with configurable columns/rows
+ * Multi-execution chain monitoring page with:
+ * - Resizable sidebar (ExecutionsSidebar) for execution chain selection and filtering
+ * - Grid view (ExecutionsGrid) displaying execution chains (root + follow-ups)
  * - Pagination with keyboard navigation
  * - localStorage persistence for grid configuration
  */
 export default function ExecutionsPage() {
-  // Fetch all executions using React Query hook
+  // Fetch all root executions (displayed as chains with follow-ups) using React Query hook
   const { data: executionsData, isLoading, error, refetch } = useExecutions()
 
   // Sidebar panel ref for programmatic control
@@ -92,33 +112,72 @@ export default function ExecutionsPage() {
     setCurrentPage(0)
   }, [])
 
-  // Show all executions
-  const handleShowAll = useCallback(() => {
-    const executions = executionsData?.executions || []
-    setVisibleExecutionIds(new Set(executions.map((e) => e.id)))
-    setCurrentPage(0)
-  }, [executionsData])
-
-  // Hide all executions
-  const handleHideAll = useCallback(() => {
-    setVisibleExecutionIds(new Set())
-    setCurrentPage(0)
-  }, [])
-
   // Delete execution (placeholder - not implemented yet)
   const handleDeleteExecution = useCallback((executionId: string) => {
     console.log('Delete execution:', executionId)
     // TODO: Implement execution deletion via API
   }, [])
 
+  // Handle status filter toggle
+  const handleStatusToggle = useCallback(
+    (status: ExecutionStatus) => {
+      const newFilters = new Set(statusFilters)
+      if (newFilters.has(status)) {
+        newFilters.delete(status)
+      } else {
+        newFilters.add(status)
+      }
+      setStatusFilters(newFilters)
+    },
+    [statusFilters]
+  )
+
+  // Toggle all executions (show/hide all) - respects status filters
+  const handleToggleAll = useCallback(() => {
+    const executions = executionsData?.executions || []
+    // Apply status filter
+    const filteredExecutions =
+      statusFilters.size === 0 ? executions : executions.filter((e) => statusFilters.has(e.status))
+
+    const allVisible = filteredExecutions.every((e) => visibleExecutionIds.has(e.id))
+
+    if (allVisible) {
+      // If all filtered executions are visible, hide them all
+      const idsToRemove = new Set(filteredExecutions.map((e) => e.id))
+      setVisibleExecutionIds((prev) => {
+        const next = new Set(prev)
+        idsToRemove.forEach((id) => next.delete(id))
+        return next
+      })
+    } else {
+      // If not all filtered executions are visible, show them all
+      setVisibleExecutionIds((prev) => {
+        const next = new Set(prev)
+        filteredExecutions.forEach((e) => next.add(e.id))
+        return next
+      })
+    }
+    setCurrentPage(0)
+  }, [executionsData, visibleExecutionIds, statusFilters])
+
   // Calculate pagination
   const executions = executionsData?.executions || []
-  const visibleExecutions = executions.filter((e) => visibleExecutionIds.has(e.id))
+
+  // Filter by status if filters are applied
+  const filteredExecutions =
+    statusFilters.size === 0 ? executions : executions.filter((e) => statusFilters.has(e.status))
+
+  // Filter by visibility
+  const visibleExecutions = filteredExecutions.filter((e) => visibleExecutionIds.has(e.id))
   const executionsPerPage = columns * rows
   const totalPages = Math.ceil(visibleExecutions.length / executionsPerPage)
   const startIndex = currentPage * executionsPerPage
   const endIndex = Math.min(startIndex + executionsPerPage, visibleExecutions.length)
   const paginatedExecutions = visibleExecutions.slice(startIndex, endIndex)
+
+  // Check if all filtered executions are visible (for checkbox state)
+  const allExecutionsVisible =
+    filteredExecutions.length > 0 && filteredExecutions.every((e) => visibleExecutionIds.has(e.id))
 
   // Reset to first page when filters change
   useEffect(() => {
@@ -157,16 +216,110 @@ export default function ExecutionsPage() {
     <div className="flex h-screen flex-col">
       {/* Header with grid configuration and pagination */}
       <div className="flex items-center justify-between border-b border-border px-6 py-4">
-        <div>
-          <h1 className="text-2xl font-bold">Agent Executions</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Showing {startIndex + 1}-{endIndex} of {visibleExecutions.length} visible
-            {totalPages > 1 && ` (page ${currentPage + 1} of ${totalPages})`}
-          </p>
+        <div className="flex items-center gap-4">
+          {/* Sidebar toggle */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleToggleSidebar}
+                  className="h-8 w-8 p-0"
+                >
+                  {sidebarCollapsed ? (
+                    <PanelLeft className="h-5 w-5" />
+                  ) : (
+                    <PanelLeftClose className="h-5 w-5" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          <div>
+            <h1 className="text-xl font-bold">Agent Executions</h1>
+          </div>
+          {/* Pagination controls */}
+          {totalPages > 1 && (
+            <div>
+              <div className="flex items-center gap-1">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((prev) => Math.max(0, prev - 1))}
+                        disabled={currentPage === 0}
+                        className="h-8 w-8 p-0"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Previous page (←)</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                <span className="min-w-[80px] text-center text-sm text-muted-foreground">
+                  Page {currentPage + 1} of {totalPages}
+                </span>
+
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((prev) => Math.min(totalPages - 1, prev + 1))}
+                        disabled={currentPage >= totalPages - 1}
+                        className="h-8 w-8 p-0"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Next page (→)</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Grid configuration and pagination controls */}
         <div className="flex items-center gap-4">
+          {/* Status filter dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 gap-1">
+                <Filter className="h-3.5 w-3.5" />
+                Filter
+                {statusFilters.size > 0 && (
+                  <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
+                    {statusFilters.size}
+                  </Badge>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuLabel className="text-xs">Status Filters</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {ALL_STATUSES.map((status) => (
+                <DropdownMenuCheckboxItem
+                  key={status}
+                  checked={statusFilters.has(status)}
+                  onCheckedChange={() => handleStatusToggle(status)}
+                  className="text-xs capitalize"
+                >
+                  {status}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           {/* Columns configuration */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Columns:</span>
@@ -218,49 +371,6 @@ export default function ExecutionsPage() {
               </Button>
             </div>
           </div>
-
-          {/* Pagination controls */}
-          {totalPages > 1 && (
-            <div className="flex items-center gap-2 border-l pl-4">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage((prev) => Math.max(0, prev - 1))}
-                      disabled={currentPage === 0}
-                      className="h-8 w-8 p-0"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Previous page (←)</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-
-              <span className="min-w-[80px] text-center text-sm text-muted-foreground">
-                Page {currentPage + 1} of {totalPages}
-              </span>
-
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage((prev) => Math.min(totalPages - 1, prev + 1))}
-                      disabled={currentPage >= totalPages - 1}
-                      className="h-8 w-8 p-0"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Next page (→)</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-          )}
         </div>
       </div>
 
@@ -302,14 +412,11 @@ export default function ExecutionsPage() {
             onExpand={() => setSidebarCollapsed(false)}
           >
             <ExecutionsSidebar
-              executions={executions}
+              executions={filteredExecutions}
               visibleExecutionIds={visibleExecutionIds}
               onToggleVisibility={handleToggleVisibility}
-              onRefresh={() => refetch()}
-              statusFilters={statusFilters}
-              onStatusFilterChange={setStatusFilters}
-              onShowAll={handleShowAll}
-              onHideAll={handleHideAll}
+              allChecked={allExecutionsVisible}
+              onToggleAll={handleToggleAll}
               collapsed={sidebarCollapsed}
               onToggleCollapse={handleToggleSidebar}
             />
@@ -322,36 +429,13 @@ export default function ExecutionsPage() {
 
           {/* Right Panel - ExecutionsGrid */}
           <Panel defaultSize={80} minSize={50}>
-            <div className="relative h-full">
-              {/* Expand sidebar button (visible when collapsed) */}
-              {sidebarCollapsed && (
-                <div className="absolute left-4 top-4 z-20">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleToggleSidebar}
-                          className="h-8 w-8 p-0 shadow-md"
-                        >
-                          <ChevronRight className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Expand sidebar</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-              )}
-
-              <ExecutionsGrid
-                executions={paginatedExecutions}
-                columns={columns}
-                rows={rows}
-                onToggleVisibility={handleToggleVisibility}
-                onDeleteExecution={handleDeleteExecution}
-              />
-            </div>
+            <ExecutionsGrid
+              executions={paginatedExecutions}
+              columns={columns}
+              rows={rows}
+              onToggleVisibility={handleToggleVisibility}
+              onDeleteExecution={handleDeleteExecution}
+            />
           </Panel>
         </PanelGroup>
       )}
