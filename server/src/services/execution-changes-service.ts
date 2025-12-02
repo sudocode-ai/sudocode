@@ -657,4 +657,134 @@ export class ExecutionChangesService {
       return [];
     }
   }
+
+  /**
+   * Get diff content for a specific file
+   *
+   * @param executionId - Execution ID
+   * @param filePath - Path to the file
+   * @returns Object with oldContent and newContent
+   */
+  async getFileDiff(executionId: string, filePath: string): Promise<{
+    success: boolean;
+    oldContent?: string;
+    newContent?: string;
+    error?: string;
+  }> {
+    try {
+      // 1. Load execution from database
+      const execution = getExecution(this.db, executionId);
+      if (!execution) {
+        return { success: false, error: "Execution not found" };
+      }
+
+      // 2. Find root execution for before_commit
+      const rootExecution = this.getRootExecution(execution);
+      const beforeCommit = rootExecution.before_commit || execution.before_commit;
+      const afterCommit = execution.after_commit;
+
+      if (!beforeCommit) {
+        return { success: false, error: "Missing before_commit" };
+      }
+
+      let oldContent = "";
+      let newContent = "";
+
+      // Normalize file path - remove leading './' if present
+      const normalizedPath = filePath.startsWith('./') ? filePath.slice(2) : filePath;
+
+      console.log(`[ExecutionChangesService] Getting diff for ${filePath}:`, {
+        beforeCommit,
+        afterCommit,
+        worktreePath: execution.worktree_path,
+        normalizedPath,
+      });
+
+      // 3. Get old content (from before_commit)
+      try {
+        const cmd = `git show ${beforeCommit}:${normalizedPath}`;
+        console.log(`[ExecutionChangesService] Running: ${cmd}`);
+        oldContent = execSync(cmd, {
+          cwd: this.repoPath,
+          encoding: "utf-8",
+          stdio: "pipe",
+          maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large files
+        });
+        console.log(`[ExecutionChangesService] Old content length: ${oldContent.length}`);
+      } catch (error) {
+        // File might not exist in before_commit (new file)
+        console.log(`[ExecutionChangesService] Failed to get old content:`, error instanceof Error ? error.message : error);
+        oldContent = "";
+      }
+
+      // 4. Get new content (depends on whether we have committed or uncommitted changes)
+      if (afterCommit && afterCommit !== beforeCommit) {
+        // Committed changes - get from after_commit
+        console.log(`[ExecutionChangesService] Fetching new content from after_commit: ${afterCommit}`);
+        try {
+          const cmd = `git show ${afterCommit}:${normalizedPath}`;
+          console.log(`[ExecutionChangesService] Running: ${cmd}`);
+          newContent = execSync(cmd, {
+            cwd: this.repoPath,
+            encoding: "utf-8",
+            stdio: "pipe",
+            maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large files
+          });
+          console.log(`[ExecutionChangesService] New content length: ${newContent.length}`);
+        } catch (error) {
+          // File might have been deleted
+          console.log(`[ExecutionChangesService] Failed to get new content:`, error instanceof Error ? error.message : error);
+          newContent = "";
+        }
+      } else if (execution.worktree_path && existsSync(execution.worktree_path)) {
+        // Uncommitted changes - get from working tree
+        console.log(`[ExecutionChangesService] Fetching new content from worktree: ${execution.worktree_path}`);
+        try {
+          const { readFileSync } = await import("fs");
+          const { join } = await import("path");
+          const fullPath = join(execution.worktree_path, normalizedPath);
+          console.log(`[ExecutionChangesService] Checking file: ${fullPath}`);
+          if (existsSync(fullPath)) {
+            newContent = readFileSync(fullPath, "utf-8");
+            console.log(`[ExecutionChangesService] New content length: ${newContent.length}`);
+          } else {
+            // File might have been deleted
+            console.log(`[ExecutionChangesService] File deleted in worktree`);
+            newContent = "";
+          }
+        } catch (error) {
+          return { success: false, error: `Failed to read file: ${error}` };
+        }
+      } else {
+        // No after_commit and no worktree - use HEAD
+        console.log(`[ExecutionChangesService] Fetching new content from HEAD`);
+        try {
+          newContent = execSync(`git show HEAD:${normalizedPath}`, {
+            cwd: this.repoPath,
+            encoding: "utf-8",
+            stdio: "pipe",
+            maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large files
+          });
+          console.log(`[ExecutionChangesService] New content length: ${newContent.length}`);
+        } catch (error) {
+          console.log(`[ExecutionChangesService] File deleted at HEAD`);
+          newContent = "";
+        }
+      }
+
+      console.log(`[ExecutionChangesService] Returning diff - oldContent: ${oldContent.length} chars, newContent: ${newContent.length} chars`);
+
+      return {
+        success: true,
+        oldContent,
+        newContent,
+      };
+    } catch (error) {
+      console.error("[ExecutionChangesService] Error getting file diff:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
 }

@@ -314,6 +314,12 @@ export const executionsApi = {
   getChanges: (executionId: string) =>
     get<ExecutionChangesResult>(`/executions/${executionId}/changes`),
 
+  // Get diff content for a specific file
+  getFileDiff: (executionId: string, filePath: string) =>
+    get<{ filePath: string; oldContent: string; newContent: string }>(
+      `/executions/${executionId}/changes/file?filePath=${encodeURIComponent(filePath)}`
+    ),
+
   // Open worktree in IDE
   openInIde: (worktreePath: string, request?: { editorType?: string }) =>
     post(`/open-in-ide`, { worktreePath, ...request }),

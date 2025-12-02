@@ -21,6 +21,8 @@ export interface DiffViewerProps {
   className?: string
   /** Maximum lines to show before truncating (default: 50) */
   maxLines?: number
+  /** Whether to render side-by-side (default: false) */
+  sideBySide?: boolean
 }
 
 /**
@@ -32,6 +34,7 @@ export function DiffViewer({
   filePath,
   className = '',
   maxLines = 50,
+  sideBySide = false,
 }: DiffViewerProps) {
   const { actualTheme } = useTheme()
   const [showFullDiff, setShowFullDiff] = useState(false)
@@ -42,16 +45,23 @@ export function DiffViewer({
 
   const lineCount = Math.max(oldContent.split('\n').length, newContent.split('\n').length)
   const shouldTruncate = lineCount > maxLines && !showFullDiff
+
+  // Calculate height - if maxLines is very large (like 10000 for modal), use 100% height
+  const useFlexHeight = maxLines >= 10000
   const displayHeight = shouldTruncate ? Math.min(lineCount * 19, 400) : lineCount * 19
 
   // Detect language from file extension for syntax highlighting
   const language = detectLanguage(filePath)
 
   return (
-    <div className={className}>
+    <div className={`${className} ${useFlexHeight ? 'h-full' : ''}`}>
       <div
-        className={`monaco-diff-wrapper ${shouldTruncate ? 'diff-collapsed cursor-pointer' : ''}`}
-        style={{ height: `${displayHeight}px`, minHeight: '100px' }}
+        className={`monaco-diff-wrapper ${shouldTruncate ? 'diff-collapsed cursor-pointer' : ''} ${useFlexHeight ? 'h-full' : ''}`}
+        style={
+          useFlexHeight
+            ? { minHeight: '100px' }
+            : { height: `${displayHeight}px`, minHeight: '100px' }
+        }
         onClick={() => {
           if (shouldTruncate) {
             setShowFullDiff(true)
@@ -80,7 +90,7 @@ export function DiffViewer({
             },
             renderLineHighlight: 'none',
             occurrencesHighlight: 'off',
-            renderSideBySide: false, // Inline diff view for compact display
+            renderSideBySide: sideBySide,
           }}
         />
       </div>

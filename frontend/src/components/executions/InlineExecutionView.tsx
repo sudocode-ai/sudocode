@@ -576,6 +576,7 @@ export function InlineExecutionView({
                   }
                   executionStatus={lastExecution.status}
                   worktreePath={rootExecution.worktree_path}
+                  diffMode="modal"
                 />
               </>
             )}

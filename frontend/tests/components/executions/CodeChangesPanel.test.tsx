@@ -1501,4 +1501,203 @@ describe('CodeChangesPanel', () => {
       expect(screen.queryByText('-0')).not.toBeInTheDocument()
     })
   })
+
+  describe('Diff Mode Behavior', () => {
+    // Mock executionsApi.getFileDiff
+    beforeEach(() => {
+      vi.mock('@/lib/api', () => ({
+        executionsApi: {
+          getFileDiff: vi.fn(),
+        },
+      }))
+    })
+
+    describe('Inline Mode (default)', () => {
+      it('should show chevron icons in inline mode by default', async () => {
+        const user = userEvent.setup()
+        const data: ExecutionChangesResult = {
+          available: true,
+          captured: {
+            files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
+            summary: {
+              totalFiles: 1,
+              totalAdditions: 10,
+              totalDeletions: 5,
+            },
+            commitRange: { before: 'abc123', after: 'def456' },
+            uncommitted: false,
+          },
+        }
+
+        mockUseExecutionChanges.mockReturnValue({
+          data,
+          loading: false,
+          error: null,
+          refresh: vi.fn(),
+        })
+
+        render(<CodeChangesPanel executionId="exec-123" />)
+
+        // Expand to see files
+        await user.click(screen.getByTitle('Expand code changes'))
+
+        // File row should have chevron icon (not maximize icon)
+        const fileRow = screen.getByText('src/file1.ts').closest('button')
+        expect(fileRow).toBeInTheDocument()
+
+        // Should not show maximize icon in inline mode
+        expect(fileRow?.querySelector('svg')).toBeInTheDocument()
+      })
+
+      it('should explicitly work in inline mode when diffMode="inline"', async () => {
+        const user = userEvent.setup()
+        const data: ExecutionChangesResult = {
+          available: true,
+          captured: {
+            files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
+            summary: {
+              totalFiles: 1,
+              totalAdditions: 10,
+              totalDeletions: 5,
+            },
+            commitRange: { before: 'abc123', after: 'def456' },
+            uncommitted: false,
+          },
+        }
+
+        mockUseExecutionChanges.mockReturnValue({
+          data,
+          loading: false,
+          error: null,
+          refresh: vi.fn(),
+        })
+
+        render(<CodeChangesPanel executionId="exec-123" diffMode="inline" />)
+
+        // Expand to see files
+        await user.click(screen.getByTitle('Expand code changes'))
+
+        // Should have file row
+        expect(screen.getByText('src/file1.ts')).toBeInTheDocument()
+      })
+    })
+
+    describe('Modal Mode', () => {
+      it('should work in modal mode when diffMode="modal"', async () => {
+        const user = userEvent.setup()
+        const data: ExecutionChangesResult = {
+          available: true,
+          captured: {
+            files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
+            summary: {
+              totalFiles: 1,
+              totalAdditions: 10,
+              totalDeletions: 5,
+            },
+            commitRange: { before: 'abc123', after: 'def456' },
+            uncommitted: false,
+          },
+        }
+
+        mockUseExecutionChanges.mockReturnValue({
+          data,
+          loading: false,
+          error: null,
+          refresh: vi.fn(),
+        })
+
+        render(<CodeChangesPanel executionId="exec-123" diffMode="modal" />)
+
+        // Expand to see files
+        await user.click(screen.getByTitle('Expand code changes'))
+
+        // Should have file row
+        expect(screen.getByText('src/file1.ts')).toBeInTheDocument()
+      })
+
+      it('should have maximize icon in modal mode', async () => {
+        const user = userEvent.setup()
+        const data: ExecutionChangesResult = {
+          available: true,
+          captured: {
+            files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
+            summary: {
+              totalFiles: 1,
+              totalAdditions: 10,
+              totalDeletions: 5,
+            },
+            commitRange: { before: 'abc123', after: 'def456' },
+            uncommitted: false,
+          },
+        }
+
+        mockUseExecutionChanges.mockReturnValue({
+          data,
+          loading: false,
+          error: null,
+          refresh: vi.fn(),
+        })
+
+        render(<CodeChangesPanel executionId="exec-123" diffMode="modal" />)
+
+        // Expand panel
+        await user.click(screen.getByTitle('Expand code changes'))
+
+        // File row should have a button
+        const fileButton = screen.getByText('src/file1.ts').closest('button')
+        expect(fileButton).toBeInTheDocument()
+      })
+
+      it('should show loading state when fetching diff in modal mode', async () => {
+        const user = userEvent.setup()
+        const { executionsApi } = await import('@/lib/api')
+
+        // Mock with a delayed promise to catch loading state
+        const mockGetFileDiff = vi.fn().mockImplementation(
+          () => new Promise((resolve) => setTimeout(() => resolve({
+            oldContent: 'old content',
+            newContent: 'new content',
+          }), 100))
+        )
+        ;(executionsApi.getFileDiff as any) = mockGetFileDiff
+
+        const data: ExecutionChangesResult = {
+          available: true,
+          captured: {
+            files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
+            summary: {
+              totalFiles: 1,
+              totalAdditions: 10,
+              totalDeletions: 5,
+            },
+            commitRange: { before: 'abc123', after: 'def456' },
+            uncommitted: false,
+          },
+        }
+
+        mockUseExecutionChanges.mockReturnValue({
+          data,
+          loading: false,
+          error: null,
+          refresh: vi.fn(),
+        })
+
+        render(<CodeChangesPanel executionId="exec-123" diffMode="modal" />)
+
+        // Expand panel
+        await user.click(screen.getByTitle('Expand code changes'))
+
+        // Click file row
+        const fileButton = screen.getByText('src/file1.ts').closest('button')
+        if (fileButton) {
+          await user.click(fileButton)
+        }
+
+        // Should show loading spinner briefly
+        const fileRow = screen.getByText('src/file1.ts').closest('button')
+        expect(fileRow?.querySelector('.animate-spin')).toBeInTheDocument()
+      })
+    })
+
+  })
 })

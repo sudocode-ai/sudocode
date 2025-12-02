@@ -18,10 +18,15 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   ExternalLink,
+  Maximize2,
+  X,
 } from 'lucide-react'
 import type { FileChangeStat } from '@/types/execution'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { DiffViewer } from './DiffViewer'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 const CODE_CHANGES_STORAGE_KEY = 'codeChanges.isCollapsed'
 const MAX_FILES_TO_SHOW = 20
@@ -34,6 +39,8 @@ interface CodeChangesPanelProps {
   executionStatus?: string
   /** Worktree path - if provided, shows "Open in IDE" button */
   worktreePath?: string | null
+  /** Diff expansion mode: 'inline' shows diff inline, 'modal' opens in full-screen modal (default: 'inline') */
+  diffMode?: 'inline' | 'modal'
 }
 
 /**
@@ -77,23 +84,144 @@ function getStatusBadge(status: 'A' | 'M' | 'D' | 'R') {
 /**
  * File change row component
  */
-function FileChangeRow({ file }: { file: FileChangeStat }) {
+function FileChangeRow({
+  file,
+  executionId,
+  mode = 'inline',
+}: {
+  file: FileChangeStat
+  executionId: string
+  mode?: 'inline' | 'modal'
+}) {
   const statusBadge = getStatusBadge(file.status)
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isLoadingDiff, setIsLoadingDiff] = useState(false)
+  const [diffContent, setDiffContent] = useState<{
+    oldContent: string
+    newContent: string
+  } | null>(null)
+
+  const fetchDiff = async () => {
+    if (diffContent) return // Already loaded
+
+    setIsLoadingDiff(true)
+    try {
+      const result = await executionsApi.getFileDiff(executionId, file.path)
+      console.log(`[CodeChangesPanel] Received diff for ${file.path}:`, {
+        oldContentLength: result.oldContent?.length || 0,
+        newContentLength: result.newContent?.length || 0,
+        oldContentPreview: result.oldContent?.substring(0, 100),
+        newContentPreview: result.newContent?.substring(0, 100),
+      })
+      setDiffContent({
+        oldContent: result.oldContent || '',
+        newContent: result.newContent || '',
+      })
+    } catch (error) {
+      console.error(`[CodeChangesPanel] Failed to load diff for ${file.path}:`, error)
+      const message = error instanceof Error ? error.message : 'Failed to load diff'
+      toast.error(message)
+    } finally {
+      setIsLoadingDiff(false)
+    }
+  }
+
+  const handleClick = async () => {
+    if (mode === 'modal') {
+      // Modal mode - open full-screen modal
+      if (!diffContent) {
+        await fetchDiff()
+      }
+      setIsModalOpen(true)
+    } else {
+      // Inline mode - toggle inline expansion
+      if (!isExpanded && !diffContent) {
+        await fetchDiff()
+        setIsExpanded(true)
+      } else {
+        setIsExpanded(!isExpanded)
+      }
+    }
+  }
 
   return (
-    <div className="flex items-start gap-2">
-      <FileText className="mt-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground" />
-      <div className="flex flex-1 items-baseline gap-2">
-        <span className={`text-[10px] ${statusBadge.color} shrink-0`}>{file.status}</span>
-        <span className="flex-1 truncate leading-relaxed" title={file.path}>
-          {file.path}
-        </span>
-        <div className="flex shrink-0 items-center gap-2">
-          {file.additions > 0 && <span className="text-green-600">+{file.additions}</span>}
-          {file.deletions > 0 && <span className="text-red-600">-{file.deletions}</span>}
-        </div>
+    <>
+      <div className="border-b border-border/50 last:border-0">
+        <button
+          onClick={handleClick}
+          className="flex w-full items-start gap-2 py-2 text-left transition-colors hover:bg-muted/50"
+          disabled={isLoadingDiff}
+        >
+          {isLoadingDiff ? (
+            <Loader2 className="mt-0.5 h-3 w-3 flex-shrink-0 animate-spin text-muted-foreground" />
+          ) : mode === 'modal' ? (
+            <Maximize2 className="mt-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground" />
+          ) : isExpanded ? (
+            <ChevronDown className="mt-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="mt-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground" />
+          )}
+          <FileText className="mt-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground" />
+          <div className="flex flex-1 items-baseline gap-2">
+            <span className={`text-[10px] ${statusBadge.color} shrink-0`}>{file.status}</span>
+            <span className="flex-1 truncate leading-relaxed" title={file.path}>
+              {file.path}
+            </span>
+            <div className="flex shrink-0 items-center gap-2">
+              {file.additions > 0 && <span className="text-green-600">+{file.additions}</span>}
+              {file.deletions > 0 && <span className="text-red-600">-{file.deletions}</span>}
+            </div>
+          </div>
+        </button>
+        {mode === 'inline' && isExpanded && diffContent && (
+          <div className="px-6 pb-3">
+            <DiffViewer
+              oldContent={diffContent.oldContent}
+              newContent={diffContent.newContent}
+              filePath={file.path}
+              maxLines={100}
+            />
+          </div>
+        )}
       </div>
-    </div>
+
+      {/* Modal for full-screen diff view (only in modal mode) */}
+      {mode === 'modal' && (
+        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+          <DialogContent className="flex h-[75vh] max-w-[75vw] flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 pr-8 font-mono text-sm">
+                <span className={`text-[10px] ${statusBadge.color}`}>{file.status}</span>
+                <span className="flex-1 truncate">{file.path}</span>
+                <div className="flex shrink-0 items-center gap-2 text-xs font-normal">
+                  {file.additions > 0 && <span className="text-green-600">+{file.additions}</span>}
+                  {file.deletions > 0 && <span className="text-red-600">-{file.deletions}</span>}
+                </div>
+                <button
+                  onClick={() => setIsModalOpen(false)}
+                  className="ml-2 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                >
+                  <X className="h-4 w-4" />
+                  <span className="sr-only">Close</span>
+                </button>
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 overflow-hidden">
+              {diffContent && (
+                <DiffViewer
+                  oldContent={diffContent.oldContent}
+                  newContent={diffContent.newContent}
+                  filePath={file.path}
+                  maxLines={10000} // Show full diff in modal
+                  sideBySide={true}
+                />
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
   )
 }
 
@@ -105,6 +233,7 @@ export function CodeChangesPanel({
   autoRefreshInterval,
   executionStatus,
   worktreePath,
+  diffMode = 'inline',
 }: CodeChangesPanelProps) {
   const { data, loading, error, refresh } = useExecutionChanges(executionId)
   const previousStatusRef = useRef<string | undefined>(executionStatus)
@@ -332,7 +461,12 @@ export function CodeChangesPanel({
               <div className="space-y-1">
                 {(showAllFiles ? committedFiles : committedFiles.slice(0, MAX_FILES_TO_SHOW)).map(
                   (file) => (
-                    <FileChangeRow key={file.path} file={file} />
+                    <FileChangeRow
+                      key={file.path}
+                      file={file}
+                      executionId={executionId}
+                      mode={diffMode}
+                    />
                   )
                 )}
               </div>
@@ -357,7 +491,12 @@ export function CodeChangesPanel({
                     ? uncommittedFiles
                     : uncommittedFiles.slice(0, remainingBudget)
                   return filesToShow.map((file) => (
-                    <FileChangeRow key={`uncommitted-${file.path}`} file={file} />
+                    <FileChangeRow
+                      key={`uncommitted-${file.path}`}
+                      file={file}
+                      executionId={executionId}
+                      mode={diffMode}
+                    />
                   ))
                 })()}
               </div>

@@ -109,7 +109,8 @@ export function createExecutionsRouter(): Router {
       }
 
       const issueId = req.query.issueId as string | undefined;
-      const sortBy = (req.query.sortBy as "created_at" | "updated_at") || undefined;
+      const sortBy =
+        (req.query.sortBy as "created_at" | "updated_at") || undefined;
       const order = (req.query.order as "asc" | "desc") || undefined;
 
       // Validate limit and offset
@@ -136,7 +137,8 @@ export function createExecutionsRouter(): Router {
         res.status(400).json({
           success: false,
           data: null,
-          message: "Invalid sortBy parameter. Must be 'created_at' or 'updated_at'",
+          message:
+            "Invalid sortBy parameter. Must be 'created_at' or 'updated_at'",
         });
         return;
       }
@@ -504,6 +506,68 @@ export function createExecutionsRouter(): Router {
           data: null,
           error_data: error instanceof Error ? error.message : String(error),
           message: "Failed to calculate changes",
+        });
+      }
+    }
+  );
+
+  /**
+   * GET /api/executions/:executionId/changes/file
+   *
+   * Get diff content for a specific file in an execution
+   *
+   * Query params:
+   * - filePath: Path to the file to get diff for
+   */
+  router.get(
+    "/executions/:executionId/changes/file",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+        const { filePath } = req.query;
+
+        if (!filePath || typeof filePath !== "string") {
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: "filePath query parameter is required",
+          });
+          return;
+        }
+
+        const db = req.project!.db;
+        const repoPath = req.project!.path;
+
+        // Create changes service
+        const changesService = new ExecutionChangesService(db, repoPath);
+
+        // Get file diff
+        const result = await changesService.getFileDiff(executionId, filePath);
+
+        if (!result.success) {
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: result.error || "Failed to get file diff",
+          });
+          return;
+        }
+
+        res.json({
+          success: true,
+          data: {
+            filePath,
+            oldContent: result.oldContent,
+            newContent: result.newContent,
+          },
+        });
+      } catch (error) {
+        console.error("[GET /executions/:id/changes/file] Error:", error);
+        res.status(500).json({
+          success: false,
+          data: null,
+          error_data: error instanceof Error ? error.message : String(error),
+          message: "Failed to get file diff",
         });
       }
     }

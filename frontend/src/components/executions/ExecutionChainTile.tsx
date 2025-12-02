@@ -401,6 +401,7 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
               }
               executionStatus={lastExecution.status}
               worktreePath={rootExecution.worktree_path}
+              diffMode="modal"
             />
           </div>
         )}

@@ -551,4 +551,251 @@ describe("ExecutionChangesService", () => {
       expect(result.captured!.files.some(f => f.path === "feature.ts")).toBe(true);
     });
   });
+
+  describe("getFileDiff", () => {
+    it("should return old and new content for a modified file", async () => {
+      // Create initial file
+      commitFile(testRepo, "test.ts", "const oldValue = 1;", "Initial");
+      const beforeCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Modify file
+      commitFile(testRepo, "test.ts", "const newValue = 2;", "Modified");
+      const afterCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Create execution
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit, after_commit)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run("exec-diff-1", "claude-code", "main", "main", "completed", beforeCommit, afterCommit);
+
+      // Get file diff
+      const result = await service.getFileDiff("exec-diff-1", "test.ts");
+
+      // Assertions
+      expect(result.success).toBe(true);
+      expect(result.oldContent).toBe("const oldValue = 1;");
+      expect(result.newContent).toBe("const newValue = 2;");
+    });
+
+    it("should return empty old content for a new file", async () => {
+      const beforeCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Add new file
+      commitFile(testRepo, "newfile.ts", "const newFile = true;", "Add new file");
+      const afterCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Create execution
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit, after_commit)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run("exec-diff-2", "claude-code", "main", "main", "completed", beforeCommit, afterCommit);
+
+      // Get file diff
+      const result = await service.getFileDiff("exec-diff-2", "newfile.ts");
+
+      // Assertions
+      expect(result.success).toBe(true);
+      expect(result.oldContent).toBe("");
+      expect(result.newContent).toBe("const newFile = true;");
+    });
+
+    it("should return empty new content for a deleted file", async () => {
+      // Create file
+      commitFile(testRepo, "todelete.ts", "const toDelete = true;", "Add file");
+      const beforeCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Delete file
+      fs.unlinkSync(path.join(testRepo, "todelete.ts"));
+      execSync("git add .", { cwd: testRepo, stdio: "pipe" });
+      execSync('git commit -m "Delete file"', { cwd: testRepo, stdio: "pipe" });
+      const afterCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Create execution
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit, after_commit)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run("exec-diff-3", "claude-code", "main", "main", "completed", beforeCommit, afterCommit);
+
+      // Get file diff
+      const result = await service.getFileDiff("exec-diff-3", "todelete.ts");
+
+      // Assertions
+      expect(result.success).toBe(true);
+      expect(result.oldContent).toBe("const toDelete = true;");
+      expect(result.newContent).toBe("");
+    });
+
+    it("should handle files with leading ./ in path", async () => {
+      // Create file
+      commitFile(testRepo, "withslash.ts", "const value = 1;", "Initial");
+      const beforeCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Modify file
+      commitFile(testRepo, "withslash.ts", "const value = 2;", "Modified");
+      const afterCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Create execution
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit, after_commit)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run("exec-diff-4", "claude-code", "main", "main", "completed", beforeCommit, afterCommit);
+
+      // Get file diff with leading ./
+      const result = await service.getFileDiff("exec-diff-4", "./withslash.ts");
+
+      // Should normalize path and find file
+      expect(result.success).toBe(true);
+      expect(result.oldContent).toBe("const value = 1;");
+      expect(result.newContent).toBe("const value = 2;");
+    });
+
+    it("should get content from worktree for uncommitted changes", async () => {
+      const beforeCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Create a worktree
+      const worktreePath = path.join(testRepo, "..", "test-worktree");
+      execSync(`git worktree add ${worktreePath}`, { cwd: testRepo, stdio: "pipe" });
+
+      // Create uncommitted file in worktree
+      fs.writeFileSync(
+        path.join(worktreePath, "uncommitted.ts"),
+        "const uncommitted = true;"
+      );
+
+      // Create execution with worktree
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit, worktree_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run("exec-diff-5", "claude-code", "main", "main", "running", beforeCommit, worktreePath);
+
+      // Get file diff
+      const result = await service.getFileDiff("exec-diff-5", "uncommitted.ts");
+
+      // Cleanup worktree (force because it has untracked files)
+      execSync(`git worktree remove --force ${worktreePath}`, { cwd: testRepo, stdio: "pipe" });
+
+      // Assertions
+      expect(result.success).toBe(true);
+      expect(result.oldContent).toBe(""); // File doesn't exist in before_commit
+      expect(result.newContent).toBe("const uncommitted = true;");
+    });
+
+    it("should return error for non-existent execution", async () => {
+      const result = await service.getFileDiff("non-existent", "file.ts");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Execution not found");
+    });
+
+    it("should return error for missing before_commit", async () => {
+      // Create execution without before_commit
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status)
+        VALUES (?, ?, ?, ?, ?)
+      `).run("exec-diff-6", "claude-code", "main", "main", "completed");
+
+      const result = await service.getFileDiff("exec-diff-6", "file.ts");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Missing before_commit");
+    });
+
+    it("should handle multiline content correctly", async () => {
+      // Create file with multiple lines
+      const oldContent = "line 1\nline 2\nline 3\n";
+      commitFile(testRepo, "multiline.ts", oldContent, "Initial");
+      const beforeCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Modify to different multiline content
+      const newContent = "new line 1\nline 2\nnew line 3\nline 4\n";
+      commitFile(testRepo, "multiline.ts", newContent, "Modified");
+      const afterCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Create execution
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit, after_commit)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run("exec-diff-7", "claude-code", "main", "main", "completed", beforeCommit, afterCommit);
+
+      // Get file diff
+      const result = await service.getFileDiff("exec-diff-7", "multiline.ts");
+
+      // Assertions
+      expect(result.success).toBe(true);
+      expect(result.oldContent).toBe(oldContent);
+      expect(result.newContent).toBe(newContent);
+    });
+
+    it("should work for follow-up executions using root execution's before_commit", async () => {
+      // Create root execution
+      const beforeCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      commitFile(testRepo, "root.ts", "const root = 1;", "Root change");
+      const rootAfterCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit, after_commit)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run("exec-root", "claude-code", "main", "main", "completed", beforeCommit, rootAfterCommit);
+
+      // Create follow-up execution
+      commitFile(testRepo, "root.ts", "const root = 2;", "Follow-up change");
+      const followupAfterCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit, after_commit, parent_execution_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run("exec-followup", "claude-code", "main", "main", "completed", rootAfterCommit, followupAfterCommit, "exec-root");
+
+      // Get file diff for follow-up (should use root's before_commit)
+      const result = await service.getFileDiff("exec-followup", "root.ts");
+
+      // Assertions - should compare against root's before_commit, not follow-up's
+      expect(result.success).toBe(true);
+      expect(result.oldContent).toBe(""); // File didn't exist in root's before_commit
+      expect(result.newContent).toBe("const root = 2;");
+    });
+  });
 });
