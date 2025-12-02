@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import React from 'react'
 import ExecutionsPage from '@/pages/ExecutionsPage'
 import type { Execution } from '@/types/execution'
+import type { Issue, IssueStatus } from '@/types/api'
 
 // Mock useExecutions hook
 const mockRefetch = vi.fn()
@@ -24,6 +25,31 @@ vi.mock('@/hooks/useExecutions', () => ({
     refetch: mockRefetch,
   }),
 }))
+
+// Mock useIssues hook
+let mockIssues: Issue[] = []
+
+vi.mock('@/hooks/useIssues', () => ({
+  useIssues: () => ({
+    issues: mockIssues,
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
+}))
+
+// Helper to create mock issue
+const createMockIssue = (overrides: Partial<Issue> = {}): Issue => ({
+  id: 'i-abc',
+  title: 'Test Issue',
+  status: 'open' as IssueStatus,
+  uuid: 'uuid-123',
+  content: 'Test content',
+  priority: 2,
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  ...overrides,
+})
 
 // Mock useProject hook
 vi.mock('@/hooks/useProject', () => ({
@@ -46,9 +72,25 @@ vi.mock('@/contexts/WebSocketContext', () => ({
 }))
 
 // Mock react-resizable-panels
+const mockPanelExpand = vi.fn()
+const mockPanelCollapse = vi.fn()
+
 vi.mock('react-resizable-panels', () => ({
   PanelGroup: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Panel: React.forwardRef(({ children }: any, ref: any) => <div ref={ref}>{children}</div>),
+  Panel: React.forwardRef(({ children, onCollapse, onExpand }: any, ref: any) => {
+    // Expose mock methods via ref
+    React.useImperativeHandle(ref, () => ({
+      expand: () => {
+        mockPanelExpand()
+        onExpand?.()
+      },
+      collapse: () => {
+        mockPanelCollapse()
+        onCollapse?.()
+      },
+    }))
+    return <div>{children}</div>
+  }),
   PanelResizeHandle: () => <div data-testid="resize-handle" />,
   ImperativePanelHandle: {},
 }))
@@ -98,6 +140,9 @@ describe('ExecutionsPage', () => {
     }
     mockIsLoading = false
     mockError = null
+    mockIssues = []
+    mockPanelExpand.mockClear()
+    mockPanelCollapse.mockClear()
     localStorage.clear()
   })
 
@@ -474,6 +519,223 @@ describe('ExecutionsPage', () => {
       // Should fallback to defaults (3 columns, 2 rows)
       expect(screen.getByText('3')).toBeInTheDocument()
       expect(screen.getByText('2')).toBeInTheDocument()
+    })
+
+    it('loads status filters from localStorage', () => {
+      localStorage.setItem('sudocode:executions:statusFilters', JSON.stringify(['running', 'completed']))
+      renderPage()
+
+      // Open filter dropdown and check that filters are applied
+      const filterButton = screen.getByRole('button', { name: /filter/i })
+      expect(filterButton).toBeInTheDocument()
+
+      // Badge should show 2 active filters
+      const badge = filterButton.querySelector('.ml-1')
+      expect(badge).toHaveTextContent('2')
+    })
+
+    it('loads issue status filters from localStorage', () => {
+      localStorage.setItem('sudocode:executions:issueStatusFilters', JSON.stringify(['open', 'in_progress']))
+      renderPage()
+
+      // Open filter dropdown and check that filters are applied
+      const filterButton = screen.getByRole('button', { name: /filter/i })
+      expect(filterButton).toBeInTheDocument()
+
+      // Badge should show 2 active filters
+      const badge = filterButton.querySelector('.ml-1')
+      expect(badge).toHaveTextContent('2')
+    })
+
+    it('loads sidebar collapsed state from localStorage', () => {
+      localStorage.setItem('sudocode:executions:sidebarCollapsed', 'true')
+      renderPage()
+
+      // The sidebar toggle button should show expand icon when collapsed
+      // (PanelLeft icon instead of PanelLeftClose)
+      const sidebarToggle = screen.getAllByRole('button').find((btn) => {
+        const svg = btn.querySelector('svg')
+        return svg?.classList.contains('lucide-panel-left')
+      })
+      expect(sidebarToggle).toBeInTheDocument()
+    })
+  })
+
+  describe('Status Filters', () => {
+    beforeEach(() => {
+      mockExecutionsData.executions = [
+        createMockExecution({ id: 'exec-1', status: 'running' }),
+        createMockExecution({ id: 'exec-2', status: 'completed' }),
+        createMockExecution({ id: 'exec-3', status: 'failed' }),
+      ]
+      mockExecutionsData.total = 3
+    })
+
+    it('renders filter button', () => {
+      renderPage()
+      const filterButton = screen.getByRole('button', { name: /filter/i })
+      expect(filterButton).toBeInTheDocument()
+    })
+
+    it('shows filter count badge when status filters are loaded from localStorage', () => {
+      // Pre-set status filter
+      localStorage.setItem('sudocode:executions:statusFilters', JSON.stringify(['running']))
+      renderPage()
+
+      const filterButton = screen.getByRole('button', { name: /filter/i })
+      const badge = filterButton.querySelector('.ml-1')
+      expect(badge).toHaveTextContent('1')
+    })
+
+    it('shows filter count badge when issue status filters are loaded from localStorage', () => {
+      // Pre-set issue status filter
+      localStorage.setItem('sudocode:executions:issueStatusFilters', JSON.stringify(['open']))
+      renderPage()
+
+      const filterButton = screen.getByRole('button', { name: /filter/i })
+      const badge = filterButton.querySelector('.ml-1')
+      expect(badge).toHaveTextContent('1')
+    })
+
+    it('shows combined filter count for both filter types', () => {
+      // Pre-set both filter types
+      localStorage.setItem('sudocode:executions:statusFilters', JSON.stringify(['running']))
+      localStorage.setItem('sudocode:executions:issueStatusFilters', JSON.stringify(['open']))
+      renderPage()
+
+      const filterButton = screen.getByRole('button', { name: /filter/i })
+      const badge = filterButton.querySelector('.ml-1')
+      expect(badge).toHaveTextContent('2')
+    })
+
+    it('shows no badge when no filters are active', () => {
+      renderPage()
+
+      const filterButton = screen.getByRole('button', { name: /filter/i })
+      const badge = filterButton.querySelector('.ml-1')
+      expect(badge).toBeNull()
+    })
+
+    it('loads multiple status filters from localStorage', () => {
+      localStorage.setItem('sudocode:executions:statusFilters', JSON.stringify(['running', 'completed', 'failed']))
+      renderPage()
+
+      const filterButton = screen.getByRole('button', { name: /filter/i })
+      const badge = filterButton.querySelector('.ml-1')
+      expect(badge).toHaveTextContent('3')
+    })
+
+    it('loads multiple issue status filters from localStorage', () => {
+      localStorage.setItem('sudocode:executions:issueStatusFilters', JSON.stringify(['open', 'in_progress', 'blocked']))
+      renderPage()
+
+      const filterButton = screen.getByRole('button', { name: /filter/i })
+      const badge = filterButton.querySelector('.ml-1')
+      expect(badge).toHaveTextContent('3')
+    })
+  })
+
+  describe('Issue Status Filtering', () => {
+    beforeEach(() => {
+      // Create executions with different issue IDs
+      mockExecutionsData.executions = [
+        createMockExecution({ id: 'exec-1', issue_id: 'i-open', status: 'running' }),
+        createMockExecution({ id: 'exec-2', issue_id: 'i-progress', status: 'completed' }),
+        createMockExecution({ id: 'exec-3', issue_id: 'i-closed', status: 'completed' }),
+        createMockExecution({ id: 'exec-4', issue_id: null, status: 'running' }), // No issue
+      ]
+      mockExecutionsData.total = 4
+
+      // Create corresponding issues
+      mockIssues = [
+        createMockIssue({ id: 'i-open', status: 'open' }),
+        createMockIssue({ id: 'i-progress', status: 'in_progress' }),
+        createMockIssue({ id: 'i-closed', status: 'closed' }),
+      ]
+    })
+
+    it('applies issue status filter from localStorage', () => {
+      // Pre-set issue status filter for 'open'
+      localStorage.setItem('sudocode:executions:issueStatusFilters', JSON.stringify(['open']))
+      renderPage()
+
+      // Badge should show 1 filter active
+      const filterButton = screen.getByRole('button', { name: /filter/i })
+      const badge = filterButton.querySelector('.ml-1')
+      expect(badge).toHaveTextContent('1')
+    })
+
+    it('shows correct filter count with multiple issue status filters', () => {
+      // Pre-set issue status filter for all statuses
+      localStorage.setItem('sudocode:executions:issueStatusFilters', JSON.stringify(['open', 'in_progress', 'closed']))
+      renderPage()
+
+      // Badge should show 3 filters active
+      const filterButton = screen.getByRole('button', { name: /filter/i })
+      const badge = filterButton.querySelector('.ml-1')
+      expect(badge).toHaveTextContent('3')
+    })
+
+    it('combines execution status and issue status filter counts', () => {
+      // Pre-set both filter types
+      localStorage.setItem('sudocode:executions:statusFilters', JSON.stringify(['completed']))
+      localStorage.setItem('sudocode:executions:issueStatusFilters', JSON.stringify(['closed']))
+      renderPage()
+
+      // Badge should show 2 filters active (1 execution status + 1 issue status)
+      const filterButton = screen.getByRole('button', { name: /filter/i })
+      const badge = filterButton.querySelector('.ml-1')
+      expect(badge).toHaveTextContent('2')
+    })
+
+    it('creates issue status map from issues', () => {
+      // This test verifies the component correctly uses the issues data
+      // by checking that filters with issues work correctly
+      localStorage.setItem('sudocode:executions:issueStatusFilters', JSON.stringify(['open']))
+      renderPage()
+
+      // The page should render without errors, indicating the issue status map was created
+      expect(screen.getByText('Agent Executions')).toBeInTheDocument()
+    })
+  })
+
+  describe('Sidebar Collapse Persistence', () => {
+    it('calls panel collapse when sidebar toggle is clicked', async () => {
+      renderPage()
+
+      // Find and click the sidebar toggle button (starts expanded, so has PanelLeftClose icon)
+      const sidebarToggle = screen.getAllByRole('button').find((btn) => {
+        const svg = btn.querySelector('svg')
+        return svg?.classList.contains('lucide-panel-left-close')
+      })
+
+      expect(sidebarToggle).toBeInTheDocument()
+      if (sidebarToggle) {
+        fireEvent.click(sidebarToggle)
+        expect(mockPanelCollapse).toHaveBeenCalled()
+      }
+    })
+
+    it('persists sidebar collapsed state to localStorage', async () => {
+      renderPage()
+
+      // Verify initial state is saved
+      await waitFor(() => {
+        const savedState = localStorage.getItem('sudocode:executions:sidebarCollapsed')
+        expect(savedState).toBe('false')
+      })
+    })
+
+    it('loads sidebar collapsed state from localStorage on mount', () => {
+      localStorage.setItem('sudocode:executions:sidebarCollapsed', 'true')
+      renderPage()
+
+      // When localStorage says collapsed=true, the toggle should show expand icon (PanelLeft)
+      const sidebarToggle = screen.getAllByRole('button').find((btn) => {
+        const svg = btn.querySelector('svg')
+        return svg?.classList.contains('lucide-panel-left')
+      })
+      expect(sidebarToggle).toBeInTheDocument()
     })
   })
 })

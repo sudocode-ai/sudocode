@@ -255,12 +255,13 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
         ))}
       </div>
 
-      {/* Sticky Footer - AgentConfigPanel for follow-ups */}
+      {/* Sticky Footer - AgentConfigPanel for follow-ups (compact mode) */}
       <div
-        className="sticky bottom-0 z-10 border-t bg-card px-2"
+        className="sticky bottom-0 z-10 border-t bg-card px-2 py-2"
         onClick={(e) => e.stopPropagation()}
       >
         <AgentConfigPanel
+          variant="compact"
           issueId={rootExecution.issue_id || ''}
           onStart={handleFollowUpStart}
           disabled={submittingFollowUp}

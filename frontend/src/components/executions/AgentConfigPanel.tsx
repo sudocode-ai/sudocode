@@ -38,6 +38,12 @@ interface AgentConfigPanelProps {
   disabled?: boolean
   onSelectOpenChange?: (isOpen: boolean) => void
   /**
+   * Display variant:
+   * - 'full': Show all configuration options (agent, mode, branch, settings)
+   * - 'compact': Show only textarea and submit/cancel buttons inline
+   */
+  variant?: 'full' | 'compact'
+  /**
    * Follow-up mode: locks config options and shows inherited values
    */
   isFollowUp?: boolean
@@ -234,6 +240,7 @@ export function AgentConfigPanel({
   onStart,
   disabled = false,
   onSelectOpenChange,
+  variant = 'full',
   isFollowUp = false,
   lastExecution,
   promptPlaceholder,
@@ -440,11 +447,12 @@ export function AgentConfigPanel({
     setSelectedAgentType(loadAgentTypeForIssue())
   }, [issueId, lastExecution?.id, isFollowUp])
 
-  // Load branches and repository info (skip for follow-ups)
+  // Load branches and repository info (skip for follow-ups and compact mode)
   useEffect(() => {
     // Skip for follow-ups - we use parent execution config
-    if (isFollowUp) {
-      setLoading(false) // Ensure loading is false for follow-ups
+    // Skip for compact mode - we don't show config options
+    if (isFollowUp || variant === 'compact') {
+      setLoading(false) // Ensure loading is false
       return
     }
 
@@ -487,7 +495,7 @@ export function AgentConfigPanel({
     return () => {
       isMounted = false
     }
-  }, [issueId, isFollowUp])
+  }, [issueId, isFollowUp, variant])
 
   // Auto-focus textarea when panel opens or issue changes
   useEffect(() => {
@@ -563,6 +571,61 @@ export function AgentConfigPanel({
   // Note: We don't block based on agent availability - we just show warnings
   // Users can still attempt to run unavailable agents (will fail at execution time)
   const canStart = !loading && (prompt.trim().length > 0 || !isFollowUp) && !disabled
+
+  // Compact mode: inline textarea with submit/cancel button
+  if (variant === 'compact') {
+    return (
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <ContextSearchTextarea
+            ref={textareaRef}
+            value={prompt}
+            onChange={setPrompt}
+            onKeyDown={handleKeyDown}
+            placeholder={
+              isRunning
+                ? 'Execution is running (esc to cancel)'
+                : promptPlaceholder || 'Send feedback to the agent... (@ for context)'
+            }
+            disabled={loading || disabled}
+            className="max-h-[150px] min-h-0 resize-none overflow-y-auto border-none bg-muted/80 py-2 text-sm shadow-none transition-[height] duration-100 focus-visible:ring-0 focus-visible:ring-offset-0"
+            projectId={currentProjectId || ''}
+            autoResize
+            maxHeight={150}
+          />
+        </div>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={isRunning && isHoveringButton ? onCancel : handleStart}
+                disabled={isRunning ? isCancelling : !canStart}
+                size="sm"
+                onMouseEnter={() => setIsHoveringButton(true)}
+                onMouseLeave={() => setIsHoveringButton(false)}
+                className="h-7 w-7 shrink-0 rounded-full p-0"
+                variant={isRunning && isHoveringButton ? 'destructive' : 'default'}
+                aria-label={isRunning ? (isHoveringButton ? 'Cancel' : 'Running...') : 'Submit'}
+              >
+                {isRunning ? (
+                  isHoveringButton ? (
+                    <Square className="h-3 w-3" />
+                  ) : (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )
+                ) : (
+                  <ArrowDown className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {isRunning ? (isHoveringButton ? 'Cancel' : 'Running...') : 'Submit'}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-2 py-2">

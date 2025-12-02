@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { PanelGroup, Panel, PanelResizeHandle, ImperativePanelHandle } from 'react-resizable-panels'
 import {
   Minus,
@@ -23,10 +23,16 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ExecutionsSidebar } from '@/components/executions/ExecutionsSidebar'
 import { ExecutionsGrid } from '@/components/executions/ExecutionsGrid'
 import { useExecutions } from '@/hooks/useExecutions'
-import type { ExecutionStatus } from '@/types/execution'
+import { useIssues } from '@/hooks/useIssues'
+import type { Execution, ExecutionStatus } from '@/types/execution'
+import type { IssueStatus } from '@/types/api'
 
+// localStorage keys for persistence
 const GRID_COLUMNS_STORAGE_KEY = 'sudocode:executions:gridColumns'
 const GRID_ROWS_STORAGE_KEY = 'sudocode:executions:gridRows'
+const STATUS_FILTERS_STORAGE_KEY = 'sudocode:executions:statusFilters'
+const ISSUE_STATUS_FILTERS_STORAGE_KEY = 'sudocode:executions:issueStatusFilters'
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sudocode:executions:sidebarCollapsed'
 
 // Column and row limits
 const MIN_COLUMNS = 1
@@ -36,6 +42,34 @@ const MAX_ROWS = 3
 
 // All possible execution statuses
 const ALL_STATUSES: ExecutionStatus[] = ['running', 'completed', 'failed', 'cancelled', 'stopped']
+
+// All possible issue statuses
+const ALL_ISSUE_STATUSES: IssueStatus[] = ['open', 'in_progress', 'blocked', 'needs_review', 'closed']
+
+// Helper to load Set from localStorage
+function loadSetFromStorage<T extends string>(key: string): Set<T> {
+  try {
+    const saved = localStorage.getItem(key)
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      if (Array.isArray(parsed)) {
+        return new Set(parsed as T[])
+      }
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return new Set()
+}
+
+// Helper to save Set to localStorage
+function saveSetToStorage<T extends string>(key: string, set: Set<T>): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(Array.from(set)))
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 /**
  * ExecutionsPage Component
@@ -50,9 +84,30 @@ export default function ExecutionsPage() {
   // Fetch all root executions (displayed as chains with follow-ups) using React Query hook
   const { data: executionsData, isLoading, error, refetch } = useExecutions()
 
+  // Fetch issues to get issue status for filtering
+  const { issues } = useIssues()
+
+  // Create a map of issue_id to issue status for quick lookup
+  const issueStatusMap = useMemo(() => {
+    const map = new Map<string, IssueStatus>()
+    for (const issue of issues) {
+      map.set(issue.id, issue.status)
+    }
+    return map
+  }, [issues])
+
   // Sidebar panel ref for programmatic control
   const sidebarPanelRef = useRef<ImperativePanelHandle>(null)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+
+  // Sidebar collapsed state (persisted to localStorage)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)
+      return saved ? JSON.parse(saved) : false
+    } catch {
+      return false
+    }
+  })
 
   // Grid columns (1-5, persisted to localStorage)
   const [columns, setColumns] = useState<number>(() => {
@@ -68,8 +123,15 @@ export default function ExecutionsPage() {
     return parsed >= MIN_ROWS && parsed <= MAX_ROWS ? parsed : 2
   })
 
-  // Status filters (Set for O(1) lookup)
-  const [statusFilters, setStatusFilters] = useState<Set<ExecutionStatus>>(new Set())
+  // Status filters (Set for O(1) lookup, persisted to localStorage)
+  const [statusFilters, setStatusFilters] = useState<Set<ExecutionStatus>>(() =>
+    loadSetFromStorage<ExecutionStatus>(STATUS_FILTERS_STORAGE_KEY)
+  )
+
+  // Issue status filters (Set for O(1) lookup, persisted to localStorage)
+  const [issueStatusFilters, setIssueStatusFilters] = useState<Set<IssueStatus>>(() =>
+    loadSetFromStorage<IssueStatus>(ISSUE_STATUS_FILTERS_STORAGE_KEY)
+  )
 
   // Visible execution IDs (Set for O(1) lookup)
   // Default: show all executions
@@ -96,6 +158,25 @@ export default function ExecutionsPage() {
   useEffect(() => {
     localStorage.setItem(GRID_ROWS_STORAGE_KEY, rows.toString())
   }, [rows])
+
+  // Persist status filters to localStorage
+  useEffect(() => {
+    saveSetToStorage(STATUS_FILTERS_STORAGE_KEY, statusFilters)
+  }, [statusFilters])
+
+  // Persist issue status filters to localStorage
+  useEffect(() => {
+    saveSetToStorage(ISSUE_STATUS_FILTERS_STORAGE_KEY, issueStatusFilters)
+  }, [issueStatusFilters])
+
+  // Persist sidebar collapsed state to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, JSON.stringify(sidebarCollapsed))
+    } catch {
+      // Ignore storage errors
+    }
+  }, [sidebarCollapsed])
 
   // Toggle execution visibility
   const handleToggleVisibility = useCallback((executionId: string) => {
@@ -132,12 +213,49 @@ export default function ExecutionsPage() {
     [statusFilters]
   )
 
-  // Toggle all executions (show/hide all) - respects status filters
+  // Handle issue status filter toggle
+  const handleIssueStatusToggle = useCallback(
+    (status: IssueStatus) => {
+      const newFilters = new Set(issueStatusFilters)
+      if (newFilters.has(status)) {
+        newFilters.delete(status)
+      } else {
+        newFilters.add(status)
+      }
+      setIssueStatusFilters(newFilters)
+    },
+    [issueStatusFilters]
+  )
+
+  // Helper function to apply all filters to executions
+  const applyFilters = useCallback(
+    (executions: Execution[]) => {
+      let filtered = executions
+
+      // Apply execution status filter
+      if (statusFilters.size > 0) {
+        filtered = filtered.filter((e) => statusFilters.has(e.status))
+      }
+
+      // Apply issue status filter
+      if (issueStatusFilters.size > 0) {
+        filtered = filtered.filter((e) => {
+          if (!e.issue_id) return false // Exclude executions without issues
+          const issueStatus = issueStatusMap.get(e.issue_id)
+          return issueStatus && issueStatusFilters.has(issueStatus)
+        })
+      }
+
+      return filtered
+    },
+    [statusFilters, issueStatusFilters, issueStatusMap]
+  )
+
+  // Toggle all executions (show/hide all) - respects all filters
   const handleToggleAll = useCallback(() => {
     const executions = executionsData?.executions || []
-    // Apply status filter
-    const filteredExecutions =
-      statusFilters.size === 0 ? executions : executions.filter((e) => statusFilters.has(e.status))
+    // Apply all filters
+    const filteredExecutions = applyFilters(executions)
 
     const allVisible = filteredExecutions.every((e) => visibleExecutionIds.has(e.id))
 
@@ -158,14 +276,13 @@ export default function ExecutionsPage() {
       })
     }
     setCurrentPage(0)
-  }, [executionsData, visibleExecutionIds, statusFilters])
+  }, [executionsData, visibleExecutionIds, applyFilters])
 
   // Calculate pagination
   const executions = executionsData?.executions || []
 
-  // Filter by status if filters are applied
-  const filteredExecutions =
-    statusFilters.size === 0 ? executions : executions.filter((e) => statusFilters.has(e.status))
+  // Apply all filters
+  const filteredExecutions = applyFilters(executions)
 
   // Filter by visibility
   const visibleExecutions = filteredExecutions.filter((e) => visibleExecutionIds.has(e.id))
@@ -182,7 +299,7 @@ export default function ExecutionsPage() {
   // Reset to first page when filters change
   useEffect(() => {
     setCurrentPage(0)
-  }, [statusFilters])
+  }, [statusFilters, issueStatusFilters])
 
   // Keyboard navigation for pagination
   useEffect(() => {
@@ -297,15 +414,15 @@ export default function ExecutionsPage() {
               <Button variant="outline" size="sm" className="h-8 gap-1">
                 <Filter className="h-3.5 w-3.5" />
                 Filter
-                {statusFilters.size > 0 && (
+                {(statusFilters.size > 0 || issueStatusFilters.size > 0) && (
                   <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
-                    {statusFilters.size}
+                    {statusFilters.size + issueStatusFilters.size}
                   </Badge>
                 )}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-48">
-              <DropdownMenuLabel className="text-xs">Status Filters</DropdownMenuLabel>
+              <DropdownMenuLabel className="text-xs">Execution Status</DropdownMenuLabel>
               <DropdownMenuSeparator />
               {ALL_STATUSES.map((status) => (
                 <DropdownMenuCheckboxItem
@@ -315,6 +432,19 @@ export default function ExecutionsPage() {
                   className="text-xs capitalize"
                 >
                   {status}
+                </DropdownMenuCheckboxItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-xs">Issue Status</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {ALL_ISSUE_STATUSES.map((status) => (
+                <DropdownMenuCheckboxItem
+                  key={`issue-${status}`}
+                  checked={issueStatusFilters.has(status)}
+                  onCheckedChange={() => handleIssueStatusToggle(status)}
+                  className="text-xs capitalize"
+                >
+                  {status.replace('_', ' ')}
                 </DropdownMenuCheckboxItem>
               ))}
             </DropdownMenuContent>

@@ -17,6 +17,7 @@ import {
   PauseCircle,
   ListIcon,
   ChevronLeft,
+  GitBranch,
 } from 'lucide-react'
 
 export interface ExecutionsSidebarProps {
@@ -201,11 +202,7 @@ export function ExecutionsSidebar({
         <div className="border-b p-3">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Checkbox
-                checked={allChecked}
-                onCheckedChange={onToggleAll}
-                className="h-4 w-4"
-              />
+              <Checkbox checked={allChecked} onCheckedChange={onToggleAll} className="h-4 w-4" />
               <span className="text-sm text-muted-foreground">All</span>
             </div>
             {onToggleCollapse && (
@@ -235,11 +232,7 @@ export function ExecutionsSidebar({
         {/* Title row */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Checkbox
-              checked={allChecked}
-              onCheckedChange={onToggleAll}
-              className="h-4 w-4"
-            />
+            <Checkbox checked={allChecked} onCheckedChange={onToggleAll} className="h-4 w-4" />
             <span className="text-sm text-muted-foreground">All</span>
             <Badge variant="secondary" className="text-xs">
               {executions.length}
@@ -300,8 +293,8 @@ export function ExecutionsSidebar({
 
                   {/* Branch name */}
                   {execution.branch_name && (
-                    <div className="mb-1 flex min-w-0 items-center gap-1">
-                      <span className="flex-shrink-0 text-xs text-muted-foreground">Branch:</span>
+                    <div className="mb-1 flex min-w-0 items-center gap-1 text-muted-foreground">
+                      <GitBranch className="h-3 w-3 shrink-0" />
                       <span className="min-w-0 truncate font-mono text-xs">
                         {execution.branch_name}
                       </span>
