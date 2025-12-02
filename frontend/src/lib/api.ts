@@ -309,6 +309,9 @@ export const executionsApi = {
   syncPreserve: (executionId: string, request?: PerformSyncRequest) =>
     post<SyncResult>(`/executions/${executionId}/sync/preserve`, request),
 
+  syncStage: (executionId: string) =>
+    post<SyncResult>(`/executions/${executionId}/sync/stage`),
+
   // Commit uncommitted changes
   commit: (executionId: string, request: { message: string }) =>
     post<{ commitSha: string; filesCommitted: number; branch: string }>(

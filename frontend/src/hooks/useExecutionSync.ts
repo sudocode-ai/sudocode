@@ -63,6 +63,9 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
       mode: SyncMode
       commitMessage?: string
     }) => {
+      if (mode === 'stage') {
+        return executionsApi.syncStage(executionId)
+      }
       const request = commitMessage ? { mode, commitMessage } : { mode }
       return mode === 'squash'
         ? executionsApi.syncSquash(executionId, request)

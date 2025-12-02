@@ -41,6 +41,8 @@ interface CodeChangesPanelProps {
   worktreePath?: string | null
   /** Diff expansion mode: 'inline' shows diff inline, 'modal' opens in full-screen modal (default: 'inline') */
   diffMode?: 'inline' | 'modal'
+  /** Refresh trigger - increment this value to force a refresh of changes data */
+  refreshTrigger?: number
 }
 
 /**
@@ -234,6 +236,7 @@ export function CodeChangesPanel({
   executionStatus,
   worktreePath,
   diffMode = 'inline',
+  refreshTrigger,
 }: CodeChangesPanelProps) {
   const { data, loading, error, refresh } = useExecutionChanges(executionId)
   const previousStatusRef = useRef<string | undefined>(executionStatus)
@@ -313,6 +316,18 @@ export function CodeChangesPanel({
       refresh()
     }
   }, [executionStatus, executionId, refresh])
+
+  console.log('REFRESH TRIGGER:', refreshTrigger)
+  // Refresh when refreshTrigger changes (e.g., after commit)
+  // Skip initial value of 0, only refresh when it increments
+  useEffect(() => {
+    if (refreshTrigger && refreshTrigger > 0) {
+      console.log(
+        `[CodeChangesPanel] Refresh triggered (${refreshTrigger}) for execution ${executionId}`
+      )
+      refresh()
+    }
+  }, [refreshTrigger, executionId, refresh])
 
   // Show loading state only on initial load (when we have no data yet)
   if (loading && !data) {

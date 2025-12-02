@@ -498,8 +498,7 @@ export function AgentConfigPanel({
           // Use current branch if stored baseBranch is not valid for this project
           setConfig((prev) => {
             const storedBranch = prev.baseBranch
-            const isStoredBranchValid =
-              storedBranch && branchInfo.branches.includes(storedBranch)
+            const isStoredBranchValid = storedBranch && branchInfo.branches.includes(storedBranch)
 
             if (isStoredBranchValid) {
               // Keep the stored branch - it's valid for this project
@@ -965,7 +964,6 @@ export function AgentConfigPanel({
       {/* Sync Preview Dialog */}
       {currentExecution && syncPreview && (
         <SyncPreviewDialog
-          execution={currentExecution}
           preview={syncPreview}
           isOpen={isSyncPreviewOpen}
           onClose={() => setIsSyncPreviewOpen(false)}

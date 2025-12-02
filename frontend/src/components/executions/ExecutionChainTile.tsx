@@ -256,7 +256,8 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
                       const hasUncommitted =
                         changes.available &&
                         ((changes.uncommittedSnapshot?.files?.length ?? 0) > 0 ||
-                          (changes.captured?.uncommitted && (changes.captured?.files?.length ?? 0) > 0))
+                          (changes.captured?.uncommitted &&
+                            (changes.captured?.files?.length ?? 0) > 0))
                       setHasUncommittedChanges(hasUncommitted)
                     }
                   } catch (err) {
@@ -638,7 +639,6 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
       {/* Sync Preview Dialog */}
       {lastExecution && syncPreview && (
         <SyncPreviewDialog
-          execution={lastExecution}
           preview={syncPreview}
           isOpen={isSyncPreviewOpen}
           onClose={() => setIsSyncPreviewOpen(false)}

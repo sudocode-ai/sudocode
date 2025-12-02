@@ -263,7 +263,6 @@ export default function WorktreesPage() {
       {/* Sync Dialogs */}
       {syncPreview && selectedWorktree && (
         <SyncPreviewDialog
-          execution={selectedWorktree}
           preview={syncPreview}
           isOpen={isSyncPreviewOpen}
           onClose={() => setIsSyncPreviewOpen(false)}

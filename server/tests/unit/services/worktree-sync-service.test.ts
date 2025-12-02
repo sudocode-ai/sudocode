@@ -860,6 +860,243 @@ describe("WorktreeSyncService Foundation", () => {
     });
   });
 
+  describe("stageSync", () => {
+    it("should stage changes without committing", async () => {
+      // Create worktree with changes
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      execSync(`git worktree add ${worktreePath} -b stage-test-branch`, {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Add files in worktree
+      fs.writeFileSync(path.join(worktreePath, "staged-file.ts"), "staged content");
+      execSync("git add staged-file.ts", { cwd: worktreePath, stdio: "pipe" });
+      execSync('git commit -m "Add staged file"', {
+        cwd: worktreePath,
+        stdio: "pipe",
+      });
+
+      // Get initial commit count on main
+      const initialCommitCount = execSync("git rev-list --count main", {
+        cwd: testRepo,
+        encoding: "utf8",
+        stdio: "pipe",
+      }).trim();
+
+      // Create execution
+      createExecution(db, {
+        id: "exec-stage-1",
+        worktree_path: worktreePath,
+        branch_name: "stage-test-branch",
+        target_branch: "main",
+        status: "completed",
+      });
+
+      // Perform stage sync
+      const result = await service.stageSync("exec-stage-1");
+
+      expect(result.success).toBe(true);
+      expect(result.filesChanged).toBeGreaterThan(0);
+
+      // Verify files are staged (not committed)
+      const status = execSync("git status --porcelain", {
+        cwd: testRepo,
+        encoding: "utf8",
+        stdio: "pipe",
+      });
+      expect(status).toContain("staged-file.ts");
+
+      // Verify no new commit was created (commit count unchanged)
+      const finalCommitCount = execSync("git rev-list --count main", {
+        cwd: testRepo,
+        encoding: "utf8",
+        stdio: "pipe",
+      }).trim();
+      expect(finalCommitCount).toBe(initialCommitCount);
+    });
+
+    it("should return error when code conflicts exist", async () => {
+      // Create worktree
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      execSync(`git worktree add ${worktreePath} -b stage-conflict-branch`, {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Create conflicting changes
+      // Change in main
+      fs.writeFileSync(path.join(testRepo, "stage-conflict.ts"), "main content");
+      execSync("git add stage-conflict.ts", { cwd: testRepo, stdio: "pipe" });
+      execSync('git commit -m "Add conflict file in main"', {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Different change in worktree
+      fs.writeFileSync(
+        path.join(worktreePath, "stage-conflict.ts"),
+        "worktree content"
+      );
+      execSync("git add stage-conflict.ts", { cwd: worktreePath, stdio: "pipe" });
+      execSync('git commit -m "Add conflict file in worktree"', {
+        cwd: worktreePath,
+        stdio: "pipe",
+      });
+
+      // Create execution
+      createExecution(db, {
+        id: "exec-stage-conflict-1",
+        worktree_path: worktreePath,
+        branch_name: "stage-conflict-branch",
+        target_branch: "main",
+        status: "completed",
+      });
+
+      // Perform stage sync
+      const result = await service.stageSync("exec-stage-conflict-1");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("code conflict(s) detected");
+    });
+
+    it("should handle uncommitted JSONL files", async () => {
+      // Create worktree
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      execSync(`git worktree add ${worktreePath} -b stage-jsonl-branch`, {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Create .sudocode directory and add a committed file first
+      const sudocodeDir = path.join(worktreePath, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
+      fs.writeFileSync(path.join(sudocodeDir, ".gitkeep"), "");
+      execSync("git add .sudocode/.gitkeep", {
+        cwd: worktreePath,
+        stdio: "pipe",
+      });
+      execSync('git commit -m "Add .sudocode"', {
+        cwd: worktreePath,
+        stdio: "pipe",
+      });
+
+      // Add uncommitted JSONL file
+      fs.writeFileSync(
+        path.join(sudocodeDir, "issues.jsonl"),
+        '{"id":"i-stage-001","title":"Stage test"}\n'
+      );
+
+      // Create execution
+      createExecution(db, {
+        id: "exec-stage-jsonl-1",
+        worktree_path: worktreePath,
+        branch_name: "stage-jsonl-branch",
+        target_branch: "main",
+        status: "completed",
+      });
+
+      // Perform stage sync
+      const result = await service.stageSync("exec-stage-jsonl-1");
+
+      expect(result.success).toBe(true);
+      expect(result.uncommittedJSONLIncluded).toBe(true);
+    });
+
+    it("should throw error for non-existent execution", async () => {
+      await expect(service.stageSync("nonexistent")).rejects.toThrow(
+        WorktreeSyncError
+      );
+
+      try {
+        await service.stageSync("nonexistent");
+      } catch (error: any) {
+        expect(error.code).toBe(WorktreeSyncErrorCode.EXECUTION_NOT_FOUND);
+      }
+    });
+
+    it("should throw error when worktree path is missing", async () => {
+      // Create execution without worktree
+      createExecution(db, {
+        id: "exec-stage-no-worktree",
+        worktree_path: null,
+        branch_name: "some-branch",
+        target_branch: "main",
+        status: "completed",
+      });
+
+      await expect(service.stageSync("exec-stage-no-worktree")).rejects.toThrow(
+        WorktreeSyncError
+      );
+
+      try {
+        await service.stageSync("exec-stage-no-worktree");
+      } catch (error: any) {
+        expect(error.code).toBe(WorktreeSyncErrorCode.NO_WORKTREE);
+      }
+    });
+
+    it("should leave changes staged for manual commit", async () => {
+      // Create worktree with multiple files
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      execSync(`git worktree add ${worktreePath} -b stage-multi-branch`, {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Add multiple files in worktree
+      fs.writeFileSync(path.join(worktreePath, "file1.ts"), "content1");
+      fs.writeFileSync(path.join(worktreePath, "file2.ts"), "content2");
+      execSync("git add file1.ts file2.ts", { cwd: worktreePath, stdio: "pipe" });
+      execSync('git commit -m "Add multiple files"', {
+        cwd: worktreePath,
+        stdio: "pipe",
+      });
+
+      // Create execution
+      createExecution(db, {
+        id: "exec-stage-multi-1",
+        worktree_path: worktreePath,
+        branch_name: "stage-multi-branch",
+        target_branch: "main",
+        status: "completed",
+      });
+
+      // Perform stage sync
+      const result = await service.stageSync("exec-stage-multi-1");
+
+      expect(result.success).toBe(true);
+      expect(result.filesChanged).toBe(2);
+
+      // Verify both files are staged
+      const stagedFiles = execSync("git diff --cached --name-only", {
+        cwd: testRepo,
+        encoding: "utf8",
+        stdio: "pipe",
+      });
+      expect(stagedFiles).toContain("file1.ts");
+      expect(stagedFiles).toContain("file2.ts");
+
+      // Verify user can now commit manually
+      execSync('git commit -m "Manual commit after stage sync"', {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Verify commit was created
+      const log = execSync("git log -1 --pretty=%B", {
+        cwd: testRepo,
+        encoding: "utf8",
+        stdio: "pipe",
+      });
+      expect(log).toContain("Manual commit after stage sync");
+    });
+  });
+
   describe("_readJSONLVersion", () => {
     it("should read JSONL file at specific revision", async () => {
       // Helper to create issue entity

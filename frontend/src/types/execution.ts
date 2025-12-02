@@ -202,7 +202,7 @@ export interface SyncResult {
   cleanupOffered?: boolean
 }
 
-export type SyncMode = 'squash' | 'preserve'
+export type SyncMode = 'squash' | 'preserve' | 'stage'
 
 export interface PerformSyncRequest {
   mode: SyncMode

@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import type { Execution, ExecutionConfig } from '@/types/execution'
+import type { Execution, ExecutionConfig, SyncMode } from '@/types/execution'
 import type { ToolCallTracking } from '@/hooks/useAgUiStream'
 import {
   Loader2,
@@ -138,6 +138,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
           setHasUncommittedChanges(false)
         }
       }
+
     } catch (err) {
       console.error('Failed to reload chain after action:', err)
     }
@@ -152,6 +153,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
     setIsCleanupDialogOpen,
     isCommitting,
     isCleaning,
+    changesRefreshTrigger,
     handleCommitChanges,
     handleCleanupWorktree: handleCleanupWorktreeAction,
     syncPreview: contextualSyncPreview,
@@ -415,7 +417,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
 
   // Handle sync confirmation (wrapper for dialog)
   const handleConfirmSync = useCallback(
-    (mode: 'squash' | 'preserve', commitMessage?: string) => {
+    (mode: SyncMode, commitMessage?: string) => {
       if (!chainData || chainData.executions.length === 0) return
       const rootExecution = chainData.executions[0]
       performSync(rootExecution.id, mode, commitMessage)
@@ -930,6 +932,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                     }
                     executionStatus={lastExecution.status}
                     worktreePath={rootExecution.worktree_path}
+                    refreshTrigger={changesRefreshTrigger}
                   />
                 </>
               )}
@@ -1064,7 +1067,6 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
         {/* Sync Preview Dialog */}
         {syncPreview && (
           <SyncPreviewDialog
-            execution={rootExecution}
             preview={syncPreview}
             isOpen={isSyncPreviewOpen}
             onClose={() => setIsSyncPreviewOpen(false)}
@@ -1111,7 +1113,6 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
         {/* Sync Preview Dialog (from contextual actions) */}
         {lastExecution && contextualSyncPreview && (
           <SyncPreviewDialog
-            execution={lastExecution}
             preview={contextualSyncPreview}
             isOpen={isContextualSyncPreviewOpen}
             onClose={() => setIsContextualSyncPreviewOpen(false)}

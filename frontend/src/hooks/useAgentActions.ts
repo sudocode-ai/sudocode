@@ -116,6 +116,9 @@ export function useAgentActions(options: UseAgentActionsOptions) {
   const [isCommitting, setIsCommitting] = useState(false)
   const [isCleaning, setIsCleaning] = useState(false)
 
+  // Refresh trigger for CodeChangesPanel - incremented after successful actions
+  const [changesRefreshTrigger, setChangesRefreshTrigger] = useState(0)
+
   // Action handler: Commit changes
   const handleCommitChanges = useCallback(
     async (message: string) => {
@@ -129,6 +132,9 @@ export function useAgentActions(options: UseAgentActionsOptions) {
 
         // Invalidate execution queries
         queryClient.invalidateQueries({ queryKey: ['executions'] })
+
+        // Trigger CodeChangesPanel refresh
+        setChangesRefreshTrigger((prev) => prev + 1)
 
         // Notify parent component to refresh data
         onCommitComplete?.()
@@ -252,10 +258,10 @@ export function useAgentActions(options: UseAgentActionsOptions) {
       })
     }
 
-    // Action: Squash & Merge
-    // Available for worktree mode with file changes AND worktree still exists
-    const hasSyncableWorktree =
-      hasWorktreePath && isWorktreeMode && filesChanged.length > 0 && worktreeExists
+    // Action: Merge Changes
+    // Available for worktree mode when worktree exists
+    // The sync preview will determine if there's actually anything to merge
+    const hasSyncableWorktree = hasWorktreePath && isWorktreeMode && worktreeExists
 
     if (hasSyncableWorktree) {
       availableActions.push({
@@ -313,6 +319,9 @@ export function useAgentActions(options: UseAgentActionsOptions) {
     // Loading states
     isCommitting,
     isCleaning,
+
+    // Refresh trigger for CodeChangesPanel
+    changesRefreshTrigger,
 
     // Handlers
     handleCommitChanges,

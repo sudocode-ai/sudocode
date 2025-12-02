@@ -968,6 +968,56 @@ export function createExecutionsRouter(): Router {
   );
 
   /**
+   * POST /api/executions/:executionId/sync/stage
+   *
+   * Perform stage sync operation
+   *
+   * Applies all worktree changes to the working directory without committing.
+   * Changes are left staged, ready for the user to commit manually.
+   */
+  router.post(
+    "/executions/:executionId/sync/stage",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+
+        // Get worktree sync service
+        const syncService = getWorktreeSyncService(req);
+
+        // Perform stage sync
+        const result = await syncService.stageSync(executionId);
+
+        res.json({
+          success: true,
+          data: result,
+        });
+      } catch (error) {
+        console.error(
+          `Failed to stage sync execution ${req.params.executionId}:`,
+          error
+        );
+
+        if (error instanceof WorktreeSyncError) {
+          const statusCode = getStatusCodeForSyncError(error);
+          res.status(statusCode).json({
+            success: false,
+            data: null,
+            error: error.message,
+            code: error.code,
+          });
+        } else {
+          res.status(500).json({
+            success: false,
+            data: null,
+            error: "Internal server error",
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+  );
+
+  /**
    * POST /api/executions/:executionId/commit
    *
    * Commit uncommitted changes for an execution

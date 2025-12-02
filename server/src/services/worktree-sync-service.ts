@@ -790,4 +790,99 @@ Synced changes from worktree execution.`;
       );
     }
   }
+
+  /**
+   * Perform stage sync operation
+   *
+   * Applies all worktree changes to the working directory without committing.
+   * Changes are left staged, ready for the user to commit manually.
+   *
+   * @param executionId - Execution ID to sync
+   * @returns Sync result with details
+   * @throws WorktreeSyncError if sync fails
+   */
+  async stageSync(executionId: string): Promise<SyncResult> {
+    // 1. Load and validate execution
+    const execution = await this._loadAndValidateExecution(executionId);
+
+    // 2. Validate preconditions
+    await this._validateSyncPreconditions(execution);
+
+    // 3. Preview sync to check for conflicts
+    const preview = await this.previewSync(executionId);
+
+    // 4. Block if code conflicts exist
+    if (preview.conflicts.codeConflicts.length > 0) {
+      return {
+        success: false,
+        filesChanged: 0,
+        conflictsResolved: 0,
+        uncommittedJSONLIncluded: false,
+        error: `Cannot sync: ${preview.conflicts.codeConflicts.length} code conflict(s) detected. Please resolve manually.`,
+      };
+    }
+
+    let safetyTag: string | undefined;
+
+    try {
+      // 5. Handle uncommitted JSONL files
+      const uncommittedJSONL = preview.uncommittedJSONLChanges;
+      if (uncommittedJSONL.length > 0) {
+        await this.commitUncommittedJSONL(
+          execution.worktree_path!,
+          uncommittedJSONL
+        );
+      }
+
+      // 6. Create safety snapshot
+      safetyTag = await this._createSafetySnapshot(
+        executionId,
+        execution.target_branch
+      );
+
+      // 7. Perform git merge --squash (this stages but doesn't commit)
+      const mergeResult = this._performSquashMerge(
+        execution.branch_name,
+        execution.target_branch
+      );
+
+      // 8. Resolve JSONL conflicts
+      let conflictsResolved = 0;
+      if (preview.conflicts.jsonlConflicts.length > 0) {
+        await this.resolveJSONLConflicts(
+          execution,
+          preview.conflicts.jsonlConflicts
+        );
+        conflictsResolved = preview.conflicts.jsonlConflicts.length;
+      }
+
+      // 9. Return success result WITHOUT creating a commit
+      // Changes remain staged for user to commit manually
+      return {
+        success: true,
+        filesChanged: mergeResult.filesChanged,
+        conflictsResolved,
+        uncommittedJSONLIncluded: uncommittedJSONL.length > 0,
+        cleanupOffered: true,
+      };
+    } catch (error: any) {
+      // Rollback to safety snapshot on failure
+      if (safetyTag) {
+        try {
+          await this._rollbackToSnapshot(execution.target_branch, safetyTag);
+        } catch (rollbackError: any) {
+          console.error(
+            `Failed to rollback to snapshot ${safetyTag}:`,
+            rollbackError
+          );
+        }
+      }
+
+      throw new WorktreeSyncError(
+        `Stage sync failed: ${error.message}`,
+        WorktreeSyncErrorCode.MERGE_FAILED,
+        error
+      );
+    }
+  }
 }

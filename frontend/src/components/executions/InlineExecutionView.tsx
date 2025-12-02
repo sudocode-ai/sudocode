@@ -156,6 +156,7 @@ export function InlineExecutionView({
     setIsCleanupDialogOpen,
     isCommitting,
     isCleaning,
+    changesRefreshTrigger,
     handleCommitChanges,
     handleCleanupWorktree,
     syncPreview,
@@ -697,6 +698,7 @@ export function InlineExecutionView({
                   executionStatus={lastExecution.status}
                   worktreePath={rootExecution.worktree_path}
                   diffMode="modal"
+                  refreshTrigger={changesRefreshTrigger}
                 />
               </>
             )}
@@ -784,7 +786,6 @@ export function InlineExecutionView({
       {/* Sync Preview Dialog */}
       {lastExecution && syncPreview && (
         <SyncPreviewDialog
-          execution={lastExecution}
           preview={syncPreview}
           isOpen={isSyncPreviewOpen}
           onClose={() => setIsSyncPreviewOpen(false)}

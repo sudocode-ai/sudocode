@@ -66,13 +66,13 @@ describe('SyncPreviewDialog', () => {
   describe('Rendering', () => {
     it('should render dialog when open', () => {
       render(<SyncPreviewDialog {...defaultProps} />)
-      expect(screen.getByText('Sync Preview')).toBeInTheDocument()
-      expect(screen.getByText('Review changes before syncing worktree to local branch')).toBeInTheDocument()
+      expect(screen.getByText('Merge Changes')).toBeInTheDocument()
+      expect(screen.getByText('Review changes before syncing worktree')).toBeInTheDocument()
     })
 
     it('should not render when closed', () => {
       render(<SyncPreviewDialog {...defaultProps} isOpen={false} />)
-      expect(screen.queryByText('Sync Preview')).not.toBeInTheDocument()
+      expect(screen.queryByText('Merge Changes')).not.toBeInTheDocument()
     })
 
     it('should show loading state when previewing', () => {
@@ -81,51 +81,38 @@ describe('SyncPreviewDialog', () => {
     })
   })
 
-  describe('Execution Status', () => {
-    it('should show completed status', () => {
+  describe('Header Summary', () => {
+    it('should display file count and diff stats in header', () => {
       render(<SyncPreviewDialog {...defaultProps} />)
-      expect(screen.getByText('Completed')).toBeInTheDocument()
+      expect(screen.getByText('3 files')).toBeInTheDocument()
+      expect(screen.getByText('+150')).toBeInTheDocument()
+      expect(screen.getByText('-50')).toBeInTheDocument()
     })
 
-    it('should show running status with warning', () => {
-      const runningExecution = { ...mockExecution, status: 'running' as const }
-      render(<SyncPreviewDialog {...defaultProps} execution={runningExecution as Execution} />)
-
-      expect(screen.getByText('Running')).toBeInTheDocument()
-      expect(screen.getByText('Execution In Progress')).toBeInTheDocument()
-      expect(screen.getByText(/The execution may continue making changes/)).toBeInTheDocument()
+    it('should display commit count in header', () => {
+      render(<SyncPreviewDialog {...defaultProps} />)
+      expect(screen.getByText('2 commits')).toBeInTheDocument()
     })
 
-    it('should show paused status with warning', () => {
-      const pausedExecution = { ...mockExecution, status: 'paused' as const }
-      render(<SyncPreviewDialog {...defaultProps} execution={pausedExecution as Execution} />)
-
-      expect(screen.getByText('Paused')).toBeInTheDocument()
-      expect(screen.getByText('Execution In Progress')).toBeInTheDocument()
+    it('should handle singular file count', () => {
+      const singleFilePreview: SyncPreviewResult = {
+        ...mockPreview,
+        diff: { files: ['file1.ts'], additions: 10, deletions: 5 },
+      }
+      render(<SyncPreviewDialog {...defaultProps} preview={singleFilePreview} />)
+      expect(screen.getByText('1 file')).toBeInTheDocument()
     })
 
-    it('should show failed status', () => {
-      const failedExecution = { ...mockExecution, status: 'failed' as const }
-      render(<SyncPreviewDialog {...defaultProps} execution={failedExecution as Execution} />)
-      expect(screen.getByText('Failed')).toBeInTheDocument()
+    it('should handle singular commit count', () => {
+      const singleCommitPreview: SyncPreviewResult = {
+        ...mockPreview,
+        commits: [mockPreview.commits[0]],
+      }
+      render(<SyncPreviewDialog {...defaultProps} preview={singleCommitPreview} />)
+      expect(screen.getByText('1 commit')).toBeInTheDocument()
     })
   })
 
-  describe('Diff Summary', () => {
-    it('should display file counts', () => {
-      render(<SyncPreviewDialog {...defaultProps} />)
-      expect(screen.getByText('3')).toBeInTheDocument() // Files changed
-      expect(screen.getByText('+150')).toBeInTheDocument() // Additions
-      expect(screen.getByText('-50')).toBeInTheDocument() // Deletions
-    })
-
-    it('should have expandable file list', () => {
-      render(<SyncPreviewDialog {...defaultProps} />)
-
-      // Should show expand button
-      expect(screen.getByText(/Show Files/)).toBeInTheDocument()
-    })
-  })
 
   describe('Conflicts', () => {
     it('should show code conflicts with error state', () => {
@@ -234,11 +221,12 @@ describe('SyncPreviewDialog', () => {
   })
 
   describe('Mode Selection', () => {
-    it('should show squash and preserve mode options', () => {
+    it('should show all three sync mode options', () => {
       render(<SyncPreviewDialog {...defaultProps} />)
 
       expect(screen.getByLabelText(/Squash Merge/)).toBeInTheDocument()
       expect(screen.getByLabelText(/Preserve Commits/)).toBeInTheDocument()
+      expect(screen.getByLabelText(/Stage Only/)).toBeInTheDocument()
     })
 
     it('should show commit message input in squash mode', () => {
@@ -253,6 +241,17 @@ describe('SyncPreviewDialog', () => {
 
       expect(screen.getByLabelText('Commit Message (Optional)')).toBeInTheDocument()
       expect(screen.getByPlaceholderText('Custom commit message...')).toBeInTheDocument()
+    })
+
+    it('should hide commit message input when stage mode selected', async () => {
+      const user = userEvent.setup()
+      render(<SyncPreviewDialog {...defaultProps} />)
+
+      // Select stage mode
+      await user.click(screen.getByLabelText(/Stage Only/))
+
+      // Commit message input should not be visible
+      expect(screen.queryByLabelText('Commit Message (Optional)')).not.toBeInTheDocument()
     })
   })
 
@@ -281,6 +280,25 @@ describe('SyncPreviewDialog', () => {
       render(<SyncPreviewDialog {...defaultProps} />)
 
       expect(screen.getByText('Squash & Sync')).toBeInTheDocument()
+    })
+
+    it('should show Stage Changes button when stage mode selected', async () => {
+      const user = userEvent.setup()
+      render(<SyncPreviewDialog {...defaultProps} />)
+
+      await user.click(screen.getByLabelText(/Stage Only/))
+
+      expect(screen.getByText('Stage Changes')).toBeInTheDocument()
+    })
+
+    it('should call onConfirmSync with stage mode', async () => {
+      const user = userEvent.setup()
+      render(<SyncPreviewDialog {...defaultProps} />)
+
+      await user.click(screen.getByLabelText(/Stage Only/))
+      await user.click(screen.getByText('Stage Changes'))
+
+      expect(defaultProps.onConfirmSync).toHaveBeenCalledWith('stage', undefined)
     })
 
     it('should disable confirm button when code conflicts exist', () => {

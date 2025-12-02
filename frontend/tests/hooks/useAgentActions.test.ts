@@ -214,7 +214,9 @@ describe('useAgentActions', () => {
       expect(syncAction).toBeUndefined()
     })
 
-    it('should not show sync action when no files changed', () => {
+    it('should show sync action when worktree exists even without uncommitted files', () => {
+      // Sync action should appear for worktrees regardless of uncommitted changes
+      // because there may be commits to merge even if all changes are committed
       const noChangesExecution: Execution = {
         ...mockExecution,
         files_changed: null,
@@ -230,7 +232,8 @@ describe('useAgentActions', () => {
       )
 
       const syncAction = result.current.actions.find((a) => a.id === 'squash-merge')
-      expect(syncAction).toBeUndefined()
+      expect(syncAction).toBeDefined()
+      expect(syncAction?.label).toBe('Merge Changes')
     })
 
     it('should show sync action for running executions with worktree and changes', () => {
@@ -497,7 +500,8 @@ describe('useAgentActions', () => {
     })
 
     it('should show subset of actions when only some conditions are met', () => {
-      // Worktree with no file changes - no commit or sync actions, only cleanup
+      // Worktree with no uncommitted file changes - no commit action, but sync and cleanup
+      // Sync is available because there may be commits to merge even without uncommitted changes
       const noChangesExecution: Execution = {
         ...mockExecution,
         files_changed: null,
@@ -514,7 +518,7 @@ describe('useAgentActions', () => {
 
       const actionIds = result.current.actions.map((a) => a.id)
       expect(actionIds).not.toContain('commit-changes')
-      expect(actionIds).not.toContain('squash-merge')
+      expect(actionIds).toContain('squash-merge') // Sync available for worktrees
       expect(actionIds).toContain('cleanup-worktree')
     })
   })
