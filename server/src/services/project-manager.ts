@@ -22,6 +22,7 @@ import {
 } from "@sudocode-ai/cli/dist/cli/init-commands.js";
 import { WorkflowEventEmitter } from "../workflow/workflow-event-emitter.js";
 import { SequentialWorkflowEngine } from "../workflow/engines/sequential-engine.js";
+import type { IWorkflowEngine } from "../workflow/workflow-engine.js";
 import { WorkflowBroadcastService } from "./workflow-broadcast-service.js";
 
 interface CachedDatabase {
@@ -143,6 +144,16 @@ export class ProjectManager {
 
       context.workflowEngine = workflowEngine;
       context.workflowBroadcastService = workflowBroadcastService;
+
+      // 7b. Run workflow recovery (for OrchestratorWorkflowEngine)
+      // Use interface type to access optional methods
+      const engine = workflowEngine as IWorkflowEngine;
+      if (engine.markStaleExecutionsAsFailed) {
+        await engine.markStaleExecutionsAsFailed();
+      }
+      if (engine.recoverOrphanedWorkflows) {
+        await engine.recoverOrphanedWorkflows();
+      }
 
       // 8. Start file watcher if enabled
       if (this.watchEnabled) {

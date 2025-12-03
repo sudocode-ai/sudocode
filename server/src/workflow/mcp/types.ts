@@ -278,6 +278,16 @@ export interface WorkflowMCPContext {
   db: Database.Database;
   /** Execution service for spawning/managing executions */
   executionService: ExecutionService;
+  /** Wakeup service for timeout tracking (optional) */
+  wakeupService?: {
+    startExecutionTimeout(
+      executionId: string,
+      workflowId: string,
+      stepId: string,
+      timeoutMs: number
+    ): void;
+    clearExecutionTimeout(executionId: string): void;
+  };
   /** Path to the repository root */
   repoPath: string;
 }

@@ -1,7 +1,10 @@
 /**
- * Unit tests for Workflow Escalation API Endpoint
+ * Unit tests for Workflow Escalation API Endpoints
  *
- * Tests POST /api/workflows/:id/escalation/respond
+ * Tests:
+ * - GET /api/workflows/:id/escalation - Get pending escalation
+ * - POST /api/workflows/:id/escalation/respond - Respond to escalation
+ *
  * Escalations are stored as workflow events, not as workflow fields.
  */
 
@@ -133,6 +136,155 @@ describe("Workflow Escalation API", () => {
       )
       .all(workflowId) as Array<{ type: string; payload: string }>;
   }
+
+  // ===========================================================================
+  // GET /api/workflows/:id/escalation Tests
+  // ===========================================================================
+
+  describe("GET /api/workflows/:id/escalation", () => {
+    it("should return hasPendingEscalation: false when no pending escalation", async () => {
+      insertTestWorkflow();
+
+      const response = await request(app).get(
+        "/api/workflows/wf-test1/escalation"
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.hasPendingEscalation).toBe(false);
+      expect(response.body.data.escalation).toBeUndefined();
+    });
+
+    it("should return escalation data when pending escalation exists", async () => {
+      insertTestWorkflow();
+      insertEscalationRequestedEvent(
+        "wf-test1",
+        "esc-123",
+        "Should we proceed with this approach?"
+      );
+
+      const response = await request(app).get(
+        "/api/workflows/wf-test1/escalation"
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.hasPendingEscalation).toBe(true);
+      expect(response.body.data.escalation).toBeDefined();
+      expect(response.body.data.escalation.requestId).toBe("esc-123");
+      expect(response.body.data.escalation.message).toBe(
+        "Should we proceed with this approach?"
+      );
+    });
+
+    it("should return escalation with options", async () => {
+      insertTestWorkflow();
+
+      // Insert escalation with options
+      db.prepare(
+        `
+        INSERT INTO workflow_events (id, workflow_id, type, payload, created_at)
+        VALUES (?, ?, 'escalation_requested', ?, ?)
+      `
+      ).run(
+        "event-esc-options",
+        "wf-test1",
+        JSON.stringify({
+          escalation_id: "esc-options",
+          message: "Which option?",
+          options: ["Option A", "Option B", "Option C"],
+        }),
+        new Date().toISOString()
+      );
+
+      const response = await request(app).get(
+        "/api/workflows/wf-test1/escalation"
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.escalation.options).toEqual([
+        "Option A",
+        "Option B",
+        "Option C",
+      ]);
+    });
+
+    it("should return escalation with context", async () => {
+      insertTestWorkflow();
+
+      // Insert escalation with context
+      db.prepare(
+        `
+        INSERT INTO workflow_events (id, workflow_id, type, payload, created_at)
+        VALUES (?, ?, 'escalation_requested', ?, ?)
+      `
+      ).run(
+        "event-esc-context",
+        "wf-test1",
+        JSON.stringify({
+          escalation_id: "esc-context",
+          message: "Encountered an issue",
+          context: { errorType: "timeout", stepId: "step-123" },
+        }),
+        new Date().toISOString()
+      );
+
+      const response = await request(app).get(
+        "/api/workflows/wf-test1/escalation"
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.escalation.context).toEqual({
+        errorType: "timeout",
+        stepId: "step-123",
+      });
+    });
+
+    it("should return hasPendingEscalation: false when escalation is already resolved", async () => {
+      insertTestWorkflow();
+      insertEscalationRequestedEvent("wf-test1", "esc-123", "Already resolved");
+      insertEscalationResolvedEvent("wf-test1", "esc-123");
+
+      const response = await request(app).get(
+        "/api/workflows/wf-test1/escalation"
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.hasPendingEscalation).toBe(false);
+    });
+
+    it("should return 404 for non-existent workflow", async () => {
+      const response = await request(app).get(
+        "/api/workflows/wf-nonexistent/escalation"
+      );
+
+      expect(response.status).toBe(404);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain("not found");
+    });
+
+    it("should return the most recent pending escalation", async () => {
+      insertTestWorkflow();
+
+      // Insert older escalation (resolved)
+      insertEscalationRequestedEvent("wf-test1", "esc-old", "Old question");
+      insertEscalationResolvedEvent("wf-test1", "esc-old");
+
+      // Insert newer escalation (pending) - add small delay for timestamp ordering
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      insertEscalationRequestedEvent("wf-test1", "esc-new", "New question");
+
+      const response = await request(app).get(
+        "/api/workflows/wf-test1/escalation"
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.hasPendingEscalation).toBe(true);
+      expect(response.body.data.escalation.requestId).toBe("esc-new");
+      expect(response.body.data.escalation.message).toBe("New question");
+    });
+  });
 
   // ===========================================================================
   // POST /api/workflows/:id/escalation/respond Tests

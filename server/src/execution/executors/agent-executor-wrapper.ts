@@ -30,6 +30,7 @@ import { updateExecution, getExecution } from "../../services/executions.js";
 import { broadcastExecutionUpdate } from "../../services/websocket.js";
 import { execSync } from "child_process";
 import { ExecutionChangesService } from "../../services/execution-changes-service.js";
+import { notifyExecutionEvent } from "../../services/execution-event-callbacks.js";
 
 /**
  * Base executor interface that all agent executors implement
@@ -764,6 +765,13 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
         updatedExecution,
         updatedExecution.issue_id || undefined
       );
+
+      // Notify callbacks for workflow integration
+      await notifyExecutionEvent("completed", {
+        executionId,
+        workflowId: updatedExecution.workflow_execution_id ?? undefined,
+        issueId: updatedExecution.issue_id ?? undefined,
+      });
     }
   }
 
@@ -818,6 +826,14 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
         execution,
         execution.issue_id || undefined
       );
+
+      // Notify callbacks for workflow integration
+      await notifyExecutionEvent("failed", {
+        executionId,
+        workflowId: execution.workflow_execution_id ?? undefined,
+        issueId: execution.issue_id ?? undefined,
+        error: error.message,
+      });
     }
   }
 

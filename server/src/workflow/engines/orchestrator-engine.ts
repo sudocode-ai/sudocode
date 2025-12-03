@@ -14,8 +14,11 @@ import path from "path";
 import type Database from "better-sqlite3";
 import type {
   Workflow,
+  WorkflowRow,
   WorkflowSource,
   WorkflowConfig,
+  WorkflowStep,
+  WorkflowStepStatus,
   Issue,
 } from "@sudocode-ai/types";
 import { getIssue } from "@sudocode-ai/cli/dist/operations/issues.js";
@@ -30,6 +33,11 @@ import type { WorkflowEventEmitter } from "../workflow-event-emitter.js";
 import type { ExecutionService } from "../../services/execution-service.js";
 import type { WorkflowWakeupService } from "../services/wakeup-service.js";
 import { WorkflowPromptBuilder } from "../services/prompt-builder.js";
+import {
+  registerExecutionCallback,
+  type ExecutionEventType,
+  type ExecutionEventData,
+} from "../../services/execution-event-callbacks.js";
 
 // =============================================================================
 // Types
@@ -90,6 +98,7 @@ export class OrchestratorWorkflowEngine extends BaseWorkflowEngine {
   private wakeupService: WorkflowWakeupService;
   private promptBuilder: WorkflowPromptBuilder;
   private config: OrchestratorEngineConfig;
+  private unregisterExecutionCallback?: () => void;
 
   constructor(deps: {
     db: Database.Database;
@@ -103,6 +112,99 @@ export class OrchestratorWorkflowEngine extends BaseWorkflowEngine {
     this.wakeupService = deps.wakeupService;
     this.promptBuilder = new WorkflowPromptBuilder();
     this.config = deps.config;
+
+    // Register callback to record workflow events when executions complete
+    this.setupExecutionCallbacks();
+  }
+
+  // ===========================================================================
+  // Execution Event Callbacks
+  // ===========================================================================
+
+  /**
+   * Set up callbacks to record workflow events when executions complete/fail.
+   *
+   * When an execution that belongs to a workflow completes or fails, we need to:
+   * 1. Find the corresponding workflow step
+   * 2. Update the step status
+   * 3. Record a workflow event (step_completed or step_failed)
+   * 4. Trigger a wakeup so the orchestrator can react
+   */
+  private setupExecutionCallbacks(): void {
+    this.unregisterExecutionCallback = registerExecutionCallback(
+      async (event: ExecutionEventType, data: ExecutionEventData) => {
+        // Only handle events from workflow executions
+        if (!data.workflowId) {
+          return;
+        }
+
+        // Get the workflow
+        const workflow = await this.getWorkflow(data.workflowId);
+        if (!workflow) {
+          console.warn(
+            `[OrchestratorEngine] Workflow not found for execution event: ${data.workflowId}`
+          );
+          return;
+        }
+
+        // Find the step for this execution
+        const step = workflow.steps.find(
+          (s: WorkflowStep) => s.executionId === data.executionId
+        );
+        if (!step) {
+          // Might be the orchestrator execution itself, not a step
+          console.debug(
+            `[OrchestratorEngine] No step found for execution ${data.executionId} in workflow ${data.workflowId}`
+          );
+          return;
+        }
+
+        // Clear any pending timeout for this execution
+        this.wakeupService.clearExecutionTimeout(data.executionId);
+
+        // Determine event type and update step status
+        const eventType =
+          event === "completed" ? "step_completed" : "step_failed";
+        const newStepStatus = event === "completed" ? "completed" : "failed";
+
+        // Update step status in workflow
+        const updatedSteps = workflow.steps.map((s: WorkflowStep) =>
+          s.id === step.id
+            ? { ...s, status: newStepStatus as WorkflowStepStatus }
+            : s
+        );
+        this.updateWorkflow(data.workflowId, { steps: updatedSteps });
+
+        // Record workflow event for orchestrator
+        await this.wakeupService.recordEvent({
+          workflowId: data.workflowId,
+          type: eventType,
+          executionId: data.executionId,
+          stepId: step.id,
+          payload: {
+            issueId: step.issueId,
+            error: data.error,
+          },
+        });
+
+        // Trigger wakeup so orchestrator can react
+        await this.wakeupService.triggerWakeup(data.workflowId);
+
+        console.log(
+          `[OrchestratorEngine] Recorded ${eventType} for step ${step.id} in workflow ${data.workflowId}`
+        );
+      }
+    );
+  }
+
+  /**
+   * Clean up the execution callback when the engine is disposed.
+   */
+  dispose(): void {
+    if (this.unregisterExecutionCallback) {
+      this.unregisterExecutionCallback();
+      this.unregisterExecutionCallback = undefined;
+    }
   }
 
   // ===========================================================================
@@ -553,6 +655,141 @@ Use the workflow tools to:
       } catch (error) {
         console.warn(`Failed to cancel execution ${id}:`, error);
       }
+    }
+  }
+
+  // ===========================================================================
+  // Recovery
+  // ===========================================================================
+
+  /**
+   * Recover orphaned workflows on server restart.
+   *
+   * Finds workflows in 'running' status whose orchestrator execution
+   * is no longer running, and triggers a wakeup to resume them.
+   */
+  async recoverOrphanedWorkflows(): Promise<void> {
+    console.log("[OrchestratorEngine] Checking for orphaned workflows...");
+
+    // Find workflows in 'running' status
+    const runningWorkflows = this.db
+      .prepare(`SELECT * FROM workflows WHERE status = 'running'`)
+      .all() as WorkflowRow[];
+
+    let recoveredCount = 0;
+
+    for (const row of runningWorkflows) {
+      // Parse the workflow row
+      const workflow: Workflow = {
+        id: row.id,
+        title: row.title,
+        source: JSON.parse(row.source),
+        status: row.status as Workflow["status"],
+        steps: JSON.parse(row.steps),
+        worktreePath: row.worktree_path ?? undefined,
+        branchName: row.branch_name ?? undefined,
+        baseBranch: row.base_branch,
+        currentStepIndex: row.current_step_index,
+        orchestratorExecutionId: row.orchestrator_execution_id ?? undefined,
+        orchestratorSessionId: row.orchestrator_session_id ?? undefined,
+        config: JSON.parse(row.config),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        startedAt: row.started_at ?? undefined,
+        completedAt: row.completed_at ?? undefined,
+      };
+
+      // Skip if no orchestrator execution
+      if (!workflow.orchestratorExecutionId) {
+        console.warn(
+          `[OrchestratorEngine] Workflow ${workflow.id} running but no orchestrator`
+        );
+        continue;
+      }
+
+      // Check orchestrator execution status
+      const orchestrator = this.db
+        .prepare(`SELECT status FROM executions WHERE id = ?`)
+        .get(workflow.orchestratorExecutionId) as
+        | { status: string }
+        | undefined;
+
+      // If orchestrator is not running, trigger recovery
+      if (!orchestrator || orchestrator.status !== "running") {
+        console.log(
+          `[OrchestratorEngine] Recovering workflow ${workflow.id} ` +
+            `(orchestrator status: ${orchestrator?.status ?? "not found"})`
+        );
+
+        try {
+          // Record recovery event
+          await this.wakeupService.recordEvent({
+            workflowId: workflow.id,
+            type: "orchestrator_wakeup",
+            payload: {
+              reason: "recovery",
+              previousStatus: orchestrator?.status,
+            },
+          });
+
+          // Trigger wakeup to resume
+          await this.wakeupService.triggerWakeup(workflow.id);
+          recoveredCount++;
+        } catch (err) {
+          console.error(
+            `[OrchestratorEngine] Failed to recover workflow ${workflow.id}:`,
+            err
+          );
+        }
+      }
+    }
+
+    console.log(
+      `[OrchestratorEngine] Recovery complete: ${recoveredCount}/${runningWorkflows.length} workflows recovered`
+    );
+  }
+
+  /**
+   * Mark stale running executions as failed.
+   *
+   * Called during recovery to clean up executions that were running
+   * when the server crashed.
+   */
+  async markStaleExecutionsAsFailed(): Promise<void> {
+    console.log("[OrchestratorEngine] Checking for stale executions...");
+
+    const staleExecutions = this.db
+      .prepare(
+        `
+        SELECT id, workflow_execution_id FROM executions
+        WHERE status = 'running'
+          AND workflow_execution_id IS NOT NULL
+      `
+      )
+      .all() as Array<{ id: string; workflow_execution_id: string }>;
+
+    for (const exec of staleExecutions) {
+      console.log(
+        `[OrchestratorEngine] Marking stale execution ${exec.id} as failed`
+      );
+
+      this.db
+        .prepare(
+          `
+          UPDATE executions
+          SET status = 'failed',
+              error_message = 'Execution was running when server restarted',
+              completed_at = ?
+          WHERE id = ?
+        `
+        )
+        .run(new Date().toISOString(), exec.id);
+    }
+
+    if (staleExecutions.length > 0) {
+      console.log(
+        `[OrchestratorEngine] Marked ${staleExecutions.length} stale executions as failed`
+      );
     }
   }
 }

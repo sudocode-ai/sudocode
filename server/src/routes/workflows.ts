@@ -635,6 +635,79 @@ export function createWorkflowsRouter(): Router {
   });
 
   /**
+   * GET /api/workflows/:id/escalation - Get pending escalation for workflow
+   */
+  router.get("/:id/escalation", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const db = req.project!.db;
+
+      // Check if workflow exists
+      const workflowExists = db
+        .prepare("SELECT 1 FROM workflows WHERE id = ?")
+        .get(id);
+
+      if (!workflowExists) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Workflow not found: ${id}`,
+        });
+        return;
+      }
+
+      // Query for pending escalation (same logic as respond endpoint)
+      const pendingEscalation = db
+        .prepare(
+          `
+          SELECT payload FROM workflow_events
+          WHERE workflow_id = ?
+            AND type = 'escalation_requested'
+            AND json_extract(payload, '$.escalation_id') NOT IN (
+              SELECT json_extract(payload, '$.escalation_id')
+              FROM workflow_events
+              WHERE workflow_id = ?
+                AND type = 'escalation_resolved'
+            )
+          ORDER BY created_at DESC
+          LIMIT 1
+        `
+        )
+        .get(id, id) as { payload: string } | undefined;
+
+      if (!pendingEscalation) {
+        res.json({
+          success: true,
+          data: { hasPendingEscalation: false },
+        });
+        return;
+      }
+
+      const payload = JSON.parse(pendingEscalation.payload) as {
+        escalation_id: string;
+        message: string;
+        options?: string[];
+        context?: Record<string, unknown>;
+      };
+
+      res.json({
+        success: true,
+        data: {
+          hasPendingEscalation: true,
+          escalation: {
+            requestId: payload.escalation_id,
+            message: payload.message,
+            options: payload.options,
+            context: payload.context,
+          },
+        },
+      });
+    } catch (error) {
+      handleWorkflowError(error, res);
+    }
+  });
+
+  /**
    * POST /api/workflows/:id/escalation/respond - Respond to a pending escalation
    *
    * Request body:

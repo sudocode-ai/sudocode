@@ -236,4 +236,33 @@ export interface IWorkflowEngine {
    * @returns Unsubscribe function
    */
   onWorkflowEvent(listener: WorkflowEventListener): () => void;
+
+  // ===========================================================================
+  // Recovery Methods (Optional)
+  // ===========================================================================
+
+  /**
+   * Recover orphaned workflows on server restart.
+   *
+   * Finds workflows in 'running' status whose orchestrator execution
+   * is no longer running, and triggers a wakeup to resume them.
+   *
+   * Only implemented by OrchestratorWorkflowEngine.
+   */
+  recoverOrphanedWorkflows?(): Promise<void>;
+
+  /**
+   * Mark stale running executions as failed.
+   *
+   * Called during recovery to clean up executions that were running
+   * when the server crashed.
+   *
+   * Only implemented by OrchestratorWorkflowEngine.
+   */
+  markStaleExecutionsAsFailed?(): Promise<void>;
+
+  /**
+   * Clean up resources when the engine is disposed.
+   */
+  dispose?(): void;
 }

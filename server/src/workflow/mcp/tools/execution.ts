@@ -224,12 +224,13 @@ export async function handleExecuteIssue(
   // Create prompt from issue content
   const prompt = issue.content || `Implement issue: ${issue.title}`;
 
-  // Create execution
+  // Create execution with workflow context
   const execution = await executionService.createExecution(
     issue_id,
     executionConfig,
     prompt,
-    agentTypeToUse
+    agentTypeToUse,
+    { workflowId, stepId: step.id }
   );
 
   // Update step status and execution ID
@@ -244,6 +245,17 @@ export async function handleExecuteIssue(
       workflowId,
       execution.worktree_path,
       execution.branch_name
+    );
+  }
+
+  // Start execution timeout if configured
+  const timeoutMs = config.executionTimeoutMs;
+  if (timeoutMs && context.wakeupService) {
+    context.wakeupService.startExecutionTimeout(
+      execution.id,
+      workflowId,
+      step.id,
+      timeoutMs
     );
   }
 

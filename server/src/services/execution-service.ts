@@ -44,6 +44,16 @@ export interface ExecutionConfig {
 }
 
 /**
+ * Workflow context for executions spawned by workflows
+ */
+export interface WorkflowContext {
+  /** The workflow ID that spawned this execution */
+  workflowId: string;
+  /** The workflow step ID this execution implements */
+  stepId: string;
+}
+
+/**
  * ExecutionService
  *
  * Manages the full lifecycle of issue-based executions:
@@ -101,13 +111,15 @@ export class ExecutionService {
    * @param config - Execution configuration
    * @param prompt - Rendered prompt to execute
    * @param agentType - Type of agent to use (defaults to 'claude-code')
+   * @param workflowContext - Optional workflow context for workflow-spawned executions
    * @returns Created execution record
    */
   async createExecution(
     issueId: string | null,
     config: ExecutionConfig,
     prompt: string,
-    agentType: AgentType = "claude-code"
+    agentType: AgentType = "claude-code",
+    workflowContext?: WorkflowContext
   ): Promise<Execution> {
     // 1. Validate
     if (!prompt.trim()) {
@@ -221,7 +233,19 @@ export class ExecutionService {
       }
     }
 
-    // 3. Resolve prompt references for execution (done after storing original)
+    // 3. Update workflow context if provided
+    if (workflowContext) {
+      updateExecution(this.db, execution.id, {
+        workflow_execution_id: workflowContext.workflowId,
+      });
+      // Reload execution to get updated workflow_execution_id
+      const updatedExecution = getExecution(this.db, execution.id);
+      if (updatedExecution) {
+        execution = updatedExecution;
+      }
+    }
+
+    // 4. Resolve prompt references for execution (done after storing original)
     // Pass the issue ID so the issue content is automatically included even if not explicitly mentioned
     const resolver = new PromptResolver(this.db);
     const { resolvedPrompt, errors } = await resolver.resolve(

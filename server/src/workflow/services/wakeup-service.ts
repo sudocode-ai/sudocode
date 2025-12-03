@@ -93,6 +93,12 @@ export class WorkflowWakeupService {
   /** Pending wakeup timers by workflow ID */
   private pendingWakeups = new Map<string, NodeJS.Timeout>();
 
+  /** Active execution timeout timers by execution ID */
+  private executionTimeouts = new Map<
+    string,
+    { timeout: NodeJS.Timeout; workflowId: string; stepId: string }
+  >();
+
   /** Whether the service is running (for timeout monitoring) */
   private _isRunning = false;
 
@@ -220,6 +226,108 @@ export class WorkflowWakeupService {
   }
 
   // ===========================================================================
+  // Execution Timeout Tracking
+  // ===========================================================================
+
+  /**
+   * Start a timeout for an execution.
+   *
+   * When the timeout fires, the execution is cancelled and a step_failed
+   * event is recorded with reason "timeout".
+   *
+   * @param executionId - The execution to track
+   * @param workflowId - The workflow the execution belongs to
+   * @param stepId - The workflow step ID
+   * @param timeoutMs - Timeout duration in milliseconds
+   */
+  startExecutionTimeout(
+    executionId: string,
+    workflowId: string,
+    stepId: string,
+    timeoutMs: number
+  ): void {
+    // Clear any existing timeout for this execution
+    this.clearExecutionTimeout(executionId);
+
+    const timeout = setTimeout(() => {
+      this.executionTimeouts.delete(executionId);
+      this.handleExecutionTimeout(executionId, workflowId, stepId).catch(
+        (err) => {
+          console.error(
+            `[WakeupService] Error handling execution timeout:`,
+            err
+          );
+        }
+      );
+    }, timeoutMs);
+
+    this.executionTimeouts.set(executionId, { timeout, workflowId, stepId });
+
+    console.log(
+      `[WakeupService] Started ${timeoutMs}ms timeout for execution ${executionId}`
+    );
+  }
+
+  /**
+   * Clear timeout for an execution.
+   *
+   * Call this when an execution completes normally to prevent
+   * the timeout from firing.
+   *
+   * @param executionId - The execution to clear timeout for
+   */
+  clearExecutionTimeout(executionId: string): void {
+    const entry = this.executionTimeouts.get(executionId);
+    if (entry) {
+      clearTimeout(entry.timeout);
+      this.executionTimeouts.delete(executionId);
+      console.log(
+        `[WakeupService] Cleared timeout for execution ${executionId}`
+      );
+    }
+  }
+
+  /**
+   * Handle an execution timeout.
+   *
+   * Cancels the execution and records a step_failed event.
+   *
+   * @param executionId - The timed-out execution
+   * @param workflowId - The workflow containing the execution
+   * @param stepId - The workflow step that timed out
+   */
+  private async handleExecutionTimeout(
+    executionId: string,
+    workflowId: string,
+    stepId: string
+  ): Promise<void> {
+    console.warn(`[WakeupService] Execution ${executionId} timed out`);
+
+    // Try to cancel the execution
+    try {
+      await this.executionService.cancelExecution(executionId);
+    } catch (err) {
+      console.error(
+        `[WakeupService] Failed to cancel timed-out execution ${executionId}:`,
+        err
+      );
+      // Continue to record the timeout event anyway
+    }
+
+    // Record timeout event (will trigger wakeup via scheduleWakeup)
+    await this.recordEvent({
+      workflowId,
+      type: "step_failed",
+      executionId,
+      stepId,
+      payload: {
+        reason: "timeout",
+        message: "Execution exceeded configured timeout",
+      },
+    });
+  }
+
+  // ===========================================================================
   // Wakeup Triggering
   // ===========================================================================
 
@@ -315,7 +423,7 @@ export class WorkflowWakeupService {
 
   /**
    * Stop the wakeup service.
-   * Cancels all pending wakeups.
+   * Cancels all pending wakeups and execution timeouts.
    */
   stop(): void {
     this._isRunning = false;
@@ -325,6 +433,12 @@ export class WorkflowWakeupService {
       clearTimeout(timeout);
     }
     this.pendingWakeups.clear();
+
+    // Cancel all execution timeouts
+    for (const [, entry] of this.executionTimeouts) {
+      clearTimeout(entry.timeout);
+    }
+    this.executionTimeouts.clear();
   }
 
   // ===========================================================================
