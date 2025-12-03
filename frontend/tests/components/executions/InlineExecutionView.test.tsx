@@ -24,6 +24,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
       ...actual.executionsApi,
       getChain: vi.fn(),
       worktreeExists: vi.fn(),
+      getChanges: vi.fn(),
       cancel: vi.fn(),
       delete: vi.fn(),
       createFollowUp: vi.fn(),
@@ -130,6 +131,15 @@ describe('InlineExecutionView', () => {
       executions: [createMockExecution()],
     })
     vi.mocked(executionsApi.worktreeExists).mockResolvedValue({ exists: false })
+    vi.mocked(executionsApi.getChanges).mockResolvedValue({
+      available: true,
+      captured: {
+        files: [],
+        summary: { totalFiles: 0, totalAdditions: 0, totalDeletions: 0 },
+        commitRange: null,
+        uncommitted: false,
+      },
+    })
   })
 
   describe('loading state', () => {
@@ -409,9 +419,7 @@ describe('InlineExecutionView', () => {
       const user = userEvent.setup()
       vi.mocked(executionsApi.getChain).mockResolvedValue({
         rootId: 'exec-001',
-        executions: [
-          createMockExecution({ worktree_path: '/path/to/worktree' }),
-        ],
+        executions: [createMockExecution({ worktree_path: '/path/to/worktree' })],
       })
       vi.mocked(executionsApi.worktreeExists).mockResolvedValue({ exists: true })
 
@@ -423,9 +431,7 @@ describe('InlineExecutionView', () => {
 
       // Find the actions menu button (MoreVertical icon)
       const buttons = screen.getAllByRole('button')
-      const menuButton = buttons.find(
-        (btn) => btn.querySelector('.lucide-more-vertical')
-      )
+      const menuButton = buttons.find((btn) => btn.querySelector('.lucide-more-vertical'))
       expect(menuButton).toBeDefined()
 
       if (menuButton) {
@@ -453,9 +459,7 @@ describe('InlineExecutionView', () => {
 
       // Find the actions menu button
       const buttons = screen.getAllByRole('button')
-      const menuButton = buttons.find(
-        (btn) => btn.querySelector('.lucide-more-vertical')
-      )
+      const menuButton = buttons.find((btn) => btn.querySelector('.lucide-more-vertical'))
       expect(menuButton).toBeDefined()
 
       if (menuButton) {
@@ -486,9 +490,7 @@ describe('InlineExecutionView', () => {
 
       // Find the actions menu button
       const buttons = screen.getAllByRole('button')
-      const menuButton = buttons.find(
-        (btn) => btn.querySelector('.lucide-more-vertical')
-      )
+      const menuButton = buttons.find((btn) => btn.querySelector('.lucide-more-vertical'))
       expect(menuButton).toBeDefined()
 
       if (menuButton) {
@@ -571,9 +573,7 @@ describe('InlineExecutionView', () => {
 
       // Should have a menu button
       const buttons = screen.getAllByRole('button')
-      const menuButton = buttons.find(
-        (btn) => btn.querySelector('.lucide-more-vertical')
-      )
+      const menuButton = buttons.find((btn) => btn.querySelector('.lucide-more-vertical'))
       expect(menuButton).toBeDefined()
     })
   })

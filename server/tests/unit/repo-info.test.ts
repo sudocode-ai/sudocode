@@ -431,6 +431,11 @@ describe("Worktree Endpoints", () => {
           deletions: 5,
         }),
         getUncommittedFiles: vi.fn().mockReturnValue([]),
+        getUncommittedStats: vi.fn().mockReturnValue({
+          files: [],
+          additions: 0,
+          deletions: 0,
+        }),
       };
 
       const mockConflictDetector = {
@@ -459,7 +464,7 @@ describe("Worktree Endpoints", () => {
       expect(response.body.data).toHaveProperty("diff");
       expect(response.body.data).toHaveProperty("commits");
       expect(response.body.data).toHaveProperty("mergeBase");
-      expect(response.body.data).toHaveProperty("uncommittedFiles");
+      expect(response.body.data).toHaveProperty("uncommittedChanges");
       expect(response.body.data).toHaveProperty("warnings");
     });
 
@@ -475,6 +480,11 @@ describe("Worktree Endpoints", () => {
           deletions: 0,
         }),
         getUncommittedFiles: vi.fn().mockReturnValue([]),
+        getUncommittedStats: vi.fn().mockReturnValue({
+          files: [],
+          additions: 0,
+          deletions: 0,
+        }),
       };
 
       const mockConflictDetector = {
@@ -523,6 +533,11 @@ describe("Worktree Endpoints", () => {
         getUncommittedFiles: vi
           .fn()
           .mockReturnValue([".sudocode/execution-1234.jsonl"]),
+        getUncommittedStats: vi.fn().mockReturnValue({
+          files: [".sudocode/execution-1234.jsonl"],
+          additions: 10,
+          deletions: 0,
+        }),
       };
 
       const mockConflictDetector = {

@@ -58,11 +58,16 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
       executionId,
       mode,
       commitMessage,
+      includeUncommitted,
     }: {
       executionId: string
       mode: SyncMode
       commitMessage?: string
+      includeUncommitted?: boolean
     }) => {
+      if (mode === 'stage') {
+        return executionsApi.syncStage(executionId, { includeUncommitted })
+      }
       const request = commitMessage ? { mode, commitMessage } : { mode }
       return mode === 'squash'
         ? executionsApi.syncSquash(executionId, request)
@@ -114,8 +119,17 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
    * Perform sync operation
    */
   const performSync = useCallback(
-    (executionId: string, mode: SyncMode, commitMessage?: string) => {
-      syncMutation.mutate({ executionId, mode, commitMessage })
+    (
+      executionId: string,
+      mode: SyncMode,
+      options?: { commitMessage?: string; includeUncommitted?: boolean }
+    ) => {
+      syncMutation.mutate({
+        executionId,
+        mode,
+        commitMessage: options?.commitMessage,
+        includeUncommitted: options?.includeUncommitted,
+      })
     },
     [syncMutation]
   )

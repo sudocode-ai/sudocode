@@ -41,6 +41,8 @@ interface CodeChangesPanelProps {
   worktreePath?: string | null
   /** Diff expansion mode: 'inline' shows diff inline, 'modal' opens in full-screen modal (default: 'inline') */
   diffMode?: 'inline' | 'modal'
+  /** Refresh trigger - increment this value to force a refresh of changes data */
+  refreshTrigger?: number
 }
 
 /**
@@ -57,7 +59,7 @@ function getReasonMessage(reason?: string): string {
     case 'git_error':
       return 'Git operation failed'
     case 'worktree_deleted_with_uncommitted_changes':
-      return 'Worktree was deleted before changes were committed'
+      return 'Worktree was deleted'
     case 'branch_deleted':
       return 'Branch no longer exists, showing captured state'
     default:
@@ -234,6 +236,7 @@ export function CodeChangesPanel({
   executionStatus,
   worktreePath,
   diffMode = 'inline',
+  refreshTrigger,
 }: CodeChangesPanelProps) {
   const { data, loading, error, refresh } = useExecutionChanges(executionId)
   const previousStatusRef = useRef<string | undefined>(executionStatus)
@@ -309,10 +312,17 @@ export function CodeChangesPanel({
       currentStatus &&
       ['completed', 'stopped', 'failed'].includes(currentStatus)
     ) {
-      console.log(`[CodeChangesPanel] Execution ${executionId} completed, refreshing changes`)
       refresh()
     }
   }, [executionStatus, executionId, refresh])
+
+  // Refresh when refreshTrigger changes (e.g., after commit)
+  // Skip initial value of 0, only refresh when it increments
+  useEffect(() => {
+    if (refreshTrigger && refreshTrigger > 0) {
+      refresh()
+    }
+  }, [refreshTrigger, executionId, refresh])
 
   // Show loading state only on initial load (when we have no data yet)
   if (loading && !data) {

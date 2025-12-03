@@ -7,7 +7,7 @@
  * @module hooks/useExecutionChanges
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { executionsApi } from '../lib/api';
 import { isCancel } from 'axios';
 import type { ExecutionChangesResult } from '@/types/execution';
@@ -61,10 +61,10 @@ export function useExecutionChanges(
   const [error, setError] = useState<Error | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
-  // Manual refresh function
-  const refresh = () => {
+  // Manual refresh function (stable reference)
+  const refresh = useCallback(() => {
     setRefreshTrigger((prev) => prev + 1);
-  };
+  }, []);
 
   useEffect(() => {
     // Skip fetching if no execution ID

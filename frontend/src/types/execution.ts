@@ -181,14 +181,25 @@ export interface Commit {
   timestamp: string
 }
 
+/**
+ * Stats about uncommitted changes in worktree
+ */
+export interface UncommittedFileStats {
+  files: string[]
+  additions: number
+  deletions: number
+}
+
 export interface SyncPreviewResult {
   canSync: boolean
   conflicts: ConflictReport
   diff: DiffSummary
   commits: Commit[]
   mergeBase: string
-  uncommittedJSONLChanges: boolean
-  uncommittedFiles: string[]
+  /** @deprecated Use uncommittedChanges instead */
+  uncommittedJSONLChanges?: boolean
+  /** Stats about uncommitted changes in worktree (not included in sync by default) */
+  uncommittedChanges?: UncommittedFileStats
   executionStatus: ExecutionStatus
   warnings: string[]
 }
@@ -197,13 +208,15 @@ export interface SyncResult {
   success: boolean
   finalCommit?: string
   filesChanged: number
-  conflictsResolved: number
-  uncommittedJSONLIncluded: boolean
+  /** Whether there are unresolved merge conflicts (user must resolve manually) */
+  hasConflicts?: boolean
+  /** Number of uncommitted files copied from worktree (stage sync only) */
+  uncommittedFilesIncluded?: number
   error?: string
   cleanupOffered?: boolean
 }
 
-export type SyncMode = 'squash' | 'preserve'
+export type SyncMode = 'squash' | 'preserve' | 'stage'
 
 export interface PerformSyncRequest {
   mode: SyncMode

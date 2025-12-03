@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   Settings,
   ArrowDown,
@@ -107,6 +107,20 @@ interface AgentConfigPanelProps {
    * Defaults to false
    */
   disableContextualActions?: boolean
+  /**
+   * Whether the worktree has uncommitted changes
+   * Required for showing the commit action
+   */
+  hasUncommittedChanges?: boolean
+  /**
+   * Number of commits the worktree branch is ahead of the target branch
+   * If 0, the Merge Changes action will be hidden
+   */
+  commitsAhead?: number
+  /**
+   * Whether the worktree still exists on disk
+   */
+  worktreeExists?: boolean
 }
 
 // TODO: Move this somewhere more central.
@@ -253,6 +267,9 @@ export function AgentConfigPanel({
   forceNewExecution: controlledForceNewExecution,
   currentExecution,
   disableContextualActions = true,
+  hasUncommittedChanges,
+  commitsAhead,
+  worktreeExists = true,
 }: AgentConfigPanelProps) {
   const [loading, setLoading] = useState(false)
   const [prompt, setPrompt] = useState('')
@@ -362,6 +379,9 @@ export function AgentConfigPanel({
     execution: currentExecution,
     issueId,
     disabled: disabled || isRunning,
+    hasUncommittedChanges,
+    commitsAhead,
+    worktreeExists,
   })
 
   // Get current project ID for context search
@@ -369,6 +389,30 @@ export function AgentConfigPanel({
 
   // Fetch available worktrees for worktree-based creation
   const { worktrees } = useWorktrees()
+
+  // Check if the current execution's worktree has been cleaned up
+  // If the execution was a worktree execution but the worktree no longer exists,
+  // we can't follow up and must start a new execution
+  const isWorktreeCleaned = useMemo(() => {
+    // Only relevant for follow-up mode with worktree executions
+    if (!isFollowUp) return false
+    if (!currentExecution?.worktree_path) return false
+    if (currentExecution.mode !== 'worktree') return false
+
+    // Check if the worktree still exists
+    const worktreeExists = worktrees.some(
+      (wt) => wt.id === currentExecution.id || wt.worktree_path === currentExecution.worktree_path
+    )
+
+    return !worktreeExists
+  }, [isFollowUp, currentExecution, worktrees])
+
+  // Force new execution when worktree is cleaned up
+  useEffect(() => {
+    if (isWorktreeCleaned && !forceNewExecution) {
+      setForceNewExecution(true)
+    }
+  }, [isWorktreeCleaned, forceNewExecution, setForceNewExecution])
 
   // Reset config when issue or lastExecution changes (issue switching)
   useEffect(() => {
@@ -462,24 +506,35 @@ export function AgentConfigPanel({
       if (!isMounted) return
       setLoading(true)
       try {
-        // Load branches and repo info in parallel
-        const [branchInfo, repoInfo] = await Promise.all([
-          repositoryApi.getBranches(),
-          repositoryApi.getInfo(),
-        ])
+        // Load branches
+        const branchInfo = await repositoryApi.getBranches()
 
         if (isMounted) {
           // Store available branches and current branch
           setAvailableBranches(branchInfo.branches)
           setCurrentBranch(branchInfo.current)
 
-          // Set baseBranch to current branch if not already set
-          if (repoInfo.branch) {
-            setConfig((prev) => ({
-              ...prev,
-              baseBranch: prev.baseBranch || repoInfo.branch,
-            }))
-          }
+          // Validate and set baseBranch
+          // Use current branch if stored baseBranch is not valid for this project
+          setConfig((prev) => {
+            const storedBranch = prev.baseBranch
+            const isStoredBranchValid = storedBranch && branchInfo.branches.includes(storedBranch)
+
+            if (isStoredBranchValid) {
+              // Keep the stored branch - it's valid for this project
+              return prev
+            }
+
+            // Fall back to current branch
+            const fallbackBranch = branchInfo.current
+            if (fallbackBranch) {
+              return {
+                ...prev,
+                baseBranch: fallbackBranch,
+              }
+            }
+            return prev
+          })
         }
       } catch (error) {
         console.error('Failed to get repository info:', error)
@@ -496,6 +551,24 @@ export function AgentConfigPanel({
       isMounted = false
     }
   }, [issueId, isFollowUp, variant])
+
+  // Validate reuseWorktreeId when worktrees change
+  // If the stored worktree no longer exists, clear it and fall back to current branch
+  useEffect(() => {
+    if (isFollowUp || variant === 'compact') return
+    if (!config.reuseWorktreeId) return
+
+    // Check if the stored worktree still exists
+    const worktreeExists = worktrees.some((w) => w.id === config.reuseWorktreeId)
+    if (!worktreeExists) {
+      // Worktree no longer exists, clear it and fall back to current branch
+      setConfig((prev) => ({
+        ...prev,
+        reuseWorktreeId: undefined,
+        baseBranch: currentBranch || prev.baseBranch,
+      }))
+    }
+  }, [worktrees, config.reuseWorktreeId, isFollowUp, variant, currentBranch])
 
   // Auto-focus textarea when panel opens or issue changes
   useEffect(() => {
@@ -546,9 +619,10 @@ export function AgentConfigPanel({
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Toggle between new execution and follow-up mode with Ctrl+K (only if allowed)
+    // Don't allow toggling back to follow-up if worktree was cleaned up
     if (e.key === 'k' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault()
-      if (isFollowUp && allowModeToggle) {
+      if (isFollowUp && allowModeToggle && !isWorktreeCleaned) {
         const newValue = !forceNewExecution
         setForceNewExecution(newValue)
         onForceNewToggle?.(newValue)
@@ -672,9 +746,11 @@ export function AgentConfigPanel({
                   ? 'Loading prompt...'
                   : isFollowUp
                     ? forceNewExecution
-                      ? allowModeToggle
-                        ? 'Start a new execution... (ctrl+k to continue previous, @ for context)'
-                        : 'Start a new execution... (@ for context)'
+                      ? isWorktreeCleaned
+                        ? 'Worktree cleaned up. Start a new execution... (@ for context)'
+                        : allowModeToggle
+                          ? 'Start a new execution... (ctrl+k to continue previous, @ for context)'
+                          : 'Start a new execution... (@ for context)'
                       : allowModeToggle
                         ? 'Continue the previous conversation... (ctrl+k for new, @ for context)'
                         : 'Continue the previous conversation... (@ for context)'
@@ -908,12 +984,11 @@ export function AgentConfigPanel({
       {/* Sync Preview Dialog */}
       {currentExecution && syncPreview && (
         <SyncPreviewDialog
-          execution={currentExecution}
           preview={syncPreview}
           isOpen={isSyncPreviewOpen}
           onClose={() => setIsSyncPreviewOpen(false)}
-          onConfirmSync={(mode, commitMessage) => {
-            performSync(currentExecution.id, mode, commitMessage)
+          onConfirmSync={(mode, options) => {
+            performSync(currentExecution.id, mode, options)
           }}
           onOpenIDE={() => {
             // Open worktree path in IDE (copy to clipboard for now)
@@ -925,6 +1000,7 @@ export function AgentConfigPanel({
             }
           }}
           isPreviewing={isPreviewing}
+          targetBranch={currentExecution.target_branch ?? undefined}
         />
       )}
     </div>

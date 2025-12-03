@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
 import { useSpec, useSpecFeedback, useSpecs } from '@/hooks/useSpecs'
@@ -39,6 +39,7 @@ import {
 import type { IssueFeedback, Relationship, EntityType, RelationshipType } from '@/types/api'
 import { relationshipsApi } from '@/lib/api'
 import { DeleteSpecDialog } from '@/components/specs/DeleteSpecDialog'
+import { EntityBadge } from '@/components/entities/EntityBadge'
 import { toast } from 'sonner'
 import type { TocItem } from '@/components/specs/TiptapEditor'
 
@@ -60,7 +61,7 @@ export default function SpecDetailPage() {
   const { spec, isLoading, isError } = useSpec(id || '')
   const { feedback } = useSpecFeedback(id || '')
   const { issues } = useIssues()
-  const { updateSpec, isUpdating, archiveSpec, unarchiveSpec, deleteSpec } = useSpecs()
+  const { specs, updateSpec, isUpdating, archiveSpec, unarchiveSpec, deleteSpec } = useSpecs()
   const { createFeedback, updateFeedback, deleteFeedback } = useFeedback(id || '')
 
   const [selectedLine, setSelectedLine] = useState<number | null>(null)
@@ -91,6 +92,12 @@ export default function SpecDetailPage() {
   // Relationships state
   const [relationships, setRelationships] = useState<Relationship[]>([])
   const [_isLoadingRelationships, setIsLoadingRelationships] = useState(false)
+
+  // Compute child specs (specs whose parent_id matches this spec's id)
+  const childSpecs = useMemo(() => {
+    if (!id) return []
+    return specs.filter((s) => s.parent_id === id)
+  }, [specs, id])
 
   // Refs for auto-save and position tracking
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -665,11 +672,25 @@ export default function SpecDetailPage() {
                         <>
                           <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
                           <span className="text-sm text-muted-foreground">Parent: </span>
-                          <button onClick={() => navigate(`/specs/${spec.parent_id}`)}>
-                            <Badge variant="spec" className="cursor-pointer hover:opacity-80">
-                              {spec.parent_id}
-                            </Badge>
-                          </button>
+                          <EntityBadge entityId={spec.parent_id} entityType="spec" />
+                        </>
+                      )}
+                      {childSpecs.length > 0 && (
+                        <>
+                          <GitBranch className="h-3.5 w-3.5 rotate-180 text-muted-foreground" />
+                          <span className="text-sm text-muted-foreground">
+                            {childSpecs.length === 1 ? 'Child:' : 'Children:'}
+                          </span>
+                          <div className="flex flex-wrap items-center gap-1">
+                            {childSpecs.map((child) => (
+                              <EntityBadge
+                                key={child.id}
+                                entityId={child.id}
+                                entityType="spec"
+                                displayText={child.title}
+                              />
+                            ))}
+                          </div>
                         </>
                       )}
                     </div>

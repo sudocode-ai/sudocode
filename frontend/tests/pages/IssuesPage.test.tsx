@@ -36,6 +36,8 @@ vi.mock('@/lib/api', () => ({
   },
   executionsApi: {
     getById: vi.fn(),
+    getChain: vi.fn(),
+    getChanges: vi.fn(),
     list: vi.fn().mockResolvedValue([]),
     listAll: vi.fn().mockResolvedValue({ executions: [], total: 0, hasMore: false }),
     prepare: vi.fn(),
@@ -108,6 +110,17 @@ const mockIssues: Issue[] = [
 describe('IssuesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Default mocks for execution-related API calls
+    vi.mocked(executionsApi.worktreeExists).mockResolvedValue({ exists: false })
+    vi.mocked(executionsApi.getChanges).mockResolvedValue({
+      available: true,
+      captured: {
+        files: [],
+        summary: { totalFiles: 0, totalAdditions: 0, totalDeletions: 0 },
+        commitRange: null,
+        uncommitted: false,
+      },
+    })
   })
 
   it('should show loading state initially', () => {

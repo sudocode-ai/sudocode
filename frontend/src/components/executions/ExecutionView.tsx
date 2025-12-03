@@ -5,18 +5,20 @@ import { AgentConfigPanel } from './AgentConfigPanel'
 import { DeleteWorktreeDialog } from './DeleteWorktreeDialog'
 import { DeleteExecutionDialog } from './DeleteExecutionDialog'
 import { SyncPreviewDialog } from './SyncPreviewDialog'
-import { SyncProgressDialog } from './SyncProgressDialog'
+import { CommitChangesDialog } from './CommitChangesDialog'
+import { CleanupWorktreeDialog } from './CleanupWorktreeDialog'
 import { CodeChangesPanel } from './CodeChangesPanel'
 import { TodoTracker } from './TodoTracker'
 import { buildTodoHistory } from '@/utils/todoExtractor'
 import { useExecutionSync } from '@/hooks/useExecutionSync'
+import { useAgentActions } from '@/hooks/useAgentActions'
 import { useWorktreeMutations } from '@/hooks/useWorktreeMutations'
 import { useExecutionMutations } from '@/hooks/useExecutionMutations'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import type { Execution, ExecutionConfig } from '@/types/execution'
+import type { Execution, ExecutionConfig, SyncMode } from '@/types/execution'
 import type { ToolCallTracking } from '@/hooks/useAgUiStream'
 import {
   Loader2,
@@ -24,7 +26,6 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
-  Trash2,
   Clock,
   PauseCircle,
   ArrowDown,
@@ -62,22 +63,17 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
   const [deletingWorktree, setDeletingWorktree] = useState(false)
   const [deletingExecution, setDeletingExecution] = useState(false)
   const [worktreeExists, setWorktreeExists] = useState(false)
+  const [hasUncommittedChanges, setHasUncommittedChanges] = useState<boolean | undefined>(undefined)
+  const [commitsAhead, setCommitsAhead] = useState<number | undefined>(undefined)
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
 
   // Sync state management
   const {
     syncPreview,
-    syncStatus,
-    syncResult,
-    syncError,
     isSyncPreviewOpen,
-    isSyncProgressOpen,
-    fetchSyncPreview,
     performSync,
     openWorktreeInIDE,
-    cleanupWorktree,
     setIsSyncPreviewOpen,
-    setIsSyncProgressOpen,
     isPreviewing,
   } = useExecutionSync()
 
@@ -86,6 +82,88 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
 
   // Extract todos from accumulated tool calls
   const allTodos = useMemo(() => buildTodoHistory(allToolCalls), [allToolCalls])
+
+  // Get last execution for contextual actions
+  const lastExecutionForActions = chainData?.executions[chainData.executions.length - 1] ?? null
+  const rootExecutionForIssue = chainData?.executions[0]
+
+  // Handle cleanup/commit complete - update local state and reload chain
+  const handleActionComplete = useCallback(async () => {
+    // Reload chain to get fresh data
+    try {
+      const data = await executionsApi.getChain(executionId)
+      setChainData(data)
+
+      // Re-check for uncommitted changes
+      const rootExecution = data.executions[0]
+      if (rootExecution?.worktree_path) {
+        // Worktree mode
+        try {
+          const changes = await executionsApi.getChanges(rootExecution.id)
+          // Check for uncommitted changes: must have uncommitted flag AND actual files to commit
+          const uncommittedFiles =
+            (changes.uncommittedSnapshot?.files?.length ?? 0) +
+            (changes.captured?.uncommitted ? (changes.captured?.files?.length ?? 0) : 0)
+          const hasUncommitted = changes.available && uncommittedFiles > 0
+          setHasUncommittedChanges(hasUncommitted)
+          setCommitsAhead(changes.commitsAhead)
+
+          const worktreeStatus = await executionsApi.worktreeExists(rootExecution.id)
+          setWorktreeExists(worktreeStatus.exists)
+        } catch (err) {
+          console.error('Failed to check changes after action:', err)
+          setHasUncommittedChanges(false)
+          setCommitsAhead(undefined)
+          setWorktreeExists(false)
+        }
+      } else {
+        // Local mode: check for uncommitted changes in main repo
+        setWorktreeExists(false)
+        setCommitsAhead(undefined) // Not applicable for local mode
+        try {
+          const changes = await executionsApi.getChanges(rootExecution.id)
+          // Check for uncommitted changes: must have uncommitted flag AND actual files to commit
+          const uncommittedFiles =
+            (changes.uncommittedSnapshot?.files?.length ?? 0) +
+            (changes.captured?.uncommitted ? (changes.captured?.files?.length ?? 0) : 0)
+          const hasUncommitted = changes.available && uncommittedFiles > 0
+          setHasUncommittedChanges(hasUncommitted)
+        } catch (err) {
+          console.error('Failed to check uncommitted changes for local mode:', err)
+          setHasUncommittedChanges(false)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to reload chain after action:', err)
+    }
+  }, [executionId])
+
+  // Contextual actions (commit, sync, cleanup) - uses the common hook
+  const {
+    actions: contextualActions,
+    isCommitDialogOpen,
+    setIsCommitDialogOpen,
+    isCleanupDialogOpen,
+    setIsCleanupDialogOpen,
+    isCommitting,
+    isCleaning,
+    changesRefreshTrigger,
+    handleCommitChanges,
+    handleCleanupWorktree: handleCleanupWorktreeAction,
+    syncPreview: contextualSyncPreview,
+    isSyncPreviewOpen: isContextualSyncPreviewOpen,
+    setIsSyncPreviewOpen: setIsContextualSyncPreviewOpen,
+    performSync: contextualPerformSync,
+    isPreviewing: isContextualPreviewing,
+  } = useAgentActions({
+    execution: lastExecutionForActions,
+    issueId: rootExecutionForIssue?.issue_id ?? '',
+    worktreeExists,
+    hasUncommittedChanges,
+    commitsAhead,
+    onCleanupComplete: handleActionComplete,
+    onCommitComplete: handleActionComplete,
+  })
 
   // Auto-scroll state and refs
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -103,15 +181,55 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
         const data = await executionsApi.getChain(executionId)
         setChainData(data)
 
-        // Check worktree status for the root execution
+        // Check worktree status (for worktree mode) and uncommitted changes (all modes)
         const rootExecution = data.executions[0]
         if (rootExecution?.worktree_path) {
+          // Worktree mode: check if worktree exists
           try {
             const worktreeStatus = await executionsApi.worktreeExists(rootExecution.id)
             setWorktreeExists(worktreeStatus.exists)
+
+            // Check for uncommitted changes only if worktree still exists
+            if (worktreeStatus.exists) {
+              try {
+                const changes = await executionsApi.getChanges(rootExecution.id)
+                // Uncommitted changes can be in:
+                // 1. uncommittedSnapshot - when there are committed changes AND uncommitted on top
+                // 2. captured with uncommitted=true - when there are only uncommitted changes (no commits yet)
+                const hasUncommitted =
+                  changes.available &&
+                  ((changes.uncommittedSnapshot?.files?.length ?? 0) > 0 ||
+                    (changes.captured?.uncommitted && (changes.captured?.files?.length ?? 0) > 0))
+                setHasUncommittedChanges(hasUncommitted)
+                setCommitsAhead(changes.commitsAhead)
+              } catch (err) {
+                console.error('Failed to check uncommitted changes:', err)
+                setHasUncommittedChanges(undefined)
+                setCommitsAhead(undefined)
+              }
+            } else {
+              setHasUncommittedChanges(false)
+              setCommitsAhead(undefined)
+            }
           } catch (err) {
             console.error('Failed to check worktree status:', err)
             setWorktreeExists(false)
+            setHasUncommittedChanges(false)
+            setCommitsAhead(undefined)
+          }
+        } else {
+          // Local mode: check for uncommitted changes in main repo
+          setCommitsAhead(undefined) // Not applicable for local mode
+          try {
+            const changes = await executionsApi.getChanges(rootExecution.id)
+            const hasUncommitted =
+              changes.available &&
+              ((changes.uncommittedSnapshot?.files?.length ?? 0) > 0 ||
+                (changes.captured?.uncommitted && (changes.captured?.files?.length ?? 0) > 0))
+            setHasUncommittedChanges(hasUncommitted)
+          } catch (err) {
+            console.error('Failed to check uncommitted changes for local mode:', err)
+            setHasUncommittedChanges(undefined)
           }
         }
       } catch (err) {
@@ -131,15 +249,49 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
       const data = await executionsApi.getChain(completedExecutionId)
       setChainData(data)
 
-      // Re-check worktree status
+      // Re-check worktree status and uncommitted changes
       const rootExecution = data.executions[0]
       if (rootExecution?.worktree_path) {
+        // Worktree mode
         try {
           const worktreeStatus = await executionsApi.worktreeExists(rootExecution.id)
           setWorktreeExists(worktreeStatus.exists)
+
+          if (worktreeStatus.exists) {
+            try {
+              const changes = await executionsApi.getChanges(rootExecution.id)
+              // Uncommitted changes can be in:
+              // 1. uncommittedSnapshot - when there are committed changes AND uncommitted on top
+              // 2. captured with uncommitted=true - when there are only uncommitted changes (no commits yet)
+              const hasUncommitted =
+                changes.available &&
+                ((changes.uncommittedSnapshot?.files?.length ?? 0) > 0 ||
+                  (changes.captured?.uncommitted && (changes.captured?.files?.length ?? 0) > 0))
+              setHasUncommittedChanges(hasUncommitted)
+            } catch (err) {
+              console.error('Failed to check uncommitted changes:', err)
+              setHasUncommittedChanges(undefined)
+            }
+          } else {
+            setHasUncommittedChanges(false)
+          }
         } catch (err) {
           console.error('Failed to check worktree status:', err)
           setWorktreeExists(false)
+          setHasUncommittedChanges(false)
+        }
+      } else {
+        // Local mode: check for uncommitted changes in main repo
+        try {
+          const changes = await executionsApi.getChanges(rootExecution.id)
+          const hasUncommitted =
+            changes.available &&
+            ((changes.uncommittedSnapshot?.files?.length ?? 0) > 0 ||
+              (changes.captured?.uncommitted && (changes.captured?.files?.length ?? 0) > 0))
+          setHasUncommittedChanges(hasUncommitted)
+        } catch (err) {
+          console.error('Failed to check uncommitted changes for local mode:', err)
+          setHasUncommittedChanges(undefined)
         }
       }
     } catch (err) {
@@ -249,13 +401,6 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
     }
   }
 
-  // Handle Sync Worktree to Local button click
-  const handleSyncToLocal = useCallback(() => {
-    if (!chainData || chainData.executions.length === 0) return
-    const rootExecution = chainData.executions[0]
-    fetchSyncPreview(rootExecution.id)
-  }, [chainData, fetchSyncPreview])
-
   // Handle open in IDE button click
   const handleOpenInIDE = useCallback(() => {
     if (!chainData || chainData.executions.length === 0) return
@@ -265,25 +410,13 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
 
   // Handle sync confirmation (wrapper for dialog)
   const handleConfirmSync = useCallback(
-    (mode: 'squash' | 'preserve', commitMessage?: string) => {
+    (mode: SyncMode, options?: { commitMessage?: string; includeUncommitted?: boolean }) => {
       if (!chainData || chainData.executions.length === 0) return
       const rootExecution = chainData.executions[0]
-      performSync(rootExecution.id, mode, commitMessage)
+      performSync(rootExecution.id, mode, options)
     },
     [chainData, performSync]
   )
-
-  // Handle cleanup worktree after sync
-  const handleCleanupWorktree = useCallback(() => {
-    if (!chainData || chainData.executions.length === 0) return
-    const rootExecution = chainData.executions[0]
-    cleanupWorktree(rootExecution.id)
-  }, [chainData, cleanupWorktree])
-
-  // Handle retry sync
-  const handleRetrySync = useCallback(() => {
-    handleSyncToLocal()
-  }, [handleSyncToLocal])
 
   // Handle scroll events to detect manual scrolling
   const handleScroll = useCallback(() => {
@@ -516,7 +649,6 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
 
   // Can we cancel the last execution?
   const canCancelLast = lastExecution.status === 'running'
-  const canDeleteWorktree = rootExecution.worktree_path && worktreeExists
 
   const truncateId = (id: string, length = 8) => id.substring(0, length)
 
@@ -651,7 +783,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                       )}
                     </Button>
                   )}
-                  {rootExecution.worktree_path && (
+                  {rootExecution.worktree_path && worktreeExists && (
                     <>
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -691,7 +823,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                       </Tooltip> */}
                     </>
                   )}
-                  {canDeleteWorktree && (
+                  {/* {canDeleteWorktree && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -701,7 +833,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                       <Trash2 className="mr-2 h-4 w-4" />
                       Delete Worktree
                     </Button>
-                  )}
+                  )} */}
                   <Button
                     variant="destructive"
                     size="sm"
@@ -774,15 +906,46 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
                 <>
                   <div className="my-3" />
                   <CodeChangesPanel
+                    key={`${rootExecution.id}-${worktreeExists}`}
                     executionId={rootExecution.id}
                     autoRefreshInterval={
                       executions.some((exec) => exec.status === 'running') ? 30000 : undefined
                     }
                     executionStatus={lastExecution.status}
                     worktreePath={rootExecution.worktree_path}
+                    refreshTrigger={changesRefreshTrigger}
                   />
                 </>
               )}
+
+              {/* Contextual Actions - shown after execution completes */}
+              {!executions.some((exec) => exec.status === 'running') &&
+                contextualActions.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 pt-4">
+                    {contextualActions.map((action) => {
+                      const Icon = action.icon
+                      return (
+                        <Button
+                          key={action.id}
+                          variant={action.variant || 'outline'}
+                          size="sm"
+                          onClick={action.onClick}
+                          disabled={action.disabled}
+                          className="h-8 text-xs"
+                          title={action.description}
+                        >
+                          <Icon className="mr-1.5 h-3.5 w-3.5" />
+                          {action.label}
+                          {action.badge && (
+                            <span className="ml-1.5 rounded-full bg-muted px-1.5 text-xs">
+                              {action.badge}
+                            </span>
+                          )}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                )}
 
               {/* Running indicator if any executions are running */}
               {executions.some((exec) => exec.status === 'running') && (
@@ -885,27 +1048,51 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
         {/* Sync Preview Dialog */}
         {syncPreview && (
           <SyncPreviewDialog
-            execution={rootExecution}
             preview={syncPreview}
             isOpen={isSyncPreviewOpen}
             onClose={() => setIsSyncPreviewOpen(false)}
             onConfirmSync={handleConfirmSync}
             onOpenIDE={handleOpenInIDE}
             isPreviewing={isPreviewing}
+            targetBranch={rootExecution.target_branch ?? undefined}
           />
         )}
 
-        {/* Sync Progress Dialog */}
-        <SyncProgressDialog
-          execution={rootExecution}
-          syncStatus={syncStatus === 'previewing' ? 'idle' : syncStatus}
-          syncResult={syncResult}
-          syncError={syncError}
-          isOpen={isSyncProgressOpen}
-          onClose={() => setIsSyncProgressOpen(false)}
-          onCleanupWorktree={handleCleanupWorktree}
-          onRetry={handleRetrySync}
-        />
+        {/* Commit Changes Dialog (from contextual actions) */}
+        {lastExecution && (
+          <CommitChangesDialog
+            execution={lastExecution}
+            isOpen={isCommitDialogOpen}
+            onClose={() => setIsCommitDialogOpen(false)}
+            onConfirm={handleCommitChanges}
+            isCommitting={isCommitting}
+          />
+        )}
+
+        {/* Cleanup Worktree Dialog (from contextual actions) */}
+        {rootExecution && (
+          <CleanupWorktreeDialog
+            execution={rootExecution}
+            isOpen={isCleanupDialogOpen}
+            onClose={() => setIsCleanupDialogOpen(false)}
+            onConfirm={handleCleanupWorktreeAction}
+            isCleaning={isCleaning}
+          />
+        )}
+
+        {/* Sync Preview Dialog (from contextual actions) */}
+        {lastExecution && contextualSyncPreview && (
+          <SyncPreviewDialog
+            preview={contextualSyncPreview}
+            isOpen={isContextualSyncPreviewOpen}
+            onClose={() => setIsContextualSyncPreviewOpen(false)}
+            onConfirmSync={(mode, options) =>
+              contextualPerformSync(lastExecution.id, mode, options)
+            }
+            onOpenIDE={handleOpenInIDE}
+            isPreviewing={isContextualPreviewing}
+          />
+        )}
       </div>
     </TooltipProvider>
   )

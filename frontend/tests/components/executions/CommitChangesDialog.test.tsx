@@ -57,11 +57,8 @@ describe('CommitChangesDialog', () => {
     )
 
     expect(screen.getByText('Commit Changes')).toBeInTheDocument()
-    expect(
-      screen.getByText((_, element) => {
-        return element?.textContent === 'Commit 3 file changes to feature/test'
-      })
-    ).toBeInTheDocument()
+    // The description includes file count and branch name
+    expect(screen.getByText(/Commit 3 file changes to/)).toBeInTheDocument()
   })
 
   it('should not render dialog when closed', () => {
@@ -88,7 +85,6 @@ describe('CommitChangesDialog', () => {
     )
 
     expect(screen.getByText('feature/test')).toBeInTheDocument()
-    expect(screen.getByText('3 files')).toBeInTheDocument()
   })
 
   it('should show placeholder commit message', () => {
@@ -119,10 +115,16 @@ describe('CommitChangesDialog', () => {
     const textarea = screen.getByPlaceholderText(/Implement i-test1/)
     const commitButton = screen.getByRole('button', { name: /Commit/i })
 
-    // Initially disabled
+    // Initially enabled (pre-filled with "Implement i-test1")
+    expect(commitButton).toBeEnabled()
+
+    // Clear the message
+    await user.clear(textarea)
+
+    // Should be disabled with empty message
     expect(commitButton).toBeDisabled()
 
-    // Type a message
+    // Type a new message
     await user.type(textarea, 'Fix bug in authentication')
 
     // Should be enabled now
@@ -145,31 +147,10 @@ describe('CommitChangesDialog', () => {
     const textarea = screen.getByPlaceholderText(/Implement i-test1/)
     const commitButton = screen.getByRole('button', { name: /Commit/i })
 
+    // Clear the pre-filled message and enter a new one
+    await user.clear(textarea)
     await user.type(textarea, 'Fix bug in authentication')
     await user.click(commitButton)
-
-    await waitFor(() => {
-      expect(mockOnConfirm).toHaveBeenCalledWith('Fix bug in authentication')
-    })
-  })
-
-  it('should support keyboard shortcut (Cmd+Enter) to commit', async () => {
-    const user = userEvent.setup()
-    mockOnConfirm.mockResolvedValue(undefined)
-
-    render(
-      <CommitChangesDialog
-        execution={mockExecution}
-        isOpen={true}
-        onClose={mockOnClose}
-        onConfirm={mockOnConfirm}
-      />
-    )
-
-    const textarea = screen.getByPlaceholderText(/Implement i-test1/)
-
-    await user.type(textarea, 'Fix bug in authentication')
-    await user.keyboard('{Meta>}{Enter}{/Meta}')
 
     await waitFor(() => {
       expect(mockOnConfirm).toHaveBeenCalledWith('Fix bug in authentication')
@@ -240,7 +221,8 @@ describe('CommitChangesDialog', () => {
       />
     )
 
-    expect(screen.getByText('1 file')).toBeInTheDocument()
+    // The description includes file count and branch name
+    expect(screen.getByText(/Commit 1 file change to/)).toBeInTheDocument()
   })
 
   it('should handle execution with no issue_id', () => {
@@ -273,7 +255,11 @@ describe('CommitChangesDialog', () => {
       />
     )
 
+    const textarea = screen.getByPlaceholderText(/Implement i-test1/)
     const commitButton = screen.getByRole('button', { name: /Commit/i })
+
+    // Clear the pre-filled message
+    await user.clear(textarea)
 
     // Button should be disabled with empty message
     expect(commitButton).toBeDisabled()

@@ -77,6 +77,16 @@ vi.mock('@/components/executions/DeleteWorktreeDialog', () => ({
     ) : null,
 }))
 
+vi.mock('@/components/executions/CleanupWorktreeDialog', () => ({
+  CleanupWorktreeDialog: ({ isOpen, onConfirm, onClose }: any) =>
+    isOpen ? (
+      <div data-testid="cleanup-worktree-dialog">
+        <button onClick={() => onConfirm(false)}>Cleanup</button>
+        <button onClick={onClose}>Cancel</button>
+      </div>
+    ) : null,
+}))
+
 vi.mock('@/components/executions/SyncPreviewDialog', () => ({
   SyncPreviewDialog: ({ isOpen, onClose, onConfirmSync }: any) =>
     isOpen ? (
@@ -94,6 +104,20 @@ vi.mock('@/components/executions/SyncProgressDialog', () => ({
         <button onClick={onClose}>Done</button>
       </div>
     ) : null,
+}))
+
+// Mock sonner toast to render visible error messages
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn((message: string, options?: { description?: string }) => {
+      // Create a visible element for testing
+      const div = document.createElement('div')
+      div.setAttribute('data-testid', 'toast-error')
+      div.textContent = options?.description || message
+      document.body.appendChild(div)
+    }),
+  },
 }))
 
 describe('ExecutionView', () => {
@@ -146,6 +170,16 @@ describe('ExecutionView', () => {
     vi.clearAllMocks()
     // Default mock: worktree doesn't exist
     vi.mocked(executionsApi.worktreeExists).mockResolvedValue({ exists: false })
+    // Default mock: no uncommitted changes
+    vi.mocked(executionsApi.getChanges).mockResolvedValue({
+      available: true,
+      captured: {
+        files: [],
+        summary: { totalFiles: 0, totalAdditions: 0, totalDeletions: 0 },
+        commitRange: null,
+        uncommitted: false,
+      },
+    })
   })
 
   it('should display loading state initially', () => {
@@ -506,7 +540,7 @@ describe('ExecutionView', () => {
     })
   })
 
-  it('should show Delete Worktree button when worktree exists', async () => {
+  it('should show Cleanup Worktree button when worktree exists', async () => {
     vi.mocked(executionsApi.getChain).mockResolvedValue(
       mockChainResponse({
         ...mockExecution,
@@ -520,11 +554,11 @@ describe('ExecutionView', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Delete Worktree/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Cleanup Worktree/ })).toBeInTheDocument()
     })
   })
 
-  it('should not show Delete Worktree button when worktree does not exist', async () => {
+  it('should not show Cleanup Worktree button when worktree does not exist', async () => {
     vi.mocked(executionsApi.getChain).mockResolvedValue(
       mockChainResponse({
         ...mockExecution,
@@ -541,10 +575,10 @@ describe('ExecutionView', () => {
       expect(screen.getByText('Completed')).toBeInTheDocument()
     })
 
-    expect(screen.queryByRole('button', { name: /Delete Worktree/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Cleanup Worktree/ })).not.toBeInTheDocument()
   })
 
-  it('should open DeleteWorktreeDialog when Delete Worktree button clicked', async () => {
+  it('should open CleanupWorktreeDialog when Cleanup Worktree button clicked', async () => {
     const user = userEvent.setup()
     vi.mocked(executionsApi.getChain).mockResolvedValue(
       mockChainResponse({
@@ -559,16 +593,16 @@ describe('ExecutionView', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Delete Worktree/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Cleanup Worktree/ })).toBeInTheDocument()
     })
 
-    const deleteButton = screen.getByRole('button', { name: /Delete Worktree/ })
+    const deleteButton = screen.getByRole('button', { name: /Cleanup Worktree/ })
     await user.click(deleteButton)
 
-    expect(screen.getByTestId('delete-worktree-dialog')).toBeInTheDocument()
+    expect(screen.getByTestId('cleanup-worktree-dialog')).toBeInTheDocument()
   })
 
-  it('should delete worktree when dialog confirmed', async () => {
+  it('should cleanup worktree when dialog confirmed', async () => {
     const user = userEvent.setup()
     const completedExecution = { ...mockExecution, status: 'completed' as const }
 
@@ -583,14 +617,14 @@ describe('ExecutionView', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Delete Worktree/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Cleanup Worktree/ })).toBeInTheDocument()
     })
 
-    const deleteButton = screen.getByRole('button', { name: /Delete Worktree/ })
+    const deleteButton = screen.getByRole('button', { name: /Cleanup Worktree/ })
     await user.click(deleteButton)
 
     // Find the confirm button inside the dialog
-    const dialog = screen.getByTestId('delete-worktree-dialog')
+    const dialog = screen.getByTestId('cleanup-worktree-dialog')
     const confirmButton = dialog.querySelector('button:first-child') as HTMLButtonElement
     await user.click(confirmButton)
 
@@ -599,7 +633,7 @@ describe('ExecutionView', () => {
     })
   })
 
-  it('should handle delete worktree error gracefully', async () => {
+  it('should handle cleanup worktree error gracefully', async () => {
     const user = userEvent.setup()
     vi.mocked(executionsApi.getChain).mockResolvedValue(
       mockChainResponse({
@@ -615,14 +649,14 @@ describe('ExecutionView', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Delete Worktree/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Cleanup Worktree/ })).toBeInTheDocument()
     })
 
-    const deleteButton = screen.getByRole('button', { name: /Delete Worktree/ })
+    const deleteButton = screen.getByRole('button', { name: /Cleanup Worktree/ })
     await user.click(deleteButton)
 
     // Find the confirm button inside the dialog
-    const dialog = screen.getByTestId('delete-worktree-dialog')
+    const dialog = screen.getByTestId('cleanup-worktree-dialog')
     const confirmButton = dialog.querySelector('button:first-child') as HTMLButtonElement
     await user.click(confirmButton)
 

@@ -10,7 +10,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
 import { GitCommit, Loader2, AlertCircle } from 'lucide-react'
 import type { Execution } from '@/types/execution'
 
@@ -57,19 +56,15 @@ export function CommitChangesDialog({
   // Reset message when dialog opens
   useEffect(() => {
     if (isOpen) {
-      setCommitMessage('')
+      setCommitMessage(
+        execution.issue_id ? `Implement ${execution.issue_id}` : 'Commit changes from execution'
+      )
     }
   }, [isOpen])
 
   const handleConfirm = async () => {
     if (!commitMessage.trim()) return
     await onConfirm(commitMessage.trim())
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && commitMessage.trim()) {
-      handleConfirm()
-    }
   }
 
   return (
@@ -97,23 +92,12 @@ export function CommitChangesDialog({
           </DialogTitle>
           <DialogDescription>
             Commit {filesChanged.length} file change{filesChanged.length !== 1 ? 's' : ''} to{' '}
-            <span className="font-mono text-xs">{targetBranch}</span>
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{targetBranch}</code>
+            {execution.mode === 'worktree' && <span> (worktree)</span>}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* File count badge */}
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-xs">
-              {filesChanged.length} {filesChanged.length === 1 ? 'file' : 'files'}
-            </Badge>
-            {execution.mode && (
-              <Badge variant="outline" className="text-xs">
-                {execution.mode} mode
-              </Badge>
-            )}
-          </div>
-
           {/* Commit message input */}
           <div className="space-y-2">
             <Label htmlFor="commit-message">Commit Message</Label>
@@ -122,21 +106,17 @@ export function CommitChangesDialog({
               placeholder={placeholderMessage}
               value={commitMessage}
               onChange={(e) => setCommitMessage(e.target.value)}
-              onKeyDown={handleKeyDown}
               rows={4}
               disabled={isCommitting}
               className="resize-none"
               autoFocus
             />
-            <p className="text-xs text-muted-foreground">
-              Tip: Press <kbd className="px-1 rounded bg-muted">⌘/Ctrl+Enter</kbd> to commit
-            </p>
           </div>
 
           {/* Warning if message is empty */}
           {!commitMessage.trim() && (
             <div className="flex items-start gap-2 rounded-md border border-yellow-500/50 bg-yellow-50 p-3 text-sm dark:bg-yellow-950/20">
-              <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-500 mt-0.5 flex-shrink-0" />
+              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-yellow-600 dark:text-yellow-500" />
               <span className="text-yellow-800 dark:text-yellow-200">
                 Please enter a commit message to continue
               </span>

@@ -19,6 +19,7 @@
     "build:server": "npm run build:frontend && npm run build --workspace=server",
     "build:frontend": "npm run build --workspace=frontend",
     "test": "vitest run",
+    "test:summary": "DEBUG_PRINT_LIMIT=0 vitest run --reporter=dot --silent --hideSkippedTests",
     "test:all": "npm test --workspaces --if-present",
     "test:cli": "npm test --workspace=cli",
     "test:mcp": "npm test --workspace=mcp",

@@ -205,21 +205,29 @@ export function WorktreeDetailPanel({ execution }: WorktreeDetailPanelProps) {
         )}
 
         {/* Files Changed Section - Uncommitted */}
-        {syncPreview?.uncommittedFiles && syncPreview.uncommittedFiles.length > 0 && (
+        {syncPreview?.uncommittedChanges && syncPreview.uncommittedChanges.files.length > 0 && (
           <Card className="border-yellow-500/50 p-4">
             <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-yellow-600 dark:text-yellow-400">
               <FilePen className="h-4 w-4" />
-              Uncommitted Changes ({syncPreview.uncommittedFiles.length})
+              Uncommitted Changes ({syncPreview.uncommittedChanges.files.length})
             </h3>
+            <div className="mb-3 flex items-center gap-3 text-xs">
+              <span className="text-green-600 dark:text-green-400">
+                +{syncPreview.uncommittedChanges.additions}
+              </span>
+              <span className="text-red-600 dark:text-red-400">
+                -{syncPreview.uncommittedChanges.deletions}
+              </span>
+            </div>
             <div className="flex flex-col gap-1">
-              {syncPreview.uncommittedFiles.slice(0, 5).map((filePath, index) => (
+              {syncPreview.uncommittedChanges.files.slice(0, 5).map((filePath, index) => (
                 <div key={index} className="text-xs">
                   <span className="truncate font-mono">{filePath}</span>
                 </div>
               ))}
-              {syncPreview.uncommittedFiles.length > 5 && (
+              {syncPreview.uncommittedChanges.files.length > 5 && (
                 <div className="text-xs text-muted-foreground">
-                  + {syncPreview.uncommittedFiles.length - 5} more
+                  + {syncPreview.uncommittedChanges.files.length - 5} more
                 </div>
               )}
             </div>

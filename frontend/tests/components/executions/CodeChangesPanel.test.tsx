@@ -146,9 +146,7 @@ describe('CodeChangesPanel', () => {
 
       render(<CodeChangesPanel executionId="exec-123" />)
 
-      expect(
-        screen.getByText('Changes unavailable: Worktree was deleted before changes were committed')
-      ).toBeInTheDocument()
+      expect(screen.getByText('Changes unavailable: Worktree was deleted')).toBeInTheDocument()
     })
 
     it('should display generic message for unknown reason', () => {
@@ -734,6 +732,51 @@ describe('CodeChangesPanel', () => {
 
       // In collapsed state, shows "+1 new"
       expect(screen.getByText('+1 new')).toBeInTheDocument()
+    })
+
+    it('should show current state info when current state exists', async () => {
+      const user = userEvent.setup()
+      const data: ExecutionChangesResult = {
+        available: true,
+        branchName: 'feature-branch',
+        current: {
+          files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
+          summary: {
+            totalFiles: 1,
+            totalAdditions: 10,
+            totalDeletions: 5,
+          },
+          commitRange: { before: 'abc123', after: 'ghi789' },
+          uncommitted: false,
+        },
+        captured: {
+          files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
+          summary: {
+            totalFiles: 1,
+            totalAdditions: 10,
+            totalDeletions: 5,
+          },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
+        },
+      }
+
+      mockUseExecutionChanges.mockReturnValue({
+        data,
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      })
+
+      render(<CodeChangesPanel executionId="exec-123" />)
+
+      // Expand to see current state info
+      await user.click(screen.getByTitle('Expand code changes'))
+
+      // Check that the file is displayed with stats
+      expect(screen.getByText('src/file1.ts')).toBeInTheDocument()
+      expect(screen.getAllByText('+10')[0]).toBeInTheDocument()
+      expect(screen.getAllByText('-5')[0]).toBeInTheDocument()
     })
   })
 

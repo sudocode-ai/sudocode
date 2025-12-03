@@ -24,6 +24,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
       ...actual.executionsApi,
       getChain: vi.fn(),
       worktreeExists: vi.fn(),
+      getChanges: vi.fn(),
       cancel: vi.fn(),
       delete: vi.fn(),
       createFollowUp: vi.fn(),
@@ -91,6 +92,15 @@ describe('ActivityTimeline', () => {
       executions: [createMockExecution()],
     })
     vi.mocked(executionsApi.worktreeExists).mockResolvedValue({ exists: false })
+    vi.mocked(executionsApi.getChanges).mockResolvedValue({
+      available: true,
+      captured: {
+        files: [],
+        summary: { totalFiles: 0, totalAdditions: 0, totalDeletions: 0 },
+        commitRange: null,
+        uncommitted: false,
+      },
+    })
   })
 
   describe('empty state', () => {

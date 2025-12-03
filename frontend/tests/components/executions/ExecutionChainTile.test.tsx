@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import { BrowserRouter } from 'react-router-dom'
+import { screen, waitFor } from '@testing-library/react'
+import { renderWithProviders } from '@/test/test-utils'
 import { ExecutionChainTile } from '@/components/executions/ExecutionChainTile'
 import { executionsApi } from '@/lib/api'
 import type { Execution } from '@/types/execution'
@@ -19,6 +19,7 @@ vi.mock('@/contexts/WebSocketContext', () => ({
     addMessageHandler: mockAddMessageHandler,
     removeMessageHandler: mockRemoveMessageHandler,
   }),
+  WebSocketProvider: ({ children }: { children: React.ReactNode }) => children,
 }))
 
 // Mock API
@@ -29,6 +30,7 @@ vi.mock('@/lib/api', () => ({
     getChain: vi.fn(),
     createFollowUp: vi.fn(),
     getChanges: vi.fn(),
+    worktreeExists: vi.fn(),
   },
 }))
 
@@ -53,10 +55,7 @@ vi.mock('@/components/executions/AgentConfigPanel', () => ({
   AgentConfigPanel: ({ onStart, isFollowUp, disabled }: any) =>
     isFollowUp ? (
       <div data-testid="agent-config-panel">
-        <button
-          onClick={() => onStart({}, 'Test feedback', 'claude-code')}
-          disabled={disabled}
-        >
+        <button onClick={() => onStart({}, 'Test feedback', 'claude-code')} disabled={disabled}>
           Send Follow-up
         </button>
       </div>
@@ -127,24 +126,33 @@ const createMockExecution = (overrides: Partial<Execution> = {}): Execution => (
   ...overrides,
 })
 
-// Helper to render with router
-const renderWithRouter = (ui: React.ReactElement) => {
-  return render(<BrowserRouter>{ui}</BrowserRouter>)
-}
-
 describe('ExecutionChainTile', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Default mocks
+    vi.mocked(executionsApi.worktreeExists).mockResolvedValue({ exists: false })
+    vi.mocked(executionsApi.getChanges).mockResolvedValue({
+      available: true,
+      captured: {
+        files: [],
+        summary: { totalFiles: 0, totalAdditions: 0, totalDeletions: 0 },
+        commitRange: null,
+        uncommitted: false,
+      },
+    })
   })
 
   describe('Loading State', () => {
     it('shows loading spinner while fetching chain data', async () => {
       // Delay the API response
       vi.mocked(executionsApi.getChain).mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ rootId: 'exec-123', executions: [] }), 100))
+        () =>
+          new Promise((resolve) =>
+            setTimeout(() => resolve({ rootId: 'exec-123', executions: [] }), 100)
+          )
       )
 
-      const { container } = renderWithRouter(<ExecutionChainTile executionId="exec-123" />)
+      const { container } = renderWithProviders(<ExecutionChainTile executionId="exec-123" />)
 
       // Should show loading spinner (Loader2 component with animate-spin class)
       expect(container.querySelector('.animate-spin')).toBeTruthy()
@@ -159,7 +167,7 @@ describe('ExecutionChainTile', () => {
         executions: [mockExecution],
       })
 
-      renderWithRouter(<ExecutionChainTile executionId="exec-123" />)
+      renderWithProviders(<ExecutionChainTile executionId="exec-123" />)
 
       await waitFor(() => {
         expect(screen.getByTestId('execution-monitor-exec-123')).toBeInTheDocument()
@@ -177,7 +185,7 @@ describe('ExecutionChainTile', () => {
         executions,
       })
 
-      renderWithRouter(<ExecutionChainTile executionId="exec-1" />)
+      renderWithProviders(<ExecutionChainTile executionId="exec-1" />)
 
       await waitFor(() => {
         expect(screen.getByTestId('execution-monitor-exec-1')).toBeInTheDocument()
@@ -193,7 +201,7 @@ describe('ExecutionChainTile', () => {
         executions: [mockExecution],
       })
 
-      renderWithRouter(<ExecutionChainTile executionId="exec-123" />)
+      renderWithProviders(<ExecutionChainTile executionId="exec-123" />)
 
       await waitFor(() => {
         expect(screen.getByTestId('entity-badge')).toBeInTheDocument()
@@ -208,7 +216,7 @@ describe('ExecutionChainTile', () => {
         executions: [mockExecution],
       })
 
-      renderWithRouter(<ExecutionChainTile executionId="exec-123" />)
+      renderWithProviders(<ExecutionChainTile executionId="exec-123" />)
 
       await waitFor(() => {
         const link = screen.getByRole('link', { name: /exec-123/i })
@@ -225,7 +233,7 @@ describe('ExecutionChainTile', () => {
         executions: [mockExecution],
       })
 
-      renderWithRouter(<ExecutionChainTile executionId="exec-123" />)
+      renderWithProviders(<ExecutionChainTile executionId="exec-123" />)
 
       await waitFor(() => {
         expect(mockSubscribe).toHaveBeenCalledWith('execution')
@@ -239,7 +247,7 @@ describe('ExecutionChainTile', () => {
         executions: [mockExecution],
       })
 
-      renderWithRouter(<ExecutionChainTile executionId="exec-123" />)
+      renderWithProviders(<ExecutionChainTile executionId="exec-123" />)
 
       await waitFor(() => {
         expect(mockAddMessageHandler).toHaveBeenCalledWith(
@@ -256,7 +264,7 @@ describe('ExecutionChainTile', () => {
         executions: [mockExecution],
       })
 
-      const { unmount } = renderWithRouter(<ExecutionChainTile executionId="exec-123" />)
+      const { unmount } = renderWithProviders(<ExecutionChainTile executionId="exec-123" />)
 
       await waitFor(() => {
         expect(mockAddMessageHandler).toHaveBeenCalled()
@@ -274,7 +282,7 @@ describe('ExecutionChainTile', () => {
         executions: [mockExecution],
       })
 
-      renderWithRouter(<ExecutionChainTile executionId="exec-123" />)
+      renderWithProviders(<ExecutionChainTile executionId="exec-123" />)
 
       await waitFor(() => {
         expect(mockAddMessageHandler).toHaveBeenCalled()
@@ -314,7 +322,7 @@ describe('ExecutionChainTile', () => {
         executions: [mockExecution],
       })
 
-      renderWithRouter(<ExecutionChainTile executionId="exec-123" />)
+      renderWithProviders(<ExecutionChainTile executionId="exec-123" />)
 
       await waitFor(() => {
         expect(mockAddMessageHandler).toHaveBeenCalled()
@@ -355,7 +363,7 @@ describe('ExecutionChainTile', () => {
         executions: [mockExecution],
       })
 
-      renderWithRouter(<ExecutionChainTile executionId="exec-123" />)
+      renderWithProviders(<ExecutionChainTile executionId="exec-123" />)
 
       await waitFor(() => {
         expect(mockAddMessageHandler).toHaveBeenCalled()
@@ -391,7 +399,7 @@ describe('ExecutionChainTile', () => {
         executions: [mockExecution],
       })
 
-      renderWithRouter(<ExecutionChainTile executionId="exec-123" />)
+      renderWithProviders(<ExecutionChainTile executionId="exec-123" />)
 
       await waitFor(() => {
         expect(screen.getByTestId('code-changes-panel')).toBeInTheDocument()
@@ -409,7 +417,7 @@ describe('ExecutionChainTile', () => {
         executions: [mockExecution],
       })
 
-      renderWithRouter(<ExecutionChainTile executionId="exec-123" />)
+      renderWithProviders(<ExecutionChainTile executionId="exec-123" />)
 
       await waitFor(() => {
         expect(screen.getByTestId('execution-monitor-exec-123')).toBeInTheDocument()
@@ -427,7 +435,7 @@ describe('ExecutionChainTile', () => {
         executions: [mockExecution],
       })
 
-      renderWithRouter(<ExecutionChainTile executionId="exec-123" />)
+      renderWithProviders(<ExecutionChainTile executionId="exec-123" />)
 
       await waitFor(() => {
         expect(screen.getByTestId('run-indicator')).toBeInTheDocument()
@@ -441,7 +449,7 @@ describe('ExecutionChainTile', () => {
         executions: [mockExecution],
       })
 
-      renderWithRouter(<ExecutionChainTile executionId="exec-123" />)
+      renderWithProviders(<ExecutionChainTile executionId="exec-123" />)
 
       await waitFor(() => {
         expect(screen.getByTestId('execution-monitor-exec-123')).toBeInTheDocument()
@@ -459,7 +467,7 @@ describe('ExecutionChainTile', () => {
         executions: [mockExecution],
       })
 
-      renderWithRouter(<ExecutionChainTile executionId="exec-123" />)
+      renderWithProviders(<ExecutionChainTile executionId="exec-123" />)
 
       await waitFor(() => {
         expect(screen.getByTestId('agent-config-panel')).toBeInTheDocument()
@@ -476,7 +484,7 @@ describe('ExecutionChainTile', () => {
         executions: [mockExecution],
       })
 
-      const { container } = renderWithRouter(
+      const { container } = renderWithProviders(
         <ExecutionChainTile executionId="exec-123" onToggleVisibility={mockOnToggleVisibility} />
       )
 

@@ -1234,7 +1234,21 @@ export function IssuePanel({
 
             {/* Activity Timeline */}
             <div ref={activitySectionRef} className="space-y-2">
-              <h3 className="text-sm font-medium text-muted-foreground">Activity</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-muted-foreground">Activity</h3>
+                {/* New conversation button - shown when there's at least one execution and it's complete */}
+                {executions.length > 0 && canFollowUp && !forceNewExecution && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setForceNewExecution(true)}
+                    className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    New conversation
+                  </Button>
+                )}
+              </div>
               <ActivityTimeline
                 items={[
                   ...feedback.map((f) => ({ ...f, itemType: 'feedback' as const })),
@@ -1247,20 +1261,6 @@ export function IssuePanel({
                 currentEntityId={issue.id}
                 lastFeedbackRef={lastFeedbackRef}
               />
-              {/* New conversation button - shown when there's a previous execution and we're in follow-up mode */}
-              {isFollowUpMode && canFollowUp && !forceNewExecution && (
-                <div className="flex justify-center pt-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setForceNewExecution(true)}
-                    className="gap-2 text-muted-foreground"
-                  >
-                    <Plus className="h-4 w-4" />
-                    New conversation
-                  </Button>
-                </div>
-              )}
               {/* Scroll marker for bottom of activity */}
               <div ref={activityBottomRef} />
             </div>

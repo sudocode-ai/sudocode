@@ -116,7 +116,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       await waitFor(() => {
-        expect(repositoryApi.getInfo).toHaveBeenCalled()
+        expect(repositoryApi.getBranches).toHaveBeenCalled()
       })
     })
 
@@ -290,10 +290,9 @@ describe('AgentConfigPanel', () => {
 
     it('should show current branch from repository', async () => {
       // Override repo info to return a different branch
-      vi.mocked(repositoryApi.getInfo).mockResolvedValue({
-        name: 'test-repo',
-        path: '/test/path',
-        branch: 'develop',
+      vi.mocked(repositoryApi.getBranches).mockResolvedValue({
+        current: 'develop',
+        branches: ['main', 'develop', 'feature/test'],
       })
 
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)

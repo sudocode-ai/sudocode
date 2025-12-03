@@ -186,6 +186,7 @@ export function createRepoInfoRouter(): Router {
 
         // Check for uncommitted changes
         const uncommittedFiles = worktreeGitSync.getUncommittedFiles();
+        const uncommittedStats = worktreeGitSync.getUncommittedStats();
         const uncommittedJSONL = uncommittedFiles.filter(
           (file) =>
             file.endsWith(".jsonl") &&
@@ -217,7 +218,7 @@ export function createRepoInfoRouter(): Router {
           commits,
           mergeBase,
           uncommittedJSONLChanges: uncommittedJSONL,
-          uncommittedFiles,
+          uncommittedChanges: uncommittedStats,
           executionStatus: null, // Not execution-specific
           warnings,
         };

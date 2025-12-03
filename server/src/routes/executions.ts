@@ -968,6 +968,112 @@ export function createExecutionsRouter(): Router {
   );
 
   /**
+   * POST /api/executions/:executionId/sync/stage
+   *
+   * Perform stage sync operation
+   *
+   * Applies committed worktree changes to the working directory without committing.
+   * Changes are left staged, ready for the user to commit manually.
+   *
+   * Request body:
+   * - includeUncommitted?: boolean - If true, also copy uncommitted files from worktree
+   */
+  router.post(
+    "/executions/:executionId/sync/stage",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+        const { includeUncommitted } = req.body || {};
+
+        // Get worktree sync service
+        const syncService = getWorktreeSyncService(req);
+
+        // Perform stage sync with options
+        const result = await syncService.stageSync(executionId, {
+          includeUncommitted: includeUncommitted === true,
+        });
+
+        res.json({
+          success: true,
+          data: result,
+        });
+      } catch (error) {
+        console.error(
+          `Failed to stage sync execution ${req.params.executionId}:`,
+          error
+        );
+
+        if (error instanceof WorktreeSyncError) {
+          const statusCode = getStatusCodeForSyncError(error);
+          res.status(statusCode).json({
+            success: false,
+            data: null,
+            error: error.message,
+            code: error.code,
+          });
+        } else {
+          res.status(500).json({
+            success: false,
+            data: null,
+            error: "Internal server error",
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+  );
+
+  /**
+   * POST /api/executions/:executionId/sync/preserve
+   *
+   * Perform preserve sync operation
+   *
+   * Merges all commits from worktree branch to target branch, preserving commit history.
+   * Only includes committed changes - uncommitted changes are excluded.
+   */
+  router.post(
+    "/executions/:executionId/sync/preserve",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+
+        // Get worktree sync service
+        const syncService = getWorktreeSyncService(req);
+
+        // Perform preserve sync
+        const result = await syncService.preserveSync(executionId);
+
+        res.json({
+          success: true,
+          data: result,
+        });
+      } catch (error) {
+        console.error(
+          `Failed to preserve sync execution ${req.params.executionId}:`,
+          error
+        );
+
+        if (error instanceof WorktreeSyncError) {
+          const statusCode = getStatusCodeForSyncError(error);
+          res.status(statusCode).json({
+            success: false,
+            data: null,
+            error: error.message,
+            code: error.code,
+          });
+        } else {
+          res.status(500).json({
+            success: false,
+            data: null,
+            error: "Internal server error",
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+  );
+
+  /**
    * POST /api/executions/:executionId/commit
    *
    * Commit uncommitted changes for an execution
@@ -1013,18 +1119,68 @@ export function createExecutionsRouter(): Router {
           return;
         }
 
-        // Parse files_changed
+        // Determine working directory and target branch
+        // IMPORTANT: If worktree_path exists, always use it - this is more reliable than the mode field
+        // which may not be set correctly on follow-up executions
+        const hasWorktree = !!execution.worktree_path;
+        const workingDir = hasWorktree ? execution.worktree_path : repoPath;
+        const targetBranch = hasWorktree
+          ? execution.branch_name
+          : execution.target_branch || "main";
+
+        console.log(
+          `[Commit] Execution ${executionId}: hasWorktree=${hasWorktree}, workingDir=${workingDir}, targetBranch=${targetBranch}, mode=${execution.mode}`
+        );
+
+        // Get current uncommitted files from working directory instead of stale database field
+        // This ensures we're working with the current state
         let filesChanged: string[] = [];
         try {
-          if (execution.files_changed) {
-            const parsed =
-              typeof execution.files_changed === "string"
-                ? JSON.parse(execution.files_changed)
-                : execution.files_changed;
-            filesChanged = Array.isArray(parsed) ? parsed : [parsed];
+          // Get modified tracked files
+          const modifiedOutput = execSync("git diff --name-only", {
+            cwd: workingDir,
+            encoding: "utf-8",
+            stdio: "pipe",
+          });
+
+          // Get staged files
+          const stagedOutput = execSync("git diff --cached --name-only", {
+            cwd: workingDir,
+            encoding: "utf-8",
+            stdio: "pipe",
+          });
+
+          // Get untracked files
+          const untrackedOutput = execSync(
+            "git ls-files --others --exclude-standard",
+            {
+              cwd: workingDir,
+              encoding: "utf-8",
+              stdio: "pipe",
+            }
+          );
+
+          console.log(`[Commit] Git status in ${workingDir}:`, {
+            modified: modifiedOutput.trim().split("\n").filter(Boolean),
+            staged: stagedOutput.trim().split("\n").filter(Boolean),
+            untracked: untrackedOutput.trim().split("\n").filter(Boolean),
+          });
+
+          // Combine all files, removing duplicates
+          const allFiles = new Set<string>();
+          for (const output of [
+            modifiedOutput,
+            stagedOutput,
+            untrackedOutput,
+          ]) {
+            output
+              .split("\n")
+              .filter((line) => line.trim())
+              .forEach((file) => allFiles.add(file));
           }
+          filesChanged = Array.from(allFiles);
         } catch (error) {
-          console.error("Failed to parse files_changed:", error);
+          console.error("Failed to get uncommitted files:", error);
         }
 
         // Validate has uncommitted changes
@@ -1037,41 +1193,55 @@ export function createExecutionsRouter(): Router {
           return;
         }
 
-        // Determine working directory and target branch based on mode
-        const mode = execution.mode || "local";
-        const workingDir =
-          mode === "worktree" && execution.worktree_path
-            ? execution.worktree_path
-            : repoPath;
-        const targetBranch =
-          mode === "worktree"
-            ? execution.branch_name
-            : execution.target_branch || "main";
-
-        console.log(
-          `[Commit] Execution ${executionId}: mode=${mode}, workingDir=${workingDir}, targetBranch=${targetBranch}`
-        );
-
-        // Escape commit message for shell
-        const escapedMessage = message.replace(/"/g, '\\"');
-
         // Execute git operations
         try {
-          // Add files
-          const addCommand = `git add ${filesChanged.map((f) => `"${f}"`).join(" ")}`;
-          execSync(addCommand, {
+          // Add all changes (more reliable than adding specific files)
+          // This catches any files that might have been missed in detection
+          execSync("git add -A", {
             cwd: workingDir,
             encoding: "utf-8",
             stdio: "pipe",
           });
 
-          // Commit with message
-          const commitCommand = `git commit -m "${escapedMessage}"`;
-          execSync(commitCommand, {
+          console.log(`[Commit] Staged all changes with git add -A`);
+
+          // Verify something is staged
+          const stagedAfterAdd = execSync("git diff --cached --name-only", {
+            cwd: workingDir,
+            encoding: "utf-8",
+            stdio: "pipe",
+          }).trim();
+
+          if (!stagedAfterAdd) {
+            console.log(`[Commit] No files staged after git add -A`);
+            res.status(400).json({
+              success: false,
+              data: null,
+              message: "No files staged for commit after git add",
+            });
+            return;
+          }
+
+          console.log(
+            `[Commit] Files staged: ${stagedAfterAdd.split("\n").filter(Boolean).join(", ")}`
+          );
+
+          // Commit using -F - to read message from stdin (safer than shell escaping)
+          const { spawnSync } = await import("child_process");
+          const commitResult = spawnSync("git", ["commit", "-m", message], {
             cwd: workingDir,
             encoding: "utf-8",
             stdio: "pipe",
           });
+
+          if (commitResult.status !== 0) {
+            const errorOutput =
+              commitResult.stderr || commitResult.stdout || "Unknown error";
+            console.error(`[Commit] git commit failed:`, errorOutput);
+            throw new Error(`git commit failed: ${errorOutput}`);
+          }
+
+          console.log(`[Commit] git commit output:`, commitResult.stdout);
 
           // Get commit SHA
           const commitSha = execSync("git rev-parse HEAD", {

@@ -44,7 +44,13 @@ const MAX_ROWS = 3
 const ALL_STATUSES: ExecutionStatus[] = ['running', 'completed', 'failed', 'cancelled', 'stopped']
 
 // All possible issue statuses
-const ALL_ISSUE_STATUSES: IssueStatus[] = ['open', 'in_progress', 'blocked', 'needs_review', 'closed']
+const ALL_ISSUE_STATUSES: IssueStatus[] = [
+  'open',
+  'in_progress',
+  'blocked',
+  'needs_review',
+  'closed',
+]
 
 // Helper to load Set from localStorage
 function loadSetFromStorage<T extends string>(key: string): Set<T> {
@@ -140,13 +146,19 @@ export default function ExecutionsPage() {
     return new Set(executions.map((e) => e.id))
   })
 
+  // Track if initial load has populated visible executions
+  const hasInitializedVisibility = useRef(false)
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(0)
 
-  // Update visible executions when data loads
+  // Update visible executions when data loads (only on initial load)
   useEffect(() => {
-    if (executionsData?.executions && visibleExecutionIds.size === 0) {
-      setVisibleExecutionIds(new Set(executionsData.executions.map((e) => e.id)))
+    if (executionsData?.executions && !hasInitializedVisibility.current) {
+      hasInitializedVisibility.current = true
+      if (visibleExecutionIds.size === 0) {
+        setVisibleExecutionIds(new Set(executionsData.executions.map((e) => e.id)))
+      }
     }
   }, [executionsData, visibleExecutionIds.size])
 
@@ -411,7 +423,7 @@ export default function ExecutionsPage() {
           {/* Status filter dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="h-8 gap-1">
+              <Button variant="outline" size="sm" className="h-8 gap-1 text-muted-foreground">
                 <Filter className="h-3.5 w-3.5" />
                 Filter
                 {(statusFilters.size > 0 || issueStatusFilters.size > 0) && (

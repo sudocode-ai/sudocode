@@ -738,4 +738,96 @@ describe('ExecutionsPage', () => {
       expect(sidebarToggle).toBeInTheDocument()
     })
   })
+
+  describe('Select All / Deselect All', () => {
+    beforeEach(() => {
+      mockExecutionsData.executions = [
+        createMockExecution({ id: 'exec-1', status: 'running' }),
+        createMockExecution({ id: 'exec-2', status: 'completed' }),
+        createMockExecution({ id: 'exec-3', status: 'pending' }),
+      ]
+      mockExecutionsData.total = 3
+    })
+
+    it('allows deselecting all executions via the "All" checkbox', async () => {
+      renderPage()
+
+      // Find all checkboxes - the first one is the "All" checkbox in the sidebar
+      const checkboxes = screen.getAllByRole('checkbox')
+      const allCheckbox = checkboxes[0]
+
+      // Initially, all executions should be visible (checked)
+      // The "All" checkbox should be checked
+      await waitFor(() => {
+        expect(allCheckbox).toBeChecked()
+      })
+
+      // Click the "All" checkbox to deselect all
+      fireEvent.click(allCheckbox)
+
+      // After clicking, all executions should be deselected
+      // The "All" checkbox should be unchecked and stay unchecked
+      await waitFor(() => {
+        expect(allCheckbox).not.toBeChecked()
+      })
+
+      // Verify the empty state is shown (no execution chains visible)
+      await waitFor(() => {
+        expect(screen.getByText('No execution chains visible')).toBeInTheDocument()
+      })
+    })
+
+    it('allows selecting all executions after they were deselected', async () => {
+      renderPage()
+
+      const checkboxes = screen.getAllByRole('checkbox')
+      const allCheckbox = checkboxes[0]
+
+      // First deselect all
+      fireEvent.click(allCheckbox)
+
+      await waitFor(() => {
+        expect(allCheckbox).not.toBeChecked()
+      })
+
+      // Then select all again
+      fireEvent.click(allCheckbox)
+
+      await waitFor(() => {
+        expect(allCheckbox).toBeChecked()
+      })
+
+      // Verify executions are visible again (not showing empty state)
+      await waitFor(() => {
+        expect(screen.queryByText('No execution chains visible')).not.toBeInTheDocument()
+      })
+    })
+
+    it('deselect all state persists and is not reset by useEffect', async () => {
+      renderPage()
+
+      const checkboxes = screen.getAllByRole('checkbox')
+      const allCheckbox = checkboxes[0]
+
+      // Initially checked
+      await waitFor(() => {
+        expect(allCheckbox).toBeChecked()
+      })
+
+      // Deselect all
+      fireEvent.click(allCheckbox)
+
+      // Wait for state to settle
+      await waitFor(() => {
+        expect(allCheckbox).not.toBeChecked()
+      })
+
+      // Wait a bit more to ensure no useEffect resets the state
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      // Should still be unchecked (the bug was that useEffect would re-add all executions)
+      expect(allCheckbox).not.toBeChecked()
+      expect(screen.getByText('No execution chains visible')).toBeInTheDocument()
+    })
+  })
 })

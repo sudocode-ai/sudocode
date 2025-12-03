@@ -68,6 +68,7 @@ describe('SpecDetailPage', () => {
     } as any)
 
     vi.mocked(useSpecsHook.useSpecs).mockReturnValue({
+      specs: [],
       updateSpec: mockUpdateSpec,
       isUpdating: false,
     } as any)
@@ -209,6 +210,66 @@ describe('SpecDetailPage', () => {
     })
   })
 
+  it('should display parent spec when spec has parent_id', async () => {
+    const specWithParent = {
+      ...mockSpec,
+      parent_id: 's-parent',
+    }
+
+    vi.mocked(useSpecsHook.useSpec).mockReturnValue({
+      spec: specWithParent,
+      isLoading: false,
+      isError: false,
+    } as any)
+
+    renderSpecDetailPage()
+
+    await waitFor(() => {
+      expect(screen.getByText('Parent:')).toBeInTheDocument()
+      expect(screen.getByText('s-parent')).toBeInTheDocument()
+    })
+  })
+
+  it('should display child specs when spec has children', async () => {
+    const childSpecs = [
+      { ...mockSpec, id: 's-child1', title: 'Child Spec One', parent_id: 'SPEC-001' },
+      { ...mockSpec, id: 's-child2', title: 'Child Spec Two', parent_id: 'SPEC-001' },
+    ]
+
+    vi.mocked(useSpecsHook.useSpecs).mockReturnValue({
+      specs: childSpecs,
+      updateSpec: mockUpdateSpec,
+      isUpdating: false,
+    } as any)
+
+    renderSpecDetailPage()
+
+    await waitFor(() => {
+      expect(screen.getByText('Children:')).toBeInTheDocument()
+      expect(screen.getByText('Child Spec One')).toBeInTheDocument()
+      expect(screen.getByText('Child Spec Two')).toBeInTheDocument()
+    })
+  })
+
+  it('should display singular "Child:" label when spec has one child', async () => {
+    const childSpecs = [
+      { ...mockSpec, id: 's-child1', title: 'Only Child', parent_id: 'SPEC-001' },
+    ]
+
+    vi.mocked(useSpecsHook.useSpecs).mockReturnValue({
+      specs: childSpecs,
+      updateSpec: mockUpdateSpec,
+      isUpdating: false,
+    } as any)
+
+    renderSpecDetailPage()
+
+    await waitFor(() => {
+      expect(screen.getByText('Child:')).toBeInTheDocument()
+      expect(screen.getByText('Only Child')).toBeInTheDocument()
+    })
+  })
+
   it('should render back button', async () => {
     renderSpecDetailPage()
 
@@ -219,6 +280,7 @@ describe('SpecDetailPage', () => {
 
   it('should show updating status when saving', async () => {
     vi.mocked(useSpecsHook.useSpecs).mockReturnValue({
+      specs: [],
       updateSpec: mockUpdateSpec,
       isUpdating: true,
     } as any)

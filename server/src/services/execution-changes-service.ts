@@ -202,7 +202,17 @@ export class ExecutionChangesService {
       }
     }
 
-    // 9. Return result with both states
+    // 9. Calculate commits ahead of target branch (for merge action visibility)
+    let commitsAhead = 0;
+    if (branchExists && currentBranchHead && execution.target_branch) {
+      commitsAhead = this.countCommitsAhead(
+        execution.target_branch,
+        currentBranchHead,
+        this.repoPath
+      );
+    }
+
+    // 10. Return result with both states
     if (!captured) {
       return {
         available: false,
@@ -220,6 +230,7 @@ export class ExecutionChangesService {
       worktreeExists,
       executionMode,
       additionalCommits,
+      commitsAhead,
       // Legacy compatibility
       changes: captured,
       commitRange: captured.commitRange,
@@ -600,6 +611,43 @@ export class ExecutionChangesService {
       return parseInt(output, 10) || 0;
     } catch (error) {
       console.error("[ExecutionChangesService] Error counting commits:", error);
+      return 0;
+    }
+  }
+
+  /**
+   * Count commits the branch is ahead of target branch
+   * Uses merge-base to find the common ancestor
+   */
+  private countCommitsAhead(
+    targetBranch: string,
+    branchHead: string,
+    workDir: string
+  ): number {
+    try {
+      // Find the merge base between target branch and the current branch
+      const mergeBase = execSync(
+        `git merge-base ${targetBranch} ${branchHead}`,
+        {
+          cwd: workDir,
+          encoding: "utf-8",
+          stdio: "pipe",
+        }
+      ).trim();
+
+      // Count commits from merge base to branch head
+      const output = execSync(
+        `git rev-list --count ${mergeBase}..${branchHead}`,
+        {
+          cwd: workDir,
+          encoding: "utf-8",
+          stdio: "pipe",
+        }
+      ).trim();
+
+      return parseInt(output, 10) || 0;
+    } catch (error) {
+      console.error("[ExecutionChangesService] Error counting commits ahead:", error);
       return 0;
     }
   }

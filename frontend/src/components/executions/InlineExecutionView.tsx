@@ -7,6 +7,10 @@ import { DeleteWorktreeDialog } from './DeleteWorktreeDialog'
 import { DeleteExecutionDialog } from './DeleteExecutionDialog'
 import { CodeChangesPanel } from './CodeChangesPanel'
 import { TodoTracker } from './TodoTracker'
+import { CommitChangesDialog } from './CommitChangesDialog'
+import { CleanupWorktreeDialog } from './CleanupWorktreeDialog'
+import { SyncPreviewDialog } from './SyncPreviewDialog'
+import { useAgentActions } from '@/hooks/useAgentActions'
 import { buildTodoHistory } from '@/utils/todoExtractor'
 import { useWebSocketContext } from '@/contexts/WebSocketContext'
 import { useWorktreeMutations } from '@/hooks/useWorktreeMutations'
@@ -80,6 +84,8 @@ export function InlineExecutionView({
   const [deletingWorktree, setDeletingWorktree] = useState(false)
   const [deletingExecution, setDeletingExecution] = useState(false)
   const [worktreeExists, setWorktreeExists] = useState(false)
+  const [hasUncommittedChanges, setHasUncommittedChanges] = useState<boolean | undefined>(undefined)
+  const [commitsAhead, setCommitsAhead] = useState<number | undefined>(undefined)
   const rootExecutionIdRef = useRef<string | null>(null)
 
   // Accumulated tool calls from all executions in the chain
@@ -87,6 +93,89 @@ export function InlineExecutionView({
 
   // Extract todos from accumulated tool calls
   const allTodos = useMemo(() => buildTodoHistory(allToolCalls), [allToolCalls])
+
+  // Get the last execution for contextual actions (using root for issue context)
+  const lastExecutionForActions = chainData?.executions[chainData.executions.length - 1] ?? null
+  const rootExecutionForIssue = chainData?.executions[0]
+
+  // Handle cleanup/commit complete - update local state and reload chain
+  const handleActionComplete = useCallback(async () => {
+    // Reload chain to get fresh data
+    try {
+      const data = await executionsApi.getChain(executionId)
+      setChainData(data)
+
+      // Re-check for uncommitted changes
+      const rootExecution = data.executions[0]
+      if (rootExecution?.worktree_path) {
+        // Worktree mode
+        try {
+          const changes = await executionsApi.getChanges(rootExecution.id)
+          // Check for uncommitted changes: must have uncommitted flag AND actual files to commit
+          const uncommittedFiles =
+            (changes.uncommittedSnapshot?.files?.length ?? 0) +
+            (changes.captured?.uncommitted ? (changes.captured?.files?.length ?? 0) : 0)
+          const hasUncommitted = changes.available && uncommittedFiles > 0
+          setHasUncommittedChanges(hasUncommitted)
+          setCommitsAhead(changes.commitsAhead)
+
+          // Also re-check worktree status
+          const worktreeStatus = await executionsApi.worktreeExists(rootExecution.id)
+          setWorktreeExists(worktreeStatus.exists)
+        } catch (err) {
+          console.error('Failed to check changes after action:', err)
+          setHasUncommittedChanges(false)
+          setCommitsAhead(undefined)
+          setWorktreeExists(false)
+        }
+      } else {
+        // Local mode: check for uncommitted changes in main repo
+        setWorktreeExists(false)
+        setCommitsAhead(undefined) // Not applicable for local mode
+        try {
+          const changes = await executionsApi.getChanges(rootExecution.id)
+          // Check for uncommitted changes: must have uncommitted flag AND actual files to commit
+          const uncommittedFiles =
+            (changes.uncommittedSnapshot?.files?.length ?? 0) +
+            (changes.captured?.uncommitted ? (changes.captured?.files?.length ?? 0) : 0)
+          const hasUncommitted = changes.available && uncommittedFiles > 0
+          setHasUncommittedChanges(hasUncommitted)
+        } catch (err) {
+          console.error('Failed to check uncommitted changes for local mode:', err)
+          setHasUncommittedChanges(false)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to reload chain after action:', err)
+    }
+  }, [executionId])
+
+  // Contextual actions (commit, sync, cleanup)
+  const {
+    actions,
+    isCommitDialogOpen,
+    setIsCommitDialogOpen,
+    isCleanupDialogOpen,
+    setIsCleanupDialogOpen,
+    isCommitting,
+    isCleaning,
+    changesRefreshTrigger,
+    handleCommitChanges,
+    handleCleanupWorktree,
+    syncPreview,
+    isSyncPreviewOpen,
+    setIsSyncPreviewOpen,
+    performSync,
+    isPreviewing,
+  } = useAgentActions({
+    execution: lastExecutionForActions,
+    issueId: rootExecutionForIssue?.issue_id ?? '',
+    worktreeExists,
+    hasUncommittedChanges,
+    commitsAhead,
+    onCleanupComplete: handleActionComplete,
+    onCommitComplete: handleActionComplete,
+  })
 
   // Load execution chain and set up WebSocket subscription
   useEffect(() => {
@@ -132,14 +221,52 @@ export function InlineExecutionView({
           addMessageHandler(handlerId, handleMessage)
         }
 
-        // Check worktree status for the root execution
+        // Check worktree status (for worktree mode) and uncommitted changes (all modes)
         if (rootExecution?.worktree_path) {
+          // Worktree mode: check if worktree exists
           try {
             const worktreeStatus = await executionsApi.worktreeExists(rootExecution.id)
             setWorktreeExists(worktreeStatus.exists)
+
+            // Check for uncommitted changes only if worktree still exists
+            if (worktreeStatus.exists) {
+              try {
+                const changes = await executionsApi.getChanges(rootExecution.id)
+                // Check for uncommitted changes: must have uncommitted flag AND actual files to commit
+                const uncommittedFiles =
+                  (changes.uncommittedSnapshot?.files?.length ?? 0) +
+                  (changes.captured?.uncommitted ? (changes.captured?.files?.length ?? 0) : 0)
+                const hasUncommitted = changes.available && uncommittedFiles > 0
+                setHasUncommittedChanges(hasUncommitted)
+                setCommitsAhead(changes.commitsAhead)
+              } catch (err) {
+                console.error('Failed to check uncommitted changes:', err)
+                setHasUncommittedChanges(false) // Safe default: assume no uncommitted changes
+                setCommitsAhead(undefined)
+              }
+            } else {
+              setHasUncommittedChanges(false)
+              setCommitsAhead(undefined)
+            }
           } catch (err) {
             console.error('Failed to check worktree status:', err)
             setWorktreeExists(false)
+            setHasUncommittedChanges(false)
+            setCommitsAhead(undefined)
+          }
+        } else {
+          // Local mode: check for uncommitted changes in main repo
+          setCommitsAhead(undefined) // Not applicable for local mode
+          try {
+            const changes = await executionsApi.getChanges(rootExecution.id)
+            const hasUncommitted =
+              changes.available &&
+              ((changes.uncommittedSnapshot?.files?.length ?? 0) > 0 ||
+                (changes.captured?.uncommitted && (changes.captured?.files?.length ?? 0) > 0))
+            setHasUncommittedChanges(hasUncommitted)
+          } catch (err) {
+            console.error('Failed to check uncommitted changes for local mode:', err)
+            setHasUncommittedChanges(false) // Safe default: assume no uncommitted changes
           }
         }
       } catch (err) {
@@ -570,6 +697,7 @@ export function InlineExecutionView({
               <>
                 <div className="my-3" />
                 <CodeChangesPanel
+                  key={`${rootExecution.id}-${worktreeExists}`}
                   executionId={rootExecution.id}
                   autoRefreshInterval={
                     executions.some((exec) => exec.status === 'running') ? 30000 : undefined
@@ -577,6 +705,7 @@ export function InlineExecutionView({
                   executionStatus={lastExecution.status}
                   worktreePath={rootExecution.worktree_path}
                   diffMode="modal"
+                  refreshTrigger={changesRefreshTrigger}
                 />
               </>
             )}
@@ -587,6 +716,35 @@ export function InlineExecutionView({
                 <div className="my-3" />
                 <RunIndicator />
               </>
+            )}
+
+            {/* Contextual Actions - shown after execution completes */}
+            {!executions.some((exec) => exec.status === 'running') && actions.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 pt-4">
+                {/* Worktree actions */}
+                {actions.map((action) => {
+                  const Icon = action.icon
+                  return (
+                    <Button
+                      key={action.id}
+                      variant={action.variant || 'outline'}
+                      size="sm"
+                      onClick={action.onClick}
+                      disabled={action.disabled}
+                      className="h-8 text-xs"
+                      title={action.description}
+                    >
+                      <Icon className="mr-1.5 h-3.5 w-3.5" />
+                      {action.label}
+                      {action.badge && (
+                        <span className="ml-1.5 rounded-full bg-muted px-1.5 text-xs">
+                          {action.badge}
+                        </span>
+                      )}
+                    </Button>
+                  )
+                })}
+              </div>
             )}
           </div>
         )}
@@ -609,6 +767,45 @@ export function InlineExecutionView({
         onConfirm={handleDeleteExecution}
         isDeleting={deletingExecution}
       />
+
+      {/* Commit Changes Dialog */}
+      {lastExecution && (
+        <CommitChangesDialog
+          execution={lastExecution}
+          isOpen={isCommitDialogOpen}
+          onClose={() => setIsCommitDialogOpen(false)}
+          onConfirm={handleCommitChanges}
+          isCommitting={isCommitting}
+        />
+      )}
+
+      {/* Cleanup Worktree Dialog */}
+      {rootExecution && (
+        <CleanupWorktreeDialog
+          execution={rootExecution}
+          isOpen={isCleanupDialogOpen}
+          onClose={() => setIsCleanupDialogOpen(false)}
+          onConfirm={handleCleanupWorktree}
+          isCleaning={isCleaning}
+        />
+      )}
+
+      {/* Sync Preview Dialog */}
+      {lastExecution && syncPreview && (
+        <SyncPreviewDialog
+          preview={syncPreview}
+          isOpen={isSyncPreviewOpen}
+          onClose={() => setIsSyncPreviewOpen(false)}
+          onConfirmSync={(mode, options) =>
+            performSync(lastExecution.id, mode, options)
+          }
+          onOpenIDE={() => {
+            // Could add IDE integration here
+          }}
+          isPreviewing={isPreviewing}
+          targetBranch={lastExecution.target_branch ?? undefined}
+        />
+      )}
     </>
   )
 }

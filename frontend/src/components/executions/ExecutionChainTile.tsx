@@ -7,8 +7,12 @@ import { ExecutionMonitor, RunIndicator } from './ExecutionMonitor'
 import { AgentConfigPanel } from './AgentConfigPanel'
 import { TodoTracker } from './TodoTracker'
 import { CodeChangesPanel } from './CodeChangesPanel'
+import { CommitChangesDialog } from './CommitChangesDialog'
+import { CleanupWorktreeDialog } from './CleanupWorktreeDialog'
+import { SyncPreviewDialog } from './SyncPreviewDialog'
 import { buildTodoHistory } from '@/utils/todoExtractor'
 import { executionsApi, type ExecutionChainResponse } from '@/lib/api'
+import { useAgentActions } from '@/hooks/useAgentActions'
 import { useWebSocketContext } from '@/contexts/WebSocketContext'
 import type { Execution, ExecutionConfig } from '@/types/execution'
 import type { WebSocketMessage } from '@/types/api'
@@ -115,12 +119,96 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
   const [chainData, setChainData] = useState<ExecutionChainResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
+  const [worktreeExists, setWorktreeExists] = useState(false)
+  const [hasUncommittedChanges, setHasUncommittedChanges] = useState<boolean | undefined>(undefined)
+  const [commitsAhead, setCommitsAhead] = useState<number | undefined>(undefined)
 
   // Accumulated tool calls from all executions in the chain (for TodoTracker)
   const [allToolCalls, setAllToolCalls] = useState<Map<string, ToolCallTracking>>(new Map())
 
   // Extract todos from accumulated tool calls
   const allTodos = useMemo(() => buildTodoHistory(allToolCalls), [allToolCalls])
+
+  // Get the last execution for contextual actions
+  const lastExecutionForActions = chainData?.executions[chainData.executions.length - 1] ?? null
+  const rootExecutionForIssue = chainData?.executions[0]
+
+  // Handle cleanup/commit complete - update local state and reload chain
+  const handleActionComplete = useCallback(async () => {
+    // Reload chain to get fresh data
+    try {
+      const data = await executionsApi.getChain(executionId)
+      setChainData(data)
+
+      // Re-check for uncommitted changes and commits ahead
+      const rootExecution = data.executions[0]
+      if (rootExecution?.worktree_path) {
+        // Worktree mode
+        try {
+          const changes = await executionsApi.getChanges(rootExecution.id)
+          // Check for uncommitted changes: must have uncommitted flag AND actual files to commit
+          const uncommittedFiles =
+            (changes.uncommittedSnapshot?.files?.length ?? 0) +
+            (changes.captured?.uncommitted ? (changes.captured?.files?.length ?? 0) : 0)
+          const hasUncommitted = changes.available && uncommittedFiles > 0
+          setHasUncommittedChanges(hasUncommitted)
+          setCommitsAhead(changes.commitsAhead)
+
+          const worktreeStatus = await executionsApi.worktreeExists(rootExecution.id)
+          setWorktreeExists(worktreeStatus.exists)
+        } catch (err) {
+          console.error('Failed to check changes after action:', err)
+          setHasUncommittedChanges(false)
+          setCommitsAhead(undefined)
+          setWorktreeExists(false)
+        }
+      } else {
+        // Local mode: check for uncommitted changes in main repo
+        setWorktreeExists(false)
+        setCommitsAhead(undefined) // Not applicable for local mode
+        try {
+          const changes = await executionsApi.getChanges(rootExecution.id)
+          // Check for uncommitted changes: must have uncommitted flag AND actual files to commit
+          const uncommittedFiles =
+            (changes.uncommittedSnapshot?.files?.length ?? 0) +
+            (changes.captured?.uncommitted ? (changes.captured?.files?.length ?? 0) : 0)
+          const hasUncommitted = changes.available && uncommittedFiles > 0
+          setHasUncommittedChanges(hasUncommitted)
+        } catch (err) {
+          console.error('Failed to check uncommitted changes for local mode:', err)
+          setHasUncommittedChanges(false)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to reload chain after action:', err)
+    }
+  }, [executionId])
+
+  // Contextual actions (commit, sync, cleanup)
+  const {
+    actions: contextualActions,
+    isCommitDialogOpen,
+    setIsCommitDialogOpen,
+    isCleanupDialogOpen,
+    setIsCleanupDialogOpen,
+    isCommitting,
+    isCleaning,
+    handleCommitChanges,
+    handleCleanupWorktree: handleCleanupWorktreeAction,
+    syncPreview,
+    isSyncPreviewOpen,
+    setIsSyncPreviewOpen,
+    performSync,
+    isPreviewing,
+  } = useAgentActions({
+    execution: lastExecutionForActions,
+    issueId: rootExecutionForIssue?.issue_id ?? '',
+    worktreeExists,
+    hasUncommittedChanges,
+    commitsAhead,
+    onCleanupComplete: handleActionComplete,
+    onCommitComplete: handleActionComplete,
+  })
 
   // WebSocket context for real-time updates
   const { connected, subscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
@@ -151,6 +239,69 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
         if (!cancelled) {
           setChainData(data)
           chainExecutionIdsRef.current = new Set(data.executions.map((e) => e.id))
+
+          // Check worktree status (for worktree mode) and uncommitted changes (all modes)
+          const rootExecution = data.executions[0]
+          if (rootExecution?.worktree_path) {
+            // Worktree mode: check if worktree exists
+            try {
+              const worktreeStatus = await executionsApi.worktreeExists(rootExecution.id)
+              if (!cancelled) {
+                setWorktreeExists(worktreeStatus.exists)
+
+                // Check for uncommitted changes and commits ahead only if worktree still exists
+                if (worktreeStatus.exists) {
+                  try {
+                    const changes = await executionsApi.getChanges(rootExecution.id)
+                    if (!cancelled) {
+                      // Check for uncommitted changes: must have uncommitted flag AND actual files to commit
+                      const uncommittedFiles =
+                        (changes.uncommittedSnapshot?.files?.length ?? 0) +
+                        (changes.captured?.uncommitted ? (changes.captured?.files?.length ?? 0) : 0)
+                      const hasUncommitted = changes.available && uncommittedFiles > 0
+                      setHasUncommittedChanges(hasUncommitted)
+                      setCommitsAhead(changes.commitsAhead)
+                    }
+                  } catch (err) {
+                    console.error('Failed to check uncommitted changes:', err)
+                    if (!cancelled) {
+                      setHasUncommittedChanges(false) // Safe default: assume no uncommitted changes
+                      setCommitsAhead(undefined)
+                    }
+                  }
+                } else {
+                  setHasUncommittedChanges(false)
+                  setCommitsAhead(undefined)
+                }
+              }
+            } catch (err) {
+              console.error('Failed to check worktree status:', err)
+              if (!cancelled) {
+                setWorktreeExists(false)
+                setHasUncommittedChanges(false)
+                setCommitsAhead(undefined)
+              }
+            }
+          } else {
+            // Local mode: check for uncommitted changes in main repo
+            setCommitsAhead(undefined) // Not applicable for local mode
+            try {
+              const changes = await executionsApi.getChanges(rootExecution.id)
+              if (!cancelled) {
+                // Check for uncommitted changes: must have uncommitted flag AND actual files to commit
+                const uncommittedFiles =
+                  (changes.uncommittedSnapshot?.files?.length ?? 0) +
+                  (changes.captured?.uncommitted ? (changes.captured?.files?.length ?? 0) : 0)
+                const hasUncommitted = changes.available && uncommittedFiles > 0
+                setHasUncommittedChanges(hasUncommitted)
+              }
+            } catch (err) {
+              console.error('Failed to check uncommitted changes for local mode:', err)
+              if (!cancelled) {
+                setHasUncommittedChanges(false) // Safe default: assume no uncommitted changes
+              }
+            }
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -262,10 +413,7 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
             const existing = prev.get(key)
             if (!existing) {
               hasChanges = true
-            } else if (
-              existing.status !== toolCall.status ||
-              existing.result !== toolCall.result
-            ) {
+            } else if (existing.status !== toolCall.status || existing.result !== toolCall.result) {
               hasChanges = true
             }
           })
@@ -314,129 +462,203 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
   const lastExecution = executions[executions.length - 1]
 
   return (
-    <div className="flex h-full cursor-pointer flex-col border bg-card shadow-sm transition-shadow focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 hover:shadow-md">
-      {/* Sticky Header */}
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-card px-4 py-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Link
-            to={`/executions/${executionId}`}
-            className="min-w-0 truncate font-mono text-sm font-medium hover:underline"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {rootExecution.id}
-          </Link>
+    <>
+      <div className="flex h-full cursor-pointer flex-col border bg-card shadow-sm transition-shadow focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 hover:shadow-md">
+        {/* Sticky Header */}
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-card px-4 py-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Link
+              to={`/executions/${executionId}`}
+              className="min-w-0 truncate font-mono text-sm font-medium hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {rootExecution.id}
+            </Link>
 
-          {/* Issue badge inline if available */}
-          {rootExecution.issue_id && (
-            <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-              <EntityBadge
-                entityId={rootExecution.issue_id}
-                entityType="issue"
-                showHoverCard={true}
-                linkToEntity={true}
-                className="text-xs"
+            {/* Issue badge inline if available */}
+            {rootExecution.issue_id && (
+              <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                <EntityBadge
+                  entityId={rootExecution.issue_id}
+                  entityType="issue"
+                  showHoverCard={true}
+                  linkToEntity={true}
+                  className="text-xs"
+                />
+              </div>
+            )}
+
+            {/* Status icon */}
+            <div className="flex-shrink-0">{renderStatusIcon(lastExecution.status)}</div>
+          </div>
+
+          {/* Quick actions */}
+          {onToggleVisibility && (
+            <div className="flex items-center gap-1">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleClose()
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Hide from grid</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          )}
+        </div>
+
+        {/* Scrollable Middle - ExecutionMonitor for each execution */}
+        <div className="flex-1 overflow-y-auto p-2">
+          {executions.map((execution, index) => (
+            <div key={execution.id}>
+              <ExecutionMonitor
+                executionId={execution.id}
+                execution={execution}
+                compact={true}
+                hideTodoTracker={true}
+                onToolCallsUpdate={(toolCalls) => handleToolCallsUpdate(execution.id, toolCalls)}
+              />
+              {/* Separator between executions */}
+              {index < executions.length - 1 && <div className="mx-4 my-2" />}
+            </div>
+          ))}
+
+          {/* Accumulated Todo Tracker - shows todos from all executions in chain */}
+          {allTodos.length > 0 && (
+            <div className="mt-2 px-2">
+              <TodoTracker todos={allTodos} />
+            </div>
+          )}
+
+          {/* Code Changes Panel - shows file changes from the execution */}
+          {(rootExecution.before_commit || rootExecution.after_commit) && (
+            <div className="mt-2 px-2">
+              <CodeChangesPanel
+                key={`${rootExecution.id}-${worktreeExists}`}
+                executionId={rootExecution.id}
+                autoRefreshInterval={
+                  executions.some((exec) => exec.status === 'running') ? 30000 : undefined
+                }
+                executionStatus={lastExecution.status}
+                worktreePath={rootExecution.worktree_path}
+                diffMode="modal"
               />
             </div>
           )}
 
-          {/* Status icon */}
-          <div className="flex-shrink-0">{renderStatusIcon(lastExecution.status)}</div>
+          {/* Contextual Actions - shown after execution completes */}
+          {!executions.some((exec) => exec.status === 'running') &&
+            contextualActions.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 px-2">
+                {contextualActions.map((action) => {
+                  const Icon = action.icon
+                  return (
+                    <Button
+                      key={action.id}
+                      variant={action.variant || 'outline'}
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        action.onClick()
+                      }}
+                      disabled={action.disabled}
+                      className="h-7 text-xs"
+                      title={action.description}
+                    >
+                      <Icon className="mr-1 h-3 w-3" />
+                      {action.label}
+                      {action.badge && (
+                        <span className="ml-1 rounded-full bg-muted px-1.5 text-xs">
+                          {action.badge}
+                        </span>
+                      )}
+                    </Button>
+                  )
+                })}
+              </div>
+            )}
+
+          {/* Running indicator if any executions are running */}
+          {executions.some((exec) => exec.status === 'running') && (
+            <div className="mt-2 px-2">
+              <RunIndicator />
+            </div>
+          )}
         </div>
 
-        {/* Quick actions */}
-        {onToggleVisibility && (
-          <div className="flex items-center gap-1">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleClose()
-                    }}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Hide from grid</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-        )}
+        {/* Sticky Footer - AgentConfigPanel for follow-ups (compact mode) */}
+        <div
+          className="sticky bottom-0 z-10 border-t bg-card px-2 py-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <AgentConfigPanel
+            variant="compact"
+            issueId={rootExecution.issue_id || ''}
+            onStart={handleFollowUpStart}
+            disabled={submittingFollowUp}
+            isFollowUp={true}
+            lastExecution={{
+              id: lastExecution.id,
+              mode: lastExecution.mode || undefined,
+              model: lastExecution.model || undefined,
+              target_branch: lastExecution.target_branch,
+              agent_type: lastExecution.agent_type,
+            }}
+            promptPlaceholder="Send a follow-up message..."
+            currentExecution={lastExecution}
+            disableContextualActions={true}
+          />
+        </div>
       </div>
 
-      {/* Scrollable Middle - ExecutionMonitor for each execution */}
-      <div className="flex-1 overflow-y-auto p-2">
-        {executions.map((execution, index) => (
-          <div key={execution.id}>
-            <ExecutionMonitor
-              executionId={execution.id}
-              execution={execution}
-              compact={true}
-              hideTodoTracker={true}
-              onToolCallsUpdate={(toolCalls) => handleToolCallsUpdate(execution.id, toolCalls)}
-            />
-            {/* Separator between executions */}
-            {index < executions.length - 1 && <div className="mx-4 my-2" />}
-          </div>
-        ))}
-
-        {/* Accumulated Todo Tracker - shows todos from all executions in chain */}
-        {allTodos.length > 0 && (
-          <div className="mt-2 px-2">
-            <TodoTracker todos={allTodos} />
-          </div>
-        )}
-
-        {/* Code Changes Panel - shows file changes from the execution */}
-        {(rootExecution.before_commit || rootExecution.after_commit) && (
-          <div className="mt-2 px-2">
-            <CodeChangesPanel
-              executionId={rootExecution.id}
-              autoRefreshInterval={
-                executions.some((exec) => exec.status === 'running') ? 30000 : undefined
-              }
-              executionStatus={lastExecution.status}
-              worktreePath={rootExecution.worktree_path}
-              diffMode="modal"
-            />
-          </div>
-        )}
-
-        {/* Running indicator if any executions are running */}
-        {executions.some((exec) => exec.status === 'running') && (
-          <div className="mt-2 px-2">
-            <RunIndicator />
-          </div>
-        )}
-      </div>
-
-      {/* Sticky Footer - AgentConfigPanel for follow-ups (compact mode) */}
-      <div
-        className="sticky bottom-0 z-10 border-t bg-card px-2 py-2"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <AgentConfigPanel
-          variant="compact"
-          issueId={rootExecution.issue_id || ''}
-          onStart={handleFollowUpStart}
-          disabled={submittingFollowUp}
-          isFollowUp={true}
-          lastExecution={{
-            id: lastExecution.id,
-            mode: lastExecution.mode || undefined,
-            model: lastExecution.model || undefined,
-            target_branch: lastExecution.target_branch,
-            agent_type: lastExecution.agent_type,
-          }}
-          promptPlaceholder="Send a follow-up message..."
-          currentExecution={lastExecution}
-          disableContextualActions={true}
+      {/* Commit Changes Dialog */}
+      {lastExecution && (
+        <CommitChangesDialog
+          execution={lastExecution}
+          isOpen={isCommitDialogOpen}
+          onClose={() => setIsCommitDialogOpen(false)}
+          onConfirm={handleCommitChanges}
+          isCommitting={isCommitting}
         />
-      </div>
-    </div>
+      )}
+
+      {/* Cleanup Worktree Dialog */}
+      {rootExecution && (
+        <CleanupWorktreeDialog
+          execution={rootExecution}
+          isOpen={isCleanupDialogOpen}
+          onClose={() => setIsCleanupDialogOpen(false)}
+          onConfirm={handleCleanupWorktreeAction}
+          isCleaning={isCleaning}
+        />
+      )}
+
+      {/* Sync Preview Dialog */}
+      {lastExecution && syncPreview && (
+        <SyncPreviewDialog
+          preview={syncPreview}
+          isOpen={isSyncPreviewOpen}
+          onClose={() => setIsSyncPreviewOpen(false)}
+          onConfirmSync={(mode, options) =>
+            performSync(lastExecution.id, mode, options)
+          }
+          onOpenIDE={() => {
+            // Could add IDE integration here
+          }}
+          isPreviewing={isPreviewing}
+          targetBranch={lastExecution.target_branch ?? undefined}
+        />
+      )}
+    </>
   )
 }
