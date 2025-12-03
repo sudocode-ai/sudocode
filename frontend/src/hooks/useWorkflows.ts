@@ -5,6 +5,7 @@
 
 import { useMemo, useCallback } from 'react'
 import type { Workflow, CreateWorkflowOptions } from '@/types/workflow'
+import type { Issue } from '@/types/api'
 import { MOCK_WORKFLOWS, getIssuesForWorkflow } from '@/lib/mock/workflows'
 
 // =============================================================================
@@ -20,7 +21,7 @@ interface UseWorkflowsResult {
 
 interface UseWorkflowResult {
   workflow: Workflow | undefined
-  issues: Record<string, { id: string; title: string; content?: string }> | undefined
+  issues: Record<string, Issue> | undefined
   isLoading: boolean
   error: Error | null
   refetch: () => void

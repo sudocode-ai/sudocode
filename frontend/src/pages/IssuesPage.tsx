@@ -6,10 +6,12 @@ import { useWebSocketContext } from '@/contexts/WebSocketContext'
 import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
 import { useProject } from '@/hooks/useProject'
 import { useProjectById } from '@/hooks/useProjects'
+import { useWorkflows } from '@/hooks/useWorkflows'
 import { executionsApi } from '@/lib/api'
 import type { Issue, IssueStatus } from '@/types/api'
 import type { Execution } from '@/types/execution'
 import type { DragEndEvent } from '@/components/ui/kanban'
+import type { WorkflowStepStatus } from '@/types/workflow'
 import IssueKanbanBoard from '@/components/issues/IssueKanbanBoard'
 import IssuePanel from '@/components/issues/IssuePanel'
 import { CreateIssueDialog } from '@/components/issues/CreateIssueDialog'
@@ -61,6 +63,7 @@ export default function IssuesPage() {
   const { data: repoInfo } = useRepositoryInfo()
   const { currentProjectId } = useProject()
   const { data: currentProject } = useProjectById(currentProjectId)
+  const { workflows } = useWorkflows()
   const [selectedIssue, setSelectedIssue] = useState<Issue | undefined>()
   const { feedback } = useIssueFeedback(selectedIssue?.id || '')
   const [showCreateDialog, setShowCreateDialog] = useState(false)
@@ -159,6 +162,32 @@ export default function IssuesPage() {
     }
     return byIssueId
   }, [recentExecutionsData?.executions])
+
+  // Map issue IDs to workflow info for issues in active workflows
+  const issueWorkflows = useMemo(() => {
+    const map = new Map<
+      string,
+      { workflowId: string; workflowTitle?: string; stepStatus: WorkflowStepStatus }
+    >()
+
+    // Only process active workflows (running or paused)
+    const activeWorkflows = workflows.filter((w) =>
+      ['running', 'paused'].includes(w.status)
+    )
+
+    for (const workflow of activeWorkflows) {
+      for (const step of workflow.steps) {
+        // Map the issue ID to its workflow info
+        map.set(step.issueId, {
+          workflowId: workflow.id,
+          workflowTitle: workflow.title,
+          stepStatus: step.status,
+        })
+      }
+    }
+
+    return map
+  }, [workflows])
 
   // Track if we've initialized from URL hash yet
   const [hasInitializedFromUrl, setHasInitializedFromUrl] = useState(false)
@@ -502,6 +531,7 @@ export default function IssuesPage() {
                 collapsedColumns={collapsedColumns}
                 onToggleColumnCollapse={handleToggleColumnCollapse}
                 latestExecutions={latestExecutions}
+                issueWorkflows={issueWorkflows}
               />
             </Panel>
 
@@ -562,6 +592,7 @@ export default function IssuesPage() {
               collapsedColumns={collapsedColumns}
               onToggleColumnCollapse={handleToggleColumnCollapse}
               latestExecutions={latestExecutions}
+              issueWorkflows={issueWorkflows}
             />
           </div>
         )}

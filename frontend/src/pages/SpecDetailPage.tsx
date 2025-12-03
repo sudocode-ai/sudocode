@@ -35,13 +35,19 @@ import {
   Copy,
   Check,
   List,
+  Play,
+  Loader2,
+  Pause,
 } from 'lucide-react'
 import type { IssueFeedback, Relationship, EntityType, RelationshipType } from '@/types/api'
 import { relationshipsApi } from '@/lib/api'
 import { DeleteSpecDialog } from '@/components/specs/DeleteSpecDialog'
 import { EntityBadge } from '@/components/entities/EntityBadge'
+import { CreateWorkflowDialog } from '@/components/workflows'
+import { useWorkflows, useWorkflowMutations } from '@/hooks/useWorkflows'
 import { toast } from 'sonner'
 import type { TocItem } from '@/components/specs/TiptapEditor'
+import { cn } from '@/lib/utils'
 
 const PRIORITY_OPTIONS = [
   { value: '0', label: 'Critical (P0)' },
@@ -63,6 +69,8 @@ export default function SpecDetailPage() {
   const { issues } = useIssues()
   const { specs, updateSpec, isUpdating, archiveSpec, unarchiveSpec, deleteSpec } = useSpecs()
   const { createFeedback, updateFeedback, deleteFeedback } = useFeedback(id || '')
+  const { workflows } = useWorkflows()
+  const { create: createWorkflow, isCreating: isCreatingWorkflow } = useWorkflowMutations()
 
   const [selectedLine, setSelectedLine] = useState<number | null>(null)
   const [_selectedText, setSelectedText] = useState<string | null>(null) // Reserved for future text selection feature
@@ -82,6 +90,7 @@ export default function SpecDetailPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [isCopied, setIsCopied] = useState(false)
+  const [workflowDialogOpen, setWorkflowDialogOpen] = useState(false)
 
   // Local state for editable fields
   const [title, setTitle] = useState('')
@@ -98,6 +107,17 @@ export default function SpecDetailPage() {
     if (!id) return []
     return specs.filter((s) => s.parent_id === id)
   }, [specs, id])
+
+  // Compute active workflow for this spec
+  const activeWorkflow = useMemo(() => {
+    if (!id) return undefined
+    return workflows.find(
+      (w) =>
+        w.source.type === 'spec' &&
+        w.source.specId === id &&
+        ['running', 'paused'].includes(w.status)
+    )
+  }, [workflows, id])
 
   // Refs for auto-save and position tracking
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -494,6 +514,21 @@ export default function SpecDetailPage() {
     }
   }
 
+  const handleRunAsWorkflow = () => {
+    setWorkflowDialogOpen(true)
+  }
+
+  const handleCreateWorkflow = async (options: Parameters<typeof createWorkflow>[0]) => {
+    await createWorkflow(options)
+    setWorkflowDialogOpen(false)
+  }
+
+  const handleViewWorkflow = () => {
+    if (activeWorkflow) {
+      navigate(`/workflows/${activeWorkflow.id}`)
+    }
+  }
+
   return (
     <div className="flex h-screen flex-col">
       {/* Header */}
@@ -554,6 +589,55 @@ export default function SpecDetailPage() {
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
+
+            {/* Run as Workflow / View Workflow button */}
+            {activeWorkflow ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleViewWorkflow}
+                      className={cn(
+                        activeWorkflow.status === 'running'
+                          ? 'border-blue-500 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950'
+                          : 'border-yellow-500 text-yellow-500 hover:bg-yellow-50 dark:hover:bg-yellow-950'
+                      )}
+                    >
+                      {activeWorkflow.status === 'running' ? (
+                        <Loader2 className="h-4 w-4 animate-spin sm:mr-2" />
+                      ) : (
+                        <Pause className="h-4 w-4 sm:mr-2" />
+                      )}
+                      <span className="hidden sm:inline capitalize">{activeWorkflow.status}</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>View workflow: {activeWorkflow.title}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRunAsWorkflow}
+                      disabled={isUpdating}
+                    >
+                      <Play className="h-4 w-4 sm:mr-2" />
+                      <span className="hidden sm:inline">Run as Workflow</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Run implementing issues as workflow</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
 
             {spec.archived ? (
               <Button
@@ -815,6 +899,15 @@ export default function SpecDetailPage() {
         onClose={() => setShowDeleteDialog(false)}
         onConfirm={handleDelete}
         isDeleting={isDeleting}
+      />
+
+      {/* Create Workflow Dialog */}
+      <CreateWorkflowDialog
+        open={workflowDialogOpen}
+        onOpenChange={setWorkflowDialogOpen}
+        onCreate={handleCreateWorkflow}
+        defaultSource={id ? { type: 'spec', specId: id } : undefined}
+        isCreating={isCreatingWorkflow}
       />
     </div>
   )

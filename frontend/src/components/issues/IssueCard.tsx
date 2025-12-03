@@ -3,11 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { KanbanCard } from '@/components/ui/kanban'
 import type { Issue } from '@sudocode-ai/types'
 import type { Execution } from '@/types/execution'
+import type { WorkflowStepStatus } from '@/types/workflow'
 import { Copy, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { ExecutionPreview } from '@/components/executions/ExecutionPreview'
+import { WorkflowIndicator } from './WorkflowIndicator'
 
 // Priority badge colors - using darker shades for better contrast with white text
 const priorityColors: Record<number, string> = {
@@ -26,6 +28,13 @@ const priorityLabels: Record<number, string> = {
   4: 'P4',
 }
 
+/** Workflow membership info for the issue */
+interface WorkflowInfo {
+  workflowId: string
+  workflowTitle?: string
+  stepStatus: WorkflowStepStatus
+}
+
 interface IssueCardProps {
   issue: Issue
   index: number
@@ -34,6 +43,8 @@ interface IssueCardProps {
   isOpen?: boolean
   showExecutionPreview?: boolean // Whether to show execution preview for running executions
   latestExecution?: Execution | null // Pre-fetched execution from parent
+  /** Workflow membership info (if issue is part of an active workflow) */
+  workflowInfo?: WorkflowInfo
 }
 
 export function IssueCard({
@@ -44,6 +55,7 @@ export function IssueCard({
   isOpen,
   showExecutionPreview = false,
   latestExecution,
+  workflowInfo,
 }: IssueCardProps) {
   const navigate = useNavigate()
   const [isCopied, setIsCopied] = useState(false)
@@ -124,14 +136,24 @@ export function IssueCard({
               </Tooltip>
             </TooltipProvider>
           </div>
-          {/* Priority Badge */}
-          {issue.priority !== undefined && issue.priority <= 3 && (
-            <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-xs text-white ${priorityColors[issue.priority]}`}
-            >
-              {priorityLabels[issue.priority]}
-            </span>
-          )}
+          <div className="flex items-center gap-1.5">
+            {/* Workflow Indicator */}
+            {workflowInfo && (
+              <WorkflowIndicator
+                workflowId={workflowInfo.workflowId}
+                workflowTitle={workflowInfo.workflowTitle}
+                stepStatus={workflowInfo.stepStatus}
+              />
+            )}
+            {/* Priority Badge */}
+            {issue.priority !== undefined && issue.priority <= 3 && (
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 text-xs text-white ${priorityColors[issue.priority]}`}
+              >
+                {priorityLabels[issue.priority]}
+              </span>
+            )}
+          </div>
         </div>
         <h4 className="text-md line-clamp-2 min-w-0 flex-1 font-medium">{issue.title}</h4>
         {/* Content Preview */}
