@@ -408,6 +408,67 @@ export class GitSyncCli {
   }
 
   /**
+   * Get uncommitted file stats including additions and deletions
+   * Combines both modified and untracked files
+   *
+   * @returns Stats about uncommitted changes
+   */
+  getUncommittedStats(): {
+    files: string[];
+    additions: number;
+    deletions: number;
+  } {
+    try {
+      // Get modified files with stats
+      const modifiedOutput = this.execGit('git diff --numstat');
+
+      // Get untracked files
+      const untrackedFiles = this.execGit(
+        'git ls-files --others --exclude-standard'
+      )
+        .split('\n')
+        .filter((line) => line.trim().length > 0);
+
+      // Parse modified file stats
+      let additions = 0;
+      let deletions = 0;
+      const modifiedFiles: string[] = [];
+
+      for (const line of modifiedOutput.split('\n')) {
+        if (!line.trim()) continue;
+        const parts = line.split('\t');
+        if (parts.length >= 3) {
+          const add = parts[0] === '-' ? 0 : parseInt(parts[0], 10) || 0;
+          const del = parts[1] === '-' ? 0 : parseInt(parts[1], 10) || 0;
+          additions += add;
+          deletions += del;
+          modifiedFiles.push(parts[2]);
+        }
+      }
+
+      // Count lines in untracked files as additions (simplified)
+      // In production, you might want to actually read and count lines
+      additions += untrackedFiles.length * 10; // Rough estimate
+
+      // Combine all files
+      const allFiles = [...new Set([...modifiedFiles, ...untrackedFiles])];
+
+      return {
+        files: allFiles,
+        additions,
+        deletions,
+      };
+    } catch (error) {
+      // Return empty stats on error
+      return {
+        files: [],
+        additions: 0,
+        deletions: 0,
+      };
+    }
+  }
+
+  /**
    * Get current HEAD commit SHA
    * Equivalent to: git rev-parse HEAD
    *

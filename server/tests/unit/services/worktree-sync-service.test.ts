@@ -25,7 +25,7 @@ import type Database from "better-sqlite3";
  * Create a unique worktree path (outside the test repo to avoid polluting working tree)
  */
 function createWorktreePath(): string {
-  return mkdtempSync(path.join(tmpdir(), 'test-worktree-'));
+  return mkdtempSync(path.join(tmpdir(), "test-worktree-"));
 }
 
 describe("WorktreeSyncService Foundation", () => {
@@ -275,79 +275,6 @@ describe("WorktreeSyncService Foundation", () => {
     });
   });
 
-  describe("_getUncommittedJSONLFiles", () => {
-    it("should detect uncommitted JSONL files", () => {
-      // Create worktree
-      const worktreePath = createWorktreePath();
-      worktreePaths.push(worktreePath);
-      execSync(`git worktree add ${worktreePath} -b worktree-branch`, {
-        cwd: testRepo,
-        stdio: "pipe",
-      });
-
-      // Create .sudocode directory and commit it
-      const sudocodeDir = path.join(worktreePath, ".sudocode");
-      fs.mkdirSync(sudocodeDir, { recursive: true });
-      fs.writeFileSync(path.join(sudocodeDir, ".gitkeep"), "");
-      execSync("git add .sudocode/.gitkeep", {
-        cwd: worktreePath,
-        stdio: "pipe",
-      });
-      execSync('git commit -m "Add .sudocode"', {
-        cwd: worktreePath,
-        stdio: "pipe",
-      });
-
-      // Add uncommitted JSONL file
-      fs.writeFileSync(
-        path.join(sudocodeDir, "issues.jsonl"),
-        '{"id":"i-001"}\n'
-      );
-
-      const uncommitted = (service as any)._getUncommittedJSONLFiles(
-        worktreePath
-      );
-
-      expect(uncommitted).toContain(".sudocode/issues.jsonl");
-    });
-
-    it("should filter out non-JSONL files", () => {
-      // Create worktree
-      const worktreePath = createWorktreePath();
-      worktreePaths.push(worktreePath);
-      execSync(`git worktree add ${worktreePath} -b worktree-branch`, {
-        cwd: testRepo,
-        stdio: "pipe",
-      });
-
-      // Add uncommitted files (not JSONL)
-      fs.writeFileSync(path.join(worktreePath, "file.ts"), "content");
-      fs.writeFileSync(path.join(worktreePath, "file.js"), "content");
-
-      const uncommitted = (service as any)._getUncommittedJSONLFiles(
-        worktreePath
-      );
-
-      expect(uncommitted.length).toBe(0);
-    });
-
-    it("should return empty array if no uncommitted JSONL", () => {
-      // Create worktree
-      const worktreePath = createWorktreePath();
-      worktreePaths.push(worktreePath);
-      execSync(`git worktree add ${worktreePath} -b worktree-branch`, {
-        cwd: testRepo,
-        stdio: "pipe",
-      });
-
-      const uncommitted = (service as any)._getUncommittedJSONLFiles(
-        worktreePath
-      );
-
-      expect(uncommitted).toEqual([]);
-    });
-  });
-
   describe("_isLocalTreeClean", () => {
     it("should return true for clean working tree", () => {
       const isClean = (service as any)._isLocalTreeClean();
@@ -477,7 +404,9 @@ describe("WorktreeSyncService Foundation", () => {
       // The frontend checks both canSync AND hasCodeConflicts
       expect(preview.conflicts.hasConflicts).toBe(true);
       expect(preview.conflicts.codeConflicts.length).toBeGreaterThan(0);
-      expect(preview.warnings.some(w => w.includes("code conflict(s) detected"))).toBe(true);
+      expect(
+        preview.warnings.some((w) => w.includes("code conflict(s) detected"))
+      ).toBe(true);
     });
 
     it("should detect uncommitted JSONL files", async () => {
@@ -551,7 +480,11 @@ describe("WorktreeSyncService Foundation", () => {
       const preview = await service.previewSync("exec-running-1");
 
       expect(preview.executionStatus).toBe("running");
-      expect(preview.warnings.some(w => w.includes("Execution is currently active"))).toBe(true);
+      expect(
+        preview.warnings.some((w) =>
+          w.includes("Execution is currently active")
+        )
+      ).toBe(true);
     });
 
     it("should return error when validation fails", async () => {
@@ -649,9 +582,18 @@ describe("WorktreeSyncService Foundation", () => {
       // Create main branch with initial JSONL
       const issuesPath = path.join(testRepo, ".sudocode/issues.jsonl");
       fs.mkdirSync(path.dirname(issuesPath), { recursive: true });
-      fs.writeFileSync(issuesPath, JSON.stringify(createIssue("i-1", "Base issue")) + "\n");
-      execSync("git add .sudocode/issues.jsonl", { cwd: testRepo, stdio: "pipe" });
-      execSync('git commit -m "Add base issue"', { cwd: testRepo, stdio: "pipe" });
+      fs.writeFileSync(
+        issuesPath,
+        JSON.stringify(createIssue("i-1", "Base issue")) + "\n"
+      );
+      execSync("git add .sudocode/issues.jsonl", {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+      execSync('git commit -m "Add base issue"', {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
 
       // Create worktree branch and add new issue
       const worktreePath = createWorktreePath();
@@ -660,21 +602,36 @@ describe("WorktreeSyncService Foundation", () => {
         cwd: testRepo,
         stdio: "pipe",
       });
-      const worktreeIssuesPath = path.join(worktreePath, ".sudocode/issues.jsonl");
+      const worktreeIssuesPath = path.join(
+        worktreePath,
+        ".sudocode/issues.jsonl"
+      );
       fs.appendFileSync(
         worktreeIssuesPath,
         JSON.stringify(createIssue("i-2", "Worktree issue")) + "\n"
       );
-      execSync("git add .sudocode/issues.jsonl", { cwd: worktreePath, stdio: "pipe" });
+      execSync("git add .sudocode/issues.jsonl", {
+        cwd: worktreePath,
+        stdio: "pipe",
+      });
       execSync('git commit -m "Add worktree issue"', {
         cwd: worktreePath,
         stdio: "pipe",
       });
 
       // Modify main branch to create conflict
-      fs.appendFileSync(issuesPath, JSON.stringify(createIssue("i-3", "Main issue")) + "\n");
-      execSync("git add .sudocode/issues.jsonl", { cwd: testRepo, stdio: "pipe" });
-      execSync('git commit -m "Add main issue"', { cwd: testRepo, stdio: "pipe" });
+      fs.appendFileSync(
+        issuesPath,
+        JSON.stringify(createIssue("i-3", "Main issue")) + "\n"
+      );
+      execSync("git add .sudocode/issues.jsonl", {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+      execSync('git commit -m "Add main issue"', {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
 
       // Create execution
       const execution = createExecution(db, {
@@ -750,7 +707,9 @@ describe("WorktreeSyncService Foundation", () => {
 
       // Should handle non-existent files gracefully by returning empty array
       // The merge should still work with empty arrays
-      await expect(service.resolveJSONLConflicts(execution, jsonlConflicts)).resolves.not.toThrow();
+      await expect(
+        service.resolveJSONLConflicts(execution, jsonlConflicts)
+      ).resolves.not.toThrow();
     });
   });
 
@@ -778,10 +737,15 @@ describe("WorktreeSyncService Foundation", () => {
       // Create uncommitted JSONL file
       const issuesPath = path.join(worktreePath, ".sudocode/issues.jsonl");
       fs.mkdirSync(path.dirname(issuesPath), { recursive: true });
-      fs.writeFileSync(issuesPath, JSON.stringify(createIssue("i-test", "Test issue")) + "\n");
+      fs.writeFileSync(
+        issuesPath,
+        JSON.stringify(createIssue("i-test", "Test issue")) + "\n"
+      );
 
       // Commit the file
-      await service.commitUncommittedJSONL(worktreePath, [".sudocode/issues.jsonl"]);
+      await service.commitUncommittedJSONL(worktreePath, [
+        ".sudocode/issues.jsonl",
+      ]);
 
       // Verify working tree is clean
       const status = execSync("git status --porcelain", {
@@ -791,7 +755,7 @@ describe("WorktreeSyncService Foundation", () => {
       expect(status.trim()).toBe("");
 
       // Verify commit message
-      const log = execSync('git log -1 --pretty=%B', {
+      const log = execSync("git log -1 --pretty=%B", {
         cwd: worktreePath,
         encoding: "utf8",
       });
@@ -838,8 +802,14 @@ describe("WorktreeSyncService Foundation", () => {
       const issuesPath = path.join(worktreePath, ".sudocode/issues.jsonl");
       const specsPath = path.join(worktreePath, ".sudocode/specs.jsonl");
       fs.mkdirSync(path.dirname(issuesPath), { recursive: true });
-      fs.writeFileSync(issuesPath, JSON.stringify(createIssue("i-test", "Test issue")) + "\n");
-      fs.writeFileSync(specsPath, JSON.stringify(createSpec("s-test", "Test spec")) + "\n");
+      fs.writeFileSync(
+        issuesPath,
+        JSON.stringify(createIssue("i-test", "Test issue")) + "\n"
+      );
+      fs.writeFileSync(
+        specsPath,
+        JSON.stringify(createSpec("s-test", "Test spec")) + "\n"
+      );
 
       // Commit both files
       await service.commitUncommittedJSONL(worktreePath, [
@@ -855,7 +825,7 @@ describe("WorktreeSyncService Foundation", () => {
       expect(status.trim()).toBe("");
 
       // Verify commit message includes both files
-      const log = execSync('git log -1 --pretty=%B', {
+      const log = execSync("git log -1 --pretty=%B", {
         cwd: worktreePath,
         encoding: "utf8",
       });
@@ -875,7 +845,10 @@ describe("WorktreeSyncService Foundation", () => {
       });
 
       // Add files in worktree
-      fs.writeFileSync(path.join(worktreePath, "staged-file.ts"), "staged content");
+      fs.writeFileSync(
+        path.join(worktreePath, "staged-file.ts"),
+        "staged content"
+      );
       execSync("git add staged-file.ts", { cwd: worktreePath, stdio: "pipe" });
       execSync('git commit -m "Add staged file"', {
         cwd: worktreePath,
@@ -932,7 +905,10 @@ describe("WorktreeSyncService Foundation", () => {
 
       // Create conflicting changes
       // Change in main
-      fs.writeFileSync(path.join(testRepo, "stage-conflict.ts"), "main content");
+      fs.writeFileSync(
+        path.join(testRepo, "stage-conflict.ts"),
+        "main content"
+      );
       execSync("git add stage-conflict.ts", { cwd: testRepo, stdio: "pipe" });
       execSync('git commit -m "Add conflict file in main"', {
         cwd: testRepo,
@@ -944,7 +920,10 @@ describe("WorktreeSyncService Foundation", () => {
         path.join(worktreePath, "stage-conflict.ts"),
         "worktree content"
       );
-      execSync("git add stage-conflict.ts", { cwd: worktreePath, stdio: "pipe" });
+      execSync("git add stage-conflict.ts", {
+        cwd: worktreePath,
+        stdio: "pipe",
+      });
       execSync('git commit -m "Add conflict file in worktree"', {
         cwd: worktreePath,
         stdio: "pipe",
@@ -1059,7 +1038,10 @@ describe("WorktreeSyncService Foundation", () => {
       // Add multiple files in worktree
       fs.writeFileSync(path.join(worktreePath, "file1.ts"), "content1");
       fs.writeFileSync(path.join(worktreePath, "file2.ts"), "content2");
-      execSync("git add file1.ts file2.ts", { cwd: worktreePath, stdio: "pipe" });
+      execSync("git add file1.ts file2.ts", {
+        cwd: worktreePath,
+        stdio: "pipe",
+      });
       execSync('git commit -m "Add multiple files"', {
         cwd: worktreePath,
         stdio: "pipe",
@@ -1182,8 +1164,14 @@ describe("WorktreeSyncService Foundation", () => {
 
       // Create conflicting changes
       // Change in main
-      fs.writeFileSync(path.join(testRepo, "preserve-conflict.ts"), "main content");
-      execSync("git add preserve-conflict.ts", { cwd: testRepo, stdio: "pipe" });
+      fs.writeFileSync(
+        path.join(testRepo, "preserve-conflict.ts"),
+        "main content"
+      );
+      execSync("git add preserve-conflict.ts", {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
       execSync('git commit -m "Add conflict file in main"', {
         cwd: testRepo,
         stdio: "pipe",
@@ -1194,7 +1182,10 @@ describe("WorktreeSyncService Foundation", () => {
         path.join(worktreePath, "preserve-conflict.ts"),
         "worktree content"
       );
-      execSync("git add preserve-conflict.ts", { cwd: worktreePath, stdio: "pipe" });
+      execSync("git add preserve-conflict.ts", {
+        cwd: worktreePath,
+        stdio: "pipe",
+      });
       execSync('git commit -m "Add conflict file in worktree"', {
         cwd: worktreePath,
         stdio: "pipe",
@@ -1316,9 +1307,9 @@ describe("WorktreeSyncService Foundation", () => {
         status: "completed",
       });
 
-      await expect(service.preserveSync("exec-preserve-no-worktree")).rejects.toThrow(
-        WorktreeSyncError
-      );
+      await expect(
+        service.preserveSync("exec-preserve-no-worktree")
+      ).rejects.toThrow(WorktreeSyncError);
 
       try {
         await service.preserveSync("exec-preserve-no-worktree");
@@ -1412,10 +1403,15 @@ describe("WorktreeSyncService Foundation", () => {
       fs.mkdirSync(path.dirname(issuesPath), { recursive: true });
       fs.writeFileSync(
         issuesPath,
-        JSON.stringify(createIssue("i-1", "Issue 1")) + "\n" +
-          JSON.stringify(createIssue("i-2", "Issue 2")) + "\n"
+        JSON.stringify(createIssue("i-1", "Issue 1")) +
+          "\n" +
+          JSON.stringify(createIssue("i-2", "Issue 2")) +
+          "\n"
       );
-      execSync("git add .sudocode/issues.jsonl", { cwd: testRepo, stdio: "pipe" });
+      execSync("git add .sudocode/issues.jsonl", {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
       execSync('git commit -m "Add issues"', { cwd: testRepo, stdio: "pipe" });
 
       // Read at HEAD
@@ -1454,8 +1450,14 @@ describe("WorktreeSyncService Foundation", () => {
       // Create initial version
       const issuesPath = path.join(testRepo, ".sudocode/test.jsonl");
       fs.mkdirSync(path.dirname(issuesPath), { recursive: true });
-      fs.writeFileSync(issuesPath, JSON.stringify(createIssue("i-1", "Version 1")) + "\n");
-      execSync("git add .sudocode/test.jsonl", { cwd: testRepo, stdio: "pipe" });
+      fs.writeFileSync(
+        issuesPath,
+        JSON.stringify(createIssue("i-1", "Version 1")) + "\n"
+      );
+      execSync("git add .sudocode/test.jsonl", {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
       execSync('git commit -m "Version 1"', { cwd: testRepo, stdio: "pipe" });
 
       const commit1 = execSync("git rev-parse HEAD", {
@@ -1464,8 +1466,14 @@ describe("WorktreeSyncService Foundation", () => {
       }).trim();
 
       // Create second version
-      fs.writeFileSync(issuesPath, JSON.stringify(createIssue("i-1", "Version 2")) + "\n");
-      execSync("git add .sudocode/test.jsonl", { cwd: testRepo, stdio: "pipe" });
+      fs.writeFileSync(
+        issuesPath,
+        JSON.stringify(createIssue("i-1", "Version 2")) + "\n"
+      );
+      execSync("git add .sudocode/test.jsonl", {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
       execSync('git commit -m "Version 2"', { cwd: testRepo, stdio: "pipe" });
 
       // Read at first commit

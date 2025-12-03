@@ -45,6 +45,7 @@ describe('SyncPreviewDialog', () => {
     ],
     mergeBase: 'base123',
     uncommittedJSONLChanges: false,
+    uncommittedChanges: { files: [], additions: 0, deletions: 0 },
     executionStatus: 'completed',
     warnings: [],
   }

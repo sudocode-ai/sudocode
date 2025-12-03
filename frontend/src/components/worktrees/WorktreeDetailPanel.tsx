@@ -1,71 +1,39 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
 import {
   Copy,
   Check,
   GitBranch,
   GitCommit,
   FileText,
-  AlertCircle,
+  FilePen,
   Loader2,
-  GitMerge,
   FolderOpen,
   Trash2,
-  ExternalLink,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { format } from 'date-fns'
-import { executionsApi } from '@/lib/api'
+import { repositoryApi } from '@/lib/api'
 import { useExecutionSync } from '@/hooks/useExecutionSync'
 import { DeleteWorktreeDialog } from '@/components/executions/DeleteWorktreeDialog'
 import type { Execution, SyncPreviewResult } from '@/types/execution'
-import { cn } from '@/lib/utils'
 
 interface WorktreeDetailPanelProps {
   execution: Execution | null
 }
 
-// Status badge colors
-const statusColors: Record<string, string> = {
-  running: 'bg-blue-500 dark:bg-blue-600',
-  paused: 'bg-yellow-500 dark:bg-yellow-600',
-  completed: 'bg-green-500 dark:bg-green-600',
-  failed: 'bg-red-500 dark:bg-red-600',
-  cancelled: 'bg-gray-500 dark:bg-gray-600',
-  stopped: 'bg-orange-500 dark:bg-orange-600',
-}
-
-const statusLabels: Record<string, string> = {
-  running: 'Running',
-  paused: 'Paused',
-  completed: 'Completed',
-  failed: 'Failed',
-  cancelled: 'Cancelled',
-  stopped: 'Stopped',
-}
-
 export function WorktreeDetailPanel({ execution }: WorktreeDetailPanelProps) {
-  const navigate = useNavigate()
-  const [isCopiedId, setIsCopiedId] = useState(false)
   const [isCopiedPath, setIsCopiedPath] = useState(false)
   const [syncPreview, setSyncPreview] = useState<SyncPreviewResult | null>(null)
   const [isLoadingPreview, setIsLoadingPreview] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
-  const {
-    fetchSyncPreview,
-    openWorktreeInIDE,
-    cleanupWorktree,
-    isPreviewing,
-  } = useExecutionSync()
+  const { openWorktreeInIDE, cleanupWorktree } = useExecutionSync()
 
   // Fetch sync preview when execution changes
   useEffect(() => {
-    if (!execution) {
+    if (!execution?.worktree_path || !execution.branch_name || !execution.target_branch) {
       setSyncPreview(null)
       return
     }
@@ -73,7 +41,11 @@ export function WorktreeDetailPanel({ execution }: WorktreeDetailPanelProps) {
     const loadPreview = async () => {
       try {
         setIsLoadingPreview(true)
-        const preview = await executionsApi.syncPreview(execution.id)
+        const preview = await repositoryApi.previewWorktreeSync({
+          worktreePath: execution.worktree_path!,
+          branchName: execution.branch_name,
+          targetBranch: execution.target_branch,
+        })
         setSyncPreview(preview)
       } catch (error) {
         console.error('Failed to load sync preview:', error)
@@ -84,18 +56,6 @@ export function WorktreeDetailPanel({ execution }: WorktreeDetailPanelProps) {
     }
 
     loadPreview()
-  }, [execution])
-
-  const handleCopyId = useCallback(async () => {
-    if (!execution) return
-    try {
-      await navigator.clipboard.writeText(execution.id)
-      setIsCopiedId(true)
-      setTimeout(() => setIsCopiedId(false), 2000)
-      toast.success('Execution ID copied')
-    } catch (error) {
-      toast.error('Failed to copy ID')
-    }
   }, [execution])
 
   const handleCopyPath = useCallback(async () => {
@@ -110,31 +70,32 @@ export function WorktreeDetailPanel({ execution }: WorktreeDetailPanelProps) {
     }
   }, [execution])
 
-  const handleSync = useCallback(() => {
-    if (!execution) return
-    fetchSyncPreview(execution.id)
-  }, [execution, fetchSyncPreview])
+  // const handleSync = useCallback(() => {
+  //   if (!execution) return
+  //   fetchSyncPreview(execution.id)
+  // }, [execution, fetchSyncPreview])
 
   const handleOpenIDE = useCallback(() => {
     if (!execution) return
     openWorktreeInIDE(execution)
   }, [execution, openWorktreeInIDE])
 
-  const handleDelete = useCallback(async () => {
-    if (!execution) return
-    try {
-      await cleanupWorktree(execution.id)
-      toast.success('Worktree deleted successfully')
-      setShowDeleteDialog(false)
-    } catch (error) {
-      toast.error('Failed to delete worktree')
-    }
-  }, [execution, cleanupWorktree])
-
-  const handleViewFullDetails = useCallback(() => {
-    if (!execution) return
-    navigate(`/executions/${execution.id}`)
-  }, [execution, navigate])
+  const handleDelete = useCallback(
+    async (deleteBranch: boolean) => {
+      if (!execution) return
+      setIsDeleting(true)
+      try {
+        await cleanupWorktree(execution.id, deleteBranch)
+        toast.success('Worktree deleted successfully')
+        setShowDeleteDialog(false)
+      } catch (error) {
+        toast.error('Failed to delete worktree')
+      } finally {
+        setIsDeleting(false)
+      }
+    },
+    [execution, cleanupWorktree]
+  )
 
   if (!execution) {
     return (
@@ -144,105 +105,43 @@ export function WorktreeDetailPanel({ execution }: WorktreeDetailPanelProps) {
     )
   }
 
-  const hasConflicts = syncPreview?.conflicts?.hasConflicts ?? false
   const totalAdditions = syncPreview?.diff?.additions ?? 0
   const totalDeletions = syncPreview?.diff?.deletions ?? 0
 
+  // Determine if branch was created by execution (auto-created branches start with "sudocode/")
+  const branchWasCreatedByExecution = execution?.branch_name?.startsWith('sudocode/') ?? false
+
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <div className="flex flex-col gap-4 p-4">
+      <div className="flex flex-col gap-2 p-3">
         {/* Overview Section */}
         <Card className="p-4">
-          <h3 className="text-sm font-semibold mb-3">Overview</h3>
+          <h3 className="mb-3 text-sm font-semibold">Overview</h3>
           <div className="flex flex-col gap-2 text-sm">
-            {/* Execution ID */}
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">Execution ID</span>
-              <div className="flex items-center gap-1">
-                <span className="font-mono text-xs">{execution.id.substring(0, 12)}</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCopyId}
-                  className="h-5 w-5 p-0"
-                >
-                  {isCopiedId ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                </Button>
-              </div>
-            </div>
-
-            {/* Issue */}
-            {execution.issue_id && (
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">Issue</span>
-                <button
-                  onClick={() => navigate(`/issues/${execution.issue_id}`)}
-                  className="text-xs text-primary hover:underline"
-                >
-                  {execution.issue_id}
-                </button>
-              </div>
-            )}
-
             {/* Branch */}
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">Branch</span>
+            <div className="flex items-center gap-2">
               <div className="flex items-center gap-1">
                 <GitBranch className="h-3 w-3" />
                 <span className="text-xs font-medium">{execution.branch_name}</span>
               </div>
             </div>
 
-            {/* Status */}
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">Status</span>
-              <Badge
-                className={cn(
-                  'text-white text-xs',
-                  statusColors[execution.status] || 'bg-gray-500'
-                )}
-              >
-                {statusLabels[execution.status] || execution.status}
-              </Badge>
-            </div>
-
-            {/* Created */}
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">Created</span>
-              <span className="text-xs">
-                {format(new Date(execution.created_at), 'MMM d, yyyy h:mm a')}
-              </span>
-            </div>
-
-            {/* Updated */}
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">Updated</span>
-              <span className="text-xs">
-                {format(new Date(execution.updated_at), 'MMM d, yyyy h:mm a')}
-              </span>
-            </div>
-
             {/* Worktree Path */}
             {execution.worktree_path && (
-              <>
-                <Separator className="my-1" />
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-muted-foreground">Path</span>
-                  <div className="flex items-center gap-1 max-w-[200px]">
-                    <span className="text-xs font-mono truncate">
-                      {execution.worktree_path}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleCopyPath}
-                      className="h-5 w-5 p-0 shrink-0"
-                    >
-                      {isCopiedPath ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                    </Button>
-                  </div>
-                </div>
-              </>
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 text-muted-foreground">Path:</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                  {execution.worktree_path}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleCopyPath}
+                  className="h-5 w-5 shrink-0 p-0"
+                >
+                  {isCopiedPath ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                </Button>
+              </div>
             )}
           </div>
         </Card>
@@ -256,82 +155,94 @@ export function WorktreeDetailPanel({ execution }: WorktreeDetailPanelProps) {
           </Card>
         ) : syncPreview?.commits && syncPreview.commits.length > 0 ? (
           <Card className="p-4">
-            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
               <GitCommit className="h-4 w-4" />
               Commits ({syncPreview.commits.length})
             </h3>
             <div className="flex flex-col gap-2">
-              {syncPreview.commits.map((commit) => (
-                <div key={commit.sha} className="text-xs border-l-2 border-muted pl-2">
-                  <div className="font-mono text-muted-foreground">{commit.sha.substring(0, 7)}</div>
+              {syncPreview.commits.slice(0, 5).map((commit) => (
+                <div key={commit.sha} className="border-l-2 border-muted pl-2 text-xs">
+                  <div className="font-mono text-muted-foreground">
+                    {commit.sha.substring(0, 7)}
+                  </div>
                   <div className="font-medium">{commit.message}</div>
                   <div className="text-muted-foreground">{commit.author}</div>
                 </div>
               ))}
+              {syncPreview.commits.length > 5 && (
+                <div className="pl-2 text-xs text-muted-foreground">
+                  + {syncPreview.commits.length - 5} more
+                </div>
+              )}
             </div>
           </Card>
         ) : null}
 
-        {/* Files Changed Section */}
-        {syncPreview?.diff && (
+        {/* Files Changed Section - Committed */}
+        {syncPreview?.diff && syncPreview.diff.files.length > 0 && (
           <Card className="p-4">
-            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
               <FileText className="h-4 w-4" />
-              Files Changed ({syncPreview.diff.files.length})
+              Committed Changes ({syncPreview.diff.files.length})
             </h3>
-            <div className="flex items-center gap-3 mb-3 text-xs">
+            <div className="mb-3 flex items-center gap-3 text-xs">
               <span className="text-green-600 dark:text-green-400">+{totalAdditions}</span>
               <span className="text-red-600 dark:text-red-400">-{totalDeletions}</span>
             </div>
-            <div className="flex flex-col gap-1 max-h-[200px] overflow-y-auto">
-              {syncPreview.diff.files.map((filePath, index) => (
+            <div className="flex flex-col gap-1">
+              {syncPreview.diff.files.slice(0, 5).map((filePath, index) => (
                 <div key={index} className="text-xs">
                   <span className="truncate font-mono">{filePath}</span>
                 </div>
               ))}
+              {syncPreview.diff.files.length > 5 && (
+                <div className="text-xs text-muted-foreground">
+                  + {syncPreview.diff.files.length - 5} more
+                </div>
+              )}
             </div>
           </Card>
         )}
 
-        {/* Conflicts Section */}
-        {hasConflicts && syncPreview?.conflicts && (
-          <Card className="p-4 border-destructive">
-            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2 text-destructive">
-              <AlertCircle className="h-4 w-4" />
-              Conflicts ({syncPreview.conflicts.totalFiles})
+        {/* Files Changed Section - Uncommitted */}
+        {syncPreview?.uncommittedChanges && syncPreview.uncommittedChanges.files.length > 0 && (
+          <Card className="border-yellow-500/50 p-4">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-yellow-600 dark:text-yellow-400">
+              <FilePen className="h-4 w-4" />
+              Uncommitted Changes ({syncPreview.uncommittedChanges.files.length})
             </h3>
-            <div className="flex flex-col gap-2 text-xs">
-              {syncPreview.conflicts.codeConflicts.map((conflict, index) => (
-                <div key={index} className="flex items-start gap-2">
-                  <AlertCircle className="h-3 w-3 text-destructive shrink-0 mt-0.5" />
-                  <div>
-                    <div className="font-mono">{conflict.filePath}</div>
-                    <div className="text-muted-foreground">Requires manual resolution</div>
-                  </div>
+            <div className="mb-3 flex items-center gap-3 text-xs">
+              <span className="text-green-600 dark:text-green-400">
+                +{syncPreview.uncommittedChanges.additions}
+              </span>
+              <span className="text-red-600 dark:text-red-400">
+                -{syncPreview.uncommittedChanges.deletions}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1">
+              {syncPreview.uncommittedChanges.files.slice(0, 5).map((filePath, index) => (
+                <div key={index} className="text-xs">
+                  <span className="truncate font-mono">{filePath}</span>
                 </div>
               ))}
-              {syncPreview.conflicts.jsonlConflicts.map((conflict, index) => (
-                <div key={index} className="flex items-start gap-2">
-                  <AlertCircle className="h-3 w-3 text-yellow-600 shrink-0 mt-0.5" />
-                  <div>
-                    <div className="font-mono">{conflict.filePath}</div>
-                    <div className="text-muted-foreground">Auto-resolvable</div>
-                  </div>
+              {syncPreview.uncommittedChanges.files.length > 5 && (
+                <div className="text-xs text-muted-foreground">
+                  + {syncPreview.uncommittedChanges.files.length - 5} more
                 </div>
-              ))}
+              )}
             </div>
           </Card>
         )}
 
         {/* Action Bar */}
-        <div className="flex flex-col gap-2 pt-2 border-t">
-          <Button onClick={handleSync} className="w-full" disabled={isPreviewing}>
-            <GitMerge className="h-4 w-4 mr-2" />
+        <div className="flex flex-col gap-2 pt-2">
+          {/* <Button onClick={handleSync} disabled={isPreviewing}>
+            <GitMerge className="mr-2 h-4 w-4" />
             Sync to Local
-          </Button>
+          </Button> */}
           <div className="grid grid-cols-2 gap-2">
             <Button variant="outline" onClick={handleOpenIDE} className="w-full">
-              <FolderOpen className="h-4 w-4 mr-2" />
+              <FolderOpen className="mr-2 h-4 w-4" />
               Open in IDE
             </Button>
             <Button
@@ -339,14 +250,10 @@ export function WorktreeDetailPanel({ execution }: WorktreeDetailPanelProps) {
               onClick={() => setShowDeleteDialog(true)}
               className="w-full text-destructive hover:text-destructive"
             >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete
+              <Trash2 className="mr-2 h-4 w-4" />
+              Cleanup
             </Button>
           </div>
-          <Button variant="ghost" onClick={handleViewFullDetails} className="w-full">
-            <ExternalLink className="h-4 w-4 mr-2" />
-            View Full Details
-          </Button>
         </div>
       </div>
 
@@ -356,6 +263,9 @@ export function WorktreeDetailPanel({ execution }: WorktreeDetailPanelProps) {
         isOpen={showDeleteDialog}
         onClose={() => setShowDeleteDialog(false)}
         onConfirm={handleDelete}
+        isDeleting={isDeleting}
+        branchName={execution.branch_name}
+        branchWasCreatedByExecution={branchWasCreatedByExecution}
       />
     </div>
   )

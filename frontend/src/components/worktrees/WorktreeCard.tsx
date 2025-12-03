@@ -1,8 +1,17 @@
-import { useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { GitBranch } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { EntityBadge } from '@/components/entities/EntityBadge'
+import {
+  GitBranch,
+  Loader2,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  X,
+  PauseCircle,
+} from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import type { Execution } from '@/types/execution'
 import { cn } from '@/lib/utils'
@@ -13,48 +22,81 @@ interface WorktreeCardProps {
   onClick?: () => void
 }
 
-// Status badge colors
-const statusColors: Record<string, string> = {
-  running: 'bg-blue-500 dark:bg-blue-600',
-  paused: 'bg-yellow-500 dark:bg-yellow-600',
-  completed: 'bg-green-500 dark:bg-green-600',
-  failed: 'bg-red-500 dark:bg-red-600',
-  cancelled: 'bg-gray-500 dark:bg-gray-600',
-  stopped: 'bg-orange-500 dark:bg-orange-600',
-}
+/**
+ * Render status icon with tooltip for execution
+ */
+function renderStatusIcon(status: Execution['status']) {
+  const getStatusConfig = () => {
+    switch (status) {
+      case 'preparing':
+        return {
+          icon: <Clock className="h-4 w-4 text-muted-foreground" />,
+          label: 'Preparing',
+        }
+      case 'pending':
+        return {
+          icon: <Clock className="h-4 w-4 text-muted-foreground" />,
+          label: 'Pending',
+        }
+      case 'running':
+        return {
+          icon: <Loader2 className="h-4 w-4 animate-spin text-blue-600" />,
+          label: 'Running',
+        }
+      case 'paused':
+        return {
+          icon: <PauseCircle className="h-4 w-4 text-muted-foreground" />,
+          label: 'Paused',
+        }
+      case 'completed':
+        return {
+          icon: <CheckCircle2 className="h-4 w-4 text-green-600" />,
+          label: 'Completed',
+        }
+      case 'failed':
+        return {
+          icon: <XCircle className="h-4 w-4 text-destructive" />,
+          label: 'Failed',
+        }
+      case 'cancelled':
+        return {
+          icon: <X className="h-4 w-4 text-muted-foreground" />,
+          label: 'Cancelled',
+        }
+      case 'stopped':
+        return {
+          icon: <X className="h-4 w-4 text-muted-foreground" />,
+          label: 'Stopped',
+        }
+      default:
+        return {
+          icon: <AlertCircle className="h-4 w-4 text-muted-foreground" />,
+          label: String(status).charAt(0).toUpperCase() + String(status).slice(1),
+        }
+    }
+  }
 
-const statusLabels: Record<string, string> = {
-  running: 'Running',
-  paused: 'Paused',
-  completed: 'Completed',
-  failed: 'Failed',
-  cancelled: 'Cancelled',
-  stopped: 'Stopped',
+  const { icon, label } = getStatusConfig()
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex items-center justify-center">{icon}</div>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p className="text-xs">{label}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
 }
 
 export function WorktreeCard({ execution, isSelected, onClick }: WorktreeCardProps) {
-  const navigate = useNavigate()
-
-  const handleNavigateToIssue = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation()
-      navigate(`/issues/${execution.issue_id}`)
-    },
-    [navigate, execution.issue_id]
-  )
-
-  const handleNavigateToExecution = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation()
-      navigate(`/executions/${execution.id}`)
-    },
-    [navigate, execution.id]
-  )
-
   return (
     <Card
       className={cn(
-        'group cursor-pointer rounded-lg border border-border transition-all hover:bg-accent/50 hover:shadow-md',
+        'group cursor-pointer border border-border transition-all hover:bg-accent/50 hover:shadow-md',
         isSelected && 'ring-2 ring-primary'
       )}
       onClick={onClick}
@@ -73,38 +115,36 @@ export function WorktreeCard({ execution, isSelected, onClick }: WorktreeCardPro
           </div>
         )}
 
-        {/* Execution Info - lightweight header similar to issue activity */}
-        <div className="flex flex-wrap items-center gap-2 border-t pt-3">
-          {/* Agent Type */}
-          <button
-            onClick={handleNavigateToExecution}
-            className="font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"
-          >
-            {execution.agent_type || 'execution'}
-          </button>
+        {/* Execution Info - Inline: ID, Issue Badge, Status Icon */}
+        <div className="flex flex-col border-t pt-3">
+          <div className="flex items-center gap-2">
+            <Link
+              to={`/executions/${execution.id}`}
+              className="min-w-0 truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {execution.id}
+            </Link>
 
-          {/* Status Badge */}
-          <Badge
-            className={cn('shrink-0 text-white', statusColors[execution.status] || 'bg-gray-500')}
-          >
-            {statusLabels[execution.status] || execution.status}
-          </Badge>
+            {/* Issue badge if available */}
+            {execution.issue_id && (
+              <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                <EntityBadge
+                  entityId={execution.issue_id}
+                  entityType="issue"
+                  showHoverCard={true}
+                  linkToEntity={true}
+                  className="text-xs"
+                />
+              </div>
+            )}
 
-          {/* Issue Reference */}
-          {execution.issue_id && (
-            <>
-              <span className="text-xs text-muted-foreground">for</span>
-              <button
-                onClick={handleNavigateToIssue}
-                className="font-mono text-xs text-primary hover:underline"
-              >
-                {execution.issue_id}
-              </button>
-            </>
-          )}
+            {/* Status icon */}
+            <div className="flex-shrink-0">{renderStatusIcon(execution.status)}</div>
+          </div>
 
-          {/* Last Updated */}
-          <span className="ml-auto text-xs text-muted-foreground">
+          {/* Last Updated - on second line */}
+          <span className="text-xs text-muted-foreground">
             {formatDistanceToNow(new Date(execution.updated_at), { addSuffix: true })}
           </span>
         </div>

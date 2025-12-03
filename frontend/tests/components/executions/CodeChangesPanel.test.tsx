@@ -534,6 +534,74 @@ describe('CodeChangesPanel', () => {
       expect(screen.getByText('src/committed2.ts')).toBeInTheDocument()
       expect(screen.getByText('src/uncommitted1.ts')).toBeInTheDocument()
     })
+
+    it('should display both when current has committed files and captured has uncommitted files', async () => {
+      const user = userEvent.setup()
+      // This scenario: execution completed with uncommitted changes (captured),
+      // then additional commits were made (current shows branch state)
+      const data: ExecutionChangesResult = {
+        available: true,
+        uncommitted: true,
+        branchName: 'sudocode/test-branch',
+        branchExists: true,
+        worktreeExists: true,
+        executionMode: 'worktree',
+        additionalCommits: 1,
+        captured: {
+          files: [{ path: 'yo4', additions: 1, deletions: 0, status: 'A' }],
+          summary: {
+            totalFiles: 1,
+            totalAdditions: 1,
+            totalDeletions: 0,
+          },
+          commitRange: null,
+          uncommitted: true,
+        },
+        current: {
+          files: [
+            { path: '.sudocode/issues.jsonl', additions: 1, deletions: 0, status: 'M' },
+            { path: '.sudocode/specs.jsonl', additions: 1, deletions: 0, status: 'M' },
+            { path: 'yo4.txt', additions: 1, deletions: 0, status: 'A' },
+          ],
+          summary: {
+            totalFiles: 3,
+            totalAdditions: 3,
+            totalDeletions: 0,
+          },
+          commitRange: { before: 'abc123', after: 'def456' },
+          uncommitted: false,
+        },
+        // Note: uncommittedSnapshot is NOT present - this is the key scenario
+      }
+
+      mockUseExecutionChanges.mockReturnValue({
+        data,
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      })
+
+      render(<CodeChangesPanel executionId="exec-123" />)
+
+      // Should show combined totals in header (3 committed + 1 uncommitted = 4)
+      expect(screen.getByText('4 FILES')).toBeInTheDocument()
+      expect(screen.getByText('+4')).toBeInTheDocument()
+
+      // Expand to see both sections
+      await user.click(screen.getByTitle('Expand code changes'))
+
+      // Should show both sections
+      expect(screen.getByText(/Committed \(3 files\)/)).toBeInTheDocument()
+      expect(screen.getByText(/Uncommitted \(1 file\)/)).toBeInTheDocument()
+
+      // Check committed files from current
+      expect(screen.getByText('.sudocode/issues.jsonl')).toBeInTheDocument()
+      expect(screen.getByText('.sudocode/specs.jsonl')).toBeInTheDocument()
+      expect(screen.getByText('yo4.txt')).toBeInTheDocument()
+
+      // Check uncommitted file from captured
+      expect(screen.getByText('yo4')).toBeInTheDocument()
+    })
   })
 
   describe('Empty State', () => {
@@ -582,176 +650,6 @@ describe('CodeChangesPanel', () => {
   })
 
   describe('Deleted Resources', () => {
-    it('should display "Branch deleted" badge when branch is deleted', async () => {
-      const user = userEvent.setup()
-      const data: ExecutionChangesResult = {
-        available: true,
-        branchName: 'deleted-branch',
-        branchExists: false,
-        captured: {
-          files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
-          summary: {
-            totalFiles: 1,
-            totalAdditions: 10,
-            totalDeletions: 5,
-          },
-          commitRange: { before: 'abc123', after: 'def456' },
-          uncommitted: false,
-        },
-      }
-
-      mockUseExecutionChanges.mockReturnValue({
-        data,
-        loading: false,
-        error: null,
-        refresh: vi.fn(),
-      })
-
-      render(<CodeChangesPanel executionId="exec-123" />)
-
-      // Expand to see the badge (now shows "Branch no longer exists")
-      await user.click(screen.getByTitle('Expand code changes'))
-
-      expect(screen.getByText('Branch no longer exists')).toBeInTheDocument()
-    })
-
-    it('should display "Worktree deleted" badge when worktree is deleted', async () => {
-      const user = userEvent.setup()
-      const data: ExecutionChangesResult = {
-        available: true,
-        worktreeExists: false,
-        executionMode: 'worktree',
-        captured: {
-          files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
-          summary: {
-            totalFiles: 1,
-            totalAdditions: 10,
-            totalDeletions: 5,
-          },
-          commitRange: { before: 'abc123', after: 'def456' },
-          uncommitted: false,
-        },
-      }
-
-      mockUseExecutionChanges.mockReturnValue({
-        data,
-        loading: false,
-        error: null,
-        refresh: vi.fn(),
-      })
-
-      render(<CodeChangesPanel executionId="exec-123" />)
-
-      // Expand to see the badge
-      await user.click(screen.getByTitle('Expand code changes'))
-
-      expect(screen.getByText('Worktree deleted')).toBeInTheDocument()
-    })
-
-    it('should display both badges when both branch and worktree are deleted', async () => {
-      const user = userEvent.setup()
-      const data: ExecutionChangesResult = {
-        available: true,
-        branchName: 'deleted-branch',
-        branchExists: false,
-        worktreeExists: false,
-        executionMode: 'worktree',
-        captured: {
-          files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
-          summary: {
-            totalFiles: 1,
-            totalAdditions: 10,
-            totalDeletions: 5,
-          },
-          commitRange: { before: 'abc123', after: 'def456' },
-          uncommitted: false,
-        },
-      }
-
-      mockUseExecutionChanges.mockReturnValue({
-        data,
-        loading: false,
-        error: null,
-        refresh: vi.fn(),
-      })
-
-      render(<CodeChangesPanel executionId="exec-123" />)
-
-      // Expand to see the badges
-      await user.click(screen.getByTitle('Expand code changes'))
-
-      expect(screen.getByText('Branch no longer exists')).toBeInTheDocument()
-      expect(screen.getByText('Worktree deleted')).toBeInTheDocument()
-    })
-
-    it('should not display "Worktree deleted" for local mode executions', async () => {
-      const user = userEvent.setup()
-      const data: ExecutionChangesResult = {
-        available: true,
-        worktreeExists: false,
-        executionMode: 'local',
-        captured: {
-          files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
-          summary: {
-            totalFiles: 1,
-            totalAdditions: 10,
-            totalDeletions: 5,
-          },
-          commitRange: { before: 'abc123', after: 'def456' },
-          uncommitted: false,
-        },
-      }
-
-      mockUseExecutionChanges.mockReturnValue({
-        data,
-        loading: false,
-        error: null,
-        refresh: vi.fn(),
-      })
-
-      render(<CodeChangesPanel executionId="exec-123" />)
-
-      // Expand to see if the badge appears (it shouldn't)
-      await user.click(screen.getByTitle('Expand code changes'))
-
-      expect(screen.queryByText('Worktree deleted')).not.toBeInTheDocument()
-    })
-
-    it('should not display badges when branch and worktree exist', async () => {
-      const user = userEvent.setup()
-      const data: ExecutionChangesResult = {
-        available: true,
-        branchName: 'feature-branch',
-        branchExists: true,
-        worktreeExists: true,
-        captured: {
-          files: [{ path: 'src/file1.ts', additions: 10, deletions: 5, status: 'M' }],
-          summary: {
-            totalFiles: 1,
-            totalAdditions: 10,
-            totalDeletions: 5,
-          },
-          commitRange: { before: 'abc123', after: 'def456' },
-          uncommitted: false,
-        },
-      }
-
-      mockUseExecutionChanges.mockReturnValue({
-        data,
-        loading: false,
-        error: null,
-        refresh: vi.fn(),
-      })
-
-      render(<CodeChangesPanel executionId="exec-123" />)
-
-      // Expand to check
-      await user.click(screen.getByTitle('Expand code changes'))
-
-      expect(screen.queryByText('Branch no longer exists')).not.toBeInTheDocument()
-      expect(screen.queryByText('Worktree deleted')).not.toBeInTheDocument()
-    })
-
     it('should display additional commits badge when current state exists', () => {
       const data: ExecutionChangesResult = {
         available: true,
@@ -875,9 +773,10 @@ describe('CodeChangesPanel', () => {
       // Expand to see current state info
       await user.click(screen.getByTitle('Expand code changes'))
 
-      expect(
-        screen.getByText(/Showing current state of branch: feature-branch/)
-      ).toBeInTheDocument()
+      // Check that the file is displayed with stats
+      expect(screen.getByText('src/file1.ts')).toBeInTheDocument()
+      expect(screen.getAllByText('+10')[0]).toBeInTheDocument()
+      expect(screen.getAllByText('-5')[0]).toBeInTheDocument()
     })
   })
 

@@ -139,6 +139,7 @@ describe.skip('Sync Workflow Integration Tests', () => {
         ],
         mergeBase: 'def456',
         uncommittedJSONLChanges: false,
+        uncommittedChanges: { files: [], additions: 0, deletions: 0 },
         executionStatus: 'completed',
         warnings: [],
       }
@@ -240,6 +241,7 @@ describe.skip('Sync Workflow Integration Tests', () => {
         ],
         mergeBase: 'ghi789',
         uncommittedJSONLChanges: false,
+        uncommittedChanges: { files: [], additions: 0, deletions: 0 },
         executionStatus: 'completed',
         warnings: [],
       }
@@ -323,6 +325,7 @@ describe.skip('Sync Workflow Integration Tests', () => {
         commits: [],
         mergeBase: 'abc123',
         uncommittedJSONLChanges: false,
+        uncommittedChanges: { files: [], additions: 0, deletions: 0 },
         executionStatus: 'completed',
         warnings: [],
       }
@@ -403,6 +406,7 @@ describe.skip('Sync Workflow Integration Tests', () => {
         commits: [],
         mergeBase: 'abc123',
         uncommittedJSONLChanges: false,
+        uncommittedChanges: { files: [], additions: 0, deletions: 0 },
         executionStatus: 'completed',
         warnings: [],
       }
@@ -454,6 +458,7 @@ describe.skip('Sync Workflow Integration Tests', () => {
         commits: [],
         mergeBase: 'abc123',
         uncommittedJSONLChanges: true,
+        uncommittedChanges: { files: [], additions: 0, deletions: 0 },
         executionStatus: 'completed',
         warnings: [],
       }
@@ -550,6 +555,7 @@ describe.skip('Sync Workflow Integration Tests', () => {
         commits: [],
         mergeBase: 'abc123',
         uncommittedJSONLChanges: false,
+        uncommittedChanges: { files: [], additions: 0, deletions: 0 },
         executionStatus: 'completed',
         warnings: [],
       }
@@ -660,6 +666,7 @@ describe.skip('Sync Workflow Integration Tests', () => {
         commits: [],
         mergeBase: 'abc123',
         uncommittedJSONLChanges: false,
+        uncommittedChanges: { files: [], additions: 0, deletions: 0 },
         executionStatus: 'running',
         warnings: ['This execution is still running. Changes may still be in progress.'],
       }

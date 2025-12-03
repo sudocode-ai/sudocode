@@ -82,6 +82,7 @@ describe('useExecutionSync', () => {
         ],
         mergeBase: 'def456',
         uncommittedJSONLChanges: false,
+        uncommittedChanges: { files: [], additions: 0, deletions: 0 },
         executionStatus: 'completed',
         warnings: [],
       }
@@ -395,10 +396,17 @@ describe('useExecutionSync', () => {
 
       const { result } = renderHook(() => useExecutionSync(), { wrapper })
 
+      let thrownError: Error | undefined
       await act(async () => {
-        await result.current.cleanupWorktree('exec-123')
+        try {
+          await result.current.cleanupWorktree('exec-123')
+        } catch (e) {
+          thrownError = e as Error
+        }
       })
 
+      expect(thrownError).toBeDefined()
+      expect(thrownError?.message).toBe('Cleanup failed')
       expect(result.current.syncError).toBe('Cleanup failed')
 
       consoleSpy.mockRestore()

@@ -463,7 +463,7 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
 
   return (
     <>
-      <div className="flex h-full cursor-pointer flex-col border bg-card shadow-sm transition-shadow focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 hover:shadow-md">
+      <div className="flex h-full flex-col border bg-card shadow-sm transition-shadow hover:shadow-md">
         {/* Sticky Header */}
         <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-card px-4 py-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">

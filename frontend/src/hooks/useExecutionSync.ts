@@ -156,16 +156,17 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
    * Cleanup worktree
    */
   const cleanupWorktree = useCallback(
-    async (executionId: string) => {
+    async (executionId: string, deleteBranch?: boolean) => {
       try {
         // Use centralized mutation which handles cache invalidation
-        await deleteWorktreeMutation({ executionId })
+        await deleteWorktreeMutation({ executionId, deleteBranch })
 
         // Close progress dialog
         setIsSyncProgressOpen(false)
       } catch (error) {
         console.error('Failed to cleanup worktree:', error)
         setSyncError(error instanceof Error ? error.message : 'Failed to cleanup worktree')
+        throw error
       }
     },
     [deleteWorktreeMutation]

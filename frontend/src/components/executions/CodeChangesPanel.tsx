@@ -363,28 +363,53 @@ export function CodeChangesPanel({
     )
   }
 
-  // Use current state if available, otherwise use captured state
-  const snapshot = data.current || data.captured
-  if (!snapshot) {
+  // Determine committed and uncommitted files from all available sources
+  // Priority for committed: current > captured (if not uncommitted)
+  // Priority for uncommitted: uncommittedSnapshot > captured (if uncommitted and we have current) > captured (if only uncommitted)
+
+  let committedFiles: FileChangeStat[] = []
+  let uncommittedFiles: FileChangeStat[] = []
+
+  if (data.current) {
+    // We have current branch state - use it for committed files
+    committedFiles = data.current.files
+    // Check for uncommitted files from uncommittedSnapshot or captured
+    if (data.uncommittedSnapshot?.files) {
+      uncommittedFiles = data.uncommittedSnapshot.files
+    } else if (data.captured?.uncommitted) {
+      // Captured state was uncommitted - these are still uncommitted relative to current
+      uncommittedFiles = data.captured.files
+    }
+  } else if (data.captured) {
+    // No current state, use captured
+    if (data.captured.uncommitted) {
+      // Captured is uncommitted
+      uncommittedFiles = data.captured.files
+      // Check if there's also an uncommittedSnapshot (shouldn't happen, but be safe)
+      if (data.uncommittedSnapshot?.files) {
+        uncommittedFiles = [...uncommittedFiles, ...data.uncommittedSnapshot.files]
+      }
+    } else {
+      // Captured is committed
+      committedFiles = data.captured.files
+      if (data.uncommittedSnapshot?.files) {
+        uncommittedFiles = data.uncommittedSnapshot.files
+      }
+    }
+  }
+
+  if (committedFiles.length === 0 && uncommittedFiles.length === 0) {
     return null
   }
 
-  // Calculate total stats from all sources
-  // If snapshot is uncommitted and there's no uncommittedSnapshot, use snapshot.files as uncommitted
-  // Otherwise, use uncommittedSnapshot for uncommitted files
-  const uncommittedFiles =
-    data.uncommittedSnapshot?.files || (snapshot.uncommitted ? snapshot.files : [])
-  const committedFiles = snapshot.uncommitted ? [] : snapshot.files
+  // Calculate totals from actual files
   const totalFiles = committedFiles.length + uncommittedFiles.length
   const totalAdditions =
-    snapshot.summary.totalAdditions + (data.uncommittedSnapshot?.summary.totalAdditions || 0)
+    committedFiles.reduce((sum, f) => sum + f.additions, 0) +
+    uncommittedFiles.reduce((sum, f) => sum + f.additions, 0)
   const totalDeletions =
-    snapshot.summary.totalDeletions + (data.uncommittedSnapshot?.summary.totalDeletions || 0)
-
-  // Don't render if there are no file changes
-  if (totalFiles === 0) {
-    return null
-  }
+    committedFiles.reduce((sum, f) => sum + f.deletions, 0) +
+    uncommittedFiles.reduce((sum, f) => sum + f.deletions, 0)
 
   return (
     <div className="rounded-md border border-border bg-muted/30 p-3 font-mono text-xs">
@@ -392,7 +417,7 @@ export function CodeChangesPanel({
       <div className="flex w-full items-center gap-2">
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="flex flex-1 items-center gap-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          className="flex flex-1 items-center gap-2 text-xs text-muted-foreground transition-colors hover:text-foreground focus:outline-none"
           title={isCollapsed ? 'Expand code changes' : 'Collapse code changes'}
         >
           {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
@@ -447,21 +472,6 @@ export function CodeChangesPanel({
       {/* Expanded content */}
       {!isCollapsed && (
         <>
-          {/* Metadata info */}
-          {(data.current ||
-            data.branchName ||
-            (data.worktreeExists === false && data.executionMode === 'worktree')) && (
-            <div className="mt-3 space-y-1 text-muted-foreground">
-              {data.current && <div>Showing current state of branch: {data.branchName}</div>}
-              {data.branchName && data.branchExists === false && (
-                <div className="text-orange-600">Branch no longer exists</div>
-              )}
-              {data.worktreeExists === false && data.executionMode === 'worktree' && (
-                <div className="text-orange-600">Worktree deleted</div>
-              )}
-            </div>
-          )}
-
           {/* Committed changes section */}
           {committedFiles.length > 0 && (
             <div className="mt-4">

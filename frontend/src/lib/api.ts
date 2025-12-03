@@ -348,6 +348,11 @@ export const repositoryApi = {
   getInfo: () => get<RepositoryInfo>('/repo-info'),
   getBranches: () => get<BranchInfo>('/repo-info/branches'),
   listWorktrees: () => get<Execution[]>('/repo-info/worktrees'),
+  previewWorktreeSync: (params: {
+    worktreePath: string
+    branchName: string
+    targetBranch: string
+  }) => post<SyncPreviewResult>('/repo-info/worktrees/preview', params),
 }
 
 /**
@@ -358,7 +363,6 @@ export const filesApi = {
     get<{ results: FileSearchResult[] }>(
       `/files/search?q=${encodeURIComponent(query)}${options?.limit ? `&limit=${options.limit}` : ''}${options?.includeDirectories ? `&includeDirectories=${options.includeDirectories}` : ''}`
     ).then((res) => res.results),
-  listWorktrees: () => get<Execution[]>('/repo-info/worktrees'),
 }
 
 /**

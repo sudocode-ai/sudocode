@@ -109,14 +109,12 @@ export interface SyncResult {
  */
 export class WorktreeSyncService {
   private gitSync: GitSyncCli;
-  private conflictDetector: ConflictDetector;
 
   constructor(
     private db: Database.Database,
     private repoPath: string
   ) {
     this.gitSync = new GitSyncCli(repoPath);
-    this.conflictDetector = new ConflictDetector(repoPath);
   }
 
   /**
@@ -147,12 +145,18 @@ export class WorktreeSyncService {
         commits: [],
         mergeBase: "",
         uncommittedJSONLChanges: [],
+        uncommittedChanges: { files: [], additions: 0, deletions: 0 },
         executionStatus: execution.status,
         warnings: [criticalPreconditionError],
       };
     }
 
-    // 3. Find merge base
+    // 3. Create ConflictDetector instance for worktree context
+    const worktreeConflictDetector = new ConflictDetector(
+      execution.worktree_path!
+    );
+
+    // 4. Find merge base (use main repo since it has both branches)
     const mergeBase = this.gitSync.getMergeBase(
       execution.branch_name,
       execution.target_branch
@@ -164,18 +168,23 @@ export class WorktreeSyncService {
       execution.branch_name
     );
 
-    // 5. Get diff summary
+    // 6. Get diff summary (use main repo to see all changes)
     const diff = this.gitSync.getDiff(mergeBase, execution.branch_name);
 
-    // 6. Detect conflicts
-    const conflicts = this.conflictDetector.detectConflicts(
+    // 7. Detect conflicts (use worktree for conflict detection)
+    const conflicts = worktreeConflictDetector.detectConflicts(
       execution.branch_name,
       execution.target_branch
     );
 
     // 7. Check for uncommitted changes in worktree (not included by default)
-    const uncommittedJSONL = this._getUncommittedJSONLFiles(
+    const uncommittedFiles = this._getUncommittedFiles(
       execution.worktree_path!
+    );
+    const uncommittedJSONL = uncommittedFiles.filter(
+      (file) =>
+        file.endsWith(".jsonl") &&
+        (file.includes(".sudocode/") || file.startsWith(".sudocode/"))
     );
     const uncommittedChanges = this._getUncommittedFileStats(
       execution.worktree_path!
@@ -399,25 +408,14 @@ export class WorktreeSyncService {
   }
 
   /**
-   * Get uncommitted JSONL files from worktree
-   *
-   * Used by previewSync() and will be used in i-3wmx (JSONL conflict resolution)
+   * Get all uncommitted files from worktree
    *
    * @param worktreePath - Path to worktree
-   * @returns Array of uncommitted JSONL file paths
+   * @returns Array of all uncommitted file paths
    */
-  private _getUncommittedJSONLFiles(worktreePath: string): string[] {
+  private _getUncommittedFiles(worktreePath: string): string[] {
     const gitSyncWorktree = new GitSyncCli(worktreePath);
-
-    // Get all uncommitted files
-    const uncommitted = gitSyncWorktree.getUncommittedFiles();
-
-    // Filter for JSONL files in .sudocode/
-    return uncommitted.filter(
-      (file) =>
-        file.endsWith(".jsonl") &&
-        (file.includes(".sudocode/") || file.startsWith(".sudocode/"))
-    );
+    return gitSyncWorktree.getUncommittedFiles();
   }
 
   /**
@@ -1347,10 +1345,13 @@ Synced changes from worktree execution.`;
       );
 
       // 7. Checkout target branch
-      execSync(`git checkout ${this._escapeShellArg(execution.target_branch)}`, {
-        cwd: this.repoPath,
-        stdio: "pipe",
-      });
+      execSync(
+        `git checkout ${this._escapeShellArg(execution.target_branch)}`,
+        {
+          cwd: this.repoPath,
+          stdio: "pipe",
+        }
+      );
 
       // 8. Perform regular merge (preserves commit history)
       let hasConflicts = false;
