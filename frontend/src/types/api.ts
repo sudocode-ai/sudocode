@@ -183,6 +183,8 @@ export interface WebSocketMessage {
     | 'workflow_step_completed'
     | 'workflow_step_failed'
     | 'workflow_step_skipped'
+    | 'workflow_escalation_requested'
+    | 'workflow_escalation_resolved'
     | 'error'
   projectId?: string // Project ID for project-scoped messages
   data?: Issue | Spec | Relationship | IssueFeedback | Execution | any

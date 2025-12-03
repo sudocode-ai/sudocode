@@ -728,7 +728,9 @@ export function broadcastWorkflowUpdate(
     | "resumed"
     | "completed"
     | "failed"
-    | "cancelled",
+    | "cancelled"
+    | "escalation_requested"
+    | "escalation_resolved",
   data?: any
 ): void {
   websocketManager.broadcast(projectId, "workflow", workflowId, {

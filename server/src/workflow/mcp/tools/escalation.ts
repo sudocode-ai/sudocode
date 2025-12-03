@@ -174,6 +174,27 @@ export async function handleEscalateToUser(
     `[escalate_to_user] Escalation created for workflow ${workflowId}: ${escalationId}`
   );
 
+  // Notify main server for WebSocket broadcast (if serverUrl is configured)
+  if (context.serverUrl) {
+    try {
+      const notifyUrl = `${context.serverUrl}/api/workflows/${workflowId}/escalation/notify`;
+      await fetch(notifyUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          escalation_id: escalationId,
+          message,
+          options,
+          context: escalationContext,
+        }),
+      });
+      console.error(`[escalate_to_user] Notified server at ${notifyUrl}`);
+    } catch (notifyError) {
+      // Don't fail the escalation if notification fails
+      console.error(`[escalate_to_user] Failed to notify server:`, notifyError);
+    }
+  }
+
   return {
     status: "pending",
     escalation_id: escalationId,

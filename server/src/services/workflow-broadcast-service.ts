@@ -142,6 +142,36 @@ export class WorkflowBroadcastService {
         // Orchestrator wakeup events are internal and don't need to be broadcast
         break;
 
+      // Escalation events
+      case "escalation_requested":
+        broadcastWorkflowUpdate(
+          projectId,
+          event.workflowId,
+          "escalation_requested",
+          {
+            escalationId: event.escalationId,
+            message: event.message,
+            options: event.options,
+            context: event.context,
+            timestamp: event.timestamp,
+          }
+        );
+        break;
+
+      case "escalation_resolved":
+        broadcastWorkflowUpdate(
+          projectId,
+          event.workflowId,
+          "escalation_resolved",
+          {
+            escalationId: event.escalationId,
+            action: event.action,
+            message: event.message,
+            timestamp: event.timestamp,
+          }
+        );
+        break;
+
       default:
         // Exhaustive check - TypeScript will error if we miss a case
         const _exhaustive: never = event;

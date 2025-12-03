@@ -42,6 +42,8 @@ import type {
   WorkflowStatus,
   WorkflowEvent,
   CreateWorkflowOptions,
+  PendingEscalationResponse,
+  EscalationResponseRequest,
 } from '@/types/workflow'
 
 // Create axios instance
@@ -483,6 +485,16 @@ export const workflowsApi = {
 
   // Get workflow event history
   getEvents: (id: string) => get<WorkflowEvent[]>(`/workflows/${id}/events`),
+
+  // Get pending escalation for workflow
+  getEscalation: (id: string) => get<PendingEscalationResponse>(`/workflows/${id}/escalation`),
+
+  // Respond to pending escalation
+  respondToEscalation: (id: string, response: EscalationResponseRequest) =>
+    post<{ workflow: Workflow; escalation: { id: string; action: string; resolvedAt: string } }>(
+      `/workflows/${id}/escalation/respond`,
+      response
+    ),
 }
 
 export default api

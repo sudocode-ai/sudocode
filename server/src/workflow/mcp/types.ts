@@ -290,6 +290,8 @@ export interface WorkflowMCPContext {
   };
   /** Path to the repository root */
   repoPath: string;
+  /** Base URL of the main server for notifications (optional) */
+  serverUrl?: string;
 }
 
 /**

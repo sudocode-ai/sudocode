@@ -62,6 +62,8 @@ export interface WorkflowMCPServerOptions {
   repoPath: string;
   /** Optional: Pre-configured execution service (for testing) */
   executionService?: ExecutionService;
+  /** Optional: Base URL of the main server for notifications */
+  serverUrl?: string;
 }
 
 // =============================================================================
@@ -310,6 +312,7 @@ export class WorkflowMCPServer {
       db: this.db,
       executionService: options.executionService!,
       repoPath: options.repoPath,
+      serverUrl: options.serverUrl,
     };
 
     // Create MCP server

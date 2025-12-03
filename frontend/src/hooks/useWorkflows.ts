@@ -4,8 +4,9 @@
 
 import { useMemo, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import type { Workflow, CreateWorkflowOptions } from '@/types/workflow'
+import type { Workflow, CreateWorkflowOptions, EscalationResponseRequest, EscalationData } from '@/types/workflow'
 import type { Issue, WebSocketMessage } from '@/types/api'
 import { workflowsApi, ListWorkflowsParams, issuesApi } from '@/lib/api'
 import { useWebSocketContext } from '@/contexts/WebSocketContext'
@@ -22,6 +23,7 @@ export const workflowKeys = {
   details: () => [...workflowKeys.all, 'detail'] as const,
   detail: (id: string) => [...workflowKeys.details(), id] as const,
   events: (id: string) => [...workflowKeys.detail(id), 'events'] as const,
+  escalation: (id: string) => [...workflowKeys.detail(id), 'escalation'] as const,
 }
 
 // =============================================================================
@@ -30,6 +32,7 @@ export const workflowKeys = {
 
 export function useWorkflows(params?: ListWorkflowsParams) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const { currentProjectId } = useProject()
   const { connected, subscribe, addMessageHandler, removeMessageHandler } =
     useWebSocketContext()
@@ -68,8 +71,56 @@ export function useWorkflows(params?: ListWorkflowsParams) {
         // Invalidate all workflow queries
         queryClient.invalidateQueries({ queryKey: workflowKeys.all })
       }
+
+      // Handle escalation events
+      if (message.type === 'workflow_escalation_requested') {
+        const workflowId = message.data?.workflowId
+        const escalationMessage = message.data?.message || 'Workflow needs your input'
+        const truncatedMessage =
+          escalationMessage.length > 60
+            ? escalationMessage.slice(0, 57) + '...'
+            : escalationMessage
+
+        if (workflowId) {
+          // Invalidate escalation query for this workflow
+          queryClient.invalidateQueries({
+            queryKey: workflowKeys.escalation(workflowId),
+          })
+          // Invalidate workflow detail to update UI
+          queryClient.invalidateQueries({
+            queryKey: workflowKeys.detail(workflowId),
+          })
+
+          // Show toast notification with action to navigate
+          toast.warning(`Workflow needs input: "${truncatedMessage}"`, {
+            duration: 10000, // 10 seconds
+            action: {
+              label: 'Respond',
+              onClick: () => navigate(`/workflows/${workflowId}`),
+            },
+          })
+        }
+        // Also invalidate the list
+        queryClient.invalidateQueries({ queryKey: workflowKeys.all })
+      }
+
+      if (message.type === 'workflow_escalation_resolved') {
+        const workflowId = message.data?.workflowId
+        if (workflowId) {
+          // Invalidate escalation query for this workflow
+          queryClient.invalidateQueries({
+            queryKey: workflowKeys.escalation(workflowId),
+          })
+          // Invalidate workflow detail to update UI
+          queryClient.invalidateQueries({
+            queryKey: workflowKeys.detail(workflowId),
+          })
+        }
+        // Also invalidate the list
+        queryClient.invalidateQueries({ queryKey: workflowKeys.all })
+      }
     },
-    [queryClient]
+    [queryClient, navigate]
   )
 
   // Register message handler and subscribe to workflow updates
@@ -338,4 +389,63 @@ export function useWorkflowEvents(workflowId: string | undefined) {
     enabled: !!workflowId,
     staleTime: 10_000, // 10 seconds - events update frequently
   })
+}
+
+// =============================================================================
+// useWorkflowEscalation - Get and respond to pending escalations
+// =============================================================================
+
+export interface UseWorkflowEscalationResult {
+  /** The pending escalation data, if any */
+  escalation: EscalationData | undefined
+  /** Whether there is a pending escalation */
+  hasPendingEscalation: boolean
+  /** Whether the query is loading */
+  isLoading: boolean
+  /** Send a response to the pending escalation */
+  respond: (response: EscalationResponseRequest) => Promise<void>
+  /** Whether a response is being sent */
+  isResponding: boolean
+  /** Refetch the escalation status */
+  refetch: () => void
+}
+
+export function useWorkflowEscalation(
+  workflowId: string | undefined
+): UseWorkflowEscalationResult {
+  const queryClient = useQueryClient()
+
+  const query = useQuery({
+    queryKey: workflowKeys.escalation(workflowId!),
+    queryFn: () => workflowsApi.getEscalation(workflowId!),
+    enabled: !!workflowId,
+    staleTime: 5_000, // 5 seconds - check frequently for escalations
+    refetchInterval: 10_000, // Poll every 10s as backup for missed WebSocket events
+  })
+
+  const respondMutation = useMutation({
+    mutationFn: (response: EscalationResponseRequest) =>
+      workflowsApi.respondToEscalation(workflowId!, response),
+    onSuccess: () => {
+      // Invalidate escalation query to reflect resolved state
+      queryClient.invalidateQueries({ queryKey: workflowKeys.escalation(workflowId!) })
+      // Also invalidate workflow detail since status may change
+      queryClient.invalidateQueries({ queryKey: workflowKeys.detail(workflowId!) })
+      toast.success('Response sent to orchestrator')
+    },
+    onError: (error: Error) => {
+      toast.error(`Failed to send response: ${error.message}`)
+    },
+  })
+
+  return {
+    escalation: query.data?.escalation,
+    hasPendingEscalation: query.data?.hasPendingEscalation ?? false,
+    isLoading: query.isLoading,
+    respond: async (response: EscalationResponseRequest) => {
+      await respondMutation.mutateAsync(response)
+    },
+    isResponding: respondMutation.isPending,
+    refetch: () => query.refetch(),
+  }
 }

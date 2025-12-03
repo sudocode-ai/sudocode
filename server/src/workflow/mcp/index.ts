@@ -32,6 +32,10 @@ const { values } = parseArgs({
       type: "string",
       short: "r",
     },
+    "server-url": {
+      type: "string",
+      short: "s",
+    },
     help: {
       type: "boolean",
       short: "h",
@@ -51,12 +55,13 @@ Workflow MCP Server
 Provides MCP tools for workflow orchestration.
 
 Usage:
-  node index.js --workflow-id <id> --db-path <path> --repo-path <path>
+  node index.js --workflow-id <id> --db-path <path> --repo-path <path> [--server-url <url>]
 
 Options:
   -w, --workflow-id  Workflow ID to manage (required)
   -d, --db-path      Path to SQLite database (required)
   -r, --repo-path    Path to repository root (required)
+  -s, --server-url   Base URL of main server for notifications (optional)
   -h, --help         Show this help message
 `);
   process.exit(0);
@@ -89,6 +94,7 @@ const server = new WorkflowMCPServer({
   workflowId: values["workflow-id"],
   dbPath: values["db-path"],
   repoPath: values["repo-path"],
+  serverUrl: values["server-url"],
 });
 
 // Handle shutdown gracefully

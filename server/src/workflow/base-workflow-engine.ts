@@ -28,6 +28,8 @@ import {
 import {
   WorkflowEventEmitter,
   type WorkflowEventListener,
+  createEscalationRequestedEvent,
+  createEscalationResolvedEvent,
 } from "./workflow-event-emitter.js";
 import { analyzeDependencies } from "./dependency-analyzer.js";
 
@@ -237,6 +239,41 @@ export abstract class BaseWorkflowEngine implements IWorkflowEngine {
    */
   onWorkflowEvent(listener: WorkflowEventListener): () => void {
     return this.eventEmitter.on(listener);
+  }
+
+  /**
+   * Emit an escalation requested event.
+   */
+  emitEscalationRequested(
+    workflowId: string,
+    escalationId: string,
+    message: string,
+    options?: string[],
+    context?: Record<string, unknown>
+  ): void {
+    this.eventEmitter.emit(
+      createEscalationRequestedEvent(
+        workflowId,
+        escalationId,
+        message,
+        options,
+        context
+      )
+    );
+  }
+
+  /**
+   * Emit an escalation resolved event.
+   */
+  emitEscalationResolved(
+    workflowId: string,
+    escalationId: string,
+    action: "approve" | "reject" | "custom",
+    message?: string
+  ): void {
+    this.eventEmitter.emit(
+      createEscalationResolvedEvent(workflowId, escalationId, action, message)
+    );
   }
 
   // ===========================================================================

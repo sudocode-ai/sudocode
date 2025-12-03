@@ -29,7 +29,10 @@ export type WorkflowEventPayload =
   | WorkflowFailedEvent
   | WorkflowCancelledEvent
   // Orchestrator events
-  | OrchestratorWakeupEvent;
+  | OrchestratorWakeupEvent
+  // Escalation events
+  | EscalationRequestedEvent
+  | EscalationResolvedEvent;
 
 /**
  * Event type constants for use in switch statements.
@@ -46,6 +49,8 @@ export const WorkflowEventType = {
   WORKFLOW_FAILED: "workflow_failed",
   WORKFLOW_CANCELLED: "workflow_cancelled",
   ORCHESTRATOR_WAKEUP: "orchestrator_wakeup",
+  ESCALATION_REQUESTED: "escalation_requested",
+  ESCALATION_RESOLVED: "escalation_resolved",
 } as const;
 
 // =============================================================================
@@ -170,6 +175,35 @@ export interface OrchestratorWakeupEvent {
     eventCount: number;
     executionId: string;
   };
+  timestamp: number;
+}
+
+// =============================================================================
+// Escalation Events
+// =============================================================================
+
+/**
+ * Emitted when the orchestrator requests user input (escalation).
+ */
+export interface EscalationRequestedEvent {
+  type: "escalation_requested";
+  workflowId: string;
+  escalationId: string;
+  message: string;
+  options?: string[];
+  context?: Record<string, unknown>;
+  timestamp: number;
+}
+
+/**
+ * Emitted when an escalation is resolved by user response.
+ */
+export interface EscalationResolvedEvent {
+  type: "escalation_resolved";
+  workflowId: string;
+  escalationId: string;
+  action: "approve" | "reject" | "custom";
+  message?: string;
   timestamp: number;
 }
 
@@ -433,6 +467,46 @@ export function createWorkflowCancelledEvent(
   return {
     type: "workflow_cancelled",
     workflowId,
+    timestamp: Date.now(),
+  };
+}
+
+/**
+ * Create an escalation requested event.
+ */
+export function createEscalationRequestedEvent(
+  workflowId: string,
+  escalationId: string,
+  message: string,
+  options?: string[],
+  context?: Record<string, unknown>
+): EscalationRequestedEvent {
+  return {
+    type: "escalation_requested",
+    workflowId,
+    escalationId,
+    message,
+    options,
+    context,
+    timestamp: Date.now(),
+  };
+}
+
+/**
+ * Create an escalation resolved event.
+ */
+export function createEscalationResolvedEvent(
+  workflowId: string,
+  escalationId: string,
+  action: "approve" | "reject" | "custom",
+  message?: string
+): EscalationResolvedEvent {
+  return {
+    type: "escalation_resolved",
+    workflowId,
+    escalationId,
+    action,
+    message,
     timestamp: Date.now(),
   };
 }

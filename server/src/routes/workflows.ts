@@ -800,8 +800,18 @@ export function createWorkflowsRouter(): Router {
         now
       );
 
-      // Trigger orchestrator wakeup if available
+      // Emit escalation resolved event for WebSocket broadcast
       const engine = req.project!.workflowEngine;
+      if (engine) {
+        engine.emitEscalationResolved(
+          id,
+          escalationPayload.escalation_id,
+          action as "approve" | "reject" | "custom",
+          message
+        );
+      }
+
+      // Trigger orchestrator wakeup if available
       if (engine && "triggerEscalationWakeup" in engine) {
         try {
           await (engine as { triggerEscalationWakeup: (id: string) => Promise<void> }).triggerEscalationWakeup(id);
@@ -846,6 +856,68 @@ export function createWorkflowsRouter(): Router {
           },
         },
         message: `Escalation resolved with action: ${action}`,
+      });
+    } catch (error) {
+      handleWorkflowError(error, res);
+    }
+  });
+
+  /**
+   * POST /api/workflows/:id/escalation/notify - Internal endpoint for MCP tool to notify of new escalation
+   *
+   * This endpoint is called by the workflow MCP server when an escalation is created.
+   * It broadcasts the escalation_requested event via WebSocket.
+   *
+   * Request body:
+   * - escalation_id: string (required)
+   * - message: string (required)
+   * - options?: string[]
+   * - context?: Record<string, unknown>
+   */
+  router.post("/:id/escalation/notify", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { escalation_id, message, options, context } = req.body as {
+        escalation_id?: string;
+        message?: string;
+        options?: string[];
+        context?: Record<string, unknown>;
+      };
+
+      if (!escalation_id || !message) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "escalation_id and message are required",
+        });
+        return;
+      }
+
+      // Verify workflow exists
+      const db = req.project!.db;
+      const workflowExists = db
+        .prepare("SELECT 1 FROM workflows WHERE id = ?")
+        .get(id);
+
+      if (!workflowExists) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Workflow not found: ${id}`,
+        });
+        return;
+      }
+
+      // Emit escalation requested event for WebSocket broadcast
+      const engine = req.project!.workflowEngine;
+      if (engine) {
+        engine.emitEscalationRequested(id, escalation_id, message, options, context);
+      }
+
+      res.json({
+        success: true,
+        data: { notified: true },
+        message: "Escalation notification broadcast",
       });
     } catch (error) {
       handleWorkflowError(error, res);

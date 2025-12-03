@@ -21,6 +21,8 @@ import type {
   WorkflowEventType,
   CreateWorkflowOptions,
   DependencyGraph,
+  EscalationData,
+  EscalationResponse,
 } from '@sudocode-ai/types/workflows'
 import type { Issue } from './api'
 
@@ -45,6 +47,29 @@ export type {
   WorkflowEventType,
   CreateWorkflowOptions,
   DependencyGraph,
+  EscalationData,
+  EscalationResponse,
+}
+
+// =============================================================================
+// Escalation API Types
+// =============================================================================
+
+/**
+ * Response from GET /api/workflows/:id/escalation
+ */
+export interface PendingEscalationResponse {
+  hasPendingEscalation: boolean
+  escalation?: EscalationData
+}
+
+/**
+ * Request body for POST /api/workflows/:id/escalation/respond
+ * Note: EscalationResponse from @sudocode-ai/types includes respondedAt which is set server-side
+ */
+export interface EscalationResponseRequest {
+  action: 'approve' | 'reject' | 'custom'
+  message?: string
 }
 
 // =============================================================================

@@ -237,6 +237,38 @@ export interface IWorkflowEngine {
    */
   onWorkflowEvent(listener: WorkflowEventListener): () => void;
 
+  /**
+   * Emit an escalation requested event.
+   *
+   * @param workflowId - The workflow ID
+   * @param escalationId - Unique escalation ID
+   * @param message - Escalation message
+   * @param options - Optional predefined response options
+   * @param context - Optional additional context
+   */
+  emitEscalationRequested(
+    workflowId: string,
+    escalationId: string,
+    message: string,
+    options?: string[],
+    context?: Record<string, unknown>
+  ): void;
+
+  /**
+   * Emit an escalation resolved event.
+   *
+   * @param workflowId - The workflow ID
+   * @param escalationId - The escalation ID that was resolved
+   * @param action - User's response action
+   * @param message - Optional user message
+   */
+  emitEscalationResolved(
+    workflowId: string,
+    escalationId: string,
+    action: "approve" | "reject" | "custom",
+    message?: string
+  ): void;
+
   // ===========================================================================
   // Recovery Methods (Optional)
   // ===========================================================================
