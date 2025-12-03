@@ -121,6 +121,7 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
   const [worktreeExists, setWorktreeExists] = useState(false)
   const [hasUncommittedChanges, setHasUncommittedChanges] = useState<boolean | undefined>(undefined)
+  const [commitsAhead, setCommitsAhead] = useState<number | undefined>(undefined)
 
   // Accumulated tool calls from all executions in the chain (for TodoTracker)
   const [allToolCalls, setAllToolCalls] = useState<Map<string, ToolCallTracking>>(new Map())
@@ -139,7 +140,7 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
       const data = await executionsApi.getChain(executionId)
       setChainData(data)
 
-      // Re-check for uncommitted changes
+      // Re-check for uncommitted changes and commits ahead
       const rootExecution = data.executions[0]
       if (rootExecution?.worktree_path) {
         // Worktree mode
@@ -153,17 +154,20 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
             ((changes.uncommittedSnapshot?.files?.length ?? 0) > 0 ||
               (changes.captured?.uncommitted && (changes.captured?.files?.length ?? 0) > 0))
           setHasUncommittedChanges(hasUncommitted)
+          setCommitsAhead(changes.commitsAhead)
 
           const worktreeStatus = await executionsApi.worktreeExists(rootExecution.id)
           setWorktreeExists(worktreeStatus.exists)
         } catch (err) {
           console.error('Failed to check changes after action:', err)
           setHasUncommittedChanges(false)
+          setCommitsAhead(undefined)
           setWorktreeExists(false)
         }
       } else {
         // Local mode: check for uncommitted changes in main repo
         setWorktreeExists(false)
+        setCommitsAhead(undefined) // Not applicable for local mode
         try {
           const changes = await executionsApi.getChanges(rootExecution.id)
           const hasUncommitted =
@@ -202,6 +206,7 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
     issueId: rootExecutionForIssue?.issue_id ?? '',
     worktreeExists,
     hasUncommittedChanges,
+    commitsAhead,
     onCleanupComplete: handleActionComplete,
     onCommitComplete: handleActionComplete,
   })
@@ -245,7 +250,7 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
               if (!cancelled) {
                 setWorktreeExists(worktreeStatus.exists)
 
-                // Check for uncommitted changes only if worktree still exists
+                // Check for uncommitted changes and commits ahead only if worktree still exists
                 if (worktreeStatus.exists) {
                   try {
                     const changes = await executionsApi.getChanges(rootExecution.id)
@@ -259,15 +264,18 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
                           (changes.captured?.uncommitted &&
                             (changes.captured?.files?.length ?? 0) > 0))
                       setHasUncommittedChanges(hasUncommitted)
+                      setCommitsAhead(changes.commitsAhead)
                     }
                   } catch (err) {
                     console.error('Failed to check uncommitted changes:', err)
                     if (!cancelled) {
                       setHasUncommittedChanges(false) // Safe default: assume no uncommitted changes
+                      setCommitsAhead(undefined)
                     }
                   }
                 } else {
                   setHasUncommittedChanges(false)
+                  setCommitsAhead(undefined)
                 }
               }
             } catch (err) {
@@ -275,10 +283,12 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
               if (!cancelled) {
                 setWorktreeExists(false)
                 setHasUncommittedChanges(false)
+                setCommitsAhead(undefined)
               }
             }
           } else {
             // Local mode: check for uncommitted changes in main repo
+            setCommitsAhead(undefined) // Not applicable for local mode
             try {
               const changes = await executionsApi.getChanges(rootExecution.id)
               if (!cancelled) {
@@ -649,6 +659,7 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
             // Could add IDE integration here
           }}
           isPreviewing={isPreviewing}
+          targetBranch={lastExecution.target_branch ?? undefined}
         />
       )}
     </>

@@ -400,6 +400,7 @@ ${feedback}`;
       id: newExecutionId,
       issue_id: prevExecution.issue_id,
       agent_type: agentType, // Use same agent as previous execution
+      mode: prevExecution.mode || (hasWorktree ? "worktree" : "local"), // Inherit mode from parent
       target_branch: prevExecution.target_branch,
       branch_name: prevExecution.branch_name,
       worktree_path: prevExecution.worktree_path || undefined, // Reuse same worktree (undefined for local)

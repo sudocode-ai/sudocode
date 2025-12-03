@@ -8,8 +8,15 @@ import type { Execution } from "@sudocode-ai/types";
 import type { Database } from "better-sqlite3";
 import * as child_process from "child_process";
 
-// Mock child_process
-vi.mock("child_process");
+// Mock child_process - need to mock both execSync and spawnSync
+vi.mock("child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof child_process>();
+  return {
+    ...actual,
+    execSync: vi.fn(),
+    spawnSync: vi.fn(),
+  };
+});
 
 // Mock agent registry service
 vi.mock("../../../src/services/agent-registry.js", () => {
@@ -125,6 +132,8 @@ describe("POST /api/executions/:executionId/commit", () => {
 
     // Mock child_process.execSync to simulate git commands
     // Return strings directly instead of Buffers
+    // Track whether git add has been called to simulate staged files
+    let gitAddCalled = false;
     vi.mocked(child_process.execSync).mockImplementation((command: any) => {
       const cmd = command.toString();
 
@@ -136,18 +145,32 @@ describe("POST /api/executions/:executionId/commit", () => {
         return "file1.ts\n" as any;
       }
       if (cmd.includes("git diff --cached --name-only")) {
-        return "" as any;
+        // After git add, return the staged files
+        return gitAddCalled ? "file1.ts\nfile2.ts\n" as any : "" as any;
       }
       if (cmd.includes("git ls-files --others --exclude-standard")) {
         return "file2.ts\n" as any;
       }
       if (cmd.includes("git add")) {
+        gitAddCalled = true;
         return "" as any;
       }
       if (cmd.includes("git commit")) {
         return "" as any;
       }
       return "" as any;
+    });
+
+    // Mock spawnSync for git commit (route uses spawnSync for safer message handling)
+    vi.mocked(child_process.spawnSync).mockImplementation(() => {
+      return {
+        status: 0,
+        stdout: "commit successful",
+        stderr: "",
+        pid: 12345,
+        output: ["", "commit successful", ""],
+        signal: null,
+      } as any;
     });
   });
 
@@ -173,8 +196,10 @@ describe("POST /api/executions/:executionId/commit", () => {
       expect.stringContaining("git add"),
       expect.any(Object)
     );
-    expect(child_process.execSync).toHaveBeenCalledWith(
-      expect.stringContaining("git commit"),
+    // git commit is now called via spawnSync for safer message handling
+    expect(child_process.spawnSync).toHaveBeenCalledWith(
+      "git",
+      ["commit", "-m", "feat: implement new feature"],
       expect.any(Object)
     );
     expect(child_process.execSync).toHaveBeenCalledWith(

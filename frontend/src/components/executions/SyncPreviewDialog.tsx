@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -37,6 +37,10 @@ export interface SyncPreviewDialogProps {
   ) => void
   onOpenIDE: () => void
   isPreviewing?: boolean
+  /**
+   * Target branch name to display in merge descriptions
+   */
+  targetBranch?: string
 }
 
 export function SyncPreviewDialog({
@@ -46,11 +50,22 @@ export function SyncPreviewDialog({
   onConfirmSync,
   onOpenIDE,
   isPreviewing = false,
+  targetBranch,
 }: SyncPreviewDialogProps) {
   const [selectedMode, setSelectedMode] = useState<SyncMode>('squash')
   const [commitMessage, setCommitMessage] = useState('')
   const [commitsExpanded, setCommitsExpanded] = useState(false)
-  const [includeUncommitted, setIncludeUncommitted] = useState(false)
+  const [includeUncommitted, setIncludeUncommitted] = useState(true)
+
+  // Check if there are commits to merge (required for squash and preserve modes)
+  const hasCommits = (preview?.commits.length ?? 0) > 0
+
+  // Auto-select 'stage' mode when there are no commits and current selection requires commits
+  useEffect(() => {
+    if (!hasCommits && (selectedMode === 'squash' || selectedMode === 'preserve')) {
+      setSelectedMode('stage')
+    }
+  }, [hasCommits, selectedMode])
 
   // Determine if sync is blocked by code conflicts
   const hasCodeConflicts = (preview?.conflicts.codeConflicts.length ?? 0) > 0
@@ -271,26 +286,69 @@ export function SyncPreviewDialog({
                       </div>
                       <Label
                         htmlFor="squash"
-                        className="flex cursor-pointer items-start space-x-3 rounded-md border p-3 hover:bg-muted/50"
+                        className={`flex items-start space-x-3 rounded-md border p-3 ${
+                          hasCommits
+                            ? 'cursor-pointer hover:bg-muted/50'
+                            : 'cursor-not-allowed opacity-50'
+                        }`}
                       >
-                        <RadioGroupItem value="squash" id="squash" className="mt-1" />
+                        <RadioGroupItem
+                          value="squash"
+                          id="squash"
+                          className="mt-1"
+                          disabled={!hasCommits}
+                        />
                         <div className="flex-1">
                           <span className="font-medium">Squash and merge</span>
                           <p className="mt-1 text-sm font-normal text-muted-foreground">
-                            Combine all worktree changes into a single commit on your local branch
+                            Combine all worktree changes into a single commit on{' '}
+                            {targetBranch ? (
+                              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                                {targetBranch}
+                              </code>
+                            ) : (
+                              'your local branch'
+                            )}
                           </p>
+                          {!hasCommits && (
+                            <p className="mt-1 text-xs text-amber-600">
+                              Requires committed changes
+                            </p>
+                          )}
                         </div>
                       </Label>
                       <Label
                         htmlFor="preserve"
-                        className="flex cursor-pointer items-start space-x-3 rounded-md border p-3 hover:bg-muted/50"
+                        className={`flex items-start space-x-3 rounded-md border p-3 ${
+                          hasCommits
+                            ? 'cursor-pointer hover:bg-muted/50'
+                            : 'cursor-not-allowed opacity-50'
+                        }`}
                       >
-                        <RadioGroupItem value="preserve" id="preserve" className="mt-1" />
+                        <RadioGroupItem
+                          value="preserve"
+                          id="preserve"
+                          className="mt-1"
+                          disabled={!hasCommits}
+                        />
                         <div className="flex-1">
                           <span className="font-medium">Merge all commits</span>
                           <p className="mt-1 text-sm font-normal text-muted-foreground">
-                            Merge all commits to your local branch and preserve commit history
+                            Merge all commits to{' '}
+                            {targetBranch ? (
+                              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                                {targetBranch}
+                              </code>
+                            ) : (
+                              'your local branch'
+                            )}{' '}
+                            and preserve commit history
                           </p>
+                          {!hasCommits && (
+                            <p className="mt-1 text-xs text-amber-600">
+                              Requires committed changes
+                            </p>
+                          )}
                         </div>
                       </Label>
                     </div>

@@ -806,6 +806,7 @@ export function InlineExecutionView({
             // Could add IDE integration here
           }}
           isPreviewing={isPreviewing}
+          targetBranch={lastExecution.target_branch ?? undefined}
         />
       )}
     </>

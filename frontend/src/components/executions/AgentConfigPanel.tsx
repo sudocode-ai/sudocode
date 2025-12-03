@@ -107,6 +107,20 @@ interface AgentConfigPanelProps {
    * Defaults to false
    */
   disableContextualActions?: boolean
+  /**
+   * Whether the worktree has uncommitted changes
+   * Required for showing the commit action
+   */
+  hasUncommittedChanges?: boolean
+  /**
+   * Number of commits the worktree branch is ahead of the target branch
+   * If 0, the Merge Changes action will be hidden
+   */
+  commitsAhead?: number
+  /**
+   * Whether the worktree still exists on disk
+   */
+  worktreeExists?: boolean
 }
 
 // TODO: Move this somewhere more central.
@@ -253,6 +267,9 @@ export function AgentConfigPanel({
   forceNewExecution: controlledForceNewExecution,
   currentExecution,
   disableContextualActions = true,
+  hasUncommittedChanges,
+  commitsAhead,
+  worktreeExists = true,
 }: AgentConfigPanelProps) {
   const [loading, setLoading] = useState(false)
   const [prompt, setPrompt] = useState('')
@@ -362,6 +379,9 @@ export function AgentConfigPanel({
     execution: currentExecution,
     issueId,
     disabled: disabled || isRunning,
+    hasUncommittedChanges,
+    commitsAhead,
+    worktreeExists,
   })
 
   // Get current project ID for context search
@@ -980,6 +1000,7 @@ export function AgentConfigPanel({
             }
           }}
           isPreviewing={isPreviewing}
+          targetBranch={currentExecution.target_branch ?? undefined}
         />
       )}
     </div>

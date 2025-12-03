@@ -688,6 +688,97 @@ describe("ExecutionService", () => {
       expect(followUp.issue_id).toBe(testIssueId);
       expect(followUp.worktree_path).toBeNull(); // Local mode has no worktree
     });
+
+    it("should inherit mode from parent execution (worktree mode)", async () => {
+      // Create initial execution in worktree mode
+      const issueContent = "Add OAuth2 authentication with JWT tokens";
+      const initialExecution = await service.createExecution(
+        testIssueId,
+        { mode: "worktree" as const },
+        issueContent
+      );
+
+      expect(initialExecution.mode).toBe("worktree");
+
+      // Create follow-up
+      const followUpExecution = await service.createFollowUp(
+        initialExecution.id,
+        "Please add unit tests"
+      );
+
+      // Follow-up should inherit mode from parent
+      expect(followUpExecution.mode).toBe("worktree");
+    });
+
+    it("should inherit mode from parent execution (local mode)", async () => {
+      // Create initial execution in local mode
+      const issueContent = "Add OAuth2 authentication with JWT tokens";
+      const initialExecution = await service.createExecution(
+        testIssueId,
+        { mode: "local" },
+        issueContent
+      );
+
+      expect(initialExecution.mode).toBe("local");
+
+      // Create follow-up
+      const followUpExecution = await service.createFollowUp(
+        initialExecution.id,
+        "Please add unit tests"
+      );
+
+      // Follow-up should inherit mode from parent
+      expect(followUpExecution.mode).toBe("local");
+    });
+
+    it("should default to worktree mode when parent has worktree_path but no mode", async () => {
+      // Create initial execution in worktree mode
+      const issueContent = "Add OAuth2 authentication with JWT tokens";
+      const initialExecution = await service.createExecution(
+        testIssueId,
+        { mode: "worktree" as const },
+        issueContent
+      );
+
+      // Manually clear the mode field to simulate legacy execution
+      // (before mode field was consistently set)
+      updateExecution(db, initialExecution.id, { mode: null as any });
+
+      // Create follow-up from execution with worktree_path but no mode
+      const followUpExecution = await service.createFollowUp(
+        initialExecution.id,
+        "Please add unit tests"
+      );
+
+      // Should default to worktree mode since parent has worktree_path
+      expect(followUpExecution.mode).toBe("worktree");
+      expect(followUpExecution.worktree_path).toBe(
+        initialExecution.worktree_path
+      );
+    });
+
+    it("should default to local mode when parent has no worktree_path and no mode", async () => {
+      // Create initial execution in local mode
+      const issueContent = "Add OAuth2 authentication with JWT tokens";
+      const initialExecution = await service.createExecution(
+        testIssueId,
+        { mode: "local" },
+        issueContent
+      );
+
+      // Manually clear the mode field to simulate legacy execution
+      updateExecution(db, initialExecution.id, { mode: null as any });
+
+      // Create follow-up from execution without worktree_path and no mode
+      const followUpExecution = await service.createFollowUp(
+        initialExecution.id,
+        "Please add unit tests"
+      );
+
+      // Should default to local mode since parent has no worktree_path
+      expect(followUpExecution.mode).toBe("local");
+      expect(followUpExecution.worktree_path).toBeNull();
+    });
   });
 
   describe("cancelExecution", () => {

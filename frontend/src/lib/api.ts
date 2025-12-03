@@ -116,10 +116,17 @@ api.interceptors.response.use(
 
     // Handle HTTP errors
     const status = error.response.status
+    const responseData = error.response.data as ApiResponse<any> | undefined
+
     if (status === 404) {
-      throw new Error('Resource not found')
+      throw new Error(responseData?.message || 'Resource not found')
+    } else if (status === 400) {
+      // Bad request - extract the message from the response
+      throw new Error(responseData?.message || 'Bad request')
     } else if (status === 500) {
-      throw new Error('Server error: Please try again later')
+      // Server error - include the actual error message if available
+      const message = responseData?.message || 'Server error: Please try again later'
+      throw new Error(message)
     }
 
     throw error

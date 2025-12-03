@@ -258,6 +258,118 @@ describe('SyncPreviewDialog', () => {
       // Commit message input should not be visible
       expect(screen.queryByLabelText('Commit Message (Optional)')).not.toBeInTheDocument()
     })
+
+    it('should disable squash and preserve options when there are no commits', () => {
+      const previewWithNoCommits: SyncPreviewResult = {
+        ...mockPreview,
+        commits: [],
+        uncommittedChanges: {
+          files: ['file1.ts'],
+          additions: 10,
+          deletions: 5,
+        },
+      }
+
+      render(<SyncPreviewDialog {...defaultProps} preview={previewWithNoCommits} />)
+
+      // Squash and preserve radio buttons should be disabled
+      const squashRadio = screen.getByRole('radio', { name: /Squash and merge/ })
+      const preserveRadio = screen.getByRole('radio', { name: /Merge all commits/ })
+      const stageRadio = screen.getByRole('radio', { name: /Stage changes only/ })
+
+      expect(squashRadio).toBeDisabled()
+      expect(preserveRadio).toBeDisabled()
+      expect(stageRadio).not.toBeDisabled()
+    })
+
+    it('should auto-select stage mode when there are no commits', () => {
+      const previewWithNoCommits: SyncPreviewResult = {
+        ...mockPreview,
+        commits: [],
+        uncommittedChanges: {
+          files: ['file1.ts'],
+          additions: 10,
+          deletions: 5,
+        },
+      }
+
+      render(<SyncPreviewDialog {...defaultProps} preview={previewWithNoCommits} />)
+
+      // Stage radio should be checked (auto-selected)
+      const stageRadio = screen.getByRole('radio', { name: /Stage changes only/ })
+      expect(stageRadio).toBeChecked()
+
+      // Button text should reflect stage mode
+      expect(screen.getByText('Stage Changes')).toBeInTheDocument()
+    })
+
+    it('should show "Requires committed changes" message when there are no commits', () => {
+      const previewWithNoCommits: SyncPreviewResult = {
+        ...mockPreview,
+        commits: [],
+      }
+
+      render(<SyncPreviewDialog {...defaultProps} preview={previewWithNoCommits} />)
+
+      // Should show the helper text for both disabled options
+      const requiresCommitsMessages = screen.getAllByText('Requires committed changes')
+      expect(requiresCommitsMessages).toHaveLength(2) // One for squash, one for preserve
+    })
+
+    it('should have include uncommitted checkbox checked by default in stage mode', async () => {
+      const user = userEvent.setup()
+      const previewWithUncommitted: SyncPreviewResult = {
+        ...mockPreview,
+        uncommittedChanges: {
+          files: ['file1.ts', 'file2.ts'],
+          additions: 20,
+          deletions: 5,
+        },
+      }
+
+      render(<SyncPreviewDialog {...defaultProps} preview={previewWithUncommitted} />)
+
+      // Select stage mode to reveal the checkbox
+      await user.click(screen.getByLabelText(/Stage changes only/))
+
+      // The checkbox should be checked by default
+      const includeUncommittedCheckbox = screen.getByRole('checkbox', {
+        name: /Include uncommitted changes/,
+      })
+      expect(includeUncommittedCheckbox).toBeChecked()
+    })
+
+    it('should allow unchecking include uncommitted checkbox', async () => {
+      const user = userEvent.setup()
+      const previewWithUncommitted: SyncPreviewResult = {
+        ...mockPreview,
+        uncommittedChanges: {
+          files: ['file1.ts'],
+          additions: 10,
+          deletions: 5,
+        },
+      }
+
+      render(<SyncPreviewDialog {...defaultProps} preview={previewWithUncommitted} />)
+
+      // Select stage mode
+      await user.click(screen.getByLabelText(/Stage changes only/))
+
+      // Uncheck the checkbox
+      const includeUncommittedCheckbox = screen.getByRole('checkbox', {
+        name: /Include uncommitted changes/,
+      })
+      await user.click(includeUncommittedCheckbox)
+
+      expect(includeUncommittedCheckbox).not.toBeChecked()
+
+      // Confirm sync and verify the option is false
+      await user.click(screen.getByText('Stage Changes'))
+      expect(defaultProps.onConfirmSync).toHaveBeenCalledWith('stage', {
+        commitMessage: undefined,
+        includeUncommitted: false,
+      })
+    })
   })
 
   describe('Actions', () => {
@@ -300,7 +412,7 @@ describe('SyncPreviewDialog', () => {
       expect(screen.getByText('Stage Changes')).toBeInTheDocument()
     })
 
-    it('should call onConfirmSync with stage mode and options', async () => {
+    it('should call onConfirmSync with stage mode and options (includeUncommitted defaults to true)', async () => {
       const user = userEvent.setup()
       render(<SyncPreviewDialog {...defaultProps} />)
 
@@ -309,7 +421,7 @@ describe('SyncPreviewDialog', () => {
 
       expect(defaultProps.onConfirmSync).toHaveBeenCalledWith('stage', {
         commitMessage: undefined,
-        includeUncommitted: false,
+        includeUncommitted: true,
       })
     })
 

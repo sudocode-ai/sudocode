@@ -258,6 +258,7 @@ export default function WorktreesPage() {
           onConfirmSync={(mode, options) => performSync(selectedWorktree.id, mode, options)}
           onOpenIDE={() => {}}
           isPreviewing={false}
+          targetBranch={selectedWorktree.target_branch ?? undefined}
         />
       )}
     </div>

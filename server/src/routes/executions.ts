@@ -1119,19 +1119,17 @@ export function createExecutionsRouter(): Router {
           return;
         }
 
-        // Determine working directory and target branch based on mode
-        const mode = execution.mode || "local";
-        const workingDir =
-          mode === "worktree" && execution.worktree_path
-            ? execution.worktree_path
-            : repoPath;
-        const targetBranch =
-          mode === "worktree"
-            ? execution.branch_name
-            : execution.target_branch || "main";
+        // Determine working directory and target branch
+        // IMPORTANT: If worktree_path exists, always use it - this is more reliable than the mode field
+        // which may not be set correctly on follow-up executions
+        const hasWorktree = !!execution.worktree_path;
+        const workingDir = hasWorktree ? execution.worktree_path : repoPath;
+        const targetBranch = hasWorktree
+          ? execution.branch_name
+          : execution.target_branch || "main";
 
         console.log(
-          `[Commit] Execution ${executionId}: mode=${mode}, workingDir=${workingDir}, targetBranch=${targetBranch}`
+          `[Commit] Execution ${executionId}: hasWorktree=${hasWorktree}, workingDir=${workingDir}, targetBranch=${targetBranch}, mode=${execution.mode}`
         );
 
         // Get current uncommitted files from working directory instead of stale database field
@@ -1162,9 +1160,19 @@ export function createExecutionsRouter(): Router {
             }
           );
 
+          console.log(`[Commit] Git status in ${workingDir}:`, {
+            modified: modifiedOutput.trim().split("\n").filter(Boolean),
+            staged: stagedOutput.trim().split("\n").filter(Boolean),
+            untracked: untrackedOutput.trim().split("\n").filter(Boolean),
+          });
+
           // Combine all files, removing duplicates
           const allFiles = new Set<string>();
-          for (const output of [modifiedOutput, stagedOutput, untrackedOutput]) {
+          for (const output of [
+            modifiedOutput,
+            stagedOutput,
+            untrackedOutput,
+          ]) {
             output
               .split("\n")
               .filter((line) => line.trim())
@@ -1185,26 +1193,55 @@ export function createExecutionsRouter(): Router {
           return;
         }
 
-        // Escape commit message for shell
-        const escapedMessage = message.replace(/"/g, '\\"');
-
         // Execute git operations
         try {
-          // Add all uncommitted files
-          const addCommand = `git add ${filesChanged.map((f) => `"${f}"`).join(" ")}`;
-          execSync(addCommand, {
+          // Add all changes (more reliable than adding specific files)
+          // This catches any files that might have been missed in detection
+          execSync("git add -A", {
             cwd: workingDir,
             encoding: "utf-8",
             stdio: "pipe",
           });
 
-          // Commit with message
-          const commitCommand = `git commit -m "${escapedMessage}"`;
-          execSync(commitCommand, {
+          console.log(`[Commit] Staged all changes with git add -A`);
+
+          // Verify something is staged
+          const stagedAfterAdd = execSync("git diff --cached --name-only", {
+            cwd: workingDir,
+            encoding: "utf-8",
+            stdio: "pipe",
+          }).trim();
+
+          if (!stagedAfterAdd) {
+            console.log(`[Commit] No files staged after git add -A`);
+            res.status(400).json({
+              success: false,
+              data: null,
+              message: "No files staged for commit after git add",
+            });
+            return;
+          }
+
+          console.log(
+            `[Commit] Files staged: ${stagedAfterAdd.split("\n").filter(Boolean).join(", ")}`
+          );
+
+          // Commit using -F - to read message from stdin (safer than shell escaping)
+          const { spawnSync } = await import("child_process");
+          const commitResult = spawnSync("git", ["commit", "-m", message], {
             cwd: workingDir,
             encoding: "utf-8",
             stdio: "pipe",
           });
+
+          if (commitResult.status !== 0) {
+            const errorOutput =
+              commitResult.stderr || commitResult.stdout || "Unknown error";
+            console.error(`[Commit] git commit failed:`, errorOutput);
+            throw new Error(`git commit failed: ${errorOutput}`);
+          }
+
+          console.log(`[Commit] git commit output:`, commitResult.stdout);
 
           // Get commit SHA
           const commitSha = execSync("git rev-parse HEAD", {

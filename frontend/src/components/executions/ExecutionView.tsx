@@ -1055,6 +1055,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
             onConfirmSync={handleConfirmSync}
             onOpenIDE={handleOpenInIDE}
             isPreviewing={isPreviewing}
+            targetBranch={rootExecution.target_branch ?? undefined}
           />
         )}
 

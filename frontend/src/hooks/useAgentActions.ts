@@ -237,7 +237,6 @@ export function useAgentActions(options: UseAgentActionsOptions) {
     // Determine execution mode and state
     const isWorktreeMode = execution.mode === 'worktree' || parsedConfig?.mode === 'worktree'
     const hasWorktreePath = !!execution.worktree_path
-    const hasFileChanges = filesChanged.length > 0
     const isTerminalState = ['completed', 'failed', 'stopped', 'cancelled'].includes(
       execution.status
     )
@@ -267,10 +266,13 @@ export function useAgentActions(options: UseAgentActionsOptions) {
     }
 
     // Action: Merge Changes
-    // Available for worktree mode when worktree exists and has commits to merge
-    // If commitsAhead is provided and is 0, don't show the action (nothing to merge)
-    const hasCommitsToMerge = commitsAhead === undefined || commitsAhead > 0
-    const hasSyncableWorktree = hasWorktreePath && isWorktreeMode && worktreeExists && hasCommitsToMerge
+    // Available for worktree mode when worktree exists and has changes to merge
+    // Show if there are committed changes (commitsAhead > 0) OR uncommitted changes
+    // Only hide if we're certain there are no changes at all
+    const hasChangesToMerge =
+      commitsAhead === undefined || commitsAhead > 0 || hasUncommittedChanges === true
+    const hasSyncableWorktree =
+      hasWorktreePath && isWorktreeMode && worktreeExists && hasChangesToMerge
 
     if (hasSyncableWorktree) {
       availableActions.push({
@@ -301,7 +303,15 @@ export function useAgentActions(options: UseAgentActionsOptions) {
     }
 
     return availableActions
-  }, [execution, issueId, disabled, handleSyncWorktree, worktreeExists, hasUncommittedChanges, commitsAhead])
+  }, [
+    execution,
+    issueId,
+    disabled,
+    handleSyncWorktree,
+    worktreeExists,
+    hasUncommittedChanges,
+    commitsAhead,
+  ])
 
   return {
     /**

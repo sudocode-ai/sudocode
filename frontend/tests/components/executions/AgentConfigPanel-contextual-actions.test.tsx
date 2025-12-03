@@ -221,6 +221,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
       renderComponent({
         currentExecution: mockCompletedExecution,
         disableContextualActions: false,
+        hasUncommittedChanges: true,
       })
 
       await waitFor(() => {
@@ -232,6 +233,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
       renderComponent({
         currentExecution: mockCompletedExecution,
         disableContextualActions: false,
+        hasUncommittedChanges: true,
       })
 
       await waitFor(() => {
@@ -276,6 +278,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
       renderComponent({
         currentExecution: committedExecution,
         disableContextualActions: false,
+        hasUncommittedChanges: false, // Explicitly no uncommitted changes
       })
 
       await waitFor(() => {
@@ -326,6 +329,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
         currentExecution: mockCompletedExecution,
         disabled: true,
         disableContextualActions: false,
+        hasUncommittedChanges: true,
       })
 
       await waitFor(() => {
@@ -367,6 +371,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
         currentExecution: mockCompletedExecution,
         disabled: false,
         disableContextualActions: false,
+        hasUncommittedChanges: true,
       })
 
       await waitFor(() => {
@@ -386,6 +391,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
       const { rerender } = renderComponent({
         currentExecution: mockCompletedExecution,
         disableContextualActions: false,
+        hasUncommittedChanges: true,
       })
 
       await waitFor(() => {
@@ -408,6 +414,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
                 onStart={mockOnStart}
                 currentExecution={committedExecution}
                 disableContextualActions={false}
+                hasUncommittedChanges={false}
               />
             </ProjectProvider>
           </WebSocketProvider>
@@ -423,6 +430,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
       const { rerender } = renderComponent({
         currentExecution: mockCompletedExecution,
         disableContextualActions: false,
+        hasUncommittedChanges: true,
       })
 
       await waitFor(() => {
@@ -439,6 +447,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
                 onStart={mockOnStart}
                 currentExecution={null}
                 disableContextualActions={false}
+                hasUncommittedChanges={true}
               />
             </ProjectProvider>
           </WebSocketProvider>
@@ -457,6 +466,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
       renderComponent({
         currentExecution: mockCompletedExecution,
         disableContextualActions: false,
+        hasUncommittedChanges: true,
       })
 
       await waitFor(() => {
@@ -470,6 +480,7 @@ describe('AgentConfigPanel - Contextual Actions', () => {
       renderComponent({
         currentExecution: mockCompletedExecution,
         disableContextualActions: false,
+        hasUncommittedChanges: true,
       })
 
       await waitFor(() => {

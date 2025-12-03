@@ -722,6 +722,112 @@ describe('useAgentActions', () => {
     })
   })
 
+  describe('Merge Changes with commitsAhead and hasUncommittedChanges', () => {
+    it('should show merge action when commitsAhead is undefined (default behavior)', () => {
+      const { result } = renderHook(
+        () =>
+          useAgentActions({
+            execution: mockExecution,
+            issueId: 'i-test1',
+            worktreeExists: true,
+            // commitsAhead not specified - should default to showing merge action
+          }),
+        { wrapper }
+      )
+
+      const syncAction = result.current.actions.find((a) => a.id === 'squash-merge')
+      expect(syncAction).toBeDefined()
+      expect(syncAction?.label).toBe('Merge Changes')
+    })
+
+    it('should show merge action when commitsAhead > 0', () => {
+      const { result } = renderHook(
+        () =>
+          useAgentActions({
+            execution: mockExecution,
+            issueId: 'i-test1',
+            worktreeExists: true,
+            commitsAhead: 3,
+          }),
+        { wrapper }
+      )
+
+      const syncAction = result.current.actions.find((a) => a.id === 'squash-merge')
+      expect(syncAction).toBeDefined()
+    })
+
+    it('should show merge action when commitsAhead is 0 but hasUncommittedChanges is true', () => {
+      const { result } = renderHook(
+        () =>
+          useAgentActions({
+            execution: mockExecution,
+            issueId: 'i-test1',
+            worktreeExists: true,
+            commitsAhead: 0,
+            hasUncommittedChanges: true,
+          }),
+        { wrapper }
+      )
+
+      const syncAction = result.current.actions.find((a) => a.id === 'squash-merge')
+      expect(syncAction).toBeDefined()
+      expect(syncAction?.label).toBe('Merge Changes')
+    })
+
+    it('should hide merge action when commitsAhead is 0 and hasUncommittedChanges is false', () => {
+      const { result } = renderHook(
+        () =>
+          useAgentActions({
+            execution: mockExecution,
+            issueId: 'i-test1',
+            worktreeExists: true,
+            commitsAhead: 0,
+            hasUncommittedChanges: false,
+          }),
+        { wrapper }
+      )
+
+      const syncAction = result.current.actions.find((a) => a.id === 'squash-merge')
+      expect(syncAction).toBeUndefined()
+    })
+
+    it('should hide merge action when commitsAhead is 0 and hasUncommittedChanges is undefined', () => {
+      const { result } = renderHook(
+        () =>
+          useAgentActions({
+            execution: mockExecution,
+            issueId: 'i-test1',
+            worktreeExists: true,
+            commitsAhead: 0,
+            // hasUncommittedChanges not specified
+          }),
+        { wrapper }
+      )
+
+      const syncAction = result.current.actions.find((a) => a.id === 'squash-merge')
+      expect(syncAction).toBeUndefined()
+    })
+
+    it('should show merge action when only uncommitted changes exist (no commits)', () => {
+      // This is the key scenario: agent made changes but hasn't committed yet
+      const { result } = renderHook(
+        () =>
+          useAgentActions({
+            execution: mockExecution,
+            issueId: 'i-test1',
+            worktreeExists: true,
+            commitsAhead: 0, // No commits yet
+            hasUncommittedChanges: true, // But has uncommitted changes
+          }),
+        { wrapper }
+      )
+
+      const syncAction = result.current.actions.find((a) => a.id === 'squash-merge')
+      expect(syncAction).toBeDefined()
+      expect(syncAction?.label).toBe('Merge Changes')
+    })
+  })
+
   describe('Worktree Mode vs Local Mode Commit Logic', () => {
     it('should show commit action for worktree mode even with after_commit set', () => {
       // In worktree mode, we can have uncommitted changes even if after_commit is set
