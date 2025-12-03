@@ -5,7 +5,6 @@ import { AgentConfigPanel } from './AgentConfigPanel'
 import { DeleteWorktreeDialog } from './DeleteWorktreeDialog'
 import { DeleteExecutionDialog } from './DeleteExecutionDialog'
 import { SyncPreviewDialog } from './SyncPreviewDialog'
-import { SyncProgressDialog } from './SyncProgressDialog'
 import { CommitChangesDialog } from './CommitChangesDialog'
 import { CleanupWorktreeDialog } from './CleanupWorktreeDialog'
 import { CodeChangesPanel } from './CodeChangesPanel'
@@ -71,17 +70,10 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
   // Sync state management
   const {
     syncPreview,
-    syncStatus,
-    syncResult,
-    syncError,
     isSyncPreviewOpen,
-    isSyncProgressOpen,
-    fetchSyncPreview,
     performSync,
     openWorktreeInIDE,
-    cleanupWorktree,
     setIsSyncPreviewOpen,
-    setIsSyncProgressOpen,
     isPreviewing,
   } = useExecutionSync()
 
@@ -142,7 +134,6 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
           setHasUncommittedChanges(false)
         }
       }
-
     } catch (err) {
       console.error('Failed to reload chain after action:', err)
     }
@@ -411,13 +402,6 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
     }
   }
 
-  // Handle Sync Worktree to Local button click
-  const handleSyncToLocal = useCallback(() => {
-    if (!chainData || chainData.executions.length === 0) return
-    const rootExecution = chainData.executions[0]
-    fetchSyncPreview(rootExecution.id)
-  }, [chainData, fetchSyncPreview])
-
   // Handle open in IDE button click
   const handleOpenInIDE = useCallback(() => {
     if (!chainData || chainData.executions.length === 0) return
@@ -427,25 +411,13 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
 
   // Handle sync confirmation (wrapper for dialog)
   const handleConfirmSync = useCallback(
-    (mode: SyncMode, commitMessage?: string) => {
+    (mode: SyncMode, options?: { commitMessage?: string; includeUncommitted?: boolean }) => {
       if (!chainData || chainData.executions.length === 0) return
       const rootExecution = chainData.executions[0]
-      performSync(rootExecution.id, mode, commitMessage)
+      performSync(rootExecution.id, mode, options)
     },
     [chainData, performSync]
   )
-
-  // Handle cleanup worktree after sync
-  const handleCleanupWorktree = useCallback(() => {
-    if (!chainData || chainData.executions.length === 0) return
-    const rootExecution = chainData.executions[0]
-    cleanupWorktree(rootExecution.id)
-  }, [chainData, cleanupWorktree])
-
-  // Handle retry sync
-  const handleRetrySync = useCallback(() => {
-    handleSyncToLocal()
-  }, [handleSyncToLocal])
 
   // Handle scroll events to detect manual scrolling
   const handleScroll = useCallback(() => {
@@ -1086,18 +1058,6 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
           />
         )}
 
-        {/* Sync Progress Dialog */}
-        <SyncProgressDialog
-          execution={rootExecution}
-          syncStatus={syncStatus === 'previewing' ? 'idle' : syncStatus}
-          syncResult={syncResult}
-          syncError={syncError}
-          isOpen={isSyncProgressOpen}
-          onClose={() => setIsSyncProgressOpen(false)}
-          onCleanupWorktree={handleCleanupWorktree}
-          onRetry={handleRetrySync}
-        />
-
         {/* Commit Changes Dialog (from contextual actions) */}
         {lastExecution && (
           <CommitChangesDialog
@@ -1126,8 +1086,8 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
             preview={contextualSyncPreview}
             isOpen={isContextualSyncPreviewOpen}
             onClose={() => setIsContextualSyncPreviewOpen(false)}
-            onConfirmSync={(mode, commitMessage) =>
-              contextualPerformSync(lastExecution.id, mode, commitMessage)
+            onConfirmSync={(mode, options) =>
+              contextualPerformSync(lastExecution.id, mode, options)
             }
             onOpenIDE={handleOpenInIDE}
             isPreviewing={isContextualPreviewing}

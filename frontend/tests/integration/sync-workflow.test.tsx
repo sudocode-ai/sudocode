@@ -148,8 +148,8 @@ describe.skip('Sync Workflow Integration Tests', () => {
         success: true,
         finalCommit: 'xyz789',
         filesChanged: 5,
-        conflictsResolved: 0,
-        uncommittedJSONLIncluded: false,
+        hasConflicts: false,
+        uncommittedFilesIncluded: 0,
         cleanupOffered: true,
       }
 
@@ -248,8 +248,8 @@ describe.skip('Sync Workflow Integration Tests', () => {
         success: true,
         finalCommit: 'jkl012',
         filesChanged: 3,
-        conflictsResolved: 0,
-        uncommittedJSONLIncluded: false,
+        hasConflicts: false,
+        uncommittedFilesIncluded: 0,
         cleanupOffered: true,
       }
 
@@ -331,8 +331,8 @@ describe.skip('Sync Workflow Integration Tests', () => {
         success: true,
         finalCommit: 'xyz789',
         filesChanged: 2,
-        conflictsResolved: 1,
-        uncommittedJSONLIncluded: false,
+        hasConflicts: false,
+        uncommittedFilesIncluded: 0,
         cleanupOffered: true,
       }
 
@@ -462,8 +462,8 @@ describe.skip('Sync Workflow Integration Tests', () => {
         success: true,
         finalCommit: 'xyz789',
         filesChanged: 3,
-        conflictsResolved: 0,
-        uncommittedJSONLIncluded: true,
+        hasConflicts: false,
+        uncommittedFilesIncluded: 2,
         cleanupOffered: true,
       }
 
@@ -558,8 +558,8 @@ describe.skip('Sync Workflow Integration Tests', () => {
         success: true,
         finalCommit: 'xyz789',
         filesChanged: 1,
-        conflictsResolved: 0,
-        uncommittedJSONLIncluded: false,
+        hasConflicts: false,
+        uncommittedFilesIncluded: 0,
         cleanupOffered: true,
       }
 

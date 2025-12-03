@@ -312,19 +312,14 @@ export function CodeChangesPanel({
       currentStatus &&
       ['completed', 'stopped', 'failed'].includes(currentStatus)
     ) {
-      console.log(`[CodeChangesPanel] Execution ${executionId} completed, refreshing changes`)
       refresh()
     }
   }, [executionStatus, executionId, refresh])
 
-  console.log('REFRESH TRIGGER:', refreshTrigger)
   // Refresh when refreshTrigger changes (e.g., after commit)
   // Skip initial value of 0, only refresh when it increments
   useEffect(() => {
     if (refreshTrigger && refreshTrigger > 0) {
-      console.log(
-        `[CodeChangesPanel] Refresh triggered (${refreshTrigger}) for execution ${executionId}`
-      )
       refresh()
     }
   }, [refreshTrigger, executionId, refresh])

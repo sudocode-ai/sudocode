@@ -972,20 +972,26 @@ export function createExecutionsRouter(): Router {
    *
    * Perform stage sync operation
    *
-   * Applies all worktree changes to the working directory without committing.
+   * Applies committed worktree changes to the working directory without committing.
    * Changes are left staged, ready for the user to commit manually.
+   *
+   * Request body:
+   * - includeUncommitted?: boolean - If true, also copy uncommitted files from worktree
    */
   router.post(
     "/executions/:executionId/sync/stage",
     async (req: Request, res: Response) => {
       try {
         const { executionId } = req.params;
+        const { includeUncommitted } = req.body || {};
 
         // Get worktree sync service
         const syncService = getWorktreeSyncService(req);
 
-        // Perform stage sync
-        const result = await syncService.stageSync(executionId);
+        // Perform stage sync with options
+        const result = await syncService.stageSync(executionId, {
+          includeUncommitted: includeUncommitted === true,
+        });
 
         res.json({
           success: true,
@@ -994,6 +1000,56 @@ export function createExecutionsRouter(): Router {
       } catch (error) {
         console.error(
           `Failed to stage sync execution ${req.params.executionId}:`,
+          error
+        );
+
+        if (error instanceof WorktreeSyncError) {
+          const statusCode = getStatusCodeForSyncError(error);
+          res.status(statusCode).json({
+            success: false,
+            data: null,
+            error: error.message,
+            code: error.code,
+          });
+        } else {
+          res.status(500).json({
+            success: false,
+            data: null,
+            error: "Internal server error",
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+  );
+
+  /**
+   * POST /api/executions/:executionId/sync/preserve
+   *
+   * Perform preserve sync operation
+   *
+   * Merges all commits from worktree branch to target branch, preserving commit history.
+   * Only includes committed changes - uncommitted changes are excluded.
+   */
+  router.post(
+    "/executions/:executionId/sync/preserve",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+
+        // Get worktree sync service
+        const syncService = getWorktreeSyncService(req);
+
+        // Perform preserve sync
+        const result = await syncService.preserveSync(executionId);
+
+        res.json({
+          success: true,
+          data: result,
+        });
+      } catch (error) {
+        console.error(
+          `Failed to preserve sync execution ${req.params.executionId}:`,
           error
         );
 
@@ -1063,30 +1119,6 @@ export function createExecutionsRouter(): Router {
           return;
         }
 
-        // Parse files_changed
-        let filesChanged: string[] = [];
-        try {
-          if (execution.files_changed) {
-            const parsed =
-              typeof execution.files_changed === "string"
-                ? JSON.parse(execution.files_changed)
-                : execution.files_changed;
-            filesChanged = Array.isArray(parsed) ? parsed : [parsed];
-          }
-        } catch (error) {
-          console.error("Failed to parse files_changed:", error);
-        }
-
-        // Validate has uncommitted changes
-        if (filesChanged.length === 0) {
-          res.status(400).json({
-            success: false,
-            data: null,
-            message: "No files to commit",
-          });
-          return;
-        }
-
         // Determine working directory and target branch based on mode
         const mode = execution.mode || "local";
         const workingDir =
@@ -1102,12 +1134,63 @@ export function createExecutionsRouter(): Router {
           `[Commit] Execution ${executionId}: mode=${mode}, workingDir=${workingDir}, targetBranch=${targetBranch}`
         );
 
+        // Get current uncommitted files from working directory instead of stale database field
+        // This ensures we're working with the current state
+        let filesChanged: string[] = [];
+        try {
+          // Get modified tracked files
+          const modifiedOutput = execSync("git diff --name-only", {
+            cwd: workingDir,
+            encoding: "utf-8",
+            stdio: "pipe",
+          });
+
+          // Get staged files
+          const stagedOutput = execSync("git diff --cached --name-only", {
+            cwd: workingDir,
+            encoding: "utf-8",
+            stdio: "pipe",
+          });
+
+          // Get untracked files
+          const untrackedOutput = execSync(
+            "git ls-files --others --exclude-standard",
+            {
+              cwd: workingDir,
+              encoding: "utf-8",
+              stdio: "pipe",
+            }
+          );
+
+          // Combine all files, removing duplicates
+          const allFiles = new Set<string>();
+          for (const output of [modifiedOutput, stagedOutput, untrackedOutput]) {
+            output
+              .split("\n")
+              .filter((line) => line.trim())
+              .forEach((file) => allFiles.add(file));
+          }
+          filesChanged = Array.from(allFiles);
+        } catch (error) {
+          console.error("Failed to get uncommitted files:", error);
+        }
+
+        // Validate has uncommitted changes
+        if (filesChanged.length === 0) {
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: "No files to commit",
+          });
+          return;
+        }
+
         // Escape commit message for shell
         const escapedMessage = message.replace(/"/g, '\\"');
 
         // Execute git operations
         try {
-          // Add files
+          // Add all uncommitted files
           const addCommand = `git add ${filesChanged.map((f) => `"${f}"`).join(" ")}`;
           execSync(addCommand, {
             cwd: workingDir,

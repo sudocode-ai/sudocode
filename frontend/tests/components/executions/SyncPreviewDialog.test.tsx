@@ -113,7 +113,6 @@ describe('SyncPreviewDialog', () => {
     })
   })
 
-
   describe('Conflicts', () => {
     it('should show code conflicts with error state', () => {
       const previewWithConflicts: SyncPreviewResult = {
@@ -142,9 +141,11 @@ describe('SyncPreviewDialog', () => {
       expect(screen.getByText('Open Worktree in IDE')).toBeInTheDocument()
     })
 
-    it('should show JSONL conflicts as auto-resolvable', () => {
+    // Note: JSONL conflicts UI was removed - conflicts are now auto-resolved during sync
+    it('should allow sync when only JSONL conflicts exist (auto-resolvable)', () => {
       const previewWithJSONL: SyncPreviewResult = {
         ...mockPreview,
+        canSync: true, // JSONL conflicts don't block sync
         conflicts: {
           hasConflicts: true,
           codeConflicts: [],
@@ -163,9 +164,9 @@ describe('SyncPreviewDialog', () => {
 
       render(<SyncPreviewDialog {...defaultProps} preview={previewWithJSONL} />)
 
-      expect(screen.getByText('JSONL Conflicts (Auto-resolvable)')).toBeInTheDocument()
-      expect(screen.getByText(/.sudocode\/issues\.jsonl/)).toBeInTheDocument()
-      expect(screen.getByText(/3 conflicts/)).toBeInTheDocument()
+      // Sync button should be enabled since JSONL conflicts are auto-resolved
+      const confirmButton = screen.getByText('Squash and Merge')
+      expect(confirmButton).not.toBeDisabled()
     })
 
     it('should show Open in IDE button for code conflicts', () => {
@@ -207,16 +208,20 @@ describe('SyncPreviewDialog', () => {
       expect(screen.getByText('Warning 2')).toBeInTheDocument()
     })
 
-    it('should show uncommitted JSONL changes notice', () => {
+    it('should show uncommitted changes notice when files exist', () => {
       const previewWithUncommitted: SyncPreviewResult = {
         ...mockPreview,
-        uncommittedJSONLChanges: true,
+        uncommittedChanges: {
+          files: ['file1.ts', 'file2.ts'],
+          additions: 20,
+          deletions: 5,
+        },
       }
 
       render(<SyncPreviewDialog {...defaultProps} preview={previewWithUncommitted} />)
 
       expect(screen.getByText('Uncommitted Changes')).toBeInTheDocument()
-      expect(screen.getByText('Uncommitted JSONL changes will be included in sync')).toBeInTheDocument()
+      expect(screen.getByText(/2 uncommitted file/)).toBeInTheDocument()
     })
   })
 
@@ -224,9 +229,9 @@ describe('SyncPreviewDialog', () => {
     it('should show all three sync mode options', () => {
       render(<SyncPreviewDialog {...defaultProps} />)
 
-      expect(screen.getByLabelText(/Squash Merge/)).toBeInTheDocument()
-      expect(screen.getByLabelText(/Preserve Commits/)).toBeInTheDocument()
-      expect(screen.getByLabelText(/Stage Only/)).toBeInTheDocument()
+      expect(screen.getByLabelText(/Stage changes only/)).toBeInTheDocument()
+      expect(screen.getByLabelText(/Squash and merge/)).toBeInTheDocument()
+      expect(screen.getByLabelText(/Merge all commits/)).toBeInTheDocument()
     })
 
     it('should show commit message input in squash mode', () => {
@@ -248,7 +253,7 @@ describe('SyncPreviewDialog', () => {
       render(<SyncPreviewDialog {...defaultProps} />)
 
       // Select stage mode
-      await user.click(screen.getByLabelText(/Stage Only/))
+      await user.click(screen.getByLabelText(/Stage changes only/))
 
       // Commit message input should not be visible
       expect(screen.queryByLabelText('Commit Message (Optional)')).not.toBeInTheDocument()
@@ -266,39 +271,46 @@ describe('SyncPreviewDialog', () => {
       expect(defaultProps.onClose).toHaveBeenCalledTimes(1)
     })
 
-    it('should call onConfirmSync with squash mode', async () => {
+    it('should call onConfirmSync with squash mode and options', async () => {
       const user = userEvent.setup()
       render(<SyncPreviewDialog {...defaultProps} />)
 
-      const confirmButton = screen.getByText('Squash & Sync')
+      // Default is squash mode, just click the confirm button
+      const confirmButton = screen.getByText('Squash and Merge')
       await user.click(confirmButton)
 
-      expect(defaultProps.onConfirmSync).toHaveBeenCalledWith('squash', '')
+      expect(defaultProps.onConfirmSync).toHaveBeenCalledWith('squash', {
+        commitMessage: '',
+        includeUncommitted: undefined,
+      })
     })
 
-    it('should show Squash & Sync button by default', () => {
+    it('should show Squash and Merge button by default', () => {
       render(<SyncPreviewDialog {...defaultProps} />)
 
-      expect(screen.getByText('Squash & Sync')).toBeInTheDocument()
+      expect(screen.getByText('Squash and Merge')).toBeInTheDocument()
     })
 
     it('should show Stage Changes button when stage mode selected', async () => {
       const user = userEvent.setup()
       render(<SyncPreviewDialog {...defaultProps} />)
 
-      await user.click(screen.getByLabelText(/Stage Only/))
+      await user.click(screen.getByLabelText(/Stage changes only/))
 
       expect(screen.getByText('Stage Changes')).toBeInTheDocument()
     })
 
-    it('should call onConfirmSync with stage mode', async () => {
+    it('should call onConfirmSync with stage mode and options', async () => {
       const user = userEvent.setup()
       render(<SyncPreviewDialog {...defaultProps} />)
 
-      await user.click(screen.getByLabelText(/Stage Only/))
+      await user.click(screen.getByLabelText(/Stage changes only/))
       await user.click(screen.getByText('Stage Changes'))
 
-      expect(defaultProps.onConfirmSync).toHaveBeenCalledWith('stage', undefined)
+      expect(defaultProps.onConfirmSync).toHaveBeenCalledWith('stage', {
+        commitMessage: undefined,
+        includeUncommitted: false,
+      })
     })
 
     it('should disable confirm button when code conflicts exist', () => {
@@ -323,14 +335,14 @@ describe('SyncPreviewDialog', () => {
 
       render(<SyncPreviewDialog {...defaultProps} preview={previewWithConflicts} />)
 
-      const confirmButton = screen.getByText('Squash & Sync')
+      const confirmButton = screen.getByText('Squash and Merge')
       expect(confirmButton).toBeDisabled()
     })
 
     it('should disable confirm button when previewing', () => {
       render(<SyncPreviewDialog {...defaultProps} isPreviewing={true} />)
 
-      const confirmButton = screen.getByText('Squash & Sync')
+      const confirmButton = screen.getByText('Squash and Merge')
       expect(confirmButton).toBeDisabled()
     })
   })

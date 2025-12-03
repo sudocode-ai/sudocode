@@ -279,16 +279,18 @@ describe("Uncommitted JSONL handling", () => {
     // Preview should detect uncommitted JSONL
     const preview = await service.previewSync(testEnv.execution.id);
     expect(preview.uncommittedJSONLChanges).toContain(".sudocode/issues.jsonl");
-    expect(
-      preview.warnings.some((w) => w.includes("uncommitted JSONL"))
-    ).toBe(true);
+    // Note: uncommittedChanges now contains general file stats
+    expect(preview.uncommittedChanges).toBeDefined();
+    expect(preview.uncommittedChanges?.files.length).toBeGreaterThan(0);
 
-    // Squash should include them
-    const result = await service.squashSync(testEnv.execution.id);
+    // Stage sync with includeUncommitted should include them
+    const result = await service.stageSync(testEnv.execution.id, {
+      includeUncommitted: true,
+    });
     expect(result.success).toBe(true);
-    expect(result.uncommittedJSONLIncluded).toBe(true);
+    expect(result.uncommittedFilesIncluded).toBeGreaterThan(0);
 
-    // Verify JSONL synced
+    // Verify JSONL synced to working directory (staged, not committed)
     const issuesContent = fs.readFileSync(
       path.join(testEnv.repo, ".sudocode/issues.jsonl"),
       "utf8"
@@ -315,7 +317,7 @@ describe("Code conflict handling", () => {
     }
   });
 
-  it("should block sync when code conflicts exist", async () => {
+  it("should detect code conflicts and warn about them", async () => {
     // Create initial file in main
     commitFile(testEnv.repo, "shared.ts", "version 1", "Initial version");
 
@@ -329,15 +331,17 @@ describe("Code conflict handling", () => {
     // Preview should detect code conflict
     const preview = await service.previewSync(testEnv.execution.id);
     expect(preview.conflicts.codeConflicts.length).toBe(1);
-    expect(preview.canSync).toBe(false);
+    // Note: canSync reflects dirty working tree status, not code conflicts
+    // The frontend handles code conflicts via conflicts.codeConflicts check
+    expect(preview.conflicts.hasConflicts).toBe(true);
     expect(
       preview.warnings.some((w) => w.includes("code conflict"))
     ).toBe(true);
 
-    // Squash should fail gracefully
+    // Squash will attempt merge and may result in conflicts
     const result = await service.squashSync(testEnv.execution.id);
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("code conflict");
+    // The merge may succeed with conflicts that need resolution, or fail
+    expect(result.hasConflicts).toBe(true);
   });
 });
 

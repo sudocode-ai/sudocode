@@ -967,8 +967,8 @@ export function AgentConfigPanel({
           preview={syncPreview}
           isOpen={isSyncPreviewOpen}
           onClose={() => setIsSyncPreviewOpen(false)}
-          onConfirmSync={(mode, commitMessage) => {
-            performSync(currentExecution.id, mode, commitMessage)
+          onConfirmSync={(mode, options) => {
+            performSync(currentExecution.id, mode, options)
           }}
           onOpenIDE={() => {
             // Open worktree path in IDE (copy to clipboard for now)

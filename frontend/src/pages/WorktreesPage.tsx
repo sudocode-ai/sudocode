@@ -9,7 +9,6 @@ import type { Execution } from '@/types/execution'
 import { WorktreeList } from '@/components/worktrees/WorktreeList'
 import { WorktreeDetailPanel } from '@/components/worktrees/WorktreeDetailPanel'
 import { SyncPreviewDialog } from '@/components/executions/SyncPreviewDialog'
-import { SyncProgressDialog } from '@/components/executions/SyncProgressDialog'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import {
@@ -54,17 +53,7 @@ export default function WorktreesPage() {
   const [hasInitializedFromUrl, setHasInitializedFromUrl] = useState(false)
 
   // Sync state management for dialogs
-  const {
-    syncPreview,
-    syncStatus,
-    syncResult,
-    syncError,
-    isSyncPreviewOpen,
-    isSyncProgressOpen,
-    performSync,
-    setIsSyncPreviewOpen,
-    setIsSyncProgressOpen,
-  } = useExecutionSync()
+  const { syncPreview, isSyncPreviewOpen, performSync, setIsSyncPreviewOpen } = useExecutionSync()
 
   // Initialize selected worktree from URL hash on mount
   useEffect(() => {
@@ -266,22 +255,9 @@ export default function WorktreesPage() {
           preview={syncPreview}
           isOpen={isSyncPreviewOpen}
           onClose={() => setIsSyncPreviewOpen(false)}
-          onConfirmSync={(mode, commitMessage) =>
-            performSync(selectedWorktree.id, mode, commitMessage)
-          }
+          onConfirmSync={(mode, options) => performSync(selectedWorktree.id, mode, options)}
           onOpenIDE={() => {}}
           isPreviewing={false}
-        />
-      )}
-
-      {selectedWorktree && (
-        <SyncProgressDialog
-          execution={selectedWorktree}
-          syncStatus={syncStatus === 'previewing' ? 'idle' : syncStatus}
-          syncResult={syncResult}
-          syncError={syncError}
-          isOpen={isSyncProgressOpen}
-          onClose={() => setIsSyncProgressOpen(false)}
         />
       )}
     </div>

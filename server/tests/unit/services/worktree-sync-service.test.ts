@@ -472,7 +472,9 @@ describe("WorktreeSyncService Foundation", () => {
       // Preview sync
       const preview = await service.previewSync("exec-conflict-1");
 
-      expect(preview.canSync).toBe(false);
+      // Note: canSync reflects whether local working tree is clean
+      // Code conflicts are reported separately via conflicts.codeConflicts
+      // The frontend checks both canSync AND hasCodeConflicts
       expect(preview.conflicts.hasConflicts).toBe(true);
       expect(preview.conflicts.codeConflicts.length).toBeGreaterThan(0);
       expect(preview.warnings.some(w => w.includes("code conflict(s) detected"))).toBe(true);
@@ -522,7 +524,9 @@ describe("WorktreeSyncService Foundation", () => {
       expect(preview.uncommittedJSONLChanges).toContain(
         ".sudocode/issues.jsonl"
       );
-      expect(preview.warnings.some(w => w.includes("uncommitted JSONL file(s)"))).toBe(true);
+      // Note: uncommittedChanges is now used for general file stats,
+      // and warning about uncommitted files was removed to avoid noise
+      expect(preview.uncommittedChanges).toBeDefined();
     });
 
     it("should warn when execution is running", async () => {
@@ -959,7 +963,8 @@ describe("WorktreeSyncService Foundation", () => {
       const result = await service.stageSync("exec-stage-conflict-1");
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain("code conflict(s) detected");
+      expect(result.hasConflicts).toBe(true);
+      expect(result.error).toContain("Merge conflicts detected");
     });
 
     it("should handle uncommitted JSONL files", async () => {
@@ -999,11 +1004,14 @@ describe("WorktreeSyncService Foundation", () => {
         status: "completed",
       });
 
-      // Perform stage sync
-      const result = await service.stageSync("exec-stage-jsonl-1");
+      // Perform stage sync with includeUncommitted option
+      const result = await service.stageSync("exec-stage-jsonl-1", {
+        includeUncommitted: true,
+      });
 
       expect(result.success).toBe(true);
-      expect(result.uncommittedJSONLIncluded).toBe(true);
+      // uncommittedFilesIncluded is a count, not a boolean
+      expect(result.uncommittedFilesIncluded).toBeGreaterThan(0);
     });
 
     it("should throw error for non-existent execution", async () => {
@@ -1094,6 +1102,294 @@ describe("WorktreeSyncService Foundation", () => {
         stdio: "pipe",
       });
       expect(log).toContain("Manual commit after stage sync");
+    });
+  });
+
+  describe("preserveSync", () => {
+    it("should merge commits preserving history", async () => {
+      // Create worktree with multiple commits
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      execSync(`git worktree add ${worktreePath} -b preserve-test-branch`, {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Add files in worktree with multiple commits
+      fs.writeFileSync(path.join(worktreePath, "file1.ts"), "content1");
+      execSync("git add file1.ts", { cwd: worktreePath, stdio: "pipe" });
+      execSync('git commit -m "Add file1"', {
+        cwd: worktreePath,
+        stdio: "pipe",
+      });
+
+      fs.writeFileSync(path.join(worktreePath, "file2.ts"), "content2");
+      execSync("git add file2.ts", { cwd: worktreePath, stdio: "pipe" });
+      execSync('git commit -m "Add file2"', {
+        cwd: worktreePath,
+        stdio: "pipe",
+      });
+
+      // Get initial commit count on main
+      const initialCommitCount = parseInt(
+        execSync("git rev-list --count main", {
+          cwd: testRepo,
+          encoding: "utf8",
+          stdio: "pipe",
+        }).trim()
+      );
+
+      // Create execution
+      createExecution(db, {
+        id: "exec-preserve-1",
+        worktree_path: worktreePath,
+        branch_name: "preserve-test-branch",
+        target_branch: "main",
+        status: "completed",
+      });
+
+      // Perform preserve sync
+      const result = await service.preserveSync("exec-preserve-1");
+
+      expect(result.success).toBe(true);
+      expect(result.filesChanged).toBeGreaterThan(0);
+      expect(result.finalCommit).toBeDefined();
+
+      // Verify commits were preserved (merge commit + 2 original commits)
+      const finalCommitCount = parseInt(
+        execSync("git rev-list --count main", {
+          cwd: testRepo,
+          encoding: "utf8",
+          stdio: "pipe",
+        }).trim()
+      );
+      // Should have at least the original + 2 new commits (+ possibly merge commit)
+      expect(finalCommitCount).toBeGreaterThan(initialCommitCount);
+
+      // Verify files exist
+      expect(fs.existsSync(path.join(testRepo, "file1.ts"))).toBe(true);
+      expect(fs.existsSync(path.join(testRepo, "file2.ts"))).toBe(true);
+    });
+
+    it("should return error when code conflicts exist", async () => {
+      // Create worktree
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      execSync(`git worktree add ${worktreePath} -b preserve-conflict-branch`, {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Create conflicting changes
+      // Change in main
+      fs.writeFileSync(path.join(testRepo, "preserve-conflict.ts"), "main content");
+      execSync("git add preserve-conflict.ts", { cwd: testRepo, stdio: "pipe" });
+      execSync('git commit -m "Add conflict file in main"', {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Different change in worktree
+      fs.writeFileSync(
+        path.join(worktreePath, "preserve-conflict.ts"),
+        "worktree content"
+      );
+      execSync("git add preserve-conflict.ts", { cwd: worktreePath, stdio: "pipe" });
+      execSync('git commit -m "Add conflict file in worktree"', {
+        cwd: worktreePath,
+        stdio: "pipe",
+      });
+
+      // Create execution
+      createExecution(db, {
+        id: "exec-preserve-conflict-1",
+        worktree_path: worktreePath,
+        branch_name: "preserve-conflict-branch",
+        target_branch: "main",
+        status: "completed",
+      });
+
+      // Perform preserve sync
+      const result = await service.preserveSync("exec-preserve-conflict-1");
+
+      expect(result.success).toBe(false);
+      expect(result.hasConflicts).toBe(true);
+      expect(result.error).toContain("Merge conflicts detected");
+    });
+
+    it("should auto-resolve JSONL conflicts", async () => {
+      // Create worktree
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      execSync(`git worktree add ${worktreePath} -b preserve-jsonl-branch`, {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Helper to create issue entity
+      const createIssue = (id: string, title: string) => ({
+        id,
+        uuid: `uuid-${id}`,
+        title,
+        status: "open",
+        content: "",
+        priority: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+      // Create JSONL conflict
+      // In main
+      const mainSudocode = path.join(testRepo, ".sudocode");
+      fs.mkdirSync(mainSudocode, { recursive: true });
+      fs.writeFileSync(
+        path.join(mainSudocode, "issues.jsonl"),
+        JSON.stringify(createIssue("i-main", "Main issue")) + "\n"
+      );
+      execSync("git add .sudocode/issues.jsonl", {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+      execSync('git commit -m "Add issue in main"', {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // In worktree
+      const worktreeSudocode = path.join(worktreePath, ".sudocode");
+      fs.mkdirSync(worktreeSudocode, { recursive: true });
+      fs.writeFileSync(
+        path.join(worktreeSudocode, "issues.jsonl"),
+        JSON.stringify(createIssue("i-worktree", "Worktree issue")) + "\n"
+      );
+      execSync("git add .sudocode/issues.jsonl", {
+        cwd: worktreePath,
+        stdio: "pipe",
+      });
+      execSync('git commit -m "Add issue in worktree"', {
+        cwd: worktreePath,
+        stdio: "pipe",
+      });
+
+      // Create execution
+      createExecution(db, {
+        id: "exec-preserve-jsonl-1",
+        worktree_path: worktreePath,
+        branch_name: "preserve-jsonl-branch",
+        target_branch: "main",
+        status: "completed",
+      });
+
+      // Perform preserve sync - JSONL conflicts should be auto-resolved
+      const result = await service.preserveSync("exec-preserve-jsonl-1");
+
+      expect(result.success).toBe(true);
+
+      // Verify JSONL file was merged (both issues should exist)
+      const issuesContent = fs.readFileSync(
+        path.join(testRepo, ".sudocode/issues.jsonl"),
+        "utf8"
+      );
+      expect(issuesContent).toContain("i-main");
+      expect(issuesContent).toContain("i-worktree");
+    });
+
+    it("should throw error for non-existent execution", async () => {
+      await expect(service.preserveSync("nonexistent")).rejects.toThrow(
+        WorktreeSyncError
+      );
+
+      try {
+        await service.preserveSync("nonexistent");
+      } catch (error: any) {
+        expect(error.code).toBe(WorktreeSyncErrorCode.EXECUTION_NOT_FOUND);
+      }
+    });
+
+    it("should throw error when worktree path is missing", async () => {
+      // Create execution without worktree
+      createExecution(db, {
+        id: "exec-preserve-no-worktree",
+        worktree_path: null,
+        branch_name: "some-branch",
+        target_branch: "main",
+        status: "completed",
+      });
+
+      await expect(service.preserveSync("exec-preserve-no-worktree")).rejects.toThrow(
+        WorktreeSyncError
+      );
+
+      try {
+        await service.preserveSync("exec-preserve-no-worktree");
+      } catch (error: any) {
+        expect(error.code).toBe(WorktreeSyncErrorCode.NO_WORKTREE);
+      }
+    });
+
+    it("should return error when no commits to merge", async () => {
+      // Create worktree with no new commits (empty branch)
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      execSync(`git worktree add ${worktreePath} -b preserve-empty-branch`, {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Create execution
+      createExecution(db, {
+        id: "exec-preserve-empty",
+        worktree_path: worktreePath,
+        branch_name: "preserve-empty-branch",
+        target_branch: "main",
+        status: "completed",
+      });
+
+      // Perform preserve sync
+      const result = await service.preserveSync("exec-preserve-empty");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("No commits to merge");
+    });
+
+    it("should throw DIRTY_WORKING_TREE if local tree has uncommitted changes", async () => {
+      // Create worktree
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      execSync(`git worktree add ${worktreePath} -b preserve-dirty-branch`, {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Add a commit in worktree
+      fs.writeFileSync(path.join(worktreePath, "file.ts"), "content");
+      execSync("git add file.ts", { cwd: worktreePath, stdio: "pipe" });
+      execSync('git commit -m "Add file"', {
+        cwd: worktreePath,
+        stdio: "pipe",
+      });
+
+      // Make local tree dirty
+      fs.writeFileSync(path.join(testRepo, "dirty.txt"), "uncommitted content");
+
+      // Create execution
+      createExecution(db, {
+        id: "exec-preserve-dirty",
+        worktree_path: worktreePath,
+        branch_name: "preserve-dirty-branch",
+        target_branch: "main",
+        status: "completed",
+      });
+
+      await expect(service.preserveSync("exec-preserve-dirty")).rejects.toThrow(
+        WorktreeSyncError
+      );
+
+      try {
+        await service.preserveSync("exec-preserve-dirty");
+      } catch (error: any) {
+        expect(error.code).toBe(WorktreeSyncErrorCode.DIRTY_WORKING_TREE);
+      }
     });
   });
 

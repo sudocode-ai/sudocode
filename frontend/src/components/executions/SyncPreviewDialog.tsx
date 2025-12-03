@@ -13,12 +13,12 @@ import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   AlertCircle,
   ChevronDown,
   ChevronRight,
-  GitBranch,
   GitCommit,
   GitMerge,
   Loader2,
@@ -31,7 +31,10 @@ export interface SyncPreviewDialogProps {
   preview: SyncPreviewResult | null
   isOpen: boolean
   onClose: () => void
-  onConfirmSync: (mode: SyncMode, commitMessage?: string) => void
+  onConfirmSync: (
+    mode: SyncMode,
+    options?: { commitMessage?: string; includeUncommitted?: boolean }
+  ) => void
   onOpenIDE: () => void
   isPreviewing?: boolean
 }
@@ -47,10 +50,13 @@ export function SyncPreviewDialog({
   const [selectedMode, setSelectedMode] = useState<SyncMode>('squash')
   const [commitMessage, setCommitMessage] = useState('')
   const [commitsExpanded, setCommitsExpanded] = useState(false)
+  const [includeUncommitted, setIncludeUncommitted] = useState(false)
 
   // Determine if sync is blocked by code conflicts
   const hasCodeConflicts = (preview?.conflicts.codeConflicts.length ?? 0) > 0
-  const canSync = preview?.canSync && !hasCodeConflicts
+  // Stage mode can bypass the dirty working tree check since it doesn't commit
+  const canSync =
+    selectedMode === 'stage' ? !hasCodeConflicts : preview?.canSync && !hasCodeConflicts
 
   // Get button text based on mode
   const getButtonText = () => {
@@ -61,8 +67,10 @@ export function SyncPreviewDialog({
 
   const handleConfirm = () => {
     if (!canSync) return
-    const message = selectedMode === 'squash' ? commitMessage : undefined
-    onConfirmSync(selectedMode, message)
+    onConfirmSync(selectedMode, {
+      commitMessage: selectedMode === 'squash' ? commitMessage : undefined,
+      includeUncommitted: selectedMode === 'stage' ? includeUncommitted : undefined,
+    })
   }
 
   return (
@@ -156,16 +164,16 @@ export function SyncPreviewDialog({
                 )}
 
                 {/* JSONL Conflicts Info */}
-                {preview.conflicts.jsonlConflicts.length > 0 && (
-                  <div className="rounded-lg border border-blue-500/50 bg-blue-500/10 p-3">
+                {/* {preview.conflicts.jsonlConflicts.length > 0 && (
+                  <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-3">
                     <div className="flex items-start gap-2">
-                      <Info className="mt-0.5 h-4 w-4 text-blue-600" />
+                      <AlertCircle className="mt-0.5 h-4 w-4 text-amber-600" />
                       <div className="flex-1 text-sm">
-                        <p className="font-medium text-blue-900 dark:text-blue-100">
-                          JSONL Conflicts (Auto-resolvable)
+                        <p className="font-medium text-amber-900 dark:text-amber-100">
+                          JSONL Conflicts Detected
                         </p>
-                        <p className="mt-1 text-blue-800 dark:text-blue-200">
-                          The following files have conflicts that will be automatically resolved:
+                        <p className="mt-1 text-amber-800 dark:text-amber-200">
+                          The following files may have merge conflicts that need manual resolution:
                         </p>
                         <ul className="mt-2 space-y-1">
                           {preview.conflicts.jsonlConflicts.map((conflict, i) => (
@@ -180,16 +188,25 @@ export function SyncPreviewDialog({
                       </div>
                     </div>
                   </div>
-                )}
+                )} */}
 
-                {/* Uncommitted JSONL Changes */}
-                {preview.uncommittedJSONLChanges && (
-                  <div className="rounded-lg border p-3">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary">Uncommitted Changes</Badge>
-                      <span className="text-sm text-muted-foreground">
-                        Uncommitted JSONL changes will be included in sync
-                      </span>
+                {/* Uncommitted Changes Info */}
+                {preview.uncommittedChanges && preview.uncommittedChanges.files.length > 0 && (
+                  <div className="rounded-lg border border-muted-foreground/30 bg-muted/30 p-3">
+                    <div className="flex items-start gap-2">
+                      <Info className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                      <div className="flex-1 text-sm">
+                        <p className="font-medium">Uncommitted Changes</p>
+                        <p className="mt-1 text-muted-foreground">
+                          {preview.uncommittedChanges.files.length} uncommitted file
+                          {preview.uncommittedChanges.files.length !== 1 ? 's' : ''} in worktree
+                          will <span className="font-medium text-amber-600">not be included</span>{' '}
+                          in sync by default.
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Use "Stage changes only" with the include option to add these files.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -197,7 +214,6 @@ export function SyncPreviewDialog({
                 {/* Mode Selector */}
                 <div className="rounded-lg p-1">
                   <div className="mb-3 flex items-center gap-2">
-                    <GitBranch className="h-4 w-4" />
                     <h3 className="font-medium">Sync Mode</h3>
                   </div>
                   <RadioGroup
@@ -205,18 +221,54 @@ export function SyncPreviewDialog({
                     onValueChange={(v) => setSelectedMode(v as SyncMode)}
                   >
                     <div className="space-y-3">
-                      <Label
-                        htmlFor="stage"
-                        className="flex cursor-pointer items-start space-x-3 rounded-md border p-3 hover:bg-muted/50"
+                      <div
+                        className={`rounded-md border p-3 ${selectedMode === 'stage' ? 'border-primary bg-muted/30' : 'hover:bg-muted/50'}`}
                       >
-                        <RadioGroupItem value="stage" id="stage" className="mt-1" />
-                        <div className="flex-1">
-                          <span className="font-medium">Stage changes only</span>
-                          <p className="mt-1 text-sm font-normal text-muted-foreground">
-                            Merge all changes to working directory without committing
-                          </p>
-                        </div>
-                      </Label>
+                        <Label
+                          htmlFor="stage"
+                          className="flex cursor-pointer items-start space-x-3"
+                        >
+                          <RadioGroupItem value="stage" id="stage" className="mt-1" />
+                          <div className="flex-1">
+                            <span className="font-medium">Stage changes only</span>
+                            <p className="mt-1 text-sm font-normal text-muted-foreground">
+                              Merge committed changes to working directory without committing
+                            </p>
+                          </div>
+                        </Label>
+                        {/* Checkbox for including uncommitted changes - only show when stage mode is selected */}
+                        {selectedMode === 'stage' &&
+                          preview?.uncommittedChanges &&
+                          preview.uncommittedChanges.files.length > 0 && (
+                            <div className="ml-7 mt-3 border-t pt-3">
+                              <Label
+                                htmlFor="include-uncommitted"
+                                className="flex cursor-pointer items-center gap-2 text-sm"
+                              >
+                                <Checkbox
+                                  id="include-uncommitted"
+                                  checked={includeUncommitted}
+                                  onCheckedChange={(checked) =>
+                                    setIncludeUncommitted(checked === true)
+                                  }
+                                />
+                                <span className="flex items-center gap-1">
+                                  Include uncommitted changes
+                                  <span className="ml-2 text-muted-foreground">
+                                    {preview.uncommittedChanges.files.length} file
+                                    {preview.uncommittedChanges.files.length !== 1 ? 's' : ''}
+                                  </span>
+                                  <span className="text-green-600">
+                                    +{preview.uncommittedChanges.additions}
+                                  </span>
+                                  <span className="text-red-600">
+                                    -{preview.uncommittedChanges.deletions}
+                                  </span>
+                                </span>
+                              </Label>
+                            </div>
+                          )}
+                      </div>
                       <Label
                         htmlFor="squash"
                         className="flex cursor-pointer items-start space-x-3 rounded-md border p-3 hover:bg-muted/50"
@@ -262,15 +314,15 @@ export function SyncPreviewDialog({
 
                   {/* Commit History (for preserve mode) */}
                   {selectedMode === 'preserve' && preview.commits.length > 0 && (
-                    <div className="rounded-lg border p-4">
+                    <div className="mt-2 rounded-lg border p-4">
                       <div className="mb-3 flex items-center gap-2">
                         <GitCommit className="h-4 w-4" />
-                        <h3 className="font-medium">Commits to Preserve</h3>
+                        <h3 className="text-sm">Commits to merge</h3>
                         <Badge variant="secondary">{preview.commits.length}</Badge>
                       </div>
                       <Collapsible open={commitsExpanded} onOpenChange={setCommitsExpanded}>
                         <CollapsibleTrigger asChild>
-                          <Button variant="ghost" size="sm" className="w-full">
+                          <Button variant="ghost" size="xs" className="">
                             {commitsExpanded ? (
                               <ChevronDown className="mr-2 h-4 w-4" />
                             ) : (
@@ -280,12 +332,12 @@ export function SyncPreviewDialog({
                           </Button>
                         </CollapsibleTrigger>
                         <CollapsibleContent className="mt-2">
-                          <ScrollArea className="h-48 rounded-md border p-2">
-                            <ul className="space-y-2">
+                          <ScrollArea className="h-48">
+                            <ul className="space-y-1">
                               {preview.commits.map((commit) => (
                                 <li
                                   key={commit.sha}
-                                  className="rounded-md border-l-2 border-blue-500 bg-muted/50 p-2"
+                                  className="border-l-2 border-blue-500 bg-muted/50 p-2"
                                 >
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="flex-1">

@@ -377,7 +377,8 @@ export class GitSyncCli {
     const escapedRef = this.escapeShellArg(ref);
     const message = this.escapeShellArg(`Safety snapshot before sync at ${ref}`);
 
-    const command = `git tag -a ${escapedTag} ${escapedRef} -m ${message}`;
+    // Use -f to force update if tag already exists (e.g., after revert and re-sync)
+    const command = `git tag -f -a ${escapedTag} ${escapedRef} -m ${message}`;
     this.execGit(command);
   }
 

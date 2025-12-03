@@ -131,6 +131,16 @@ describe("POST /api/executions/:executionId/commit", () => {
       if (cmd.includes("git rev-parse HEAD")) {
         return "def456\n" as any;
       }
+      // Mock git status commands for detecting uncommitted files
+      if (cmd.includes("git diff --name-only") && !cmd.includes("--cached")) {
+        return "file1.ts\n" as any;
+      }
+      if (cmd.includes("git diff --cached --name-only")) {
+        return "" as any;
+      }
+      if (cmd.includes("git ls-files --others --exclude-standard")) {
+        return "file2.ts\n" as any;
+      }
       if (cmd.includes("git add")) {
         return "" as any;
       }
@@ -227,34 +237,23 @@ describe("POST /api/executions/:executionId/commit", () => {
     );
   });
 
-  it("should return 400 if files_changed is not available", async () => {
-    const noFilesExecution: Execution = {
-      ...mockExecution,
-      files_changed: null,
-    };
+  it("should return 400 if no uncommitted files in working directory", async () => {
+    // Mock git commands to return no uncommitted files
+    vi.mocked(child_process.execSync).mockImplementation((command: any) => {
+      const cmd = command.toString();
 
-    // Update database mock for this test
-    mockDbGet.mockReturnValueOnce(noFilesExecution);
-
-    const response = await request(app)
-      .post("/api/executions/exec-123/commit")
-      .send({
-        message: "feat: test",
-      });
-
-    expect(response.status).toBe(400);
-    expect(response.body.success).toBe(false);
-    expect(response.body.message).toBe("No files to commit");
-  });
-
-  it("should return 400 if files_changed is empty array", async () => {
-    const noFilesExecution: Execution = {
-      ...mockExecution,
-      files_changed: JSON.stringify([]),
-    };
-
-    // Update database mock for this test
-    mockDbGet.mockReturnValueOnce(noFilesExecution);
+      // Return empty for all status commands
+      if (cmd.includes("git diff --name-only")) {
+        return "" as any;
+      }
+      if (cmd.includes("git diff --cached --name-only")) {
+        return "" as any;
+      }
+      if (cmd.includes("git ls-files --others --exclude-standard")) {
+        return "" as any;
+      }
+      return "" as any;
+    });
 
     const response = await request(app)
       .post("/api/executions/exec-123/commit")
@@ -290,7 +289,21 @@ describe("POST /api/executions/:executionId/commit", () => {
   });
 
   it("should handle git command failures gracefully", async () => {
-    vi.mocked(child_process.execSync).mockImplementation(() => {
+    // Mock git status commands to succeed, but git add/commit to fail
+    vi.mocked(child_process.execSync).mockImplementation((command: any) => {
+      const cmd = command.toString();
+
+      // Allow status commands to succeed
+      if (cmd.includes("git diff --name-only") && !cmd.includes("--cached")) {
+        return "file1.ts\n" as any;
+      }
+      if (cmd.includes("git diff --cached --name-only")) {
+        return "" as any;
+      }
+      if (cmd.includes("git ls-files --others --exclude-standard")) {
+        return "" as any;
+      }
+      // Fail on git add/commit
       throw new Error("Git command failed");
     });
 

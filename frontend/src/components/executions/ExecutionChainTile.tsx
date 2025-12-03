@@ -642,8 +642,8 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
           preview={syncPreview}
           isOpen={isSyncPreviewOpen}
           onClose={() => setIsSyncPreviewOpen(false)}
-          onConfirmSync={(mode, commitMessage) =>
-            performSync(lastExecution.id, mode, commitMessage)
+          onConfirmSync={(mode, options) =>
+            performSync(lastExecution.id, mode, options)
           }
           onOpenIDE={() => {
             // Could add IDE integration here
