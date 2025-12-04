@@ -1,0 +1,156 @@
+name: Volta VOLTA_HOME Mismatch Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'sudocode/**'
+
+jobs:
+  volta-path-mismatch-test:
+    name: Test with VOLTA_HOME mismatch (reproduce user's issue)
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Volta 1.1.1
+        run: |
+          echo "=== Installing Volta 1.1.1 ==="
+          export VOLTA_INSTALL_VERSION=1.1.1
+          curl https://get.volta.sh | bash
+          echo "$HOME/.volta/bin" >> $GITHUB_PATH
+
+      - name: Wait for PATH update
+        run: sleep 2
+
+      - name: Create VOLTA_HOME mismatch (reproduce user's environment)
+        run: |
+          echo "=== Creating VOLTA_HOME path mismatch like user had ==="
+          echo "User had: VOLTA_HOME=/Users/XX.XX/volta (no dot)"
+          echo "User had: PATH=/Users/XX.XX/.volta/bin (with dot)"
+          echo ""
+          echo "Creating symlink to simulate this:"
+          mkdir -p "$HOME/volta"
+          cp -r "$HOME/.volta/"* "$HOME/volta/" || true
+          echo "VOLTA_HOME=$HOME/volta" >> $GITHUB_ENV
+          echo "Actual .volta directory: $HOME/.volta"
+
+      - name: Verify the mismatch is set up
+        run: |
+          echo "=== Verifying VOLTA_HOME mismatch setup ==="
+          echo "VOLTA_HOME=$VOLTA_HOME"
+          echo "PATH contains: $(echo $PATH | tr ':' '\n' | grep volta)"
+          echo ""
+          echo "Contents of ~/.volta/bin/:"
+          ls -la ~/.volta/bin/ | head -10
+          echo ""
+          echo "Contents of ~/volta/bin/:"
+          ls -la ~/volta/bin/ 2>/dev/null | head -10 || echo "~/volta/bin/ does not exist"
+
+      - name: Install Node via Volta
+        run: |
+          export PATH="$HOME/.volta/bin:$PATH"
+          echo "=== Installing Node 22 via Volta ==="
+          volta install node@22
+          echo "Node version: $(node --version)"
+          echo "npm version: $(npm --version)"
+
+      - name: Attempt to install sudocode with VOLTA_HOME mismatch
+        continue-on-error: true
+        run: |
+          export PATH="$HOME/.volta/bin:$PATH"
+          echo "=== Installing sudocode via 'volta install sudocode' ==="
+          echo "With VOLTA_HOME=$VOLTA_HOME (incorrect, no dot)"
+          volta install sudocode || echo "volta install exited with code $?"
+
+      - name: Run diagnostic checks
+        run: |
+          export PATH="$HOME/.volta/bin:$PATH"
+          echo "=== Environment Check ==="
+          echo "VOLTA_HOME: $VOLTA_HOME"
+          echo "PATH (volta entries): $(echo $PATH | tr ':' '\n' | grep volta)"
+          echo -e "\n=== Volta Version ==="
+          volta --version
+          echo -e "\n=== Volta list ==="
+          volta list || true
+          echo -e "\n=== Check ~/.volta/bin/ for sudocode shims ==="
+          if ls ~/.volta/bin/ | grep -q sudocode; then
+            echo "✓ SUDOCODE SHIMS FOUND in ~/.volta/bin/:"
+            ls -la ~/.volta/bin/ | grep sudo
+          else
+            echo "✗ NO SUDOCODE SHIMS in ~/.volta/bin/"
+          fi
+          echo -e "\n=== Check ~/volta/bin/ (incorrect VOLTA_HOME) for sudocode shims ==="
+          if ls ~/volta/bin/ 2>/dev/null | grep -q sudocode; then
+            echo "⚠️ SUDOCODE SHIMS FOUND in ~/volta/bin/ (wrong location!):"
+            ls -la ~/volta/bin/ | grep sudo
+          else
+            echo "No sudocode shims in ~/volta/bin/"
+          fi
+          echo -e "\n=== Which commands ==="
+          which volta || echo "volta not in PATH"
+          which node || echo "node not in PATH"
+          which npm || echo "npm not in PATH"
+          which sudocode || echo "sudocode not in PATH"
+
+      - name: Attempt to run sudocode
+        continue-on-error: true
+        run: |
+          export PATH="$HOME/.volta/bin:$PATH"
+          echo "=== Attempting to run sudocode --version ==="
+          sudocode --version || echo "sudocode command failed with exit code $?"
+
+      - name: Check if issue reproduced
+        run: |
+          export PATH="$HOME/.volta/bin:$PATH"
+          echo "=== REPRODUCTION CHECK WITH VOLTA_HOME MISMATCH ==="
+          echo "VOLTA_HOME: $VOLTA_HOME (incorrect - no dot)"
+          echo "Actual directory: ~/.volta/ (with dot)"
+          echo ""
+          if volta list 2>/dev/null | grep -q sudocode; then
+            echo "✓ sudocode appears in 'volta list'"
+            VOLTA_LIST_CHECK=true
+          else
+            echo "✗ sudocode does NOT appear in 'volta list'"
+            VOLTA_LIST_CHECK=false
+          fi
+          if ls ~/.volta/bin/ | grep -q sudocode; then
+            echo "✓ sudocode shim EXISTS in correct location (~/.volta/bin/)"
+            SHIM_CHECK=true
+          else
+            echo "✗ sudocode shim does NOT exist in ~/.volta/bin/"
+            SHIM_CHECK=false
+          fi
+          if which sudocode > /dev/null 2>&1; then
+            echo "✓ sudocode command IS available"
+            COMMAND_CHECK=true
+          else
+            echo "✗ sudocode command is NOT available"
+            COMMAND_CHECK=false
+          fi
+          echo ""
+          echo "=== FINAL RESULT ==="
+          echo "volta list shows sudocode: $VOLTA_LIST_CHECK"
+          echo "Shim exists in ~/.volta/bin/: $SHIM_CHECK"
+          echo "Command available: $COMMAND_CHECK"
+          echo ""
+          if [ "$VOLTA_LIST_CHECK" = "true" ] && [ "$SHIM_CHECK" = "false" ]; then
+            echo "🔴 ISSUE REPRODUCED WITH VOLTA_HOME MISMATCH!"
+            echo "Package shows in volta list but shims not created in correct location."
+            echo "This confirms the VOLTA_HOME path mismatch is the root cause."
+            exit 1
+          elif [ "$SHIM_CHECK" = "false" ] && [ "$COMMAND_CHECK" = "false" ]; then
+            echo "🔴 ISSUE REPRODUCED: Shims not created and command not available"
+            echo "The VOLTA_HOME mismatch prevented shim creation."
+            exit 1
+          elif [ "$SHIM_CHECK" = "true" ] && [ "$COMMAND_CHECK" = "true" ]; then
+            echo "🟢 NO ISSUE: Even with VOLTA_HOME mismatch, installation worked"
+            echo "Volta may be resilient to this specific mismatch."
+            exit 0
+          else
+            echo "⚪ PARTIAL ISSUE: Unexpected combination of results"
+            echo "Shim exists: $SHIM_CHECK, Command works: $COMMAND_CHECK"
+            exit 1
+          fi
