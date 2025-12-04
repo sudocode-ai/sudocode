@@ -1,0 +1,285 @@
+name: Volta Installation Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'sudocode/**'
+
+jobs:
+  volta-macos:
+    name: Volta on macOS ARM64
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Volta
+        run: |
+          curl https://get.volta.sh | bash
+          echo "$HOME/.volta/bin" >> $GITHUB_PATH
+
+      - name: Wait for PATH update
+        run: sleep 2
+
+      - name: Verify Volta installation
+        run: |
+          export VOLTA_HOME="$HOME/.volta"
+          export PATH="$VOLTA_HOME/bin:$PATH"
+          volta --version
+
+      - name: Install Node via Volta
+        run: |
+          export VOLTA_HOME="$HOME/.volta"
+          export PATH="$VOLTA_HOME/bin:$PATH"
+          volta install node@22
+
+      - name: Verify Node installation
+        run: |
+          export VOLTA_HOME="$HOME/.volta"
+          export PATH="$VOLTA_HOME/bin:$PATH"
+          node --version
+          npm --version
+
+      - name: Build sudocode packages locally
+        run: |
+          npm ci
+          npm run build
+
+      - name: Pack CLI package
+        run: |
+          cd cli
+          npm pack
+          echo "PACKAGE_FILE=$(ls sudocode-ai-cli-*.tgz)" >> $GITHUB_ENV
+
+      - name: Install sudocode globally via npm
+        run: |
+          export VOLTA_HOME="$HOME/.volta"
+          export PATH="$VOLTA_HOME/bin:$PATH"
+          cd cli
+          npm install -g ./${{ env.PACKAGE_FILE }}
+
+      - name: Run diagnostic commands
+        run: |
+          export VOLTA_HOME="$HOME/.volta"
+          export PATH="$VOLTA_HOME/bin:$PATH"
+
+          echo "=== Volta version ==="
+          volta --version
+
+          echo -e "\n=== Volta list ==="
+          volta list || true
+
+          echo -e "\n=== Check ~/.volta/bin/ for sudocode shims ==="
+          ls -la ~/.volta/bin/ | head -30
+
+          echo -e "\n=== Search for sudocode in ~/.volta/bin/ ==="
+          ls -la ~/.volta/bin/ | grep sudo || echo "No sudocode shims found!"
+
+          echo -e "\n=== Check Volta tools directory ==="
+          ls ~/.volta/tools/image/packages/ 2>/dev/null || echo "No packages directory"
+
+          echo -e "\n=== Environment variables ==="
+          echo "VOLTA_HOME: $VOLTA_HOME"
+          echo "PATH: $PATH"
+
+          echo -e "\n=== Which commands ==="
+          which volta || echo "volta not in PATH"
+          which node || echo "node not in PATH"
+          which npm || echo "npm not in PATH"
+          which sudocode || echo "sudocode not in PATH"
+
+      - name: Attempt to run sudocode
+        continue-on-error: true
+        run: |
+          export VOLTA_HOME="$HOME/.volta"
+          export PATH="$VOLTA_HOME/bin:$PATH"
+          sudocode --version
+
+      - name: Check if issue reproduced
+        run: |
+          export VOLTA_HOME="$HOME/.volta"
+          export PATH="$VOLTA_HOME/bin:$PATH"
+
+          echo "=== Checking if issue is reproduced ==="
+
+          if volta list 2>/dev/null | grep -q sudocode; then
+            echo "✓ sudocode appears in 'volta list'"
+            VOLTA_LIST_CHECK=true
+          else
+            echo "✗ sudocode does NOT appear in 'volta list'"
+            VOLTA_LIST_CHECK=false
+          fi
+
+          if ls ~/.volta/bin/ | grep -q sudocode; then
+            echo "✓ sudocode shim EXISTS in ~/.volta/bin/"
+            SHIM_CHECK=true
+          else
+            echo "✗ sudocode shim does NOT exist in ~/.volta/bin/"
+            SHIM_CHECK=false
+          fi
+
+          if which sudocode > /dev/null 2>&1; then
+            echo "✓ sudocode command IS available"
+            COMMAND_CHECK=true
+          else
+            echo "✗ sudocode command is NOT available"
+            COMMAND_CHECK=false
+          fi
+
+          echo ""
+          echo "=== REPRODUCTION RESULT ==="
+          if [ "$VOLTA_LIST_CHECK" = "true" ] && [ "$SHIM_CHECK" = "false" ]; then
+            echo "🔴 ISSUE REPRODUCED: Package in volta list but no shim created"
+            exit 1
+          elif [ "$SHIM_CHECK" = "true" ] && [ "$COMMAND_CHECK" = "false" ]; then
+            echo "🟡 PARTIAL ISSUE: Shim exists but command not available (PATH issue?)"
+            exit 1
+          elif [ "$SHIM_CHECK" = "true" ] && [ "$COMMAND_CHECK" = "true" ]; then
+            echo "🟢 NO ISSUE: Installation successful, shims created and working"
+            exit 0
+          else
+            echo "⚪ INCONCLUSIVE: Installation may have failed entirely"
+            exit 1
+          fi
+
+  volta-linux:
+    name: Volta on Linux x86_64
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Volta
+        run: |
+          curl https://get.volta.sh | bash
+          echo "$HOME/.volta/bin" >> $GITHUB_PATH
+
+      - name: Wait for PATH update
+        run: sleep 2
+
+      - name: Verify Volta installation
+        run: |
+          export VOLTA_HOME="$HOME/.volta"
+          export PATH="$VOLTA_HOME/bin:$PATH"
+          volta --version
+
+      - name: Install Node via Volta
+        run: |
+          export VOLTA_HOME="$HOME/.volta"
+          export PATH="$VOLTA_HOME/bin:$PATH"
+          volta install node@22
+
+      - name: Verify Node installation
+        run: |
+          export VOLTA_HOME="$HOME/.volta"
+          export PATH="$VOLTA_HOME/bin:$PATH"
+          node --version
+          npm --version
+
+      - name: Build sudocode packages locally
+        run: |
+          npm ci
+          npm run build
+
+      - name: Pack CLI package
+        run: |
+          cd cli
+          npm pack
+          echo "PACKAGE_FILE=$(ls sudocode-ai-cli-*.tgz)" >> $GITHUB_ENV
+
+      - name: Install sudocode globally via npm
+        run: |
+          export VOLTA_HOME="$HOME/.volta"
+          export PATH="$VOLTA_HOME/bin:$PATH"
+          cd cli
+          npm install -g ./${{ env.PACKAGE_FILE }}
+
+      - name: Run diagnostic commands
+        run: |
+          export VOLTA_HOME="$HOME/.volta"
+          export PATH="$VOLTA_HOME/bin:$PATH"
+
+          echo "=== Volta version ==="
+          volta --version
+
+          echo -e "\n=== Volta list ==="
+          volta list || true
+
+          echo -e "\n=== Check ~/.volta/bin/ for sudocode shims ==="
+          ls -la ~/.volta/bin/ | head -30
+
+          echo -e "\n=== Search for sudocode in ~/.volta/bin/ ==="
+          ls -la ~/.volta/bin/ | grep sudo || echo "No sudocode shims found!"
+
+          echo -e "\n=== Check Volta tools directory ==="
+          ls ~/.volta/tools/image/packages/ 2>/dev/null || echo "No packages directory"
+
+          echo -e "\n=== Environment variables ==="
+          echo "VOLTA_HOME: $VOLTA_HOME"
+          echo "PATH: $PATH"
+
+          echo -e "\n=== Which commands ==="
+          which volta || echo "volta not in PATH"
+          which node || echo "node not in PATH"
+          which npm || echo "npm not in PATH"
+          which sudocode || echo "sudocode not in PATH"
+
+          echo -e "\n=== Architecture ==="
+          uname -m
+
+      - name: Attempt to run sudocode
+        continue-on-error: true
+        run: |
+          export VOLTA_HOME="$HOME/.volta"
+          export PATH="$VOLTA_HOME/bin:$PATH"
+          sudocode --version
+
+      - name: Check if issue reproduced
+        run: |
+          export VOLTA_HOME="$HOME/.volta"
+          export PATH="$VOLTA_HOME/bin:$PATH"
+
+          echo "=== Checking if issue is reproduced ==="
+
+          if volta list 2>/dev/null | grep -q sudocode; then
+            echo "✓ sudocode appears in 'volta list'"
+            VOLTA_LIST_CHECK=true
+          else
+            echo "✗ sudocode does NOT appear in 'volta list'"
+            VOLTA_LIST_CHECK=false
+          fi
+
+          if ls ~/.volta/bin/ | grep -q sudocode; then
+            echo "✓ sudocode shim EXISTS in ~/.volta/bin/"
+            SHIM_CHECK=true
+          else
+            echo "✗ sudocode shim does NOT exist in ~/.volta/bin/"
+            SHIM_CHECK=false
+          fi
+
+          if which sudocode > /dev/null 2>&1; then
+            echo "✓ sudocode command IS available"
+            COMMAND_CHECK=true
+          else
+            echo "✗ sudocode command is NOT available"
+            COMMAND_CHECK=false
+          fi
+
+          echo ""
+          echo "=== REPRODUCTION RESULT ==="
+          if [ "$VOLTA_LIST_CHECK" = "true" ] && [ "$SHIM_CHECK" = "false" ]; then
+            echo "🔴 ISSUE REPRODUCED: Package in volta list but no shim created"
+            exit 1
+          elif [ "$SHIM_CHECK" = "true" ] && [ "$COMMAND_CHECK" = "false" ]; then
+            echo "🟡 PARTIAL ISSUE: Shim exists but command not available (PATH issue?)"
+            exit 1
+          elif [ "$SHIM_CHECK" = "true" ] && [ "$COMMAND_CHECK" = "true" ]; then
+            echo "🟢 NO ISSUE: Installation successful, shims created and working"
+            exit 0
+          else
+            echo "⚪ INCONCLUSIVE: Installation may have failed entirely"
+            exit 1
+          fi
