@@ -160,7 +160,9 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
           outputFormat: (agentConfig as any).outputFormat ?? "stream-json",
           verbose: (agentConfig as any).verbose ?? true,
           dangerouslySkipPermissions:
-            (agentConfig as any).dangerouslySkipPermissions ?? true,
+            (agentConfig as any).dangerouslySkipPermissions ?? false,
+          restrictToWorkDir: (agentConfig as any).restrictToWorkDir ?? true,
+          directoryGuardHookPath: (agentConfig as any).directoryGuardHookPath,
         }) as IAgentExecutor;
 
       case "codex":

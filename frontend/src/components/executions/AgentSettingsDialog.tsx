@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { ExecutionConfig, CleanupMode } from '@/types/execution'
+import { ClaudeCodeConfigForm, type ClaudeCodeConfig } from './ClaudeCodeConfigForm'
 import { CodexConfigForm, type CodexConfig } from './CodexConfigForm'
 import { CursorConfigForm, type CursorConfig } from './CursorConfigForm'
 import { CopilotConfigForm, type CopilotConfig } from './CopilotConfigForm'
@@ -49,6 +50,21 @@ export function AgentSettingsDialog({
     }
 
     switch (agentType) {
+      case 'claude-code':
+        return (
+          <>
+            <div>
+              <h3 className="mb-3 text-sm font-medium">Claude Code Configuration</h3>
+              <ClaudeCodeConfigForm
+                config={(config.agentConfig ?? {}) as ClaudeCodeConfig}
+                onChange={(newAgentConfig) => {
+                  onConfigChange({ agentConfig: newAgentConfig })
+                }}
+              />
+            </div>
+            <Separator />
+          </>
+        )
       case 'codex':
         return (
           <>
