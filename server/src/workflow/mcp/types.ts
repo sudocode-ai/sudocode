@@ -4,9 +4,7 @@
  * Type definitions for MCP tool parameters, results, and context.
  */
 
-import type Database from "better-sqlite3";
 import type { AgentType, Workflow, WorkflowStep } from "@sudocode-ai/types";
-import type { ExecutionService } from "../../services/execution-service.js";
 
 // =============================================================================
 // Tool Parameter Types
@@ -268,30 +266,34 @@ export interface NotifyUserResult {
 // =============================================================================
 
 /**
+ * API client interface for tool handlers.
+ * Matches the WorkflowAPIClient class interface.
+ */
+export interface WorkflowAPIClientInterface {
+  getWorkflowStatus(): Promise<WorkflowStatusResult>;
+  completeWorkflow(params: WorkflowCompleteParams): Promise<WorkflowCompleteResult>;
+  executeIssue(params: ExecuteIssueParams): Promise<ExecuteIssueResult>;
+  getExecutionStatus(params: ExecutionStatusParams): Promise<ExecutionStatusResult>;
+  cancelExecution(params: ExecutionCancelParams): Promise<ExecutionCancelResult>;
+  getExecutionTrajectory(params: ExecutionTrajectoryParams): Promise<ExecutionTrajectoryResult>;
+  getExecutionChanges(params: ExecutionChangesParams): Promise<ExecutionChangesResult>;
+  escalateToUser(params: EscalateToUserParams): Promise<EscalateToUserResult>;
+  notifyUser(params: NotifyUserParams): Promise<NotifyUserResult>;
+}
+
+/**
  * Context passed to tool handlers.
- * Provides access to database, services, and workflow info.
+ *
+ * All communication with the main server goes through the API client.
+ * The MCP server does not have direct database access.
  */
 export interface WorkflowMCPContext {
   /** The workflow ID this server is managing */
   workflowId: string;
-  /** Database connection */
-  db: Database.Database;
-  /** Execution service for spawning/managing executions */
-  executionService: ExecutionService;
-  /** Wakeup service for timeout tracking (optional) */
-  wakeupService?: {
-    startExecutionTimeout(
-      executionId: string,
-      workflowId: string,
-      stepId: string,
-      timeoutMs: number
-    ): void;
-    clearExecutionTimeout(executionId: string): void;
-  };
+  /** API client for communicating with main server */
+  apiClient: WorkflowAPIClientInterface;
   /** Path to the repository root */
   repoPath: string;
-  /** Base URL of the main server for notifications (optional) */
-  serverUrl?: string;
 }
 
 /**

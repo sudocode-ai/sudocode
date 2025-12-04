@@ -2,10 +2,10 @@
  * Workflow MCP Server
  *
  * MCP server that provides workflow control tools to the orchestrator agent.
- * Spawned as a subprocess with workflow-id, db-path, and repo-path arguments.
+ * Spawned as a subprocess with workflow-id, server-url, project-id, and repo-path arguments.
+ * All communication with the main server goes through the HTTP API client.
  */
 
-import Database from "better-sqlite3";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -25,7 +25,7 @@ import type {
   EscalateToUserParams,
   NotifyUserParams,
 } from "./types.js";
-import type { ExecutionService } from "../../services/execution-service.js";
+import { WorkflowAPIClient } from "./api-client.js";
 
 // Tool implementations
 import {
@@ -56,14 +56,14 @@ import {
 export interface WorkflowMCPServerOptions {
   /** The workflow ID this server manages */
   workflowId: string;
-  /** Path to the SQLite database */
-  dbPath: string;
   /** Path to the repository root */
   repoPath: string;
-  /** Optional: Pre-configured execution service (for testing) */
-  executionService?: ExecutionService;
-  /** Optional: Base URL of the main server for notifications */
-  serverUrl?: string;
+  /** Base URL of the main server for API calls */
+  serverUrl: string;
+  /** Project ID for API calls */
+  projectId: string;
+  /** Optional: Pre-configured API client (for testing) */
+  apiClient?: WorkflowAPIClient;
 }
 
 // =============================================================================
@@ -286,11 +286,14 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
  * - Inspect execution results
  * - Complete the workflow
  *
+ * All communication with the main server goes through the HTTP API client.
+ *
  * @example
  * ```typescript
  * const server = new WorkflowMCPServer({
  *   workflowId: "wf-abc123",
- *   dbPath: ".sudocode/cache.db",
+ *   serverUrl: "http://localhost:3000",
+ *   projectId: "proj-123",
  *   repoPath: "/path/to/repo",
  * });
  * await server.start();
@@ -299,20 +302,27 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
 export class WorkflowMCPServer {
   private server: Server;
   private context: WorkflowMCPContext;
-  private db: Database.Database;
   private transport: StdioServerTransport | null = null;
 
   constructor(options: WorkflowMCPServerOptions) {
-    // Initialize database connection
-    this.db = new Database(options.dbPath);
+    // Create API client (use provided one for testing, otherwise create new)
+    const apiClient =
+      options.apiClient ||
+      new WorkflowAPIClient({
+        serverUrl: options.serverUrl,
+        projectId: options.projectId,
+        workflowId: options.workflowId,
+      });
+
+    console.error(
+      `[WorkflowMCPServer] Using API client: ${options.serverUrl}`
+    );
 
     // Build context for tool handlers
     this.context = {
       workflowId: options.workflowId,
-      db: this.db,
-      executionService: options.executionService!,
+      apiClient,
       repoPath: options.repoPath,
-      serverUrl: options.serverUrl,
     };
 
     // Create MCP server
@@ -545,7 +555,6 @@ export class WorkflowMCPServer {
       await this.server.close();
       this.transport = null;
     }
-    this.db.close();
 
     console.error(`[WorkflowMCPServer] Stopped`);
   }

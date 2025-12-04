@@ -269,6 +269,52 @@ export interface IWorkflowEngine {
     message?: string
   ): void;
 
+  /**
+   * Emit a step started event.
+   *
+   * @param workflowId - The workflow ID
+   * @param step - The step that started
+   */
+  emitStepStarted(workflowId: string, step: WorkflowStep): void;
+
+  /**
+   * Emit a step completed event.
+   *
+   * @param workflowId - The workflow ID
+   * @param step - The step that completed
+   * @param executionId - The execution ID
+   */
+  emitStepCompleted(
+    workflowId: string,
+    step: WorkflowStep,
+    executionId: string
+  ): void;
+
+  /**
+   * Emit a step failed event.
+   *
+   * @param workflowId - The workflow ID
+   * @param step - The step that failed
+   * @param error - The error message
+   */
+  emitStepFailed(workflowId: string, step: WorkflowStep, error: string): void;
+
+  /**
+   * Emit a workflow completed event.
+   *
+   * @param workflowId - The workflow ID
+   * @param workflow - The completed workflow
+   */
+  emitWorkflowCompleted(workflowId: string, workflow: Workflow): void;
+
+  /**
+   * Emit a workflow failed event.
+   *
+   * @param workflowId - The workflow ID
+   * @param error - The error message
+   */
+  emitWorkflowFailed(workflowId: string, error: string): void;
+
   // ===========================================================================
   // Recovery Methods (Optional)
   // ===========================================================================

@@ -2,17 +2,11 @@
  * Unit tests for Workflow MCP Tools
  *
  * Tests workflow_status and workflow_complete tool handlers.
+ * Uses mock API client since MCP server now only uses HTTP API.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import Database from "better-sqlite3";
-import {
-  WORKFLOWS_TABLE,
-  ISSUES_TABLE,
-  EXECUTIONS_TABLE,
-} from "@sudocode-ai/types/schema";
-import type { WorkflowMCPContext } from "../../../../src/workflow/mcp/types.js";
-import type { ExecutionService } from "../../../../src/services/execution-service.js";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import type { WorkflowMCPContext, WorkflowAPIClientInterface } from "../../../../src/workflow/mcp/types.js";
 import {
   handleWorkflowStatus,
   handleWorkflowComplete,
@@ -23,120 +17,65 @@ import {
 // =============================================================================
 
 describe("Workflow MCP Tools", () => {
-  let db: Database.Database;
   let context: WorkflowMCPContext;
-  let mockExecutionService: ExecutionService;
+  let mockApiClient: WorkflowAPIClientInterface;
 
   beforeEach(() => {
-    // Create in-memory database
-    db = new Database(":memory:");
-
-    // Set up schema (disable foreign keys for unit tests)
-    db.exec("PRAGMA foreign_keys = OFF");
-    db.exec(WORKFLOWS_TABLE);
-    db.exec(ISSUES_TABLE);
-    db.exec(EXECUTIONS_TABLE);
-
-    // Create indexes
-    db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_executions_workflow ON executions(workflow_execution_id);
-    `);
-
-    // Mock execution service
-    mockExecutionService = {
-      createExecution: vi.fn(),
+    // Create mock API client
+    mockApiClient = {
+      getWorkflowStatus: vi.fn().mockResolvedValue({
+        workflow: {
+          id: "wf-test1",
+          title: "Test Workflow",
+          status: "running",
+          source: { type: "issues", issueIds: ["i-1", "i-2"] },
+          config: {
+            parallelism: "sequential",
+            onFailure: "pause",
+            defaultAgentType: "claude-code",
+          },
+        },
+        steps: [
+          {
+            id: "step-1",
+            issueId: "i-1",
+            issueTitle: "First Issue",
+            status: "completed",
+            executionId: "exec-1",
+            dependsOn: [],
+          },
+          {
+            id: "step-2",
+            issueId: "i-2",
+            issueTitle: "Second Issue",
+            status: "pending",
+            dependsOn: ["step-1"],
+          },
+        ],
+        activeExecutions: [],
+        readySteps: ["step-2"],
+      }),
+      completeWorkflow: vi.fn().mockResolvedValue({
+        success: true,
+        workflow_status: "completed",
+        completed_at: new Date().toISOString(),
+      }),
+      executeIssue: vi.fn(),
+      getExecutionStatus: vi.fn(),
       cancelExecution: vi.fn(),
-    } as unknown as ExecutionService;
+      getExecutionTrajectory: vi.fn(),
+      getExecutionChanges: vi.fn(),
+      escalateToUser: vi.fn(),
+      notifyUser: vi.fn(),
+    };
 
     // Create context
     context = {
       workflowId: "wf-test1",
-      db,
-      executionService: mockExecutionService,
+      apiClient: mockApiClient,
       repoPath: "/test/repo",
     };
   });
-
-  afterEach(() => {
-    db.close();
-  });
-
-  // ===========================================================================
-  // Test Data Helpers
-  // ===========================================================================
-
-  function insertTestWorkflow(overrides: Record<string, unknown> = {}) {
-    const defaults = {
-      id: "wf-test1",
-      title: "Test Workflow",
-      source: JSON.stringify({ type: "issues", issueIds: ["i-1", "i-2"] }),
-      status: "running",
-      steps: JSON.stringify([
-        {
-          id: "step-1",
-          issueId: "i-1",
-          index: 0,
-          dependencies: [],
-          status: "completed",
-          executionId: "exec-1",
-        },
-        {
-          id: "step-2",
-          issueId: "i-2",
-          index: 1,
-          dependencies: ["step-1"],
-          status: "pending",
-        },
-      ]),
-      base_branch: "main",
-      current_step_index: 0,
-      config: JSON.stringify({
-        parallelism: "sequential",
-        onFailure: "pause",
-        defaultAgentType: "claude-code",
-      }),
-    };
-
-    const data = { ...defaults, ...overrides };
-    db.prepare(`
-      INSERT INTO workflows (
-        id, title, source, status, steps, base_branch,
-        current_step_index, config
-      ) VALUES (
-        @id, @title, @source, @status, @steps, @base_branch,
-        @current_step_index, @config
-      )
-    `).run(data);
-  }
-
-  function insertTestIssue(id: string, title: string) {
-    db.prepare(`
-      INSERT INTO issues (id, uuid, title, status, content, priority)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, `uuid-${id}`, title, "open", `Content for ${title}`, 1);
-  }
-
-  function insertTestExecution(
-    id: string,
-    status: string,
-    workflowId?: string
-  ) {
-    db.prepare(`
-      INSERT INTO executions (
-        id, agent_type, target_branch, branch_name, status,
-        workflow_execution_id, started_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      "claude-code",
-      "main",
-      `branch-${id}`,
-      status,
-      workflowId || null,
-      new Date().toISOString()
-    );
-  }
 
   // ===========================================================================
   // workflow_status Tests
@@ -144,23 +83,16 @@ describe("Workflow MCP Tools", () => {
 
   describe("handleWorkflowStatus", () => {
     it("should return workflow with steps", async () => {
-      insertTestWorkflow();
-      insertTestIssue("i-1", "Issue 1");
-      insertTestIssue("i-2", "Issue 2");
-
       const result = await handleWorkflowStatus(context);
 
       expect(result.workflow.id).toBe("wf-test1");
       expect(result.workflow.title).toBe("Test Workflow");
       expect(result.workflow.status).toBe("running");
       expect(result.steps).toHaveLength(2);
+      expect(mockApiClient.getWorkflowStatus).toHaveBeenCalled();
     });
 
     it("should include issue titles in steps", async () => {
-      insertTestWorkflow();
-      insertTestIssue("i-1", "First Issue");
-      insertTestIssue("i-2", "Second Issue");
-
       const result = await handleWorkflowStatus(context);
 
       expect(result.steps[0].issueTitle).toBe("First Issue");
@@ -168,10 +100,14 @@ describe("Workflow MCP Tools", () => {
     });
 
     it("should include active executions", async () => {
-      insertTestWorkflow();
-      insertTestIssue("i-1", "Issue 1");
-      insertTestIssue("i-2", "Issue 2");
-      insertTestExecution("exec-1", "running", "wf-test1");
+      (mockApiClient.getWorkflowStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+        workflow: { id: "wf-test1", title: "Test", status: "running", source: {}, config: {} },
+        steps: [],
+        activeExecutions: [
+          { id: "exec-1", stepId: "step-1", status: "running", startedAt: new Date().toISOString() },
+        ],
+        readySteps: [],
+      });
 
       const result = await handleWorkflowStatus(context);
 
@@ -180,42 +116,20 @@ describe("Workflow MCP Tools", () => {
       expect(result.activeExecutions[0].status).toBe("running");
     });
 
-    it("should calculate ready steps correctly", async () => {
-      insertTestWorkflow();
-      insertTestIssue("i-1", "Issue 1");
-      insertTestIssue("i-2", "Issue 2");
-
+    it("should include ready steps", async () => {
       const result = await handleWorkflowStatus(context);
 
-      // step-2 depends on step-1 which is completed, so step-2 should be ready
       expect(result.readySteps).toContain("step-2");
     });
 
-    it("should not include completed steps in ready list", async () => {
-      insertTestWorkflow({
-        steps: JSON.stringify([
-          {
-            id: "step-1",
-            issueId: "i-1",
-            index: 0,
-            dependencies: [],
-            status: "completed",
-          },
-        ]),
-      });
-      insertTestIssue("i-1", "Issue 1");
+    it("should propagate API errors", async () => {
+      (mockApiClient.getWorkflowStatus as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("Workflow not found")
+      );
 
-      const result = await handleWorkflowStatus(context);
-
-      expect(result.readySteps).not.toContain("step-1");
-    });
-
-    it("should throw error for non-existent workflow", async () => {
       context.workflowId = "wf-nonexistent";
 
-      await expect(handleWorkflowStatus(context)).rejects.toThrow(
-        "Workflow not found"
-      );
+      await expect(handleWorkflowStatus(context)).rejects.toThrow("Workflow not found");
     });
   });
 
@@ -225,8 +139,6 @@ describe("Workflow MCP Tools", () => {
 
   describe("handleWorkflowComplete", () => {
     it("should update status to completed", async () => {
-      insertTestWorkflow();
-
       const result = await handleWorkflowComplete(context, {
         summary: "All done!",
       });
@@ -234,17 +146,18 @@ describe("Workflow MCP Tools", () => {
       expect(result.success).toBe(true);
       expect(result.workflow_status).toBe("completed");
       expect(result.completed_at).toBeDefined();
-
-      // Verify database was updated
-      const workflow = db
-        .prepare("SELECT status, completed_at FROM workflows WHERE id = ?")
-        .get("wf-test1") as { status: string; completed_at: string };
-      expect(workflow.status).toBe("completed");
-      expect(workflow.completed_at).toBeDefined();
+      expect(mockApiClient.completeWorkflow).toHaveBeenCalledWith({
+        summary: "All done!",
+        status: "completed",
+      });
     });
 
     it("should update status to failed when specified", async () => {
-      insertTestWorkflow();
+      (mockApiClient.completeWorkflow as ReturnType<typeof vi.fn>).mockResolvedValue({
+        success: true,
+        workflow_status: "failed",
+        completed_at: new Date().toISOString(),
+      });
 
       const result = await handleWorkflowComplete(context, {
         summary: "Something went wrong",
@@ -252,49 +165,58 @@ describe("Workflow MCP Tools", () => {
       });
 
       expect(result.workflow_status).toBe("failed");
-
-      const workflow = db
-        .prepare("SELECT status FROM workflows WHERE id = ?")
-        .get("wf-test1") as { status: string };
-      expect(workflow.status).toBe("failed");
+      expect(mockApiClient.completeWorkflow).toHaveBeenCalledWith({
+        summary: "Something went wrong",
+        status: "failed",
+      });
     });
 
-    it("should reject already-completed workflow", async () => {
-      insertTestWorkflow({ status: "completed" });
+    it("should propagate API error for already-completed workflow", async () => {
+      (mockApiClient.completeWorkflow as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("Workflow already completed. Cannot complete again.")
+      );
 
       await expect(
         handleWorkflowComplete(context, { summary: "Done again" })
       ).rejects.toThrow("already completed");
     });
 
-    it("should reject already-failed workflow", async () => {
-      insertTestWorkflow({ status: "failed" });
+    it("should propagate API error for already-failed workflow", async () => {
+      (mockApiClient.completeWorkflow as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("Workflow already failed. Cannot complete again.")
+      );
 
       await expect(
         handleWorkflowComplete(context, { summary: "Try again" })
       ).rejects.toThrow("already failed");
     });
 
-    it("should reject cancelled workflow", async () => {
-      insertTestWorkflow({ status: "cancelled" });
+    it("should propagate API error for cancelled workflow", async () => {
+      (mockApiClient.completeWorkflow as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("Workflow was cancelled. Cannot complete a cancelled workflow.")
+      );
 
       await expect(
         handleWorkflowComplete(context, { summary: "Complete anyway" })
       ).rejects.toThrow("cancelled");
     });
 
-    it("should reject completion with active executions", async () => {
-      insertTestWorkflow();
-      insertTestExecution("exec-active", "running", "wf-test1");
+    it("should propagate API error for active executions", async () => {
+      (mockApiClient.completeWorkflow as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("Cannot complete workflow: 1 execution(s) still active.")
+      );
 
       await expect(
         handleWorkflowComplete(context, { summary: "Complete" })
       ).rejects.toThrow("execution(s) still active");
     });
 
-    it("should allow failed status with active executions", async () => {
-      insertTestWorkflow();
-      insertTestExecution("exec-active", "running", "wf-test1");
+    it("should allow failed status (API handles validation)", async () => {
+      (mockApiClient.completeWorkflow as ReturnType<typeof vi.fn>).mockResolvedValue({
+        success: true,
+        workflow_status: "failed",
+        completed_at: new Date().toISOString(),
+      });
 
       const result = await handleWorkflowComplete(context, {
         summary: "Giving up",
@@ -304,7 +226,11 @@ describe("Workflow MCP Tools", () => {
       expect(result.workflow_status).toBe("failed");
     });
 
-    it("should throw error for non-existent workflow", async () => {
+    it("should propagate API error for non-existent workflow", async () => {
+      (mockApiClient.completeWorkflow as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("Workflow not found: wf-nonexistent")
+      );
+
       context.workflowId = "wf-nonexistent";
 
       await expect(

@@ -71,6 +71,13 @@ describe("Workflow Routes", () => {
       getWorkflow: vi.fn().mockResolvedValue(mockWorkflow),
       getReadySteps: vi.fn().mockResolvedValue([]),
       onWorkflowEvent: vi.fn().mockReturnValue(() => {}),
+      // Emit methods for MCP endpoints
+      emitStepStarted: vi.fn(),
+      emitStepCompleted: vi.fn(),
+      emitStepFailed: vi.fn(),
+      emitWorkflowCompleted: vi.fn(),
+      emitWorkflowFailed: vi.fn(),
+      emitEscalationRequested: vi.fn(),
     };
 
     // Setup mock database
@@ -438,6 +445,386 @@ describe("Workflow Routes", () => {
       (mockEngine.getWorkflow as any).mockResolvedValue(null);
 
       const response = await request(app).get("/api/workflows/wf-unknown/events");
+
+      expect(response.status).toBe(404);
+    });
+  });
+
+  // ===========================================================================
+  // MCP Server Endpoints
+  // ===========================================================================
+
+  describe("GET /api/workflows/:id/status (MCP)", () => {
+    it("should return extended workflow status", async () => {
+      const mockIssues = [
+        { id: "i-1", title: "Issue One" },
+        { id: "i-2", title: "Issue Two" },
+      ];
+
+      mockDb.prepare.mockReturnValue({
+        get: vi.fn().mockReturnValue({ id: "exec-1", status: "running", started_at: "2024-01-01T00:00:00Z" }),
+        all: vi.fn().mockReturnValue(mockIssues),
+      });
+
+      const response = await request(app).get("/api/workflows/wf-123/status");
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.workflow.id).toBe("wf-123");
+      expect(response.body.data.steps).toBeDefined();
+      expect(response.body.data.readySteps).toBeDefined();
+    });
+
+    it("should return 404 for non-existent workflow", async () => {
+      (mockEngine.getWorkflow as any).mockResolvedValue(null);
+
+      const response = await request(app).get("/api/workflows/wf-unknown/status");
+
+      expect(response.status).toBe(404);
+    });
+
+    it("should return 503 when engine not available", async () => {
+      app = express();
+      app.use(express.json());
+      app.use((req, _res, next) => {
+        (req as any).project = {
+          id: "project-123",
+          workflowEngine: undefined,
+          db: mockDb,
+        };
+        next();
+      });
+      app.use("/api/workflows", createWorkflowsRouter());
+
+      const response = await request(app).get("/api/workflows/wf-123/status");
+
+      expect(response.status).toBe(503);
+    });
+  });
+
+  describe("POST /api/workflows/:id/execute (MCP)", () => {
+    let mockExecutionService: any;
+
+    beforeEach(() => {
+      mockExecutionService = {
+        createExecution: vi.fn().mockResolvedValue({
+          id: "exec-new",
+          status: "pending",
+          worktree_path: "/test/worktree",
+          branch_name: "sudocode/exec-new",
+        }),
+      };
+
+      // Add executionService to app
+      app = express();
+      app.use(express.json());
+      app.use((req, _res, next) => {
+        (req as any).project = {
+          id: "project-123",
+          workflowEngine: mockEngine,
+          executionService: mockExecutionService,
+          db: mockDb,
+        };
+        next();
+      });
+      app.use("/api/workflows", createWorkflowsRouter());
+    });
+
+    it("should return 400 when issue_id is missing", async () => {
+      const response = await request(app)
+        .post("/api/workflows/wf-123/execute")
+        .send({ worktree_mode: "create_root" });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain("issue_id is required");
+    });
+
+    it("should return 400 when worktree_mode is missing", async () => {
+      const response = await request(app)
+        .post("/api/workflows/wf-123/execute")
+        .send({ issue_id: "i-1" });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain("worktree_mode is required");
+    });
+
+    it("should return 404 for non-existent workflow", async () => {
+      (mockEngine.getWorkflow as any).mockResolvedValue(null);
+
+      const response = await request(app)
+        .post("/api/workflows/wf-unknown/execute")
+        .send({ issue_id: "i-1", worktree_mode: "create_root" });
+
+      expect(response.status).toBe(404);
+    });
+
+    it("should return 400 when workflow is not running", async () => {
+      (mockEngine.getWorkflow as any).mockResolvedValue({
+        ...mockWorkflow,
+        status: "paused",
+      });
+
+      const response = await request(app)
+        .post("/api/workflows/wf-123/execute")
+        .send({ issue_id: "i-1", worktree_mode: "create_root" });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain("workflow is paused");
+    });
+
+    it("should return 400 when issue is not part of workflow", async () => {
+      (mockEngine.getWorkflow as any).mockResolvedValue({
+        ...mockWorkflow,
+        status: "running",
+      });
+
+      const response = await request(app)
+        .post("/api/workflows/wf-123/execute")
+        .send({ issue_id: "i-unknown", worktree_mode: "create_root" });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain("not part of workflow");
+    });
+
+    it("should return 400 when use_root without worktree_id", async () => {
+      (mockEngine.getWorkflow as any).mockResolvedValue({
+        ...mockWorkflow,
+        status: "running",
+      });
+
+      mockDb.prepare.mockReturnValue({
+        get: vi.fn().mockReturnValue({ id: "i-1", title: "Issue 1", content: "Content" }),
+        run: vi.fn(),
+      });
+
+      const response = await request(app)
+        .post("/api/workflows/wf-123/execute")
+        .send({ issue_id: "i-1", worktree_mode: "use_root" });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain("worktree_id is required");
+    });
+
+    it("should return 503 when engine not available", async () => {
+      app = express();
+      app.use(express.json());
+      app.use((req, _res, next) => {
+        (req as any).project = {
+          id: "project-123",
+          workflowEngine: undefined,
+          db: mockDb,
+        };
+        next();
+      });
+      app.use("/api/workflows", createWorkflowsRouter());
+
+      const response = await request(app)
+        .post("/api/workflows/wf-123/execute")
+        .send({ issue_id: "i-1", worktree_mode: "create_root" });
+
+      expect(response.status).toBe(503);
+    });
+  });
+
+  describe("POST /api/workflows/:id/complete (MCP)", () => {
+    it("should complete workflow with summary", async () => {
+      mockDb.prepare.mockReturnValue({
+        run: vi.fn(),
+      });
+
+      const response = await request(app)
+        .post("/api/workflows/wf-123/complete")
+        .send({ summary: "All done!" });
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.workflow_status).toBe("completed");
+      expect(response.body.data.completed_at).toBeDefined();
+    });
+
+    it("should mark workflow as failed when specified", async () => {
+      mockDb.prepare.mockReturnValue({
+        run: vi.fn(),
+      });
+
+      const response = await request(app)
+        .post("/api/workflows/wf-123/complete")
+        .send({ summary: "Failed due to error", status: "failed" });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.workflow_status).toBe("failed");
+    });
+
+    it("should return 400 when summary is missing", async () => {
+      const response = await request(app)
+        .post("/api/workflows/wf-123/complete")
+        .send({});
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain("summary is required");
+    });
+
+    it("should return 404 for non-existent workflow", async () => {
+      (mockEngine.getWorkflow as any).mockResolvedValue(null);
+
+      const response = await request(app)
+        .post("/api/workflows/wf-unknown/complete")
+        .send({ summary: "Done" });
+
+      expect(response.status).toBe(404);
+    });
+
+    it("should return 503 when engine not available", async () => {
+      app = express();
+      app.use(express.json());
+      app.use((req, _res, next) => {
+        (req as any).project = {
+          id: "project-123",
+          workflowEngine: undefined,
+          db: mockDb,
+        };
+        next();
+      });
+      app.use("/api/workflows", createWorkflowsRouter());
+
+      const response = await request(app)
+        .post("/api/workflows/wf-123/complete")
+        .send({ summary: "Done" });
+
+      expect(response.status).toBe(503);
+    });
+  });
+
+  describe("POST /api/workflows/:id/escalate (MCP)", () => {
+    it("should create escalation and return pending status", async () => {
+      // Mock prepare to return different mocks for different calls
+      const getMock = vi.fn()
+        // First call: get workflow row
+        .mockReturnValueOnce({
+          id: "wf-123",
+          config: JSON.stringify({ autonomyLevel: "human_in_the_loop" }),
+        })
+        // Second call: check pending escalation - return undefined
+        .mockReturnValueOnce(undefined);
+
+      mockDb.prepare.mockReturnValue({
+        get: getMock,
+        run: vi.fn(),
+      });
+
+      const response = await request(app)
+        .post("/api/workflows/wf-123/escalate")
+        .send({ message: "Need user input" });
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.status).toBe("pending");
+      expect(response.body.data.escalation_id).toBeDefined();
+    });
+
+    it("should include options in escalation", async () => {
+      const getMock = vi.fn()
+        .mockReturnValueOnce({
+          id: "wf-123",
+          config: JSON.stringify({ autonomyLevel: "human_in_the_loop" }),
+        })
+        .mockReturnValueOnce(undefined);
+
+      mockDb.prepare.mockReturnValue({
+        get: getMock,
+        run: vi.fn(),
+      });
+
+      const response = await request(app)
+        .post("/api/workflows/wf-123/escalate")
+        .send({ message: "Choose one", options: ["Yes", "No"] });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.status).toBe("pending");
+    });
+
+    it("should auto-approve in full_auto mode", async () => {
+      mockDb.prepare.mockReturnValue({
+        get: vi.fn().mockReturnValue({
+          id: "wf-123",
+          config: JSON.stringify({ autonomyLevel: "full_auto" }),
+        }),
+      });
+
+      const response = await request(app)
+        .post("/api/workflows/wf-123/escalate")
+        .send({ message: "Proceed?" });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.status).toBe("auto_approved");
+    });
+
+    it("should return 400 when message is missing", async () => {
+      const response = await request(app)
+        .post("/api/workflows/wf-123/escalate")
+        .send({});
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain("message is required");
+    });
+
+    it("should return 404 for non-existent workflow", async () => {
+      mockDb.prepare.mockReturnValue({
+        get: vi.fn().mockReturnValue(undefined),
+      });
+
+      const response = await request(app)
+        .post("/api/workflows/wf-unknown/escalate")
+        .send({ message: "Help" });
+
+      expect(response.status).toBe(404);
+    });
+  });
+
+  describe("POST /api/workflows/:id/notify (MCP)", () => {
+    beforeEach(() => {
+      mockDb.prepare.mockReturnValue({
+        get: vi.fn().mockReturnValue({ id: "wf-123" }),
+        run: vi.fn(),
+      });
+    });
+
+    it("should send notification and return success", async () => {
+      const response = await request(app)
+        .post("/api/workflows/wf-123/notify")
+        .send({ message: "Progress update" });
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.delivered).toBe(true);
+    });
+
+    it("should accept level parameter", async () => {
+      const response = await request(app)
+        .post("/api/workflows/wf-123/notify")
+        .send({ message: "Warning!", level: "warning" });
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+    });
+
+    it("should return 400 when message is missing", async () => {
+      const response = await request(app)
+        .post("/api/workflows/wf-123/notify")
+        .send({});
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain("message is required");
+    });
+
+    it("should return 404 for non-existent workflow", async () => {
+      mockDb.prepare.mockReturnValue({
+        get: vi.fn().mockReturnValue(undefined),
+      });
+
+      const response = await request(app)
+        .post("/api/workflows/wf-unknown/notify")
+        .send({ message: "Update" });
 
       expect(response.status).toBe(404);
     });

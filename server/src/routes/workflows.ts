@@ -924,5 +924,611 @@ export function createWorkflowsRouter(): Router {
     }
   });
 
+  // ===========================================================================
+  // MCP Server Endpoints
+  // These endpoints are called by the workflow MCP server instead of direct DB access
+  // ===========================================================================
+
+  /**
+   * GET /api/workflows/:id/status - Get extended workflow status for orchestrator
+   *
+   * Returns workflow with steps, active executions, and ready steps.
+   * Used by workflow_status MCP tool.
+   */
+  router.get("/:id/status", async (req: Request, res: Response) => {
+    try {
+      const engine = req.project!.workflowEngine;
+      if (!engine) {
+        res.status(503).json({
+          success: false,
+          data: null,
+          message: "Workflow engine not available",
+        });
+        return;
+      }
+
+      const { id } = req.params;
+      const workflow = await engine.getWorkflow(id);
+
+      if (!workflow) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Workflow not found: ${id}`,
+        });
+        return;
+      }
+
+      // Get ready steps
+      const readySteps = await engine.getReadySteps(id);
+      const readyStepIds = readySteps.map((s) => s.id);
+
+      // Get active executions from steps
+      const db = req.project!.db;
+      const activeExecutionIds = workflow.steps
+        .filter((s) => s.status === "running" && s.executionId)
+        .map((s) => s.executionId!);
+
+      const activeExecutions: Array<{
+        id: string;
+        stepId: string;
+        status: string;
+        startedAt: string;
+      }> = [];
+
+      for (const execId of activeExecutionIds) {
+        const exec = db
+          .prepare("SELECT id, status, started_at FROM executions WHERE id = ?")
+          .get(execId) as { id: string; status: string; started_at: string } | undefined;
+        if (exec) {
+          const step = workflow.steps.find((s) => s.executionId === execId);
+          activeExecutions.push({
+            id: exec.id,
+            stepId: step?.id || "",
+            status: exec.status,
+            startedAt: exec.started_at,
+          });
+        }
+      }
+
+      // Get issue titles for steps
+      const issueIds = workflow.steps.map((s) => s.issueId);
+      const issueTitles: Record<string, string> = {};
+      if (issueIds.length > 0) {
+        const placeholders = issueIds.map(() => "?").join(",");
+        const issues = db
+          .prepare(`SELECT id, title FROM issues WHERE id IN (${placeholders})`)
+          .all(...issueIds) as { id: string; title: string }[];
+        for (const issue of issues) {
+          issueTitles[issue.id] = issue.title;
+        }
+      }
+
+      // Build response matching WorkflowStatusResult type
+      const result = {
+        workflow: {
+          id: workflow.id,
+          title: workflow.title,
+          status: workflow.status,
+          source: workflow.source,
+          config: workflow.config,
+          worktreePath: workflow.worktreePath,
+        },
+        steps: workflow.steps.map((s) => ({
+          id: s.id,
+          issueId: s.issueId,
+          issueTitle: issueTitles[s.issueId] || s.issueId,
+          status: s.status,
+          executionId: s.executionId,
+          dependsOn: s.dependencies || [],
+        })),
+        activeExecutions,
+        readySteps: readyStepIds,
+      };
+
+      res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      handleWorkflowError(error, res);
+    }
+  });
+
+  /**
+   * POST /api/workflows/:id/execute - Execute an issue within the workflow
+   *
+   * Used by execute_issue MCP tool.
+   *
+   * Request body:
+   * - issue_id: string (required)
+   * - agent_type?: AgentType
+   * - model?: string
+   * - worktree_mode: 'create_root' | 'use_root' | 'create_branch' | 'use_branch'
+   * - worktree_id?: string (for use_root/use_branch)
+   */
+  router.post("/:id/execute", async (req: Request, res: Response) => {
+    try {
+      const engine = req.project!.workflowEngine;
+      if (!engine) {
+        res.status(503).json({
+          success: false,
+          data: null,
+          message: "Workflow engine not available",
+        });
+        return;
+      }
+
+      const { id: workflowId } = req.params;
+      const {
+        issue_id,
+        agent_type,
+        model,
+        worktree_mode,
+        worktree_id,
+      } = req.body as {
+        issue_id?: string;
+        agent_type?: string;
+        model?: string;
+        worktree_mode?: string;
+        worktree_id?: string;
+      };
+
+      // Validate required params
+      if (!issue_id) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "issue_id is required",
+        });
+        return;
+      }
+
+      if (!worktree_mode) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "worktree_mode is required",
+        });
+        return;
+      }
+
+      // Get workflow
+      const workflow = await engine.getWorkflow(workflowId);
+      if (!workflow) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Workflow not found: ${workflowId}`,
+        });
+        return;
+      }
+
+      // Validate workflow is running
+      if (workflow.status !== "running") {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: `Cannot execute issue: workflow is ${workflow.status}, expected running`,
+        });
+        return;
+      }
+
+      // Find step for this issue
+      const step = workflow.steps.find((s) => s.issueId === issue_id);
+      if (!step) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: `Issue ${issue_id} is not part of workflow ${workflowId}`,
+        });
+        return;
+      }
+
+      // Validate step status
+      if (step.status !== "pending" && step.status !== "ready") {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: `Cannot execute step: status is ${step.status}, expected pending or ready`,
+        });
+        return;
+      }
+
+      // Get issue
+      const db = req.project!.db;
+      const issue = db
+        .prepare("SELECT id, title, content FROM issues WHERE id = ?")
+        .get(issue_id) as { id: string; title: string; content: string } | undefined;
+
+      if (!issue) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Issue not found: ${issue_id}`,
+        });
+        return;
+      }
+
+      // Determine worktree configuration
+      let reuseWorktreeId: string | undefined;
+      if (worktree_mode === "use_root" || worktree_mode === "use_branch") {
+        if (!worktree_id) {
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: `worktree_id is required for ${worktree_mode} mode`,
+          });
+          return;
+        }
+        reuseWorktreeId = worktree_id;
+      }
+
+      // Build execution config
+      const agentTypeToUse = agent_type || workflow.config.defaultAgentType || "claude-code";
+      const executionConfig = {
+        mode: "worktree" as const,
+        model: model || workflow.config.orchestratorModel,
+        baseBranch: workflow.baseBranch,
+        reuseWorktreeId,
+      };
+
+      // Create prompt from issue content
+      const prompt = issue.content || `Implement issue: ${issue.title}`;
+
+      // Create execution with workflow context
+      const executionService = req.project!.executionService;
+      const execution = await executionService.createExecution(
+        issue_id,
+        executionConfig,
+        prompt,
+        agentTypeToUse as any,
+        { workflowId, stepId: step.id }
+      );
+
+      // Update step status and execution ID
+      const updatedSteps = workflow.steps.map((s) =>
+        s.id === step.id
+          ? { ...s, status: "running" as const, executionId: execution.id }
+          : s
+      );
+      db.prepare("UPDATE workflows SET steps = ?, updated_at = ? WHERE id = ?").run(
+        JSON.stringify(updatedSteps),
+        new Date().toISOString(),
+        workflowId
+      );
+
+      // Store worktree path on workflow for create_root mode
+      if (worktree_mode === "create_root" && execution.worktree_path) {
+        db.prepare("UPDATE workflows SET worktree_path = ?, branch_name = ?, updated_at = ? WHERE id = ?").run(
+          execution.worktree_path,
+          execution.branch_name,
+          new Date().toISOString(),
+          workflowId
+        );
+      }
+
+      // Emit step started event
+      engine.emitStepStarted(workflowId, { ...step, status: "running", executionId: execution.id });
+
+      console.log(
+        `[workflows/:id/execute] Started execution ${execution.id} for issue ${issue_id} in workflow ${workflowId}`
+      );
+
+      res.json({
+        success: true,
+        data: {
+          execution_id: execution.id,
+          worktree_path: execution.worktree_path || "",
+          branch_name: execution.branch_name,
+          status: execution.status,
+        },
+      });
+    } catch (error) {
+      handleWorkflowError(error, res);
+    }
+  });
+
+  /**
+   * POST /api/workflows/:id/complete - Mark workflow as complete or failed
+   *
+   * Used by workflow_complete MCP tool.
+   *
+   * Request body:
+   * - summary: string (required)
+   * - status?: 'completed' | 'failed' (default: 'completed')
+   */
+  router.post("/:id/complete", async (req: Request, res: Response) => {
+    try {
+      const engine = req.project!.workflowEngine;
+      if (!engine) {
+        res.status(503).json({
+          success: false,
+          data: null,
+          message: "Workflow engine not available",
+        });
+        return;
+      }
+
+      const { id: workflowId } = req.params;
+      const { summary, status = "completed" } = req.body as {
+        summary?: string;
+        status?: "completed" | "failed";
+      };
+
+      if (!summary) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "summary is required",
+        });
+        return;
+      }
+
+      // Get workflow
+      const workflow = await engine.getWorkflow(workflowId);
+      if (!workflow) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Workflow not found: ${workflowId}`,
+        });
+        return;
+      }
+
+      // Update workflow status
+      const now = new Date().toISOString();
+      const db = req.project!.db;
+      db.prepare(`
+        UPDATE workflows
+        SET status = ?, completed_at = ?, updated_at = ?
+        WHERE id = ?
+      `).run(status, now, now, workflowId);
+
+      // Emit workflow completed/failed event
+      const updatedWorkflow = await engine.getWorkflow(workflowId);
+      if (status === "completed") {
+        engine.emitWorkflowCompleted(workflowId, updatedWorkflow!);
+      } else {
+        engine.emitWorkflowFailed(workflowId, summary);
+      }
+
+      // Broadcast update
+      broadcastWorkflowUpdate(req.project!.id, workflowId, status, updatedWorkflow);
+
+      res.json({
+        success: true,
+        data: {
+          success: true,
+          workflow_status: status,
+          completed_at: now,
+        },
+      });
+    } catch (error) {
+      handleWorkflowError(error, res);
+    }
+  });
+
+  /**
+   * POST /api/workflows/:id/escalate - Create an escalation request
+   *
+   * Used by escalate_to_user MCP tool.
+   * Creates escalation and emits event for WebSocket broadcast.
+   *
+   * Request body:
+   * - message: string (required)
+   * - options?: string[]
+   * - context?: Record<string, unknown>
+   */
+  router.post("/:id/escalate", async (req: Request, res: Response) => {
+    try {
+      const { id: workflowId } = req.params;
+      const { message, options, context: escalationContext } = req.body as {
+        message?: string;
+        options?: string[];
+        context?: Record<string, unknown>;
+      };
+
+      if (!message) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "message is required",
+        });
+        return;
+      }
+
+      const db = req.project!.db;
+
+      // Get workflow
+      const workflowRow = db
+        .prepare("SELECT * FROM workflows WHERE id = ?")
+        .get(workflowId) as any;
+
+      if (!workflowRow) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Workflow not found: ${workflowId}`,
+        });
+        return;
+      }
+
+      // Parse config to check autonomy level
+      const config = JSON.parse(workflowRow.config) as WorkflowConfig;
+
+      // If full_auto mode, bypass escalation
+      if (config.autonomyLevel === "full_auto") {
+        console.log(
+          `[workflows/:id/escalate] Workflow ${workflowId} is in full_auto mode, auto-approving`
+        );
+
+        res.json({
+          success: true,
+          data: {
+            status: "auto_approved",
+            message:
+              "Escalation auto-approved (workflow is in full_auto mode). " +
+              "Proceed with your decision.",
+          },
+        });
+        return;
+      }
+
+      // Check for existing pending escalation
+      const pendingEscalation = db.prepare(`
+        SELECT payload FROM workflow_events
+        WHERE workflow_id = ?
+          AND type = 'escalation_requested'
+          AND json_extract(payload, '$.escalation_id') NOT IN (
+            SELECT json_extract(payload, '$.escalation_id')
+            FROM workflow_events
+            WHERE workflow_id = ?
+              AND type = 'escalation_resolved'
+          )
+        ORDER BY created_at DESC
+        LIMIT 1
+      `).get(workflowId, workflowId) as { payload: string } | undefined;
+
+      if (pendingEscalation) {
+        const payload = JSON.parse(pendingEscalation.payload);
+        res.status(400).json({
+          success: false,
+          data: null,
+          message:
+            `Workflow already has a pending escalation (ID: ${payload.escalation_id}). ` +
+            `Wait for user response or resolve the existing escalation first.`,
+        });
+        return;
+      }
+
+      // Generate unique escalation ID
+      const escalationId = randomUUID();
+      const now = new Date().toISOString();
+
+      // Record escalation_requested event
+      const eventId = randomUUID();
+      db.prepare(`
+        INSERT INTO workflow_events (id, workflow_id, type, payload, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(
+        eventId,
+        workflowId,
+        "escalation_requested",
+        JSON.stringify({
+          escalation_id: escalationId,
+          message,
+          options,
+          context: escalationContext,
+        }),
+        now
+      );
+
+      // Emit escalation requested event for WebSocket broadcast
+      const engine = req.project!.workflowEngine;
+      if (engine) {
+        engine.emitEscalationRequested(workflowId, escalationId, message, options, escalationContext);
+      }
+
+      console.log(
+        `[workflows/:id/escalate] Escalation created for workflow ${workflowId}: ${escalationId}`
+      );
+
+      res.json({
+        success: true,
+        data: {
+          status: "pending",
+          escalation_id: escalationId,
+          message:
+            "Escalation request created. Your session will end here. " +
+            "When the user responds, you will receive a follow-up message with their response. " +
+            "The workflow will resume automatically.",
+        },
+      });
+    } catch (error) {
+      handleWorkflowError(error, res);
+    }
+  });
+
+  /**
+   * POST /api/workflows/:id/notify - Send a non-blocking notification
+   *
+   * Used by notify_user MCP tool.
+   * Broadcasts notification via WebSocket.
+   *
+   * Request body:
+   * - message: string (required)
+   * - level?: 'info' | 'warning' | 'error' (default: 'info')
+   */
+  router.post("/:id/notify", async (req: Request, res: Response) => {
+    try {
+      const { id: workflowId } = req.params;
+      const { message, level = "info" } = req.body as {
+        message?: string;
+        level?: "info" | "warning" | "error";
+      };
+
+      if (!message) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "message is required",
+        });
+        return;
+      }
+
+      const db = req.project!.db;
+
+      // Verify workflow exists
+      const workflowExists = db
+        .prepare("SELECT 1 FROM workflows WHERE id = ?")
+        .get(workflowId);
+
+      if (!workflowExists) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Workflow not found: ${workflowId}`,
+        });
+        return;
+      }
+
+      // Record notification event (for audit trail)
+      const eventId = randomUUID();
+      const now = new Date().toISOString();
+      db.prepare(`
+        INSERT INTO workflow_events (id, workflow_id, type, payload, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(
+        eventId,
+        workflowId,
+        "user_notification",
+        JSON.stringify({ level, message }),
+        now
+      );
+
+      // Broadcast notification via WebSocket
+      broadcastWorkflowUpdate(req.project!.id, workflowId, "notification", {
+        level,
+        message,
+        timestamp: now,
+      });
+
+      console.log(
+        `[workflows/:id/notify] [${level.toUpperCase()}] Workflow ${workflowId}: ${message}`
+      );
+
+      res.json({
+        success: true,
+        data: {
+          success: true,
+          delivered: true, // We assume WebSocket delivery
+        },
+      });
+    } catch (error) {
+      handleWorkflowError(error, res);
+    }
+  });
+
   return router;
 }

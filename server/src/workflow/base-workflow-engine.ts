@@ -30,6 +30,11 @@ import {
   type WorkflowEventListener,
   createEscalationRequestedEvent,
   createEscalationResolvedEvent,
+  createStepStartedEvent,
+  createStepCompletedEvent,
+  createStepFailedEvent,
+  createWorkflowCompletedEvent,
+  createWorkflowFailedEvent,
 } from "./workflow-event-emitter.js";
 import { analyzeDependencies } from "./dependency-analyzer.js";
 
@@ -274,6 +279,47 @@ export abstract class BaseWorkflowEngine implements IWorkflowEngine {
     this.eventEmitter.emit(
       createEscalationResolvedEvent(workflowId, escalationId, action, message)
     );
+  }
+
+  /**
+   * Emit a step started event.
+   */
+  emitStepStarted(workflowId: string, step: WorkflowStep): void {
+    this.eventEmitter.emit(createStepStartedEvent(workflowId, step));
+  }
+
+  /**
+   * Emit a step completed event.
+   */
+  emitStepCompleted(
+    workflowId: string,
+    step: WorkflowStep,
+    executionId: string
+  ): void {
+    this.eventEmitter.emit(
+      createStepCompletedEvent(workflowId, step, executionId)
+    );
+  }
+
+  /**
+   * Emit a step failed event.
+   */
+  emitStepFailed(workflowId: string, step: WorkflowStep, error: string): void {
+    this.eventEmitter.emit(createStepFailedEvent(workflowId, step, error));
+  }
+
+  /**
+   * Emit a workflow completed event.
+   */
+  emitWorkflowCompleted(workflowId: string, workflow: Workflow): void {
+    this.eventEmitter.emit(createWorkflowCompletedEvent(workflowId, workflow));
+  }
+
+  /**
+   * Emit a workflow failed event.
+   */
+  emitWorkflowFailed(workflowId: string, error: string): void {
+    this.eventEmitter.emit(createWorkflowFailedEvent(workflowId, error));
   }
 
   // ===========================================================================
