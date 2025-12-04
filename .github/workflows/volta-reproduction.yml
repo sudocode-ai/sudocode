@@ -8,6 +8,7 @@ on:
       - 'cli/package.json'
       - 'mcp/package.json'
       - 'local-server/package.json'
+      - '.github/workflows/volta-reproduction.yml'
 
 jobs:
   # Test on macOS ARM64 (M1/M2)
