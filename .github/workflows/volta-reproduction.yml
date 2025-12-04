@@ -1,0 +1,289 @@
+name: Volta Installation Reproduction Test
+
+on:
+  workflow_dispatch:  # Allow manual triggering
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'cli/package.json'
+      - 'mcp/package.json'
+      - 'local-server/package.json'
+
+jobs:
+  # Test on macOS ARM64 (M1/M2)
+  test-macos-arm64:
+    runs-on: macos-14  # M1 runner
+    name: Reproduce on macOS ARM64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: System information
+        run: |
+          echo "=== System Information ==="
+          uname -a
+          echo ""
+          echo "=== Architecture ==="
+          uname -m
+          echo ""
+          echo "=== macOS Version ==="
+          sw_vers
+
+      - name: Install Volta
+        run: |
+          echo "=== Installing Volta ==="
+          curl https://get.volta.sh | bash
+          echo ""
+          echo "=== Volta Installation Complete ==="
+
+      - name: Setup Volta in PATH
+        run: |
+          echo "$HOME/.volta/bin" >> $GITHUB_PATH
+          echo "VOLTA_HOME=$HOME/.volta" >> $GITHUB_ENV
+
+      - name: Verify Volta installation
+        run: |
+          echo "=== Volta Version ==="
+          volta --version
+          echo ""
+          echo "=== VOLTA_HOME ==="
+          echo $VOLTA_HOME
+          echo ""
+          echo "=== PATH ==="
+          echo $PATH | tr ':' '\n' | grep -i volta || echo "No Volta in PATH"
+
+      - name: Install Node via Volta
+        run: |
+          echo "=== Installing Node 22 via Volta ==="
+          volta install node@22
+          echo ""
+          echo "=== Node Version ==="
+          node --version
+          echo ""
+          echo "=== npm Version ==="
+          npm --version
+
+      - name: List Volta bin directory BEFORE sudocode installation
+        run: |
+          echo "=== Contents of ~/.volta/bin BEFORE sudocode ==="
+          ls -la ~/.volta/bin/ || echo "Directory does not exist"
+          echo ""
+          echo "=== Count of files ==="
+          ls -1 ~/.volta/bin/ | wc -l || echo "0"
+
+      - name: Attempt sudocode installation via Volta
+        id: volta_install
+        continue-on-error: true
+        run: |
+          echo "=== Installing sudocode via volta install ==="
+          volta install sudocode
+          echo ""
+          echo "=== Installation exit code: $? ==="
+
+      - name: List Volta packages
+        run: |
+          echo "=== Volta list output ==="
+          volta list
+          echo ""
+          echo "=== Volta list all ==="
+          volta list all || true
+
+      - name: List Volta bin directory AFTER sudocode installation
+        run: |
+          echo "=== Contents of ~/.volta/bin AFTER sudocode ==="
+          ls -la ~/.volta/bin/
+          echo ""
+          echo "=== Searching for sudocode-related files ==="
+          ls -la ~/.volta/bin/ | grep sudo || echo "No sudocode shims found"
+          echo ""
+          echo "=== Count of files ==="
+          ls -1 ~/.volta/bin/ | wc -l
+
+      - name: Check for sudocode binaries
+        run: |
+          echo "=== Checking which sudocode ==="
+          which sudocode || echo "sudocode not found in PATH"
+          echo ""
+          echo "=== Checking which sdc ==="
+          which sdc || echo "sdc not found in PATH"
+          echo ""
+          echo "=== Checking which sudocode-mcp ==="
+          which sudocode-mcp || echo "sudocode-mcp not found in PATH"
+          echo ""
+          echo "=== Checking which sudocode-server ==="
+          which sudocode-server || echo "sudocode-server not found in PATH"
+
+      - name: Try to run sudocode commands
+        continue-on-error: true
+        run: |
+          echo "=== Attempting to run sudocode --version ==="
+          sudocode --version || echo "Failed to run sudocode"
+          echo ""
+          echo "=== Attempting to run sdc --version ==="
+          sdc --version || echo "Failed to run sdc"
+
+      - name: Check npm global packages
+        run: |
+          echo "=== npm list -g --depth=0 ==="
+          npm list -g --depth=0
+          echo ""
+          echo "=== npm root -g ==="
+          npm root -g
+          echo ""
+          echo "=== Contents of npm global bin ==="
+          ls -la $(npm bin -g) || echo "Cannot list npm bin"
+
+      - name: Volta tool directory inspection
+        run: |
+          echo "=== Volta tool inventory ==="
+          find ~/.volta -name "sudocode" -o -name "sdc" -o -name "sudocode-mcp" -o -name "sudocode-server" || echo "No sudocode files found in .volta"
+          echo ""
+          echo "=== Volta tools directory ==="
+          ls -la ~/.volta/tools/ || echo "No tools directory"
+
+      - name: Check package.json bin configuration
+        run: |
+          echo "=== npm info sudocode bin ==="
+          npm info sudocode bin
+          echo ""
+          echo "=== npm info sudocode version ==="
+          npm info sudocode version
+
+      - name: Final diagnostic summary
+        run: |
+          echo "========================================"
+          echo "REPRODUCTION TEST SUMMARY (macOS ARM64)"
+          echo "========================================"
+          echo ""
+          echo "Architecture: $(uname -m)"
+          echo "OS: $(sw_vers -productName) $(sw_vers -productVersion)"
+          echo "Volta version: $(volta --version)"
+          echo "Node version: $(node --version)"
+          echo "npm version: $(npm --version)"
+          echo ""
+          echo "Volta packages installed:"
+          volta list
+          echo ""
+          echo "Sudocode shims in ~/.volta/bin:"
+          ls -la ~/.volta/bin/ | grep sudo || echo "NONE FOUND - BUG REPRODUCED"
+          echo ""
+          echo "Can run sudocode command:"
+          if command -v sudocode &> /dev/null; then
+            echo "YES - Bug NOT reproduced"
+          else
+            echo "NO - BUG REPRODUCED"
+          fi
+
+  # Test on macOS x86_64 for comparison
+  test-macos-x86:
+    runs-on: macos-13  # Intel runner
+    name: Reproduce on macOS x86_64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: System information
+        run: |
+          echo "=== System Information ==="
+          uname -a
+          echo ""
+          echo "=== Architecture ==="
+          uname -m
+          echo ""
+          echo "=== macOS Version ==="
+          sw_vers
+
+      - name: Install Volta
+        run: |
+          echo "=== Installing Volta ==="
+          curl https://get.volta.sh | bash
+
+      - name: Setup Volta in PATH
+        run: |
+          echo "$HOME/.volta/bin" >> $GITHUB_PATH
+          echo "VOLTA_HOME=$HOME/.volta" >> $GITHUB_ENV
+
+      - name: Verify Volta installation
+        run: |
+          echo "=== Volta Version ==="
+          volta --version
+
+      - name: Install Node via Volta
+        run: |
+          echo "=== Installing Node 22 via Volta ==="
+          volta install node@22
+
+      - name: Attempt sudocode installation via Volta
+        continue-on-error: true
+        run: |
+          echo "=== Installing sudocode via volta install ==="
+          volta install sudocode
+
+      - name: Check installation results
+        run: |
+          echo "=== Volta list output ==="
+          volta list
+          echo ""
+          echo "=== Contents of ~/.volta/bin ==="
+          ls -la ~/.volta/bin/ | grep sudo || echo "No sudocode shims found"
+          echo ""
+          echo "=== Can run sudocode? ==="
+          if command -v sudocode &> /dev/null; then
+            echo "YES - Bug NOT reproduced on x86_64"
+          else
+            echo "NO - Bug also present on x86_64"
+          fi
+
+  # Test on Linux ARM64
+  test-linux-arm64:
+    runs-on: ubuntu-latest
+    name: Reproduce on Linux ARM64 (Docker)
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU for ARM64 emulation
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create Dockerfile for Volta test
+        run: |
+          cat > Dockerfile.volta-test << 'EOF'
+          FROM --platform=linux/arm64 ubuntu:22.04
+
+          # Install basic dependencies
+          RUN apt-get update && apt-get install -y curl git build-essential ca-certificates
+
+          # Install Volta
+          RUN curl https://get.volta.sh | bash
+          ENV VOLTA_HOME=/root/.volta
+          ENV PATH="$VOLTA_HOME/bin:$PATH"
+
+          # Install Node via Volta
+          RUN volta install node@22
+
+          # Install sudocode and capture result
+          RUN volta install sudocode || echo "Installation failed but continuing"
+
+          # Run diagnostics
+          CMD ["/bin/bash", "-c", "\
+            echo '=== Architecture ===' && uname -m && \
+            echo '' && \
+            echo '=== Volta version ===' && volta --version && \
+            echo '' && \
+            echo '=== Volta list ===' && volta list && \
+            echo '' && \
+            echo '=== Volta bin contents ===' && ls -la /root/.volta/bin/ && \
+            echo '' && \
+            echo '=== Sudocode shims ===' && (ls -la /root/.volta/bin/ | grep sudo || echo 'No sudocode shims found') && \
+            echo '' && \
+            echo '=== Can run sudocode? ===' && (command -v sudocode && echo 'YES' || echo 'NO - BUG REPRODUCED')"]
+          EOF
+
+      - name: Build and run ARM64 Docker test
+        run: |
+          docker buildx build --platform linux/arm64 -f Dockerfile.volta-test -t volta-test-arm64 --load .
+          echo "=== Running ARM64 container ==="
+          docker run --platform linux/arm64 volta-test-arm64
