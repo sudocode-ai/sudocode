@@ -22,6 +22,7 @@ import {
 import {
   addRelationship,
   removeAllRelationships,
+  removeOutgoingRelationships,
 } from "./operations/relationships.js";
 import { setTags } from "./operations/tags.js";
 import {
@@ -31,6 +32,7 @@ import {
 } from "./operations/feedback.js";
 import { transaction } from "./operations/transactions.js";
 import * as path from "path";
+import * as fs from "fs";
 
 export interface ImportOptions {
   /**
@@ -472,12 +474,12 @@ export function importSpecs(
     }
   }
 
-  // Update relationships
+  // Update relationships (only remove outgoing to preserve incoming relationships)
   if (!skipRelationships) {
     for (const id of changes.updated) {
       const spec = specs.find((s) => s.id === id);
       if (spec) {
-        removeAllRelationships(db, spec.id, "spec");
+        removeOutgoingRelationships(db, spec.id, "spec");
         for (const rel of spec.relationships || []) {
           addRelationship(db, {
             from_id: rel.from,
@@ -629,12 +631,12 @@ export function importIssues(
     }
   }
 
-  // Update relationships
+  // Update relationships (only remove outgoing to preserve incoming relationships)
   if (!skipRelationships) {
     for (const id of changes.updated) {
       const issue = issues.find((i) => i.id === id);
       if (issue) {
-        removeAllRelationships(db, issue.id, "issue");
+        removeOutgoingRelationships(db, issue.id, "issue");
         for (const rel of issue.relationships || []) {
           addRelationship(db, {
             from_id: rel.from,
@@ -779,6 +781,23 @@ export async function importFromJSONL(
   const specChanges = detectChanges(existingSpecs, incomingSpecs, forceUpdateIds);
   const issueChanges = detectChanges(existingIssues, incomingIssues, forceUpdateIds);
 
+  // Collect markdown file paths for entities to be deleted (before deletion)
+  // We need to do this before the transaction because the entities will be gone after
+  const markdownFilesToDelete: string[] = [];
+  if (!dryRun) {
+    // Collect spec file paths
+    for (const id of specChanges.deleted) {
+      const spec = getSpec(db, id);
+      if (spec && spec.file_path) {
+        markdownFilesToDelete.push(path.join(inputDir, spec.file_path));
+      }
+    }
+    // Collect issue file paths (issues use standard path format)
+    for (const id of issueChanges.deleted) {
+      markdownFilesToDelete.push(path.join(inputDir, "issues", `${id}.md`));
+    }
+  }
+
   // Apply changes in transaction
   const result: ImportResult = {
     specs: { added: 0, updated: 0, deleted: 0 },
@@ -816,11 +835,11 @@ export async function importFromJSONL(
         }
       }
 
-      // Import spec relationships for updated specs
+      // Import spec relationships for updated specs (only remove outgoing to preserve incoming)
       for (const id of specChanges.updated) {
         const spec = incomingSpecs.find((s) => s.id === id);
         if (spec) {
-          removeAllRelationships(db, spec.id, "spec");
+          removeOutgoingRelationships(db, spec.id, "spec");
           for (const rel of spec.relationships || []) {
             addRelationship(db, {
               from_id: rel.from,
@@ -849,11 +868,11 @@ export async function importFromJSONL(
         }
       }
 
-      // Import issue relationships for updated issues
+      // Import issue relationships for updated issues (only remove outgoing to preserve incoming)
       for (const id of issueChanges.updated) {
         const issue = incomingIssues.find((i) => i.id === id);
         if (issue) {
-          removeAllRelationships(db, issue.id, "issue");
+          removeOutgoingRelationships(db, issue.id, "issue");
           for (const rel of issue.relationships || []) {
             addRelationship(db, {
               from_id: rel.from,
@@ -871,6 +890,18 @@ export async function importFromJSONL(
       // References within the imported data should already be using the correct IDs
       // Updating all references globally would incorrectly change references to the local entity
     });
+
+    // Clean up markdown files for deleted entities (after successful DB transaction)
+    for (const filePath of markdownFilesToDelete) {
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (err) {
+          // Log but don't fail - file cleanup is best-effort
+          console.warn(`Failed to delete markdown file: ${filePath}`, err);
+        }
+      }
+    }
   } else {
     result.specs = importSpecs(db, incomingSpecs, specChanges, dryRun);
     result.issues = importIssues(db, incomingIssues, issueChanges, dryRun);

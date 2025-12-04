@@ -1,5 +1,6 @@
 /**
- * Test that frontmatter is written back to new spec files
+ * Test orphaned file handling and frontmatter preservation
+ * (DB/JSONL is source of truth - markdown files without DB entries are orphaned)
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -10,7 +11,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
-describe("File Watcher - Frontmatter Writeback", () => {
+describe("File Watcher - Orphaned Files and Frontmatter", () => {
   let db: Database.Database;
   let tempDir: string;
   let control: ReturnType<typeof startWatcher> | null = null;
@@ -62,18 +63,22 @@ describe("File Watcher - Frontmatter Writeback", () => {
     }
   });
 
-  it("should write frontmatter back to new spec file without frontmatter", async () => {
+  it("should delete orphaned spec file without frontmatter (no DB entry)", async () => {
     const logs: string[] = [];
     const errors: Error[] = [];
 
-    // Create a spec file WITHOUT frontmatter
+    // Create a spec file WITHOUT frontmatter (and no DB entry)
+    // Since DB/JSONL is source of truth, this file should be deleted as orphaned
     const specPath = path.join(tempDir, "specs", "new-spec-without-fm.md");
     const content = `# Test New Spec
 
-This is a test spec without any frontmatter.
-The watcher should auto-generate an ID and write it back.
+This is a test spec without any frontmatter and no DB entry.
+It should be deleted as orphaned.
 `;
     fs.writeFileSync(specPath, content, "utf8");
+
+    // Verify file exists before watcher starts
+    expect(fs.existsSync(specPath)).toBe(true);
 
     // Start watcher with ignoreInitial: false to detect existing files
     control = startWatcher({
@@ -87,52 +92,40 @@ The watcher should auto-generate an ID and write it back.
     // Wait for watcher to process the file
     await new Promise((resolve) => setTimeout(resolve, 800));
 
-    // Read the file again
-    const updatedContent = fs.readFileSync(specPath, "utf8");
+    // File should be deleted as orphaned (no DB entry)
+    expect(fs.existsSync(specPath)).toBe(false);
 
-    // Check that frontmatter was added
-    expect(updatedContent.startsWith("---")).toBe(true);
-
-    // Check that an ID was generated (hash-based format)
-    expect(updatedContent).toMatch(/id:\s*s-[0-9a-z]{4,8}/);
-
-    // Check that title was extracted
-    expect(updatedContent).toContain("title:");
-
-    // Check that priority was set
-    expect(updatedContent).toMatch(/priority:\s*\d/);
-
-    // Check that timestamps were added
-    expect(updatedContent).toContain("created_at:");
-
-    // Verify spec was created in database
-    const { getSpecByFilePath } = await import("../../src/operations/specs.js");
-    const spec = getSpecByFilePath(db, "specs/new-spec-without-fm.md");
-    expect(spec).not.toBeNull();
-    expect(spec?.id).toMatch(/s-[0-9a-z]{4,8}/);
+    // Verify orphaned file handling was logged
+    expect(
+      logs.some((log) => log.includes("Orphaned file detected") || log.includes("Deleted orphaned"))
+    ).toBe(true);
 
     // No errors should occur
     expect(errors.length).toBe(0);
   });
 
-  it("should not create duplicate frontmatter for spec that already has frontmatter", async () => {
+  it("should delete orphaned spec file with frontmatter but no DB entry", async () => {
     const logs: string[] = [];
     const errors: Error[] = [];
 
-    // Create a spec file WITH frontmatter
+    // Create a spec file WITH frontmatter but WITHOUT a DB entry
+    // Since the ID doesn't exist in DB, it should be deleted as orphaned
     const specPath = path.join(tempDir, "specs", "existing-fm.md");
     const content = `---
 id: SPEC-999
-title: Existing Spec
+title: Orphaned Spec
 priority: 1
 created_at: '2025-01-01 00:00:00'
 ---
 
-# Existing Spec
+# Orphaned Spec
 
-This spec already has frontmatter.
+This spec has frontmatter but no DB entry, so it's orphaned.
 `;
     fs.writeFileSync(specPath, content, "utf8");
+
+    // Verify file exists before watcher starts
+    expect(fs.existsSync(specPath)).toBe(true);
 
     // Start watcher
     control = startWatcher({
@@ -146,17 +139,69 @@ This spec already has frontmatter.
     // Wait for watcher to process
     await new Promise((resolve) => setTimeout(resolve, 800));
 
-    // Read the file again
-    const updatedContent = fs.readFileSync(specPath, "utf8");
+    // File should be deleted as orphaned (no DB entry for SPEC-999)
+    expect(fs.existsSync(specPath)).toBe(false);
 
-    // Should still have frontmatter (and only one set of it)
-    const frontmatterCount = (
-      updatedContent.match(/^---$/gm) || []
-    ).length;
-    expect(frontmatterCount).toBe(2); // Opening and closing ---
+    // Verify orphaned file handling was logged
+    expect(
+      logs.some((log) => log.includes("Orphaned file detected") || log.includes("Deleted orphaned"))
+    ).toBe(true);
 
-    // ID should be unchanged
-    expect(updatedContent).toContain("id: SPEC-999");
+    // No errors should occur
+    expect(errors.length).toBe(0);
+  });
+
+  it("should preserve valid spec file with matching DB entry", async () => {
+    const logs: string[] = [];
+    const errors: Error[] = [];
+
+    // First create the spec in the database (DB is source of truth)
+    const { createSpec, getSpec } = await import("../../src/operations/specs.js");
+    createSpec(db, {
+      id: "s-valid",
+      uuid: "test-uuid-valid",
+      title: "Valid Spec",
+      file_path: "specs/valid-spec.md",
+      content: "# Valid Spec\n\nThis spec exists in both DB and markdown.",
+      priority: 1,
+    });
+
+    // Create matching markdown file
+    const specPath = path.join(tempDir, "specs", "valid-spec.md");
+    const content = `---
+id: s-valid
+title: Valid Spec
+priority: 1
+---
+
+# Valid Spec
+
+This spec exists in both DB and markdown.
+`;
+    fs.writeFileSync(specPath, content, "utf8");
+
+    // Verify file exists before watcher starts
+    expect(fs.existsSync(specPath)).toBe(true);
+
+    // Start watcher
+    control = startWatcher({
+      db,
+      baseDir: tempDir,
+      ignoreInitial: false,
+      onLog: (msg) => logs.push(msg),
+      onError: (err) => errors.push(err),
+    });
+
+    // Wait for watcher to process
+    await new Promise((resolve) => setTimeout(resolve, 800));
+
+    // File should NOT be deleted (it has a matching DB entry)
+    expect(fs.existsSync(specPath)).toBe(true);
+
+    // Verify spec still exists in database
+    const spec = getSpec(db, "s-valid");
+    expect(spec).not.toBeNull();
+    expect(spec?.title).toBe("Valid Spec");
 
     // No errors should occur
     expect(errors.length).toBe(0);

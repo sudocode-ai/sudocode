@@ -13,12 +13,18 @@ import {
   getDependents,
   relationshipExists,
   removeAllRelationships,
+  removeOutgoingRelationships,
 } from "../../../src/operations/relationships.js";
 import {
   createIssue,
   getIssue,
   updateIssue,
+  deleteIssue,
 } from "../../../src/operations/issues.js";
+import {
+  createSpec,
+  deleteSpec,
+} from "../../../src/operations/specs.js";
 import type Database from "better-sqlite3";
 
 describe("Relationship Operations", () => {
@@ -535,6 +541,197 @@ describe("Relationship Operations", () => {
 
       // Now issue-001 should be open
       expect(getIssue(db, "issue-001")?.status).toBe("open");
+    });
+  });
+
+  describe("removeOutgoingRelationships", () => {
+    beforeEach(() => {
+      // Create outgoing relationships FROM issue-001
+      addRelationship(db, {
+        from_id: "issue-001",
+        from_type: "issue",
+        to_id: "issue-002",
+        to_type: "issue",
+        relationship_type: "blocks",
+      });
+      addRelationship(db, {
+        from_id: "issue-001",
+        from_type: "issue",
+        to_id: "issue-003",
+        to_type: "issue",
+        relationship_type: "related",
+      });
+
+      // Create incoming relationship TO issue-001
+      addRelationship(db, {
+        from_id: "issue-003",
+        from_type: "issue",
+        to_id: "issue-001",
+        to_type: "issue",
+        relationship_type: "related",
+      });
+    });
+
+    it("should remove only outgoing relationships", () => {
+      // Verify initial state
+      const outgoingBefore = getOutgoingRelationships(db, "issue-001", "issue");
+      const incomingBefore = getIncomingRelationships(db, "issue-001", "issue");
+      expect(outgoingBefore).toHaveLength(2);
+      expect(incomingBefore).toHaveLength(1);
+
+      // Remove only outgoing relationships
+      const count = removeOutgoingRelationships(db, "issue-001", "issue");
+      expect(count).toBe(2);
+
+      // Verify outgoing are removed
+      const outgoingAfter = getOutgoingRelationships(db, "issue-001", "issue");
+      expect(outgoingAfter).toHaveLength(0);
+
+      // Verify incoming is preserved
+      const incomingAfter = getIncomingRelationships(db, "issue-001", "issue");
+      expect(incomingAfter).toHaveLength(1);
+      expect(incomingAfter[0].from_id).toBe("issue-003");
+    });
+
+    it("should preserve incoming 'implements' relationships when spec is updated", () => {
+      // Create a spec
+      createSpec(db, {
+        id: "spec-001",
+        title: "Test Spec",
+        file_path: "test.md",
+        content: "Test content",
+      });
+
+      // Create an issue that implements the spec
+      addRelationship(db, {
+        from_id: "issue-001",
+        from_type: "issue",
+        to_id: "spec-001",
+        to_type: "spec",
+        relationship_type: "implements",
+      });
+
+      // Verify incoming relationship to spec exists
+      const incomingBefore = getIncomingRelationships(db, "spec-001", "spec");
+      expect(incomingBefore).toHaveLength(1);
+      expect(incomingBefore[0].relationship_type).toBe("implements");
+
+      // Simulate spec update by removing only outgoing relationships
+      const count = removeOutgoingRelationships(db, "spec-001", "spec");
+      expect(count).toBe(0); // Spec has no outgoing relationships
+
+      // Verify incoming 'implements' relationship is still there
+      const incomingAfter = getIncomingRelationships(db, "spec-001", "spec");
+      expect(incomingAfter).toHaveLength(1);
+      expect(incomingAfter[0].from_id).toBe("issue-001");
+      expect(incomingAfter[0].relationship_type).toBe("implements");
+    });
+
+    it("should return 0 when entity has no outgoing relationships", () => {
+      // issue-002 has no outgoing relationships
+      const count = removeOutgoingRelationships(db, "issue-002", "issue");
+      expect(count).toBe(0);
+    });
+  });
+
+  describe("Cascade Delete on Entity Deletion", () => {
+    beforeEach(() => {
+      // Create a spec
+      createSpec(db, {
+        id: "spec-001",
+        title: "Test Spec",
+        file_path: "test.md",
+        content: "Test content",
+      });
+
+      // Create relationships between issues and spec
+      // issue-001 implements spec-001
+      addRelationship(db, {
+        from_id: "issue-001",
+        from_type: "issue",
+        to_id: "spec-001",
+        to_type: "spec",
+        relationship_type: "implements",
+      });
+
+      // spec-001 references issue-002
+      addRelationship(db, {
+        from_id: "spec-001",
+        from_type: "spec",
+        to_id: "issue-002",
+        to_type: "issue",
+        relationship_type: "references",
+      });
+
+      // issue-001 blocks issue-002
+      addRelationship(db, {
+        from_id: "issue-001",
+        from_type: "issue",
+        to_id: "issue-002",
+        to_type: "issue",
+        relationship_type: "blocks",
+      });
+    });
+
+    it("should cascade delete all relationships when spec is deleted", () => {
+      // Verify relationships exist
+      const specOutgoing = getOutgoingRelationships(db, "spec-001", "spec");
+      const specIncoming = getIncomingRelationships(db, "spec-001", "spec");
+      expect(specOutgoing).toHaveLength(1);
+      expect(specIncoming).toHaveLength(1);
+
+      // Delete spec
+      deleteSpec(db, "spec-001");
+
+      // Verify all relationships involving spec are deleted
+      const specOutgoingAfter = getOutgoingRelationships(db, "spec-001", "spec");
+      const specIncomingAfter = getIncomingRelationships(db, "spec-001", "spec");
+      expect(specOutgoingAfter).toHaveLength(0);
+      expect(specIncomingAfter).toHaveLength(0);
+
+      // Verify issue-001's outgoing relationship to spec is gone
+      const issue1Outgoing = getOutgoingRelationships(db, "issue-001", "issue");
+      const implementsRel = issue1Outgoing.find(
+        (r) => r.to_id === "spec-001" && r.relationship_type === "implements"
+      );
+      expect(implementsRel).toBeUndefined();
+
+      // But issue-001's other relationships should remain
+      const blocksRel = issue1Outgoing.find(
+        (r) => r.to_id === "issue-002" && r.relationship_type === "blocks"
+      );
+      expect(blocksRel).toBeDefined();
+    });
+
+    it("should cascade delete all relationships when issue is deleted", () => {
+      // Verify relationships exist
+      const issue1Outgoing = getOutgoingRelationships(db, "issue-001", "issue");
+      expect(issue1Outgoing).toHaveLength(2); // implements spec + blocks issue-002
+
+      // Delete issue-001
+      deleteIssue(db, "issue-001");
+
+      // Verify all relationships involving issue-001 are deleted
+      const issue1OutgoingAfter = getOutgoingRelationships(db, "issue-001", "issue");
+      const issue1IncomingAfter = getIncomingRelationships(db, "issue-001", "issue");
+      expect(issue1OutgoingAfter).toHaveLength(0);
+      expect(issue1IncomingAfter).toHaveLength(0);
+
+      // Verify spec's incoming relationship from issue-001 is gone
+      const specIncoming = getIncomingRelationships(db, "spec-001", "spec");
+      expect(specIncoming).toHaveLength(0);
+
+      // Verify issue-002's incoming relationship from issue-001 is gone
+      const issue2Incoming = getIncomingRelationships(db, "issue-002", "issue");
+      const blocksRel = issue2Incoming.find(
+        (r) => r.from_id === "issue-001" && r.relationship_type === "blocks"
+      );
+      expect(blocksRel).toBeUndefined();
+
+      // But spec-001's other relationships should remain
+      const specOutgoing = getOutgoingRelationships(db, "spec-001", "spec");
+      expect(specOutgoing).toHaveLength(1);
+      expect(specOutgoing[0].to_id).toBe("issue-002");
     });
   });
 });

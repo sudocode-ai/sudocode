@@ -81,7 +81,7 @@ function initializeFrontmatter(
   entityType: "spec" | "issue",
   mdPath: string,
   outputDir: string,
-  user: string
+  _user: string
 ): Record<string, any> {
   const now = new Date().toISOString();
   const initialized = { ...data };
@@ -572,11 +572,16 @@ async function syncRelationships(
   entityType: "spec" | "issue",
   references: CrossReference[],
   frontmatterRels?: Array<{
-    target_id: string;
-    target_type: string;
+    // Support both formats:
+    // 1. DB format from entityToFrontmatter: { from_id, from_type, to_id, to_type, relationship_type }
+    // 2. Simplified format: { target_id, target_type, relationship_type }
+    target_id?: string;
+    target_type?: string;
+    to_id?: string;
+    to_type?: string;
     relationship_type: string;
   }>,
-  user: string = "system"
+  _user: string = "system"
 ): Promise<void> {
   // Get existing relationships (all outgoing)
   const { getOutgoingRelationships } = await import(
@@ -610,16 +615,26 @@ async function syncRelationships(
   }
 
   // Add relationships from frontmatter
+  // Handle both DB format (to_id/to_type) and simplified format (target_id/target_type)
   if (frontmatterRels && Array.isArray(frontmatterRels)) {
     for (const rel of frontmatterRels) {
-      const key = `${rel.relationship_type}:${rel.target_type}:${rel.target_id}`;
+      // Support both formats
+      const toId = rel.to_id || rel.target_id;
+      const toType = rel.to_type || rel.target_type;
+
+      if (!toId || !toType) {
+        // Skip invalid relationships
+        continue;
+      }
+
+      const key = `${rel.relationship_type}:${toType}:${toId}`;
       if (!existingSet.has(key)) {
         try {
           addRelationship(db, {
             from_id: entityId,
             from_type: entityType,
-            to_id: rel.target_id,
-            to_type: rel.target_type as "spec" | "issue",
+            to_id: toId,
+            to_type: toType as "spec" | "issue",
             relationship_type: rel.relationship_type as any,
           });
         } catch (error) {
