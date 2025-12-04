@@ -18,8 +18,8 @@ jobs:
       - name: Install Volta 1.1.1 (user's version)
         run: |
           echo "=== Installing Volta 1.1.1 (matching user's version) ==="
-          curl -sSLf https://github.com/volta-cli/volta/releases/download/v1.1.1/volta-1.1.1-macos-aarch64.tar.gz | tar -xzf - -C /tmp
-          bash /tmp/volta-1.1.1-macos-aarch64/install.sh
+          export VOLTA_INSTALL_VERSION=1.1.1
+          curl https://get.volta.sh | bash
           echo "$HOME/.volta/bin" >> $GITHUB_PATH
 
       - name: Wait for PATH update
@@ -161,8 +161,8 @@ jobs:
       - name: Install Volta 1.1.1 (user's version)
         run: |
           echo "=== Installing Volta 1.1.1 (matching user's version) ==="
-          curl -sSLf https://github.com/volta-cli/volta/releases/download/v1.1.1/volta-1.1.1-linux.tar.gz | tar -xzf - -C /tmp
-          bash /tmp/volta-1.1.1-linux/install.sh
+          export VOLTA_INSTALL_VERSION=1.1.1
+          curl https://get.volta.sh | bash
           echo "$HOME/.volta/bin" >> $GITHUB_PATH
 
       - name: Wait for PATH update
