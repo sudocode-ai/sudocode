@@ -3,6 +3,9 @@
  *
  * Tests the full MCP protocol flow by spawning the server
  * as a subprocess and communicating via stdio.
+ *
+ * NOTE: The MCP server now uses HTTP API instead of direct DB access.
+ * Tests spawn a real test server and the MCP server communicates with it.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
@@ -10,13 +13,13 @@ import { spawn, ChildProcess } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
-import Database from "better-sqlite3";
+
 import {
-  WORKFLOWS_TABLE,
-  ISSUES_TABLE,
-  EXECUTIONS_TABLE,
-  EXECUTION_LOGS_TABLE,
-} from "@sudocode-ai/types/schema";
+  createTestServer,
+  createTestIssues,
+  type TestServer,
+} from "./helpers/workflow-test-server.js";
+import { createTestWorkflow } from "./helpers/workflow-test-setup.js";
 
 // =============================================================================
 // Test Setup
@@ -24,8 +27,7 @@ import {
 
 describe("Workflow MCP Protocol", () => {
   let testDir: string;
-  let dbPath: string;
-  let db: Database.Database;
+  let testServer: TestServer;
   let mcpProcess: ChildProcess | null = null;
 
   // Path to the built MCP server entry point
@@ -34,39 +36,50 @@ describe("Workflow MCP Protocol", () => {
     "../../../dist/workflow/mcp/index.js"
   );
 
-  beforeAll(() => {
-    // Create temp directory
+  beforeAll(async () => {
+    // Create temp directory for git repo simulation
     testDir = fs.mkdtempSync(path.join(os.tmpdir(), "sudocode-mcp-test-"));
-    dbPath = path.join(testDir, "test.db");
 
-    // Initialize database
-    db = new Database(dbPath);
-    db.exec("PRAGMA foreign_keys = OFF");
-    db.exec(WORKFLOWS_TABLE);
-    db.exec(ISSUES_TABLE);
-    db.exec(EXECUTIONS_TABLE);
-    db.exec(EXECUTION_LOGS_TABLE);
+    // Initialize as a git repo (required for worktree operations)
+    const { execSync } = await import("child_process");
+    execSync("git init", { cwd: testDir, stdio: "pipe" });
+    execSync('git config user.name "Test"', { cwd: testDir, stdio: "pipe" });
+    execSync('git config user.email "test@test.com"', {
+      cwd: testDir,
+      stdio: "pipe",
+    });
+    fs.writeFileSync(path.join(testDir, ".gitkeep"), "");
+    execSync("git add . && git commit -m 'init'", {
+      cwd: testDir,
+      stdio: "pipe",
+    });
 
-    // Create indexes
-    db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_executions_workflow ON executions(workflow_execution_id);
-    `);
+    // Start test server
+    testServer = await createTestServer({
+      repoPath: testDir,
+      mockExecutor: true,
+    });
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     if (mcpProcess) {
       mcpProcess.kill();
       mcpProcess = null;
     }
-    db.close();
+
+    // Shutdown test server
+    await testServer.shutdown();
+
+    // Clean up temp directory
     fs.rmSync(testDir, { recursive: true, force: true });
   });
 
   beforeEach(() => {
-    // Clean up data between tests
-    db.exec("DELETE FROM workflows");
-    db.exec("DELETE FROM issues");
-    db.exec("DELETE FROM executions");
+    // Clean up database between tests
+    testServer.db.exec("DELETE FROM workflow_events");
+    testServer.db.exec("DELETE FROM workflows");
+    testServer.db.exec("DELETE FROM executions");
+    testServer.db.exec("DELETE FROM issues");
   });
 
   // ===========================================================================
@@ -74,17 +87,19 @@ describe("Workflow MCP Protocol", () => {
   // ===========================================================================
 
   function insertTestWorkflow() {
-    db.prepare(`
-      INSERT INTO workflows (
-        id, title, source, status, steps, base_branch,
-        current_step_index, config
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      "wf-test1",
-      "Test Workflow",
-      JSON.stringify({ type: "issues", issueIds: ["i-1", "i-2"] }),
-      "running",
-      JSON.stringify([
+    // Create issues first
+    createTestIssues(testServer.db, [
+      { id: "i-1", title: "Issue 1" },
+      { id: "i-2", title: "Issue 2" },
+    ]);
+
+    // Create workflow
+    createTestWorkflow(testServer.db, {
+      id: "wf-test1",
+      title: "Test Workflow",
+      source: { type: "issues", issueIds: ["i-1", "i-2"] },
+      status: "running",
+      steps: [
         {
           id: "step-1",
           issueId: "i-1",
@@ -99,22 +114,14 @@ describe("Workflow MCP Protocol", () => {
           dependencies: ["step-1"],
           status: "pending",
         },
-      ]),
-      "main",
-      0,
-      JSON.stringify({
+      ],
+      config: {
         parallelism: "sequential",
         onFailure: "pause",
         defaultAgentType: "claude-code",
-      })
-    );
-  }
-
-  function insertTestIssue(id: string, title: string) {
-    db.prepare(`
-      INSERT INTO issues (id, uuid, title, status, content, priority)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, `uuid-${id}`, title, "open", `Content for ${title}`, 1);
+        autonomyLevel: "human_in_the_loop",
+      },
+    });
   }
 
   // ===========================================================================
@@ -152,8 +159,10 @@ describe("Workflow MCP Protocol", () => {
         mcpServerPath,
         "--workflow-id",
         workflowId,
-        "--db-path",
-        dbPath,
+        "--server-url",
+        testServer.baseUrl,
+        "--project-id",
+        testServer.projectId,
         "--repo-path",
         testDir,
       ]);
@@ -191,7 +200,7 @@ describe("Workflow MCP Protocol", () => {
       proc.stderr.on("data", (data: Buffer) => {
         // Server logs to stderr - this is expected
         const msg = data.toString();
-        if (msg.includes("Started")) {
+        if (msg.includes("Started") || msg.includes("connected")) {
           // Server is ready
           resolve({
             send: (request: JsonRpcRequest) => {
@@ -219,7 +228,7 @@ describe("Workflow MCP Protocol", () => {
       // Timeout if server doesn't start
       setTimeout(() => {
         reject(new Error("MCP server failed to start within timeout"));
-      }, 5000);
+      }, 10000);
     });
   }
 
@@ -229,8 +238,6 @@ describe("Workflow MCP Protocol", () => {
 
   it("should list available tools", async () => {
     insertTestWorkflow();
-    insertTestIssue("i-1", "Issue 1");
-    insertTestIssue("i-2", "Issue 2");
 
     const client = await spawnMCPServer("wf-test1");
 
@@ -257,6 +264,8 @@ describe("Workflow MCP Protocol", () => {
       expect(toolNames).toContain("execution_cancel");
       expect(toolNames).toContain("execution_trajectory");
       expect(toolNames).toContain("execution_changes");
+      expect(toolNames).toContain("escalate_to_user");
+      expect(toolNames).toContain("notify_user");
     } finally {
       client.close();
     }
@@ -264,8 +273,6 @@ describe("Workflow MCP Protocol", () => {
 
   it("should handle workflow_status tool call", async () => {
     insertTestWorkflow();
-    insertTestIssue("i-1", "Issue 1");
-    insertTestIssue("i-2", "Issue 2");
 
     const client = await spawnMCPServer("wf-test1");
 
@@ -335,7 +342,7 @@ describe("Workflow MCP Protocol", () => {
       expect(data.workflow_status).toBe("completed");
 
       // Verify database was updated
-      const workflow = db
+      const workflow = testServer.db
         .prepare("SELECT status FROM workflows WHERE id = ?")
         .get("wf-test1") as { status: string };
       expect(workflow.status).toBe("completed");
@@ -403,6 +410,75 @@ describe("Workflow MCP Protocol", () => {
 
       const data = JSON.parse(result.content[0].text);
       expect(data.error).toContain("not found");
+    } finally {
+      client.close();
+    }
+  });
+
+  it("should handle escalate_to_user in human_in_the_loop mode", async () => {
+    insertTestWorkflow();
+
+    const client = await spawnMCPServer("wf-test1");
+
+    try {
+      client.send({
+        jsonrpc: "2.0",
+        id: 6,
+        method: "tools/call",
+        params: {
+          name: "escalate_to_user",
+          arguments: {
+            message: "Need user input for decision",
+            options: ["Option A", "Option B"],
+          },
+        },
+      });
+
+      const response = await client.receive();
+
+      expect(response.error).toBeUndefined();
+      expect(response.result).toBeDefined();
+
+      const result = response.result as {
+        content: Array<{ type: string; text: string }>;
+      };
+      const data = JSON.parse(result.content[0].text);
+      expect(data.status).toBe("pending");
+      expect(data.escalation_id).toBeDefined();
+    } finally {
+      client.close();
+    }
+  });
+
+  it("should handle notify_user", async () => {
+    insertTestWorkflow();
+
+    const client = await spawnMCPServer("wf-test1");
+
+    try {
+      client.send({
+        jsonrpc: "2.0",
+        id: 7,
+        method: "tools/call",
+        params: {
+          name: "notify_user",
+          arguments: {
+            message: "Progress update: Step 1 complete",
+            level: "info",
+          },
+        },
+      });
+
+      const response = await client.receive();
+
+      expect(response.error).toBeUndefined();
+      expect(response.result).toBeDefined();
+
+      const result = response.result as {
+        content: Array<{ type: string; text: string }>;
+      };
+      const data = JSON.parse(result.content[0].text);
+      expect(data.success).toBe(true);
     } finally {
       client.close();
     }

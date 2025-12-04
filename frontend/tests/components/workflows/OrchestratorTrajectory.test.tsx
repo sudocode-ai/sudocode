@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { renderWithProviders } from '@/test/test-utils'
 import { OrchestratorTrajectory } from '@/components/workflows/OrchestratorTrajectory'
 import type { EscalationData } from '@/types/workflow'
@@ -23,6 +22,7 @@ describe('OrchestratorTrajectory', () => {
 
   const createMessage = (partial: Partial<MessageBuffer>): MessageBuffer => ({
     messageId: 'msg-1',
+    role: 'assistant',
     content: 'Test message',
     timestamp: Date.now(),
     complete: true,
@@ -239,7 +239,10 @@ describe('OrchestratorTrajectory', () => {
         createToolCall({
           toolCallId: 'tool-1',
           toolCallName: 'workflow_complete',
-          args: JSON.stringify({ summary: 'All issues completed successfully', status: 'completed' }),
+          args: JSON.stringify({
+            summary: 'All issues completed successfully',
+            status: 'completed',
+          }),
           status: 'completed',
         }),
       ],
