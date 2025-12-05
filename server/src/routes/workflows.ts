@@ -6,6 +6,8 @@
 
 import { Router, Request, Response } from "express";
 import { randomUUID } from "crypto";
+import { execSync } from "child_process";
+import * as fs from "fs";
 import type {
   Workflow,
   WorkflowSource,
@@ -381,10 +383,16 @@ export function createWorkflowsRouter(): Router {
 
   /**
    * DELETE /api/workflows/:id - Delete a workflow
+   *
+   * Query parameters:
+   * - deleteWorktree: if "true", also delete the workflow's worktree
+   * - deleteBranch: if "true", also delete the workflow's branch
    */
   router.delete("/:id", async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
+      const { deleteWorktree, deleteBranch } = req.query;
+
       const engine = getEngineForWorkflow(req, id);
       if (!engine) {
         res.status(503).json({
@@ -411,6 +419,82 @@ export function createWorkflowsRouter(): Router {
         await engine.cancelWorkflow(id);
       }
 
+      // Track cleanup results
+      const cleanupResults: {
+        worktreeDeleted?: boolean;
+        branchDeleted?: boolean;
+        cleanupErrors?: string[];
+      } = {};
+      const cleanupErrors: string[] = [];
+
+      const repoPath = req.project!.path;
+
+      // Delete worktree if requested
+      if (deleteWorktree === "true" && workflow.worktreePath) {
+        try {
+          // Remove git worktree registration
+          execSync(`git worktree remove --force "${workflow.worktreePath}"`, {
+            cwd: repoPath,
+            stdio: "pipe",
+          });
+          cleanupResults.worktreeDeleted = true;
+          console.log(
+            `[workflows/:id] Deleted worktree: ${workflow.worktreePath}`
+          );
+        } catch (worktreeError) {
+          // Worktree might already be removed, try to clean up the directory
+          try {
+            if (fs.existsSync(workflow.worktreePath)) {
+              fs.rmSync(workflow.worktreePath, { recursive: true, force: true });
+              cleanupResults.worktreeDeleted = true;
+              console.log(
+                `[workflows/:id] Removed worktree directory: ${workflow.worktreePath}`
+              );
+            }
+            // Prune stale worktree entries
+            execSync("git worktree prune", { cwd: repoPath, stdio: "pipe" });
+          } catch (cleanupError) {
+            const errorMsg =
+              worktreeError instanceof Error
+                ? worktreeError.message
+                : String(worktreeError);
+            cleanupErrors.push(`Failed to delete worktree: ${errorMsg}`);
+            console.error(
+              `[workflows/:id] Failed to delete worktree ${workflow.worktreePath}:`,
+              worktreeError
+            );
+          }
+        }
+      }
+
+      // Delete branch if requested
+      if (deleteBranch === "true" && workflow.branchName) {
+        try {
+          execSync(`git branch -D "${workflow.branchName}"`, {
+            cwd: repoPath,
+            stdio: "pipe",
+          });
+          cleanupResults.branchDeleted = true;
+          console.log(
+            `[workflows/:id] Deleted branch: ${workflow.branchName}`
+          );
+        } catch (branchError) {
+          const errorMsg =
+            branchError instanceof Error
+              ? branchError.message
+              : String(branchError);
+          cleanupErrors.push(`Failed to delete branch: ${errorMsg}`);
+          console.error(
+            `[workflows/:id] Failed to delete branch ${workflow.branchName}:`,
+            branchError
+          );
+        }
+      }
+
+      if (cleanupErrors.length > 0) {
+        cleanupResults.cleanupErrors = cleanupErrors;
+      }
+
       // Delete from database
       const db = req.project!.db;
       db.prepare("DELETE FROM workflow_events WHERE workflow_id = ?").run(id);
@@ -421,7 +505,7 @@ export function createWorkflowsRouter(): Router {
 
       res.json({
         success: true,
-        data: { id, deleted: true },
+        data: { id, deleted: true, ...cleanupResults },
       });
     } catch (error) {
       handleWorkflowError(error, res);

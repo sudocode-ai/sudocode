@@ -14,7 +14,8 @@ import {
   Play,
   Pause,
   Square,
-  ExternalLink,
+  Trash2,
+  MoreVertical,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -24,6 +25,12 @@ import {
   CardHeader,
 } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import type { Workflow, WorkflowStatus } from '@/types/workflow'
 
 // =============================================================================
@@ -41,6 +48,8 @@ export interface WorkflowCardProps {
   onResume?: () => void
   /** Callback to cancel a workflow */
   onCancel?: () => void
+  /** Callback to delete a workflow */
+  onDelete?: () => void
   /** Additional class name */
   className?: string
 }
@@ -189,6 +198,7 @@ export function WorkflowCard({
   onPause,
   onResume,
   onCancel,
+  onDelete,
   className,
 }: WorkflowCardProps) {
   const { status, steps, config, createdAt, updatedAt } = workflow
@@ -204,7 +214,8 @@ export function WorkflowCard({
   const showPause = status === 'running' && onPause
   const showResume = status === 'paused' && onResume
   const showCancel = (status === 'running' || status === 'paused') && onCancel
-  const hasActions = showPause || showResume || showCancel
+  const canDelete = onDelete // Delete is available for any workflow
+  const hasFooterActions = showPause || showResume || showCancel
 
   // Format timestamps
   const timeAgo = formatDistanceToNow(new Date(updatedAt || createdAt), {
@@ -214,7 +225,7 @@ export function WorkflowCard({
   return (
     <Card
       className={cn(
-        'transition-all duration-150 hover:shadow-md',
+        'border border-border transition-all duration-150 hover:bg-accent/50 hover:shadow-md',
         onSelect && 'cursor-pointer hover:border-primary/50',
         className
       )}
@@ -232,7 +243,36 @@ export function WorkflowCard({
               {getSourceDisplay(workflow)}
             </p>
           </div>
-          <StatusBadge status={status} />
+          <div className="flex items-center gap-2">
+            <StatusBadge status={status} />
+            {canDelete && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                    <span className="sr-only">Open menu</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDelete()
+                    }}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         </div>
       </CardHeader>
 
@@ -263,8 +303,8 @@ export function WorkflowCard({
         </div>
       </CardContent>
 
-      {/* Actions */}
-      {hasActions && (
+      {/* Actions for running/paused workflows */}
+      {hasFooterActions && (
         <CardFooter className="pt-0 border-t">
           <div className="flex items-center justify-end gap-2 w-full pt-3">
             {showPause && (
@@ -307,16 +347,6 @@ export function WorkflowCard({
                 Cancel
               </Button>
             )}
-          </div>
-        </CardFooter>
-      )}
-
-      {/* View indicator for completed workflows */}
-      {!hasActions && onSelect && (
-        <CardFooter className="pt-0 border-t">
-          <div className="flex items-center justify-end w-full pt-3 text-xs text-muted-foreground">
-            <ExternalLink className="h-3 w-3 mr-1" />
-            Click to view details
           </div>
         </CardFooter>
       )}

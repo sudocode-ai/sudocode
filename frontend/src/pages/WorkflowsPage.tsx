@@ -5,7 +5,7 @@
 
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, GitBranch, Search, Filter, X } from 'lucide-react'
+import { Plus, GitBranch, Search, Filter } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -15,9 +15,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { WorkflowCard, CreateWorkflowDialog } from '@/components/workflows'
+import { WorkflowCard, CreateWorkflowDialog, DeleteWorkflowDialog } from '@/components/workflows'
+import type { DeleteWorkflowOptions } from '@/components/workflows'
 import { useWorkflows, useWorkflowMutations } from '@/hooks/useWorkflows'
 import type { Workflow, WorkflowStatus } from '@/types/workflow'
+import { Badge } from '@/components/ui/badge'
 
 // Status filter options
 const STATUS_FILTER_OPTIONS: Array<{ value: WorkflowStatus | 'all'; label: string }> = [
@@ -33,10 +35,12 @@ const STATUS_FILTER_OPTIONS: Array<{ value: WorkflowStatus | 'all'; label: strin
 export default function WorkflowsPage() {
   const navigate = useNavigate()
   const { data: workflows = [], isLoading } = useWorkflows()
-  const { create } = useWorkflowMutations()
+  const { create, delete: deleteWorkflow, isDeleting } = useWorkflowMutations()
 
   // State
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [workflowToDelete, setWorkflowToDelete] = useState<Workflow | null>(null)
   const [statusFilter, setStatusFilter] = useState<WorkflowStatus | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -68,22 +72,25 @@ export default function WorkflowsPage() {
     })
   }, [workflows, statusFilter, searchQuery])
 
-  // Stats
-  const activeCount = workflows.filter((w: Workflow) =>
-    ['running', 'paused'].includes(w.status)
-  ).length
-
   const handleCreate = async (options: Parameters<typeof create>[0]) => {
     await create(options)
     setCreateDialogOpen(false)
   }
 
-  const clearFilters = () => {
-    setStatusFilter('all')
-    setSearchQuery('')
+  const handleDeleteClick = (workflow: Workflow) => {
+    setWorkflowToDelete(workflow)
+    setDeleteDialogOpen(true)
   }
 
-  const hasActiveFilters = statusFilter !== 'all' || searchQuery.trim() !== ''
+  const handleDeleteConfirm = async (options: DeleteWorkflowOptions) => {
+    if (!workflowToDelete) return
+    await deleteWorkflow(workflowToDelete.id, {
+      deleteWorktree: options.deleteWorktree,
+      deleteBranch: options.deleteBranch,
+    })
+    setDeleteDialogOpen(false)
+    setWorkflowToDelete(null)
+  }
 
   if (isLoading) {
     return (
@@ -94,96 +101,73 @@ export default function WorkflowsPage() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b px-6 py-4">
-        <div className="flex items-center gap-3">
-          <GitBranch className="h-6 w-6 text-muted-foreground" />
+    <div className="flex h-full flex-col">
+      {/* Header with filters */}
+      <div className="flex items-center justify-between gap-4 border-b p-4">
+        <div className="flex shrink-0 items-center gap-3">
           <h1 className="text-2xl font-semibold">Workflows</h1>
-          <span className="text-sm text-muted-foreground">
-            ({workflows.length} total{activeCount > 0 && `, ${activeCount} active`})
-          </span>
-        </div>
-        <Button onClick={() => setCreateDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Create Workflow
-        </Button>
-      </div>
-
-      {/* Filters */}
-      <div className="flex items-center gap-3 border-b px-6 py-3 bg-muted/30">
-        {/* Search */}
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search workflows..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
+          <Badge variant="secondary">{workflows.length}</Badge>
         </div>
 
-        {/* Status Filter */}
-        <Select
-          value={statusFilter}
-          onValueChange={(value) => setStatusFilter(value as WorkflowStatus | 'all')}
-        >
-          <SelectTrigger className="w-[160px]">
-            <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {STATUS_FILTER_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* Create button - right side */}
+        <div className="flex shrink-0 items-center gap-3">
+          {/* Search */}
+          <div className="relative max-w-xs flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search workflows..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
 
-        {/* Clear Filters */}
-        {hasActiveFilters && (
-          <Button variant="ghost" size="sm" onClick={clearFilters}>
-            <X className="h-4 w-4 mr-1" />
-            Clear
+          {/* Status Filter */}
+          <Select
+            value={statusFilter}
+            onValueChange={(value) => setStatusFilter(value as WorkflowStatus | 'all')}
+          >
+            <SelectTrigger className="w-[160px]">
+              <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_FILTER_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button onClick={() => setCreateDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Workflow
           </Button>
-        )}
-
-        {/* Results count */}
-        {hasActiveFilters && (
-          <span className="text-sm text-muted-foreground">
-            {filteredWorkflows.length} of {workflows.length} workflows
-          </span>
-        )}
+        </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-6">
         {workflows.length === 0 ? (
           // No workflows at all
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <GitBranch className="h-12 w-12 text-muted-foreground/50 mb-4" />
-            <h2 className="text-lg font-medium mb-2">No workflows yet</h2>
-            <p className="text-muted-foreground mb-4 max-w-md">
-              Workflows let you run multiple issues in sequence with dependency
-              ordering. Create your first workflow to get started.
+          <div className="flex h-full flex-col items-center justify-center text-center">
+            <GitBranch className="mb-4 h-12 w-12 text-muted-foreground/50" />
+            <h2 className="mb-2 text-lg font-medium">No workflows yet</h2>
+            <p className="mb-4 max-w-md text-muted-foreground">
+              Workflows let you run multiple issues in sequence with dependency ordering. Create
+              your first workflow to get started.
             </p>
             <Button onClick={() => setCreateDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="mr-2 h-4 w-4" />
               Create Workflow
             </Button>
           </div>
         ) : filteredWorkflows.length === 0 ? (
           // No workflows match filters
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <Search className="h-12 w-12 text-muted-foreground/50 mb-4" />
-            <h2 className="text-lg font-medium mb-2">No matching workflows</h2>
-            <p className="text-muted-foreground mb-4">
-              No workflows match your current filters.
-            </p>
-            <Button variant="outline" onClick={clearFilters}>
-              Clear Filters
-            </Button>
+          <div className="flex h-full flex-col items-center justify-center text-center">
+            <Search className="mb-4 h-12 w-12 text-muted-foreground/50" />
+            <h2 className="mb-2 text-lg font-medium">No matching workflows</h2>
+            <p className="mb-4 text-muted-foreground">No workflows match your current filters.</p>
           </div>
         ) : (
           // Workflow grid
@@ -193,6 +177,7 @@ export default function WorkflowsPage() {
                 key={workflow.id}
                 workflow={workflow}
                 onSelect={() => navigate(`/workflows/${workflow.id}`)}
+                onDelete={() => handleDeleteClick(workflow)}
               />
             ))}
           </div>
@@ -204,6 +189,18 @@ export default function WorkflowsPage() {
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         onCreate={handleCreate}
+      />
+
+      {/* Delete Dialog */}
+      <DeleteWorkflowDialog
+        workflow={workflowToDelete}
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open)
+          if (!open) setWorkflowToDelete(null)
+        }}
+        onConfirm={handleDeleteConfirm}
+        isDeleting={isDeleting}
       />
     </div>
   )

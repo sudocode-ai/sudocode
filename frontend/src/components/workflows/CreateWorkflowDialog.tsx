@@ -4,15 +4,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react'
-import {
-  FileText,
-  ListTodo,
-  Target,
-  MessageSquare,
-  ChevronDown,
-  Play,
-  Loader2,
-} from 'lucide-react'
+import { FileText, ListTodo, Target, MessageSquare, ChevronDown, Play, Loader2 } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -33,11 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { repositoryApi } from '@/lib/api'
@@ -152,7 +140,8 @@ export function CreateWorkflowDialog({
   // Form state
   const [form, setForm] = useState<FormState>(() => ({
     title: '',
-    engineType: defaultSource?.type === 'goal' ? 'orchestrator' : DEFAULT_WORKFLOW_CONFIG.engineType,
+    engineType:
+      defaultSource?.type === 'goal' ? 'orchestrator' : DEFAULT_WORKFLOW_CONFIG.engineType,
     sourceType: defaultSource?.type || 'spec',
     specId: defaultSource?.type === 'spec' ? defaultSource.specId : '',
     issueIds: defaultSource?.type === 'issues' ? defaultSource.issueIds : [],
@@ -288,7 +277,7 @@ export function CreateWorkflowDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+      <DialogContent className="flex max-h-[90vh] max-w-lg flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Create Workflow</DialogTitle>
           <DialogDescription>
@@ -296,13 +285,13 @@ export function CreateWorkflowDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 space-y-6 overflow-y-auto py-4">
+        <div className="flex-1 space-y-2 overflow-y-auto px-1">
           {/* Title */}
-          <div className="space-y-2">
+          <div className="flex flex-row items-center space-y-2">
             <Label htmlFor="title">Title (optional)</Label>
             <Input
               id="title"
-              placeholder="My Workflow"
+              placeholder="Workflow title"
               value={form.title}
               onChange={(e) => updateForm('title', e.target.value)}
             />
@@ -325,32 +314,32 @@ export function CreateWorkflowDialog({
             >
               <label
                 className={cn(
-                  'flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors',
+                  'flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors',
                   form.engineType === 'sequential'
                     ? 'border-primary bg-primary/5'
                     : 'hover:border-muted-foreground/50'
                 )}
               >
                 <RadioGroupItem value="sequential" className="mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <span className="font-medium text-sm">Sequential</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                <div className="min-w-0 flex-1">
+                  <span className="text-sm font-medium">Sequential</span>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     Server executes steps in dependency order
                   </p>
                 </div>
               </label>
               <label
                 className={cn(
-                  'flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors',
+                  'flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors',
                   form.engineType === 'orchestrator'
                     ? 'border-primary bg-primary/5'
                     : 'hover:border-muted-foreground/50'
                 )}
               >
                 <RadioGroupItem value="orchestrator" className="mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <span className="font-medium text-sm">AI Orchestrator</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                <div className="min-w-0 flex-1">
+                  <span className="text-sm font-medium">AI Orchestrator</span>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     AI agent manages workflow execution
                   </p>
                 </div>
@@ -375,28 +364,22 @@ export function CreateWorkflowDialog({
                     key={option.value}
                     className={cn(
                       'flex items-start gap-3 rounded-lg border p-3 transition-colors',
-                      isDisabled
-                        ? 'opacity-50 cursor-not-allowed'
-                        : 'cursor-pointer',
+                      isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
                       isSelected && !isDisabled
                         ? 'border-primary bg-primary/5'
                         : !isDisabled && 'hover:border-muted-foreground/50'
                     )}
                   >
                     <RadioGroupItem value={option.value} className="mt-0.5" disabled={isDisabled} />
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <Icon className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-medium text-sm">{option.label}</span>
+                        <span className="text-sm font-medium">{option.label}</span>
                         {option.orchestratorOnly && (
-                          <span className="text-xs bg-muted px-1.5 py-0.5 rounded">
-                            AI Only
-                          </span>
+                          <span className="rounded bg-muted px-1.5 py-0.5 text-xs">AI Only</span>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {option.description}
-                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{option.description}</p>
                     </div>
                   </label>
                 )
@@ -509,10 +492,7 @@ export function CreateWorkflowDialog({
               <Button variant="ghost" className="w-full justify-between">
                 Advanced Configuration
                 <ChevronDown
-                  className={cn(
-                    'h-4 w-4 transition-transform',
-                    advancedOpen && 'rotate-180'
-                  )}
+                  className={cn('h-4 w-4 transition-transform', advancedOpen && 'rotate-180')}
                 />
               </Button>
             </CollapsibleTrigger>
@@ -571,10 +551,7 @@ export function CreateWorkflowDialog({
               {/* Agent Type */}
               <div className="space-y-2">
                 <Label>Default Agent</Label>
-                <Select
-                  value={form.agentType}
-                  onValueChange={(v) => updateForm('agentType', v)}
-                >
+                <Select value={form.agentType} onValueChange={(v) => updateForm('agentType', v)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -632,7 +609,7 @@ export function CreateWorkflowDialog({
                   checked={form.autoCommit}
                   onCheckedChange={(checked) => updateForm('autoCommit', !!checked)}
                 />
-                <Label htmlFor="autoCommit" className="text-sm font-normal cursor-pointer">
+                <Label htmlFor="autoCommit" className="cursor-pointer text-sm font-normal">
                   Auto-commit after each step
                 </Label>
               </div>
@@ -647,12 +624,12 @@ export function CreateWorkflowDialog({
           <Button onClick={handleSubmit} disabled={!isValid || isCreating}>
             {isCreating ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Creating...
               </>
             ) : (
               <>
-                <Play className="h-4 w-4 mr-2" />
+                <Play className="mr-2 h-4 w-4" />
                 Create & Run
               </>
             )}

@@ -460,8 +460,14 @@ export const workflowsApi = {
   // Get single workflow by ID
   get: (id: string) => get<Workflow>(`/workflows/${id}`),
 
-  // Delete workflow
-  delete: (id: string) => del(`/workflows/${id}`),
+  // Delete workflow with optional cleanup options
+  delete: (id: string, options?: { deleteWorktree?: boolean; deleteBranch?: boolean }) => {
+    const queryParams = new URLSearchParams()
+    if (options?.deleteWorktree) queryParams.append('deleteWorktree', 'true')
+    if (options?.deleteBranch) queryParams.append('deleteBranch', 'true')
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : ''
+    return del(`/workflows/${id}${query}`)
+  },
 
   // Start a pending workflow
   start: (id: string) => post<Workflow>(`/workflows/${id}/start`),

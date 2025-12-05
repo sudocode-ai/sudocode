@@ -260,7 +260,13 @@ export function useWorkflowMutations() {
   })
 
   const deleteWorkflow = useMutation({
-    mutationFn: (id: string) => workflowsApi.delete(id),
+    mutationFn: ({
+      id,
+      options,
+    }: {
+      id: string
+      options?: { deleteWorktree?: boolean; deleteBranch?: boolean }
+    }) => workflowsApi.delete(id, options),
     onSuccess: () => {
       invalidateWorkflows()
       toast.success('Workflow deleted')
@@ -276,7 +282,8 @@ export function useWorkflowMutations() {
     pause: pause.mutateAsync,
     resume: resume.mutateAsync,
     cancel: cancel.mutateAsync,
-    delete: deleteWorkflow.mutateAsync,
+    delete: (id: string, options?: { deleteWorktree?: boolean; deleteBranch?: boolean }) =>
+      deleteWorkflow.mutateAsync({ id, options }),
     isCreating: create.isPending,
     isStarting: start.isPending,
     isPausing: pause.isPending,
