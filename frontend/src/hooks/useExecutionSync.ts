@@ -49,8 +49,14 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
       const errorMessage = mapErrorToUserMessage(error.message)
       setSyncError(errorMessage)
       setSyncStatus('error')
+      toast.error('Failed to load merge preview', {
+        description: errorMessage,
+      })
     },
   })
+
+  // Track the current sync mode for toast messages
+  const [currentSyncMode, setCurrentSyncMode] = useState<SyncMode | null>(null)
 
   // Sync mutation
   const syncMutation = useMutation({
@@ -73,9 +79,10 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
         ? executionsApi.syncSquash(executionId, request)
         : executionsApi.syncPreserve(executionId, request)
     },
-    onMutate: () => {
+    onMutate: ({ mode }) => {
       setSyncStatus('syncing')
       setSyncError(null)
+      setCurrentSyncMode(mode)
       setIsSyncPreviewOpen(false)
       setIsSyncProgressOpen(true)
     },
@@ -84,6 +91,14 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
 
       if (data.success) {
         setSyncStatus('success')
+
+        // Show mode-specific success toast
+        const fileText =
+          data.filesChanged === 1 ? '1 file changed' : `${data.filesChanged} files changed`
+        const successMessage = getSuccessMessage(currentSyncMode)
+        toast.success(successMessage, {
+          description: fileText,
+        })
 
         // Invalidate execution queries to refresh data
         queryClient.invalidateQueries({ queryKey: ['executions'] })
@@ -94,6 +109,10 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
         const errorMessage = data.error || 'Sync failed'
         setSyncError(errorMessage)
         setSyncStatus('error')
+        const failureMessage = getFailureMessage(currentSyncMode)
+        toast.error(failureMessage, {
+          description: errorMessage,
+        })
         options?.onSyncError?.(errorMessage)
       }
     },
@@ -101,6 +120,10 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
       const errorMessage = mapErrorToUserMessage(error.message)
       setSyncError(errorMessage)
       setSyncStatus('error')
+      const failureMessage = getFailureMessage(currentSyncMode)
+      toast.error(failureMessage, {
+        description: errorMessage,
+      })
       options?.onSyncError?.(errorMessage)
     },
   })
@@ -218,6 +241,38 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
     // Loading states
     isPreviewing: previewMutation.isPending,
     isSyncing: syncMutation.isPending,
+  }
+}
+
+/**
+ * Get mode-specific success message
+ */
+function getSuccessMessage(mode: SyncMode | null): string {
+  switch (mode) {
+    case 'squash':
+      return 'Squash and merge completed'
+    case 'preserve':
+      return 'Commits merged successfully'
+    case 'stage':
+      return 'Changes staged successfully'
+    default:
+      return 'Changes merged successfully'
+  }
+}
+
+/**
+ * Get mode-specific failure message
+ */
+function getFailureMessage(mode: SyncMode | null): string {
+  switch (mode) {
+    case 'squash':
+      return 'Squash and merge failed'
+    case 'preserve':
+      return 'Merge commits failed'
+    case 'stage':
+      return 'Failed to stage changes'
+    default:
+      return 'Merge failed'
   }
 }
 
