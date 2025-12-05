@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
 import { useSpec, useSpecFeedback, useSpecs } from '@/hooks/useSpecs'
+import { useSpecRelationships } from '@/hooks/useSpecRelationships'
 import { useIssues } from '@/hooks/useIssues'
 import { useFeedback } from '@/hooks/useFeedback'
 import { SpecViewerTiptap } from '@/components/specs/SpecViewerTiptap'
@@ -35,12 +36,17 @@ import {
   Copy,
   Check,
   List,
+  Pencil,
+  X,
+  ChevronsUpDown,
 } from 'lucide-react'
 import type { IssueFeedback, Relationship, EntityType, RelationshipType } from '@/types/api'
 import { relationshipsApi } from '@/lib/api'
 import { DeleteSpecDialog } from '@/components/specs/DeleteSpecDialog'
 import { EntityBadge } from '@/components/entities/EntityBadge'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import type { TocItem } from '@/components/specs/TiptapEditor'
 
 const PRIORITY_OPTIONS = [
@@ -89,15 +95,50 @@ export default function SpecDetailPage() {
   const [priority, setPriority] = useState<number>(2)
   const [hasChanges, setHasChanges] = useState(false)
 
-  // Relationships state
-  const [relationships, setRelationships] = useState<Relationship[]>([])
-  const [_isLoadingRelationships, setIsLoadingRelationships] = useState(false)
+  // Relationships via hook with WebSocket real-time updates
+  const { relationships } = useSpecRelationships(id)
+
+  // Parent editing state
+  const [isEditingParent, setIsEditingParent] = useState(false)
+  const [parentSearchTerm, setParentSearchTerm] = useState('')
+  const [parentComboboxOpen, setParentComboboxOpen] = useState(false)
 
   // Compute child specs (specs whose parent_id matches this spec's id)
   const childSpecs = useMemo(() => {
     if (!id) return []
     return specs.filter((s) => s.parent_id === id)
   }, [specs, id])
+
+  // Compute all descendant IDs to prevent circular parent references
+  const descendantIds = useMemo(() => {
+    if (!id) return new Set<string>()
+    const descendants = new Set<string>()
+    const collectDescendants = (parentId: string) => {
+      specs.forEach((s) => {
+        if (s.parent_id === parentId && !descendants.has(s.id)) {
+          descendants.add(s.id)
+          collectDescendants(s.id)
+        }
+      })
+    }
+    collectDescendants(id)
+    return descendants
+  }, [specs, id])
+
+  // Available specs for parent selection (exclude self and descendants)
+  const availableParentSpecs = useMemo(() => {
+    if (!id) return []
+    return specs.filter((s) => s.id !== id && !descendantIds.has(s.id))
+  }, [specs, id, descendantIds])
+
+  // Filtered parent specs based on search
+  const filteredParentSpecs = useMemo(() => {
+    if (!parentSearchTerm.trim()) return availableParentSpecs
+    const search = parentSearchTerm.toLowerCase()
+    return availableParentSpecs.filter(
+      (s) => s.id.toLowerCase().includes(search) || s.title.toLowerCase().includes(search)
+    )
+  }, [availableParentSpecs, parentSearchTerm])
 
   // Refs for auto-save and position tracking
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -144,33 +185,6 @@ export default function SpecDetailPage() {
     }
   }, [spec])
 
-  // Fetch relationships when spec ID changes
-  useEffect(() => {
-    const fetchRelationships = async () => {
-      if (!id) return
-
-      setIsLoadingRelationships(true)
-      try {
-        const data = await relationshipsApi.getForEntity(id, 'spec')
-        // Handle both array and grouped object responses
-        let relationshipsArray: Relationship[] = []
-        if (Array.isArray(data)) {
-          relationshipsArray = data
-        } else if (data && typeof data === 'object' && 'outgoing' in data && 'incoming' in data) {
-          const grouped = data as { outgoing: Relationship[]; incoming: Relationship[] }
-          relationshipsArray = [...(grouped.outgoing || []), ...(grouped.incoming || [])]
-        }
-        setRelationships(relationshipsArray)
-      } catch (error) {
-        console.error('Failed to fetch relationships:', error)
-        setRelationships([])
-      } finally {
-        setIsLoadingRelationships(false)
-      }
-    }
-
-    fetchRelationships()
-  }, [id])
 
   // Auto-save effect with debounce
   useEffect(() => {
@@ -352,6 +366,17 @@ export default function SpecDetailPage() {
     setHasChanges(true)
   }
 
+  const handleParentChange = (parentId: string | undefined) => {
+    if (!id) return
+    updateSpec({
+      id,
+      data: { parent_id: parentId },
+    })
+    setIsEditingParent(false)
+    setParentSearchTerm('')
+    setParentComboboxOpen(false)
+  }
+
   const handleFeedbackDismiss = (feedbackId: string) => {
     const fb = feedback.find((f) => f.id === feedbackId)
     if (fb) {
@@ -395,18 +420,7 @@ export default function SpecDetailPage() {
         to_type: relationship.to_type,
         relationship_type: relationship.relationship_type,
       })
-
-      // Optimistically update local state
-      setRelationships(
-        relationships.filter(
-          (r) =>
-            !(
-              r.from_id === relationship.from_id &&
-              r.to_id === relationship.to_id &&
-              r.relationship_type === relationship.relationship_type
-            )
-        )
-      )
+      // WebSocket will handle cache invalidation via useSpecRelationships hook
     } catch (error) {
       console.error('Failed to delete relationship:', error)
     }
@@ -420,16 +434,14 @@ export default function SpecDetailPage() {
     if (!id) return
 
     try {
-      const newRelationship = await relationshipsApi.create({
+      await relationshipsApi.create({
         from_id: id,
         from_type: 'spec',
         to_id: toId,
         to_type: toType,
         relationship_type: relationshipType,
       })
-
-      // Optimistically update local state
-      setRelationships([...relationships, newRelationship])
+      // WebSocket will handle cache invalidation via useSpecRelationships hook
     } catch (error) {
       console.error('Failed to create relationship:', error)
     }
@@ -668,13 +680,128 @@ export default function SpecDetailPage() {
                           </Tooltip>
                         </TooltipProvider>
                       </div>
-                      {spec.parent_id && (
-                        <>
-                          <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span className="text-sm text-muted-foreground">Parent: </span>
-                          <EntityBadge entityId={spec.parent_id} entityType="spec" />
-                        </>
-                      )}
+                      {/* Parent spec selector */}
+                      <div className="flex items-center gap-1">
+                        <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-sm text-muted-foreground">Parent:</span>
+                        {isEditingParent ? (
+                          <div className="flex items-center gap-1">
+                            <Popover open={parentComboboxOpen} onOpenChange={setParentComboboxOpen}>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  role="combobox"
+                                  aria-expanded={parentComboboxOpen}
+                                  className="h-7 w-[200px] justify-between text-xs font-normal"
+                                  disabled={isUpdating}
+                                >
+                                  {spec.parent_id ? (
+                                    <span className="truncate">
+                                      {availableParentSpecs.find((s) => s.id === spec.parent_id)?.title ||
+                                        spec.parent_id}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground">Select parent...</span>
+                                  )}
+                                  <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-[280px] p-0" align="start">
+                                <div className="flex flex-col">
+                                  <div className="border-b p-2">
+                                    <Input
+                                      placeholder="Search specs..."
+                                      value={parentSearchTerm}
+                                      onChange={(e) => setParentSearchTerm(e.target.value)}
+                                      className="h-7 text-xs"
+                                      autoFocus
+                                    />
+                                  </div>
+                                  <div className="max-h-60 overflow-auto">
+                                    {/* Option to clear parent */}
+                                    {spec.parent_id && (
+                                      <button
+                                        type="button"
+                                        className="flex w-full items-center gap-2 border-b px-3 py-2 text-left text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                                        onClick={() => handleParentChange(undefined)}
+                                      >
+                                        <X className="h-3 w-3" />
+                                        Remove parent
+                                      </button>
+                                    )}
+                                    {filteredParentSpecs.length === 0 ? (
+                                      <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                                        No specs found
+                                      </div>
+                                    ) : (
+                                      filteredParentSpecs.map((s) => (
+                                        <button
+                                          key={s.id}
+                                          type="button"
+                                          className={cn(
+                                            'flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground',
+                                            spec.parent_id === s.id && 'bg-accent text-accent-foreground'
+                                          )}
+                                          onClick={() => handleParentChange(s.id)}
+                                        >
+                                          <Check
+                                            className={cn(
+                                              'mt-0.5 h-3 w-3 shrink-0',
+                                              spec.parent_id === s.id ? 'opacity-100' : 'opacity-0'
+                                            )}
+                                          />
+                                          <div className="flex-1 overflow-hidden">
+                                            <div className="font-medium">{s.id}</div>
+                                            <div className="truncate text-muted-foreground">{s.title}</div>
+                                          </div>
+                                        </button>
+                                      ))
+                                    )}
+                                  </div>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0"
+                              onClick={() => {
+                                setIsEditingParent(false)
+                                setParentSearchTerm('')
+                                setParentComboboxOpen(false)
+                              }}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="group flex items-center gap-1">
+                            {spec.parent_id ? (
+                              <EntityBadge entityId={spec.parent_id} entityType="spec" showTitle />
+                            ) : (
+                              <span className="text-xs text-muted-foreground">None</span>
+                            )}
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setIsEditingParent(true)}
+                                    disabled={isUpdating}
+                                    className="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>{spec.parent_id ? 'Change parent' : 'Set parent'}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </div>
+                        )}
+                      </div>
                       {childSpecs.length > 0 && (
                         <>
                           <GitBranch className="h-3.5 w-3.5 rotate-180 text-muted-foreground" />

@@ -18,6 +18,7 @@ import {
   Copy,
   Check,
   ArrowDown,
+  ArrowUp,
 } from 'lucide-react'
 import type { Issue, Relationship, EntityType, RelationshipType, IssueStatus } from '@/types/api'
 import { Card } from '@/components/ui/card'
@@ -152,6 +153,7 @@ export function IssuePanel({
   const [shouldAutoScroll, setShouldAutoScroll] = useState(false)
   const [isScrollable, setIsScrollable] = useState(false)
   const lastScrollTopRef = useRef(0)
+  const isScrollingToTopRef = useRef(false)
 
   // WebSocket for real-time updates
   const { subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
@@ -190,6 +192,31 @@ export function IssuePanel({
     }
   }, [])
 
+  // Scroll to top helper
+  const scrollToTop = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    // Mark that we're programmatically scrolling to top to prevent
+    // handleScroll from re-enabling auto-scroll during the animation
+    isScrollingToTopRef.current = true
+
+    // Smooth scroll to top (with fallback for environments without scrollTo)
+    if (container.scrollTo) {
+      container.scrollTo({
+        top: 0,
+        behavior: 'smooth',
+      })
+    } else {
+      container.scrollTop = 0
+    }
+
+    // Clear the flag after animation completes (smooth scroll typically takes ~300-500ms)
+    setTimeout(() => {
+      isScrollingToTopRef.current = false
+    }, 600)
+  }, [])
+
   // Handle scroll events to detect manual scrolling
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current
@@ -208,6 +235,9 @@ export function IssuePanel({
     // Detect if user scrolled up (manual scroll)
     const scrolledUp = scrollTop < lastScrollTopRef.current
     lastScrollTopRef.current = scrollTop
+
+    // Don't modify auto-scroll state during programmatic scroll-to-top
+    if (isScrollingToTopRef.current) return
 
     if (scrolledUp && !isAtBottom) {
       // User manually scrolled up - disable auto-scroll
@@ -1015,6 +1045,7 @@ export function IssuePanel({
                       <EntityBadge
                         entityId={issue.parent_id}
                         entityType="issue"
+                        showTitle
                       />
                     </>
                   )}
@@ -1265,29 +1296,54 @@ export function IssuePanel({
               <div ref={activityBottomRef} />
             </div>
 
-            {/* Scroll to Bottom FAB - shows when container is scrollable */}
+            {/* Scroll FABs - shows when container is scrollable */}
             {isScrollable && (
-              <div className="fixed bottom-32 right-10 z-10">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={() => {
-                        setShouldAutoScroll(true)
-                        scrollToBottom()
-                      }}
-                      className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-secondary shadow-lg transition-colors hover:bg-primary hover:text-accent-foreground"
-                      type="button"
-                      data-testid="scroll-to-bottom-fab"
-                      aria-label="Scroll to Bottom"
-                    >
-                      <ArrowDown className="h-5 w-5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="left">
-                    <p>Scroll to Bottom</p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
+              <>
+                {/* Scroll to Top FAB */}
+                <div className="fixed bottom-44 right-10 z-10">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => {
+                          setShouldAutoScroll(false)
+                          scrollToTop()
+                        }}
+                        className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-secondary shadow-lg transition-colors hover:bg-primary hover:text-accent-foreground"
+                        type="button"
+                        data-testid="scroll-to-top-fab"
+                        aria-label="Scroll to Top"
+                      >
+                        <ArrowUp className="h-5 w-5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="left">
+                      <p>Scroll to Top</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                {/* Scroll to Bottom FAB */}
+                <div className="fixed bottom-32 right-10 z-10">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => {
+                          setShouldAutoScroll(true)
+                          scrollToBottom()
+                        }}
+                        className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-secondary shadow-lg transition-colors hover:bg-primary hover:text-accent-foreground"
+                        type="button"
+                        data-testid="scroll-to-bottom-fab"
+                        aria-label="Scroll to Bottom"
+                      >
+                        <ArrowDown className="h-5 w-5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="left">
+                      <p>Scroll to Bottom</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </>
             )}
           </div>
         </div>

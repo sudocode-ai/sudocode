@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import { renderWithProviders } from '@/test/test-utils'
 import { ActivityTimeline } from '@/components/issues/ActivityTimeline'
 import type { IssueFeedback } from '@sudocode-ai/types'
 import type { Execution } from '@/types/execution'
-import { executionsApi } from '@/lib/api'
+import type { Issue, Spec } from '@/types/api'
+import { executionsApi, issuesApi, specsApi } from '@/lib/api'
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async () => {
@@ -15,7 +16,7 @@ vi.mock('react-router-dom', async () => {
   }
 })
 
-// Mock the executionsApi for ExecutionView
+// Mock the API modules
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
   return {
@@ -31,7 +32,35 @@ vi.mock('@/lib/api', async (importOriginal) => {
       deleteWorktree: vi.fn(),
       list: vi.fn(),
     },
+    issuesApi: {
+      getById: vi.fn(),
+    },
+    specsApi: {
+      getById: vi.fn(),
+    },
   }
+})
+
+const mockIssue = (id: string): Issue => ({
+  id,
+  uuid: `uuid-${id}`,
+  title: `Title for ${id}`,
+  status: 'open',
+  content: 'Content',
+  priority: 1,
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
+})
+
+const mockSpec = (id: string): Spec => ({
+  id,
+  uuid: `uuid-${id}`,
+  title: `Title for ${id}`,
+  content: 'Content',
+  file_path: `/path/to/${id}.md`,
+  priority: 1,
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
 })
 
 const createMockFeedback = (overrides: Partial<IssueFeedback> = {}): IssueFeedback => ({
@@ -85,6 +114,12 @@ describe('ActivityTimeline', () => {
   beforeEach(() => {
     mockNavigate.mockClear()
     vi.clearAllMocks()
+
+    // Mock API calls to return entity titles
+    vi.mocked(issuesApi.getById).mockImplementation((id: string) =>
+      Promise.resolve(mockIssue(id))
+    )
+    vi.mocked(specsApi.getById).mockImplementation((id: string) => Promise.resolve(mockSpec(id)))
 
     // Setup default mock responses for ExecutionView
     vi.mocked(executionsApi.getChain).mockResolvedValue({
@@ -219,7 +254,7 @@ describe('ActivityTimeline', () => {
       expect(icon).toBeInTheDocument()
     })
 
-    it('should show arrow and target entity for outbound feedback', () => {
+    it('should show arrow and target entity for outbound feedback', async () => {
       const feedback = createMockFeedback({
         from_id: 'i-abc1',
         to_id: 's-xyz1',
@@ -228,11 +263,13 @@ describe('ActivityTimeline', () => {
 
       renderWithProviders(<ActivityTimeline items={items} currentEntityId="i-abc1" />)
 
-      // Should show the target spec ID
-      expect(screen.getByText('s-xyz1')).toBeInTheDocument()
+      // Should show the target spec ID with title
+      await waitFor(() => {
+        expect(screen.getByText('s-xyz1 - Title for s-xyz1')).toBeInTheDocument()
+      })
     })
 
-    it('should show "from" label and source entity for inbound feedback', () => {
+    it('should show "from" label and source entity for inbound feedback', async () => {
       const feedback = createMockFeedback({
         from_id: 'i-xyz1',
         to_id: 'i-abc1',
@@ -241,12 +278,14 @@ describe('ActivityTimeline', () => {
 
       renderWithProviders(<ActivityTimeline items={items} currentEntityId="i-abc1" />)
 
-      // Should show "from" text and the source issue ID
+      // Should show "from" text and the source issue ID with title
       expect(screen.getByText('from')).toBeInTheDocument()
-      expect(screen.getByText('i-xyz1')).toBeInTheDocument()
+      await waitFor(() => {
+        expect(screen.getByText('i-xyz1 - Title for i-xyz1')).toBeInTheDocument()
+      })
     })
 
-    it('should link to spec page for outbound feedback target (spec)', () => {
+    it('should link to spec page for outbound feedback target (spec)', async () => {
       const feedback = createMockFeedback({
         from_id: 'i-abc1',
         to_id: 's-xyz1',
@@ -255,12 +294,16 @@ describe('ActivityTimeline', () => {
 
       renderWithProviders(<ActivityTimeline items={items} currentEntityId="i-abc1" />)
 
-      const targetBadge = screen.getByText('s-xyz1')
+      await waitFor(() => {
+        expect(screen.getByText('s-xyz1 - Title for s-xyz1')).toBeInTheDocument()
+      })
+
+      const targetBadge = screen.getByText('s-xyz1 - Title for s-xyz1')
       const link = targetBadge.closest('a')
       expect(link).toHaveAttribute('href', '/specs/s-xyz1')
     })
 
-    it('should link to issue page for outbound feedback target (issue)', () => {
+    it('should link to issue page for outbound feedback target (issue)', async () => {
       const feedback = createMockFeedback({
         from_id: 'i-abc1',
         to_id: 'i-def2',
@@ -269,12 +312,16 @@ describe('ActivityTimeline', () => {
 
       renderWithProviders(<ActivityTimeline items={items} currentEntityId="i-abc1" />)
 
-      const targetBadge = screen.getByText('i-def2')
+      await waitFor(() => {
+        expect(screen.getByText('i-def2 - Title for i-def2')).toBeInTheDocument()
+      })
+
+      const targetBadge = screen.getByText('i-def2 - Title for i-def2')
       const link = targetBadge.closest('a')
       expect(link).toHaveAttribute('href', '/issues/i-def2')
     })
 
-    it('should link to issue page for inbound feedback source', () => {
+    it('should link to issue page for inbound feedback source', async () => {
       const feedback = createMockFeedback({
         from_id: 'i-xyz1',
         to_id: 'i-abc1',
@@ -283,7 +330,11 @@ describe('ActivityTimeline', () => {
 
       renderWithProviders(<ActivityTimeline items={items} currentEntityId="i-abc1" />)
 
-      const sourceBadge = screen.getByText('i-xyz1')
+      await waitFor(() => {
+        expect(screen.getByText('i-xyz1 - Title for i-xyz1')).toBeInTheDocument()
+      })
+
+      const sourceBadge = screen.getByText('i-xyz1 - Title for i-xyz1')
       const link = sourceBadge.closest('a')
       expect(link).toHaveAttribute('href', '/issues/i-xyz1')
     })

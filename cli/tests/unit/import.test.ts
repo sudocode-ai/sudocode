@@ -1866,4 +1866,300 @@ describe("Import Operations", () => {
       expect(outgoingRels[0].relationship_type).toBe("implements");
     });
   });
+
+  describe("Resilient Relationship Import", () => {
+    it("should skip relationships to missing specs and collect warnings", async () => {
+      // Create an issue that references a non-existent spec
+      const issues: IssueJSONL[] = [
+        {
+          id: "issue-001",
+          uuid: "uuid-issue-001",
+          title: "Issue with missing spec ref",
+          content: "Content",
+          status: "open",
+          priority: 2,
+          assignee: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          closed_at: null,
+          parent_id: null,
+          relationships: [
+            {
+              from: "issue-001",
+              from_type: "issue",
+              to: "spec-missing", // This spec doesn't exist
+              to_type: "spec",
+              type: "implements",
+            },
+          ],
+          tags: [],
+          feedback: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), []);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), issues);
+
+      // Import should succeed (not throw)
+      const result = await importFromJSONL(db, {
+        inputDir: TEST_DIR,
+      });
+
+      // Issue should be imported
+      expect(result.issues.added).toBe(1);
+
+      // Should have a warning about the missing spec
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings!.length).toBe(1);
+      expect(result.warnings![0].type).toBe("missing_entity");
+      expect(result.warnings![0].message).toContain("spec-missing");
+      expect(result.warnings![0].relationshipFrom).toBe("issue-001");
+      expect(result.warnings![0].relationshipTo).toBe("spec-missing");
+
+      // Relationship should not exist
+      const relationships = getOutgoingRelationships(db, "issue-001", "issue");
+      expect(relationships).toHaveLength(0);
+    });
+
+    it("should skip relationships to missing issues and collect warnings", async () => {
+      // Create a spec that references a non-existent issue
+      const specs: SpecJSONL[] = [
+        {
+          id: "spec-001",
+          uuid: "uuid-spec-001",
+          title: "Spec with missing issue ref",
+          file_path: "spec1.md",
+          content: "Content",
+          priority: 2,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          parent_id: null,
+          relationships: [
+            {
+              from: "spec-001",
+              from_type: "spec",
+              to: "issue-missing", // This issue doesn't exist
+              to_type: "issue",
+              type: "references",
+            },
+          ],
+          tags: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), specs);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), []);
+
+      // Import should succeed (not throw)
+      const result = await importFromJSONL(db, {
+        inputDir: TEST_DIR,
+      });
+
+      // Spec should be imported
+      expect(result.specs.added).toBe(1);
+
+      // Should have a warning about the missing issue
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings!.length).toBe(1);
+      expect(result.warnings![0].type).toBe("missing_entity");
+      expect(result.warnings![0].message).toContain("issue-missing");
+
+      // Relationship should not exist
+      const relationships = getOutgoingRelationships(db, "spec-001", "spec");
+      expect(relationships).toHaveLength(0);
+    });
+
+    it("should collect multiple warnings for multiple missing entities", async () => {
+      // Create an issue with multiple relationships to missing entities
+      const issues: IssueJSONL[] = [
+        {
+          id: "issue-001",
+          uuid: "uuid-issue-001",
+          title: "Issue with multiple missing refs",
+          content: "Content",
+          status: "open",
+          priority: 2,
+          assignee: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          closed_at: null,
+          parent_id: null,
+          relationships: [
+            {
+              from: "issue-001",
+              from_type: "issue",
+              to: "spec-missing-1",
+              to_type: "spec",
+              type: "implements",
+            },
+            {
+              from: "issue-001",
+              from_type: "issue",
+              to: "spec-missing-2",
+              to_type: "spec",
+              type: "references",
+            },
+          ],
+          tags: [],
+          feedback: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), []);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), issues);
+
+      // Import should succeed
+      const result = await importFromJSONL(db, {
+        inputDir: TEST_DIR,
+      });
+
+      expect(result.issues.added).toBe(1);
+
+      // Should have two warnings
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings!.length).toBe(2);
+      expect(result.warnings![0].message).toContain("spec-missing-1");
+      expect(result.warnings![1].message).toContain("spec-missing-2");
+    });
+
+    it("should import valid relationships while skipping invalid ones", async () => {
+      // Create entities with both valid and invalid relationships
+      const specs: SpecJSONL[] = [
+        {
+          id: "spec-001",
+          uuid: "uuid-spec-001",
+          title: "Spec One",
+          file_path: "spec1.md",
+          content: "",
+          priority: 2,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          parent_id: null,
+          relationships: [],
+          tags: [],
+        },
+      ];
+
+      const issues: IssueJSONL[] = [
+        {
+          id: "issue-001",
+          uuid: "uuid-issue-001",
+          title: "Issue with mixed refs",
+          content: "Content",
+          status: "open",
+          priority: 2,
+          assignee: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          closed_at: null,
+          parent_id: null,
+          relationships: [
+            {
+              from: "issue-001",
+              from_type: "issue",
+              to: "spec-001", // Valid - spec exists
+              to_type: "spec",
+              type: "implements",
+            },
+            {
+              from: "issue-001",
+              from_type: "issue",
+              to: "spec-missing", // Invalid - spec doesn't exist
+              to_type: "spec",
+              type: "references",
+            },
+          ],
+          tags: [],
+          feedback: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), specs);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), issues);
+
+      // Import should succeed
+      const result = await importFromJSONL(db, {
+        inputDir: TEST_DIR,
+      });
+
+      expect(result.specs.added).toBe(1);
+      expect(result.issues.added).toBe(1);
+
+      // Should have one warning for the invalid relationship
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings!.length).toBe(1);
+      expect(result.warnings![0].message).toContain("spec-missing");
+
+      // Valid relationship should exist
+      const relationships = getOutgoingRelationships(db, "issue-001", "issue");
+      expect(relationships).toHaveLength(1);
+      expect(relationships[0].to_id).toBe("spec-001");
+      expect(relationships[0].relationship_type).toBe("implements");
+    });
+
+    it("should have no warnings when all relationships are valid", async () => {
+      // Create entities with valid relationships
+      const specs: SpecJSONL[] = [
+        {
+          id: "spec-001",
+          uuid: "uuid-spec-001",
+          title: "Spec One",
+          file_path: "spec1.md",
+          content: "",
+          priority: 2,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          parent_id: null,
+          relationships: [],
+          tags: [],
+        },
+      ];
+
+      const issues: IssueJSONL[] = [
+        {
+          id: "issue-001",
+          uuid: "uuid-issue-001",
+          title: "Issue with valid ref",
+          content: "Content",
+          status: "open",
+          priority: 2,
+          assignee: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          closed_at: null,
+          parent_id: null,
+          relationships: [
+            {
+              from: "issue-001",
+              from_type: "issue",
+              to: "spec-001",
+              to_type: "spec",
+              type: "implements",
+            },
+          ],
+          tags: [],
+          feedback: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), specs);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), issues);
+
+      // Import should succeed
+      const result = await importFromJSONL(db, {
+        inputDir: TEST_DIR,
+      });
+
+      expect(result.specs.added).toBe(1);
+      expect(result.issues.added).toBe(1);
+
+      // Should have no warnings
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings!.length).toBe(0);
+
+      // Relationship should exist
+      const relationships = getOutgoingRelationships(db, "issue-001", "issue");
+      expect(relationships).toHaveLength(1);
+    });
+  });
 });

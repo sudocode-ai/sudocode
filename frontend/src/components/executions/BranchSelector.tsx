@@ -20,6 +20,8 @@ interface BranchSelectorProps {
   currentBranch?: string
   /** Optional worktrees to show alongside branches */
   worktrees?: Execution[]
+  /** Callback when the selector is opened - use to refresh branch list */
+  onOpen?: () => void
 }
 
 export function BranchSelector({
@@ -32,6 +34,7 @@ export function BranchSelector({
   className,
   currentBranch,
   worktrees = [],
+  onOpen,
 }: BranchSelectorProps) {
   const [open, setOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
@@ -108,8 +111,15 @@ export function BranchSelector({
     setSearchTerm('')
   }
 
+  const handleOpenChange = (isOpen: boolean) => {
+    setOpen(isOpen)
+    if (isOpen && onOpen) {
+      onOpen()
+    }
+  }
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <Tooltip open={open ? false : undefined}>
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
