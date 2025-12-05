@@ -29,6 +29,7 @@ import {
   Clock,
   PauseCircle,
   ArrowDown,
+  ArrowUp,
   FolderOpen,
 } from 'lucide-react'
 
@@ -170,6 +171,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true)
   const lastScrollTopRef = useRef(0)
   const contentChangeCounterRef = useRef(0)
+  const isScrollingToTopRef = useRef(false)
 
   // Load execution chain
   useEffect(() => {
@@ -433,6 +435,9 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
     const scrolledUp = scrollTop < lastScrollTopRef.current
     lastScrollTopRef.current = scrollTop
 
+    // Don't modify auto-scroll state during programmatic scroll-to-top
+    if (isScrollingToTopRef.current) return
+
     if (scrolledUp && !isAtBottom) {
       // User manually scrolled up - disable auto-scroll
       setShouldAutoScroll(false)
@@ -456,6 +461,31 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
     } else {
       container.scrollTop = container.scrollHeight
     }
+  }, [])
+
+  // Scroll to top helper
+  const scrollToTop = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    // Mark that we're programmatically scrolling to top to prevent
+    // handleScroll from re-enabling auto-scroll during the animation
+    isScrollingToTopRef.current = true
+
+    // Smooth scroll to top (with fallback for environments without scrollTo)
+    if (container.scrollTo) {
+      container.scrollTo({
+        top: 0,
+        behavior: 'smooth',
+      })
+    } else {
+      container.scrollTop = 0
+    }
+
+    // Clear the flag after animation completes (smooth scroll typically takes ~300-500ms)
+    setTimeout(() => {
+      isScrollingToTopRef.current = false
+    }, 600)
   }, [])
 
   // Handle content changes from ExecutionMonitor
@@ -956,28 +986,55 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
               )}
             </Card>
 
-            {/* Scroll to Bottom FAB - shows when auto-scroll is disabled */}
-            {!shouldAutoScroll && (
-              <div className="fixed bottom-24 right-8 z-10">
+            {/* Scroll FABs - scroll-to-top always visible, scroll-to-bottom when auto-scroll disabled */}
+            <>
+              {/* Scroll to Top FAB */}
+              <div className="fixed bottom-36 right-8 z-10">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       onClick={() => {
-                        setShouldAutoScroll(true)
-                        scrollToBottom()
+                        setShouldAutoScroll(false)
+                        scrollToTop()
                       }}
-                      className="absolute bottom-6 right-8 z-50 mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-secondary shadow-lg transition-colors hover:bg-primary hover:text-accent-foreground"
+                      className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-secondary shadow-lg transition-colors hover:bg-primary hover:text-accent-foreground"
                       type="button"
+                      data-testid="scroll-to-top-fab"
+                      aria-label="Scroll to Top"
                     >
-                      <ArrowDown className="h-5 w-5" />
+                      <ArrowUp className="h-5 w-5" />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="left">
-                    <p>Scroll to Bottom</p>
+                    <p>Scroll to Top</p>
                   </TooltipContent>
                 </Tooltip>
               </div>
-            )}
+              {/* Scroll to Bottom FAB - shows when auto-scroll is disabled */}
+              {!shouldAutoScroll && (
+                <div className="fixed bottom-24 right-8 z-10">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => {
+                          setShouldAutoScroll(true)
+                          scrollToBottom()
+                        }}
+                        className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-secondary shadow-lg transition-colors hover:bg-primary hover:text-accent-foreground"
+                        type="button"
+                        data-testid="scroll-to-bottom-fab"
+                        aria-label="Scroll to Bottom"
+                      >
+                        <ArrowDown className="h-5 w-5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="left">
+                      <p>Scroll to Bottom</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              )}
+            </>
           </div>
         </div>
 
