@@ -488,7 +488,6 @@ describe('IssuePanel', () => {
     // Verify the mock dialog is in the DOM
     expect(document.querySelector('[role="dialog"][data-state="open"]')).toBeInTheDocument()
 
-    // Press ESC - this simulates user closing the untracked modal
     await user.keyboard('{Escape}')
 
     // Remove the mock dialog (simulating it closing)
@@ -499,9 +498,6 @@ describe('IssuePanel', () => {
       expect(document.querySelector('[role="dialog"][data-state="open"]')).not.toBeInTheDocument()
     })
 
-    // BUG: The running execution should NOT be cancelled when closing an untracked modal
-    // This test should FAIL initially (execution gets cancelled incorrectly)
-    // After fix, this assertion should PASS (execution continues running)
     expect(mockCancel).not.toHaveBeenCalled()
   })
 
@@ -522,7 +518,6 @@ describe('IssuePanel', () => {
     // Verify the mock dialog is in the DOM
     expect(document.querySelector('[role="dialog"][data-state="open"]')).toBeInTheDocument()
 
-    // Press ESC - this simulates user closing the modal
     await user.keyboard('{Escape}')
 
     // Remove the mock dialog (simulating it closing)
@@ -533,9 +528,6 @@ describe('IssuePanel', () => {
       expect(document.querySelector('[role="dialog"][data-state="open"]')).not.toBeInTheDocument()
     })
 
-    // BUG: The panel should NOT close when ESC dismisses a modal
-    // This test should FAIL initially (panel closes incorrectly)
-    // After fix, this assertion should PASS (panel stays open)
     expect(onClose).not.toHaveBeenCalled()
   })
 
