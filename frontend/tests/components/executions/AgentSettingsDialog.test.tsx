@@ -39,14 +39,32 @@ describe('AgentSettingsDialog', () => {
       )
 
       expect(screen.getByText('Advanced Agent Settings')).toBeInTheDocument()
-      expect(screen.getByText('Execution Settings')).toBeInTheDocument()
+      // Check for section headers in the new layout (using heading role to get section headers)
+      expect(screen.getByRole('heading', { name: 'Model & Agent' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Behavior' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Execution' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Advanced' })).toBeInTheDocument()
+      // Check for individual settings
       expect(screen.getByLabelText('Worktree Cleanup Mode')).toBeInTheDocument()
       expect(screen.getByLabelText('Timeout (ms)')).toBeInTheDocument()
       expect(screen.getByLabelText('Max Tokens')).toBeInTheDocument()
       expect(screen.getByLabelText('Temperature')).toBeInTheDocument()
     })
 
-    it('should not render Codex config when agent is not codex', () => {
+    it('should show placeholder when no agent selected', () => {
+      render(
+        <AgentSettingsDialog
+          open={true}
+          config={defaultConfig}
+          onConfigChange={mockOnConfigChange}
+          onClose={mockOnClose}
+        />
+      )
+
+      expect(screen.getByText('Select an agent to see model and agent-specific settings.')).toBeInTheDocument()
+    })
+
+    it('should show message when agent has no specific settings', () => {
       render(
         <AgentSettingsDialog
           open={true}
@@ -57,7 +75,7 @@ describe('AgentSettingsDialog', () => {
         />
       )
 
-      expect(screen.queryByText('Codex Configuration')).not.toBeInTheDocument()
+      expect(screen.getByText('No specific settings available for this agent.')).toBeInTheDocument()
     })
 
     it('should render Codex config when agent is codex', () => {
@@ -74,7 +92,7 @@ describe('AgentSettingsDialog', () => {
         />
       )
 
-      expect(screen.getByText('Codex Configuration')).toBeInTheDocument()
+      // CodexConfigForm should be rendered in the Model & Agent section
       expect(screen.getByLabelText(/Model/i)).toBeInTheDocument()
       expect(screen.getByLabelText(/Full Auto Mode/i)).toBeInTheDocument()
     })
