@@ -503,8 +503,39 @@ describe('IssuePanel', () => {
     // This test should FAIL initially (execution gets cancelled incorrectly)
     // After fix, this assertion should PASS (execution continues running)
     expect(mockCancel).not.toHaveBeenCalled()
+  })
 
-    // Panel should also not close when modal is dismissed with ESC
+  it('should not close panel when ESC dismisses a modal', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+
+    renderWithProviders(<IssuePanel issue={mockIssue} onClose={onClose} />)
+
+    // Simulate a modal being open (e.g., AgentSettingsDialog, CommitChangesDialog)
+    // by creating a Radix UI dialog element in the DOM
+    const mockDialog = document.createElement('div')
+    mockDialog.setAttribute('role', 'dialog')
+    mockDialog.setAttribute('data-state', 'open')
+    mockDialog.textContent = 'Mock Settings Dialog'
+    document.body.appendChild(mockDialog)
+
+    // Verify the mock dialog is in the DOM
+    expect(document.querySelector('[role="dialog"][data-state="open"]')).toBeInTheDocument()
+
+    // Press ESC - this simulates user closing the modal
+    await user.keyboard('{Escape}')
+
+    // Remove the mock dialog (simulating it closing)
+    document.body.removeChild(mockDialog)
+
+    // Wait a bit to ensure any handlers have run
+    await waitFor(() => {
+      expect(document.querySelector('[role="dialog"][data-state="open"]')).not.toBeInTheDocument()
+    })
+
+    // BUG: The panel should NOT close when ESC dismisses a modal
+    // This test should FAIL initially (panel closes incorrectly)
+    // After fix, this assertion should PASS (panel stays open)
     expect(onClose).not.toHaveBeenCalled()
   })
 
