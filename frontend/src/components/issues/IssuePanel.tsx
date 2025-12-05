@@ -940,29 +940,6 @@ export function IssuePanel({
             </div>
 
             <div className="flex items-center gap-4">
-              {/* View mode toggle - shown inline in panel */}
-              {showViewToggleInline && (
-                <div className="mr-4 flex gap-1 rounded-md border border-border bg-muted/30 p-1">
-                  <Button
-                    variant={viewMode === 'formatted' ? 'outline' : 'ghost'}
-                    size="sm"
-                    onClick={() => handleViewModeChange('formatted')}
-                    className={`h-7 rounded-sm ${viewMode === 'formatted' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
-                  >
-                    <FileText className="mr-2 h-4 w-4" />
-                    Formatted
-                  </Button>
-                  <Button
-                    variant={viewMode === 'markdown' ? 'outline' : 'ghost'}
-                    size="sm"
-                    onClick={() => handleViewModeChange('markdown')}
-                    className={`h-7 rounded-sm ${viewMode === 'markdown' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
-                  >
-                    <Code2 className="mr-2 h-4 w-4" />
-                    Markdown
-                  </Button>
-                </div>
-              )}
               {(onArchive || onUnarchive) && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1042,11 +1019,7 @@ export function IssuePanel({
                     <>
                       <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="text-sm text-muted-foreground">Parent: </span>
-                      <EntityBadge
-                        entityId={issue.parent_id}
-                        entityType="issue"
-                        showTitle
-                      />
+                      <EntityBadge entityId={issue.parent_id} entityType="issue" showTitle />
                     </>
                   )}
                 </div>
@@ -1172,24 +1145,53 @@ export function IssuePanel({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-medium text-muted-foreground">Description</h3>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => setIsDescriptionCollapsed(!isDescriptionCollapsed)}
-                  className="h-6 gap-1 text-muted-foreground"
-                >
-                  {isDescriptionCollapsed ? (
-                    <>
-                      <ChevronDown className="h-4 w-4" />
-                      Expand
-                    </>
-                  ) : (
-                    <>
-                      <ChevronUp className="h-4 w-4" />
-                      Collapse
-                    </>
+                <div className="flex items-center gap-1">
+                  {/* View mode toggle */}
+                  {showViewToggleInline && (
+                    <div className="flex rounded border border-border/50 bg-muted/30 p-0.5">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => handleViewModeChange('formatted')}
+                            className={`rounded p-1 ${viewMode === 'formatted' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                          >
+                            <FileText className="h-4 w-4" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>Formatted</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => handleViewModeChange('markdown')}
+                            className={`rounded p-1 ${viewMode === 'markdown' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                          >
+                            <Code2 className="h-4 w-4" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>Markdown</TooltipContent>
+                      </Tooltip>
+                    </div>
                   )}
-                </Button>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => setIsDescriptionCollapsed(!isDescriptionCollapsed)}
+                    className="h-6 gap-1 text-muted-foreground"
+                  >
+                    {isDescriptionCollapsed ? (
+                      <>
+                        <ChevronDown className="h-4 w-4" />
+                        Expand
+                      </>
+                    ) : (
+                      <>
+                        <ChevronUp className="h-4 w-4" />
+                        Collapse
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
               <div className="relative">
                 <div

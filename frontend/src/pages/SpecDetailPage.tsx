@@ -185,7 +185,6 @@ export default function SpecDetailPage() {
     }
   }, [spec])
 
-
   // Auto-save effect with debounce
   useEffect(() => {
     if (!hasChanges || !id) return
@@ -517,30 +516,6 @@ export default function SpecDetailPage() {
             </Button>
           </div>
           <div className="flex items-center gap-1 sm:gap-2">
-            {/* View mode toggle */}
-            <div className="flex items-center gap-1 sm:gap-2">
-              <div className="inline-flex rounded-md border border-border bg-muted/30 p-1">
-                <Button
-                  variant={viewMode === 'formatted' ? 'outline' : 'ghost'}
-                  size="sm"
-                  onClick={() => setViewMode('formatted')}
-                  className={`h-7 rounded-sm ${viewMode === 'formatted' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
-                >
-                  <FileText className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Formatted</span>
-                </Button>
-                <Button
-                  variant={viewMode === 'source' ? 'outline' : 'ghost'}
-                  size="sm"
-                  onClick={() => setViewMode('source')}
-                  className={`h-7 rounded-sm ${viewMode === 'source' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
-                >
-                  <Code2 className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Markdown</span>
-                </Button>
-              </div>
-            </div>
-
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -697,8 +672,8 @@ export default function SpecDetailPage() {
                                 >
                                   {spec.parent_id ? (
                                     <span className="truncate">
-                                      {availableParentSpecs.find((s) => s.id === spec.parent_id)?.title ||
-                                        spec.parent_id}
+                                      {availableParentSpecs.find((s) => s.id === spec.parent_id)
+                                        ?.title || spec.parent_id}
                                     </span>
                                   ) : (
                                     <span className="text-muted-foreground">Select parent...</span>
@@ -740,7 +715,8 @@ export default function SpecDetailPage() {
                                           type="button"
                                           className={cn(
                                             'flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground',
-                                            spec.parent_id === s.id && 'bg-accent text-accent-foreground'
+                                            spec.parent_id === s.id &&
+                                              'bg-accent text-accent-foreground'
                                           )}
                                           onClick={() => handleParentChange(s.id)}
                                         >
@@ -752,7 +728,9 @@ export default function SpecDetailPage() {
                                           />
                                           <div className="flex-1 overflow-hidden">
                                             <div className="font-medium">{s.id}</div>
-                                            <div className="truncate text-muted-foreground">{s.title}</div>
+                                            <div className="truncate text-muted-foreground">
+                                              {s.title}
+                                            </div>
                                           </div>
                                         </button>
                                       ))
@@ -860,6 +838,34 @@ export default function SpecDetailPage() {
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {/* View mode toggle */}
+                  <TooltipProvider>
+                    <div className="flex rounded border border-border/50 bg-muted/30 p-0.5">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => setViewMode('formatted')}
+                            className={`rounded p-1 ${viewMode === 'formatted' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                          >
+                            <FileText className="h-4 w-4" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>Formatted</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => setViewMode('source')}
+                            className={`rounded p-1 ${viewMode === 'source' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                          >
+                            <Code2 className="h-4 w-4" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>Markdown</TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </TooltipProvider>
 
                   {/* Timestamp */}
                   <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
