@@ -224,9 +224,7 @@ describe('EntityBadge', () => {
       updated_at: '2024-01-01T00:00:00Z',
     }
 
-    const mockExecutions: Execution[] = [
-      createMockExecution({ id: 'exec-001', status: 'running' }),
-    ]
+    const mockExecutions: Execution[] = [createMockExecution({ id: 'exec-001', status: 'running' })]
 
     it('should display issue details in hover card', async () => {
       const user = userEvent.setup()
@@ -356,6 +354,109 @@ describe('EntityBadge', () => {
 
       const badge = screen.getByText('i-test123').closest('div')
       expect(badge).toHaveClass('custom-class')
+    })
+  })
+
+  describe('showTitle prop', () => {
+    const mockIssue: Issue = {
+      id: 'i-test123',
+      uuid: 'uuid-test',
+      title: 'Test Issue Title',
+      status: 'open',
+      content: 'Content',
+      priority: 1,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    }
+
+    const mockSpec: Spec = {
+      id: 's-test123',
+      uuid: 'uuid-test',
+      title: 'Test Spec Title',
+      content: 'Content',
+      file_path: '/path/to/spec.md',
+      priority: 2,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    }
+
+    it('should not fetch title when showTitle is false (default)', () => {
+      renderWithProviders(<EntityBadge entityId="i-test123" entityType="issue" />)
+
+      expect(issuesApi.getById).not.toHaveBeenCalled()
+      expect(screen.getByText('i-test123')).toBeInTheDocument()
+    })
+
+    it('should fetch and display issue title when showTitle is true', async () => {
+      vi.mocked(issuesApi.getById).mockResolvedValue(mockIssue)
+
+      renderWithProviders(<EntityBadge entityId="i-test123" entityType="issue" showTitle={true} />)
+
+      await waitFor(() => {
+        expect(issuesApi.getById).toHaveBeenCalledWith('i-test123')
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('i-test123 - Test Issue Title')).toBeInTheDocument()
+      })
+    })
+
+    it('should fetch and display spec title when showTitle is true', async () => {
+      vi.mocked(specsApi.getById).mockResolvedValue(mockSpec)
+
+      renderWithProviders(<EntityBadge entityId="s-test123" entityType="spec" showTitle={true} />)
+
+      await waitFor(() => {
+        expect(specsApi.getById).toHaveBeenCalledWith('s-test123')
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('s-test123 - Test Spec Title')).toBeInTheDocument()
+      })
+    })
+
+    it('should truncate long titles with ellipsis', async () => {
+      const longTitleIssue: Issue = {
+        ...mockIssue,
+        title: 'This is a very long title that exceeds the maximum character limit',
+      }
+      vi.mocked(issuesApi.getById).mockResolvedValue(longTitleIssue)
+
+      renderWithProviders(<EntityBadge entityId="i-test123" entityType="issue" showTitle={true} />)
+
+      await waitFor(() => {
+        // Should truncate at 25 chars (24 + ellipsis)
+        expect(screen.getByText('i-test123 - This is a very long titl…')).toBeInTheDocument()
+      })
+    })
+
+    it('should show loading state while fetching title', async () => {
+      // Create a promise that doesn't resolve immediately
+      vi.mocked(issuesApi.getById).mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve(mockIssue), 500))
+      )
+
+      renderWithProviders(<EntityBadge entityId="i-test123" entityType="issue" showTitle={true} />)
+
+      // Should show loading indicator
+      expect(screen.getByText('i-test123 - …')).toBeInTheDocument()
+    })
+
+    it('should prefer displayText over showTitle', async () => {
+      vi.mocked(issuesApi.getById).mockResolvedValue(mockIssue)
+
+      renderWithProviders(
+        <EntityBadge
+          entityId="i-test123"
+          entityType="issue"
+          showTitle={true}
+          displayText="Custom Display"
+        />
+      )
+
+      // displayText should take precedence
+      expect(screen.getByText('Custom Display')).toBeInTheDocument()
+      expect(screen.queryByText('i-test123 - Test Issue Title')).not.toBeInTheDocument()
     })
   })
 })

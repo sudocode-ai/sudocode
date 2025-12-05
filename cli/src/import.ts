@@ -34,6 +34,17 @@ import { transaction } from "./operations/transactions.js";
 import * as path from "path";
 import * as fs from "fs";
 
+/**
+ * Warnings collected during import for non-fatal issues
+ */
+export interface ImportWarning {
+  type: "missing_entity" | "invalid_relationship";
+  message: string;
+  entityId?: string;
+  relationshipFrom?: string;
+  relationshipTo?: string;
+}
+
 export interface ImportOptions {
   /**
    * Input directory for JSONL files
@@ -75,6 +86,7 @@ export interface ImportResult {
     deleted: number;
   };
   collisions: CollisionInfo[];
+  warnings?: ImportWarning[];
 }
 
 export interface CollisionInfo {
@@ -804,6 +816,38 @@ export async function importFromJSONL(
     issues: { added: 0, updated: 0, deleted: 0 },
     collisions:
       resolvedCollisions.length > 0 ? resolvedCollisions : allCollisions,
+    warnings: [],
+  };
+
+  // Helper to try adding a relationship, collecting warnings for missing entities
+  const tryAddRelationship = (
+    rel: { from: string; from_type: "spec" | "issue"; to: string; to_type: "spec" | "issue"; type: string },
+    sourceEntityId: string
+  ): void => {
+    try {
+      addRelationship(db, {
+        from_id: rel.from,
+        from_type: rel.from_type,
+        to_id: rel.to,
+        to_type: rel.to_type,
+        relationship_type: rel.type as any,
+      });
+    } catch (error: any) {
+      // Check if this is a "not found" error for missing entities
+      const message = error?.message || String(error);
+      if (message.includes("not found:")) {
+        result.warnings!.push({
+          type: "missing_entity",
+          message: `Skipping relationship: ${message}`,
+          entityId: sourceEntityId,
+          relationshipFrom: rel.from,
+          relationshipTo: rel.to,
+        });
+      } else {
+        // Re-throw other errors
+        throw error;
+      }
+    }
   };
 
   if (!dryRun) {
@@ -824,13 +868,7 @@ export async function importFromJSONL(
         const spec = incomingSpecs.find((s) => s.id === id);
         if (spec && spec.relationships && spec.relationships.length > 0) {
           for (const rel of spec.relationships) {
-            addRelationship(db, {
-              from_id: rel.from,
-              from_type: rel.from_type,
-              to_id: rel.to,
-              to_type: rel.to_type,
-              relationship_type: rel.type,
-            });
+            tryAddRelationship(rel, id);
           }
         }
       }
@@ -841,13 +879,7 @@ export async function importFromJSONL(
         if (spec) {
           removeOutgoingRelationships(db, spec.id, "spec");
           for (const rel of spec.relationships || []) {
-            addRelationship(db, {
-              from_id: rel.from,
-              from_type: rel.from_type,
-              to_id: rel.to,
-              to_type: rel.to_type,
-              relationship_type: rel.type,
-            });
+            tryAddRelationship(rel, id);
           }
         }
       }
@@ -857,13 +889,7 @@ export async function importFromJSONL(
         const issue = incomingIssues.find((i) => i.id === id);
         if (issue && issue.relationships && issue.relationships.length > 0) {
           for (const rel of issue.relationships) {
-            addRelationship(db, {
-              from_id: rel.from,
-              from_type: rel.from_type,
-              to_id: rel.to,
-              to_type: rel.to_type,
-              relationship_type: rel.type,
-            });
+            tryAddRelationship(rel, id);
           }
         }
       }
@@ -874,13 +900,7 @@ export async function importFromJSONL(
         if (issue) {
           removeOutgoingRelationships(db, issue.id, "issue");
           for (const rel of issue.relationships || []) {
-            addRelationship(db, {
-              from_id: rel.from,
-              from_type: rel.from_type,
-              to_id: rel.to,
-              to_type: rel.to_type,
-              relationship_type: rel.type,
-            });
+            tryAddRelationship(rel, id);
           }
         }
       }
@@ -905,6 +925,16 @@ export async function importFromJSONL(
   } else {
     result.specs = importSpecs(db, incomingSpecs, specChanges, dryRun);
     result.issues = importIssues(db, incomingIssues, issueChanges, dryRun);
+  }
+
+  // Log warnings for skipped relationships (non-fatal issues)
+  if (result.warnings && result.warnings.length > 0) {
+    console.warn(
+      `[Import] ${result.warnings.length} relationship(s) skipped due to missing entities:`
+    );
+    for (const warning of result.warnings) {
+      console.warn(`  - ${warning.message}`);
+    }
   }
 
   return result;

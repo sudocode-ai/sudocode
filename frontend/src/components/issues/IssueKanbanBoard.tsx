@@ -38,6 +38,7 @@ interface IssueKanbanBoardProps {
   collapsedColumns?: Set<IssueStatus>
   onToggleColumnCollapse?: (status: IssueStatus) => void
   latestExecutions?: Record<string, Execution | null> // Pre-fetched executions by issue ID
+  displayStatusOverrides?: Record<string, IssueStatus> // Issues showing in different column due to execution status
 }
 
 function IssueKanbanBoard({
@@ -49,6 +50,7 @@ function IssueKanbanBoard({
   collapsedColumns = new Set(),
   onToggleColumnCollapse,
   latestExecutions,
+  displayStatusOverrides,
 }: IssueKanbanBoardProps) {
   const renderDragOverlay = (activeId: string | null) => {
     if (!activeId) return null
@@ -67,6 +69,7 @@ function IssueKanbanBoard({
             isOpen={false}
             showExecutionPreview={true}
             latestExecution={latestExecutions?.[issue.id]}
+            displayStatusOverride={displayStatusOverrides?.[issue.id]}
           />
         )
       }
@@ -107,6 +110,7 @@ function IssueKanbanBoard({
                   isOpen={selectedIssue?.id === issue.id}
                   showExecutionPreview={true}
                   latestExecution={latestExecutions?.[issue.id]}
+                  displayStatusOverride={displayStatusOverrides?.[issue.id]}
                 />
               ))}
             </KanbanCards>

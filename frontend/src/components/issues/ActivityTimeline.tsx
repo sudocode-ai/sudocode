@@ -185,6 +185,7 @@ export function ActivityTimeline({
                         <EntityBadge
                           entityId={otherEntityId}
                           entityType={isSpec ? 'spec' : 'issue'}
+                          showTitle={otherEntityId !== currentEntityId}
                         />
                       </span>
                     </>
@@ -195,6 +196,7 @@ export function ActivityTimeline({
                         <EntityBadge
                           entityId={otherEntityId}
                           entityType={isSpec ? 'spec' : 'issue'}
+                          showTitle={otherEntityId !== currentEntityId}
                         />
                       </span>
                     </>
