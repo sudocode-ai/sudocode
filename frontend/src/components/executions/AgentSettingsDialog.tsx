@@ -16,12 +16,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { ExecutionConfig, CleanupMode } from '@/types/execution'
+import type { ExecutionConfig } from '@/types/execution'
 import { CodexConfigForm, type CodexConfig } from './CodexConfigForm'
 import { CursorConfigForm, type CursorConfig } from './CursorConfigForm'
 import { CopilotConfigForm, type CopilotConfig } from './CopilotConfigForm'
 import { Separator } from '@/components/ui/separator'
-import { Bot, Settings2, Sliders, Wrench } from 'lucide-react'
+import { Bot, Sliders, Wrench } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // Section configuration
@@ -33,7 +33,6 @@ interface Section {
 
 const SECTIONS: Section[] = [
   { id: 'agent', label: 'Model & Agent', icon: <Bot className="h-4 w-4" /> },
-  { id: 'behavior', label: 'Behavior', icon: <Settings2 className="h-4 w-4" /> },
   { id: 'execution', label: 'Execution', icon: <Sliders className="h-4 w-4" /> },
   { id: 'advanced', label: 'Advanced', icon: <Wrench className="h-4 w-4" /> },
 ]
@@ -243,46 +242,6 @@ export function AgentSettingsDialog({
                   <h3 className="text-base font-semibold">Model & Agent</h3>
                 </div>
                 <div className="space-y-4">{renderAgentSpecificConfig()}</div>
-              </section>
-
-              <Separator />
-
-              {/* Section: Behavior */}
-              <section
-                id="section-behavior"
-                ref={(el) => {
-                  sectionRefs.current['behavior'] = el
-                }}
-                className="scroll-mt-4"
-              >
-                <div className="mb-4 flex items-center gap-2">
-                  <Settings2 className="h-5 w-5 text-muted-foreground" />
-                  <h3 className="text-base font-semibold">Behavior</h3>
-                </div>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="cleanupMode">Worktree Cleanup Mode</Label>
-                    <Select
-                      value={config.cleanupMode ?? 'manual'}
-                      onValueChange={(value) =>
-                        onConfigChange({ cleanupMode: value as CleanupMode })
-                      }
-                    >
-                      <SelectTrigger id="cleanupMode" className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="auto">Auto Cleanup</SelectItem>
-                        <SelectItem value="manual">Manual</SelectItem>
-                        <SelectItem value="never">Never</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      Auto: cleanup on successful completion. Manual: user must cleanup. Never: no
-                      auto-cleanup (for debugging).
-                    </p>
-                  </div>
-                </div>
               </section>
 
               <Separator />

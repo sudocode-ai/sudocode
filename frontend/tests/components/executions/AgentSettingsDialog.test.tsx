@@ -41,11 +41,9 @@ describe('AgentSettingsDialog', () => {
       expect(screen.getByText('Advanced Agent Settings')).toBeInTheDocument()
       // Check for section headers in the new layout (using heading role to get section headers)
       expect(screen.getByRole('heading', { name: 'Model & Agent' })).toBeInTheDocument()
-      expect(screen.getByRole('heading', { name: 'Behavior' })).toBeInTheDocument()
       expect(screen.getByRole('heading', { name: 'Execution' })).toBeInTheDocument()
       expect(screen.getByRole('heading', { name: 'Advanced' })).toBeInTheDocument()
       // Check for individual settings
-      expect(screen.getByLabelText('Worktree Cleanup Mode')).toBeInTheDocument()
       expect(screen.getByLabelText('Timeout (ms)')).toBeInTheDocument()
       expect(screen.getByLabelText('Max Tokens')).toBeInTheDocument()
       expect(screen.getByLabelText('Temperature')).toBeInTheDocument()
@@ -99,25 +97,6 @@ describe('AgentSettingsDialog', () => {
   })
 
   describe('configuration changes', () => {
-    it('should handle cleanup mode changes', () => {
-      render(
-        <AgentSettingsDialog
-          open={true}
-          config={defaultConfig}
-          onConfigChange={mockOnConfigChange}
-          onClose={mockOnClose}
-        />
-      )
-
-      const cleanupSelect = screen.getByLabelText('Worktree Cleanup Mode')
-      fireEvent.click(cleanupSelect)
-
-      const autoOption = screen.getByText('Auto Cleanup')
-      fireEvent.click(autoOption)
-
-      expect(mockOnConfigChange).toHaveBeenCalledWith({ cleanupMode: 'auto' })
-    })
-
     it('should handle timeout changes', () => {
       render(
         <AgentSettingsDialog
