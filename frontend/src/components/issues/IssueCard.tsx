@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { KanbanCard } from '@/components/ui/kanban'
-import type { Issue } from '@sudocode-ai/types'
+import type { Issue, IssueStatus } from '@sudocode-ai/types'
 import type { Execution } from '@/types/execution'
-import { Copy, Check } from 'lucide-react'
+import { Copy, Check, Play, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
@@ -34,6 +34,7 @@ interface IssueCardProps {
   isOpen?: boolean
   showExecutionPreview?: boolean // Whether to show execution preview for running executions
   latestExecution?: Execution | null // Pre-fetched execution from parent
+  displayStatusOverride?: IssueStatus // If set, this issue is shown in a different column due to execution status
 }
 
 export function IssueCard({
@@ -44,6 +45,7 @@ export function IssueCard({
   isOpen,
   showExecutionPreview = false,
   latestExecution,
+  displayStatusOverride,
 }: IssueCardProps) {
   const navigate = useNavigate()
   const [isCopied, setIsCopied] = useState(false)
@@ -123,6 +125,38 @@ export function IssueCard({
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
+            {/* Visual indicator for execution-based column placement */}
+            {displayStatusOverride && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+                      {displayStatusOverride === 'in_progress' ? (
+                        <>
+                          <Play className="h-2.5 w-2.5 fill-current" />
+                          <span>Running</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="h-2.5 w-2.5" />
+                          <span>Review</span>
+                        </>
+                      )}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>
+                      {displayStatusOverride === 'in_progress'
+                        ? 'Running execution'
+                        : 'Completed execution awaiting review'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Actual status: {issue.status.replace('_', ' ')}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
           </div>
           {/* Priority Badge */}
           {issue.priority !== undefined && issue.priority <= 3 && (
