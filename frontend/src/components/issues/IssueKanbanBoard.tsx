@@ -48,6 +48,7 @@ interface IssueKanbanBoardProps {
   latestExecutions?: Record<string, Execution | null> // Pre-fetched executions by issue ID
   /** Workflow info by issue ID (for issues in active workflows) */
   issueWorkflows?: Map<string, IssueWorkflowInfo>
+  displayStatusOverrides?: Record<string, IssueStatus> // Issues showing in different column due to execution status
 }
 
 function IssueKanbanBoard({
@@ -60,6 +61,7 @@ function IssueKanbanBoard({
   onToggleColumnCollapse,
   latestExecutions,
   issueWorkflows,
+  displayStatusOverrides,
 }: IssueKanbanBoardProps) {
   const renderDragOverlay = (activeId: string | null) => {
     if (!activeId) return null
@@ -79,6 +81,7 @@ function IssueKanbanBoard({
             showExecutionPreview={true}
             latestExecution={latestExecutions?.[issue.id]}
             workflowInfo={issueWorkflows?.get(issue.id)}
+            displayStatusOverride={displayStatusOverrides?.[issue.id]}
           />
         )
       }
@@ -120,6 +123,7 @@ function IssueKanbanBoard({
                   showExecutionPreview={true}
                   latestExecution={latestExecutions?.[issue.id]}
                   workflowInfo={issueWorkflows?.get(issue.id)}
+                  displayStatusOverride={displayStatusOverrides?.[issue.id]}
                 />
               ))}
             </KanbanCards>

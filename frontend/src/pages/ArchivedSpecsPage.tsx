@@ -16,6 +16,7 @@ export default function ArchivedSpecsPage() {
     ? specs.filter((spec) => {
         const searchText = filterText.toLowerCase()
         return (
+          spec.id.toLowerCase().includes(searchText) ||
           spec.title.toLowerCase().includes(searchText) ||
           (spec.content && spec.content.toLowerCase().includes(searchText))
         )

@@ -16,6 +16,7 @@ import { generateSpecId } from "@sudocode-ai/cli/dist/id-generator.js";
 import { broadcastSpecUpdate } from "../services/websocket.js";
 import { triggerExport, syncEntityToMarkdown } from "../services/export.js";
 import * as path from "path";
+import * as fs from "fs";
 
 export function createSpecsRouter(): Router {
   const router = Router();
@@ -269,10 +270,24 @@ export function createSpecsRouter(): Router {
         return;
       }
 
+      // Save file_path before deletion
+      const markdownPath = existingSpec.file_path
+        ? path.join(req.project!.sudocodeDir, existingSpec.file_path)
+        : null;
+
       // Delete spec using CLI operation
       const deleted = deleteExistingSpec(req.project!.db, id);
 
       if (deleted) {
+        // Delete markdown file if it exists
+        if (markdownPath && fs.existsSync(markdownPath)) {
+          try {
+            fs.unlinkSync(markdownPath);
+          } catch (err) {
+            console.warn(`Failed to delete markdown file: ${markdownPath}`, err);
+          }
+        }
+
         // Trigger export to JSONL files
         triggerExport(req.project!.db, req.project!.sudocodeDir);
 

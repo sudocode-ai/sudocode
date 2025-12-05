@@ -12,7 +12,6 @@ import { importFromJSONL } from "./import.js";
 import { exportToJSONL } from "./export.js";
 import {
   getSpecByFilePath,
-  deleteSpec,
   listSpecs,
   getSpec,
 } from "./operations/specs.js";
@@ -34,6 +33,35 @@ const filesBeingProcessed = new Set<string>();
 
 // Content hash cache for detecting actual content changes (oscillation prevention)
 const contentHashCache = new Map<string, string>();
+
+// Simple async mutex to serialize file processing (prevents race conditions)
+// When markdown sync triggers JSONL export, we need to ensure the JSONL import
+// doesn't run until the export is complete
+class AsyncMutex {
+  private locked = false;
+  private waiting: Array<() => void> = [];
+
+  async acquire(): Promise<void> {
+    if (!this.locked) {
+      this.locked = true;
+      return;
+    }
+    return new Promise<void>((resolve) => {
+      this.waiting.push(resolve);
+    });
+  }
+
+  release(): void {
+    if (this.waiting.length > 0) {
+      const next = this.waiting.shift()!;
+      next();
+    } else {
+      this.locked = false;
+    }
+  }
+}
+
+const processingMutex = new AsyncMutex();
 
 /**
  * Compute SHA256 hash of file content for change detection
@@ -380,11 +408,16 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
 
   /**
    * Process a file change
+   * Uses mutex to serialize processing and prevent race conditions
+   * (e.g., markdown sync triggers JSONL export, which triggers JSONL import)
    */
   async function processChange(
     filePath: string,
     event: "add" | "change" | "unlink"
   ) {
+    // Acquire mutex to serialize processing
+    await processingMutex.acquire();
+
     try {
       // Set re-entry guard for this specific file to prevent oscillation
       filesBeingProcessed.add(filePath);
@@ -398,72 +431,136 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
         onLog(`[watch] ${event} ${path.relative(baseDir, filePath)}`);
 
         if (event === "unlink") {
-          // File was deleted - remove from database and JSONL
-          // Calculate relative file path
+          // File was deleted - DB/JSONL is source of truth, so we don't delete entities
+          // The file was likely deleted because the entity was deleted via API or JSONL
           const relPath = path.relative(baseDir, filePath);
-
-          // Look up spec by file path
-          const spec = getSpecByFilePath(db, relPath);
-          if (spec) {
-            // Delete from database
-            const deleted = deleteSpec(db, spec.id);
-            if (deleted) {
-              onLog(`[watch] Deleted spec ${spec.id} (file removed)`);
-
-              // Export to JSONL to reflect deletion
-              await exportToJSONL(db, { outputDir: baseDir });
-            }
-          } else {
-            onLog(`[watch] File deleted but no spec found: ${relPath}`);
-          }
+          onLog(`[watch] Markdown file deleted: ${relPath} (DB/JSONL is source of truth)`);
         } else {
-          // Parse markdown to get entity info
+          // Parse markdown to determine entity and sync direction
+          // DB/JSONL is source of truth for entity existence - only sync content updates
+          let entityId: string | undefined;
+          let entityType: "spec" | "issue" = "spec";
+          let syncDirection: "markdown-to-db" | "db-to-markdown" | "skip" | "orphaned" = "skip";
+
+          // Determine entity type based on file location
+          const relPath = path.relative(baseDir, filePath);
+          entityType =
+            relPath.startsWith("specs/") || relPath.startsWith("specs\\")
+              ? "spec"
+              : "issue";
+
           try {
             const parsed = parseMarkdownFile(filePath, db, baseDir);
             const { data: frontmatter } = parsed;
-            const entityId = frontmatter.id;
+            entityId = frontmatter.id;
 
-            // Determine entity type based on file location
-            const relPath = path.relative(baseDir, filePath);
-            const entityType =
-              relPath.startsWith("specs/") || relPath.startsWith("specs\\")
-                ? "spec"
-                : "issue";
+            // Check if entity exists in DB
+            const dbEntity = entityId
+              ? entityType === "spec"
+                ? getSpec(db, entityId)
+                : getIssue(db, entityId)
+              : null;
 
-            // Skip if content already matches (prevents oscillation)
-            if (entityId && contentMatches(filePath, entityId, entityType)) {
-              return;
+            if (!entityId || !dbEntity) {
+              // No entity ID in frontmatter or entity doesn't exist in DB = orphaned file
+              syncDirection = "orphaned";
             }
+            // Skip if content already matches DB (prevents oscillation)
+            else if (contentMatches(filePath, entityId, entityType)) {
+              syncDirection = "skip";
+            }
+            // Skip if file content hasn't changed since last sync (hash-based detection)
+            // This prevents oscillation from our own writes
+            else if (!hasContentChanged(filePath)) {
+              onLog(
+                `[watch] Skipping sync for ${entityType} ${entityId} (file content unchanged)`
+              );
+              syncDirection = "skip";
+            }
+            // Content differs - determine sync direction based on timestamps
+            else {
+              const fileStat = fs.statSync(filePath);
+              const fileTime = fileStat.mtimeMs;
+              const dbTime = new Date(dbEntity.updated_at).getTime();
 
-            // Check timestamps to determine sync direction
-            if (entityId) {
-              const dbEntity =
-                entityType === "spec"
-                  ? getSpec(db, entityId)
-                  : getIssue(db, entityId);
-
-              if (dbEntity) {
-                // Get file modification time
-                const fileStat = fs.statSync(filePath);
-                const fileTime = fileStat.mtimeMs;
-
-                // Get database updated_at time
-                const dbTime = new Date(dbEntity.updated_at).getTime();
-
-                // If database is newer than file, skip markdown → database sync
-                if (dbTime > fileTime) {
-                  onLog(
-                    `[watch] Skipping sync for ${entityType} ${entityId} (database is newer)`
-                  );
-                  return;
-                }
+              if (dbTime > fileTime) {
+                // DB is newer than file - sync DB → markdown
+                syncDirection = "db-to-markdown";
+                onLog(
+                  `[watch] DB is newer for ${entityType} ${entityId}, syncing DB → markdown`
+                );
+              } else {
+                // File is newer than DB - sync markdown → DB (content update only)
+                syncDirection = "markdown-to-db";
               }
             }
           } catch (error) {
-            // If parsing fails, continue with sync (might be a new file)
+            // If parsing fails, treat as orphaned file
+            syncDirection = "orphaned";
           }
 
-          // Sync markdown to database
+          // Handle orphaned files (no corresponding DB entry)
+          if (syncDirection === "orphaned") {
+            onLog(
+              `[watch] Orphaned file detected: ${relPath} (no corresponding DB entry)`
+            );
+            // Delete orphaned file to maintain 1:1 mapping
+            try {
+              fs.unlinkSync(filePath);
+              onLog(`[watch] Deleted orphaned file: ${relPath}`);
+            } catch (err) {
+              onError(
+                new Error(`Failed to delete orphaned file ${relPath}: ${err}`)
+              );
+            }
+            return;
+          }
+
+          if (syncDirection === "skip") {
+            return;
+          }
+
+          if (syncDirection === "db-to-markdown" && entityId) {
+            // Sync DB → markdown (DB is newer)
+            const syncResult = await syncJSONLToMarkdown(
+              db,
+              entityId,
+              entityType,
+              filePath
+            );
+
+            if (syncResult.success) {
+              onLog(
+                `[watch] Updated markdown for ${entityType} ${entityId} from DB`
+              );
+
+              // Update content hash cache after writing to prevent re-triggering
+              hasContentChanged(filePath);
+
+              // Emit event
+              if (onEntitySync) {
+                const entity =
+                  entityType === "spec"
+                    ? getSpec(db, entityId)
+                    : getIssue(db, entityId);
+
+                await onEntitySync({
+                  entityType,
+                  entityId,
+                  action: "updated",
+                  filePath,
+                  baseDir,
+                  source: "database",
+                  timestamp: new Date(),
+                  entity: entity ?? undefined,
+                  version: 1,
+                });
+              }
+            }
+            return;
+          }
+
+          // Sync markdown → DB (file is newer or new file)
           const result = await syncMarkdownToJSONL(db, filePath, {
             outputDir: baseDir,
             autoExport: true,
@@ -711,6 +808,8 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
     } finally {
       // Always clear re-entry guard for this file, even on errors
       filesBeingProcessed.delete(filePath);
+      // Release mutex to allow next file to be processed
+      processingMutex.release();
     }
   }
 
@@ -787,6 +886,74 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
         `[watch] Warning: Failed to initialize JSONL cache: ${error instanceof Error ? error.message : String(error)}`
       );
       // Continue anyway - cache will be populated on first change
+    }
+
+    // Clean up orphaned markdown files on startup (files without corresponding DB entries)
+    // This ensures 1:1 mapping between DB and markdown files
+    try {
+      let orphanedCount = 0;
+
+      // Build set of valid entity IDs from database
+      const validSpecIds = new Set(listSpecs(db).map((s) => s.id));
+      const validIssueIds = new Set(listIssues(db).map((i) => i.id));
+
+      // Check specs directory
+      const specsPath = path.join(baseDir, "specs");
+      if (fs.existsSync(specsPath)) {
+        const specFiles = fs
+          .readdirSync(specsPath)
+          .filter((f) => f.endsWith(".md"));
+        for (const file of specFiles) {
+          const filePath = path.join(specsPath, file);
+          try {
+            const parsed = parseMarkdownFile(filePath, db, baseDir);
+            const entityId = parsed.data.id;
+            if (!entityId || !validSpecIds.has(entityId)) {
+              fs.unlinkSync(filePath);
+              orphanedCount++;
+              onLog(`[watch] Deleted orphaned spec file: specs/${file}`);
+            }
+          } catch {
+            // If parsing fails, treat as orphaned
+            fs.unlinkSync(filePath);
+            orphanedCount++;
+            onLog(`[watch] Deleted orphaned spec file (invalid): specs/${file}`);
+          }
+        }
+      }
+
+      // Check issues directory
+      const issuesPath = path.join(baseDir, "issues");
+      if (fs.existsSync(issuesPath)) {
+        const issueFiles = fs
+          .readdirSync(issuesPath)
+          .filter((f) => f.endsWith(".md"));
+        for (const file of issueFiles) {
+          const filePath = path.join(issuesPath, file);
+          try {
+            const parsed = parseMarkdownFile(filePath, db, baseDir);
+            const entityId = parsed.data.id;
+            if (!entityId || !validIssueIds.has(entityId)) {
+              fs.unlinkSync(filePath);
+              orphanedCount++;
+              onLog(`[watch] Deleted orphaned issue file: issues/${file}`);
+            }
+          } catch {
+            // If parsing fails, treat as orphaned
+            fs.unlinkSync(filePath);
+            orphanedCount++;
+            onLog(`[watch] Deleted orphaned issue file (invalid): issues/${file}`);
+          }
+        }
+      }
+
+      if (orphanedCount > 0) {
+        onLog(`[watch] Cleaned up ${orphanedCount} orphaned markdown file(s)`);
+      }
+    } catch (error) {
+      onLog(
+        `[watch] Warning: Failed to clean up orphaned files: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   });
 

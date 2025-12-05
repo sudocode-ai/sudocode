@@ -842,8 +842,10 @@ describe('ExecutionView', () => {
       configurable: true,
     })
 
-    // Initially, FAB should not be visible (auto-scroll is enabled)
-    expect(screen.queryByRole('button', { name: '' })).toBeNull()
+    // Initially, only scroll-to-top FAB should be visible (scroll-to-bottom hidden when auto-scroll enabled)
+    const scrollToTopFab = container.querySelector('[data-testid="scroll-to-top-fab"]')
+    expect(scrollToTopFab).toBeInTheDocument()
+    expect(container.querySelector('[data-testid="scroll-to-bottom-fab"]')).not.toBeInTheDocument()
 
     // User scrolls up to disable auto-scroll - set scrollTop before lastScrollTopRef is initialized
     scrollContainer.scrollTop = 500
@@ -853,22 +855,22 @@ describe('ExecutionView', () => {
     scrollContainer.scrollTop = 200
     scrollContainer.dispatchEvent(new Event('scroll'))
 
-    // FAB should now be visible - wait for state update and re-render
+    // Both FABs should now be visible - wait for state update and re-render
     await waitFor(() => {
-      // Look for any button with the rounded-full class (unique to our FAB)
-      const buttons = container.querySelectorAll('button.rounded-full')
-      expect(buttons.length).toBeGreaterThan(0)
+      expect(container.querySelector('[data-testid="scroll-to-bottom-fab"]')).toBeInTheDocument()
     })
 
-    // Click the FAB
-    const fabButtons = container.querySelectorAll('button.rounded-full')
-    expect(fabButtons.length).toBe(1)
-    await user.click(fabButtons[0] as HTMLButtonElement)
+    // Click the scroll-to-bottom FAB
+    const scrollToBottomFab = container.querySelector(
+      '[data-testid="scroll-to-bottom-fab"]'
+    ) as HTMLButtonElement
+    expect(scrollToBottomFab).toBeInTheDocument()
+    await user.click(scrollToBottomFab)
 
-    // FAB should disappear (auto-scroll re-enabled)
+    // Scroll-to-bottom FAB should disappear (auto-scroll re-enabled), but scroll-to-top remains
     await waitFor(() => {
-      const fabAfterClick = container.querySelectorAll('button.rounded-full')
-      expect(fabAfterClick.length).toBe(0)
+      expect(container.querySelector('[data-testid="scroll-to-bottom-fab"]')).not.toBeInTheDocument()
+      expect(container.querySelector('[data-testid="scroll-to-top-fab"]')).toBeInTheDocument()
     })
   })
 

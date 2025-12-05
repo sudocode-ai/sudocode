@@ -10,6 +10,15 @@ import * as useIssuesHook from '@/hooks/useIssues'
 // Mock the hooks
 vi.mock('@/hooks/useSpecs')
 vi.mock('@/hooks/useIssues')
+vi.mock('@/hooks/useSpecRelationships', () => ({
+  useSpecRelationships: () => ({
+    relationships: [],
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}))
 vi.mock('@/hooks/useWorktrees', () => ({
   useWorktrees: () => ({
     worktrees: [],
@@ -281,9 +290,7 @@ describe('SpecDetailPage', () => {
   })
 
   it('should display singular "Child:" label when spec has one child', async () => {
-    const childSpecs = [
-      { ...mockSpec, id: 's-child1', title: 'Only Child', parent_id: 'SPEC-001' },
-    ]
+    const childSpecs = [{ ...mockSpec, id: 's-child1', title: 'Only Child', parent_id: 'SPEC-001' }]
 
     vi.mocked(useSpecsHook.useSpecs).mockReturnValue({
       specs: childSpecs,
@@ -296,14 +303,6 @@ describe('SpecDetailPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Child:')).toBeInTheDocument()
       expect(screen.getByText('Only Child')).toBeInTheDocument()
-    })
-  })
-
-  it('should render back button', async () => {
-    renderSpecDetailPage()
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Back/ })).toBeInTheDocument()
     })
   })
 

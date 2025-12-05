@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Check, ChevronsUpDown, GitBranch, Plus, FolderGit2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { Execution } from '@/types/execution'
 
@@ -22,6 +22,8 @@ interface BranchSelectorProps {
   worktrees?: Execution[]
   /** Set to true when used inside a Dialog/Modal to enable proper scrolling */
   inModal?: boolean
+  /** Callback when the selector is opened - use to refresh branch list */
+  onOpen?: () => void
 }
 
 export function BranchSelector({
@@ -35,6 +37,7 @@ export function BranchSelector({
   currentBranch,
   worktrees = [],
   inModal = false,
+  onOpen,
 }: BranchSelectorProps) {
   const [open, setOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
@@ -111,32 +114,37 @@ export function BranchSelector({
     setSearchTerm('')
   }
 
+  const handleOpenChange = (isOpen: boolean) => {
+    setOpen(isOpen)
+    if (isOpen && onOpen) {
+      onOpen()
+    }
+  }
+
   return (
-    <Popover open={open} onOpenChange={setOpen} modal={inModal}>
-      <TooltipProvider>
-        <Tooltip open={open ? false : undefined}>
-          <TooltipTrigger asChild>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                role="combobox"
-                aria-expanded={open}
-                className={cn('h-8 justify-between text-xs font-normal', className)}
-                disabled={disabled}
-              >
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <GitBranch className="h-3 w-3 flex-shrink-0" />
-                  <span className="truncate">{value || placeholder}</span>
-                </div>
-                <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p className="max-w-[300px] break-all">{value}</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+    <Popover open={open} onOpenChange={handleOpenChange} modal={inModal}>
+      <Tooltip open={open ? false : undefined}>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              role="combobox"
+              aria-expanded={open}
+              className={cn('h-8 justify-between text-xs font-normal', className)}
+              disabled={disabled}
+            >
+              <div className="flex min-w-0 items-center gap-1.5">
+                <GitBranch className="h-3 w-3 flex-shrink-0" />
+                <span className="truncate">{value || placeholder}</span>
+              </div>
+              <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p className="max-w-[300px] break-all">{value}</p>
+        </TooltipContent>
+      </Tooltip>
       <PopoverContent className="w-[280px] p-0" align="start">
         <div className="flex flex-col">
           <div className="border-b p-2">

@@ -237,6 +237,38 @@ export default function IssuesPage() {
     }
   }, [])
 
+  // Compute display status overrides based on execution state
+  // This determines which column an issue appears in, which may differ from its actual status
+  const displayStatusOverrides = useMemo(() => {
+    const overrides: Record<string, IssueStatus> = {}
+    if (!latestExecutions) return overrides
+
+    for (const [issueId, execution] of Object.entries(latestExecutions)) {
+      if (!execution) continue
+
+      // Find the issue to check its actual status
+      const issue = issues.find((i) => i.id === issueId)
+      if (!issue) continue
+
+      // Skip if issue is already closed - closed issues stay in closed column
+      if (issue.status === 'closed') continue
+
+      // Active execution statuses should show in "in_progress" column
+      if (['preparing', 'pending', 'running', 'paused'].includes(execution.status)) {
+        if (issue.status !== 'in_progress') {
+          overrides[issueId] = 'in_progress'
+        }
+      }
+      // Completed executions should show in "needs_review" column
+      else if (execution.status === 'completed') {
+        if (issue.status !== 'needs_review') {
+          overrides[issueId] = 'needs_review'
+        }
+      }
+    }
+    return overrides
+  }, [latestExecutions, issues])
+
   // Group issues by status
   const groupedIssues = useMemo(() => {
     // Filter issues based on search text
@@ -244,6 +276,7 @@ export default function IssuesPage() {
       ? issues.filter((issue) => {
           const searchText = filterText.toLowerCase()
           return (
+            issue.id.toLowerCase().includes(searchText) ||
             issue.title.toLowerCase().includes(searchText) ||
             (issue.content && issue.content.toLowerCase().includes(searchText))
           )
@@ -258,11 +291,14 @@ export default function IssuesPage() {
       closed: [],
     }
 
-    // Trust the issue status from the backend (now automatically managed)
+    // Group issues based on display status (which considers execution state)
     filteredIssues.forEach((issue) => {
-      const status = issue.status.toLowerCase() as IssueStatus
-      if (groups[status]) {
-        groups[status].push(issue)
+      // Check if there's an override based on execution status
+      const displayStatus =
+        displayStatusOverrides[issue.id] || (issue.status.toLowerCase() as IssueStatus)
+
+      if (groups[displayStatus]) {
+        groups[displayStatus].push(issue)
       } else {
         // Default to open if status is unknown
         groups.open.push(issue)
@@ -297,7 +333,7 @@ export default function IssuesPage() {
     })
 
     return groups
-  }, [issues, filterText, sortOption])
+  }, [issues, filterText, sortOption, displayStatusOverrides])
 
   // Handle drag-and-drop to change status
   const handleDragEnd = useCallback(
@@ -531,6 +567,7 @@ export default function IssuesPage() {
                 collapsedColumns={collapsedColumns}
                 onToggleColumnCollapse={handleToggleColumnCollapse}
                 latestExecutions={latestExecutions}
+                displayStatusOverrides={displayStatusOverrides}
                 issueWorkflows={issueWorkflows}
               />
             </Panel>
@@ -592,6 +629,7 @@ export default function IssuesPage() {
               collapsedColumns={collapsedColumns}
               onToggleColumnCollapse={handleToggleColumnCollapse}
               latestExecutions={latestExecutions}
+              displayStatusOverrides={displayStatusOverrides}
               issueWorkflows={issueWorkflows}
             />
           </div>

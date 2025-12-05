@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { Badge } from '@/components/ui/badge'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { GitBranch, FileText } from 'lucide-react'
@@ -7,6 +8,8 @@ import { useIssueHoverData } from '@/hooks/useIssueHoverData'
 import { useSpecHoverData } from '@/hooks/useSpecHoverData'
 import { IssueHoverContent } from './IssueHoverContent'
 import { SpecHoverContent } from './SpecHoverContent'
+import { issuesApi, specsApi, getCurrentProjectId } from '@/lib/api'
+import { useProject } from '@/hooks/useProject'
 import { cn } from '@/lib/utils'
 
 export interface EntityBadgeProps {
@@ -16,7 +19,45 @@ export interface EntityBadgeProps {
   showHoverCard?: boolean
   linkToEntity?: boolean
   relationshipType?: string | null
+  showTitle?: boolean
   className?: string
+}
+
+const MAX_TITLE_LENGTH = 25
+
+function truncateTitle(title: string, maxLength: number = MAX_TITLE_LENGTH): string {
+  if (title.length <= maxLength) return title
+  return title.slice(0, maxLength - 1) + '…'
+}
+
+function useEntityTitle(
+  entityId: string,
+  entityType: 'issue' | 'spec',
+  enabled: boolean
+): { title: string | undefined; isLoading: boolean } {
+  const { currentProjectId } = useProject()
+  const apiProjectId = getCurrentProjectId()
+  const isProjectSynced = currentProjectId === apiProjectId
+
+  const query = useQuery({
+    queryKey: [entityType, currentProjectId, entityId, 'title'],
+    queryFn: async () => {
+      if (entityType === 'issue') {
+        const issue = await issuesApi.getById(entityId)
+        return issue.title
+      } else {
+        const spec = await specsApi.getById(entityId)
+        return spec.title
+      }
+    },
+    enabled: enabled && !!entityId && !!currentProjectId && isProjectSynced,
+    staleTime: 30000,
+  })
+
+  return {
+    title: query.data,
+    isLoading: query.isLoading,
+  }
 }
 
 function IssueHoverCard({ issueId, children }: { issueId: string; children: React.ReactNode }) {
@@ -64,8 +105,11 @@ export function EntityBadge({
   showHoverCard = true,
   linkToEntity = true,
   relationshipType,
+  showTitle = false,
   className,
 }: EntityBadgeProps) {
+  const { title, isLoading: isTitleLoading } = useEntityTitle(entityId, entityType, showTitle)
+
   const getEntityUrl = () => {
     if (entityType === 'issue') {
       return `/issues/${entityId}`
@@ -84,8 +128,18 @@ export function EntityBadge({
     return entityType === 'issue' ? 'issue' : 'spec'
   }
 
-  // Display text takes precedence over entity ID
-  const displayContent = displayText || entityId
+  // Determine display content based on props
+  // Priority: displayText > showTitle with fetched title > entityId
+  const getDisplayContent = () => {
+    if (displayText) return displayText
+    if (showTitle) {
+      if (isTitleLoading) return `${entityId} - …`
+      if (title) return `${entityId} - ${truncateTitle(title)}`
+    }
+    return entityId
+  }
+
+  const displayContent = getDisplayContent()
 
   // The badge element
   const badgeElement = (

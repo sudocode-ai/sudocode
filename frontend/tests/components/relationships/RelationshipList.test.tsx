@@ -1,11 +1,57 @@
-import { describe, it, expect, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithProviders } from '@/test/test-utils'
 import { RelationshipList } from '@/components/relationships/RelationshipList'
-import type { Relationship, RelationshipType } from '@/types/api'
+import { issuesApi, specsApi } from '@/lib/api'
+import type { Relationship, RelationshipType, Issue, Spec } from '@/types/api'
+
+// Mock API modules
+vi.mock('@/lib/api', async () => {
+  const actual = await vi.importActual('@/lib/api')
+  return {
+    ...actual,
+    issuesApi: {
+      getById: vi.fn(),
+    },
+    specsApi: {
+      getById: vi.fn(),
+    },
+  }
+})
 
 describe('RelationshipList', () => {
+  const mockIssue = (id: string): Issue => ({
+    id,
+    uuid: `uuid-${id}`,
+    title: `Title for ${id}`,
+    status: 'open',
+    content: 'Content',
+    priority: 1,
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  })
+
+  const mockSpec = (id: string): Spec => ({
+    id,
+    uuid: `uuid-${id}`,
+    title: `Title for ${id}`,
+    content: 'Content',
+    file_path: `/path/to/${id}.md`,
+    priority: 1,
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // Mock API calls to return entity titles
+    vi.mocked(issuesApi.getById).mockImplementation((id: string) =>
+      Promise.resolve(mockIssue(id))
+    )
+    vi.mocked(specsApi.getById).mockImplementation((id: string) => Promise.resolve(mockSpec(id)))
+  })
+
   const mockRelationships: Relationship[] = [
     {
       from_id: 'ISSUE-001',
@@ -135,56 +181,66 @@ describe('RelationshipList', () => {
       expect(screen.getByText('Blocked by')).toBeInTheDocument()
     })
 
-    it('should display target entity IDs', () => {
+    it('should display target entity IDs with titles', async () => {
       renderWithProviders(
         <RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />
       )
 
-      expect(screen.getByText('SPEC-001')).toBeInTheDocument()
-      expect(screen.getByText('ISSUE-003')).toBeInTheDocument()
-      expect(screen.getByText('ISSUE-002')).toBeInTheDocument()
+      await waitFor(() => {
+        expect(screen.getByText('SPEC-001 - Title for SPEC-001')).toBeInTheDocument()
+        expect(screen.getByText('ISSUE-003 - Title for ISSUE-003')).toBeInTheDocument()
+        expect(screen.getByText('ISSUE-002 - Title for ISSUE-002')).toBeInTheDocument()
+      })
     })
 
-    it('should display entity type icons', () => {
+    it('should display entity type icons', async () => {
       renderWithProviders(
         <RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />
       )
 
-      // Check that entities are rendered with their IDs
-      expect(screen.getByText('SPEC-001')).toBeInTheDocument()
-      expect(screen.getByText('ISSUE-003')).toBeInTheDocument()
+      await waitFor(() => {
+        // Check that entities are rendered with their IDs and titles
+        expect(screen.getByText('SPEC-001 - Title for SPEC-001')).toBeInTheDocument()
+        expect(screen.getByText('ISSUE-003 - Title for ISSUE-003')).toBeInTheDocument()
+      })
 
       // Check that they're inside badges (links)
-      const specLink = screen.getByText('SPEC-001').closest('a')
+      const specLink = screen.getByText('SPEC-001 - Title for SPEC-001').closest('a')
       expect(specLink).toBeInTheDocument()
       expect(specLink).toHaveAttribute('href', '/specs/SPEC-001')
     })
   })
 
   describe('navigation', () => {
-    it('should render entities as links', () => {
+    it('should render entities as links', async () => {
       renderWithProviders(
         <RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />
       )
 
-      const specLink = screen.getByText('SPEC-001').closest('a')
+      await waitFor(() => {
+        expect(screen.getByText('SPEC-001 - Title for SPEC-001')).toBeInTheDocument()
+      })
+
+      const specLink = screen.getByText('SPEC-001 - Title for SPEC-001').closest('a')
       expect(specLink).toBeInTheDocument()
       expect(specLink).toHaveAttribute('href', '/specs/SPEC-001')
 
-      const issueLink = screen.getByText('ISSUE-003').closest('a')
+      const issueLink = screen.getByText('ISSUE-003 - Title for ISSUE-003').closest('a')
       expect(issueLink).toBeInTheDocument()
       expect(issueLink).toHaveAttribute('href', '/issues/ISSUE-003')
     })
 
-    it('should render entities with proper badges', () => {
+    it('should render entities with proper badges', async () => {
       renderWithProviders(
         <RelationshipList relationships={mockRelationships} currentEntityId="ISSUE-001" />
       )
 
-      // Entities should be rendered in the DOM
-      expect(screen.getByText('SPEC-001')).toBeInTheDocument()
-      expect(screen.getByText('ISSUE-003')).toBeInTheDocument()
-      expect(screen.getByText('ISSUE-002')).toBeInTheDocument()
+      // Entities should be rendered in the DOM with their titles
+      await waitFor(() => {
+        expect(screen.getByText('SPEC-001 - Title for SPEC-001')).toBeInTheDocument()
+        expect(screen.getByText('ISSUE-003 - Title for ISSUE-003')).toBeInTheDocument()
+        expect(screen.getByText('ISSUE-002 - Title for ISSUE-002')).toBeInTheDocument()
+      })
     })
   })
 

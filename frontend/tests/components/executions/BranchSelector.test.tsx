@@ -267,4 +267,24 @@ describe('BranchSelector', () => {
 
     expect(screen.getByText('No branches or worktrees found')).toBeInTheDocument()
   })
+
+  it('calls onOpen callback when selector is opened', async () => {
+    const user = userEvent.setup()
+    const mockOnOpen = vi.fn()
+
+    renderWithProviders(
+      <BranchSelector
+        branches={mockBranches}
+        value="main"
+        onChange={mockOnChange}
+        onOpen={mockOnOpen}
+      />
+    )
+
+    expect(mockOnOpen).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('combobox'))
+
+    expect(mockOnOpen).toHaveBeenCalledTimes(1)
+  })
 })
