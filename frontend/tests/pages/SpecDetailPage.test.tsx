@@ -10,6 +10,15 @@ import * as useIssuesHook from '@/hooks/useIssues'
 // Mock the hooks
 vi.mock('@/hooks/useSpecs')
 vi.mock('@/hooks/useIssues')
+vi.mock('@/hooks/useSpecRelationships', () => ({
+  useSpecRelationships: () => ({
+    relationships: [],
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}))
 
 // Mock Project context
 vi.mock('@/hooks/useProject', () => ({

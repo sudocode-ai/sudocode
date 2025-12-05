@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
 import { useSpec, useSpecFeedback, useSpecs } from '@/hooks/useSpecs'
+import { useSpecRelationships } from '@/hooks/useSpecRelationships'
 import { useIssues } from '@/hooks/useIssues'
 import { useFeedback } from '@/hooks/useFeedback'
 import { SpecViewerTiptap } from '@/components/specs/SpecViewerTiptap'
@@ -94,9 +95,8 @@ export default function SpecDetailPage() {
   const [priority, setPriority] = useState<number>(2)
   const [hasChanges, setHasChanges] = useState(false)
 
-  // Relationships state
-  const [relationships, setRelationships] = useState<Relationship[]>([])
-  const [_isLoadingRelationships, setIsLoadingRelationships] = useState(false)
+  // Relationships via hook with WebSocket real-time updates
+  const { relationships } = useSpecRelationships(id)
 
   // Parent editing state
   const [isEditingParent, setIsEditingParent] = useState(false)
@@ -185,33 +185,6 @@ export default function SpecDetailPage() {
     }
   }, [spec])
 
-  // Fetch relationships when spec ID changes
-  useEffect(() => {
-    const fetchRelationships = async () => {
-      if (!id) return
-
-      setIsLoadingRelationships(true)
-      try {
-        const data = await relationshipsApi.getForEntity(id, 'spec')
-        // Handle both array and grouped object responses
-        let relationshipsArray: Relationship[] = []
-        if (Array.isArray(data)) {
-          relationshipsArray = data
-        } else if (data && typeof data === 'object' && 'outgoing' in data && 'incoming' in data) {
-          const grouped = data as { outgoing: Relationship[]; incoming: Relationship[] }
-          relationshipsArray = [...(grouped.outgoing || []), ...(grouped.incoming || [])]
-        }
-        setRelationships(relationshipsArray)
-      } catch (error) {
-        console.error('Failed to fetch relationships:', error)
-        setRelationships([])
-      } finally {
-        setIsLoadingRelationships(false)
-      }
-    }
-
-    fetchRelationships()
-  }, [id])
 
   // Auto-save effect with debounce
   useEffect(() => {
@@ -447,18 +420,7 @@ export default function SpecDetailPage() {
         to_type: relationship.to_type,
         relationship_type: relationship.relationship_type,
       })
-
-      // Optimistically update local state
-      setRelationships(
-        relationships.filter(
-          (r) =>
-            !(
-              r.from_id === relationship.from_id &&
-              r.to_id === relationship.to_id &&
-              r.relationship_type === relationship.relationship_type
-            )
-        )
-      )
+      // WebSocket will handle cache invalidation via useSpecRelationships hook
     } catch (error) {
       console.error('Failed to delete relationship:', error)
     }
@@ -472,16 +434,14 @@ export default function SpecDetailPage() {
     if (!id) return
 
     try {
-      const newRelationship = await relationshipsApi.create({
+      await relationshipsApi.create({
         from_id: id,
         from_type: 'spec',
         to_id: toId,
         to_type: toType,
         relationship_type: relationshipType,
       })
-
-      // Optimistically update local state
-      setRelationships([...relationships, newRelationship])
+      // WebSocket will handle cache invalidation via useSpecRelationships hook
     } catch (error) {
       console.error('Failed to create relationship:', error)
     }
