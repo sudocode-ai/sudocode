@@ -49,6 +49,12 @@ vi.mock('@/lib/api', async () => {
     issuesApi: {
       getAll: vi.fn().mockResolvedValue([]),
     },
+    relationshipsApi: {
+      list: vi.fn().mockResolvedValue([]),
+      getForEntity: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      delete: vi.fn(),
+    },
   }
 })
 

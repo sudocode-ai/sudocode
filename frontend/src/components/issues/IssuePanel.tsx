@@ -650,23 +650,41 @@ export function IssuePanel({
   useEffect(() => {
     const handleEscKey = (event: KeyboardEvent) => {
       if (!onClose) return
+      if (event.key !== 'Escape') return
 
-      // Don't close if ESC is pressed while a dialog or dropdown is open
+      // Check if ESC originated from inside a dialog/modal by examining the event path
+      // This handles cases where focus is inside the dialog
+      const path = event.composedPath()
+      const isFromDialog = path.some(
+        (el) =>
+          el instanceof Element &&
+          (el.getAttribute('role') === 'dialog' || el.getAttribute('role') === 'alertdialog')
+      )
+
+      if (isFromDialog) return
+
+      // Also check if any dialog/modal is currently open in the document
+      // This handles cases where focus is outside the dialog but the dialog is open
+      // (e.g., AgentSettingsDialog, CommitChangesDialog, CleanupWorktreeDialog)
+      const openDialog = document.querySelector('[role="dialog"][data-state="open"]')
+      const openAlertDialog = document.querySelector('[role="alertdialog"][data-state="open"]')
+
+      if (openDialog || openAlertDialog) return
+
+      // Check for locally tracked dialogs as a final fallback
       if (showDeleteDialog || showAddRelationship) return
 
-      if (event.key === 'Escape') {
-        // If execution is running, first ESC press stops the execution
-        if (isExecutionRunning && !escPressedWhileRunningRef.current) {
-          escPressedWhileRunningRef.current = true
-          if (latestExecution) {
-            handleCancel(latestExecution.id)
-          }
-          return
+      // If execution is running, first ESC press stops the execution
+      if (isExecutionRunning && !escPressedWhileRunningRef.current) {
+        escPressedWhileRunningRef.current = true
+        if (latestExecution) {
+          handleCancel(latestExecution.id)
         }
-
-        // Second ESC press (or no execution running) closes the panel
-        onClose()
+        return
       }
+
+      // Second ESC press (or no execution running) closes the panel
+      onClose()
     }
 
     document.addEventListener('keydown', handleEscKey)
