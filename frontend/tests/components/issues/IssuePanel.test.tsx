@@ -441,6 +441,67 @@ describe('IssuePanel', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
+  it('should not stop execution when ESC closes untracked modal', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+
+    // Mock a running execution
+    vi.mocked(executionsApi.list).mockResolvedValue([
+      {
+        id: 'exec-123',
+        issue_id: 'ISSUE-001',
+        status: 'running',
+        created_at: '2024-01-01T10:00:00Z',
+        updated_at: '2024-01-01T11:00:00Z',
+        mode: 'worktree',
+        target_branch: 'main',
+        agent_type: 'claude-code',
+        parent_execution_id: null,
+      } as any,
+    ])
+
+    // Mock cancel API
+    const mockCancel = vi.fn().mockResolvedValue({})
+    vi.mocked(executionsApi).cancel = mockCancel
+
+    renderWithProviders(<IssuePanel issue={mockIssue} onClose={onClose} />)
+
+    // Wait for execution to load
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Execution is running (esc to cancel)')).toBeDisabled()
+    })
+
+    // Simulate an untracked modal being open (e.g., AgentSettingsDialog, CommitChangesDialog)
+    // by creating a Radix UI dialog element in the DOM
+    const mockDialog = document.createElement('div')
+    mockDialog.setAttribute('role', 'dialog')
+    mockDialog.setAttribute('data-state', 'open')
+    mockDialog.textContent = 'Mock Settings Dialog'
+    document.body.appendChild(mockDialog)
+
+    // Verify the mock dialog is in the DOM
+    expect(document.querySelector('[role="dialog"][data-state="open"]')).toBeInTheDocument()
+
+    // Press ESC - this simulates user closing the untracked modal
+    await user.keyboard('{Escape}')
+
+    // Remove the mock dialog (simulating it closing)
+    document.body.removeChild(mockDialog)
+
+    // Wait a bit to ensure any handlers have run
+    await waitFor(() => {
+      expect(document.querySelector('[role="dialog"][data-state="open"]')).not.toBeInTheDocument()
+    })
+
+    // BUG: The running execution should NOT be cancelled when closing an untracked modal
+    // This test should FAIL initially (execution gets cancelled incorrectly)
+    // After fix, this assertion should PASS (execution continues running)
+    expect(mockCancel).not.toHaveBeenCalled()
+
+    // Panel should also not close when modal is dismissed with ESC
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   describe('Follow-up Mode and New Execution Button', () => {
     it('should show "New conversation" button when there is a completed execution', async () => {
       // Mock executions API to return a completed execution
