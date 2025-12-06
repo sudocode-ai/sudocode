@@ -1,6 +1,6 @@
 {
   "name": "@sudocode-ai/local-server",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Local backend server for sudocode - provides REST API and WebSocket endpoints",
   "main": "dist/index.js",
   "type": "module",
@@ -43,8 +43,8 @@
   "dependencies": {
     "@ag-ui/core": "^0.0.39",
     "@modelcontextprotocol/sdk": "^1.24.1",
-    "@sudocode-ai/cli": "^0.1.9",
-    "@sudocode-ai/types": "^0.1.9",
+    "@sudocode-ai/cli": "^0.1.10",
+    "@sudocode-ai/types": "^0.1.10",
     "@types/ws": "^8.18.1",
     "agent-execution-engine": "^0.0.13",
     "async-mutex": "^0.5.0",
