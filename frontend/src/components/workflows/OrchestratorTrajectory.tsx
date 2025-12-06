@@ -109,9 +109,10 @@ function formatToolCall(toolCall: ToolCallTracking): FormattedToolCall {
         }
       }
       const status = result?.data?.status || 'checking'
+      const execId = args.execution_id as string | undefined
       return {
         icon: <Activity className="h-4 w-4" />,
-        title: `Checking execution ${args.execution_id?.slice(0, 8) || ''}...`,
+        title: `Checking execution ${execId?.slice(0, 8) || ''}...`,
         subtitle:
           status === 'completed'
             ? 'Completed successfully'
@@ -123,40 +124,49 @@ function formatToolCall(toolCall: ToolCallTracking): FormattedToolCall {
         variant: status === 'completed' ? 'success' : status === 'failed' ? 'error' : 'default',
       }
 
-    case 'execution_cancel':
+    case 'execution_cancel': {
+      const cancelExecId = args.execution_id as string | undefined
+      const reason = args.reason as string | undefined
       return {
         icon: <XCircle className="h-4 w-4" />,
-        title: `Cancelling execution ${args.execution_id?.slice(0, 8) || ''}`,
-        subtitle: args.reason,
+        title: `Cancelling execution ${cancelExecId?.slice(0, 8) || ''}`,
+        subtitle: reason,
         variant: 'warning',
       }
+    }
 
-    case 'escalate_to_user':
+    case 'escalate_to_user': {
+      const escalateMessage = args.message as string | undefined
       return {
         icon: <AlertTriangle className="h-4 w-4" />,
         title: 'Requesting user input',
-        subtitle: args.message?.slice(0, 50) + (args.message?.length > 50 ? '...' : ''),
+        subtitle: escalateMessage ? escalateMessage.slice(0, 50) + (escalateMessage.length > 50 ? '...' : '') : undefined,
         variant: 'warning',
         isEscalation: true,
       }
+    }
 
-    case 'notify_user':
-      const level = args.level || 'info'
+    case 'notify_user': {
+      const level = (args.level as string) || 'info'
+      const notifyMessage = args.message as string | undefined
       return {
         icon: <Bell className="h-4 w-4" />,
         title: `Notification (${level})`,
-        subtitle: args.message?.slice(0, 50) + (args.message?.length > 50 ? '...' : ''),
+        subtitle: notifyMessage ? notifyMessage.slice(0, 50) + (notifyMessage.length > 50 ? '...' : '') : undefined,
         variant: level === 'error' ? 'error' : level === 'warning' ? 'warning' : 'default',
       }
+    }
 
-    case 'workflow_complete':
+    case 'workflow_complete': {
       const success = args.status !== 'failed'
+      const summary = args.summary as string | undefined
       return {
         icon: success ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />,
         title: success ? 'Workflow completed' : 'Workflow failed',
-        subtitle: args.summary,
+        subtitle: summary,
         variant: success ? 'success' : 'error',
       }
+    }
 
     case 'workflow_status':
       return {

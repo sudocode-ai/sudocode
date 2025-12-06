@@ -163,6 +163,8 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
             (agentConfig as any).dangerouslySkipPermissions ?? false,
           restrictToWorkDir: (agentConfig as any).restrictToWorkDir ?? true,
           directoryGuardHookPath: (agentConfig as any).directoryGuardHookPath,
+          mcpServers: (agentConfig as any).mcpServers,
+          appendSystemPrompt: (agentConfig as any).appendSystemPrompt,
         }) as IAgentExecutor;
 
       case "codex":
@@ -230,6 +232,49 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
       }
 
       // 5. Execute task with agent executor
+      // Check if task has MCP servers or other runtime config that requires a fresh executor
+      let executor = this.executor;
+      const taskMcpServers = (task.metadata as any)?.mcpServers;
+      const taskAppendSystemPrompt = (task.metadata as any)?.appendSystemPrompt;
+      const taskDangerouslySkipPermissions = (task.metadata as any)
+        ?.dangerouslySkipPermissions;
+
+      // Debug: Log what we received in task metadata
+      console.log(
+        `[AgentExecutorWrapper] Task metadata for ${executionId}:`,
+        {
+          agentType: this.agentType,
+          hasMcpServers: !!taskMcpServers,
+          mcpServerNames: taskMcpServers
+            ? Object.keys(taskMcpServers)
+            : "none",
+          hasAppendSystemPrompt: !!taskAppendSystemPrompt,
+          dangerouslySkipPermissions: taskDangerouslySkipPermissions,
+        }
+      );
+
+      if (
+        this.agentType === "claude-code" &&
+        (taskMcpServers ||
+          taskAppendSystemPrompt ||
+          taskDangerouslySkipPermissions)
+      ) {
+        // Create a task-specific executor with merged config
+        console.log(
+          `[AgentExecutorWrapper] Creating task-specific executor for ${executionId}`,
+          {
+            mcpServers: taskMcpServers ? Object.keys(taskMcpServers) : "none",
+            dangerouslySkipPermissions: taskDangerouslySkipPermissions,
+          }
+        );
+        executor = this.createExecutor(this.agentType, {
+          ...this._agentConfig,
+          mcpServers: taskMcpServers,
+          appendSystemPrompt: taskAppendSystemPrompt,
+          dangerouslySkipPermissions: taskDangerouslySkipPermissions,
+        } as TConfig);
+      }
+
       console.log(
         `[AgentExecutorWrapper] Spawning ${this.adapter.metadata.name} process for ${executionId}`,
         {
@@ -238,7 +283,7 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
           promptLength: task.prompt.length,
         }
       );
-      const spawned = await this.executor.executeTask(task);
+      const spawned = await executor.executeTask(task);
       console.log(
         `[AgentExecutorWrapper] ${this.adapter.metadata.name} process spawned for ${executionId}`,
         {

@@ -145,12 +145,48 @@ export function useWorkflows(params?: ListWorkflowsParams) {
 // =============================================================================
 
 export function useWorkflow(id: string | undefined) {
+  const queryClient = useQueryClient()
+  const { addMessageHandler, removeMessageHandler } = useWebSocketContext()
+
   // Fetch the workflow
   const workflowQuery = useQuery({
     queryKey: workflowKeys.detail(id!),
     queryFn: () => workflowsApi.get(id!),
     enabled: !!id,
   })
+
+  // Handle WebSocket messages for this specific workflow
+  useEffect(() => {
+    if (!id) return
+
+    const handleMessage = (message: WebSocketMessage) => {
+      // Check if the message is for this workflow
+      const messageWorkflowId = message.data?.id || message.data?.workflowId
+      if (messageWorkflowId !== id) return
+
+      // Handle workflow-specific events
+      if (
+        message.type === 'workflow_updated' ||
+        message.type === 'workflow_started' ||
+        message.type === 'workflow_paused' ||
+        message.type === 'workflow_resumed' ||
+        message.type === 'workflow_completed' ||
+        message.type === 'workflow_failed' ||
+        message.type === 'workflow_cancelled' ||
+        message.type === 'workflow_step_started' ||
+        message.type === 'workflow_step_completed' ||
+        message.type === 'workflow_step_failed' ||
+        message.type === 'workflow_step_skipped'
+      ) {
+        // Invalidate this workflow's query
+        queryClient.invalidateQueries({ queryKey: workflowKeys.detail(id) })
+      }
+    }
+
+    const handlerId = `workflow-detail-${id}`
+    addMessageHandler(handlerId, handleMessage)
+    return () => removeMessageHandler(handlerId)
+  }, [id, queryClient, addMessageHandler, removeMessageHandler])
 
   // Get all issues (we'll filter to the ones we need)
   // Using the cached issues list to avoid N+1 queries

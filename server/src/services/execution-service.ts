@@ -29,6 +29,15 @@ import type { AgentType } from "@sudocode-ai/types/agents";
 import { PromptResolver } from "./prompt-resolver.js";
 
 /**
+ * MCP server configuration
+ */
+export interface McpServerConfig {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+/**
  * Configuration for creating an execution
  */
 export interface ExecutionConfig {
@@ -43,6 +52,12 @@ export interface ExecutionConfig {
   continueOnStepFailure?: boolean;
   captureFileChanges?: boolean;
   captureToolCalls?: boolean;
+  /** MCP servers to connect to the agent */
+  mcpServers?: Record<string, McpServerConfig>;
+  /** System prompt to append to agent's default prompt */
+  appendSystemPrompt?: string;
+  /** Skip permission prompts (for automated/orchestrator executions) */
+  dangerouslySkipPermissions?: boolean;
 }
 
 /**
@@ -333,6 +348,16 @@ export class ExecutionService {
       }
     );
 
+    // Log incoming config for debugging
+    console.log("[ExecutionService] createExecution config:", {
+      hasMcpServers: !!config.mcpServers,
+      mcpServerNames: config.mcpServers
+        ? Object.keys(config.mcpServers)
+        : "none",
+      hasAppendSystemPrompt: !!config.appendSystemPrompt,
+      dangerouslySkipPermissions: config.dangerouslySkipPermissions,
+    });
+
     // Build execution task (prompt already resolved above)
     const task: ExecutionTask = {
       id: execution.id,
@@ -349,11 +374,21 @@ export class ExecutionService {
         captureToolCalls: config.captureToolCalls ?? true,
         issueId: issueId ?? undefined,
         executionId: execution.id,
+        mcpServers: config.mcpServers,
+        appendSystemPrompt: config.appendSystemPrompt,
+        dangerouslySkipPermissions: config.dangerouslySkipPermissions,
       },
       priority: 0,
       dependencies: [],
       createdAt: new Date(),
     };
+
+    console.log("[ExecutionService] Task metadata mcpServers:", {
+      hasMcpServers: !!task.metadata?.mcpServers,
+      mcpServerNames: task.metadata?.mcpServers
+        ? Object.keys(task.metadata.mcpServers as Record<string, unknown>)
+        : "none",
+    });
 
     // Execute with full lifecycle management (non-blocking)
     wrapper.executeWithLifecycle(execution.id, task, workDir).catch((error) => {

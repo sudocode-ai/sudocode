@@ -11,7 +11,11 @@
  */
 
 import path from "path";
+import { fileURLToPath } from "url";
 import type Database from "better-sqlite3";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import type {
   Workflow,
   WorkflowRow,
@@ -30,7 +34,10 @@ import {
   WorkflowStepNotFoundError,
 } from "../workflow-engine.js";
 import type { WorkflowEventEmitter } from "../workflow-event-emitter.js";
-import type { ExecutionService } from "../../services/execution-service.js";
+import type {
+  ExecutionService,
+  McpServerConfig,
+} from "../../services/execution-service.js";
 import type { WorkflowWakeupService } from "../services/wakeup-service.js";
 import { WorkflowPromptBuilder } from "../services/prompt-builder.js";
 import {
@@ -53,6 +60,10 @@ export interface OrchestratorEngineConfig {
   dbPath: string;
   /** Path to the MCP server entry point */
   mcpServerPath?: string;
+  /** Base URL of the server for MCP API calls (e.g., http://localhost:3000) */
+  serverUrl: string;
+  /** Project ID for API calls */
+  projectId: string;
 }
 
 // =============================================================================
@@ -281,6 +292,9 @@ export class OrchestratorWorkflowEngine extends BaseWorkflowEngine {
    * @throws WorkflowStateError if workflow is not in pending state
    */
   async startWorkflow(workflowId: string): Promise<void> {
+    console.log(
+      `[OrchestratorWorkflowEngine] startWorkflow called for ${workflowId}`
+    );
     const workflow = await this.getWorkflowOrThrow(workflowId);
 
     // Validate state
@@ -303,6 +317,9 @@ export class OrchestratorWorkflowEngine extends BaseWorkflowEngine {
     });
 
     // Spawn orchestrator execution
+    console.log(
+      `[OrchestratorWorkflowEngine] Spawning orchestrator for workflow ${workflowId}`
+    );
     await this.spawnOrchestrator(updated);
   }
 
@@ -540,14 +557,21 @@ export class OrchestratorWorkflowEngine extends BaseWorkflowEngine {
     // Determine agent type (default to claude-code)
     const agentType = workflow.config.orchestratorAgentType ?? "claude-code";
 
+    // Log the full config being passed to createExecution
+    const fullConfig = {
+      mode: "local" as const,
+      baseBranch: workflow.baseBranch,
+      ...agentConfig,
+    };
+    console.log(
+      "[OrchestratorWorkflowEngine] Creating execution with config:",
+      JSON.stringify(fullConfig, null, 2)
+    );
+
     // Create orchestrator execution
     const execution = await this.executionService.createExecution(
       null, // No issue - this is the orchestrator itself
-      {
-        mode: "local", // Orchestrator runs in main repo
-        baseBranch: workflow.baseBranch,
-        ...agentConfig,
-      },
+      fullConfig,
       prompt,
       agentType
     );
@@ -563,36 +587,66 @@ export class OrchestratorWorkflowEngine extends BaseWorkflowEngine {
    * Build the orchestrator agent configuration.
    *
    * Configures MCP servers for workflow control and sudocode access.
+   * Enables dangerouslySkipPermissions for automated workflow execution.
    */
   private buildOrchestratorConfig(workflow: Workflow): {
-    mcpServers?: Record<string, unknown>;
+    mcpServers?: Record<string, McpServerConfig>;
     model?: string;
     appendSystemPrompt?: string;
+    dangerouslySkipPermissions?: boolean;
   } {
     const config: {
-      mcpServers?: Record<string, unknown>;
+      mcpServers?: Record<string, McpServerConfig>;
       model?: string;
       appendSystemPrompt?: string;
-    } = {};
+      dangerouslySkipPermissions?: boolean;
+    } = {
+      // Orchestrator runs autonomously - must skip permission prompts
+      dangerouslySkipPermissions: true,
+    };
 
     // Add workflow MCP server
-    const mcpServerPath =
-      this.config.mcpServerPath || path.join(__dirname, "../mcp/index.js");
+    // Note: When running in dev mode (tsx/ts-node), __dirname points to src/
+    // but we need the compiled dist/ path. Detect and fix this.
+    let mcpServerPath = this.config.mcpServerPath;
+    if (!mcpServerPath) {
+      const defaultPath = path.join(__dirname, "../mcp/index.js");
+      // If path contains /src/, replace with /dist/ to get compiled version
+      mcpServerPath = defaultPath.includes("/src/")
+        ? defaultPath.replace("/src/", "/dist/")
+        : defaultPath;
+    }
+
+    console.log("[OrchestratorWorkflowEngine] MCP server path:", mcpServerPath);
+
+    const mcpArgs = [
+      mcpServerPath,
+      "--workflow-id",
+      workflow.id,
+      "--server-url",
+      this.config.serverUrl,
+      "--project-id",
+      this.config.projectId,
+      "--repo-path",
+      this.config.repoPath,
+    ];
 
     config.mcpServers = {
       "sudocode-workflow": {
         command: "node",
-        args: [
-          mcpServerPath,
-          "--workflow-id",
-          workflow.id,
-          "--db-path",
-          this.config.dbPath,
-          "--repo-path",
-          this.config.repoPath,
-        ],
+        args: mcpArgs,
       },
     };
+
+    // Log the MCP run command for local testing
+    console.log(
+      "[OrchestratorWorkflowEngine] MCP server config for workflow",
+      workflow.id
+    );
+    console.log(
+      "[OrchestratorWorkflowEngine] To test MCP locally, run:\n" +
+        `  node ${mcpArgs.join(" ")}`
+    );
 
     // Set model if specified
     if (workflow.config.orchestratorModel) {

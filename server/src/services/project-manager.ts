@@ -150,6 +150,10 @@ export class ProjectManager {
         promptBuilder,
         eventEmitter: workflowEventEmitter,
       });
+      // Get server URL from environment or use default
+      const serverPort = process.env.SUDOCODE_PORT || "3000";
+      const serverUrl = `http://localhost:${serverPort}`;
+
       const orchestratorWorkflowEngine = new OrchestratorWorkflowEngine({
         db,
         executionService,
@@ -158,6 +162,8 @@ export class ProjectManager {
         config: {
           repoPath: projectPath,
           dbPath: path.join(projectPath, ".sudocode", "cache.db"),
+          serverUrl,
+          projectId,
         },
       });
 

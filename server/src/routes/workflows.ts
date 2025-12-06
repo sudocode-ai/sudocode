@@ -55,8 +55,15 @@ function getEngineForWorkflow(
 
   try {
     const config = JSON.parse(row.config) as WorkflowConfig;
-    return getEngine(req, config.engineType ?? "sequential");
+    const engineType = config.engineType ?? "sequential";
+    console.log(
+      `[workflows] getEngineForWorkflow: workflow=${workflowId}, engineType=${engineType}`
+    );
+    return getEngine(req, engineType);
   } catch {
+    console.log(
+      `[workflows] getEngineForWorkflow: workflow=${workflowId}, defaulting to sequential`
+    );
     return getEngine(req, "sequential");
   }
 }
