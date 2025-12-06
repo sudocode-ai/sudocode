@@ -72,7 +72,7 @@ export async function performInitialization(
       autoDeleteBranches: false,
       enableSparseCheckout: false,
       branchPrefix: "sudocode",
-      cleanupOrphanedWorktreesOnStartup: true,
+      cleanupOrphanedWorktreesOnStartup: false,
     },
   };
   fs.writeFileSync(

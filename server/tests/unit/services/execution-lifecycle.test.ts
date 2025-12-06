@@ -460,7 +460,7 @@ describe("ExecutionLifecycleService", () => {
       ).toBeTruthy();
     });
 
-    it("should cleanup worktrees for completed executions", async () => {
+    it("should preserve worktrees for completed executions", async () => {
       const mockWorktreeManager = createMockWorktreeManager();
 
       const service = new ExecutionLifecycleService(
@@ -497,11 +497,8 @@ describe("ExecutionLifecycleService", () => {
 
       await service.cleanupOrphanedWorktrees();
 
-      // Verify cleanup was called
-      expect(mockWorktreeManager.cleanupWorktreeCalls.length).toBe(1);
-      expect(mockWorktreeManager.cleanupWorktreeCalls[0].worktreePath).toBe(
-        result.worktreePath
-      );
+      // Verify cleanup was NOT called (execution record still exists)
+      expect(mockWorktreeManager.cleanupWorktreeCalls.length).toBe(0);
     });
 
     it("should not cleanup worktrees for running executions", async () => {

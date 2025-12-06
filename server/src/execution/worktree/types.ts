@@ -60,6 +60,7 @@ export interface WorktreeConfig {
   /** Branch naming prefix */
   branchPrefix: string;
   /** Cleanup orphaned worktrees on server startup */
+  // TODO: Re-enable this later on when orphan detection is stable.
   cleanupOrphanedWorktreesOnStartup: boolean;
 }
 

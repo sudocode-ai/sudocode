@@ -9,7 +9,6 @@ import { ExecutionService } from "./execution-service.js";
 import { ExecutionLogsStore } from "./execution-logs-store.js";
 import { WorktreeManager } from "../execution/worktree/manager.js";
 import { getWorktreeConfig } from "../execution/worktree/config.js";
-import { ExecutionLifecycleService } from "./execution-lifecycle.js";
 import { startServerWatcher } from "./watcher.js";
 import type { ProjectError, Result } from "../types/project.js";
 import { Ok, Err } from "../types/project.js";
@@ -184,23 +183,24 @@ export class ProjectManager {
       }
 
       // 8. Cleanup orphaned worktrees on first open
-      if (worktreeConfig.cleanupOrphanedWorktreesOnStartup) {
-        try {
-          const lifecycleService = new ExecutionLifecycleService(
-            db,
-            projectPath,
-            worktreeManager
-          );
-          await lifecycleService.cleanupOrphanedWorktrees();
-          console.log(`Cleaned up orphaned worktrees for ${projectId}`);
-        } catch (error) {
-          console.warn(
-            `Failed to cleanup orphaned worktrees for ${projectId}:`,
-            error
-          );
-          // Don't fail the open operation
-        }
-      }
+      // TODO: Re-enable periodic cleanup when worktree orphan detection is stable.
+      // if (worktreeConfig.cleanupOrphanedWorktreesOnStartup) {
+      //   try {
+      //     const lifecycleService = new ExecutionLifecycleService(
+      //       db,
+      //       projectPath,
+      //       worktreeManager
+      //     );
+      //     await lifecycleService.cleanupOrphanedWorktrees();
+      //     console.log(`Cleaned up orphaned worktrees for ${projectId}`);
+      //   } catch (error) {
+      //     console.warn(
+      //       `Failed to cleanup orphaned worktrees for ${projectId}:`,
+      //       error
+      //     );
+      //     // Don't fail the open operation
+      //   }
+      // }
 
       // 9. Register and track
       this.registry.registerProject(projectPath);

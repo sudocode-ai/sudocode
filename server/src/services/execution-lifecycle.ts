@@ -130,9 +130,8 @@ export class ExecutionLifecycleService {
     if (!branches.includes(targetBranch)) {
       if (createTargetBranch) {
         // Create the branch from current HEAD
-        const currentBranch = await this.worktreeManager.getCurrentBranch(
-          repoPath
-        );
+        const currentBranch =
+          await this.worktreeManager.getCurrentBranch(repoPath);
         await this.worktreeManager.createBranch(
           repoPath,
           targetBranch,
@@ -179,7 +178,9 @@ export class ExecutionLifecycleService {
           cwd: repoPath,
           encoding: "utf-8",
         }).trim();
-        console.log(`[ExecutionLifecycle] Captured before_commit: ${beforeCommit}`);
+        console.log(
+          `[ExecutionLifecycle] Captured before_commit: ${beforeCommit}`
+        );
       } catch (error) {
         console.warn(
           "[ExecutionLifecycle] Failed to capture before_commit:",
@@ -312,7 +313,10 @@ export class ExecutionLifecycleService {
         // Follow-up executions need this path to recreate the worktree
       } catch (error: any) {
         // Check if error is due to worktree already being deleted
-        if (error.code === "ENOENT" || error.message?.includes("does not exist")) {
+        if (
+          error.code === "ENOENT" ||
+          error.message?.includes("does not exist")
+        ) {
           console.log(
             `Worktree already deleted for execution ${executionId}, skipping cleanup`
           );
@@ -331,8 +335,8 @@ export class ExecutionLifecycleService {
    * Clean up orphaned worktrees
    *
    * Finds worktrees that are registered in git but don't have
-   * corresponding execution records, or vice versa.
-   * Also cleans up worktrees for finished executions (completed/failed/stopped).
+   * corresponding execution records (i.e., the execution was deleted).
+   * Worktrees for existing executions (regardless of status) are preserved.
    */
   async cleanupOrphanedWorktrees(): Promise<void> {
     const repoPath = this.repoPath;
@@ -358,13 +362,14 @@ export class ExecutionLifecycleService {
         const worktreePath = worktree.path;
 
         // Try to extract execution ID from path
+        // TODO: This requires a reverse query, since its possible for worktrees to exist without executions.
         const executionId = path.basename(worktreePath);
 
         // Check if execution exists in database
         const execution = getExecution(this.db, executionId);
 
         if (!execution) {
-          // Orphaned worktree - cleanup
+          // Orphaned worktree - no execution record exists, cleanup
           console.log(
             `Cleaning up orphaned worktree: ${worktreePath} (no execution found)`
           );
@@ -376,34 +381,8 @@ export class ExecutionLifecycleService {
               error
             );
           }
-        } else if (
-          execution.status === "completed" ||
-          execution.status === "failed" ||
-          execution.status === "stopped"
-        ) {
-          // Execution is finished but worktree still exists
-          // Check if we should cleanup based on execution config
-          if (!this.shouldCleanupExecution(executionId)) {
-            console.log(
-              `Skipping cleanup for finished execution ${executionId} (manual cleanup mode)`
-            );
-            continue;
-          }
-
-          console.log(
-            `Cleaning up worktree for finished execution ${executionId} (status: ${execution.status})`
-          );
-          try {
-            await this.worktreeManager.cleanupWorktree(worktreePath, repoPath);
-            // NOTE: We do NOT set worktree_path to null in the database
-            // Follow-up executions need this path to recreate the worktree
-          } catch (error) {
-            console.error(
-              `Failed to cleanup worktree for finished execution ${executionId}:`,
-              error
-            );
-          }
         }
+        // Worktrees for existing executions (any status) are preserved
       }
     } catch (error) {
       console.error(
