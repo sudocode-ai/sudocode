@@ -16,46 +16,14 @@ npm install -g sudocode
 sudocode init
 ```
 
-**Note:** If you use multiple Node.js versions (via nvm or similar), use `npx` to avoid native module version conflicts:
-
-```bash
-npx sudocode init
-npx sudocode spec list
-```
-
-Or install locally in your project:
-
+**Note:** If you use multiple Node.js versions (via nvm or similar), you can install locally in your project:
 ```bash
 npm install --save-dev sudocode
 npx sudocode init
 ```
 
-**Troubleshooting:** If you get "NODE_MODULE_VERSION" errors after switching Node versions with a global install:
-
-```bash
-# Reinstall with your current Node version
-npm uninstall -g sudocode
-npm install -g sudocode
-```
-
-You can also install the sudocode MCP server (stdio):
-```json
-{
-  "mcpServers": {
-    "sudocode": {
-      "command": "sudocode-mcp"
-    }
-  }
-}
-```
-
 For Claude Code, you can install the plugin:
 ```bash
-# In Claude Code
-/plugin marketplace add sudocode-ai/sudocode
-/plugin install sudocode
-
-# From a Terminal
 claude plugin marketplace add sudocode-ai/sudocode
 claude plugin install sudocode
 ```
