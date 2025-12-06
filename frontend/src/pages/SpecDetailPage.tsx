@@ -31,7 +31,6 @@ import {
   Signal,
   FileText,
   Code2,
-  GitBranch,
   Trash2,
   Copy,
   Check,
@@ -39,6 +38,7 @@ import {
   Pencil,
   X,
   ChevronsUpDown,
+  ArrowLeft,
 } from 'lucide-react'
 import type { IssueFeedback, Relationship, EntityType, RelationshipType } from '@/types/api'
 import { relationshipsApi } from '@/lib/api'
@@ -184,7 +184,6 @@ export default function SpecDetailPage() {
       setHasChanges(false)
     }
   }, [spec])
-
 
   // Auto-save effect with debounce
   useEffect(() => {
@@ -511,36 +510,39 @@ export default function SpecDetailPage() {
       {/* Header */}
       <div className="relative flex flex-shrink-0 flex-col border-b bg-background">
         <div className="flex items-center justify-between p-2 sm:p-4">
-          <div className="flex items-center gap-2 sm:gap-4">
-            <Button variant="ghost" size="sm" onClick={() => navigate('/specs')}>
-              ← <span className="ml-1 hidden sm:inline">Back to Specs</span>
-            </Button>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => navigate(-1)}
+                    className="h-8 w-8 flex-shrink-0 p-0"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Go back</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            {/* Title */}
+            <textarea
+              value={title}
+              onChange={(e) => handleTitleChange(e.target.value)}
+              disabled={isUpdating}
+              placeholder="Spec title..."
+              rows={1}
+              className="min-w-0 flex-1 resize-none overflow-hidden border-none bg-transparent px-0 text-lg font-semibold leading-tight shadow-none outline-none focus:ring-0"
+              style={{ maxHeight: '2.5em' }}
+              onInput={(e) => {
+                const target = e.target as HTMLTextAreaElement
+                target.style.height = 'auto'
+                target.style.height = `${Math.min(target.scrollHeight, 40)}px`
+              }}
+            />
           </div>
           <div className="flex items-center gap-1 sm:gap-2">
-            {/* View mode toggle */}
-            <div className="flex items-center gap-1 sm:gap-2">
-              <div className="inline-flex rounded-md border border-border bg-muted/30 p-1">
-                <Button
-                  variant={viewMode === 'formatted' ? 'outline' : 'ghost'}
-                  size="sm"
-                  onClick={() => setViewMode('formatted')}
-                  className={`h-7 rounded-sm ${viewMode === 'formatted' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
-                >
-                  <FileText className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Formatted</span>
-                </Button>
-                <Button
-                  variant={viewMode === 'source' ? 'outline' : 'ghost'}
-                  size="sm"
-                  onClick={() => setViewMode('source')}
-                  className={`h-7 rounded-sm ${viewMode === 'source' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
-                >
-                  <Code2 className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Markdown</span>
-                </Button>
-              </div>
-            </div>
-
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -650,217 +652,176 @@ export default function SpecDetailPage() {
               }`}
             >
               <div className="mx-auto max-w-full space-y-3">
-                {/* Spec ID and Title */}
-                <div className="space-y-2 pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="group relative flex items-center gap-1">
-                        <Badge variant="spec" className="font-mono">
-                          {spec.id}
-                        </Badge>
+                {/* Parent/Children info */}
+                <div className="flex flex-wrap items-center gap-2 pb-2">
+                  {/* Entity Badge */}
+                  <div className="group relative flex flex-shrink-0 items-center gap-1">
+                    <Badge variant="spec" className="font-mono">
+                      {spec.id}
+                    </Badge>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleCopyId}
+                            className="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+                          >
+                            {isCopied ? (
+                              <Check className="h-3.5 w-3.5" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{isCopied ? 'Copied!' : 'Copy ID to Clipboard'}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  {/* Parent spec selector */}
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm text-muted-foreground">Parent:</span>
+                    {isEditingParent ? (
+                      <div className="flex items-center gap-1">
+                        <Popover open={parentComboboxOpen} onOpenChange={setParentComboboxOpen}>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              role="combobox"
+                              aria-expanded={parentComboboxOpen}
+                              className="h-7 w-[200px] justify-between text-xs font-normal"
+                              disabled={isUpdating}
+                            >
+                              {spec.parent_id ? (
+                                <span className="truncate">
+                                  {availableParentSpecs.find((s) => s.id === spec.parent_id)
+                                    ?.title || spec.parent_id}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">Select parent...</span>
+                              )}
+                              <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[280px] p-0" align="start">
+                            <div className="flex flex-col">
+                              <div className="border-b p-2">
+                                <Input
+                                  placeholder="Search specs..."
+                                  value={parentSearchTerm}
+                                  onChange={(e) => setParentSearchTerm(e.target.value)}
+                                  className="h-7 text-xs"
+                                  autoFocus
+                                />
+                              </div>
+                              <div className="max-h-60 overflow-auto">
+                                {/* Option to clear parent */}
+                                {spec.parent_id && (
+                                  <button
+                                    type="button"
+                                    className="flex w-full items-center gap-2 border-b px-3 py-2 text-left text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                                    onClick={() => handleParentChange(undefined)}
+                                  >
+                                    <X className="h-3 w-3" />
+                                    Remove parent
+                                  </button>
+                                )}
+                                {filteredParentSpecs.length === 0 ? (
+                                  <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                                    No specs found
+                                  </div>
+                                ) : (
+                                  filteredParentSpecs.map((s) => (
+                                    <button
+                                      key={s.id}
+                                      type="button"
+                                      className={cn(
+                                        'flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground',
+                                        spec.parent_id === s.id &&
+                                          'bg-accent text-accent-foreground'
+                                      )}
+                                      onClick={() => handleParentChange(s.id)}
+                                    >
+                                      <Check
+                                        className={cn(
+                                          'mt-0.5 h-3 w-3 shrink-0',
+                                          spec.parent_id === s.id ? 'opacity-100' : 'opacity-0'
+                                        )}
+                                      />
+                                      <div className="flex-1 overflow-hidden">
+                                        <div className="font-medium">{s.id}</div>
+                                        <div className="truncate text-muted-foreground">
+                                          {s.title}
+                                        </div>
+                                      </div>
+                                    </button>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0"
+                          onClick={() => {
+                            setIsEditingParent(false)
+                            setParentSearchTerm('')
+                            setParentComboboxOpen(false)
+                          }}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="group flex items-center gap-1">
+                        {spec.parent_id ? (
+                          <EntityBadge entityId={spec.parent_id} entityType="spec" showTitle />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">None</span>
+                        )}
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={handleCopyId}
+                                onClick={() => setIsEditingParent(true)}
+                                disabled={isUpdating}
                                 className="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
                               >
-                                {isCopied ? (
-                                  <Check className="h-3.5 w-3.5" />
-                                ) : (
-                                  <Copy className="h-3.5 w-3.5" />
-                                )}
+                                <Pencil className="h-3 w-3" />
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p>{isCopied ? 'Copied!' : 'Copy ID to Clipboard'}</p>
+                              <p>{spec.parent_id ? 'Change parent' : 'Set parent'}</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                       </div>
-                      {/* Parent spec selector */}
-                      <div className="flex items-center gap-1">
-                        <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-sm text-muted-foreground">Parent:</span>
-                        {isEditingParent ? (
-                          <div className="flex items-center gap-1">
-                            <Popover open={parentComboboxOpen} onOpenChange={setParentComboboxOpen}>
-                              <PopoverTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  role="combobox"
-                                  aria-expanded={parentComboboxOpen}
-                                  className="h-7 w-[200px] justify-between text-xs font-normal"
-                                  disabled={isUpdating}
-                                >
-                                  {spec.parent_id ? (
-                                    <span className="truncate">
-                                      {availableParentSpecs.find((s) => s.id === spec.parent_id)?.title ||
-                                        spec.parent_id}
-                                    </span>
-                                  ) : (
-                                    <span className="text-muted-foreground">Select parent...</span>
-                                  )}
-                                  <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-[280px] p-0" align="start">
-                                <div className="flex flex-col">
-                                  <div className="border-b p-2">
-                                    <Input
-                                      placeholder="Search specs..."
-                                      value={parentSearchTerm}
-                                      onChange={(e) => setParentSearchTerm(e.target.value)}
-                                      className="h-7 text-xs"
-                                      autoFocus
-                                    />
-                                  </div>
-                                  <div className="max-h-60 overflow-auto">
-                                    {/* Option to clear parent */}
-                                    {spec.parent_id && (
-                                      <button
-                                        type="button"
-                                        className="flex w-full items-center gap-2 border-b px-3 py-2 text-left text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                                        onClick={() => handleParentChange(undefined)}
-                                      >
-                                        <X className="h-3 w-3" />
-                                        Remove parent
-                                      </button>
-                                    )}
-                                    {filteredParentSpecs.length === 0 ? (
-                                      <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-                                        No specs found
-                                      </div>
-                                    ) : (
-                                      filteredParentSpecs.map((s) => (
-                                        <button
-                                          key={s.id}
-                                          type="button"
-                                          className={cn(
-                                            'flex w-full items-start gap-2 px-3 py-2 text-left text-xs hover:bg-accent hover:text-accent-foreground',
-                                            spec.parent_id === s.id && 'bg-accent text-accent-foreground'
-                                          )}
-                                          onClick={() => handleParentChange(s.id)}
-                                        >
-                                          <Check
-                                            className={cn(
-                                              'mt-0.5 h-3 w-3 shrink-0',
-                                              spec.parent_id === s.id ? 'opacity-100' : 'opacity-0'
-                                            )}
-                                          />
-                                          <div className="flex-1 overflow-hidden">
-                                            <div className="font-medium">{s.id}</div>
-                                            <div className="truncate text-muted-foreground">{s.title}</div>
-                                          </div>
-                                        </button>
-                                      ))
-                                    )}
-                                  </div>
-                                </div>
-                              </PopoverContent>
-                            </Popover>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 w-6 p-0"
-                              onClick={() => {
-                                setIsEditingParent(false)
-                                setParentSearchTerm('')
-                                setParentComboboxOpen(false)
-                              }}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="group flex items-center gap-1">
-                            {spec.parent_id ? (
-                              <EntityBadge entityId={spec.parent_id} entityType="spec" showTitle />
-                            ) : (
-                              <span className="text-xs text-muted-foreground">None</span>
-                            )}
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setIsEditingParent(true)}
-                                    disabled={isUpdating}
-                                    className="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-                                  >
-                                    <Pencil className="h-3 w-3" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>{spec.parent_id ? 'Change parent' : 'Set parent'}</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </div>
-                        )}
-                      </div>
-                      {childSpecs.length > 0 && (
-                        <>
-                          <GitBranch className="h-3.5 w-3.5 rotate-180 text-muted-foreground" />
-                          <span className="text-sm text-muted-foreground">
-                            {childSpecs.length === 1 ? 'Child:' : 'Children:'}
-                          </span>
-                          <div className="flex flex-wrap items-center gap-1">
-                            {childSpecs.map((child) => (
-                              <EntityBadge
-                                key={child.id}
-                                entityId={child.id}
-                                entityType="spec"
-                                displayText={child.title}
-                              />
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                    <div className="text-xs italic text-muted-foreground">
-                      {isUpdating
-                        ? 'Saving...'
-                        : hasChanges
-                          ? 'Unsaved changes...'
-                          : 'All changes saved'}
-                    </div>
+                    )}
                   </div>
-                  <Input
-                    value={title}
-                    onChange={(e) => handleTitleChange(e.target.value)}
-                    disabled={isUpdating}
-                    placeholder="Spec title..."
-                    className="border-none bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
-                  />
-                </div>
-
-                {/* Metadata Row */}
-                <div className="flex flex-wrap items-center gap-4">
-                  {/* Priority */}
-                  <div className="flex items-center gap-2">
-                    <Signal className="h-4 w-4 text-muted-foreground" />
-                    <Select
-                      value={String(priority)}
-                      onValueChange={(value) => handlePriorityChange(parseInt(value))}
-                      disabled={isUpdating}
-                    >
-                      <SelectTrigger className="h-8 w-auto gap-3 rounded-md border-none bg-accent px-3 shadow-none hover:bg-accent/80">
-                        <SelectValue placeholder="Priority" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {PRIORITY_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
+                  {childSpecs.length > 0 && (
+                    <>
+                      <span className="text-sm text-muted-foreground">
+                        {childSpecs.length === 1 ? 'Child:' : 'Children:'}
+                      </span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {childSpecs.map((child) => (
+                          <EntityBadge
+                            key={child.id}
+                            entityId={child.id}
+                            entityType="spec"
+                            displayText={child.title}
+                          />
                         ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
+                      </div>
+                    </>
+                  )}
                   {/* Timestamp */}
                   <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
                     {spec.updated_at && (
@@ -874,6 +835,68 @@ export default function SpecDetailPage() {
                         )}
                       </div>
                     )}
+                  </div>
+                </div>
+
+                {/* Metadata Row */}
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center gap-4">
+                    {/* Priority */}
+                    <div className="flex items-center gap-2">
+                      <Signal className="h-4 w-4 text-muted-foreground" />
+                      <Select
+                        value={String(priority)}
+                        onValueChange={(value) => handlePriorityChange(parseInt(value))}
+                        disabled={isUpdating}
+                      >
+                        <SelectTrigger className="h-8 w-auto gap-3 rounded-md border-none bg-accent px-3 shadow-none hover:bg-accent/80">
+                          <SelectValue placeholder="Priority" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PRIORITY_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* View mode toggle */}
+                    <TooltipProvider>
+                      <div className="flex rounded border border-border/50 bg-muted/30 p-0.5">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => setViewMode('formatted')}
+                              className={`rounded p-1 ${viewMode === 'formatted' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                            >
+                              <FileText className="h-4 w-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>Formatted</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => setViewMode('source')}
+                              className={`rounded p-1 ${viewMode === 'source' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                            >
+                              <Code2 className="h-4 w-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>Markdown</TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </TooltipProvider>
+                  </div>
+                  {/* Save status */}
+                  <div className="flex-shrink-0 text-xs italic text-muted-foreground">
+                    {isUpdating
+                      ? 'Saving...'
+                      : hasChanges
+                        ? 'Unsaved changes...'
+                        : 'All changes saved'}
                   </div>
                 </div>
 
