@@ -190,6 +190,16 @@ export interface UncommittedFileStats {
   deletions: number
 }
 
+/**
+ * Info about potential local conflicts when including uncommitted files
+ */
+export interface PotentialLocalConflicts {
+  /** Number of files that may have merge conflicts */
+  count: number
+  /** List of files that may have merge conflicts */
+  files: string[]
+}
+
 export interface SyncPreviewResult {
   canSync: boolean
   conflicts: ConflictReport
@@ -200,6 +210,8 @@ export interface SyncPreviewResult {
   uncommittedJSONLChanges?: boolean
   /** Stats about uncommitted changes in worktree (not included in sync by default) */
   uncommittedChanges?: UncommittedFileStats
+  /** Files that may have merge conflicts if "include uncommitted" is selected */
+  potentialLocalConflicts?: PotentialLocalConflicts
   executionStatus: ExecutionStatus
   warnings: string[]
 }
@@ -210,6 +222,8 @@ export interface SyncResult {
   filesChanged: number
   /** Whether there are unresolved merge conflicts (user must resolve manually) */
   hasConflicts?: boolean
+  /** List of files that have merge conflicts requiring manual resolution */
+  filesWithConflicts?: string[]
   /** Number of uncommitted files copied from worktree (stage sync only) */
   uncommittedFilesIncluded?: number
   error?: string
