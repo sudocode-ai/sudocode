@@ -137,22 +137,19 @@ export function IssueCard({
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
+          </div>
+          {/* Right-aligned badges */}
+          <div className="flex items-center gap-1">
             {/* Visual indicator for execution-based column placement */}
             {displayStatusOverride && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+                    <span className="inline-flex items-center justify-center rounded-full bg-blue-100 p-1 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
                       {displayStatusOverride === 'in_progress' ? (
-                        <>
-                          <Play className="h-2.5 w-2.5 fill-current" />
-                          <span>Running</span>
-                        </>
+                        <Play className="h-4 w-4 fill-current" />
                       ) : (
-                        <>
-                          <CheckCircle2 className="h-2.5 w-2.5" />
-                          <span>Review</span>
-                        </>
+                        <CheckCircle2 className="h-4 w-4" />
                       )}
                     </span>
                   </TooltipTrigger>
@@ -169,24 +166,24 @@ export function IssueCard({
                 </Tooltip>
               </TooltipProvider>
             )}
-          </div>
-          <div className="flex items-center gap-1.5">
-            {/* Workflow Indicator */}
-            {workflowInfo && (
-              <WorkflowIndicator
-                workflowId={workflowInfo.workflowId}
-                workflowTitle={workflowInfo.workflowTitle}
-                stepStatus={workflowInfo.stepStatus}
-              />
-            )}
-            {/* Priority Badge */}
-            {issue.priority !== undefined && issue.priority <= 3 && (
-              <span
-                className={`shrink-0 rounded-full px-2 py-0.5 text-xs text-white ${priorityColors[issue.priority]}`}
-              >
-                {priorityLabels[issue.priority]}
-              </span>
-            )}
+            <div className="flex items-center gap-1.5">
+              {/* Workflow Indicator */}
+              {workflowInfo && (
+                <WorkflowIndicator
+                  workflowId={workflowInfo.workflowId}
+                  workflowTitle={workflowInfo.workflowTitle}
+                  stepStatus={workflowInfo.stepStatus}
+                />
+              )}
+              {/* Priority Badge */}
+              {issue.priority !== undefined && issue.priority <= 3 && (
+                <span
+                  className={`shrink-0 rounded-full px-1.5 py-0.5 text-xs text-white ${priorityColors[issue.priority]}`}
+                >
+                  {priorityLabels[issue.priority]}
+                </span>
+              )}
+            </div>
           </div>
         </div>
         <h4 className="text-md line-clamp-2 min-w-0 flex-1 font-medium">{issue.title}</h4>

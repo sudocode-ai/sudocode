@@ -977,13 +977,14 @@ export function createExecutionsRouter(): Router {
    *
    * Request body:
    * - includeUncommitted?: boolean - If true, also copy uncommitted files from worktree
+   * - overrideLocalChanges?: boolean - If true, skip merge and overwrite local changes
    */
   router.post(
     "/executions/:executionId/sync/stage",
     async (req: Request, res: Response) => {
       try {
         const { executionId } = req.params;
-        const { includeUncommitted } = req.body || {};
+        const { includeUncommitted, overrideLocalChanges } = req.body || {};
 
         // Get worktree sync service
         const syncService = getWorktreeSyncService(req);
@@ -991,6 +992,7 @@ export function createExecutionsRouter(): Router {
         // Perform stage sync with options
         const result = await syncService.stageSync(executionId, {
           includeUncommitted: includeUncommitted === true,
+          overrideLocalChanges: overrideLocalChanges === true,
         });
 
         res.json({

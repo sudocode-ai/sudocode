@@ -66,6 +66,7 @@ interface IssuePanelProps {
   showViewToggleInline?: boolean
   feedback?: IssueFeedback[]
   autoFocusAgentConfig?: boolean
+  issues?: Issue[] // All issues for computing children
 }
 
 const STATUS_OPTIONS: { value: IssueStatus; label: string }[] = [
@@ -100,6 +101,7 @@ export function IssuePanel({
   showViewToggleInline = true,
   feedback = [],
   autoFocusAgentConfig = false,
+  issues = [],
 }: IssuePanelProps) {
   const navigate = useNavigate()
   const [title, setTitle] = useState(issue.title)
@@ -174,6 +176,11 @@ export function IssuePanel({
     if (!latestExecution) return false
     return latestExecution.status === 'running'
   }, [latestExecution])
+
+  // Compute child issues (issues whose parent_id matches this issue's id)
+  const childIssues = useMemo(() => {
+    return issues.filter((i) => i.parent_id === issue.id)
+  }, [issues, issue.id])
 
   // Scroll to bottom helper
   const scrollToBottom = useCallback(() => {
@@ -1033,6 +1040,23 @@ export function IssuePanel({
                     <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
                     <span className="text-sm text-muted-foreground">Parent: </span>
                     <EntityBadge entityId={issue.parent_id} entityType="issue" showTitle />
+                  </>
+                )}
+                {childIssues.length > 0 && (
+                  <>
+                    <span className="text-sm text-muted-foreground">
+                      {childIssues.length === 1 ? 'Child:' : 'Children:'}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1">
+                      {childIssues.map((child) => (
+                        <EntityBadge
+                          key={child.id}
+                          entityId={child.id}
+                          entityType="issue"
+                          displayText={child.title}
+                        />
+                      ))}
+                    </div>
                   </>
                 )}
               </div>

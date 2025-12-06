@@ -14,7 +14,7 @@ export default function IssueDetailPage() {
   const navigate = useNavigate()
   const { data: issue, isLoading, isError } = useIssue(id || '')
   const { feedback } = useIssueFeedback(id || '')
-  const { updateIssue, deleteIssue, archiveIssue, unarchiveIssue, isUpdating, isDeleting } =
+  const { issues, updateIssue, deleteIssue, archiveIssue, unarchiveIssue, isUpdating, isDeleting } =
     useIssues()
 
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -176,6 +176,7 @@ export default function IssueDetailPage() {
             onViewModeChange={setViewMode}
             showViewToggleInline={true}
             feedback={feedback}
+            issues={issues}
           />
         </div>
 

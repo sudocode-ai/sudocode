@@ -423,6 +423,7 @@ describe('SyncPreviewDialog', () => {
       expect(defaultProps.onConfirmSync).toHaveBeenCalledWith('stage', {
         commitMessage: undefined,
         includeUncommitted: true,
+        overrideLocalChanges: false,
       })
     })
 

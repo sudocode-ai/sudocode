@@ -1486,6 +1486,517 @@ describe("WorktreeSyncService Foundation", () => {
       expect(entities[0].title).toBe("Version 1");
     });
   });
+
+  describe("_hasLocalUncommittedChanges", () => {
+    it("should return false for file without changes", () => {
+      // Create and commit a file
+      fs.writeFileSync(path.join(testRepo, "committed.ts"), "content");
+      execSync("git add committed.ts", { cwd: testRepo, stdio: "pipe" });
+      execSync('git commit -m "Add file"', { cwd: testRepo, stdio: "pipe" });
+
+      const hasChanges = (service as any)._hasLocalUncommittedChanges(
+        "committed.ts"
+      );
+      expect(hasChanges).toBe(false);
+    });
+
+    it("should return true for file with uncommitted changes", () => {
+      // Create and commit a file
+      fs.writeFileSync(path.join(testRepo, "modified.ts"), "original");
+      execSync("git add modified.ts", { cwd: testRepo, stdio: "pipe" });
+      execSync('git commit -m "Add file"', { cwd: testRepo, stdio: "pipe" });
+
+      // Modify it without committing
+      fs.writeFileSync(path.join(testRepo, "modified.ts"), "changed");
+
+      const hasChanges = (service as any)._hasLocalUncommittedChanges(
+        "modified.ts"
+      );
+      expect(hasChanges).toBe(true);
+    });
+
+    it("should return false for new untracked file (not in HEAD)", () => {
+      // Create a new file (not committed)
+      fs.writeFileSync(path.join(testRepo, "untracked.ts"), "content");
+
+      // For untracked files, git diff --quiet HEAD returns 0 because
+      // the file isn't in HEAD to compare against.
+      // Note: We use _isFileUntracked separately to detect these cases.
+      const hasChanges = (service as any)._hasLocalUncommittedChanges(
+        "untracked.ts"
+      );
+      expect(hasChanges).toBe(false);
+    });
+  });
+
+  describe("_isFileUntracked", () => {
+    it("should return true for untracked file", () => {
+      // Create a new file (not committed)
+      fs.writeFileSync(path.join(testRepo, "untracked-test.ts"), "content");
+
+      const isUntracked = (service as any)._isFileUntracked("untracked-test.ts");
+      expect(isUntracked).toBe(true);
+    });
+
+    it("should return false for tracked file", () => {
+      // Create and commit a file
+      fs.writeFileSync(path.join(testRepo, "tracked.ts"), "content");
+      execSync("git add tracked.ts", { cwd: testRepo, stdio: "pipe" });
+      execSync('git commit -m "Add file"', { cwd: testRepo, stdio: "pipe" });
+
+      const isUntracked = (service as any)._isFileUntracked("tracked.ts");
+      expect(isUntracked).toBe(false);
+    });
+
+    it("should return false for staged file", () => {
+      // Create and stage a file (but not commit)
+      fs.writeFileSync(path.join(testRepo, "staged.ts"), "content");
+      execSync("git add staged.ts", { cwd: testRepo, stdio: "pipe" });
+
+      const isUntracked = (service as any)._isFileUntracked("staged.ts");
+      expect(isUntracked).toBe(false);
+    });
+  });
+
+  describe("_isJSONLFile", () => {
+    it("should return true for .sudocode JSONL files", () => {
+      expect((service as any)._isJSONLFile(".sudocode/issues.jsonl")).toBe(true);
+      expect((service as any)._isJSONLFile(".sudocode/specs.jsonl")).toBe(true);
+    });
+
+    it("should return false for non-JSONL files", () => {
+      expect((service as any)._isJSONLFile("src/app.ts")).toBe(false);
+      expect((service as any)._isJSONLFile(".sudocode/config.json")).toBe(false);
+    });
+
+    it("should return false for JSONL files outside .sudocode", () => {
+      expect((service as any)._isJSONLFile("data/issues.jsonl")).toBe(false);
+    });
+  });
+
+  describe("_threeWayMergeFile", () => {
+    it("should merge non-conflicting changes cleanly", () => {
+      // Create base file
+      fs.writeFileSync(
+        path.join(testRepo, "merge-test.ts"),
+        "line1\nline2\nline3\n"
+      );
+      execSync("git add merge-test.ts", { cwd: testRepo, stdio: "pipe" });
+      execSync('git commit -m "Add base file"', {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Modify local version (add line at end)
+      fs.writeFileSync(
+        path.join(testRepo, "merge-test.ts"),
+        "line1\nline2\nline3\nline4-local\n"
+      );
+
+      // Create worktree file with different change (add line at beginning)
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      fs.writeFileSync(
+        path.join(worktreePath, "merge-test.ts"),
+        "line0-worktree\nline1\nline2\nline3\n"
+      );
+
+      // Perform merge
+      const hasConflicts = (service as any)._threeWayMergeFile(
+        "merge-test.ts",
+        path.join(worktreePath, "merge-test.ts")
+      );
+
+      expect(hasConflicts).toBe(false);
+
+      // Verify merged content has both changes
+      const mergedContent = fs.readFileSync(
+        path.join(testRepo, "merge-test.ts"),
+        "utf8"
+      );
+      expect(mergedContent).toContain("line0-worktree");
+      expect(mergedContent).toContain("line4-local");
+    });
+
+    it("should return true and add conflict markers for conflicting changes", () => {
+      // Create base file
+      fs.writeFileSync(
+        path.join(testRepo, "conflict-test.ts"),
+        "line1\nline2\nline3\n"
+      );
+      execSync("git add conflict-test.ts", { cwd: testRepo, stdio: "pipe" });
+      execSync('git commit -m "Add base file"', {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Modify local version (change line2)
+      fs.writeFileSync(
+        path.join(testRepo, "conflict-test.ts"),
+        "line1\nline2-local\nline3\n"
+      );
+
+      // Create worktree file with conflicting change (also change line2)
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      fs.writeFileSync(
+        path.join(worktreePath, "conflict-test.ts"),
+        "line1\nline2-worktree\nline3\n"
+      );
+
+      // Perform merge
+      const hasConflicts = (service as any)._threeWayMergeFile(
+        "conflict-test.ts",
+        path.join(worktreePath, "conflict-test.ts")
+      );
+
+      expect(hasConflicts).toBe(true);
+
+      // Verify conflict markers are present
+      const mergedContent = fs.readFileSync(
+        path.join(testRepo, "conflict-test.ts"),
+        "utf8"
+      );
+      expect(mergedContent).toContain("<<<<<<<");
+      expect(mergedContent).toContain("=======");
+      expect(mergedContent).toContain(">>>>>>>");
+      expect(mergedContent).toContain("line2-local");
+      expect(mergedContent).toContain("line2-worktree");
+    });
+  });
+
+  describe("_mergeJSONLFiles", () => {
+    it("should merge JSONL files using UUID-based deduplication", async () => {
+      const createIssue = (
+        id: string,
+        uuid: string,
+        title: string,
+        updatedAt?: string
+      ) => ({
+        id,
+        uuid,
+        title,
+        status: "open",
+        content: "",
+        priority: 0,
+        created_at: "2024-01-01T00:00:00Z",
+        updated_at: updatedAt || "2024-01-01T00:00:00Z",
+      });
+
+      // Create local file with one issue
+      const localPath = path.join(testRepo, ".sudocode/issues.jsonl");
+      fs.mkdirSync(path.dirname(localPath), { recursive: true });
+      fs.writeFileSync(
+        localPath,
+        JSON.stringify(createIssue("i-1", "uuid-1", "Local issue")) + "\n"
+      );
+
+      // Create worktree file with different issue
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      const worktreeFile = path.join(worktreePath, "issues.jsonl");
+      fs.writeFileSync(
+        worktreeFile,
+        JSON.stringify(createIssue("i-2", "uuid-2", "Worktree issue")) + "\n"
+      );
+
+      // Merge files
+      await (service as any)._mergeJSONLFiles(localPath, worktreeFile);
+
+      // Verify both issues are in merged file
+      const mergedContent = fs.readFileSync(localPath, "utf8");
+      expect(mergedContent).toContain("uuid-1");
+      expect(mergedContent).toContain("uuid-2");
+    });
+
+    it("should merge duplicate UUIDs by keeping most recent", async () => {
+      const createIssue = (
+        id: string,
+        uuid: string,
+        title: string,
+        updatedAt: string
+      ) => ({
+        id,
+        uuid,
+        title,
+        status: "open",
+        content: "",
+        priority: 0,
+        created_at: "2024-01-01T00:00:00Z",
+        updated_at: updatedAt,
+      });
+
+      // Create local file with issue
+      const localPath = path.join(testRepo, ".sudocode/merge-issues.jsonl");
+      fs.mkdirSync(path.dirname(localPath), { recursive: true });
+      fs.writeFileSync(
+        localPath,
+        JSON.stringify(
+          createIssue("i-1", "same-uuid", "Older version", "2024-01-01T00:00:00Z")
+        ) + "\n"
+      );
+
+      // Create worktree file with same UUID but newer timestamp
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      const worktreeFile = path.join(worktreePath, "merge-issues.jsonl");
+      fs.writeFileSync(
+        worktreeFile,
+        JSON.stringify(
+          createIssue("i-1", "same-uuid", "Newer version", "2024-06-01T00:00:00Z")
+        ) + "\n"
+      );
+
+      // Merge files
+      await (service as any)._mergeJSONLFiles(localPath, worktreeFile);
+
+      // Verify merged file has the newer version
+      const mergedContent = fs.readFileSync(localPath, "utf8");
+      expect(mergedContent).toContain("Newer version");
+      // Should only have one entity
+      const lines = mergedContent.split("\n").filter((l: string) => l.trim());
+      expect(lines.length).toBe(1);
+    });
+  });
+
+  describe("_copyUncommittedFiles with safe merging", () => {
+    it("should copy file directly when no local changes exist", async () => {
+      // Create worktree
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      execSync(`git worktree add ${worktreePath} -b copy-direct-branch`, {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Add uncommitted file in worktree
+      fs.writeFileSync(
+        path.join(worktreePath, "new-file.ts"),
+        "worktree content"
+      );
+
+      // Copy uncommitted files
+      const result = await (service as any)._copyUncommittedFiles(worktreePath);
+
+      expect(result.filesCopied).toBe(1);
+      expect(result.filesWithConflicts).toHaveLength(0);
+
+      // Verify file was copied
+      const localContent = fs.readFileSync(
+        path.join(testRepo, "new-file.ts"),
+        "utf8"
+      );
+      expect(localContent).toBe("worktree content");
+    });
+
+    it("should use three-way merge when local has uncommitted changes", async () => {
+      // Create and commit base file
+      fs.writeFileSync(
+        path.join(testRepo, "shared.ts"),
+        "line1\nline2\nline3\n"
+      );
+      execSync("git add shared.ts", { cwd: testRepo, stdio: "pipe" });
+      execSync('git commit -m "Add shared file"', {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Create worktree
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      execSync(`git worktree add ${worktreePath} -b merge-branch`, {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Modify local version (not committed)
+      fs.writeFileSync(
+        path.join(testRepo, "shared.ts"),
+        "line1\nline2-local\nline3\n"
+      );
+
+      // Modify worktree version (uncommitted)
+      fs.writeFileSync(
+        path.join(worktreePath, "shared.ts"),
+        "line1\nline2-worktree\nline3\n"
+      );
+
+      // Copy uncommitted files
+      const result = await (service as any)._copyUncommittedFiles(worktreePath);
+
+      expect(result.filesCopied).toBe(1);
+      expect(result.filesWithConflicts).toHaveLength(1);
+      expect(result.filesWithConflicts[0]).toBe("shared.ts");
+
+      // Verify conflict markers were added
+      const localContent = fs.readFileSync(
+        path.join(testRepo, "shared.ts"),
+        "utf8"
+      );
+      expect(localContent).toContain("<<<<<<<");
+      expect(localContent).toContain(">>>>>>>");
+    });
+
+    it("should use JSONL merge for .sudocode JSONL files", async () => {
+      const createIssue = (id: string, uuid: string, title: string) => ({
+        id,
+        uuid,
+        title,
+        status: "open",
+        content: "",
+        priority: 0,
+        created_at: "2024-01-01T00:00:00Z",
+        updated_at: "2024-01-01T00:00:00Z",
+      });
+
+      // Create and commit base JSONL
+      fs.mkdirSync(path.join(testRepo, ".sudocode"), { recursive: true });
+      fs.writeFileSync(
+        path.join(testRepo, ".sudocode/issues.jsonl"),
+        JSON.stringify(createIssue("i-base", "uuid-base", "Base issue")) + "\n"
+      );
+      execSync("git add .sudocode/issues.jsonl", {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+      execSync('git commit -m "Add base JSONL"', {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Create worktree
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      execSync(`git worktree add ${worktreePath} -b jsonl-merge-branch`, {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Modify local JSONL (add local issue)
+      fs.writeFileSync(
+        path.join(testRepo, ".sudocode/issues.jsonl"),
+        JSON.stringify(createIssue("i-base", "uuid-base", "Base issue")) +
+          "\n" +
+          JSON.stringify(createIssue("i-local", "uuid-local", "Local issue")) +
+          "\n"
+      );
+
+      // Modify worktree JSONL (add worktree issue)
+      fs.writeFileSync(
+        path.join(worktreePath, ".sudocode/issues.jsonl"),
+        JSON.stringify(
+          createIssue("i-worktree", "uuid-worktree", "Worktree issue")
+        ) + "\n"
+      );
+
+      // Copy uncommitted files
+      const result = await (service as any)._copyUncommittedFiles(worktreePath);
+
+      expect(result.filesCopied).toBe(1);
+      // JSONL files should NOT have conflicts (they're auto-merged)
+      expect(result.filesWithConflicts).toHaveLength(0);
+
+      // Verify JSONL was merged (should have all three issues)
+      const mergedContent = fs.readFileSync(
+        path.join(testRepo, ".sudocode/issues.jsonl"),
+        "utf8"
+      );
+      expect(mergedContent).toContain("uuid-base");
+      expect(mergedContent).toContain("uuid-local");
+      expect(mergedContent).toContain("uuid-worktree");
+    });
+
+    it("should use three-way merge for untracked local files", async () => {
+      // Create worktree
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      execSync(`git worktree add ${worktreePath} -b untracked-merge-branch`, {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Create untracked local file (not in git at all)
+      fs.writeFileSync(
+        path.join(testRepo, "untracked-local.ts"),
+        "local content\n"
+      );
+
+      // Create uncommitted file in worktree with different content
+      fs.writeFileSync(
+        path.join(worktreePath, "untracked-local.ts"),
+        "worktree content\n"
+      );
+
+      // Copy uncommitted files
+      const result = await (service as any)._copyUncommittedFiles(worktreePath);
+
+      expect(result.filesCopied).toBe(1);
+      // Should have conflicts since both have different content and no common base
+      expect(result.filesWithConflicts).toHaveLength(1);
+      expect(result.filesWithConflicts[0]).toBe("untracked-local.ts");
+
+      // Verify conflict markers were added
+      const localContent = fs.readFileSync(
+        path.join(testRepo, "untracked-local.ts"),
+        "utf8"
+      );
+      expect(localContent).toContain("<<<<<<<");
+      expect(localContent).toContain(">>>>>>>");
+    });
+
+    it("should NOT stage files that have conflict markers", async () => {
+      // Create and commit base file
+      fs.writeFileSync(
+        path.join(testRepo, "conflict-staging.ts"),
+        "base content\n"
+      );
+      execSync("git add conflict-staging.ts", { cwd: testRepo, stdio: "pipe" });
+      execSync('git commit -m "Add base file"', {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Create worktree
+      const worktreePath = createWorktreePath();
+      worktreePaths.push(worktreePath);
+      execSync(`git worktree add ${worktreePath} -b conflict-staging-branch`, {
+        cwd: testRepo,
+        stdio: "pipe",
+      });
+
+      // Modify local version
+      fs.writeFileSync(
+        path.join(testRepo, "conflict-staging.ts"),
+        "local changes\n"
+      );
+
+      // Modify worktree version with conflicting change
+      fs.writeFileSync(
+        path.join(worktreePath, "conflict-staging.ts"),
+        "worktree changes\n"
+      );
+
+      // Copy uncommitted files
+      const result = await (service as any)._copyUncommittedFiles(worktreePath);
+
+      expect(result.filesWithConflicts).toContain("conflict-staging.ts");
+
+      // Verify file is NOT staged (so VS Code can detect conflicts)
+      const stagedFiles = execSync("git diff --cached --name-only", {
+        cwd: testRepo,
+        encoding: "utf8",
+        stdio: "pipe",
+      });
+      expect(stagedFiles).not.toContain("conflict-staging.ts");
+
+      // But file should have conflict markers
+      const localContent = fs.readFileSync(
+        path.join(testRepo, "conflict-staging.ts"),
+        "utf8"
+      );
+      expect(localContent).toContain("<<<<<<<");
+    });
+  });
 });
 
 /**

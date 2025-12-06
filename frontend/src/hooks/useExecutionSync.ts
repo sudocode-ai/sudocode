@@ -65,14 +65,16 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
       mode,
       commitMessage,
       includeUncommitted,
+      overrideLocalChanges,
     }: {
       executionId: string
       mode: SyncMode
       commitMessage?: string
       includeUncommitted?: boolean
+      overrideLocalChanges?: boolean
     }) => {
       if (mode === 'stage') {
-        return executionsApi.syncStage(executionId, { includeUncommitted })
+        return executionsApi.syncStage(executionId, { includeUncommitted, overrideLocalChanges })
       }
       const request = commitMessage ? { mode, commitMessage } : { mode }
       return mode === 'squash'
@@ -110,9 +112,23 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
         setSyncError(errorMessage)
         setSyncStatus('error')
         const failureMessage = getFailureMessage(currentSyncMode)
-        toast.error(failureMessage, {
-          description: errorMessage,
-        })
+
+        // Show detailed toast with conflicting files if available
+        if (data.hasConflicts && data.filesWithConflicts && data.filesWithConflicts.length > 0) {
+          const conflictList = data.filesWithConflicts.slice(0, 5).join('\n• ')
+          const moreText =
+            data.filesWithConflicts.length > 5
+              ? `\n...and ${data.filesWithConflicts.length - 5} more`
+              : ''
+          toast.error(failureMessage, {
+            description: `Resolve conflicts in:\n• ${conflictList}${moreText}`,
+            duration: 10000, // Show longer for conflict resolution
+          })
+        } else {
+          toast.error(failureMessage, {
+            description: errorMessage,
+          })
+        }
         options?.onSyncError?.(errorMessage)
       }
     },
@@ -145,13 +161,14 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
     (
       executionId: string,
       mode: SyncMode,
-      options?: { commitMessage?: string; includeUncommitted?: boolean }
+      options?: { commitMessage?: string; includeUncommitted?: boolean; overrideLocalChanges?: boolean }
     ) => {
       syncMutation.mutate({
         executionId,
         mode,
         commitMessage: options?.commitMessage,
         includeUncommitted: options?.includeUncommitted,
+        overrideLocalChanges: options?.overrideLocalChanges,
       })
     },
     [syncMutation]
