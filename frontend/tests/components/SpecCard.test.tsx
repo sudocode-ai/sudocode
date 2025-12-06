@@ -1,7 +1,13 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { SpecCard } from '@/components/specs/SpecCard'
 import type { Spec } from '@/types/api'
+
+// Helper to render with Router context
+const renderWithRouter = (ui: React.ReactElement) => {
+  return render(<MemoryRouter>{ui}</MemoryRouter>)
+}
 
 describe('SpecCard', () => {
   const mockSpec: Spec = {
@@ -17,35 +23,35 @@ describe('SpecCard', () => {
   }
 
   it('should render spec title', () => {
-    render(<SpecCard spec={mockSpec} />)
+    renderWithRouter(<SpecCard spec={mockSpec} />)
     expect(screen.getByText('Test Spec')).toBeInTheDocument()
   })
 
   it('should render spec ID', () => {
-    render(<SpecCard spec={mockSpec} />)
+    renderWithRouter(<SpecCard spec={mockSpec} />)
     expect(screen.getByText('SPEC-001')).toBeInTheDocument()
   })
 
   it('should render priority badge for high priority', () => {
-    render(<SpecCard spec={mockSpec} />)
+    renderWithRouter(<SpecCard spec={mockSpec} />)
     expect(screen.getByText('P1')).toBeInTheDocument()
   })
 
   it('should not render priority badge for low priority', () => {
     const lowPrioritySpec = { ...mockSpec, priority: 4 }
-    render(<SpecCard spec={lowPrioritySpec} />)
+    renderWithRouter(<SpecCard spec={lowPrioritySpec} />)
     expect(screen.queryByText('P4')).not.toBeInTheDocument()
   })
 
   it('should render content preview', () => {
-    render(<SpecCard spec={mockSpec} />)
+    renderWithRouter(<SpecCard spec={mockSpec} />)
     expect(screen.getByText(/This is a test spec with some content/)).toBeInTheDocument()
   })
 
   it('should truncate long content', () => {
     const longContent = 'a'.repeat(300)
     const specWithLongContent = { ...mockSpec, content: longContent }
-    render(<SpecCard spec={specWithLongContent} />)
+    renderWithRouter(<SpecCard spec={specWithLongContent} />)
 
     const preview = screen.getByText(/a+\.\.\./)
     expect(preview.textContent?.length).toBeLessThan(210) // 200 chars + "..."
@@ -53,7 +59,7 @@ describe('SpecCard', () => {
 
   it('should call onClick when clicked', () => {
     const onClick = vi.fn()
-    render(<SpecCard spec={mockSpec} onClick={onClick} />)
+    renderWithRouter(<SpecCard spec={mockSpec} onClick={onClick} />)
 
     fireEvent.click(screen.getByText('Test Spec'))
     expect(onClick).toHaveBeenCalledWith(mockSpec)
@@ -61,26 +67,38 @@ describe('SpecCard', () => {
 
   it('should render without content', () => {
     const specWithoutContent = { ...mockSpec, content: '' }
-    render(<SpecCard spec={specWithoutContent} />)
+    renderWithRouter(<SpecCard spec={specWithoutContent} />)
 
     expect(screen.getByText('Test Spec')).toBeInTheDocument()
     expect(screen.queryByText(/This is a test/)).not.toBeInTheDocument()
   })
 
   it('should have correct priority colors', () => {
-    const { rerender } = render(<SpecCard spec={{ ...mockSpec, priority: 0 }} />)
+    const { rerender } = renderWithRouter(<SpecCard spec={{ ...mockSpec, priority: 0 }} />)
     let badge = screen.getByText('P0')
     expect(badge).toHaveClass('bg-red-600')
 
-    rerender(<SpecCard spec={{ ...mockSpec, priority: 1 }} />)
+    rerender(
+      <MemoryRouter>
+        <SpecCard spec={{ ...mockSpec, priority: 1 }} />
+      </MemoryRouter>
+    )
     badge = screen.getByText('P1')
     expect(badge).toHaveClass('bg-orange-600')
 
-    rerender(<SpecCard spec={{ ...mockSpec, priority: 2 }} />)
+    rerender(
+      <MemoryRouter>
+        <SpecCard spec={{ ...mockSpec, priority: 2 }} />
+      </MemoryRouter>
+    )
     badge = screen.getByText('P2')
     expect(badge).toHaveClass('bg-yellow-600')
 
-    rerender(<SpecCard spec={{ ...mockSpec, priority: 3 }} />)
+    rerender(
+      <MemoryRouter>
+        <SpecCard spec={{ ...mockSpec, priority: 3 }} />
+      </MemoryRouter>
+    )
     badge = screen.getByText('P3')
     expect(badge).toHaveClass('bg-blue-600')
   })

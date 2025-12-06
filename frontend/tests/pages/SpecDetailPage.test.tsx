@@ -19,6 +19,35 @@ vi.mock('@/hooks/useSpecRelationships', () => ({
     refetch: vi.fn(),
   }),
 }))
+vi.mock('@/hooks/useWorktrees', () => ({
+  useWorktrees: () => ({
+    worktrees: [],
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
+}))
+vi.mock('@/hooks/useWorkflows', () => ({
+  useWorkflows: () => ({
+    data: [],
+    isLoading: false,
+    error: null,
+  }),
+  useWorkflowMutations: () => ({
+    create: vi.fn(),
+    start: vi.fn(),
+    pause: vi.fn(),
+    resume: vi.fn(),
+    cancel: vi.fn(),
+    delete: vi.fn(),
+    isCreating: false,
+    isStarting: false,
+    isPausing: false,
+    isResuming: false,
+    isCancelling: false,
+    isDeleting: false,
+  }),
+}))
 
 // Mock Project context
 vi.mock('@/hooks/useProject', () => ({

@@ -38,6 +38,7 @@ export interface UpdateExecutionInput {
   session_id?: string | null;
   summary?: string | null;
   files_changed?: string | null;
+  workflow_execution_id?: string | null;
 }
 
 /**
@@ -209,6 +210,11 @@ export function updateExecution(
   if (input.files_changed !== undefined) {
     updates.push("files_changed = ?");
     values.push(input.files_changed);
+  }
+
+  if (input.workflow_execution_id !== undefined) {
+    updates.push("workflow_execution_id = ?");
+    values.push(input.workflow_execution_id);
   }
 
   // Always update updated_at

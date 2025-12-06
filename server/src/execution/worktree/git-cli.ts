@@ -137,6 +137,56 @@ export interface IGitCli {
    * @returns Promise resolving to the current branch name (or "(detached)" if detached HEAD)
    */
   getCurrentBranch(repoPath: string): Promise<string>;
+
+  /**
+   * Merge a branch into the current branch
+   *
+   * @param repoPath - Path to the git repository (or worktree)
+   * @param sourceBranch - Branch to merge from
+   * @param options - Merge options
+   * @returns Promise resolving to merge result
+   */
+  mergeBranch(
+    repoPath: string,
+    sourceBranch: string,
+    options?: {
+      squash?: boolean;
+      message?: string;
+    }
+  ): Promise<MergeBranchResult>;
+
+  /**
+   * Abort a merge in progress
+   * Equivalent to: git merge --abort
+   *
+   * @param repoPath - Path to the git repository (or worktree)
+   */
+  abortMerge(repoPath: string): Promise<void>;
+
+  /**
+   * Get list of files with merge conflicts
+   * Equivalent to: git diff --name-only --diff-filter=U
+   *
+   * @param repoPath - Path to the git repository (or worktree)
+   * @returns Promise resolving to array of conflicting file paths
+   */
+  getConflictingFiles(repoPath: string): Promise<string[]>;
+}
+
+/**
+ * Result of a merge operation
+ */
+export interface MergeBranchResult {
+  /** Whether the merge was successful */
+  success: boolean;
+  /** SHA of the merge commit (if successful) */
+  mergeCommit?: string;
+  /** Strategy used for the merge */
+  strategy: 'fast-forward' | 'merge' | 'squash';
+  /** List of files with conflicts (if merge failed) */
+  conflictingFiles?: string[];
+  /** Error message (if merge failed) */
+  error?: string;
 }
 
 /**
@@ -369,6 +419,111 @@ export class GitCli implements IGitCli {
     } catch (error) {
       // If we can't get the branch (detached HEAD, etc.), return '(detached)'
       return '(detached)';
+    }
+  }
+
+  async mergeBranch(
+    repoPath: string,
+    sourceBranch: string,
+    options?: {
+      squash?: boolean;
+      message?: string;
+    }
+  ): Promise<MergeBranchResult> {
+    const escapedBranch = this.escapeShellArg(sourceBranch);
+
+    try {
+      if (options?.squash) {
+        // Squash merge: git merge --squash <branch>
+        this.execGit(`git merge --squash ${escapedBranch}`, repoPath);
+
+        // For squash merges, we need to commit separately
+        const message = options.message || `Squash merge branch '${sourceBranch}'`;
+        const escapedMessage = this.escapeShellArg(message);
+        this.execGit(`git commit -m ${escapedMessage}`, repoPath);
+
+        const mergeCommit = await this.getCurrentCommit(repoPath);
+        return {
+          success: true,
+          mergeCommit,
+          strategy: 'squash',
+        };
+      } else {
+        // Regular merge: try fast-forward first, then regular merge
+        const sourceCommit = this.execGit(
+          `git rev-parse ${escapedBranch}`,
+          repoPath
+        ).trim();
+
+        // Check if current is an ancestor of source (fast-forward possible)
+        try {
+          this.execGit(
+            `git merge-base --is-ancestor HEAD ${escapedBranch}`,
+            repoPath
+          );
+          // Fast-forward is possible
+          this.execGit(`git merge --ff-only ${escapedBranch}`, repoPath);
+          return {
+            success: true,
+            mergeCommit: sourceCommit,
+            strategy: 'fast-forward',
+          };
+        } catch {
+          // Fast-forward not possible, do a regular merge
+          const message = options?.message || `Merge branch '${sourceBranch}'`;
+          const escapedMessage = this.escapeShellArg(message);
+          this.execGit(
+            `git merge --no-ff -m ${escapedMessage} ${escapedBranch}`,
+            repoPath
+          );
+          const mergeCommit = await this.getCurrentCommit(repoPath);
+          return {
+            success: true,
+            mergeCommit,
+            strategy: 'merge',
+          };
+        }
+      }
+    } catch (error: any) {
+      // Check if this is a merge conflict
+      const conflictingFiles = await this.getConflictingFiles(repoPath);
+
+      if (conflictingFiles.length > 0) {
+        return {
+          success: false,
+          strategy: options?.squash ? 'squash' : 'merge',
+          conflictingFiles,
+          error: `Merge conflict in ${conflictingFiles.length} file(s)`,
+        };
+      }
+
+      // Some other error
+      const message = error.message || 'Unknown merge error';
+      return {
+        success: false,
+        strategy: options?.squash ? 'squash' : 'merge',
+        error: message,
+      };
+    }
+  }
+
+  async abortMerge(repoPath: string): Promise<void> {
+    this.execGit('git merge --abort', repoPath);
+  }
+
+  async getConflictingFiles(repoPath: string): Promise<string[]> {
+    try {
+      const output = this.execGit(
+        'git diff --name-only --diff-filter=U',
+        repoPath
+      );
+      return output
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    } catch {
+      // No conflicts or not in a merge state
+      return [];
     }
   }
 }

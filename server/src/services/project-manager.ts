@@ -20,6 +20,12 @@ import {
   performInitialization,
   isInitialized,
 } from "@sudocode-ai/cli/dist/cli/init-commands.js";
+import { WorkflowEventEmitter } from "../workflow/workflow-event-emitter.js";
+import { SequentialWorkflowEngine } from "../workflow/engines/sequential-engine.js";
+import { OrchestratorWorkflowEngine } from "../workflow/engines/orchestrator-engine.js";
+import { WorkflowWakeupService } from "../workflow/services/wakeup-service.js";
+import { WorkflowPromptBuilder } from "../workflow/services/prompt-builder.js";
+import { WorkflowBroadcastService } from "./workflow-broadcast-service.js";
 
 interface CachedDatabase {
   db: Database.Database;
@@ -125,7 +131,69 @@ export class ProjectManager {
 
       await context.initialize();
 
-      // 7. Start file watcher if enabled
+      // 7. Initialize workflow engines and broadcast service
+      const workflowEventEmitter = new WorkflowEventEmitter();
+
+      // Create lifecycle service for workflow worktree management
+      const lifecycleService = new ExecutionLifecycleService(
+        db,
+        projectPath,
+        worktreeManager
+      );
+
+      // Create sequential workflow engine
+      const sequentialWorkflowEngine = new SequentialWorkflowEngine(
+        db,
+        executionService,
+        lifecycleService,
+        projectPath,
+        workflowEventEmitter
+      );
+
+      // Create orchestrator workflow engine with its dependencies
+      const promptBuilder = new WorkflowPromptBuilder();
+      const wakeupService = new WorkflowWakeupService({
+        db,
+        executionService,
+        promptBuilder,
+        eventEmitter: workflowEventEmitter,
+      });
+      // Initial server URL - will be updated after port discovery via updateServerUrl()
+      const serverPort = process.env.SUDOCODE_PORT || "3000";
+      const serverUrl = `http://localhost:${serverPort}`;
+
+      const orchestratorWorkflowEngine = new OrchestratorWorkflowEngine({
+        db,
+        executionService,
+        lifecycleService,
+        wakeupService,
+        eventEmitter: workflowEventEmitter,
+        config: {
+          repoPath: projectPath,
+          dbPath: path.join(projectPath, ".sudocode", "cache.db"),
+          serverUrl,
+          projectId,
+        },
+      });
+
+      const workflowBroadcastService = new WorkflowBroadcastService(
+        workflowEventEmitter,
+        () => projectId // Simple lookup - this project owns all its workflows
+      );
+
+      context.sequentialWorkflowEngine = sequentialWorkflowEngine;
+      context.orchestratorWorkflowEngine = orchestratorWorkflowEngine;
+      context.workflowBroadcastService = workflowBroadcastService;
+
+      // 7b. Run workflow recovery (for OrchestratorWorkflowEngine)
+      if (orchestratorWorkflowEngine.markStaleExecutionsAsFailed) {
+        await orchestratorWorkflowEngine.markStaleExecutionsAsFailed();
+      }
+      if (orchestratorWorkflowEngine.recoverOrphanedWorkflows) {
+        await orchestratorWorkflowEngine.recoverOrphanedWorkflows();
+      }
+
+      // 8. Start file watcher if enabled
       if (this.watchEnabled) {
         context.watcher = startServerWatcher({
           db,
@@ -464,6 +532,19 @@ export class ProjectManager {
     this.dbCache.set(projectId, cached);
     console.log(
       `Database cached for ${projectId} (TTL: ${this.DB_CACHE_TTL}ms)`
+    );
+  }
+
+  /**
+   * Update the server URL for all open projects.
+   * Called after dynamic port discovery to propagate the actual server URL.
+   */
+  updateServerUrl(serverUrl: string): void {
+    for (const project of this.openProjects.values()) {
+      project.updateServerUrl(serverUrl);
+    }
+    console.log(
+      `Server URL updated to ${serverUrl} for ${this.openProjects.size} projects`
     );
   }
 

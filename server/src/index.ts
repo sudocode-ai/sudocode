@@ -21,6 +21,7 @@ import { createFilesRouter } from "./routes/files.js";
 import { createRepoInfoRouter } from "./routes/repo-info.js";
 import { createAgentsRouter } from "./routes/agents.js";
 import { createVersionRouter } from "./routes/version.js";
+import { createWorkflowsRouter } from "./routes/workflows.js";
 import { TransportManager } from "./execution/transport/transport-manager.js";
 import { ProjectRegistry } from "./services/project-registry.js";
 import { ProjectManager } from "./services/project-manager.js";
@@ -145,6 +146,11 @@ app.use(
   requireProject(projectManager),
   createFeedbackRouter()
 );
+app.use(
+  "/api/workflows",
+  requireProject(projectManager),
+  createWorkflowsRouter()
+);
 app.use("/api/config", requireProject(projectManager), createConfigRouter());
 app.use(
   "/api/repo-info",
@@ -214,14 +220,20 @@ console.log(`[server] Serving static frontend from: ${frontendPath}`);
 // Serve static files
 app.use(express.static(frontendPath));
 
+// API 404 handler - catch all unmatched API routes (any HTTP method)
+app.all("/api/*", (req: Request, res: Response) => {
+  console.error(`[server] 404 for API route: ${req.method} ${req.path}`);
+  res.status(404).json({
+    success: false,
+    error: "Not found",
+    message: `API endpoint not found: ${req.method} ${req.path}`,
+  });
+});
+
 // SPA fallback - serve index.html for all non-API/non-WS routes
 app.get("*", (req: Request, res: Response) => {
-  // Skip API and WebSocket routes
-  if (
-    req.path.startsWith("/api") ||
-    req.path.startsWith("/ws") ||
-    req.path.startsWith("/health")
-  ) {
+  // Skip WebSocket and health routes
+  if (req.path.startsWith("/ws") || req.path.startsWith("/health")) {
     res.status(404).json({ error: "Not found" });
   } else {
     res.sendFile(path.join(frontendPath, "index.html"));
@@ -351,6 +363,11 @@ const startPort = process.env.SUDOCODE_PORT
   ? parseInt(process.env.SUDOCODE_PORT, 10)
   : DEFAULT_PORT;
 const actualPort = await startServer(startPort, MAX_PORT_ATTEMPTS);
+
+// Update all open projects with the actual server URL
+// This is needed because projects are opened before the port is known
+const actualServerUrl = `http://localhost:${actualPort}`;
+projectManager.updateServerUrl(actualServerUrl);
 
 // Format URLs as clickable links with color
 const httpUrl = `http://localhost:${actualPort}`;

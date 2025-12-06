@@ -291,4 +291,176 @@ HEAD abc123def456
         }).rejects.toThrow();
     });
   });
+
+  describe('mergeBranch', () => {
+    it('should attempt fast-forward merge first', async () => {
+      const commands: string[] = [];
+      gitCli['execGit'] = function (command: string, cwd: string) {
+        commands.push(command);
+        gitCli.lastCommand = command;
+        gitCli.lastCwd = cwd;
+        // Simulate getting source commit SHA first
+        if (command.includes('rev-parse') && command.includes('feature-branch')) {
+          return 'abc123def456\n';
+        }
+        // Simulate fast-forward is possible
+        if (command.includes('merge-base --is-ancestor')) {
+          return '';
+        }
+        if (command.includes('merge --ff-only')) {
+          return '';
+        }
+        return '';
+      };
+
+      const result = await gitCli.mergeBranch('/repo', 'feature-branch');
+
+      expect(result.success).toBe(true);
+      expect(result.strategy).toBe('fast-forward');
+      expect(result.mergeCommit).toBe('abc123def456');
+      expect(commands.some(c => c.includes('merge-base --is-ancestor'))).toBe(true);
+      expect(commands.some(c => c.includes('merge --ff-only'))).toBe(true);
+    });
+
+    it('should fall back to regular merge when fast-forward not possible', async () => {
+      const commands: string[] = [];
+      gitCli['execGit'] = function (command: string, cwd: string) {
+        commands.push(command);
+        gitCli.lastCommand = command;
+        gitCli.lastCwd = cwd;
+        // Simulate fast-forward is NOT possible
+        if (command.includes('merge-base --is-ancestor')) {
+          throw new WorktreeError('Not ancestor', WorktreeErrorCode.GIT_ERROR);
+        }
+        if (command.includes('merge --no-ff')) {
+          return '';
+        }
+        if (command.includes('rev-parse HEAD')) {
+          return 'merge123commit\n';
+        }
+        return '';
+      };
+
+      const result = await gitCli.mergeBranch('/repo', 'feature-branch');
+
+      expect(result.success).toBe(true);
+      expect(result.strategy).toBe('merge');
+      expect(result.mergeCommit).toBe('merge123commit');
+      expect(commands.some(c => c.includes('merge --no-ff'))).toBe(true);
+    });
+
+    it('should perform squash merge when strategy is squash', async () => {
+      const commands: string[] = [];
+      gitCli['execGit'] = function (command: string, cwd: string) {
+        commands.push(command);
+        gitCli.lastCommand = command;
+        gitCli.lastCwd = cwd;
+        if (command.includes('merge --squash')) {
+          return '';
+        }
+        if (command.includes('commit -m')) {
+          return '';
+        }
+        if (command.includes('rev-parse HEAD')) {
+          return 'squash123commit\n';
+        }
+        return '';
+      };
+
+      const result = await gitCli.mergeBranch('/repo', 'feature-branch', { squash: true });
+
+      expect(result.success).toBe(true);
+      expect(result.strategy).toBe('squash');
+      expect(result.mergeCommit).toBe('squash123commit');
+      expect(commands.some(c => c.includes('merge --squash'))).toBe(true);
+      expect(commands.some(c => c.includes('commit -m'))).toBe(true);
+    });
+
+    it('should use custom commit message', async () => {
+      const commands: string[] = [];
+      gitCli['execGit'] = function (command: string, cwd: string) {
+        commands.push(command);
+        gitCli.lastCommand = command;
+        gitCli.lastCwd = cwd;
+        if (command.includes('merge --squash')) {
+          return '';
+        }
+        if (command.includes('commit -m')) {
+          return '';
+        }
+        if (command.includes('rev-parse HEAD')) {
+          return 'abc123\n';
+        }
+        return '';
+      };
+
+      await gitCli.mergeBranch('/repo', 'feature-branch', {
+        squash: true,
+        message: 'Custom merge message',
+      });
+
+      expect(commands.some(c => c.includes('Custom merge message'))).toBe(true);
+    });
+
+    it('should return conflict info when merge fails', async () => {
+      gitCli['execGit'] = function (command: string, cwd: string) {
+        gitCli.lastCommand = command;
+        gitCli.lastCwd = cwd;
+        if (command.includes('merge-base --is-ancestor')) {
+          throw new WorktreeError('Not ancestor', WorktreeErrorCode.GIT_ERROR);
+        }
+        if (command.includes('merge --no-ff')) {
+          throw new WorktreeError('Merge conflict', WorktreeErrorCode.GIT_ERROR);
+        }
+        if (command.includes('diff --name-only --diff-filter=U')) {
+          return 'file1.ts\nfile2.ts\n';
+        }
+        return '';
+      };
+
+      const result = await gitCli.mergeBranch('/repo', 'feature-branch');
+
+      expect(result.success).toBe(false);
+      expect(result.conflictingFiles).toEqual(['file1.ts', 'file2.ts']);
+      expect(result.error).toContain('conflict');
+    });
+  });
+
+  describe('abortMerge', () => {
+    it('should execute git merge --abort command', async () => {
+      await gitCli.abortMerge('/repo');
+
+      expect(gitCli.lastCommand).toBe('git merge --abort');
+      expect(gitCli.lastCwd).toBe('/repo');
+    });
+  });
+
+  describe('getConflictingFiles', () => {
+    it('should return list of conflicting files', async () => {
+      gitCli.mockOutput = 'src/file1.ts\nsrc/file2.ts\nREADME.md\n';
+
+      const files = await gitCli.getConflictingFiles('/repo');
+
+      expect(files).toEqual(['src/file1.ts', 'src/file2.ts', 'README.md']);
+      expect(gitCli.lastCommand).toBe('git diff --name-only --diff-filter=U');
+    });
+
+    it('should return empty array when no conflicts', async () => {
+      gitCli.mockOutput = '\n';
+
+      const files = await gitCli.getConflictingFiles('/repo');
+
+      expect(files).toEqual([]);
+    });
+
+    it('should return empty array on error', async () => {
+      const error: any = new Error('Not in merge state');
+      error.stderr = 'fatal: not in a merge';
+      gitCli.shouldThrow = error;
+
+      const files = await gitCli.getConflictingFiles('/repo');
+
+      expect(files).toEqual([]);
+    });
+  });
 });

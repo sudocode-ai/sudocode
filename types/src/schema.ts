@@ -220,6 +220,49 @@ CREATE TABLE IF NOT EXISTS execution_logs (
 );
 `;
 
+// Workflows table - orchestrates multi-issue execution
+// Supports both sequential and agent-managed workflow strategies
+export const WORKFLOWS_TABLE = `
+CREATE TABLE IF NOT EXISTS workflows (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    source TEXT NOT NULL,          -- JSON (WorkflowSource: spec, issues, root_issue, or goal)
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN (
+        'pending', 'running', 'paused',
+        'completed', 'failed', 'cancelled'
+    )),
+    steps TEXT NOT NULL DEFAULT '[]',  -- JSON array (WorkflowStep[])
+    worktree_path TEXT,
+    branch_name TEXT,
+    base_branch TEXT NOT NULL,
+    current_step_index INTEGER NOT NULL DEFAULT 0,
+    orchestrator_execution_id TEXT,
+    orchestrator_session_id TEXT,
+    config TEXT NOT NULL,          -- JSON (WorkflowConfig)
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    started_at DATETIME,
+    completed_at DATETIME,
+    FOREIGN KEY (orchestrator_execution_id) REFERENCES executions(id) ON DELETE SET NULL
+);
+`;
+
+// Workflow events table - tracks workflow lifecycle events for orchestrator wakeups
+export const WORKFLOW_EVENTS_TABLE = `
+CREATE TABLE IF NOT EXISTS workflow_events (
+    id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL,
+    type TEXT NOT NULL,            -- WorkflowEventType (step_completed, workflow_paused, etc.)
+    step_id TEXT,
+    execution_id TEXT,
+    payload TEXT NOT NULL DEFAULT '{}',  -- JSON (event-specific data)
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    processed_at DATETIME,         -- When orchestrator processed this event
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE,
+    FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE SET NULL
+);
+`;
+
 /**
  * Index definitions
  */
@@ -304,6 +347,23 @@ CREATE INDEX IF NOT EXISTS idx_execution_logs_byte_size ON execution_logs(byte_s
 CREATE INDEX IF NOT EXISTS idx_execution_logs_line_count ON execution_logs(line_count);
 `;
 
+export const WORKFLOWS_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
+CREATE INDEX IF NOT EXISTS idx_workflows_orchestrator ON workflows(orchestrator_execution_id);
+CREATE INDEX IF NOT EXISTS idx_workflows_created_at ON workflows(created_at);
+CREATE INDEX IF NOT EXISTS idx_workflows_updated_at ON workflows(updated_at);
+CREATE INDEX IF NOT EXISTS idx_workflows_base_branch ON workflows(base_branch);
+`;
+
+export const WORKFLOW_EVENTS_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_workflow_events_workflow_id ON workflow_events(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_events_type ON workflow_events(type);
+CREATE INDEX IF NOT EXISTS idx_workflow_events_execution_id ON workflow_events(execution_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_events_processed ON workflow_events(processed_at);
+CREATE INDEX IF NOT EXISTS idx_workflow_events_created_at ON workflow_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_workflow_events_unprocessed ON workflow_events(workflow_id, processed_at) WHERE processed_at IS NULL;
+`;
+
 /**
  * View definitions
  */
@@ -362,6 +422,8 @@ export const ALL_TABLES = [
   EXECUTIONS_TABLE,
   PROMPT_TEMPLATES_TABLE,
   EXECUTION_LOGS_TABLE,
+  WORKFLOWS_TABLE,
+  WORKFLOW_EVENTS_TABLE,
 ];
 
 export const ALL_INDEXES = [
@@ -374,6 +436,8 @@ export const ALL_INDEXES = [
   EXECUTIONS_INDEXES,
   PROMPT_TEMPLATES_INDEXES,
   EXECUTION_LOGS_INDEXES,
+  WORKFLOWS_INDEXES,
+  WORKFLOW_EVENTS_INDEXES,
 ];
 
 export const ALL_VIEWS = [READY_ISSUES_VIEW, BLOCKED_ISSUES_VIEW];

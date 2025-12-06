@@ -21,7 +21,7 @@ interface Client {
 interface ClientMessage {
   type: "subscribe" | "unsubscribe" | "ping";
   project_id?: string; // Project ID for project-scoped subscriptions
-  entity_type?: "issue" | "spec" | "execution" | "all";
+  entity_type?: "issue" | "spec" | "execution" | "workflow" | "all";
   entity_id?: string;
 }
 
@@ -45,6 +45,19 @@ export interface ServerMessage {
     | "execution_updated"
     | "execution_status_changed"
     | "execution_deleted"
+    | "workflow_created"
+    | "workflow_updated"
+    | "workflow_deleted"
+    | "workflow_started"
+    | "workflow_paused"
+    | "workflow_resumed"
+    | "workflow_completed"
+    | "workflow_failed"
+    | "workflow_cancelled"
+    | "workflow_step_started"
+    | "workflow_step_completed"
+    | "workflow_step_failed"
+    | "workflow_step_skipped"
     | "project_opened"
     | "project_closed"
     | "pong"
@@ -341,7 +354,7 @@ class WebSocketManager {
    */
   broadcast(
     projectId: string,
-    entityType: "issue" | "spec" | "execution",
+    entityType: "issue" | "spec" | "execution" | "workflow",
     entityId: string,
     message: ServerMessage
   ): void {
@@ -698,4 +711,47 @@ export function getWebSocketStats() {
  */
 export async function shutdownWebSocketServer(): Promise<void> {
   await websocketManager.shutdown();
+}
+
+/**
+ * Broadcast workflow updates to subscribed clients for a specific project
+ */
+export function broadcastWorkflowUpdate(
+  projectId: string,
+  workflowId: string,
+  action:
+    | "created"
+    | "updated"
+    | "deleted"
+    | "started"
+    | "paused"
+    | "resumed"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "escalation_requested"
+    | "escalation_resolved"
+    | "notification"
+    | "awaiting",
+  data?: any
+): void {
+  websocketManager.broadcast(projectId, "workflow", workflowId, {
+    type: `workflow_${action}` as ServerMessage["type"],
+    data,
+  });
+}
+
+/**
+ * Broadcast workflow step updates to subscribed clients for a specific project
+ */
+export function broadcastWorkflowStepUpdate(
+  projectId: string,
+  workflowId: string,
+  action: "started" | "completed" | "failed" | "skipped",
+  data?: any
+): void {
+  websocketManager.broadcast(projectId, "workflow", workflowId, {
+    type: `workflow_step_${action}` as ServerMessage["type"],
+    data,
+  });
 }

@@ -245,4 +245,70 @@ describe('ProjectContext', () => {
       expect(context.hasActiveExecutions()).toBe(false)
     })
   })
+
+  describe('updateServerUrl', () => {
+    it('should call setServerUrl on orchestratorWorkflowEngine if it has the method', () => {
+      const context = new ProjectContext(
+        'test-12345678',
+        '/path',
+        '/path/.sudocode',
+        mockDb,
+        mockTransportManager,
+        mockExecutionService,
+        mockLogsStore,
+        mockWorktreeManager
+      )
+
+      // Mock orchestrator engine with setServerUrl method
+      const mockSetServerUrl = vi.fn()
+      context.orchestratorWorkflowEngine = {
+        setServerUrl: mockSetServerUrl,
+      } as any
+
+      context.updateServerUrl('http://localhost:3005')
+
+      expect(mockSetServerUrl).toHaveBeenCalledWith('http://localhost:3005')
+    })
+
+    it('should not throw if orchestratorWorkflowEngine is undefined', () => {
+      const context = new ProjectContext(
+        'test-12345678',
+        '/path',
+        '/path/.sudocode',
+        mockDb,
+        mockTransportManager,
+        mockExecutionService,
+        mockLogsStore,
+        mockWorktreeManager
+      )
+
+      // orchestratorWorkflowEngine is undefined by default
+      expect(context.orchestratorWorkflowEngine).toBeUndefined()
+
+      // Should not throw
+      expect(() => context.updateServerUrl('http://localhost:3005')).not.toThrow()
+    })
+
+    it('should not throw if orchestratorWorkflowEngine does not have setServerUrl', () => {
+      const context = new ProjectContext(
+        'test-12345678',
+        '/path',
+        '/path/.sudocode',
+        mockDb,
+        mockTransportManager,
+        mockExecutionService,
+        mockLogsStore,
+        mockWorktreeManager
+      )
+
+      // Mock engine without setServerUrl method
+      context.orchestratorWorkflowEngine = {
+        createWorkflow: vi.fn(),
+        startWorkflow: vi.fn(),
+      } as any
+
+      // Should not throw
+      expect(() => context.updateServerUrl('http://localhost:3005')).not.toThrow()
+    })
+  })
 })

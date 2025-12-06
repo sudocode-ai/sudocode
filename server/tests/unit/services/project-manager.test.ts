@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -566,6 +566,63 @@ describe("ProjectManager", () => {
       }
 
       await managerWithWatch.shutdown();
+    });
+  });
+
+  describe("updateServerUrl", () => {
+    it("should update server URL for all open projects", async () => {
+      // Create a second test project
+      const testProject2Path = path.join(tempDir, "test-project-2");
+      const sudocodeDir2 = path.join(testProject2Path, ".sudocode");
+      fs.mkdirSync(sudocodeDir2, { recursive: true });
+      fs.writeFileSync(path.join(sudocodeDir2, "cache.db"), "");
+
+      // Open both projects
+      const result1 = await manager.openProject(testProjectPath);
+      const result2 = await manager.openProject(testProject2Path);
+
+      expect(result1.ok).toBe(true);
+      expect(result2.ok).toBe(true);
+
+      // Verify both projects are open
+      expect(manager.getAllOpenProjects()).toHaveLength(2);
+
+      // Update server URL - should not throw
+      expect(() =>
+        manager.updateServerUrl("http://localhost:3005")
+      ).not.toThrow();
+    });
+
+    it("should handle empty projects list gracefully", () => {
+      // No projects open
+      expect(manager.getAllOpenProjects()).toHaveLength(0);
+
+      // Should not throw
+      expect(() =>
+        manager.updateServerUrl("http://localhost:3005")
+      ).not.toThrow();
+    });
+
+    it("should propagate URL to project contexts", async () => {
+      const result = await manager.openProject(testProjectPath);
+      expect(result.ok).toBe(true);
+
+      if (result.ok) {
+        const project = manager.getProject(result.value.id);
+        expect(project).not.toBeNull();
+
+        // Mock the orchestratorWorkflowEngine with setServerUrl
+        const mockSetServerUrl = vi.fn();
+        project!.orchestratorWorkflowEngine = {
+          setServerUrl: mockSetServerUrl,
+        } as any;
+
+        // Update server URL
+        manager.updateServerUrl("http://localhost:3005");
+
+        // Verify setServerUrl was called on the engine
+        expect(mockSetServerUrl).toHaveBeenCalledWith("http://localhost:3005");
+      }
     });
   });
 });

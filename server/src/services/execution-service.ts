@@ -7,6 +7,8 @@
  * @module services/execution-service
  */
 
+import fs from "fs";
+import path from "path";
 import type Database from "better-sqlite3";
 import type { Execution, ExecutionStatus } from "@sudocode-ai/types";
 import { ExecutionLifecycleService } from "./execution-lifecycle.js";
@@ -27,6 +29,15 @@ import type { AgentType } from "@sudocode-ai/types/agents";
 import { PromptResolver } from "./prompt-resolver.js";
 
 /**
+ * MCP server configuration
+ */
+export interface McpServerConfig {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+/**
  * Configuration for creating an execution
  */
 export interface ExecutionConfig {
@@ -36,11 +47,27 @@ export interface ExecutionConfig {
   baseBranch?: string;
   createBaseBranch?: boolean;
   branchName?: string;
-  reuseWorktreeId?: string; // If set, reuse existing worktree instead of creating new one
+  reuseWorktreePath?: string; // If set, reuse existing worktree at this path
   checkpointInterval?: number;
   continueOnStepFailure?: boolean;
   captureFileChanges?: boolean;
   captureToolCalls?: boolean;
+  /** MCP servers to connect to the agent */
+  mcpServers?: Record<string, McpServerConfig>;
+  /** System prompt to append to agent's default prompt */
+  appendSystemPrompt?: string;
+  /** Skip permission prompts (for automated/orchestrator executions) */
+  dangerouslySkipPermissions?: boolean;
+}
+
+/**
+ * Workflow context for executions spawned by workflows
+ */
+export interface WorkflowContext {
+  /** The workflow ID that spawned this execution */
+  workflowId: string;
+  /** The workflow step ID this execution implements */
+  stepId: string;
 }
 
 /**
@@ -97,29 +124,46 @@ export class ExecutionService {
    * workflow execution. Returns the execution record immediately while
    * workflow runs in the background.
    *
-   * @param issueId - ID of issue to execute
+   * @param issueId - ID of issue to execute, or null for orchestrator executions
    * @param config - Execution configuration
    * @param prompt - Rendered prompt to execute
    * @param agentType - Type of agent to use (defaults to 'claude-code')
+   * @param workflowContext - Optional workflow context for workflow-spawned executions
    * @returns Created execution record
    */
   async createExecution(
-    issueId: string,
+    issueId: string | null,
     config: ExecutionConfig,
     prompt: string,
-    agentType: AgentType = "claude-code"
+    agentType: AgentType = "claude-code",
+    workflowContext?: WorkflowContext
   ): Promise<Execution> {
     // 1. Validate
     if (!prompt.trim()) {
       throw new Error("Prompt cannot be empty");
     }
 
-    const issue = this.db
-      .prepare("SELECT * FROM issues WHERE id = ?")
-      .get(issueId) as { id: string; title: string } | undefined;
+    // Get issue if issueId is provided (orchestrator executions don't have an issue)
+    let issue: { id: string; title: string } | undefined;
+    if (issueId) {
+      issue = this.db
+        .prepare("SELECT * FROM issues WHERE id = ?")
+        .get(issueId) as { id: string; title: string } | undefined;
 
-    if (!issue) {
-      throw new Error(`Issue ${issueId} not found`);
+      if (!issue) {
+        throw new Error(`Issue ${issueId} not found`);
+      }
+    }
+
+    // Get the current branch as default (instead of hardcoding "main")
+    let defaultBranch = "main";
+    try {
+      defaultBranch = execSync("git rev-parse --abbrev-ref HEAD", {
+        cwd: this.repoPath,
+        encoding: "utf-8",
+      }).trim();
+    } catch {
+      // Fall back to "main" if we can't determine current branch
     }
 
     // 2. Determine execution mode and create execution with worktree
@@ -128,21 +172,45 @@ export class ExecutionService {
     let execution: Execution;
     let workDir: string;
 
-    if (mode === "worktree") {
-      // Check if we're reusing an existing worktree
-      if (config.reuseWorktreeId) {
-        // Reuse existing worktree
-        const existingExecution = this.db
-          .prepare("SELECT * FROM executions WHERE id = ?")
-          .get(config.reuseWorktreeId) as Execution | undefined;
+    // Worktree mode requires either an issue or a reuseWorktreePath
+    if (mode === "worktree" && !issueId && !config.reuseWorktreePath) {
+      throw new Error(
+        "Worktree mode requires either an issueId or reuseWorktreePath"
+      );
+    }
 
-        if (!existingExecution || !existingExecution.worktree_path) {
+    if (mode === "worktree" && (issueId || config.reuseWorktreePath)) {
+      // Check if we're reusing an existing worktree
+      if (config.reuseWorktreePath) {
+        // Validate worktree exists
+        if (!fs.existsSync(config.reuseWorktreePath)) {
           throw new Error(
-            `Cannot reuse worktree: execution ${config.reuseWorktreeId} not found or has no worktree`
+            `Cannot reuse worktree: path does not exist: ${config.reuseWorktreePath}`
           );
         }
 
-        // Create execution record with the same worktree path
+        // Validate it's a git worktree by checking for .git
+        const gitPath = path.join(config.reuseWorktreePath, ".git");
+        if (!fs.existsSync(gitPath)) {
+          throw new Error(
+            `Cannot reuse worktree: not a valid git worktree: ${config.reuseWorktreePath}`
+          );
+        }
+
+        // Get branch name from the worktree
+        let branchName: string;
+        try {
+          branchName = execSync("git rev-parse --abbrev-ref HEAD", {
+            cwd: config.reuseWorktreePath,
+            encoding: "utf-8",
+          }).trim();
+        } catch {
+          throw new Error(
+            `Cannot reuse worktree: failed to get branch name from: ${config.reuseWorktreePath}`
+          );
+        }
+
+        // Create execution record with the reused worktree path
         const executionId = randomUUID();
         execution = createExecution(this.db, {
           id: executionId,
@@ -151,19 +219,25 @@ export class ExecutionService {
           mode: mode,
           prompt: prompt,
           config: JSON.stringify(config),
-          target_branch: existingExecution.target_branch,
-          branch_name: existingExecution.branch_name,
-          worktree_path: existingExecution.worktree_path, // Reuse the same worktree path
+          target_branch: config.baseBranch || branchName,
+          branch_name: branchName,
+          worktree_path: config.reuseWorktreePath,
         });
 
-        workDir = existingExecution.worktree_path;
+        workDir = config.reuseWorktreePath;
       } else {
         // Create execution with isolated worktree
+        // This path requires issueId and issue (reuseWorktreePath not provided)
+        if (!issueId || !issue) {
+          throw new Error(
+            "Creating new worktree requires an issueId (use reuseWorktreePath for issue-less executions)"
+          );
+        }
         const result = await this.lifecycleService.createExecutionWithWorktree({
           issueId,
           issueTitle: issue.title,
           agentType: agentType,
-          targetBranch: config.baseBranch || "main",
+          targetBranch: config.baseBranch || defaultBranch,
           repoPath: this.repoPath,
           mode: mode,
           prompt: prompt, // Store original (unexpanded) prompt
@@ -184,8 +258,8 @@ export class ExecutionService {
         mode: mode,
         prompt: prompt, // Store original (unexpanded) prompt
         config: JSON.stringify(config),
-        target_branch: config.baseBranch || "main",
-        branch_name: config.baseBranch || "main",
+        target_branch: config.baseBranch || defaultBranch,
+        branch_name: config.baseBranch || defaultBranch,
       });
       workDir = this.repoPath;
 
@@ -212,13 +286,25 @@ export class ExecutionService {
       }
     }
 
-    // 3. Resolve prompt references for execution (done after storing original)
+    // 3. Update workflow context if provided
+    if (workflowContext) {
+      updateExecution(this.db, execution.id, {
+        workflow_execution_id: workflowContext.workflowId,
+      });
+      // Reload execution to get updated workflow_execution_id
+      const updatedExecution = getExecution(this.db, execution.id);
+      if (updatedExecution) {
+        execution = updatedExecution;
+      }
+    }
+
+    // 4. Resolve prompt references for execution (done after storing original)
     // Pass the issue ID so the issue content is automatically included even if not explicitly mentioned
     const resolver = new PromptResolver(this.db);
     const { resolvedPrompt, errors } = await resolver.resolve(
       prompt,
       new Set(),
-      issueId
+      issueId ?? undefined
     );
     if (errors.length > 0) {
       console.warn(`[ExecutionService] Prompt resolution warnings:`, errors);
@@ -270,11 +356,21 @@ export class ExecutionService {
       }
     );
 
+    // Log incoming config for debugging
+    console.log("[ExecutionService] createExecution config:", {
+      hasMcpServers: !!config.mcpServers,
+      mcpServerNames: config.mcpServers
+        ? Object.keys(config.mcpServers)
+        : "none",
+      hasAppendSystemPrompt: !!config.appendSystemPrompt,
+      dangerouslySkipPermissions: config.dangerouslySkipPermissions,
+    });
+
     // Build execution task (prompt already resolved above)
     const task: ExecutionTask = {
       id: execution.id,
       type: "issue",
-      entityId: issueId,
+      entityId: issueId ?? undefined,
       prompt: resolvedPrompt,
       workDir: workDir,
       config: {
@@ -284,13 +380,23 @@ export class ExecutionService {
         model: config.model || "claude-sonnet-4",
         captureFileChanges: config.captureFileChanges ?? true,
         captureToolCalls: config.captureToolCalls ?? true,
-        issueId,
+        issueId: issueId ?? undefined,
         executionId: execution.id,
+        mcpServers: config.mcpServers,
+        appendSystemPrompt: config.appendSystemPrompt,
+        dangerouslySkipPermissions: config.dangerouslySkipPermissions,
       },
       priority: 0,
       dependencies: [],
       createdAt: new Date(),
     };
+
+    console.log("[ExecutionService] Task metadata mcpServers:", {
+      hasMcpServers: !!task.metadata?.mcpServers,
+      mcpServerNames: task.metadata?.mcpServers
+        ? Object.keys(task.metadata.mcpServers as Record<string, unknown>)
+        : "none",
+    });
 
     // Execute with full lifecycle management (non-blocking)
     wrapper.executeWithLifecycle(execution.id, task, workDir).catch((error) => {

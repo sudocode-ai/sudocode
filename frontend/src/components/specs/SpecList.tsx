@@ -1,17 +1,27 @@
 import { useNavigate } from 'react-router-dom'
 import { SpecCard } from './SpecCard'
 import type { Spec } from '@/types/api'
+import type { Workflow } from '@/types/workflow'
 
 interface SpecListProps {
   specs: Spec[]
   loading?: boolean
   emptyMessage?: string
+  /** Map of spec ID to active workflow (if any) */
+  activeWorkflows?: Map<string, Workflow>
+  /** Set of spec IDs that have implementing issues */
+  specsWithImplementingIssues?: Set<string>
+  /** Callback to run spec as workflow */
+  onRunAsWorkflow?: (spec: Spec) => void
 }
 
 export function SpecList({
   specs,
   loading = false,
   emptyMessage = 'No specs found',
+  activeWorkflows,
+  specsWithImplementingIssues,
+  onRunAsWorkflow,
 }: SpecListProps) {
   const navigate = useNavigate()
 
@@ -44,7 +54,14 @@ export function SpecList({
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {specs.map((spec) => (
-        <SpecCard key={spec.id} spec={spec} onClick={handleSpecClick} />
+        <SpecCard
+          key={spec.id}
+          spec={spec}
+          onClick={handleSpecClick}
+          activeWorkflow={activeWorkflows?.get(spec.id)}
+          hasImplementingIssues={specsWithImplementingIssues?.has(spec.id)}
+          onRunAsWorkflow={onRunAsWorkflow}
+        />
       ))}
     </div>
   )
