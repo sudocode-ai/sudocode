@@ -15,6 +15,7 @@ import type {
   EscalateToUserParams,
   NotifyUserParams,
   MergeBranchParams,
+  AwaitEventsParams,
   WorkflowStatusResult,
   ExecuteIssueResult,
   ExecutionStatusResult,
@@ -25,6 +26,7 @@ import type {
   EscalateToUserResult,
   NotifyUserResult,
   MergeBranchResult,
+  AwaitEventsResult,
 } from "./types.js";
 
 // =============================================================================
@@ -314,6 +316,23 @@ export class WorkflowAPIClient {
     return this.request<MergeBranchResult>(
       "POST",
       `/api/workflows/${this.workflowId}/merge`,
+      params
+    );
+  }
+
+  // ===========================================================================
+  // Await Methods
+  // ===========================================================================
+
+  /**
+   * Register an await condition for the orchestrator.
+   * The orchestrator session will end after calling this.
+   * When the specified events occur, the orchestrator will be woken up.
+   */
+  async awaitEvents(params: AwaitEventsParams): Promise<AwaitEventsResult> {
+    return this.request<AwaitEventsResult>(
+      "POST",
+      `/api/workflows/${this.workflowId}/await-events`,
       params
     );
   }

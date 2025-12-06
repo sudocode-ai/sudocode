@@ -25,6 +25,7 @@ import type {
   EscalateToUserParams,
   NotifyUserParams,
   MergeBranchParams,
+  AwaitEventsParams,
 } from "./types.js";
 import { WorkflowAPIClient } from "./api-client.js";
 
@@ -304,6 +305,50 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       required: ["source_branch"],
     },
   },
+
+  // Pause and await tools
+  {
+    name: "await_events",
+    description:
+      "Pause execution and wait for specific events. Your session will end here. " +
+      "When any of the specified events occur, you'll receive a follow-up with the event data. " +
+      "Use this instead of polling execution_status in a loop.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        event_types: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: [
+              "step_completed",
+              "step_failed",
+              "user_response",
+              "escalation_resolved",
+              "timeout",
+            ],
+          },
+          description:
+            "Event types to wait for. Wakeup triggers when ANY event occurs.",
+        },
+        execution_ids: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional: Only wake for events from these execution IDs",
+        },
+        timeout_seconds: {
+          type: "number",
+          description:
+            "Optional: Maximum seconds to wait before auto-wakeup with timeout event",
+        },
+        message: {
+          type: "string",
+          description: "Optional: Message to show in UI while waiting",
+        },
+      },
+      required: ["event_types"],
+    },
+  },
 ];
 
 // =============================================================================
@@ -467,6 +512,9 @@ export class WorkflowMCPServer {
       case "merge_branch":
         return this.handleMergeBranch(args);
 
+      case "await_events":
+        return this.handleAwaitEvents(args);
+
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
@@ -577,6 +625,22 @@ export class WorkflowMCPServer {
       message: args.message as string | undefined,
     };
     return this.context.apiClient.mergeBranch(params);
+  }
+
+  private async handleAwaitEvents(
+    args: Record<string, unknown>
+  ): Promise<unknown> {
+    const params: AwaitEventsParams = {
+      event_types: args.event_types as AwaitEventsParams["event_types"],
+      execution_ids: args.execution_ids as string[] | undefined,
+      timeout_seconds: args.timeout_seconds as number | undefined,
+      message: args.message as string | undefined,
+    };
+    console.error(
+      `[await_events] Orchestrator pausing for workflow ${this.context.workflowId}`,
+      { eventTypes: params.event_types, timeout: params.timeout_seconds }
+    );
+    return this.context.apiClient.awaitEvents(params);
   }
 
   // ===========================================================================

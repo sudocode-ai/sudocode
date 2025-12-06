@@ -14,6 +14,8 @@ import type {
   Execution,
 } from "@sudocode-ai/types";
 
+import type { ResolvedAwait } from "./wakeup-service.js";
+
 // =============================================================================
 // Helper Functions
 // =============================================================================
@@ -200,18 +202,42 @@ export class WorkflowPromptBuilder {
   /**
    * Build a wakeup message from workflow events.
    * Summarizes what happened since last orchestrator interaction.
+   *
+   * @param events - Unprocessed workflow events
+   * @param executions - Map of execution ID to execution data
+   * @param resolvedAwait - Optional resolved await context (if woken from await_events)
    */
   buildWakeupMessage(
     events: WorkflowEvent[],
-    executions: Map<string, Execution>
+    executions: Map<string, Execution>,
+    resolvedAwait?: ResolvedAwait
   ): string {
     const sections: string[] = [];
 
     sections.push("[Workflow Event]");
     sections.push("");
 
+    // If woken from await, explain what triggered it
+    if (resolvedAwait) {
+      sections.push("=== AWAIT RESOLVED ===");
+      sections.push(`You were waiting for: ${resolvedAwait.eventTypes.join(", ")}`);
+      sections.push(`Triggered by: ${resolvedAwait.resolvedBy}`);
+      if (resolvedAwait.message) {
+        sections.push(`Context: ${resolvedAwait.message}`);
+      }
+      if (resolvedAwait.executionIds && resolvedAwait.executionIds.length > 0) {
+        sections.push(`Filtered executions: ${resolvedAwait.executionIds.join(", ")}`);
+      }
+      sections.push("");
+    }
+
     if (events.length === 0) {
-      sections.push("No new events since last update.");
+      if (resolvedAwait) {
+        // If we have a resolved await but no events, it was likely a timeout
+        sections.push("No new events - this is likely a timeout wakeup.");
+      } else {
+        sections.push("No new events since last update.");
+      }
       sections.push("");
       sections.push("What would you like to do next?");
       return sections.join("\n");

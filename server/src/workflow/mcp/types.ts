@@ -124,6 +124,30 @@ export interface MergeBranchParams {
   message?: string;
 }
 
+/**
+ * Event types the orchestrator can wait for.
+ */
+export type AwaitableEventType =
+  | "step_completed"
+  | "step_failed"
+  | "user_response"
+  | "escalation_resolved"
+  | "timeout";
+
+/**
+ * Parameters for await_events tool.
+ */
+export interface AwaitEventsParams {
+  /** Event types to wait for. Wakeup triggers when ANY event occurs. */
+  event_types: AwaitableEventType[];
+  /** Optional: Only wake for events from these execution IDs */
+  execution_ids?: string[];
+  /** Optional: Maximum seconds to wait before auto-wakeup with timeout event */
+  timeout_seconds?: number;
+  /** Optional: Message to show in UI while waiting */
+  message?: string;
+}
+
 // =============================================================================
 // Tool Result Types
 // =============================================================================
@@ -291,6 +315,22 @@ export interface MergeBranchResult {
   error?: string;
 }
 
+/**
+ * Result from await_events tool.
+ */
+export interface AwaitEventsResult {
+  /** Status - always "waiting" since tool returns immediately */
+  status: "waiting";
+  /** Unique ID for this await condition */
+  await_id: string;
+  /** Confirmation message */
+  message: string;
+  /** Event types being waited for */
+  will_wake_on: AwaitableEventType[];
+  /** When timeout will trigger (if specified) */
+  timeout_at?: string;
+}
+
 // =============================================================================
 // Context and Handler Types
 // =============================================================================
@@ -310,6 +350,7 @@ export interface WorkflowAPIClientInterface {
   escalateToUser(params: EscalateToUserParams): Promise<EscalateToUserResult>;
   notifyUser(params: NotifyUserParams): Promise<NotifyUserResult>;
   mergeBranch(params: MergeBranchParams): Promise<MergeBranchResult>;
+  awaitEvents(params: AwaitEventsParams): Promise<AwaitEventsResult>;
 }
 
 /**

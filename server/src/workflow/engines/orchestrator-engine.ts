@@ -144,6 +144,14 @@ export class OrchestratorWorkflowEngine extends BaseWorkflowEngine {
     this.config.serverUrl = serverUrl;
   }
 
+  /**
+   * Get the wakeup service for registering await conditions.
+   * Used by the API endpoint for await_events MCP tool.
+   */
+  getWakeupService(): WorkflowWakeupService {
+    return this.wakeupService;
+  }
+
   // ===========================================================================
   // Execution Event Callbacks
   // ===========================================================================

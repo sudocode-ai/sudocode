@@ -15,6 +15,7 @@ import type {
   Execution,
 } from "@sudocode-ai/types";
 import { WorkflowPromptBuilder } from "../../../../src/workflow/services/prompt-builder.js";
+import type { ResolvedAwait } from "../../../../src/workflow/services/wakeup-service.js";
 
 // =============================================================================
 // Test Data Factories
@@ -104,6 +105,17 @@ function createTestEvent(overrides?: Partial<WorkflowEvent>): WorkflowEvent {
     executionId: "exec-test",
     payload: {},
     createdAt: "2025-01-01T00:01:00.000Z",
+    ...overrides,
+  };
+}
+
+function createTestResolvedAwait(overrides?: Partial<ResolvedAwait>): ResolvedAwait {
+  return {
+    id: "await-test",
+    workflowId: "wf-test123",
+    eventTypes: ["step_completed", "step_failed"],
+    createdAt: "2025-01-01T00:00:00.000Z",
+    resolvedBy: "step_completed",
     ...overrides,
   };
 }
@@ -392,6 +404,156 @@ describe("WorkflowPromptBuilder", () => {
       expect(message).toContain("COMPLETED");
       expect(message).toContain("i-2");
       expect(message).toContain("FAILED");
+    });
+
+    // Await context tests
+    describe("with await context", () => {
+      it("should include await resolved header when resolvedAwait provided", () => {
+        const events: WorkflowEvent[] = [
+          createTestEvent({ type: "step_completed" }),
+        ];
+        const executions = new Map<string, Execution>();
+        executions.set("exec-test", createTestExecution());
+
+        const resolvedAwait = createTestResolvedAwait();
+
+        const message = builder.buildWakeupMessage(events, executions, resolvedAwait);
+
+        expect(message).toContain("AWAIT RESOLVED");
+      });
+
+      it("should show what event types were being waited for", () => {
+        const events: WorkflowEvent[] = [
+          createTestEvent({ type: "step_completed" }),
+        ];
+        const executions = new Map<string, Execution>();
+        executions.set("exec-test", createTestExecution());
+
+        const resolvedAwait = createTestResolvedAwait({
+          eventTypes: ["step_completed", "step_failed", "user_response"],
+        });
+
+        const message = builder.buildWakeupMessage(events, executions, resolvedAwait);
+
+        expect(message).toContain("You were waiting for:");
+        expect(message).toContain("step_completed");
+        expect(message).toContain("step_failed");
+        expect(message).toContain("user_response");
+      });
+
+      it("should show what triggered the await resolution", () => {
+        const events: WorkflowEvent[] = [
+          createTestEvent({ type: "step_failed" }),
+        ];
+        const executions = new Map<string, Execution>();
+        executions.set("exec-test", createTestExecution({ status: "failed" }));
+
+        const resolvedAwait = createTestResolvedAwait({
+          resolvedBy: "step_failed",
+        });
+
+        const message = builder.buildWakeupMessage(events, executions, resolvedAwait);
+
+        expect(message).toContain("Triggered by: step_failed");
+      });
+
+      it("should include await message context when provided", () => {
+        const events: WorkflowEvent[] = [];
+        const executions = new Map<string, Execution>();
+
+        const resolvedAwait = createTestResolvedAwait({
+          message: "Waiting for issue i-auth to complete",
+          resolvedBy: "timeout",
+        });
+
+        const message = builder.buildWakeupMessage(events, executions, resolvedAwait);
+
+        expect(message).toContain("Context: Waiting for issue i-auth to complete");
+      });
+
+      it("should include filtered execution IDs when provided", () => {
+        const events: WorkflowEvent[] = [];
+        const executions = new Map<string, Execution>();
+
+        const resolvedAwait = createTestResolvedAwait({
+          executionIds: ["exec-1", "exec-2"],
+          resolvedBy: "timeout",
+        });
+
+        const message = builder.buildWakeupMessage(events, executions, resolvedAwait);
+
+        expect(message).toContain("Filtered executions: exec-1, exec-2");
+      });
+
+      it("should handle timeout wakeup with no events", () => {
+        const events: WorkflowEvent[] = [];
+        const executions = new Map<string, Execution>();
+
+        const resolvedAwait = createTestResolvedAwait({
+          resolvedBy: "timeout",
+          eventTypes: ["step_completed"],
+        });
+
+        const message = builder.buildWakeupMessage(events, executions, resolvedAwait);
+
+        expect(message).toContain("AWAIT RESOLVED");
+        expect(message).toContain("Triggered by: timeout");
+        expect(message).toContain("timeout wakeup");
+        expect(message).toContain("What would you like to do next?");
+      });
+
+      it("should not include filtered executions when empty", () => {
+        const events: WorkflowEvent[] = [
+          createTestEvent({ type: "step_completed" }),
+        ];
+        const executions = new Map<string, Execution>();
+        executions.set("exec-test", createTestExecution());
+
+        const resolvedAwait = createTestResolvedAwait({
+          executionIds: [],
+        });
+
+        const message = builder.buildWakeupMessage(events, executions, resolvedAwait);
+
+        expect(message).not.toContain("Filtered executions");
+      });
+
+      it("should include both await context and event details", () => {
+        const execution = createTestExecution({
+          id: "exec-1",
+          issue_id: "i-auth",
+          status: "completed",
+          summary: "Implemented OAuth",
+        });
+
+        const events: WorkflowEvent[] = [
+          createTestEvent({
+            type: "step_completed",
+            executionId: "exec-1",
+          }),
+        ];
+
+        const executions = new Map<string, Execution>();
+        executions.set("exec-1", execution);
+
+        const resolvedAwait = createTestResolvedAwait({
+          eventTypes: ["step_completed"],
+          resolvedBy: "step_completed",
+          message: "Waiting for auth implementation",
+        });
+
+        const message = builder.buildWakeupMessage(events, executions, resolvedAwait);
+
+        // Should have await context
+        expect(message).toContain("AWAIT RESOLVED");
+        expect(message).toContain("Triggered by: step_completed");
+        expect(message).toContain("Context: Waiting for auth implementation");
+
+        // Should also have execution details
+        expect(message).toContain("i-auth");
+        expect(message).toContain("COMPLETED");
+        expect(message).toContain("Implemented OAuth");
+      });
     });
   });
 

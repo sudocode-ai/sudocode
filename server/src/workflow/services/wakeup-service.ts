@@ -15,6 +15,8 @@ import type {
   Execution,
 } from "@sudocode-ai/types";
 
+import type { AwaitableEventType } from "../mcp/types.js";
+
 import type { ExecutionService } from "../../services/execution-service.js";
 import type { WorkflowEventEmitter } from "../workflow-event-emitter.js";
 import { WorkflowPromptBuilder } from "./prompt-builder.js";
@@ -51,6 +53,38 @@ export interface RecordEventParams {
   executionId?: string;
   stepId?: string;
   payload: Record<string, unknown>;
+}
+
+/**
+ * Internal structure for tracking pending await conditions.
+ * Stored in-memory, not persisted to database.
+ */
+export interface PendingAwait {
+  id: string;
+  workflowId: string;
+  eventTypes: AwaitableEventType[];
+  executionIds?: string[];
+  timeoutAt?: string;
+  message?: string;
+  createdAt: string;
+}
+
+/**
+ * Resolved await with trigger information
+ */
+export interface ResolvedAwait extends PendingAwait {
+  resolvedBy: string;
+}
+
+/**
+ * Parameters for registering an await condition
+ */
+export interface RegisterAwaitParams {
+  workflowId: string;
+  eventTypes: AwaitableEventType[];
+  executionIds?: string[];
+  timeoutSeconds?: number;
+  message?: string;
 }
 
 // =============================================================================
@@ -99,6 +133,15 @@ export class WorkflowWakeupService {
     { timeout: NodeJS.Timeout; workflowId: string; stepId: string }
   >();
 
+  /** Pending await conditions by workflow ID */
+  private pendingAwaits = new Map<string, PendingAwait>();
+
+  /** Await timeout timers by await ID */
+  private awaitTimeouts = new Map<string, NodeJS.Timeout>();
+
+  /** Last resolved await for each workflow (for wakeup message context) */
+  private resolvedAwaits = new Map<string, ResolvedAwait>();
+
   /** Whether the service is running (for timeout monitoring) */
   private _isRunning = false;
 
@@ -128,6 +171,7 @@ export class WorkflowWakeupService {
   /**
    * Record a workflow event.
    * Automatically schedules a wakeup after the batch window.
+   * If an await condition is satisfied, triggers immediate wakeup.
    */
   async recordEvent(params: RecordEventParams): Promise<void> {
     const eventId = randomUUID();
@@ -150,6 +194,25 @@ export class WorkflowWakeupService {
         JSON.stringify(params.payload),
         now
       );
+
+    // Check if this event satisfies a pending await condition
+    const event: WorkflowEvent = {
+      id: eventId,
+      workflowId: params.workflowId,
+      type: params.type,
+      stepId: params.stepId,
+      executionId: params.executionId,
+      payload: params.payload,
+      createdAt: now,
+    };
+
+    if (this.checkAwaitCondition(params.workflowId, event)) {
+      // Resolve the await - this stores context for wakeup message
+      this.resolveAwait(params.workflowId, params.type);
+      // Trigger immediate wakeup (skip debounce)
+      await this.triggerWakeup(params.workflowId);
+      return;
+    }
 
     // Schedule wakeup (debounced)
     this.scheduleWakeup(params.workflowId);
@@ -367,31 +430,41 @@ export class WorkflowWakeupService {
 
     // 4. Get unprocessed events
     const events = this.getUnprocessedEvents(workflowId);
-    if (events.length === 0) {
+
+    // 5. Get resolved await context (if any) - check before events check
+    // This allows timeout wakeups to proceed even with no events
+    const resolvedAwait = this.getAndClearResolvedAwait(workflowId);
+
+    // 6. Skip if no events AND no resolved await (nothing to report)
+    if (events.length === 0 && !resolvedAwait) {
       console.debug(`No unprocessed events for workflow ${workflowId}`);
       return;
     }
 
-    // 5. Get executions referenced by events
+    // 7. Get executions referenced by events
     const executions = this.getExecutionsForEvents(events);
 
-    // 6. Build wakeup message
-    const message = this.promptBuilder.buildWakeupMessage(events, executions);
+    // 8. Build wakeup message with await context
+    const message = this.promptBuilder.buildWakeupMessage(
+      events,
+      executions,
+      resolvedAwait
+    );
 
-    // 7. Create follow-up execution
+    // 9. Create follow-up execution
     try {
       const followUp = await this.executionService.createFollowUp(
         workflow.orchestratorExecutionId,
         message
       );
 
-      // 8. Update workflow with new orchestrator execution ID
+      // 10. Update workflow with new orchestrator execution ID
       this.updateOrchestratorExecution(workflowId, followUp.id, followUp.session_id);
 
-      // 9. Mark events as processed
+      // 11. Mark events as processed
       this.markEventsProcessed(events.map((e) => e.id));
 
-      // 10. Emit wakeup event
+      // 12. Emit wakeup event
       this.eventEmitter.emit({
         type: "orchestrator_wakeup",
         workflowId,
@@ -423,7 +496,7 @@ export class WorkflowWakeupService {
 
   /**
    * Stop the wakeup service.
-   * Cancels all pending wakeups and execution timeouts.
+   * Cancels all pending wakeups, execution timeouts, and await conditions.
    */
   stop(): void {
     this._isRunning = false;
@@ -439,6 +512,223 @@ export class WorkflowWakeupService {
       clearTimeout(entry.timeout);
     }
     this.executionTimeouts.clear();
+
+    // Cancel all await timeouts
+    for (const [, timeout] of this.awaitTimeouts) {
+      clearTimeout(timeout);
+    }
+    this.awaitTimeouts.clear();
+    this.pendingAwaits.clear();
+    this.resolvedAwaits.clear();
+  }
+
+  // ===========================================================================
+  // Await Condition Management
+  // ===========================================================================
+
+  /**
+   * Register a new await condition.
+   * Called by the await-events API endpoint.
+   */
+  registerAwait(params: RegisterAwaitParams): { id: string; timeoutAt?: string } {
+    const awaitId = randomUUID();
+    const now = new Date().toISOString();
+    const timeoutAt = params.timeoutSeconds
+      ? new Date(Date.now() + params.timeoutSeconds * 1000).toISOString()
+      : undefined;
+
+    const pendingAwait: PendingAwait = {
+      id: awaitId,
+      workflowId: params.workflowId,
+      eventTypes: params.eventTypes,
+      executionIds: params.executionIds,
+      timeoutAt,
+      message: params.message,
+      createdAt: now,
+    };
+
+    // Store in memory (replaces any existing await for this workflow)
+    this.pendingAwaits.set(params.workflowId, pendingAwait);
+
+    // Schedule timeout if specified
+    if (params.timeoutSeconds) {
+      this.scheduleAwaitTimeout(
+        params.workflowId,
+        awaitId,
+        params.timeoutSeconds
+      );
+    }
+
+    console.log(
+      `[WakeupService] Registered await ${awaitId} for workflow ${params.workflowId}`,
+      { eventTypes: params.eventTypes, executionIds: params.executionIds }
+    );
+
+    return { id: awaitId, timeoutAt };
+  }
+
+  /**
+   * Check if an event satisfies the pending await for a workflow.
+   * Called internally when recording events.
+   */
+  private checkAwaitCondition(
+    workflowId: string,
+    event: WorkflowEvent
+  ): boolean {
+    const pendingAwait = this.pendingAwaits.get(workflowId);
+    if (!pendingAwait) return false;
+
+    // Map workflow event types to awaitable event types
+    const eventType = this.mapToAwaitableEventType(event.type);
+    if (!eventType) return false;
+
+    // Check event type matches
+    if (!pendingAwait.eventTypes.includes(eventType)) {
+      return false;
+    }
+
+    // Check execution ID filter if specified
+    if (pendingAwait.executionIds && pendingAwait.executionIds.length > 0) {
+      if (
+        !event.executionId ||
+        !pendingAwait.executionIds.includes(event.executionId)
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Map workflow event type to awaitable event type.
+   */
+  private mapToAwaitableEventType(
+    eventType: WorkflowEventType
+  ): AwaitableEventType | null {
+    switch (eventType) {
+      case "step_completed":
+        return "step_completed";
+      case "step_failed":
+        return "step_failed";
+      case "user_response":
+        return "user_response";
+      case "escalation_resolved":
+        return "escalation_resolved";
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Resolve an await condition (internal).
+   */
+  private resolveAwait(workflowId: string, resolvedBy: string): void {
+    const pendingAwait = this.pendingAwaits.get(workflowId);
+    if (!pendingAwait) return;
+
+    // Store for wakeup message context
+    this.resolvedAwaits.set(workflowId, { ...pendingAwait, resolvedBy });
+
+    // Clear from pending
+    this.pendingAwaits.delete(workflowId);
+
+    // Clear timeout if exists
+    const timeoutId = this.awaitTimeouts.get(pendingAwait.id);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      this.awaitTimeouts.delete(pendingAwait.id);
+    }
+
+    console.log(
+      `[WakeupService] Resolved await ${pendingAwait.id} for workflow ${workflowId}`,
+      { resolvedBy }
+    );
+  }
+
+  /**
+   * Schedule timeout for an await.
+   */
+  private scheduleAwaitTimeout(
+    workflowId: string,
+    awaitId: string,
+    seconds: number
+  ): void {
+    // Clear any existing timeout for this await
+    const existingTimeout = this.awaitTimeouts.get(awaitId);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+    }
+
+    const timeout = setTimeout(async () => {
+      this.awaitTimeouts.delete(awaitId);
+
+      // Check if this await is still pending
+      const pendingAwait = this.pendingAwaits.get(workflowId);
+      if (!pendingAwait || pendingAwait.id !== awaitId) {
+        return; // Already resolved
+      }
+
+      // Resolve the await with "timeout" as the trigger
+      this.resolveAwait(workflowId, "timeout");
+
+      // Trigger wakeup immediately
+      try {
+        await this.triggerWakeup(workflowId);
+      } catch (err) {
+        console.error(
+          `[WakeupService] Failed to trigger timeout wakeup for workflow ${workflowId}:`,
+          err
+        );
+      }
+    }, seconds * 1000);
+
+    this.awaitTimeouts.set(awaitId, timeout);
+    console.log(
+      `[WakeupService] Scheduled ${seconds}s timeout for await ${awaitId}`
+    );
+  }
+
+  /**
+   * Get the last resolved await for a workflow (for wakeup message).
+   * Clears after retrieval.
+   */
+  getAndClearResolvedAwait(workflowId: string): ResolvedAwait | undefined {
+    const resolved = this.resolvedAwaits.get(workflowId);
+    if (resolved) {
+      this.resolvedAwaits.delete(workflowId);
+    }
+    return resolved;
+  }
+
+  /**
+   * Clear all await state for a workflow (on cancel/complete).
+   */
+  clearAwaitState(workflowId: string): void {
+    const pendingAwait = this.pendingAwaits.get(workflowId);
+    if (pendingAwait) {
+      const timeoutId = this.awaitTimeouts.get(pendingAwait.id);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        this.awaitTimeouts.delete(pendingAwait.id);
+      }
+      this.pendingAwaits.delete(workflowId);
+    }
+    this.resolvedAwaits.delete(workflowId);
+  }
+
+  /**
+   * Check if a workflow has a pending await condition.
+   */
+  hasPendingAwait(workflowId: string): boolean {
+    return this.pendingAwaits.has(workflowId);
+  }
+
+  /**
+   * Get the pending await for a workflow (if any).
+   */
+  getPendingAwait(workflowId: string): PendingAwait | undefined {
+    return this.pendingAwaits.get(workflowId);
   }
 
   // ===========================================================================

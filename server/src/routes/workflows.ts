@@ -1975,5 +1975,138 @@ export function createWorkflowsRouter(): Router {
     }
   });
 
+  /**
+   * POST /api/workflows/:id/await-events - Register an await condition for the orchestrator
+   *
+   * Used by await_events MCP tool.
+   * Stores condition in wakeup service (in-memory).
+   * Returns immediately - orchestrator session should end after this call.
+   *
+   * Request body:
+   * - event_types: AwaitableEventType[] (required)
+   * - execution_ids?: string[]
+   * - timeout_seconds?: number
+   * - message?: string
+   */
+  router.post("/:id/await-events", async (req: Request, res: Response) => {
+    try {
+      const { id: workflowId } = req.params;
+      const { event_types, execution_ids, timeout_seconds, message } =
+        req.body as {
+          event_types?: string[];
+          execution_ids?: string[];
+          timeout_seconds?: number;
+          message?: string;
+        };
+
+      // Validate required params
+      if (!event_types || event_types.length === 0) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "event_types is required and must be non-empty",
+        });
+        return;
+      }
+
+      // Validate event types
+      const validEventTypes = [
+        "step_completed",
+        "step_failed",
+        "user_response",
+        "escalation_resolved",
+        "timeout",
+      ];
+      for (const eventType of event_types) {
+        if (!validEventTypes.includes(eventType)) {
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: `Invalid event type: ${eventType}. Must be one of: ${validEventTypes.join(", ")}`,
+          });
+          return;
+        }
+      }
+
+      const engine = getEngineForWorkflow(req, workflowId);
+      if (!engine) {
+        res.status(503).json({
+          success: false,
+          data: null,
+          message: "Workflow engine not available",
+        });
+        return;
+      }
+
+      // Get workflow and validate status
+      const workflow = await engine.getWorkflow(workflowId);
+      if (!workflow) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Workflow not found: ${workflowId}`,
+        });
+        return;
+      }
+
+      if (workflow.status !== "running") {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: `Cannot await events: workflow is ${workflow.status}, expected running`,
+        });
+        return;
+      }
+
+      // Register await condition in wakeup service (in-memory)
+      // Note: getWakeupService is available on orchestrator engines
+      if (!("getWakeupService" in engine)) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "Await events is only supported for orchestrator workflows",
+        });
+        return;
+      }
+
+      const wakeupService = (
+        engine as { getWakeupService: () => { registerAwait: Function } }
+      ).getWakeupService();
+      const awaitResult = wakeupService.registerAwait({
+        workflowId,
+        eventTypes: event_types,
+        executionIds: execution_ids,
+        timeoutSeconds: timeout_seconds,
+        message,
+      });
+
+      // Broadcast status update (for UI)
+      broadcastWorkflowUpdate(req.project!.id, workflowId, "awaiting", {
+        await_id: awaitResult.id,
+        event_types,
+        message,
+      });
+
+      console.log(
+        `[workflows/:id/await-events] Registered await ${awaitResult.id} for workflow ${workflowId}`,
+        { eventTypes: event_types, executionIds: execution_ids }
+      );
+
+      res.json({
+        success: true,
+        data: {
+          status: "waiting",
+          await_id: awaitResult.id,
+          message:
+            "Session will end. You'll be woken up when events occur.",
+          will_wake_on: event_types,
+          timeout_at: awaitResult.timeoutAt,
+        },
+      });
+    } catch (error) {
+      handleWorkflowError(error, res);
+    }
+  });
+
   return router;
 }

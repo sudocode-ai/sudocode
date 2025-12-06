@@ -40,9 +40,22 @@ describe("WorkflowAPIClient", () => {
   // Helper
   // ===========================================================================
 
+  function createMockHeaders(contentType = "application/json") {
+    return {
+      get: (name: string) => {
+        if (name.toLowerCase() === "content-type") {
+          return contentType;
+        }
+        return null;
+      },
+    };
+  }
+
   function mockSuccessResponse<T>(data: T) {
     mockFetch.mockResolvedValueOnce({
       ok: true,
+      status: 200,
+      headers: createMockHeaders(),
       json: () => Promise.resolve({ success: true, data }),
     });
   }
@@ -51,6 +64,7 @@ describe("WorkflowAPIClient", () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status,
+      headers: createMockHeaders(),
       json: () => Promise.resolve({ success: false, message }),
     });
   }
@@ -89,7 +103,15 @@ describe("WorkflowAPIClient", () => {
       mockFetch.mockImplementation(
         () =>
           new Promise((resolve) =>
-            setTimeout(() => resolve({ ok: true, json: () => ({}) }), 35000)
+            setTimeout(
+              () =>
+                resolve({
+                  ok: true,
+                  headers: createMockHeaders(),
+                  json: () => ({ success: true, data: {} }),
+                }),
+              35000
+            )
           )
       );
 
@@ -143,9 +165,10 @@ describe("WorkflowAPIClient", () => {
       mockErrorResponse(404, "Workflow not found");
 
       await expect(client.getWorkflowStatus()).rejects.toThrow(APIError);
-      await mockFetch.mockResolvedValueOnce({
+      mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 404,
+        headers: createMockHeaders(),
         json: () => Promise.resolve({ success: false, message: "Workflow not found" }),
       });
 
@@ -162,6 +185,7 @@ describe("WorkflowAPIClient", () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
+        headers: createMockHeaders(),
         json: () =>
           Promise.resolve({ success: false, message: "Validation failed" }),
       });
