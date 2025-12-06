@@ -14,6 +14,9 @@ npm install -g sudocode
 
 # Initialize a sudocode project in your project directory.
 sudocode init
+
+# Run the local sudocode server from anywhere
+sudocode-server
 ```
 
 **Note:** If you use multiple Node.js versions (via nvm or similar), you can install locally in your project:
