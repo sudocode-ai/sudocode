@@ -8,6 +8,7 @@
 import type Database from "better-sqlite3";
 import { exec } from "child_process";
 import { promisify } from "util";
+import * as path from "path";
 import type {
   Workflow,
   WorkflowSource,
@@ -20,6 +21,11 @@ import {
   getIssue,
   updateIssue,
 } from "@sudocode-ai/cli/dist/operations/issues.js";
+import {
+  readJSONLSync,
+  writeJSONL,
+} from "@sudocode-ai/cli/dist/jsonl.js";
+import type { IssueJSONL } from "@sudocode-ai/types";
 
 const execAsync = promisify(exec);
 
@@ -402,7 +408,7 @@ export class SequentialWorkflowEngine extends BaseWorkflowEngine {
     workflowId: string,
     step: WorkflowStep,
     execution: Execution,
-    workflowRow: { current_step_index: number }
+    workflowRow: { current_step_index: number; worktree_path: string | null }
   ): Promise<void> {
     // Update step status
     this.updateStep(workflowId, step.id, {
@@ -415,15 +421,11 @@ export class SequentialWorkflowEngine extends BaseWorkflowEngine {
       currentStepIndex: workflowRow.current_step_index + 1,
     });
 
-    // Close the issue
-    try {
-      updateIssue(this.db, step.issueId, { status: "closed" });
-    } catch (error) {
-      console.warn(
-        `[SequentialWorkflowEngine] Failed to close issue ${step.issueId}:`,
-        error
-      );
-    }
+    // Close the issue in the worktree JSONL if available
+    await this.closeIssue(
+      step.issueId,
+      workflowRow.worktree_path ?? undefined
+    );
   }
 
   /**
@@ -1104,7 +1106,8 @@ export class SequentialWorkflowEngine extends BaseWorkflowEngine {
     });
 
     // Close the issue after successful step completion
-    await this.closeIssue(step.issueId);
+    // Use worktree path to keep changes isolated until explicit sync
+    await this.closeIssue(step.issueId, workflow.worktreePath);
   }
 
   /**
@@ -1181,13 +1184,79 @@ Step: ${stepNum} of ${totalSteps}`;
   }
 
   /**
+   * Update an issue directly in the worktree's JSONL file.
+   * This keeps changes isolated to the worktree until explicitly synced.
+   *
+   * @param worktreePath - Path to the worktree
+   * @param issueId - The issue ID to update
+   * @param updates - Partial issue updates to apply
+   */
+  private async updateIssueInWorktree(
+    worktreePath: string,
+    issueId: string,
+    updates: Partial<IssueJSONL>
+  ): Promise<void> {
+    const issuesPath = path.join(worktreePath, ".sudocode", "issues.jsonl");
+
+    // Read current issues from worktree JSONL
+    const issues = readJSONLSync<IssueJSONL>(issuesPath);
+
+    // Find and update the issue
+    const issueIndex = issues.findIndex((issue) => issue.id === issueId);
+    if (issueIndex === -1) {
+      console.warn(
+        `[SequentialWorkflowEngine] Issue ${issueId} not found in worktree JSONL`
+      );
+      return;
+    }
+
+    // Apply updates
+    const updatedIssue: IssueJSONL = {
+      ...issues[issueIndex],
+      ...updates,
+      updated_at: new Date().toISOString(),
+    };
+
+    // Handle closed_at for status changes
+    if (updates.status === "closed" && issues[issueIndex].status !== "closed") {
+      updatedIssue.closed_at = new Date().toISOString();
+    } else if (updates.status && updates.status !== "closed" && issues[issueIndex].status === "closed") {
+      updatedIssue.closed_at = undefined;
+    }
+
+    issues[issueIndex] = updatedIssue;
+
+    // Write back to JSONL
+    await writeJSONL(issuesPath, issues);
+
+    console.log(
+      `[SequentialWorkflowEngine] Updated issue ${issueId} in worktree JSONL:`,
+      updates
+    );
+  }
+
+  /**
    * Close an issue after successful step completion.
+   * If a worktree path is provided, updates the worktree's JSONL directly.
+   * Otherwise, updates the main database.
    *
    * @param issueId - The issue ID to close
+   * @param worktreePath - Optional path to the worktree for isolated updates
    */
-  private async closeIssue(issueId: string): Promise<void> {
+  private async closeIssue(
+    issueId: string,
+    worktreePath?: string
+  ): Promise<void> {
     try {
-      updateIssue(this.db, issueId, { status: "closed" });
+      if (worktreePath) {
+        // Update the worktree's JSONL file directly
+        await this.updateIssueInWorktree(worktreePath, issueId, {
+          status: "closed",
+        });
+      } else {
+        // Fall back to main database
+        updateIssue(this.db, issueId, { status: "closed" });
+      }
     } catch (error) {
       // Non-fatal - log but don't fail
       console.warn(`Failed to close issue ${issueId}:`, error);

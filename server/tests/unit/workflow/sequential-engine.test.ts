@@ -33,18 +33,26 @@ vi.mock("@sudocode-ai/cli/dist/operations/relationships.js", () => ({
   getOutgoingRelationships: vi.fn(),
 }));
 
+vi.mock("@sudocode-ai/cli/dist/jsonl.js", () => ({
+  readJSONLSync: vi.fn(),
+  writeJSONL: vi.fn(),
+}));
+
 vi.mock("../../../src/services/executions.js", () => ({
   getExecution: vi.fn(),
 }));
 
 import { getIssue, updateIssue } from "@sudocode-ai/cli/dist/operations/issues.js";
 import { getIncomingRelationships, getOutgoingRelationships } from "@sudocode-ai/cli/dist/operations/relationships.js";
+import { readJSONLSync, writeJSONL } from "@sudocode-ai/cli/dist/jsonl.js";
 import { getExecution } from "../../../src/services/executions.js";
 
 const mockGetIssue = vi.mocked(getIssue);
 const mockUpdateIssue = vi.mocked(updateIssue);
 const mockGetIncomingRelationships = vi.mocked(getIncomingRelationships);
 const mockGetOutgoingRelationships = vi.mocked(getOutgoingRelationships);
+const mockReadJSONLSync = vi.mocked(readJSONLSync);
+const mockWriteJSONL = vi.mocked(writeJSONL);
 const mockGetExecution = vi.mocked(getExecution);
 
 // =============================================================================
@@ -1257,7 +1265,7 @@ describe("SequentialWorkflowEngine", () => {
   // ===========================================================================
 
   describe("auto-commit", () => {
-    it("should close issue after successful step completion", async () => {
+    it("should update issue in worktree JSONL after successful step completion", async () => {
       const workflow = createTestWorkflow({
         status: "pending",
         config: {
@@ -1300,6 +1308,21 @@ describe("SequentialWorkflowEngine", () => {
         updated_at: "2024-01-01",
       });
 
+      // Mock JSONL functions for worktree issue updates
+      mockReadJSONLSync.mockReturnValue([
+        {
+          id: "i-1",
+          title: "Test Issue",
+          content: "Test content",
+          status: "open",
+          priority: 2,
+          uuid: "uuid-1",
+          created_at: "2024-01-01",
+          updated_at: "2024-01-01",
+        },
+      ]);
+      mockWriteJSONL.mockResolvedValue(undefined);
+
       const mockExec = createMockExecution({ status: "completed" });
       (mockExecutionService.createExecution as ReturnType<typeof vi.fn>).mockResolvedValue(mockExec);
       mockGetExecution.mockReturnValue(mockExec);
@@ -1307,12 +1330,93 @@ describe("SequentialWorkflowEngine", () => {
       await engine.startWorkflow(workflow.id);
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      // Verify updateIssue was called to close the issue
+      // Verify JSONL was read from worktree
+      expect(mockReadJSONLSync).toHaveBeenCalledWith(
+        "/test/worktrees/workflow-test/.sudocode/issues.jsonl"
+      );
+
+      // Verify JSONL was written with updated issue status
+      expect(mockWriteJSONL).toHaveBeenCalledWith(
+        "/test/worktrees/workflow-test/.sudocode/issues.jsonl",
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "i-1",
+            status: "closed",
+          }),
+        ])
+      );
+
+      // Verify updateIssue was NOT called (should use JSONL instead)
+      expect(mockUpdateIssue).not.toHaveBeenCalled();
+    });
+
+    it("should fall back to database when no worktree exists", async () => {
+      // Create a workflow without worktree (simulating local mode)
+      const workflow = createTestWorkflow({
+        status: "pending",
+        worktreePath: undefined, // No worktree
+        config: {
+          parallelism: "sequential",
+          maxConcurrency: 1,
+          onFailure: "pause",
+          autoCommitAfterStep: true,
+          defaultAgentType: "claude-code",
+          autonomyLevel: "human_in_the_loop",
+        },
+        steps: [
+          { id: "step-1", issueId: "i-1", index: 0, dependencies: [], status: "ready" },
+        ],
+      });
+
+      db.prepare(`
+        INSERT INTO workflows (id, title, source, status, steps, base_branch, current_step_index, config, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        workflow.id,
+        workflow.title,
+        JSON.stringify(workflow.source),
+        workflow.status,
+        JSON.stringify(workflow.steps),
+        workflow.baseBranch,
+        workflow.currentStepIndex,
+        JSON.stringify(workflow.config),
+        workflow.createdAt,
+        workflow.updatedAt
+      );
+
+      mockGetIssue.mockReturnValue({
+        id: "i-1",
+        title: "Test Issue",
+        content: "Test content",
+        status: "open",
+        priority: 2,
+        uuid: "uuid-1",
+        created_at: "2024-01-01",
+        updated_at: "2024-01-01",
+      });
+
+      // Mock lifecycle service to NOT create a worktree for this test
+      (mockLifecycleService.createWorkflowWorktree as ReturnType<typeof vi.fn>).mockResolvedValue({
+        worktreePath: null,
+        branchName: null,
+      });
+
+      const mockExec = createMockExecution({ status: "completed" });
+      (mockExecutionService.createExecution as ReturnType<typeof vi.fn>).mockResolvedValue(mockExec);
+      mockGetExecution.mockReturnValue(mockExec);
+
+      await engine.startWorkflow(workflow.id);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Verify updateIssue was called (fallback when no worktree)
       expect(mockUpdateIssue).toHaveBeenCalledWith(
         expect.anything(),
         "i-1",
         { status: "closed" }
       );
+
+      // Verify JSONL was NOT used
+      expect(mockWriteJSONL).not.toHaveBeenCalled();
     });
 
     it("should not close issue when step fails", async () => {
@@ -1366,12 +1470,14 @@ describe("SequentialWorkflowEngine", () => {
       mockGetExecution.mockReturnValue(failedExec);
 
       mockUpdateIssue.mockClear();
+      mockWriteJSONL.mockClear();
 
       await engine.startWorkflow(workflow.id);
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      // updateIssue should NOT be called when step fails
+      // Neither updateIssue nor writeJSONL should be called when step fails
       expect(mockUpdateIssue).not.toHaveBeenCalled();
+      expect(mockWriteJSONL).not.toHaveBeenCalled();
     });
 
     it("should emit step_completed event with correct data after success", async () => {
