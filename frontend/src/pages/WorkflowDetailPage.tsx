@@ -22,17 +22,17 @@ import {
 import { Button } from '@/components/ui/button'
 import {
   WorkflowDAG,
-  WorkflowStepPanel,
   WorkflowControls,
   EscalationBanner,
   EscalationPanel,
   OrchestratorGuidancePanel,
 } from '@/components/workflows'
 import { InlineExecutionView } from '@/components/executions/InlineExecutionView'
+import { IssuePanel } from '@/components/issues/IssuePanel'
+import { useIssues } from '@/hooks/useIssues'
 import {
   useWorkflow,
   useWorkflowMutations,
-  useWorkflowStepActions,
   useWorkflowProgress,
   useWorkflowEscalation,
 } from '@/hooks/useWorkflows'
@@ -46,7 +46,6 @@ export default function WorkflowDetailPage() {
   const navigate = useNavigate()
   const { workflow, issues, isLoading, error } = useWorkflow(id)
   const { start, pause, resume, cancel, isStarting } = useWorkflowMutations()
-  const stepActions = useWorkflowStepActions(id || '')
   const progress = useWorkflowProgress(workflow)
 
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null)
@@ -75,10 +74,14 @@ export default function WorkflowDetailPage() {
     }
   }, [hasPendingEscalation, workflow?.orchestratorExecutionId])
 
-  // Get selected step
+  // Get selected step and its issue
   const selectedStep = selectedStepId
     ? workflow?.steps.find((s) => s.id === selectedStepId)
     : null
+  const selectedIssue = selectedStep && issues ? issues[selectedStep.issueId] : null
+
+  // Issue mutations for IssuePanel
+  const { updateIssue } = useIssues()
 
   // Determine if we should show orchestrator tab
   const hasOrchestrator = !!workflow?.orchestratorExecutionId
@@ -103,18 +106,6 @@ export default function WorkflowDetailPage() {
       return next
     })
   }, [])
-
-  const handleRetry = useCallback(async () => {
-    if (selectedStepId) {
-      await stepActions.retry(selectedStepId)
-    }
-  }, [selectedStepId, stepActions])
-
-  const handleSkip = useCallback(async () => {
-    if (selectedStepId) {
-      await stepActions.skip(selectedStepId)
-    }
-  }, [selectedStepId, stepActions])
 
   // Loading state
   if (isLoading) {
@@ -358,25 +349,18 @@ export default function WorkflowDetailPage() {
                   {/* Tab Content */}
                   <div className="flex-1 overflow-hidden flex flex-col">
                     {activeTab === 'steps' ? (
-                      // Steps View
-                      selectedStep ? (
-                        <WorkflowStepPanel
-                          step={selectedStep}
-                          issue={issues?.[selectedStep.issueId]}
-                          allSteps={workflow.steps}
+                      // Steps View - Show Issue Panel directly
+                      selectedIssue ? (
+                        <IssuePanel
+                          issue={selectedIssue}
                           onClose={handlePanelClose}
-                          onRetry={handleRetry}
-                          onSkip={handleSkip}
-                          onDependencyClick={handleStepSelect}
-                          onViewExecution={
-                            selectedStep.executionId
-                              ? () => navigate(`/executions/${selectedStep.executionId}`)
-                              : undefined
-                          }
+                          onUpdate={(data) => updateIssue({ id: selectedIssue.id, data })}
+                          hideTopControls={true}
+                          showOpenDetail={true}
                         />
                       ) : (
                         <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-                          Select a step to view details
+                          Select a step to view issue details
                         </div>
                       )
                     ) : (

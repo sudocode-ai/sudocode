@@ -18,6 +18,7 @@ import {
   Square,
   GitBranch,
   ChevronRight,
+  FileText,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -48,6 +49,8 @@ export interface WorkflowStepPanelProps {
   onCancel?: () => void
   /** Callback to view execution details */
   onViewExecution?: () => void
+  /** Callback to view issue details */
+  onViewIssue?: () => void
   /** Callback when a dependency is clicked */
   onDependencyClick?: (stepId: string) => void
   /** Additional class name */
@@ -162,6 +165,7 @@ export function WorkflowStepPanel({
   onSkip,
   onCancel,
   onViewExecution,
+  onViewIssue,
   onDependencyClick,
   className,
 }: WorkflowStepPanelProps) {
@@ -223,6 +227,21 @@ export function WorkflowStepPanel({
                   ? issue.content.slice(0, 300) + '...'
                   : issue.content}
               </div>
+            </Section>
+          )}
+
+          {/* View Issue */}
+          {issue && onViewIssue && (
+            <Section title="Issue">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={onViewIssue}
+              >
+                <FileText className="h-4 w-4 mr-2" />
+                View Full Issue
+                <ChevronRight className="h-4 w-4 ml-auto" />
+              </Button>
             </Section>
           )}
 
