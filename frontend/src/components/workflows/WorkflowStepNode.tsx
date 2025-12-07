@@ -3,7 +3,7 @@
  * Displays step status, issue info, and provides interactive selection
  */
 
-import { memo } from 'react'
+import { memo, useCallback } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import {
   Clock,
@@ -16,12 +16,6 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 import type { WorkflowStep } from '@/types/workflow'
 import type { Issue } from '@/types/api'
 import { STEP_STATUS_STYLES, STEP_STATUS_LABELS } from '@/types/workflow'
@@ -34,6 +28,7 @@ export interface WorkflowStepNodeData {
   step: WorkflowStep
   issue?: Issue
   isSelected?: boolean
+  onSelect?: (stepId: string) => void
 }
 
 // =============================================================================
@@ -124,8 +119,13 @@ function StatusBadge({ status }: { status: WorkflowStep['status'] }) {
 function WorkflowStepNodeComponent({ data }: NodeProps) {
   // Cast data to our expected type
   const nodeData = data as unknown as WorkflowStepNodeData
-  const { step, issue, isSelected } = nodeData
+  const { step, issue, isSelected, onSelect } = nodeData
   const styles = STEP_STATUS_STYLES[step.status] || STEP_STATUS_STYLES.pending
+
+  // Direct click handler for reliable selection
+  const handleClick = useCallback(() => {
+    onSelect?.(step.id)
+  }, [onSelect, step.id])
 
   // Get title and truncate if needed
   const title = issue?.title || `Step ${step.index + 1}`
@@ -135,28 +135,8 @@ function WorkflowStepNodeComponent({ data }: NodeProps) {
   // Get duration
   const duration = getStepDuration(step)
 
-  // Build tooltip content
-  const tooltipContent = (
-    <div className="max-w-[300px] space-y-1">
-      <div className="font-medium">{title}</div>
-      <div className="text-xs text-muted-foreground">
-        <span className="font-mono">{step.issueId}</span>
-        {step.agentType && <span> • {step.agentType}</span>}
-      </div>
-      {issue?.content && (
-        <div className="text-xs text-muted-foreground line-clamp-2">
-          {issue.content.slice(0, 150)}
-          {issue.content.length > 150 && '...'}
-        </div>
-      )}
-      {step.error && (
-        <div className="text-xs text-destructive">{step.error}</div>
-      )}
-    </div>
-  )
-
   return (
-    <TooltipProvider delayDuration={300}>
+    <>
       {/* Input handle (top) */}
       <Handle
         type="target"
@@ -172,20 +152,18 @@ function WorkflowStepNodeComponent({ data }: NodeProps) {
       />
 
       {/* Node content */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div
-            className={cn(
-              'rounded-lg border-2 bg-background p-3 shadow-sm',
-              'min-w-[220px] max-w-[280px]',
-              'transition-all duration-150',
-              'hover:shadow-md hover:scale-[1.02]',
-              'cursor-pointer',
-              styles.border,
-              styles.background,
-              isSelected && 'ring-2 ring-primary ring-offset-2 ring-offset-background'
-            )}
-          >
+      <div
+        onClick={handleClick}
+        className={cn(
+          'rounded-lg border-2 bg-background p-3 shadow-sm',
+          'min-w-[220px] max-w-[280px]',
+          'cursor-pointer select-none',
+          'hover:bg-muted/50',
+          styles.border,
+          styles.background,
+          isSelected && 'ring-2 ring-primary ring-offset-2 ring-offset-background'
+        )}
+      >
             {/* Header: Status icon + Issue ID + Status badge */}
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -241,12 +219,7 @@ function WorkflowStepNodeComponent({ data }: NodeProps) {
                 <span className="line-clamp-2">{step.error}</span>
               </div>
             )}
-          </div>
-        </TooltipTrigger>
-        <TooltipContent side="right" align="start" className="max-w-[320px]">
-          {tooltipContent}
-        </TooltipContent>
-      </Tooltip>
+      </div>
 
       {/* Output handle (bottom) */}
       <Handle
@@ -261,7 +234,7 @@ function WorkflowStepNodeComponent({ data }: NodeProps) {
               : '!bg-muted-foreground'
         )}
       />
-    </TooltipProvider>
+    </>
   )
 }
 

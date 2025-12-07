@@ -38,6 +38,8 @@ export interface WorkflowDAGProps {
   selectedStepId?: string
   /** Callback when a step is selected */
   onStepSelect?: (stepId: string) => void
+  /** Callback when clicking on empty pane area (useful for deselecting) */
+  onPaneClick?: () => void
   /** Callback for step actions (retry, skip, cancel) */
   onStepAction?: (stepId: string, action: 'retry' | 'skip' | 'cancel') => void
   /** Whether the DAG is interactive (default: true) */
@@ -115,7 +117,8 @@ function getLayoutedElements(
 function stepsToFlowElements(
   steps: WorkflowStep[],
   issues?: Record<string, Issue>,
-  selectedStepId?: string
+  selectedStepId?: string,
+  onStepSelect?: (stepId: string) => void
 ): { nodes: Node[]; edges: Edge[] } {
   // Create nodes from steps
   const nodes: Node[] = steps.map((step) => ({
@@ -126,6 +129,7 @@ function stepsToFlowElements(
       step,
       issue: issues?.[step.issueId],
       isSelected: step.id === selectedStepId,
+      onSelect: onStepSelect,
     },
   }))
 
@@ -180,6 +184,7 @@ export function WorkflowDAG({
   issues,
   selectedStepId,
   onStepSelect,
+  onPaneClick,
   // onStepAction - will be used when context menu is implemented
   onStepAction: _onStepAction,
   interactive = true,
@@ -193,10 +198,10 @@ export function WorkflowDAG({
 
   // Convert steps to flow elements
   const { initialNodes, initialEdges } = useMemo(() => {
-    const { nodes, edges } = stepsToFlowElements(steps, issues, selectedStepId)
+    const { nodes, edges } = stepsToFlowElements(steps, issues, selectedStepId, onStepSelect)
     const layouted = getLayoutedElements(nodes, edges, 'TB')
     return { initialNodes: layouted.nodes, initialEdges: layouted.edges }
-  }, [steps, issues, selectedStepId])
+  }, [steps, issues, selectedStepId, onStepSelect])
 
   // React Flow state
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
@@ -207,12 +212,13 @@ export function WorkflowDAG({
     const { nodes: newNodes, edges: newEdges } = stepsToFlowElements(
       steps,
       issues,
-      selectedStepId
+      selectedStepId,
+      onStepSelect
     )
     const layouted = getLayoutedElements(newNodes, newEdges, 'TB')
     setNodes(layouted.nodes)
     setEdges(layouted.edges)
-  }, [steps, issues, selectedStepId, setNodes, setEdges])
+  }, [steps, issues, selectedStepId, onStepSelect, setNodes, setEdges])
 
   // Handle node click
   const handleNodeClick: NodeMouseHandler = useCallback(
@@ -243,6 +249,7 @@ export function WorkflowDAG({
         onNodesChange={interactive ? onNodesChange : undefined}
         onEdgesChange={interactive ? onEdgesChange : undefined}
         onNodeClick={handleNodeClick}
+        onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         colorMode={actualTheme}
         fitView
@@ -253,9 +260,9 @@ export function WorkflowDAG({
         }}
         minZoom={0.25}
         maxZoom={2}
-        nodesDraggable={interactive}
+        nodesDraggable={false}
         nodesConnectable={false}
-        elementsSelectable={interactive}
+        elementsSelectable={false}
         panOnDrag={interactive}
         zoomOnScroll={interactive}
         zoomOnPinch={interactive}

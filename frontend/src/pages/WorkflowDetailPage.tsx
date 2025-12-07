@@ -247,6 +247,7 @@ export default function WorkflowDetailPage() {
                 issues={issues}
                 selectedStepId={selectedStepId || undefined}
                 onStepSelect={handleStepSelect}
+                onPaneClick={handlePanelClose}
               />
               {/* Toggle button when panel is collapsed */}
               {isPanelCollapsed && (selectedStep || hasOrchestrator) && (
