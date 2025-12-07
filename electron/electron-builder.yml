@@ -1,0 +1,57 @@
+appId: com.sudocode.app
+productName: Sudocode
+copyright: Copyright © 2024 Sudocode
+
+directories:
+  output: release
+  buildResources: resources
+
+files:
+  - dist/**/*
+  - node_modules/**/*
+  - "!node_modules/*/{CHANGELOG.md,README.md,readme.md}"
+  - "!node_modules/**/*.d.ts"
+  - "!node_modules/**/*.map"
+
+extraResources:
+  - from: "../cli/dist"
+    to: "cli"
+  - from: "../mcp/dist"
+    to: "mcp"
+  - from: "../frontend/dist"
+    to: "frontend"
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  icon: resources/icon.icns
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: resources/icon.ico
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  category: Development
+  icon: resources/icon.png
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+publish:
+  provider: github
+  owner: sudocode-ai
+  repo: sudocode
+
+npmRebuild: true

@@ -10,7 +10,8 @@
     "mcp",
     "server",
     "sudocode",
-    "frontend"
+    "frontend",
+    "electron"
   ],
   "scripts": {
     "build": "npm run build --workspace=types && npm run build --workspace=cli && npm run build --workspace=mcp && npm run build --workspace=frontend && npm run build --workspace=server",
@@ -31,6 +32,9 @@
     "dev:server": "SUDOCODE_DIR=$(pwd)/.sudocode npm run dev --workspace=server",
     "dev:frontend": "npm run dev --workspace=frontend",
     "start:server": "SUDOCODE_DIR=$(pwd)/.sudocode npm start --workspace=server",
+    "build:electron": "npm run build --workspace=electron",
+    "dev:electron": "npm run dev --workspace=electron",
+    "dist:electron": "npm run dist --workspace=electron",
     "version": "./scripts/version.sh",
     "publish": "./scripts/publish.sh",
     "publish:dry-run": "./scripts/publish.sh --dry-run --skip-tests",
