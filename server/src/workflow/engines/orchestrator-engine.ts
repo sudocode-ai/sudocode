@@ -380,6 +380,15 @@ export class OrchestratorWorkflowEngine extends BaseWorkflowEngine {
       throw new WorkflowStateError(workflowId, workflow.status, "pause");
     }
 
+    // Cancel ALL running executions (orchestrator chain + step executions)
+    await this.cancelAllWorkflowExecutions(workflow);
+
+    // Cancel pending wakeup
+    this.wakeupService.cancelPendingWakeup(workflowId);
+
+    // Clear any await state
+    this.wakeupService.clearAwaitState(workflowId);
+
     // Update status
     this.updateWorkflow(workflowId, { status: "paused" });
 
@@ -450,25 +459,14 @@ export class OrchestratorWorkflowEngine extends BaseWorkflowEngine {
       throw new WorkflowStateError(workflowId, workflow.status, "cancel");
     }
 
-    // Cancel orchestrator execution if running
-    if (workflow.orchestratorExecutionId) {
-      try {
-        await this.executionService.cancelExecution(
-          workflow.orchestratorExecutionId
-        );
-      } catch (error) {
-        console.warn(
-          `Failed to cancel orchestrator execution ${workflow.orchestratorExecutionId}:`,
-          error
-        );
-      }
-    }
+    // Cancel ALL running executions (orchestrator chain + step executions)
+    await this.cancelAllWorkflowExecutions(workflow);
 
     // Cancel pending wakeup
     this.wakeupService.cancelPendingWakeup(workflowId);
 
-    // Find and cancel any running step executions
-    await this.cancelRunningExecutions(workflow);
+    // Clear any await state
+    this.wakeupService.clearAwaitState(workflowId);
 
     // Update status
     this.updateWorkflow(workflowId, {
@@ -729,11 +727,67 @@ Use the workflow tools to:
   }
 
   /**
-   * Cancel all running step executions for a workflow.
+   * Cancel ALL running executions for a workflow.
+   * This includes:
+   * 1. The entire orchestrator execution chain (root + all follow-ups)
+   * 2. All step executions linked to this workflow
    */
-  private async cancelRunningExecutions(workflow: Workflow): Promise<void> {
-    // Find executions linked to this workflow
-    const executions = this.db
+  private async cancelAllWorkflowExecutions(workflow: Workflow): Promise<void> {
+    const cancelledIds = new Set<string>();
+
+    // 1. Cancel the entire orchestrator execution chain
+    if (workflow.orchestratorExecutionId) {
+      // Get the root orchestrator execution by traversing up parent_execution_id
+      let rootId = workflow.orchestratorExecutionId;
+      let safetyCounter = 100; // Prevent infinite loops
+
+      while (safetyCounter > 0) {
+        const parent = this.db
+          .prepare("SELECT parent_execution_id FROM executions WHERE id = ?")
+          .get(rootId) as { parent_execution_id: string | null } | undefined;
+
+        if (!parent || !parent.parent_execution_id) {
+          break;
+        }
+        rootId = parent.parent_execution_id;
+        safetyCounter--;
+      }
+
+      // Get all executions in the chain (root + all descendants)
+      const chainExecutions = this.db
+        .prepare(
+          `
+          WITH RECURSIVE execution_chain AS (
+            -- Base case: the root execution
+            SELECT id, status FROM executions WHERE id = ?
+            UNION ALL
+            -- Recursive case: children of executions in the chain
+            SELECT e.id, e.status FROM executions e
+            INNER JOIN execution_chain ec ON e.parent_execution_id = ec.id
+          )
+          SELECT id, status FROM execution_chain
+          WHERE status IN ('pending', 'running', 'preparing')
+        `
+        )
+        .all(rootId) as Array<{ id: string; status: string }>;
+
+      console.log(
+        `[OrchestratorEngine] Cancelling ${chainExecutions.length} orchestrator executions in chain`
+      );
+
+      for (const { id } of chainExecutions) {
+        if (cancelledIds.has(id)) continue;
+        try {
+          await this.executionService.cancelExecution(id);
+          cancelledIds.add(id);
+        } catch (error) {
+          console.warn(`Failed to cancel orchestrator execution ${id}:`, error);
+        }
+      }
+    }
+
+    // 2. Cancel all step executions linked to this workflow
+    const stepExecutions = this.db
       .prepare(
         `
         SELECT id FROM executions
@@ -743,13 +797,23 @@ Use the workflow tools to:
       )
       .all(workflow.id) as Array<{ id: string }>;
 
-    for (const { id } of executions) {
+    console.log(
+      `[OrchestratorEngine] Cancelling ${stepExecutions.length} step executions`
+    );
+
+    for (const { id } of stepExecutions) {
+      if (cancelledIds.has(id)) continue;
       try {
         await this.executionService.cancelExecution(id);
+        cancelledIds.add(id);
       } catch (error) {
-        console.warn(`Failed to cancel execution ${id}:`, error);
+        console.warn(`Failed to cancel step execution ${id}:`, error);
       }
     }
+
+    console.log(
+      `[OrchestratorEngine] Cancelled ${cancelledIds.size} total executions for workflow ${workflow.id}`
+    );
   }
 
   // ===========================================================================

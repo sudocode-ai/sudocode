@@ -47,6 +47,7 @@ function createMockExecutionService(): ExecutionService {
       session_id: "session-123",
       status: "running",
     }),
+    cancelExecution: vi.fn().mockResolvedValue(undefined),
   } as unknown as ExecutionService;
 }
 
@@ -481,6 +482,160 @@ describe("WorkflowWakeupService", () => {
       await service.triggerWakeup("wf-test");
 
       expect(executionService.createFollowUp).not.toHaveBeenCalled();
+    });
+
+    it("should cancel previous execution before creating follow-up when still running", async () => {
+      insertTestWorkflow(db);
+      insertTestExecution(db, { id: "exec-1" });
+
+      // Ensure orchestrator execution is in running state
+      db.prepare("UPDATE executions SET status = 'running' WHERE id = ?").run(
+        "orch-exec-1"
+      );
+
+      await service.recordEvent({
+        workflowId: "wf-test",
+        type: "step_completed",
+        executionId: "exec-1",
+        payload: {},
+      });
+
+      await service.triggerWakeup("wf-test");
+
+      // Should cancel the previous orchestrator execution first
+      expect(executionService.cancelExecution).toHaveBeenCalledWith(
+        "orch-exec-1"
+      );
+      // Then create follow-up
+      expect(executionService.createFollowUp).toHaveBeenCalledWith(
+        "orch-exec-1",
+        expect.any(String)
+      );
+    });
+
+    it("should not cancel previous execution if already completed", async () => {
+      insertTestWorkflow(db);
+      insertTestExecution(db, { id: "exec-1" });
+
+      // Set orchestrator execution to completed
+      db.prepare("UPDATE executions SET status = 'completed' WHERE id = ?").run(
+        "orch-exec-1"
+      );
+
+      await service.recordEvent({
+        workflowId: "wf-test",
+        type: "step_completed",
+        executionId: "exec-1",
+        payload: {},
+      });
+
+      await service.triggerWakeup("wf-test");
+
+      // Should NOT cancel since already completed
+      expect(executionService.cancelExecution).not.toHaveBeenCalled();
+      // Should still create follow-up
+      expect(executionService.createFollowUp).toHaveBeenCalled();
+    });
+
+    it("should not cancel previous execution if already cancelled", async () => {
+      insertTestWorkflow(db);
+      insertTestExecution(db, { id: "exec-1" });
+
+      // Set orchestrator execution to cancelled
+      db.prepare("UPDATE executions SET status = 'cancelled' WHERE id = ?").run(
+        "orch-exec-1"
+      );
+
+      await service.recordEvent({
+        workflowId: "wf-test",
+        type: "step_completed",
+        executionId: "exec-1",
+        payload: {},
+      });
+
+      await service.triggerWakeup("wf-test");
+
+      // Should NOT cancel since already cancelled
+      expect(executionService.cancelExecution).not.toHaveBeenCalled();
+      // Should still create follow-up
+      expect(executionService.createFollowUp).toHaveBeenCalled();
+    });
+
+    it("should cancel previous execution in pending state", async () => {
+      insertTestWorkflow(db);
+      insertTestExecution(db, { id: "exec-1" });
+
+      // Set orchestrator execution to pending
+      db.prepare("UPDATE executions SET status = 'pending' WHERE id = ?").run(
+        "orch-exec-1"
+      );
+
+      await service.recordEvent({
+        workflowId: "wf-test",
+        type: "step_completed",
+        executionId: "exec-1",
+        payload: {},
+      });
+
+      await service.triggerWakeup("wf-test");
+
+      // Should cancel the pending execution
+      expect(executionService.cancelExecution).toHaveBeenCalledWith(
+        "orch-exec-1"
+      );
+    });
+
+    it("should cancel previous execution in preparing state", async () => {
+      insertTestWorkflow(db);
+      insertTestExecution(db, { id: "exec-1" });
+
+      // Set orchestrator execution to preparing
+      db.prepare("UPDATE executions SET status = 'preparing' WHERE id = ?").run(
+        "orch-exec-1"
+      );
+
+      await service.recordEvent({
+        workflowId: "wf-test",
+        type: "step_completed",
+        executionId: "exec-1",
+        payload: {},
+      });
+
+      await service.triggerWakeup("wf-test");
+
+      // Should cancel the preparing execution
+      expect(executionService.cancelExecution).toHaveBeenCalledWith(
+        "orch-exec-1"
+      );
+    });
+
+    it("should continue creating follow-up even if cancel fails", async () => {
+      insertTestWorkflow(db);
+      insertTestExecution(db, { id: "exec-1" });
+
+      // Set orchestrator execution to running
+      db.prepare("UPDATE executions SET status = 'running' WHERE id = ?").run(
+        "orch-exec-1"
+      );
+
+      // Make cancel fail
+      (executionService.cancelExecution as any).mockRejectedValueOnce(
+        new Error("Cancel failed")
+      );
+
+      await service.recordEvent({
+        workflowId: "wf-test",
+        type: "step_completed",
+        executionId: "exec-1",
+        payload: {},
+      });
+
+      await service.triggerWakeup("wf-test");
+
+      // Cancel was attempted
+      expect(executionService.cancelExecution).toHaveBeenCalled();
+      // Follow-up should still be created despite cancel failure
+      expect(executionService.createFollowUp).toHaveBeenCalled();
     });
   });
 

@@ -343,9 +343,27 @@ export class ExecutionService {
     }
 
     // 4. In-process execution with executor wrapper (fallback when no worker pool)
+    // Extract agent-relevant config fields (exclude sudocode-specific fields like mode,
+    // baseBranch, createBaseBranch, branchName, reuseWorktreePath, etc.)
+    const {
+      mode: _mode,
+      baseBranch: _baseBranch,
+      createBaseBranch: _createBaseBranch,
+      branchName: _branchName,
+      reuseWorktreePath: _reuseWorktreePath,
+      checkpointInterval: _checkpointInterval,
+      continueOnStepFailure: _continueOnStepFailure,
+      captureFileChanges: _captureFileChanges,
+      captureToolCalls: _captureToolCalls,
+      ...agentConfig
+    } = config;
+
     const wrapper = createExecutorForAgent(
       agentType,
-      { workDir: this.repoPath }, // Agent-specific config (minimal for now)
+      {
+        workDir: this.repoPath,
+        ...agentConfig,
+      },
       {
         workDir: this.repoPath,
         lifecycleService: this.lifecycleService,
@@ -364,6 +382,17 @@ export class ExecutionService {
         : "none",
       hasAppendSystemPrompt: !!config.appendSystemPrompt,
       dangerouslySkipPermissions: config.dangerouslySkipPermissions,
+    });
+
+    // Log agentConfig being passed to executor
+    console.log("[ExecutionService] agentConfig passed to executor:", {
+      hasMcpServers: !!(agentConfig as any).mcpServers,
+      mcpServerNames: (agentConfig as any).mcpServers
+        ? Object.keys((agentConfig as any).mcpServers)
+        : "none",
+      hasAppendSystemPrompt: !!(agentConfig as any).appendSystemPrompt,
+      dangerouslySkipPermissions: (agentConfig as any).dangerouslySkipPermissions,
+      allKeys: Object.keys(agentConfig),
     });
 
     // Build execution task (prompt already resolved above)
@@ -547,10 +576,35 @@ ${feedback}`;
       );
     }
 
+    // Parse config to get model and other settings
+    // This is done early so we can pass it to the executor
+    const parsedConfig = prevExecution.config
+      ? JSON.parse(prevExecution.config)
+      : {};
+
     // 4. Use executor wrapper with session resumption
+    // IMPORTANT: Pass the full config from parent execution to preserve mcpServers,
+    // dangerouslySkipPermissions, appendSystemPrompt, and other settings
+    // Extract agent-relevant config fields (exclude sudocode-specific fields)
+    const {
+      mode: _mode,
+      baseBranch: _baseBranch,
+      createBaseBranch: _createBaseBranch,
+      branchName: _branchName,
+      reuseWorktreePath: _reuseWorktreePath,
+      checkpointInterval: _checkpointInterval,
+      continueOnStepFailure: _continueOnStepFailure,
+      captureFileChanges: _captureFileChanges,
+      captureToolCalls: _captureToolCalls,
+      ...parentAgentConfig
+    } = parsedConfig;
+
     const wrapper = createExecutorForAgent(
       agentType,
-      { workDir: this.repoPath },
+      {
+        workDir: this.repoPath,
+        ...parentAgentConfig,
+      },
       {
         workDir: this.repoPath,
         lifecycleService: this.lifecycleService,
@@ -570,11 +624,6 @@ ${feedback}`;
         `[ExecutionService] No session_id found for execution ${executionId}, follow-up will start a new session`
       );
     }
-
-    // Parse config to get model and other settings
-    const parsedConfig = prevExecution.config
-      ? JSON.parse(prevExecution.config)
-      : {};
 
     // Build execution task for follow-up (use resolved prompt for agent)
     // IMPORTANT: Inherit ALL config from parent execution
@@ -610,7 +659,9 @@ ${feedback}`;
       parentExecutionId: executionId,
       inheritedConfigKeys: Object.keys(parsedConfig),
       hasMcpServers: !!parsedConfig.mcpServers,
-      mcpServerNames: parsedConfig.mcpServers ? Object.keys(parsedConfig.mcpServers) : "none",
+      mcpServerNames: parsedConfig.mcpServers
+        ? Object.keys(parsedConfig.mcpServers)
+        : "none",
       dangerouslySkipPermissions: parsedConfig.dangerouslySkipPermissions,
       hasAppendSystemPrompt: !!parsedConfig.appendSystemPrompt,
       model: parsedConfig.model,
@@ -1039,16 +1090,18 @@ ${feedback}`;
    * @param options.includeRunning - When used with 'since', also include running executions regardless of age
    * @returns Object containing executions array, total count, and hasMore flag
    */
-  listAll(options: {
-    limit?: number;
-    offset?: number;
-    status?: ExecutionStatus | ExecutionStatus[];
-    issueId?: string;
-    sortBy?: "created_at" | "updated_at";
-    order?: "asc" | "desc";
-    since?: string;
-    includeRunning?: boolean;
-  } = {}): {
+  listAll(
+    options: {
+      limit?: number;
+      offset?: number;
+      status?: ExecutionStatus | ExecutionStatus[];
+      issueId?: string;
+      sortBy?: "created_at" | "updated_at";
+      order?: "asc" | "desc";
+      since?: string;
+      includeRunning?: boolean;
+    } = {}
+  ): {
     executions: Execution[];
     total: number;
     hasMore: boolean;

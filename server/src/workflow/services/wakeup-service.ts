@@ -270,7 +270,10 @@ export class WorkflowWakeupService {
     const timeout = setTimeout(() => {
       this.pendingWakeups.delete(workflowId);
       this.triggerWakeup(workflowId).catch((err) => {
-        console.error(`Failed to trigger wakeup for workflow ${workflowId}:`, err);
+        console.error(
+          `Failed to trigger wakeup for workflow ${workflowId}:`,
+          err
+        );
       });
     }, this.config.batchWindowMs);
 
@@ -502,20 +505,53 @@ export class WorkflowWakeupService {
       resolvedAwait
     );
 
-    // 9. Create follow-up execution
+    // 9. Stop the previous orchestrator execution before creating follow-up
+    // This prevents parallel execution of orchestrator and follow-up
+    // TODO: Migrate to using agent executor 'sendMessage' for inter-execution messages.
+    try {
+      const prevExecution = this.db
+        .prepare("SELECT status FROM executions WHERE id = ?")
+        .get(workflow.orchestratorExecutionId) as
+        | { status: string }
+        | undefined;
+
+      if (
+        prevExecution &&
+        ["running", "pending", "preparing"].includes(prevExecution.status)
+      ) {
+        console.log(
+          `[WakeupService] Stopping previous orchestrator execution ${workflow.orchestratorExecutionId} before creating follow-up`
+        );
+        await this.executionService.cancelExecution(
+          workflow.orchestratorExecutionId
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[WakeupService] Failed to stop previous orchestrator execution ${workflow.orchestratorExecutionId}:`,
+        err
+      );
+      // Continue with follow-up creation anyway
+    }
+
+    // 10. Create follow-up execution
     try {
       const followUp = await this.executionService.createFollowUp(
         workflow.orchestratorExecutionId,
         message
       );
 
-      // 10. Update workflow with new orchestrator execution ID
-      this.updateOrchestratorExecution(workflowId, followUp.id, followUp.session_id);
+      // 11. Update workflow with new orchestrator execution ID
+      this.updateOrchestratorExecution(
+        workflowId,
+        followUp.id,
+        followUp.session_id
+      );
 
-      // 11. Mark events as processed
+      // 12. Mark events as processed
       this.markEventsProcessed(events.map((e) => e.id));
 
-      // 12. Emit wakeup event
+      // 13. Emit wakeup event
       this.eventEmitter.emit({
         type: "orchestrator_wakeup",
         workflowId,
@@ -526,7 +562,10 @@ export class WorkflowWakeupService {
         timestamp: Date.now(),
       });
     } catch (err) {
-      console.error(`Failed to create follow-up execution for workflow ${workflowId}:`, err);
+      console.error(
+        `Failed to create follow-up execution for workflow ${workflowId}:`,
+        err
+      );
       // Don't mark events as processed - they'll be retried on next wakeup
       throw err;
     }
@@ -652,9 +691,7 @@ export class WorkflowWakeupService {
             await this.triggerWakeup(row.workflow_id);
           }
         } else {
-          console.log(
-            `[WakeupService] Recovered await ${row.id} (no timeout)`
-          );
+          console.log(`[WakeupService] Recovered await ${row.id} (no timeout)`);
         }
       } catch (error) {
         console.error(
@@ -736,8 +773,7 @@ export class WorkflowWakeupService {
     for (const row of timeoutRows) {
       try {
         const payload = JSON.parse(row.payload) as { timeoutAt: string };
-        const remainingMs =
-          new Date(payload.timeoutAt).getTime() - Date.now();
+        const remainingMs = new Date(payload.timeoutAt).getTime() - Date.now();
 
         if (remainingMs > 0) {
           // Reschedule timeout with remaining time
@@ -822,7 +858,10 @@ export class WorkflowWakeupService {
    *
    * Persists the await to workflow_events for recovery after server restart.
    */
-  registerAwait(params: RegisterAwaitParams): { id: string; timeoutAt?: string } {
+  registerAwait(params: RegisterAwaitParams): {
+    id: string;
+    timeoutAt?: string;
+  } {
     const awaitId = randomUUID();
     const now = new Date().toISOString();
     const timeoutAt = params.timeoutSeconds

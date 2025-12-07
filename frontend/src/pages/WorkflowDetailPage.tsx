@@ -74,6 +74,19 @@ export default function WorkflowDetailPage() {
     }
   }, [hasPendingEscalation, workflow?.orchestratorExecutionId])
 
+  // Handle Escape key to stop orchestrator when running
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && workflow?.status === 'running') {
+        e.preventDefault()
+        cancel(workflow.id)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [workflow?.id, workflow?.status, cancel])
+
   // Get selected step and its issue
   const selectedStep = selectedStepId
     ? workflow?.steps.find((s) => s.id === selectedStepId)

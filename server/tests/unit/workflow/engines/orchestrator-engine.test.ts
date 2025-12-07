@@ -73,18 +73,38 @@ function createTestDb(): Database.Database {
   return db;
 }
 
-function createMockExecutionService(): ExecutionService {
+function createMockExecutionService(db: Database.Database): ExecutionService {
   return {
-    createExecution: vi.fn().mockResolvedValue({
-      id: "exec-orch",
-      session_id: "session-orch",
-      status: "running",
+    createExecution: vi.fn().mockImplementation(async () => {
+      const execution = {
+        id: "exec-orch",
+        session_id: "session-orch",
+        status: "running",
+      };
+      // Insert into database so cancelAllWorkflowExecutions can find it
+      db.prepare(
+        `INSERT INTO executions (id, session_id, status, target_branch, branch_name, created_at, updated_at)
+         VALUES (?, ?, ?, 'main', 'test-branch', datetime('now'), datetime('now'))`
+      ).run(execution.id, execution.session_id, execution.status);
+      return execution;
     }),
-    cancelExecution: vi.fn().mockResolvedValue(undefined),
-    createFollowUp: vi.fn().mockResolvedValue({
-      id: "exec-followup",
-      session_id: "session-orch",
-      status: "running",
+    cancelExecution: vi.fn().mockImplementation(async (id: string) => {
+      // Update status in database when cancelled
+      db.prepare(`UPDATE executions SET status = 'cancelled' WHERE id = ?`).run(id);
+      return undefined;
+    }),
+    createFollowUp: vi.fn().mockImplementation(async (parentId: string) => {
+      const execution = {
+        id: "exec-followup",
+        session_id: "session-orch",
+        status: "running",
+      };
+      // Insert with parent_execution_id so chain is properly linked
+      db.prepare(
+        `INSERT INTO executions (id, session_id, status, parent_execution_id, target_branch, branch_name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'main', 'test-branch', datetime('now'), datetime('now'))`
+      ).run(execution.id, execution.session_id, execution.status, parentId);
+      return execution;
     }),
   } as unknown as ExecutionService;
 }
@@ -122,7 +142,7 @@ describe("OrchestratorWorkflowEngine", () => {
 
   beforeEach(() => {
     db = createTestDb();
-    executionService = createMockExecutionService();
+    executionService = createMockExecutionService(db);
     lifecycleService = createMockLifecycleService();
     eventEmitter = new WorkflowEventEmitter();
     const promptBuilder = new WorkflowPromptBuilder();
@@ -353,6 +373,55 @@ describe("OrchestratorWorkflowEngine", () => {
         "Cannot pause"
       );
     });
+
+    it("should cancel all running executions when pausing", async () => {
+      const workflow = await engine.createWorkflow({
+        type: "goal",
+        goal: "Test",
+      });
+      await engine.startWorkflow(workflow.id);
+
+      // Add running step executions linked to this workflow
+      db.prepare(
+        `INSERT INTO executions (id, session_id, status, workflow_execution_id, target_branch, branch_name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'main', 'test-branch', datetime('now'), datetime('now'))`
+      ).run("step-exec-running", "session-step", "running", workflow.id);
+
+      await engine.pauseWorkflow(workflow.id);
+
+      // Should cancel both orchestrator and step executions
+      expect(executionService.cancelExecution).toHaveBeenCalledWith("exec-orch");
+      expect(executionService.cancelExecution).toHaveBeenCalledWith(
+        "step-exec-running"
+      );
+    });
+
+    it("should cancel entire orchestrator execution chain when pausing", async () => {
+      const workflow = await engine.createWorkflow({
+        type: "goal",
+        goal: "Test",
+      });
+      await engine.startWorkflow(workflow.id);
+
+      // Simulate follow-up execution
+      db.prepare(
+        `INSERT INTO executions (id, session_id, status, parent_execution_id, target_branch, branch_name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'main', 'test-branch', datetime('now'), datetime('now'))`
+      ).run("exec-followup", "session-orch", "running", "exec-orch");
+
+      // Update workflow to point to latest follow-up
+      db.prepare(
+        "UPDATE workflows SET orchestrator_execution_id = ? WHERE id = ?"
+      ).run("exec-followup", workflow.id);
+
+      await engine.pauseWorkflow(workflow.id);
+
+      // Should cancel both root and follow-up executions
+      expect(executionService.cancelExecution).toHaveBeenCalledWith("exec-orch");
+      expect(executionService.cancelExecution).toHaveBeenCalledWith(
+        "exec-followup"
+      );
+    });
   });
 
   describe("resumeWorkflow", () => {
@@ -481,6 +550,94 @@ describe("OrchestratorWorkflowEngine", () => {
 
       await expect(engine.cancelWorkflow(workflow.id)).rejects.toThrow(
         "Cannot cancel"
+      );
+    });
+
+    it("should cancel entire execution chain including follow-ups", async () => {
+      const workflow = await engine.createWorkflow({
+        type: "goal",
+        goal: "Test",
+      });
+      await engine.startWorkflow(workflow.id);
+
+      // Simulate follow-up executions by inserting them into the database
+      // exec-orch is the root, exec-followup-1 and exec-followup-2 are children
+      db.prepare(
+        `INSERT INTO executions (id, session_id, status, parent_execution_id, target_branch, branch_name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'main', 'test-branch', datetime('now'), datetime('now'))`
+      ).run("exec-followup-1", "session-orch", "running", "exec-orch");
+
+      db.prepare(
+        `INSERT INTO executions (id, session_id, status, parent_execution_id, target_branch, branch_name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'main', 'test-branch', datetime('now'), datetime('now'))`
+      ).run("exec-followup-2", "session-orch", "running", "exec-followup-1");
+
+      // Update workflow to point to latest follow-up
+      db.prepare(
+        "UPDATE workflows SET orchestrator_execution_id = ? WHERE id = ?"
+      ).run("exec-followup-2", workflow.id);
+
+      await engine.cancelWorkflow(workflow.id);
+
+      // Should cancel all executions in the chain
+      expect(executionService.cancelExecution).toHaveBeenCalledWith("exec-orch");
+      expect(executionService.cancelExecution).toHaveBeenCalledWith(
+        "exec-followup-1"
+      );
+      expect(executionService.cancelExecution).toHaveBeenCalledWith(
+        "exec-followup-2"
+      );
+    });
+
+    it("should cancel step executions linked to workflow", async () => {
+      const workflow = await engine.createWorkflow({
+        type: "goal",
+        goal: "Test",
+      });
+      await engine.startWorkflow(workflow.id);
+
+      // Insert step executions linked to this workflow
+      db.prepare(
+        `INSERT INTO executions (id, session_id, status, workflow_execution_id, target_branch, branch_name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'main', 'test-branch', datetime('now'), datetime('now'))`
+      ).run("step-exec-1", "session-step", "running", workflow.id);
+
+      db.prepare(
+        `INSERT INTO executions (id, session_id, status, workflow_execution_id, target_branch, branch_name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'main', 'test-branch', datetime('now'), datetime('now'))`
+      ).run("step-exec-2", "session-step", "pending", workflow.id);
+
+      await engine.cancelWorkflow(workflow.id);
+
+      // Should cancel both the orchestrator and step executions
+      expect(executionService.cancelExecution).toHaveBeenCalledWith("exec-orch");
+      expect(executionService.cancelExecution).toHaveBeenCalledWith(
+        "step-exec-1"
+      );
+      expect(executionService.cancelExecution).toHaveBeenCalledWith(
+        "step-exec-2"
+      );
+    });
+
+    it("should not cancel already completed executions", async () => {
+      const workflow = await engine.createWorkflow({
+        type: "goal",
+        goal: "Test",
+      });
+      await engine.startWorkflow(workflow.id);
+
+      // Add a completed step execution
+      db.prepare(
+        `INSERT INTO executions (id, session_id, status, workflow_execution_id, target_branch, branch_name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'main', 'test-branch', datetime('now'), datetime('now'))`
+      ).run("step-exec-completed", "session-step", "completed", workflow.id);
+
+      await engine.cancelWorkflow(workflow.id);
+
+      // Should only cancel running orchestrator, not completed step
+      expect(executionService.cancelExecution).toHaveBeenCalledWith("exec-orch");
+      expect(executionService.cancelExecution).not.toHaveBeenCalledWith(
+        "step-exec-completed"
       );
     });
   });

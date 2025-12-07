@@ -119,11 +119,25 @@ export function buildClaudeArgs(config: ClaudeCodeConfig): string[] {
   }
 
   // === MCP Configuration ===
-  // --mcp-config accepts multiple configs
+  // --mcp-config accepts multiple configs (paths to JSON files)
   if (config.mcpConfig && config.mcpConfig.length > 0) {
     for (const mcpCfg of config.mcpConfig) {
       args.push('--mcp-config', mcpCfg);
     }
+  }
+
+  // Support inline mcpServers config (converts to inline JSON for --mcp-config)
+  // This is used by ExecutionConfig and orchestrator workflows
+  const mcpServersConfig = (config as any).mcpServers as Record<string, { command: string; args?: string[]; env?: Record<string, string> }> | undefined;
+  if (mcpServersConfig && Object.keys(mcpServersConfig).length > 0) {
+    // Convert mcpServers format to Claude CLI mcpServers format
+    const mcpConfigJson = {
+      mcpServers: mcpServersConfig,
+    };
+    console.log("[buildClaudeArgs] Adding inline mcpServers:", {
+      serverNames: Object.keys(mcpServersConfig),
+    });
+    args.push('--mcp-config', JSON.stringify(mcpConfigJson));
   }
 
   args.push(
@@ -163,6 +177,24 @@ export function buildClaudeArgs(config: ClaudeCodeConfig): string[] {
   if (config.prompt) {
     args.push(config.prompt);
   }
+
+  // Debug logging for CLI args
+  const mcpConfigIndices = args.reduce((acc: number[], arg, i) => {
+    if (arg === '--mcp-config') acc.push(i);
+    return acc;
+  }, []);
+  console.log("[buildClaudeArgs] Built CLI arguments:", {
+    totalArgs: args.length,
+    permissionArgs: {
+      dangerouslySkipPermissions: args.includes('--dangerously-skip-permissions'),
+      permissionMode: args.includes('--permission-mode') ? args[args.indexOf('--permission-mode') + 1] : 'not set',
+    },
+    mcpArgs: {
+      hasMcpConfig: args.includes('--mcp-config'),
+      mcpConfigCount: mcpConfigIndices.length,
+    },
+    model: args.includes('--model') ? args[args.indexOf('--model') + 1] : 'not set',
+  });
 
   return args;
 }
