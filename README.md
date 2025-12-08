@@ -1,4 +1,4 @@
-<div align="center" wi>
+<div align="center">
     <picture>
         <source media="(prefers-color-scheme: dark)" srcset="media/banner-otto-dusk.gif">
         <source media="(prefers-color-scheme: light)" srcset="media/banner-otto-day.gif">
@@ -6,25 +6,21 @@
     </picture>
 </div>
 
-<h1 align="center">
-sudocode
-</h1>
+<h1 align="center">sudocode</h1>
+
 <div align="center">
-<a target="_blank" href="https://opensource.org/licenses/Apache-2.0" style="background:none">
-    <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" style="height: 22px;" />
-</a>
-<a target="_blank" href="https://www.npmjs.com/package/sudocode" style="background:none">
-<img src="https://img.shields.io/badge/npm-sudocode-orange">
-</a>
-<a target="_blank" href="https://docs.sudocode.ai" style="background:none">
-    <img src="https://img.shields.io/badge/Docs-docs
-    " style="height: 22px;" />
-</a>
-<a target="_blank" href="https://discord.gg/5t8GUW65EW" style="background:none">
-    <img src="https://img.shields.io/discord/1115708641052471446?logo=discord&logoColor=5865F2&label=Discord&color=5865F2
-    "
-    " style="height: 22px;" />
-</a>
+    <a target="_blank" href="https://opensource.org/licenses/Apache-2.0" style="background:none">
+        <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" style="height: 22px;" />
+    </a>
+    <a target="_blank" href="https://www.npmjs.com/package/sudocode" style="background:none">
+        <img src="https://img.shields.io/badge/npm-sudocode-orange" style="height: 22px;" />
+    </a>
+    <a target="_blank" href="https://docs.sudocode.ai" style="background:none">
+        <img src="https://img.shields.io/badge/Docs-docs-green" style="height: 22px;" alt="Documentation" />
+    </a>
+    <a target="_blank" href="https://discord.gg/5t8GUW65EW" style="background:none">
+        <img src="https://img.shields.io/discord/1115708641052471446?logo=discord&logoColor=5865F2&label=Discord&color=5865F2" style="height: 22px;" alt="Discord" />
+    </a>
 </div>
 <br/>
 <p align="center">
