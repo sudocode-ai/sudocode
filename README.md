@@ -31,11 +31,11 @@ sudocode is a lightweight agent orchestration system that lives in your repo. Ad
 
 ### Key capabilities
 
-- Automates context handoff for complex tasks with sudocode's git-native agent memory system
-- Brings order to chaos by organizing your requirements, background context, and implementation plans into structured, executable issue graphs
-- Visualizes outputs and execution feedback in real-time
-- Runs as many Claude Code/Codex/Cursor (+more) agents in parallel as you can handle
-- Isolates agent work in worktrees and creates checkpoints
+- Automate context handoff for complex tasks with sudocode's git-native agent memory system
+- Bring order to chaos by organizing your requirements, background context, and implementation plans into structured, executable issue graphs
+- Visualize outputs and execution feedback in real-time
+- Run as many Claude Code/Codex/Cursor (+more) agents in parallel as you can handle
+- Isolate agent work in worktrees and creates checkpoints
 
 ### How it works
 
@@ -82,7 +82,7 @@ claude plugin marketplace add sudocode-ai/sudocode
 claude plugin install sudocode
 ```
 
-Check out our [Installation Guide](https://docs.sudocode.ai/installation) for instructions on setting up other agents.
+Check out our [Installation Guide](https://docs.sudocode.ai/quickstart) for instructions on setting up other agents.
 
 ## Context-as-Code
 
