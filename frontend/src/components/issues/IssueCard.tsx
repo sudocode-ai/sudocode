@@ -153,32 +153,6 @@ export function IssueCard({
           </div>
           {/* Right-aligned badges */}
           <div className="flex items-center gap-1">
-            {/* Visual indicator for execution-based column placement */}
-            {displayStatusOverride && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="inline-flex items-center justify-center rounded-full bg-blue-100 p-1 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
-                      {displayStatusOverride === 'in_progress' ? (
-                        <Play className="h-3 w-3 fill-current" />
-                      ) : (
-                        <CheckCircle2 className="h-4 w-4" />
-                      )}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>
-                      {displayStatusOverride === 'in_progress'
-                        ? 'Running execution'
-                        : 'Completed execution awaiting review'}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Actual status: {issue.status.replace('_', ' ')}
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
             <div className="flex items-center gap-1.5">
               {/* Workflow Indicator */}
               {workflowInfo && (
@@ -187,6 +161,32 @@ export function IssueCard({
                   workflowTitle={workflowInfo.workflowTitle}
                   stepStatus={workflowInfo.stepStatus}
                 />
+              )}
+              {/* Visual indicator for execution-based column placement */}
+              {displayStatusOverride && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex items-center justify-center rounded-full bg-blue-100 p-1 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+                        {displayStatusOverride === 'in_progress' ? (
+                          <Play className="h-3 w-3 fill-current" />
+                        ) : (
+                          <CheckCircle2 className="h-4 w-4" />
+                        )}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        {displayStatusOverride === 'in_progress'
+                          ? 'Running execution'
+                          : 'Completed execution awaiting review'}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Actual status: {issue.status.replace('_', ' ')}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               )}
               {/* Priority Badge */}
               {issue.priority !== undefined && issue.priority <= 3 && (

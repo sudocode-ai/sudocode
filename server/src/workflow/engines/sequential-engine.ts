@@ -1140,7 +1140,12 @@ export class SequentialWorkflowEngine extends BaseWorkflowEngine {
     // Convert null to undefined for type compatibility
     let commitSha = execution.after_commit ?? undefined;
 
+    // Close the issue BEFORE auto-commit so the status change is included
+    // Use worktree path to keep changes isolated until explicit sync
+    await this.closeIssue(step.issueId, workflow.worktreePath);
+
     // Auto-commit if configured and we have a worktree
+    // This now includes the issue status change from closeIssue above
     if (workflow.config.autoCommitAfterStep && workflow.worktreePath) {
       const newCommitSha = await this.commitStepChanges(workflow, step);
       if (newCommitSha) {
@@ -1167,10 +1172,6 @@ export class SequentialWorkflowEngine extends BaseWorkflowEngine {
     this.updateWorkflow(workflow.id, {
       currentStepIndex: workflow.currentStepIndex + 1,
     });
-
-    // Close the issue after successful step completion
-    // Use worktree path to keep changes isolated until explicit sync
-    await this.closeIssue(step.issueId, workflow.worktreePath);
   }
 
   /**
