@@ -7,7 +7,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { initDatabase } from "../../src/db.js";
 import { createSpec, getSpec } from "../../src/operations/specs.js";
-import { createIssue } from "../../src/operations/issues.js";
+import { createIssue, getIssue } from "../../src/operations/issues.js";
 import {
   addRelationship,
   getOutgoingRelationships,
@@ -2160,6 +2160,200 @@ describe("Import Operations", () => {
       // Relationship should exist
       const relationships = getOutgoingRelationships(db, "issue-001", "issue");
       expect(relationships).toHaveLength(1);
+    });
+  });
+
+  describe("Parent-Child Import Ordering", () => {
+    it("should import issues when parent is defined after child in JSONL", async () => {
+      // Child issue references parent that appears later in the JSONL
+      const issues: IssueJSONL[] = [
+        {
+          id: "i-child",
+          uuid: "uuid-child",
+          title: "Child Issue",
+          content: "This is a child issue",
+          status: "open",
+          priority: 2,
+          assignee: null,
+          parent_id: "i-parent", // Parent defined below
+          archived: false,
+          archived_at: null,
+          created_at: "2025-01-01T00:00:00Z",
+          updated_at: "2025-01-01T00:00:00Z",
+          closed_at: null,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+        {
+          id: "i-parent",
+          uuid: "uuid-parent",
+          title: "Parent Issue",
+          content: "This is a parent issue",
+          status: "open",
+          priority: 2,
+          assignee: null,
+          parent_id: null,
+          archived: false,
+          archived_at: null,
+          created_at: "2025-01-01T00:00:00Z",
+          updated_at: "2025-01-01T00:00:00Z",
+          closed_at: null,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), []);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), issues);
+
+      // Import should succeed even though parent is defined after child
+      const result = await importFromJSONL(db, {
+        inputDir: TEST_DIR,
+      });
+
+      expect(result.issues.added).toBe(2);
+
+      // Verify parent-child relationship is correct
+      const child = getIssue(db, "i-child");
+      const parent = getIssue(db, "i-parent");
+      expect(child).toBeDefined();
+      expect(parent).toBeDefined();
+      expect(child!.parent_id).toBe("i-parent");
+      expect(parent!.parent_id).toBeNull();
+    });
+
+    it("should import specs when parent is defined after child in JSONL", async () => {
+      // Child spec references parent that appears later in the JSONL
+      const specs: SpecJSONL[] = [
+        {
+          id: "s-child",
+          uuid: "uuid-child",
+          title: "Child Spec",
+          file_path: "specs/child.md",
+          content: "This is a child spec",
+          priority: 2,
+          parent_id: "s-parent", // Parent defined below
+          archived: false,
+          archived_at: null,
+          created_at: "2025-01-01T00:00:00Z",
+          updated_at: "2025-01-01T00:00:00Z",
+          relationships: [],
+          tags: [],
+        },
+        {
+          id: "s-parent",
+          uuid: "uuid-parent",
+          title: "Parent Spec",
+          file_path: "specs/parent.md",
+          content: "This is a parent spec",
+          priority: 2,
+          parent_id: null,
+          archived: false,
+          archived_at: null,
+          created_at: "2025-01-01T00:00:00Z",
+          updated_at: "2025-01-01T00:00:00Z",
+          relationships: [],
+          tags: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), specs);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), []);
+
+      // Import should succeed even though parent is defined after child
+      const result = await importFromJSONL(db, {
+        inputDir: TEST_DIR,
+      });
+
+      expect(result.specs.added).toBe(2);
+
+      // Verify parent-child relationship is correct
+      const child = getSpec(db, "s-child");
+      const parent = getSpec(db, "s-parent");
+      expect(child).toBeDefined();
+      expect(parent).toBeDefined();
+      expect(child!.parent_id).toBe("s-parent");
+      expect(parent!.parent_id).toBeNull();
+    });
+
+    it("should handle multi-level hierarchy when grandparent is defined last", async () => {
+      // Grandchild → Child → Grandparent (all defined in reverse order)
+      const issues: IssueJSONL[] = [
+        {
+          id: "i-grandchild",
+          uuid: "uuid-grandchild",
+          title: "Grandchild Issue",
+          content: "This is a grandchild issue",
+          status: "open",
+          priority: 2,
+          assignee: null,
+          parent_id: "i-child",
+          archived: false,
+          archived_at: null,
+          created_at: "2025-01-01T00:00:00Z",
+          updated_at: "2025-01-01T00:00:00Z",
+          closed_at: null,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+        {
+          id: "i-child",
+          uuid: "uuid-child",
+          title: "Child Issue",
+          content: "This is a child issue",
+          status: "open",
+          priority: 2,
+          assignee: null,
+          parent_id: "i-parent",
+          archived: false,
+          archived_at: null,
+          created_at: "2025-01-01T00:00:00Z",
+          updated_at: "2025-01-01T00:00:00Z",
+          closed_at: null,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+        {
+          id: "i-parent",
+          uuid: "uuid-parent",
+          title: "Parent Issue",
+          content: "This is a parent issue",
+          status: "open",
+          priority: 2,
+          assignee: null,
+          parent_id: null,
+          archived: false,
+          archived_at: null,
+          created_at: "2025-01-01T00:00:00Z",
+          updated_at: "2025-01-01T00:00:00Z",
+          closed_at: null,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), []);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), issues);
+
+      // Import should succeed with multi-level hierarchy
+      const result = await importFromJSONL(db, {
+        inputDir: TEST_DIR,
+      });
+
+      expect(result.issues.added).toBe(3);
+
+      // Verify all parent-child relationships are correct
+      const grandchild = getIssue(db, "i-grandchild");
+      const child = getIssue(db, "i-child");
+      const parent = getIssue(db, "i-parent");
+      expect(grandchild!.parent_id).toBe("i-child");
+      expect(child!.parent_id).toBe("i-parent");
+      expect(parent!.parent_id).toBeNull();
     });
   });
 });

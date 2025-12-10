@@ -423,7 +423,8 @@ export function importSpecs(
   let updated = 0;
   let deleted = 0;
 
-  // Add new specs
+  // Add new specs (first pass: without parent_id to handle out-of-order parents)
+  const specsWithParents: SpecJSONL[] = [];
   for (const id of changes.added) {
     const spec = specs.find((s) => s.id === id);
     if (spec) {
@@ -434,7 +435,7 @@ export function importSpecs(
         file_path: spec.file_path,
         content: spec.content,
         priority: spec.priority,
-        parent_id: spec.parent_id,
+        // Skip parent_id in first pass - will be set in second pass
         archived: spec.archived,
         archived_at: spec.archived_at,
         created_at: spec.created_at,
@@ -444,7 +445,19 @@ export function importSpecs(
       // Add tags
       setTags(db, spec.id, "spec", spec.tags || []);
       added++;
+
+      // Track specs with parent_id for second pass
+      if (spec.parent_id) {
+        specsWithParents.push(spec);
+      }
     }
+  }
+
+  // Second pass: set parent_id for newly added specs (now all parents exist)
+  for (const spec of specsWithParents) {
+    updateSpec(db, spec.id, {
+      parent_id: spec.parent_id,
+    });
   }
 
   // Add relationships
@@ -580,7 +593,8 @@ export function importIssues(
   let updated = 0;
   let deleted = 0;
 
-  // Add new issues
+  // Add new issues (first pass: without parent_id to handle out-of-order parents)
+  const issuesWithParents: IssueJSONL[] = [];
   for (const id of changes.added) {
     const issue = issues.find((i) => i.id === id);
     if (issue) {
@@ -592,7 +606,7 @@ export function importIssues(
         status: issue.status,
         priority: issue.priority,
         assignee: issue.assignee,
-        parent_id: issue.parent_id,
+        // Skip parent_id in first pass - will be set in second pass
         archived: issue.archived,
         archived_at: issue.archived_at,
         created_at: issue.created_at,
@@ -601,7 +615,19 @@ export function importIssues(
       });
       setTags(db, issue.id, "issue", issue.tags || []);
       added++;
+
+      // Track issues with parent_id for second pass
+      if (issue.parent_id) {
+        issuesWithParents.push(issue);
+      }
     }
+  }
+
+  // Second pass: set parent_id for newly added issues (now all parents exist)
+  for (const issue of issuesWithParents) {
+    updateIssue(db, issue.id, {
+      parent_id: issue.parent_id,
+    });
   }
 
   // Add relationships
