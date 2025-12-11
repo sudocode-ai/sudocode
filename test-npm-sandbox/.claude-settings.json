@@ -1,0 +1,28 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true,
+    "excludedCommands": ["docker", "npm"],
+    "network": {
+      "allowUnixSockets": ["/var/run/docker.sock"],
+      "allowLocalBinding": true
+    }
+  },
+  "permissions": {
+    "allow": [
+      "Read(./**)",
+      "Read(**)",
+      "WebFetch"
+    ],
+    "deny": [
+      "Read(/**)",
+      "Read(~/**)",
+      "Read(~/.ssh/**)",
+      "Read(**/.env)",
+      "Read(**/secrets.json)",
+      "Read(**/*.pem)",
+      "Edit(.sudocode/.claude-settings.json)",
+      "Edit(.claude-settings.json)"
+    ]
+  }
+}

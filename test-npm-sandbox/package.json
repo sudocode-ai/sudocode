@@ -1,0 +1,8 @@
+{
+  "name": "test-npm-sandbox",
+  "version": "1.0.0",
+  "description": "Test npm install in sandbox",
+  "dependencies": {
+    "lodash": "^4.17.21"
+  }
+}
