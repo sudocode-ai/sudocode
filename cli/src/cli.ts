@@ -44,6 +44,12 @@ import { handleServerStart } from "./cli/server-commands.js";
 import { handleInit } from "./cli/init-commands.js";
 import { handleUpdate, handleUpdateCheck } from "./cli/update-commands.js";
 import {
+  handlePluginList,
+  handlePluginInstall,
+  handlePluginStatus,
+  handlePluginUninstall,
+} from "./cli/plugin-commands.js";
+import {
   handleResolveConflicts,
   handleMergeDriver,
   handleInitMergeDriver,
@@ -545,6 +551,46 @@ program
   .option("--global", "Remove from global config instead of just current repo")
   .action(async (options) => {
     await handleRemoveMergeDriver(options);
+  });
+
+// ============================================================================
+// PLUGIN COMMANDS
+// ============================================================================
+
+const plugin = program
+  .command("plugin")
+  .alias("plugins")
+  .description("Manage integration plugins");
+
+plugin
+  .command("list")
+  .description("List available integration plugins")
+  .option("-a, --all", "Show all plugins including not installed")
+  .action(async (options) => {
+    await handlePluginList(getContext(), options);
+  });
+
+plugin
+  .command("install <name>")
+  .description("Install an integration plugin")
+  .option("-g, --global", "Install globally")
+  .action(async (name, options) => {
+    await handlePluginInstall(getContext(), name, options);
+  });
+
+plugin
+  .command("uninstall <name>")
+  .description("Uninstall an integration plugin")
+  .option("-g, --global", "Uninstall globally")
+  .action(async (name, options) => {
+    await handlePluginUninstall(getContext(), name, options);
+  });
+
+plugin
+  .command("status")
+  .description("Show status of installed plugins")
+  .action(async () => {
+    await handlePluginStatus(getContext());
   });
 
 // Parse arguments
