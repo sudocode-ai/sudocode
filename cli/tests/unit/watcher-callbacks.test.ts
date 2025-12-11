@@ -304,8 +304,23 @@ describe("Watcher Typed Callbacks", () => {
   });
 
   describe("onEntitySync - Markdown changes", () => {
-    it("should call onEntitySync when markdown file changes", async () => {
+    it("should call onEntitySync when markdown file changes (entity exists in DB)", async () => {
       const events: EntitySyncEvent[] = [];
+
+      // First create the spec in the database (DB is source of truth for entity existence)
+      createSpec(db, {
+        id: "s-md1",
+        uuid: "test-uuid-md1",
+        title: "Test Spec OLD",
+        file_path: "specs/s-md1 - Test Spec.md",
+        content: "Old content",
+        priority: 2,
+      });
+
+      // Set DB timestamp to past so markdown will be considered newer
+      const { updateSpec } = await import("../../src/operations/specs.js");
+      const pastTime = new Date(Date.now() - 60000).toISOString();
+      updateSpec(db, "s-md1", { updated_at: pastTime });
 
       control = startWatcher({
         db,
@@ -316,7 +331,7 @@ describe("Watcher Typed Callbacks", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // Create a new markdown file
+      // Create markdown file with updated content
       const specPath = path.join(tempDir, "specs", "s-md1 - Test Spec.md");
       const content = `---
 id: s-md1
@@ -325,7 +340,7 @@ title: Test Spec
 
 # Test Spec
 
-This is test content.
+This is updated test content.
 `;
       fs.writeFileSync(specPath, content);
 
@@ -336,7 +351,7 @@ This is test content.
       const event = events.find((e) => e.entityId === "s-md1");
       expect(event).toBeDefined();
       expect(event?.entityType).toBe("spec");
-      expect(event?.action).toBe("created");
+      expect(event?.action).toBe("updated");
       expect(event?.source).toBe("markdown");
       expect(event?.baseDir).toBe(tempDir);
       expect(event?.entity).toBeDefined();
@@ -345,6 +360,21 @@ This is test content.
 
     it("should include entity data in markdown sync events", async () => {
       const events: EntitySyncEvent[] = [];
+
+      // First create the issue in the database (DB is source of truth for entity existence)
+      createIssue(db, {
+        id: "i-md2",
+        uuid: "test-uuid-md2",
+        title: "Test Issue OLD",
+        content: "Old content",
+        status: "open",
+        priority: 2,
+      });
+
+      // Set DB timestamp to past so markdown will be considered newer
+      const { updateIssue } = await import("../../src/operations/issues.js");
+      const pastTime = new Date(Date.now() - 60000).toISOString();
+      updateIssue(db, "i-md2", { updated_at: pastTime });
 
       control = startWatcher({
         db,
@@ -364,7 +394,7 @@ status: open
 
 # Test Issue
 
-Content here.
+Updated content here.
 `;
       fs.writeFileSync(issuePath, content);
 

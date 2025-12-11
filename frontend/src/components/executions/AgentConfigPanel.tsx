@@ -491,6 +491,41 @@ export function AgentConfigPanel({
     setSelectedAgentType(loadAgentTypeForIssue())
   }, [issueId, lastExecution?.id, isFollowUp])
 
+  // Function to refresh branch information
+  const refreshBranches = async () => {
+    try {
+      const branchInfo = await repositoryApi.getBranches()
+
+      // Store available branches and current branch
+      setAvailableBranches(branchInfo.branches)
+      setCurrentBranch(branchInfo.current)
+
+      // Validate and set baseBranch
+      // Use current branch if stored baseBranch is not valid for this project
+      setConfig((prev) => {
+        const storedBranch = prev.baseBranch
+        const isStoredBranchValid = storedBranch && branchInfo.branches.includes(storedBranch)
+
+        if (isStoredBranchValid) {
+          // Keep the stored branch - it's valid for this project
+          return prev
+        }
+
+        // Fall back to current branch
+        const fallbackBranch = branchInfo.current
+        if (fallbackBranch) {
+          return {
+            ...prev,
+            baseBranch: fallbackBranch,
+          }
+        }
+        return prev
+      })
+    } catch (error) {
+      console.error('Failed to get repository info:', error)
+    }
+  }
+
   // Load branches and repository info (skip for follow-ups and compact mode)
   useEffect(() => {
     // Skip for follow-ups - we use parent execution config
@@ -506,38 +541,7 @@ export function AgentConfigPanel({
       if (!isMounted) return
       setLoading(true)
       try {
-        // Load branches
-        const branchInfo = await repositoryApi.getBranches()
-
-        if (isMounted) {
-          // Store available branches and current branch
-          setAvailableBranches(branchInfo.branches)
-          setCurrentBranch(branchInfo.current)
-
-          // Validate and set baseBranch
-          // Use current branch if stored baseBranch is not valid for this project
-          setConfig((prev) => {
-            const storedBranch = prev.baseBranch
-            const isStoredBranchValid = storedBranch && branchInfo.branches.includes(storedBranch)
-
-            if (isStoredBranchValid) {
-              // Keep the stored branch - it's valid for this project
-              return prev
-            }
-
-            // Fall back to current branch
-            const fallbackBranch = branchInfo.current
-            if (fallbackBranch) {
-              return {
-                ...prev,
-                baseBranch: fallbackBranch,
-              }
-            }
-            return prev
-          })
-        }
-      } catch (error) {
-        console.error('Failed to get repository info:', error)
+        await refreshBranches()
       } finally {
         if (isMounted) {
           setLoading(false)
@@ -552,23 +556,23 @@ export function AgentConfigPanel({
     }
   }, [issueId, isFollowUp, variant])
 
-  // Validate reuseWorktreeId when worktrees change
+  // Validate reuseWorktreePath when worktrees change
   // If the stored worktree no longer exists, clear it and fall back to current branch
   useEffect(() => {
     if (isFollowUp || variant === 'compact') return
-    if (!config.reuseWorktreeId) return
+    if (!config.reuseWorktreePath) return
 
     // Check if the stored worktree still exists
-    const worktreeExists = worktrees.some((w) => w.id === config.reuseWorktreeId)
+    const worktreeExists = worktrees.some((w) => w.worktree_path === config.reuseWorktreePath)
     if (!worktreeExists) {
       // Worktree no longer exists, clear it and fall back to current branch
       setConfig((prev) => ({
         ...prev,
-        reuseWorktreeId: undefined,
+        reuseWorktreePath: undefined,
         baseBranch: currentBranch || prev.baseBranch,
       }))
     }
-  }, [worktrees, config.reuseWorktreeId, isFollowUp, variant, currentBranch])
+  }, [worktrees, config.reuseWorktreePath, isFollowUp, variant, currentBranch])
 
   // Auto-focus textarea when panel opens or issue changes
   useEffect(() => {
@@ -764,20 +768,22 @@ export function AgentConfigPanel({
         />
       </div>
 
-      {/* Configuration Row */}
+      {/* Configuration Row - stacks vertically on narrow screens */}
       <TooltipProvider>
-        <div className="flex items-center gap-2">
-          {/* Agent Selection - disabled in follow-up mode (unless forcing new execution) */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Select
-                  value={selectedAgentType}
-                  onValueChange={setSelectedAgentType}
-                  onOpenChange={onSelectOpenChange}
-                  disabled={loading || agentsLoading || (isFollowUp && !forceNewExecution)}
-                >
-                  <SelectTrigger className="h-8 w-[140px] text-xs">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          {/* Selectors row - wraps on very narrow screens */}
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {/* Agent Selection - disabled in follow-up mode (unless forcing new execution) */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Select
+                    value={selectedAgentType}
+                    onValueChange={setSelectedAgentType}
+                    onOpenChange={onSelectOpenChange}
+                    disabled={loading || agentsLoading || (isFollowUp && !forceNewExecution)}
+                  >
+                    <SelectTrigger className="h-8 w-[140px] min-w-0 shrink text-xs">
                     <SelectValue placeholder={agentsLoading ? 'Loading...' : 'Agent'}>
                       {(() => {
                         const selectedAgent = agents?.find((a) => a.type === selectedAgentType)
@@ -847,7 +853,7 @@ export function AgentConfigPanel({
                   onOpenChange={onSelectOpenChange}
                   disabled={loading || (isFollowUp && !forceNewExecution)}
                 >
-                  <SelectTrigger className="h-8 w-[140px] text-xs">
+                  <SelectTrigger className="h-8 w-[140px] min-w-0 shrink text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -876,18 +882,19 @@ export function AgentConfigPanel({
                       availableBranches.length > 0 ? availableBranches : [config.baseBranch]
                     }
                     value={config.baseBranch}
-                    onChange={(branch, isNew, worktreeId) => {
+                    onChange={(branch, isNew, worktreePath) => {
                       updateConfig({
                         baseBranch: branch,
                         createBaseBranch: isNew || false,
-                        reuseWorktreeId: worktreeId, // If worktreeId is set, reuse that worktree
+                        reuseWorktreePath: worktreePath, // If worktreePath is set, reuse that worktree
                       })
                     }}
                     disabled={loading || (isFollowUp && !forceNewExecution)}
                     allowCreate={!isFollowUp || forceNewExecution}
-                    className="w-[180px]"
+                    className="w-[180px] min-w-0 shrink"
                     currentBranch={currentBranch}
                     worktrees={worktrees}
+                    onOpen={refreshBranches}
                   />
                 </span>
               </TooltipTrigger>
@@ -896,57 +903,59 @@ export function AgentConfigPanel({
               )}
             </Tooltip>
           )}
+          </div>
 
-          <div className="ml-auto" />
+          {/* Buttons row - right-aligned, on same row on sm+ screens */}
+          <div className="flex shrink-0 items-center gap-2 self-end sm:ml-auto sm:self-auto">
+            {/* Settings Button - disabled in follow-up mode (unless forcing new execution) */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowSettingsDialog(true)}
+                  disabled={loading || (isFollowUp && !forceNewExecution)}
+                  className="h-8 shrink-0 px-2"
+                >
+                  <Settings className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {isFollowUp && !forceNewExecution
+                  ? 'Settings are inherited from parent execution'
+                  : 'Advanced settings'}
+              </TooltipContent>
+            </Tooltip>
 
-          {/* Settings Button - disabled in follow-up mode (unless forcing new execution) */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowSettingsDialog(true)}
-                disabled={loading || (isFollowUp && !forceNewExecution)}
-                className="h-8 px-2"
-              >
-                <Settings className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {isFollowUp && !forceNewExecution
-                ? 'Settings are inherited from parent execution'
-                : 'Advanced settings'}
-            </TooltipContent>
-          </Tooltip>
-
-          {/* Submit/Cancel Button - Round button that changes based on state */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                onClick={isRunning && isHoveringButton ? onCancel : handleStart}
-                disabled={isRunning ? isCancelling : !canStart}
-                size="sm"
-                onMouseEnter={() => setIsHoveringButton(true)}
-                onMouseLeave={() => setIsHoveringButton(false)}
-                className="h-7 w-7 rounded-full p-0"
-                variant={isRunning && isHoveringButton ? 'destructive' : 'default'}
-                aria-label={isRunning ? (isHoveringButton ? 'Cancel' : 'Running...') : 'Submit'}
-              >
-                {isRunning ? (
-                  isHoveringButton ? (
-                    <Square className="h-3 w-3" />
+            {/* Submit/Cancel Button - Round button that changes based on state */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={isRunning && isHoveringButton ? onCancel : handleStart}
+                  disabled={isRunning ? isCancelling : !canStart}
+                  size="sm"
+                  onMouseEnter={() => setIsHoveringButton(true)}
+                  onMouseLeave={() => setIsHoveringButton(false)}
+                  className="h-7 w-7 shrink-0 rounded-full p-0"
+                  variant={isRunning && isHoveringButton ? 'destructive' : 'default'}
+                  aria-label={isRunning ? (isHoveringButton ? 'Cancel' : 'Running...') : 'Submit'}
+                >
+                  {isRunning ? (
+                    isHoveringButton ? (
+                      <Square className="h-3 w-3" />
+                    ) : (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    )
                   ) : (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  )
-                ) : (
-                  <ArrowDown className="h-4 w-4" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {isRunning ? (isHoveringButton ? 'Cancel' : 'Running...') : 'Submit'}
-            </TooltipContent>
-          </Tooltip>
+                    <ArrowDown className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {isRunning ? (isHoveringButton ? 'Cancel' : 'Running...') : 'Submit'}
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
       </TooltipProvider>
 

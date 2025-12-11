@@ -6,10 +6,12 @@ import { useWebSocketContext } from '@/contexts/WebSocketContext'
 import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
 import { useProject } from '@/hooks/useProject'
 import { useProjectById } from '@/hooks/useProjects'
+import { useWorkflows } from '@/hooks/useWorkflows'
 import { executionsApi } from '@/lib/api'
 import type { Issue, IssueStatus } from '@/types/api'
 import type { Execution } from '@/types/execution'
 import type { DragEndEvent } from '@/components/ui/kanban'
+import type { Workflow, WorkflowStepStatus } from '@/types/workflow'
 import IssueKanbanBoard from '@/components/issues/IssueKanbanBoard'
 import IssuePanel from '@/components/issues/IssuePanel'
 import { CreateIssueDialog } from '@/components/issues/CreateIssueDialog'
@@ -61,6 +63,7 @@ export default function IssuesPage() {
   const { data: repoInfo } = useRepositoryInfo()
   const { currentProjectId } = useProject()
   const { data: currentProject } = useProjectById(currentProjectId)
+  const { data: workflows = [] } = useWorkflows()
   const [selectedIssue, setSelectedIssue] = useState<Issue | undefined>()
   const { feedback } = useIssueFeedback(selectedIssue?.id || '')
   const [showCreateDialog, setShowCreateDialog] = useState(false)
@@ -160,6 +163,32 @@ export default function IssuesPage() {
     return byIssueId
   }, [recentExecutionsData?.executions])
 
+  // Map issue IDs to workflow info for issues in active workflows
+  const issueWorkflows = useMemo(() => {
+    const map = new Map<
+      string,
+      { workflowId: string; workflowTitle?: string; stepStatus: WorkflowStepStatus }
+    >()
+
+    // Only process active workflows (running or paused)
+    const activeWorkflows = workflows.filter((w: Workflow) =>
+      ['running', 'paused'].includes(w.status)
+    )
+
+    for (const workflow of activeWorkflows) {
+      for (const step of workflow.steps) {
+        // Map the issue ID to its workflow info
+        map.set(step.issueId, {
+          workflowId: workflow.id,
+          workflowTitle: workflow.title,
+          stepStatus: step.status,
+        })
+      }
+    }
+
+    return map
+  }, [workflows])
+
   // Track if we've initialized from URL hash yet
   const [hasInitializedFromUrl, setHasInitializedFromUrl] = useState(false)
 
@@ -208,6 +237,38 @@ export default function IssuesPage() {
     }
   }, [])
 
+  // Compute display status overrides based on execution state
+  // This determines which column an issue appears in, which may differ from its actual status
+  const displayStatusOverrides = useMemo(() => {
+    const overrides: Record<string, IssueStatus> = {}
+    if (!latestExecutions) return overrides
+
+    for (const [issueId, execution] of Object.entries(latestExecutions)) {
+      if (!execution) continue
+
+      // Find the issue to check its actual status
+      const issue = issues.find((i) => i.id === issueId)
+      if (!issue) continue
+
+      // Skip if issue is already closed - closed issues stay in closed column
+      if (issue.status === 'closed') continue
+
+      // Active execution statuses should show in "in_progress" column
+      if (['preparing', 'pending', 'running', 'paused'].includes(execution.status)) {
+        if (issue.status !== 'in_progress') {
+          overrides[issueId] = 'in_progress'
+        }
+      }
+      // Completed executions should show in "needs_review" column
+      else if (execution.status === 'completed') {
+        if (issue.status !== 'needs_review') {
+          overrides[issueId] = 'needs_review'
+        }
+      }
+    }
+    return overrides
+  }, [latestExecutions, issues])
+
   // Group issues by status
   const groupedIssues = useMemo(() => {
     // Filter issues based on search text
@@ -215,6 +276,7 @@ export default function IssuesPage() {
       ? issues.filter((issue) => {
           const searchText = filterText.toLowerCase()
           return (
+            issue.id.toLowerCase().includes(searchText) ||
             issue.title.toLowerCase().includes(searchText) ||
             (issue.content && issue.content.toLowerCase().includes(searchText))
           )
@@ -229,11 +291,14 @@ export default function IssuesPage() {
       closed: [],
     }
 
-    // Trust the issue status from the backend (now automatically managed)
+    // Group issues based on display status (which considers execution state)
     filteredIssues.forEach((issue) => {
-      const status = issue.status.toLowerCase() as IssueStatus
-      if (groups[status]) {
-        groups[status].push(issue)
+      // Check if there's an override based on execution status
+      const displayStatus =
+        displayStatusOverrides[issue.id] || (issue.status.toLowerCase() as IssueStatus)
+
+      if (groups[displayStatus]) {
+        groups[displayStatus].push(issue)
       } else {
         // Default to open if status is unknown
         groups.open.push(issue)
@@ -268,7 +333,7 @@ export default function IssuesPage() {
     })
 
     return groups
-  }, [issues, filterText, sortOption])
+  }, [issues, filterText, sortOption, displayStatusOverrides])
 
   // Handle drag-and-drop to change status
   const handleDragEnd = useCallback(
@@ -502,6 +567,8 @@ export default function IssuesPage() {
                 collapsedColumns={collapsedColumns}
                 onToggleColumnCollapse={handleToggleColumnCollapse}
                 latestExecutions={latestExecutions}
+                displayStatusOverrides={displayStatusOverrides}
+                issueWorkflows={issueWorkflows}
               />
             </Panel>
 
@@ -548,6 +615,7 @@ export default function IssuesPage() {
                 showOpenDetail={true}
                 feedback={feedback}
                 autoFocusAgentConfig
+                issues={issues}
               />
             </Panel>
           </PanelGroup>
@@ -562,6 +630,8 @@ export default function IssuesPage() {
               collapsedColumns={collapsedColumns}
               onToggleColumnCollapse={handleToggleColumnCollapse}
               latestExecutions={latestExecutions}
+              displayStatusOverrides={displayStatusOverrides}
+              issueWorkflows={issueWorkflows}
             />
           </div>
         )}

@@ -5,6 +5,11 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type Database from "better-sqlite3";
 import { initDatabase } from "@sudocode-ai/cli/dist/db.js";
+import {
+  createSpec,
+  updateSpec,
+  deleteSpec,
+} from "@sudocode-ai/cli/dist/operations/specs.js";
 import { startServerWatcher } from "../../src/services/watcher.js";
 import * as fs from "fs";
 import * as path from "path";
@@ -131,6 +136,19 @@ describe("File Watcher Service", () => {
     it("should detect markdown file changes", async () => {
       const changes: any[] = [];
 
+      // First create the spec in the database (DB is source of truth for entity existence)
+      createSpec(db, {
+        id: "SPEC-001",
+        uuid: "test-uuid-spec-001",
+        title: "Test Spec OLD",
+        file_path: "specs/test-spec.md",
+        content: "Old content",
+        priority: 2,
+      });
+      // Set DB timestamp to past so markdown will be considered newer
+      const pastTime = new Date(Date.now() - 60000).toISOString();
+      updateSpec(db, "SPEC-001", { updated_at: pastTime });
+
       const watcher = startServerWatcher({
         db,
         baseDir: testDir,
@@ -142,12 +160,12 @@ describe("File Watcher Service", () => {
       // Wait for watcher to be ready
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Create a markdown file
+      // Create a markdown file with updated content
       const specsDir = path.join(testDir, "specs");
       const testFilePath = path.join(specsDir, "test-spec.md");
       fs.writeFileSync(
         testFilePath,
-        "---\nid: SPEC-001\n---\n\n# Test Spec\n\nThis is a test spec."
+        "---\nid: SPEC-001\n---\n\n# Test Spec\n\nThis is updated test spec content."
       );
 
       // Wait for debounce + processing
@@ -161,10 +179,11 @@ describe("File Watcher Service", () => {
 
       await watcher.stop();
 
-      // Clean up test file
+      // Clean up test file and DB entry
       if (fs.existsSync(testFilePath)) {
         fs.unlinkSync(testFilePath);
       }
+      deleteSpec(db, "SPEC-001");
     });
 
     it("should detect JSONL file changes", async () => {

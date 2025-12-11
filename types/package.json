@@ -1,6 +1,6 @@
 {
   "name": "@sudocode-ai/types",
-  "version": "0.1.9",
+  "version": "0.1.11",
   "description": "TypeScript type definitions for sudocode",
   "types": "src/index.d.ts",
   "type": "module",
@@ -16,6 +16,10 @@
     "./agents": {
       "types": "./src/agents.d.ts",
       "default": "./src/agents.d.ts"
+    },
+    "./workflows": {
+      "types": "./src/workflows.d.ts",
+      "default": "./src/workflows.d.ts"
     },
     "./schema": {
       "types": "./dist/schema.d.ts",
@@ -54,6 +58,8 @@
     "src/index.d.ts",
     "src/events.d.ts",
     "src/agents.d.ts",
+    "src/artifacts.d.ts",
+    "src/workflows.d.ts",
     "dist"
   ],
   "devDependencies": {

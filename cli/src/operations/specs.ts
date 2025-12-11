@@ -283,11 +283,20 @@ export function updateSpec(
 
 /**
  * Delete a spec
- * Also cascades to delete any feedback targeting this spec
+ * Cascades to delete:
+ * - Any feedback targeting this spec
+ * - All relationships involving this spec (both incoming and outgoing)
  */
 export function deleteSpec(db: Database.Database, id: string): boolean {
   // First delete any feedback targeting this spec
   db.prepare(`DELETE FROM issue_feedback WHERE to_id = ?`).run(id);
+
+  // Delete all relationships involving this spec (both directions)
+  db.prepare(`
+    DELETE FROM relationships
+    WHERE (from_id = ? AND from_type = 'spec')
+       OR (to_id = ? AND to_type = 'spec')
+  `).run(id, id);
 
   // Then delete the spec itself
   const stmt = db.prepare(`DELETE FROM specs WHERE id = ?`);

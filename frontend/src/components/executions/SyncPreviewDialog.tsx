@@ -24,6 +24,7 @@ import {
   Loader2,
   Info,
   XCircle,
+  RefreshCw,
 } from 'lucide-react'
 import type { SyncPreviewResult, SyncMode } from '@/types/execution'
 
@@ -33,7 +34,11 @@ export interface SyncPreviewDialogProps {
   onClose: () => void
   onConfirmSync: (
     mode: SyncMode,
-    options?: { commitMessage?: string; includeUncommitted?: boolean }
+    options?: {
+      commitMessage?: string
+      includeUncommitted?: boolean
+      overrideLocalChanges?: boolean
+    }
   ) => void
   onOpenIDE: () => void
   isPreviewing?: boolean
@@ -41,6 +46,10 @@ export interface SyncPreviewDialogProps {
    * Target branch name to display in merge descriptions
    */
   targetBranch?: string
+  /**
+   * Callback to refresh the preview data
+   */
+  onRefresh?: () => void
 }
 
 export function SyncPreviewDialog({
@@ -51,11 +60,13 @@ export function SyncPreviewDialog({
   onOpenIDE,
   isPreviewing = false,
   targetBranch,
+  onRefresh,
 }: SyncPreviewDialogProps) {
   const [selectedMode, setSelectedMode] = useState<SyncMode>('squash')
   const [commitMessage, setCommitMessage] = useState('')
   const [commitsExpanded, setCommitsExpanded] = useState(false)
   const [includeUncommitted, setIncludeUncommitted] = useState(true)
+  const [overrideLocalChanges, setOverrideLocalChanges] = useState(false)
 
   // Check if there are commits to merge (required for squash and preserve modes)
   const hasCommits = (preview?.commits.length ?? 0) > 0
@@ -69,6 +80,10 @@ export function SyncPreviewDialog({
 
   // Determine if sync is blocked by code conflicts
   const hasCodeConflicts = (preview?.conflicts.codeConflicts.length ?? 0) > 0
+  // Check if local working tree has uncommitted changes
+  const hasDirtyWorkingTree = preview?.warnings.some((w) =>
+    w.toLowerCase().includes('stash or commit')
+  )
   // Stage mode can bypass the dirty working tree check since it doesn't commit
   const canSync =
     selectedMode === 'stage' ? !hasCodeConflicts : preview?.canSync && !hasCodeConflicts
@@ -85,6 +100,8 @@ export function SyncPreviewDialog({
     onConfirmSync(selectedMode, {
       commitMessage: selectedMode === 'squash' ? commitMessage : undefined,
       includeUncommitted: selectedMode === 'stage' ? includeUncommitted : undefined,
+      overrideLocalChanges:
+        selectedMode === 'stage' && includeUncommitted ? overrideLocalChanges : undefined,
     })
   }
 
@@ -115,6 +132,18 @@ export function SyncPreviewDialog({
                     </span>
                   </>
                 )}
+                {onRefresh && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={onRefresh}
+                    disabled={isPreviewing}
+                    title="Refresh preview"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${isPreviewing ? 'animate-spin' : ''}`} />
+                  </Button>
+                )}
               </div>
             )}
           </div>
@@ -132,21 +161,28 @@ export function SyncPreviewDialog({
 
             {!isPreviewing && preview && (
               <>
-                {/* General Warnings */}
-                {preview.warnings.length > 0 && (
-                  <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-3">
-                    <div className="flex items-start gap-2">
-                      <AlertCircle className="mt-0.5 h-4 w-4 text-amber-600" />
-                      <div className="flex-1 space-y-1 text-sm">
-                        {preview.warnings.map((warning, i) => (
-                          <p key={i} className="text-amber-800 dark:text-amber-200">
-                            {warning}
-                          </p>
-                        ))}
+                {/* General Warnings (excluding dirty working tree - shown in mode options) */}
+                {(() => {
+                  const filteredWarnings = preview.warnings.filter(
+                    (w) => !w.toLowerCase().includes('stash or commit')
+                  )
+                  return (
+                    filteredWarnings.length > 0 && (
+                      <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-3">
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="mt-0.5 h-4 w-4 text-amber-600" />
+                          <div className="flex-1 space-y-1 text-sm">
+                            {filteredWarnings.map((warning, i) => (
+                              <p key={i} className="text-amber-800 dark:text-amber-200">
+                                {warning}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                )}
+                    )
+                  )
+                })()}
 
                 {/* Code Conflicts Error */}
                 {hasCodeConflicts && (
@@ -205,6 +241,29 @@ export function SyncPreviewDialog({
                   </div>
                 )} */}
 
+                {/* Local Uncommitted JSONL Auto-Merge Info */}
+                {preview.localUncommittedJsonl?.willAutoMerge && (
+                  <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3">
+                    <div className="flex items-start gap-2">
+                      <Info className="mt-0.5 h-4 w-4 text-blue-600" />
+                      <div className="flex-1 text-sm">
+                        <p className="font-medium text-blue-900 dark:text-blue-100">
+                          Local JSONL Changes Will Be Auto-Merged
+                        </p>
+                        <p className="mt-1 text-blue-800 dark:text-blue-200">
+                          Your uncommitted changes to{' '}
+                          <span className="font-mono text-xs">
+                            {preview.localUncommittedJsonl.files
+                              .map((f) => f.split('/').pop())
+                              .join(', ')}
+                          </span>{' '}
+                          will be automatically merged with the incoming changes.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Uncommitted Changes Info */}
                 {preview.uncommittedChanges && preview.uncommittedChanges.files.length > 0 && (
                   <div className="rounded-lg border border-muted-foreground/30 bg-muted/30 p-3">
@@ -255,7 +314,7 @@ export function SyncPreviewDialog({
                         {selectedMode === 'stage' &&
                           preview?.uncommittedChanges &&
                           preview.uncommittedChanges.files.length > 0 && (
-                            <div className="ml-7 mt-3 border-t pt-3">
+                            <div className="ml-7 mt-3 space-y-3 border-t pt-3">
                               <Label
                                 htmlFor="include-uncommitted"
                                 className="flex cursor-pointer items-center gap-2 text-sm"
@@ -281,76 +340,167 @@ export function SyncPreviewDialog({
                                   </span>
                                 </span>
                               </Label>
+                              {/* Potential conflicts warning and override option */}
+                              {includeUncommitted &&
+                                preview.potentialLocalConflicts &&
+                                preview.potentialLocalConflicts.count > 0 && (
+                                  <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
+                                    <div className="flex items-start gap-2">
+                                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                                      <div className="flex-1 space-y-2 text-sm">
+                                        <p className="text-amber-800 dark:text-amber-200">
+                                          <span className="font-medium">
+                                            {preview.potentialLocalConflicts.count} file
+                                            {preview.potentialLocalConflicts.count !== 1 ? 's' : ''}
+                                          </span>{' '}
+                                          may have merge conflicts with your local changes.
+                                          Conflicting changes will have conflict markers that you'll
+                                          need to resolve manually.
+                                        </p>
+                                        <Label
+                                          htmlFor="override-local"
+                                          className="flex cursor-pointer items-center gap-2"
+                                        >
+                                          <Checkbox
+                                            id="override-local"
+                                            checked={overrideLocalChanges}
+                                            onCheckedChange={(checked) =>
+                                              setOverrideLocalChanges(checked === true)
+                                            }
+                                          />
+                                          <span className="text-amber-800 dark:text-amber-200">
+                                            Override local changes (skip merge, use worktree
+                                            version)
+                                          </span>
+                                        </Label>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                             </div>
                           )}
                       </div>
-                      <Label
-                        htmlFor="squash"
-                        className={`flex items-start space-x-3 rounded-md border p-3 ${
-                          hasCommits
-                            ? 'cursor-pointer hover:bg-muted/50'
-                            : 'cursor-not-allowed opacity-50'
+                      <div
+                        className={`rounded-md border p-3 ${
+                          hasCommits ? 'hover:bg-muted/50' : 'cursor-not-allowed opacity-50'
                         }`}
                       >
-                        <RadioGroupItem
-                          value="squash"
-                          id="squash"
-                          className="mt-1"
-                          disabled={!hasCommits}
-                        />
-                        <div className="flex-1">
-                          <span className="font-medium">Squash and merge</span>
-                          <p className="mt-1 text-sm font-normal text-muted-foreground">
-                            Combine all worktree changes into a single commit on{' '}
-                            {targetBranch ? (
-                              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                                {targetBranch}
-                              </code>
-                            ) : (
-                              'your local branch'
+                        <Label
+                          htmlFor="squash"
+                          className="flex cursor-pointer items-start space-x-3"
+                        >
+                          <RadioGroupItem
+                            value="squash"
+                            id="squash"
+                            className="mt-1"
+                            disabled={!hasCommits}
+                          />
+                          <div className="flex-1">
+                            <span className="font-medium">Squash and merge</span>
+                            <p className="mt-1 text-sm font-normal text-muted-foreground">
+                              Combine all worktree changes into a single commit on{' '}
+                              {targetBranch ? (
+                                <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                                  {targetBranch}
+                                </code>
+                              ) : (
+                                'your local branch'
+                              )}
+                            </p>
+                            {!hasCommits && (
+                              <p className="mt-1 text-xs text-amber-600">
+                                Requires committed changes
+                              </p>
                             )}
-                          </p>
-                          {!hasCommits && (
-                            <p className="mt-1 text-xs text-amber-600">
-                              Requires committed changes
+                          </div>
+                        </Label>
+                        {/* Dirty working tree warning */}
+                        {selectedMode === 'squash' && hasDirtyWorkingTree && (
+                          <div className="ml-7 mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-2">
+                            <p className="flex items-center gap-2 text-xs text-amber-800 dark:text-amber-200">
+                              <AlertCircle className="h-3 w-3 shrink-0" />
+                              <span>
+                                Local working tree has uncommitted changes. Stash or commit them
+                                first.
+                                {onRefresh && (
+                                  <>
+                                    {' '}
+                                    <button
+                                      type="button"
+                                      onClick={onRefresh}
+                                      disabled={isPreviewing}
+                                      className="underline hover:no-underline disabled:opacity-50"
+                                    >
+                                      {isPreviewing ? 'Refreshing...' : 'Refresh'}
+                                    </button>
+                                  </>
+                                )}
+                              </span>
                             </p>
-                          )}
-                        </div>
-                      </Label>
-                      <Label
-                        htmlFor="preserve"
-                        className={`flex items-start space-x-3 rounded-md border p-3 ${
-                          hasCommits
-                            ? 'cursor-pointer hover:bg-muted/50'
-                            : 'cursor-not-allowed opacity-50'
+                          </div>
+                        )}
+                      </div>
+                      <div
+                        className={`rounded-md border p-3 ${
+                          hasCommits ? 'hover:bg-muted/50' : 'cursor-not-allowed opacity-50'
                         }`}
                       >
-                        <RadioGroupItem
-                          value="preserve"
-                          id="preserve"
-                          className="mt-1"
-                          disabled={!hasCommits}
-                        />
-                        <div className="flex-1">
-                          <span className="font-medium">Merge all commits</span>
-                          <p className="mt-1 text-sm font-normal text-muted-foreground">
-                            Merge all commits to{' '}
-                            {targetBranch ? (
-                              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                                {targetBranch}
-                              </code>
-                            ) : (
-                              'your local branch'
-                            )}{' '}
-                            and preserve commit history
-                          </p>
-                          {!hasCommits && (
-                            <p className="mt-1 text-xs text-amber-600">
-                              Requires committed changes
+                        <Label
+                          htmlFor="preserve"
+                          className="flex cursor-pointer items-start space-x-3"
+                        >
+                          <RadioGroupItem
+                            value="preserve"
+                            id="preserve"
+                            className="mt-1"
+                            disabled={!hasCommits}
+                          />
+                          <div className="flex-1">
+                            <span className="font-medium">Merge all commits</span>
+                            <p className="mt-1 text-sm font-normal text-muted-foreground">
+                              Merge all commits to{' '}
+                              {targetBranch ? (
+                                <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                                  {targetBranch}
+                                </code>
+                              ) : (
+                                'your local branch'
+                              )}{' '}
+                              and preserve commit history
                             </p>
-                          )}
-                        </div>
-                      </Label>
+                            {!hasCommits && (
+                              <p className="mt-1 text-xs text-amber-600">
+                                Requires committed changes
+                              </p>
+                            )}
+                          </div>
+                        </Label>
+                        {/* Dirty working tree warning */}
+                        {selectedMode === 'preserve' && hasDirtyWorkingTree && (
+                          <div className="ml-7 mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-2">
+                            <p className="flex items-center gap-2 text-xs text-amber-800 dark:text-amber-200">
+                              <AlertCircle className="h-3 w-3 shrink-0" />
+                              <span>
+                                Local working tree has uncommitted changes. Stash or commit them
+                                first.
+                                {onRefresh && (
+                                  <>
+                                    {' '}
+                                    <button
+                                      type="button"
+                                      onClick={onRefresh}
+                                      disabled={isPreviewing}
+                                      className="underline hover:no-underline disabled:opacity-50"
+                                    >
+                                      {isPreviewing ? 'Refreshing...' : 'Refresh'}
+                                    </button>
+                                  </>
+                                )}
+                              </span>
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </RadioGroup>
 

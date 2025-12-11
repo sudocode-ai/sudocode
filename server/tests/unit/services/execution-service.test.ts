@@ -561,6 +561,135 @@ describe("ExecutionService", () => {
       expect(execution.agent_type).toBe("cursor");
       expect(execution.status).toBe("running");
     });
+
+    it("should use provided baseBranch in worktree mode", async () => {
+      // Create a separate issue for this test
+      const { id: branchTestIssueId, uuid: branchTestIssueUuid } =
+        generateIssueId(db, testDir);
+      createIssue(db, {
+        id: branchTestIssueId,
+        uuid: branchTestIssueUuid,
+        title: "Test baseBranch",
+        content: "Test custom baseBranch",
+      });
+
+      const execution = await service.createExecution(
+        branchTestIssueId,
+        { mode: "worktree" as const, baseBranch: "develop" },
+        "Test with custom base branch"
+      );
+
+      expect(execution).toBeDefined();
+      expect(execution.target_branch).toBe("develop");
+    });
+
+    it("should use provided baseBranch in local mode", async () => {
+      // Create a separate issue for this test
+      const { id: localBranchIssueId, uuid: localBranchIssueUuid } =
+        generateIssueId(db, testDir);
+      createIssue(db, {
+        id: localBranchIssueId,
+        uuid: localBranchIssueUuid,
+        title: "Test baseBranch local",
+        content: "Test custom baseBranch in local mode",
+      });
+
+      const execution = await service.createExecution(
+        localBranchIssueId,
+        { mode: "local", baseBranch: "feature-branch" },
+        "Test with custom base branch in local mode"
+      );
+
+      expect(execution).toBeDefined();
+      expect(execution.target_branch).toBe("feature-branch");
+      expect(execution.branch_name).toBe("feature-branch");
+    });
+
+    it("should default to current branch when baseBranch not provided", async () => {
+      // Create a real git repo for this test
+      const gitTestDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), "sudocode-test-git-branch-")
+      );
+
+      try {
+        // Initialize git repo
+        const { execSync } = await import("child_process");
+        execSync("git init", { cwd: gitTestDir });
+        execSync('git config user.email "test@example.com"', {
+          cwd: gitTestDir,
+        });
+        execSync('git config user.name "Test User"', { cwd: gitTestDir });
+
+        // Create initial commit on main
+        fs.writeFileSync(path.join(gitTestDir, "README.md"), "# Test\n");
+        execSync("git add .", { cwd: gitTestDir });
+        execSync('git commit -m "Initial commit"', { cwd: gitTestDir });
+
+        // Create and checkout a feature branch
+        execSync("git checkout -b my-feature-branch", { cwd: gitTestDir });
+
+        // Verify we're on the feature branch
+        const currentBranch = execSync("git rev-parse --abbrev-ref HEAD", {
+          cwd: gitTestDir,
+          encoding: "utf-8",
+        }).trim();
+        expect(currentBranch).toBe("my-feature-branch");
+
+        // Initialize database in git test directory
+        const gitTestDbPath = path.join(gitTestDir, ".sudocode", "cache.db");
+        fs.mkdirSync(path.join(gitTestDir, ".sudocode"), { recursive: true });
+        const gitTestDb = initCliDatabase({ path: gitTestDbPath });
+        gitTestDb.exec(EXECUTIONS_TABLE);
+        gitTestDb.exec(EXECUTIONS_INDEXES);
+        gitTestDb.exec(PROMPT_TEMPLATES_TABLE);
+        gitTestDb.exec(PROMPT_TEMPLATES_INDEXES);
+        initializeDefaultTemplates(gitTestDb);
+
+        // Create test issue in git test db
+        const { id: gitIssueId, uuid: gitIssueUuid } = generateIssueId(
+          gitTestDb,
+          gitTestDir
+        );
+        createIssue(gitTestDb, {
+          id: gitIssueId,
+          uuid: gitIssueUuid,
+          title: "Test Issue for Branch Default",
+          content: "This is a test issue",
+        });
+
+        // Create execution service with git test directory
+        const gitLifecycleService = new ExecutionLifecycleService(
+          gitTestDb,
+          gitTestDir,
+          createMockWorktreeManager()
+        );
+        const gitService = new ExecutionService(
+          gitTestDb,
+          "test-project-branch",
+          gitTestDir,
+          gitLifecycleService
+        );
+
+        // Create execution WITHOUT specifying baseBranch
+        const execution = await gitService.createExecution(
+          gitIssueId,
+          { mode: "local" }, // No baseBranch specified
+          "Test default branch"
+        );
+
+        // Should default to current branch (my-feature-branch), not "main"
+        expect(execution).toBeDefined();
+        expect(execution.target_branch).toBe("my-feature-branch");
+        expect(execution.branch_name).toBe("my-feature-branch");
+
+        gitTestDb.close();
+      } finally {
+        // Clean up
+        if (fs.existsSync(gitTestDir)) {
+          fs.rmSync(gitTestDir, { recursive: true, force: true });
+        }
+      }
+    });
   });
 
   describe("createFollowUp", () => {
@@ -778,6 +907,50 @@ describe("ExecutionService", () => {
       // Should default to local mode since parent has no worktree_path
       expect(followUpExecution.mode).toBe("local");
       expect(followUpExecution.worktree_path).toBeNull();
+    });
+
+    it("should inherit all config from parent execution including dangerouslySkipPermissions and mcpServers", async () => {
+      // Create initial execution with full config including permissions and MCP servers
+      const issueContent = "Add OAuth2 authentication with JWT tokens";
+      const mcpServerConfig = {
+        "sudocode-mcp": {
+          command: "node",
+          args: ["/path/to/mcp.js"],
+        },
+      };
+      const initialExecution = await service.createExecution(
+        testIssueId,
+        {
+          mode: "worktree" as const,
+          model: "claude-sonnet-4",
+          dangerouslySkipPermissions: true,
+          mcpServers: mcpServerConfig,
+          appendSystemPrompt: "Always be helpful",
+        },
+        issueContent
+      );
+
+      // Verify initial execution has the config stored
+      expect(initialExecution.config).toBeTruthy();
+      const initialConfig = JSON.parse(initialExecution.config!);
+      expect(initialConfig.dangerouslySkipPermissions).toBe(true);
+      expect(initialConfig.mcpServers).toEqual(mcpServerConfig);
+      expect(initialConfig.appendSystemPrompt).toBe("Always be helpful");
+      expect(initialConfig.model).toBe("claude-sonnet-4");
+
+      // Create follow-up
+      const followUpExecution = await service.createFollowUp(
+        initialExecution.id,
+        "Please add unit tests"
+      );
+
+      // Verify follow-up inherits all config
+      expect(followUpExecution.config).toBeTruthy();
+      const followUpConfig = JSON.parse(followUpExecution.config!);
+      expect(followUpConfig.dangerouslySkipPermissions).toBe(true);
+      expect(followUpConfig.mcpServers).toEqual(mcpServerConfig);
+      expect(followUpConfig.appendSystemPrompt).toBe("Always be helpful");
+      expect(followUpConfig.model).toBe("claude-sonnet-4");
     });
   });
 

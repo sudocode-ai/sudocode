@@ -15,6 +15,8 @@ import {
 import { generateIssueId } from "@sudocode-ai/cli/dist/id-generator.js";
 import { broadcastIssueUpdate } from "../services/websocket.js";
 import { triggerExport, syncEntityToMarkdown } from "../services/export.js";
+import * as path from "path";
+import * as fs from "fs";
 
 export function createIssuesRouter(): Router {
   const router = Router();
@@ -285,10 +287,26 @@ export function createIssuesRouter(): Router {
         return;
       }
 
+      // Save file_path before deletion (issues use standard path format)
+      const markdownPath = path.join(
+        req.project!.sudocodeDir,
+        "issues",
+        `${id}.md`
+      );
+
       // Delete issue using CLI operation
       const deleted = deleteExistingIssue(req.project!.db, id);
 
       if (deleted) {
+        // Delete markdown file if it exists
+        if (fs.existsSync(markdownPath)) {
+          try {
+            fs.unlinkSync(markdownPath);
+          } catch (err) {
+            console.warn(`Failed to delete markdown file: ${markdownPath}`, err);
+          }
+        }
+
         // Trigger export to JSONL files
         triggerExport(req.project!.db, req.project!.sudocodeDir);
 

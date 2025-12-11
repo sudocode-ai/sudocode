@@ -1,0 +1,1008 @@
+/**
+ * Orchestrator Workflow Engine
+ *
+ * Agent-managed workflow execution. The orchestrator is itself an execution
+ * (Claude Code agent) that controls workflow steps via MCP tools.
+ *
+ * Key differences from SequentialWorkflowEngine:
+ * - No internal execution loop - orchestrator agent handles execution
+ * - Wakeup mechanism - events trigger follow-up executions
+ * - MCP tools for step control - orchestrator uses workflow_* and execute_* tools
+ */
+
+import path from "path";
+import { fileURLToPath } from "url";
+import type Database from "better-sqlite3";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+import type {
+  Workflow,
+  WorkflowRow,
+  WorkflowSource,
+  WorkflowConfig,
+  WorkflowStep,
+  WorkflowStepStatus,
+  Issue,
+} from "@sudocode-ai/types";
+import { getIssue } from "@sudocode-ai/cli/dist/operations/issues.js";
+
+import { BaseWorkflowEngine } from "../base-workflow-engine.js";
+import {
+  WorkflowCycleError,
+  WorkflowStateError,
+  WorkflowStepNotFoundError,
+} from "../workflow-engine.js";
+import type { WorkflowEventEmitter } from "../workflow-event-emitter.js";
+import type {
+  ExecutionService,
+  McpServerConfig,
+} from "../../services/execution-service.js";
+import type { ExecutionLifecycleService } from "../../services/execution-lifecycle.js";
+import type { WorkflowWakeupService } from "../services/wakeup-service.js";
+import { WorkflowPromptBuilder } from "../services/prompt-builder.js";
+import {
+  registerExecutionCallback,
+  type ExecutionEventType,
+  type ExecutionEventData,
+} from "../../services/execution-event-callbacks.js";
+
+// =============================================================================
+// Types
+// =============================================================================
+
+/**
+ * Configuration for the orchestrator engine.
+ */
+export interface OrchestratorEngineConfig {
+  /** Path to the repository root */
+  repoPath: string;
+  /** Path to the database file */
+  dbPath: string;
+  /** Path to the MCP server entry point */
+  mcpServerPath?: string;
+  /** Base URL of the server for MCP API calls (e.g., http://localhost:3000) */
+  serverUrl: string;
+  /** Project ID for API calls */
+  projectId: string;
+}
+
+// =============================================================================
+// Orchestrator Workflow Engine
+// =============================================================================
+
+/**
+ * Orchestrator Workflow Engine implementation.
+ *
+ * This engine spawns an orchestrator agent (Claude Code execution) that controls
+ * the workflow using MCP tools. The orchestrator makes decisions about:
+ * - Which issues to execute
+ * - How to handle failures
+ * - When to escalate to the user
+ *
+ * Events from step executions trigger "wakeups" - follow-up messages to the
+ * orchestrator that inform it of completed work.
+ *
+ * @example
+ * ```typescript
+ * const engine = new OrchestratorWorkflowEngine({
+ *   db,
+ *   executionService,
+ *   wakeupService,
+ *   config: {
+ *     repoPath: '/path/to/repo',
+ *     dbPath: '/path/to/.sudocode/cache.db',
+ *   },
+ * });
+ *
+ * // Create workflow from a goal
+ * const workflow = await engine.createWorkflow({
+ *   type: "goal",
+ *   goal: "Implement user authentication with OAuth"
+ * });
+ *
+ * // Start orchestrator
+ * await engine.startWorkflow(workflow.id);
+ * ```
+ */
+export class OrchestratorWorkflowEngine extends BaseWorkflowEngine {
+  private executionService: ExecutionService;
+  private lifecycleService: ExecutionLifecycleService;
+  private wakeupService: WorkflowWakeupService;
+  private promptBuilder: WorkflowPromptBuilder;
+  private config: OrchestratorEngineConfig;
+  private unregisterExecutionCallback?: () => void;
+
+  constructor(deps: {
+    db: Database.Database;
+    executionService: ExecutionService;
+    lifecycleService: ExecutionLifecycleService;
+    wakeupService: WorkflowWakeupService;
+    eventEmitter?: WorkflowEventEmitter;
+    config: OrchestratorEngineConfig;
+  }) {
+    super(deps.db, deps.eventEmitter);
+    this.executionService = deps.executionService;
+    this.lifecycleService = deps.lifecycleService;
+    this.wakeupService = deps.wakeupService;
+    this.promptBuilder = new WorkflowPromptBuilder();
+    this.config = deps.config;
+
+    // Register callback to record workflow events when executions complete
+    this.setupExecutionCallbacks();
+  }
+
+  // ===========================================================================
+  // Configuration
+  // ===========================================================================
+
+  /**
+   * Update the server URL after dynamic port discovery.
+   * Called by ProjectContext when the actual server port is known.
+   */
+  setServerUrl(serverUrl: string): void {
+    this.config.serverUrl = serverUrl;
+  }
+
+  /**
+   * Get the wakeup service for registering await conditions.
+   * Used by the API endpoint for await_events MCP tool.
+   */
+  getWakeupService(): WorkflowWakeupService {
+    return this.wakeupService;
+  }
+
+  // ===========================================================================
+  // Execution Event Callbacks
+  // ===========================================================================
+
+  /**
+   * Set up callbacks to record workflow events when executions complete/fail.
+   *
+   * When an execution that belongs to a workflow completes or fails, we need to:
+   * 1. Find the corresponding workflow step
+   * 2. Update the step status
+   * 3. Record a workflow event (step_completed or step_failed)
+   * 4. Trigger a wakeup so the orchestrator can react
+   */
+  private setupExecutionCallbacks(): void {
+    this.unregisterExecutionCallback = registerExecutionCallback(
+      async (event: ExecutionEventType, data: ExecutionEventData) => {
+        // Only handle events from workflow executions
+        if (!data.workflowId) {
+          return;
+        }
+
+        // Get the workflow
+        const workflow = await this.getWorkflow(data.workflowId);
+        if (!workflow) {
+          console.warn(
+            `[OrchestratorEngine] Workflow not found for execution event: ${data.workflowId}`
+          );
+          return;
+        }
+
+        // Find the step for this execution
+        const step = workflow.steps.find(
+          (s: WorkflowStep) => s.executionId === data.executionId
+        );
+        if (!step) {
+          // Might be the orchestrator execution itself, not a step
+          console.debug(
+            `[OrchestratorEngine] No step found for execution ${data.executionId} in workflow ${data.workflowId}`
+          );
+          return;
+        }
+
+        // Clear any pending timeout for this execution
+        this.wakeupService.clearExecutionTimeout(data.executionId);
+
+        // Determine event type and update step status
+        const eventType =
+          event === "completed" ? "step_completed" : "step_failed";
+        const newStepStatus = event === "completed" ? "completed" : "failed";
+
+        // Update step status in workflow
+        const updatedSteps = workflow.steps.map((s: WorkflowStep) =>
+          s.id === step.id
+            ? { ...s, status: newStepStatus as WorkflowStepStatus }
+            : s
+        );
+        this.updateWorkflow(data.workflowId, { steps: updatedSteps });
+
+        // Record workflow event for orchestrator
+        await this.wakeupService.recordEvent({
+          workflowId: data.workflowId,
+          type: eventType,
+          executionId: data.executionId,
+          stepId: step.id,
+          payload: {
+            issueId: step.issueId,
+            error: data.error,
+          },
+        });
+
+        // Trigger wakeup so orchestrator can react
+        await this.wakeupService.triggerWakeup(data.workflowId);
+
+        console.log(
+          `[OrchestratorEngine] Recorded ${eventType} for step ${step.id} in workflow ${data.workflowId}`
+        );
+      }
+    );
+  }
+
+  /**
+   * Clean up the execution callback when the engine is disposed.
+   */
+  dispose(): void {
+    if (this.unregisterExecutionCallback) {
+      this.unregisterExecutionCallback();
+      this.unregisterExecutionCallback = undefined;
+    }
+  }
+
+  // ===========================================================================
+  // Workflow Creation
+  // ===========================================================================
+
+  /**
+   * Create a new workflow from a source definition.
+   *
+   * For orchestrator workflows, goal-based sources create empty workflows
+   * that the orchestrator populates dynamically.
+   *
+   * @param source - How to determine workflow scope (spec, issues, root_issue, or goal)
+   * @param config - Optional configuration overrides
+   * @returns The created workflow
+   * @throws WorkflowCycleError if dependency cycles are detected
+   */
+  async createWorkflow(
+    source: WorkflowSource,
+    config?: Partial<WorkflowConfig>
+  ): Promise<Workflow> {
+    // 1. Resolve source to issue IDs
+    const issueIds = await this.resolveSource(source);
+
+    // 2. Handle goal-based workflows (no initial issues)
+    if (source.type === "goal" && issueIds.length === 0) {
+      const workflow = this.buildWorkflow({
+        source,
+        steps: [],
+        config: config || {},
+        repoPath: this.config.repoPath,
+      });
+      this.saveWorkflow(workflow);
+      return workflow;
+    }
+
+    // 3. Build dependency graph
+    const graph = this.analyzeDependencies(issueIds);
+
+    // 4. Check for cycles
+    if (graph.cycles && graph.cycles.length > 0) {
+      throw new WorkflowCycleError(graph.cycles);
+    }
+
+    // 5. Create steps from graph
+    const steps = this.createStepsFromGraph(graph);
+
+    // 6. Build workflow object
+    const workflow = this.buildWorkflow({
+      source,
+      steps,
+      config: config || {},
+      repoPath: this.config.repoPath,
+    });
+
+    // 7. Save to database
+    this.saveWorkflow(workflow);
+
+    return workflow;
+  }
+
+  // ===========================================================================
+  // Workflow Lifecycle
+  // ===========================================================================
+
+  /**
+   * Start executing a pending workflow.
+   *
+   * Spawns an orchestrator execution (Claude Code agent) with workflow MCP tools.
+   * The orchestrator will use these tools to control step execution.
+   *
+   * @param workflowId - The workflow to start
+   * @throws WorkflowNotFoundError if workflow doesn't exist
+   * @throws WorkflowStateError if workflow is not in pending state
+   */
+  async startWorkflow(workflowId: string): Promise<void> {
+    console.log(
+      `[OrchestratorWorkflowEngine] startWorkflow called for ${workflowId}`
+    );
+    const workflow = await this.getWorkflowOrThrow(workflowId);
+
+    // Validate state
+    if (workflow.status !== "pending") {
+      throw new WorkflowStateError(workflowId, workflow.status, "start");
+    }
+
+    // Create workflow-level worktree if not already present
+    if (!workflow.worktreePath) {
+      console.log(
+        `[OrchestratorWorkflowEngine] Creating workflow worktree for ${workflowId}`
+      );
+      const { worktreePath, branchName } =
+        await this.createWorkflowWorktreeHelper(
+          workflow,
+          this.config.repoPath,
+          this.lifecycleService
+        );
+      // Update local workflow reference with worktree info
+      workflow.worktreePath = worktreePath;
+      workflow.branchName = branchName;
+    }
+
+    // Update status to running
+    const updated = this.updateWorkflow(workflowId, {
+      status: "running",
+      startedAt: new Date().toISOString(),
+    });
+
+    // Emit workflow started event
+    this.eventEmitter.emit({
+      type: "workflow_started",
+      workflowId,
+      workflow: updated,
+      timestamp: Date.now(),
+    });
+
+    // Spawn orchestrator execution
+    console.log(
+      `[OrchestratorWorkflowEngine] Spawning orchestrator for workflow ${workflowId}`
+    );
+    await this.spawnOrchestrator(updated);
+  }
+
+  /**
+   * Pause a running workflow.
+   *
+   * Sets pause status and records an event. The orchestrator will be notified
+   * via wakeup when it checks workflow status.
+   *
+   * @param workflowId - The workflow to pause
+   * @throws WorkflowNotFoundError if workflow doesn't exist
+   * @throws WorkflowStateError if workflow is not running
+   */
+  async pauseWorkflow(workflowId: string): Promise<void> {
+    const workflow = await this.getWorkflowOrThrow(workflowId);
+
+    if (workflow.status !== "running") {
+      throw new WorkflowStateError(workflowId, workflow.status, "pause");
+    }
+
+    // Cancel ALL running executions (orchestrator chain + step executions)
+    await this.cancelAllWorkflowExecutions(workflow);
+
+    // Cancel pending wakeup
+    this.wakeupService.cancelPendingWakeup(workflowId);
+
+    // Clear any await state
+    this.wakeupService.clearAwaitState(workflowId);
+
+    // Update status
+    this.updateWorkflow(workflowId, { status: "paused" });
+
+    // Record pause event for orchestrator
+    await this.wakeupService.recordEvent({
+      workflowId,
+      type: "workflow_paused",
+      payload: {},
+    });
+
+    // Emit event
+    this.eventEmitter.emit({
+      type: "workflow_paused",
+      workflowId,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Resume a paused workflow.
+   *
+   * Uses Claude Code's session resume to continue the orchestrator from where it left off.
+   * This preserves the full conversation history and context.
+   *
+   * @param workflowId - The workflow to resume
+   * @param message - Optional message to send with the resume (defaults to "Workflow resumed. Continue execution.")
+   * @throws WorkflowNotFoundError if workflow doesn't exist
+   * @throws WorkflowStateError if workflow is not paused
+   */
+  async resumeWorkflow(
+    workflowId: string,
+    message?: string
+  ): Promise<void> {
+    const workflow = await this.getWorkflowOrThrow(workflowId);
+
+    if (workflow.status !== "paused") {
+      throw new WorkflowStateError(workflowId, workflow.status, "resume");
+    }
+
+    // Get the session ID to resume
+    const sessionId = workflow.orchestratorSessionId;
+    if (!sessionId) {
+      throw new Error(
+        `Cannot resume workflow ${workflowId}: no orchestrator session ID found`
+      );
+    }
+
+    // Update status first
+    this.updateWorkflow(workflowId, { status: "running" });
+
+    // Build the resume prompt
+    const resumePrompt = message || "Workflow resumed. Continue execution.";
+
+    // Build agent config with resume flag
+    const agentConfig = this.buildOrchestratorConfig(workflow);
+    const agentType = workflow.config.orchestratorAgentType ?? "claude-code";
+
+    console.log(
+      `[OrchestratorWorkflowEngine] Resuming workflow ${workflowId} with session ${sessionId}`
+    );
+
+    // Create new execution that resumes the session
+    // Link to the previous orchestrator execution for chain tracking
+    const previousExecutionId = workflow.orchestratorExecutionId;
+    const execution = await this.executionService.createExecution(
+      null, // No issue - this is the orchestrator
+      {
+        mode: "worktree" as const,
+        baseBranch: workflow.baseBranch,
+        reuseWorktreePath: workflow.worktreePath,
+        resume: sessionId, // Resume the previous session
+        parentExecutionId: previousExecutionId, // Link to previous execution in chain
+        ...agentConfig,
+      },
+      resumePrompt,
+      agentType
+    );
+
+    // Update workflow with new orchestrator execution ID
+    // Note: session_id should remain the same for resumed sessions
+    this.updateWorkflow(workflowId, {
+      orchestratorExecutionId: execution.id,
+      orchestratorSessionId: execution.session_id || sessionId,
+    });
+
+    // Record resume event for tracking
+    await this.wakeupService.recordEvent({
+      workflowId,
+      type: "workflow_resumed",
+      payload: {
+        resumedFromSession: sessionId,
+        previousExecutionId,
+        newExecutionId: execution.id,
+      },
+    });
+
+    // Mark any pending events as processed (they're now part of the resumed session context)
+    const pendingEvents = this.wakeupService.getUnprocessedEvents(workflowId);
+    if (pendingEvents.length > 0) {
+      this.wakeupService.markEventsProcessed(pendingEvents.map((e) => e.id));
+    }
+
+    // Emit event
+    this.eventEmitter.emit({
+      type: "workflow_resumed",
+      workflowId,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Cancel a workflow, stopping the orchestrator and any running executions.
+   *
+   * @param workflowId - The workflow to cancel
+   * @throws WorkflowNotFoundError if workflow doesn't exist
+   * @throws WorkflowStateError if workflow is already completed/failed/cancelled
+   */
+  async cancelWorkflow(workflowId: string): Promise<void> {
+    const workflow = await this.getWorkflowOrThrow(workflowId);
+
+    // Check if already in terminal state
+    if (["completed", "failed", "cancelled"].includes(workflow.status)) {
+      throw new WorkflowStateError(workflowId, workflow.status, "cancel");
+    }
+
+    // Cancel ALL running executions (orchestrator chain + step executions)
+    await this.cancelAllWorkflowExecutions(workflow);
+
+    // Cancel pending wakeup
+    this.wakeupService.cancelPendingWakeup(workflowId);
+
+    // Clear any await state
+    this.wakeupService.clearAwaitState(workflowId);
+
+    // Update status
+    this.updateWorkflow(workflowId, {
+      status: "cancelled",
+      completedAt: new Date().toISOString(),
+    });
+
+    // Emit event
+    this.eventEmitter.emit({
+      type: "workflow_cancelled",
+      workflowId,
+      timestamp: Date.now(),
+    });
+  }
+
+  // ===========================================================================
+  // Step Control
+  // ===========================================================================
+
+  /**
+   * Retry a failed step.
+   *
+   * Records an event for the orchestrator to handle.
+   * The orchestrator decides how to actually retry.
+   *
+   * @param workflowId - The workflow containing the step
+   * @param stepId - The step to retry
+   * @throws WorkflowNotFoundError if workflow doesn't exist
+   * @throws WorkflowStepNotFoundError if step doesn't exist
+   */
+  async retryStep(workflowId: string, stepId: string): Promise<void> {
+    const workflow = await this.getWorkflowOrThrow(workflowId);
+    const step = workflow.steps.find((s) => s.id === stepId);
+
+    if (!step) {
+      throw new WorkflowStepNotFoundError(workflowId, stepId);
+    }
+
+    // Record event for orchestrator
+    await this.wakeupService.recordEvent({
+      workflowId,
+      type: "step_started", // Re-use step_started as retry signal
+      stepId,
+      payload: {
+        action: "retry",
+        issueId: step.issueId,
+      },
+    });
+  }
+
+  /**
+   * Skip a step.
+   *
+   * Records an event for the orchestrator to handle.
+   * The orchestrator decides how to handle dependents.
+   *
+   * @param workflowId - The workflow containing the step
+   * @param stepId - The step to skip
+   * @param reason - Optional reason for skipping
+   * @throws WorkflowNotFoundError if workflow doesn't exist
+   * @throws WorkflowStepNotFoundError if step doesn't exist
+   */
+  async skipStep(
+    workflowId: string,
+    stepId: string,
+    reason?: string
+  ): Promise<void> {
+    const workflow = await this.getWorkflowOrThrow(workflowId);
+    const step = workflow.steps.find((s) => s.id === stepId);
+
+    if (!step) {
+      throw new WorkflowStepNotFoundError(workflowId, stepId);
+    }
+
+    // Record event for orchestrator
+    await this.wakeupService.recordEvent({
+      workflowId,
+      type: "step_skipped",
+      stepId,
+      payload: {
+        action: "skip",
+        issueId: step.issueId,
+        reason: reason || "Manually skipped",
+      },
+    });
+  }
+
+  // ===========================================================================
+  // Escalation
+  // ===========================================================================
+
+  /**
+   * Trigger a wakeup for an escalation response.
+   *
+   * Called by the API when a user responds to an escalation.
+   * Immediately triggers the orchestrator to resume with the response.
+   *
+   * @param workflowId - The workflow to wake up
+   */
+  async triggerEscalationWakeup(workflowId: string): Promise<void> {
+    await this.wakeupService.triggerWakeup(workflowId);
+  }
+
+  // ===========================================================================
+  // Private: Orchestrator Spawning
+  // ===========================================================================
+
+  /**
+   * Spawn an orchestrator execution (Claude Code agent).
+   *
+   * The orchestrator is given:
+   * - Workflow MCP tools for control
+   * - Initial prompt with workflow context
+   * - Access to sudocode MCP tools for issue management
+   */
+  private async spawnOrchestrator(workflow: Workflow): Promise<void> {
+    // Get issues for initial prompt
+    const issues = this.getIssuesForWorkflow(workflow);
+
+    // Build initial prompt
+    const prompt = this.promptBuilder.buildInitialPrompt(workflow, issues);
+
+    // Build agent config with MCP servers
+    const agentConfig = this.buildOrchestratorConfig(workflow);
+
+    // Determine agent type (default to claude-code)
+    const agentType = workflow.config.orchestratorAgentType ?? "claude-code";
+
+    // Log the full config being passed to createExecution
+    // Orchestrator runs in the workflow's worktree so it can see step changes
+    const fullConfig = {
+      mode: "worktree" as const,
+      baseBranch: workflow.baseBranch,
+      reuseWorktreePath: workflow.worktreePath,
+      ...agentConfig,
+    };
+    console.log(
+      "[OrchestratorWorkflowEngine] Creating execution with config:",
+      JSON.stringify(fullConfig, null, 2)
+    );
+
+    // Create orchestrator execution
+    const execution = await this.executionService.createExecution(
+      null, // No issue - this is the orchestrator itself
+      fullConfig,
+      prompt,
+      agentType
+    );
+
+    // Store orchestrator execution ID and session ID on workflow
+    this.updateWorkflow(workflow.id, {
+      orchestratorExecutionId: execution.id,
+      orchestratorSessionId: execution.session_id,
+    });
+  }
+
+  /**
+   * Build the orchestrator agent configuration.
+   *
+   * Configures MCP servers for workflow control and sudocode access.
+   * Enables dangerouslySkipPermissions for automated workflow execution.
+   */
+  private buildOrchestratorConfig(workflow: Workflow): {
+    mcpServers?: Record<string, McpServerConfig>;
+    model?: string;
+    appendSystemPrompt?: string;
+    dangerouslySkipPermissions?: boolean;
+  } {
+    const config: {
+      mcpServers?: Record<string, McpServerConfig>;
+      model?: string;
+      appendSystemPrompt?: string;
+      dangerouslySkipPermissions?: boolean;
+    } = {
+      // Orchestrator runs autonomously - must skip permission prompts
+      dangerouslySkipPermissions: true,
+    };
+
+    // Add workflow MCP server
+    // Note: When running in dev mode (tsx/ts-node), __dirname points to src/
+    // but we need the compiled dist/ path. Detect and fix this.
+    let mcpServerPath = this.config.mcpServerPath;
+    if (!mcpServerPath) {
+      const defaultPath = path.join(__dirname, "../mcp/index.js");
+      // If path contains /src/, replace with /dist/ to get compiled version
+      mcpServerPath = defaultPath.includes("/src/")
+        ? defaultPath.replace("/src/", "/dist/")
+        : defaultPath;
+    }
+
+    console.log("[OrchestratorWorkflowEngine] MCP server path:", mcpServerPath);
+
+    const mcpArgs = [
+      mcpServerPath,
+      "--workflow-id",
+      workflow.id,
+      "--server-url",
+      this.config.serverUrl,
+      "--project-id",
+      this.config.projectId,
+      "--repo-path",
+      this.config.repoPath,
+    ];
+
+    config.mcpServers = {
+      "sudocode-workflow": {
+        command: "node",
+        args: mcpArgs,
+      },
+    };
+
+    // Log the MCP run command for local testing
+    console.log(
+      "[OrchestratorWorkflowEngine] MCP server config for workflow",
+      workflow.id
+    );
+    console.log(
+      "[OrchestratorWorkflowEngine] To test MCP locally, run:\n" +
+        `  node ${mcpArgs.join(" ")}`
+    );
+
+    // Set model if specified
+    if (workflow.config.orchestratorModel) {
+      config.model = workflow.config.orchestratorModel;
+    }
+
+    // Add system prompt extension for orchestrator role
+    config.appendSystemPrompt = `
+You are a workflow orchestrator managing the execution of coding tasks.
+You have access to workflow MCP tools to control execution flow.
+
+IMPORTANT: You are orchestrating workflow "${workflow.id}".
+Use the workflow tools to:
+- Check workflow status with workflow_status
+- Execute issues with execute_issue
+- Inspect results with execution_trajectory and execution_changes
+- Handle failures appropriately based on the workflow config
+- Mark the workflow complete when done with workflow_complete
+`;
+
+    return config;
+  }
+
+  /**
+   * Get issues for the workflow (for initial prompt).
+   */
+  private getIssuesForWorkflow(workflow: Workflow): Issue[] {
+    const issues: Issue[] = [];
+
+    for (const step of workflow.steps) {
+      const issue = getIssue(this.db, step.issueId);
+      if (issue) {
+        issues.push(issue);
+      }
+    }
+
+    return issues;
+  }
+
+  /**
+   * Cancel ALL running executions for a workflow.
+   * This includes:
+   * 1. The entire orchestrator execution chain (root + all follow-ups)
+   * 2. All step executions linked to this workflow
+   */
+  private async cancelAllWorkflowExecutions(workflow: Workflow): Promise<void> {
+    const cancelledIds = new Set<string>();
+
+    // 1. Cancel the entire orchestrator execution chain
+    if (workflow.orchestratorExecutionId) {
+      // Get the root orchestrator execution by traversing up parent_execution_id
+      let rootId = workflow.orchestratorExecutionId;
+      let safetyCounter = 100; // Prevent infinite loops
+
+      while (safetyCounter > 0) {
+        const parent = this.db
+          .prepare("SELECT parent_execution_id FROM executions WHERE id = ?")
+          .get(rootId) as { parent_execution_id: string | null } | undefined;
+
+        if (!parent || !parent.parent_execution_id) {
+          break;
+        }
+        rootId = parent.parent_execution_id;
+        safetyCounter--;
+      }
+
+      // Get all executions in the chain (root + all descendants)
+      const chainExecutions = this.db
+        .prepare(
+          `
+          WITH RECURSIVE execution_chain AS (
+            -- Base case: the root execution
+            SELECT id, status FROM executions WHERE id = ?
+            UNION ALL
+            -- Recursive case: children of executions in the chain
+            SELECT e.id, e.status FROM executions e
+            INNER JOIN execution_chain ec ON e.parent_execution_id = ec.id
+          )
+          SELECT id, status FROM execution_chain
+          WHERE status IN ('pending', 'running', 'preparing')
+        `
+        )
+        .all(rootId) as Array<{ id: string; status: string }>;
+
+      console.log(
+        `[OrchestratorEngine] Cancelling ${chainExecutions.length} orchestrator executions in chain`
+      );
+
+      for (const { id } of chainExecutions) {
+        if (cancelledIds.has(id)) continue;
+        try {
+          await this.executionService.cancelExecution(id);
+          cancelledIds.add(id);
+        } catch (error) {
+          console.warn(`Failed to cancel orchestrator execution ${id}:`, error);
+        }
+      }
+    }
+
+    // 2. Cancel all step executions linked to this workflow
+    const stepExecutions = this.db
+      .prepare(
+        `
+        SELECT id FROM executions
+        WHERE workflow_execution_id = ?
+          AND status IN ('pending', 'running', 'preparing')
+      `
+      )
+      .all(workflow.id) as Array<{ id: string }>;
+
+    console.log(
+      `[OrchestratorEngine] Cancelling ${stepExecutions.length} step executions`
+    );
+
+    for (const { id } of stepExecutions) {
+      if (cancelledIds.has(id)) continue;
+      try {
+        await this.executionService.cancelExecution(id);
+        cancelledIds.add(id);
+      } catch (error) {
+        console.warn(`Failed to cancel step execution ${id}:`, error);
+      }
+    }
+
+    console.log(
+      `[OrchestratorEngine] Cancelled ${cancelledIds.size} total executions for workflow ${workflow.id}`
+    );
+  }
+
+  // ===========================================================================
+  // Recovery
+  // ===========================================================================
+
+  /**
+   * Recover orphaned workflows on server restart.
+   *
+   * Finds workflows in 'running' status whose orchestrator execution
+   * is no longer running, and triggers a wakeup to resume them.
+   */
+  async recoverOrphanedWorkflows(): Promise<void> {
+    console.log("[OrchestratorEngine] Checking for orphaned workflows...");
+
+    // Find workflows in 'running' status
+    const runningWorkflows = this.db
+      .prepare(`SELECT * FROM workflows WHERE status = 'running'`)
+      .all() as WorkflowRow[];
+
+    let recoveredCount = 0;
+
+    for (const row of runningWorkflows) {
+      // Parse the workflow row
+      const workflow: Workflow = {
+        id: row.id,
+        title: row.title,
+        source: JSON.parse(row.source),
+        status: row.status as Workflow["status"],
+        steps: JSON.parse(row.steps),
+        worktreePath: row.worktree_path ?? undefined,
+        branchName: row.branch_name ?? undefined,
+        baseBranch: row.base_branch,
+        currentStepIndex: row.current_step_index,
+        orchestratorExecutionId: row.orchestrator_execution_id ?? undefined,
+        orchestratorSessionId: row.orchestrator_session_id ?? undefined,
+        config: JSON.parse(row.config),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        startedAt: row.started_at ?? undefined,
+        completedAt: row.completed_at ?? undefined,
+      };
+
+      // Skip if no orchestrator execution
+      if (!workflow.orchestratorExecutionId) {
+        console.warn(
+          `[OrchestratorEngine] Workflow ${workflow.id} running but no orchestrator`
+        );
+        continue;
+      }
+
+      // Check orchestrator execution status
+      const orchestrator = this.db
+        .prepare(`SELECT status FROM executions WHERE id = ?`)
+        .get(workflow.orchestratorExecutionId) as
+        | { status: string }
+        | undefined;
+
+      // If orchestrator is not running, trigger recovery
+      if (!orchestrator || orchestrator.status !== "running") {
+        console.log(
+          `[OrchestratorEngine] Recovering workflow ${workflow.id} ` +
+            `(orchestrator status: ${orchestrator?.status ?? "not found"})`
+        );
+
+        try {
+          // Record recovery event
+          await this.wakeupService.recordEvent({
+            workflowId: workflow.id,
+            type: "orchestrator_wakeup",
+            payload: {
+              reason: "recovery",
+              previousStatus: orchestrator?.status,
+            },
+          });
+
+          // Trigger wakeup to resume
+          await this.wakeupService.triggerWakeup(workflow.id);
+          recoveredCount++;
+        } catch (err) {
+          console.error(
+            `[OrchestratorEngine] Failed to recover workflow ${workflow.id}:`,
+            err
+          );
+        }
+      }
+    }
+
+    console.log(
+      `[OrchestratorEngine] Recovery complete: ${recoveredCount}/${runningWorkflows.length} workflows recovered`
+    );
+  }
+
+  /**
+   * Mark stale running executions as failed.
+   *
+   * Called during recovery to clean up executions that were running
+   * when the server crashed.
+   */
+  async markStaleExecutionsAsFailed(): Promise<void> {
+    console.log("[OrchestratorEngine] Checking for stale executions...");
+
+    const staleExecutions = this.db
+      .prepare(
+        `
+        SELECT id, workflow_execution_id FROM executions
+        WHERE status = 'running'
+          AND workflow_execution_id IS NOT NULL
+      `
+      )
+      .all() as Array<{ id: string; workflow_execution_id: string }>;
+
+    for (const exec of staleExecutions) {
+      console.log(
+        `[OrchestratorEngine] Marking stale execution ${exec.id} as failed`
+      );
+
+      this.db
+        .prepare(
+          `
+          UPDATE executions
+          SET status = 'failed',
+              error_message = 'Execution was running when server restarted',
+              completed_at = ?
+          WHERE id = ?
+        `
+        )
+        .run(new Date().toISOString(), exec.id);
+    }
+
+    if (staleExecutions.length > 0) {
+      console.log(
+        `[OrchestratorEngine] Marked ${staleExecutions.length} stale executions as failed`
+      );
+    }
+  }
+}

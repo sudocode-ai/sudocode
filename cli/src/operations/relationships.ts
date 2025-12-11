@@ -400,7 +400,8 @@ export function relationshipExists(
 }
 
 /**
- * Remove all relationships for an entity
+ * Remove all relationships for an entity (both incoming and outgoing)
+ * Use this when deleting an entity
  */
 export function removeAllRelationships(
   db: Database.Database,
@@ -414,5 +415,24 @@ export function removeAllRelationships(
   `);
 
   const result = stmt.run(entity_id, entity_type, entity_id, entity_type);
+  return result.changes;
+}
+
+/**
+ * Remove only outgoing relationships for an entity
+ * Use this when updating an entity to preserve incoming relationships
+ * (e.g., preserves "implements" relationships from issues when updating a spec)
+ */
+export function removeOutgoingRelationships(
+  db: Database.Database,
+  entity_id: string,
+  entity_type: EntityType
+): number {
+  const stmt = db.prepare(`
+    DELETE FROM relationships
+    WHERE from_id = ? AND from_type = ?
+  `);
+
+  const result = stmt.run(entity_id, entity_type);
   return result.changes;
 }

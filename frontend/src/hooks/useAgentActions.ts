@@ -353,5 +353,6 @@ export function useAgentActions(options: UseAgentActionsOptions) {
     performSync,
     isPreviewing,
     syncStatus,
+    fetchSyncPreview,
   }
 }

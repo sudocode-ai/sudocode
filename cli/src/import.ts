@@ -22,6 +22,7 @@ import {
 import {
   addRelationship,
   removeAllRelationships,
+  removeOutgoingRelationships,
 } from "./operations/relationships.js";
 import { setTags } from "./operations/tags.js";
 import {
@@ -31,6 +32,18 @@ import {
 } from "./operations/feedback.js";
 import { transaction } from "./operations/transactions.js";
 import * as path from "path";
+import * as fs from "fs";
+
+/**
+ * Warnings collected during import for non-fatal issues
+ */
+export interface ImportWarning {
+  type: "missing_entity" | "invalid_relationship";
+  message: string;
+  entityId?: string;
+  relationshipFrom?: string;
+  relationshipTo?: string;
+}
 
 export interface ImportOptions {
   /**
@@ -73,6 +86,7 @@ export interface ImportResult {
     deleted: number;
   };
   collisions: CollisionInfo[];
+  warnings?: ImportWarning[];
 }
 
 export interface CollisionInfo {
@@ -409,7 +423,8 @@ export function importSpecs(
   let updated = 0;
   let deleted = 0;
 
-  // Add new specs
+  // Add new specs (first pass: without parent_id to handle out-of-order parents)
+  const specsWithParents: SpecJSONL[] = [];
   for (const id of changes.added) {
     const spec = specs.find((s) => s.id === id);
     if (spec) {
@@ -420,7 +435,7 @@ export function importSpecs(
         file_path: spec.file_path,
         content: spec.content,
         priority: spec.priority,
-        parent_id: spec.parent_id,
+        // Skip parent_id in first pass - will be set in second pass
         archived: spec.archived,
         archived_at: spec.archived_at,
         created_at: spec.created_at,
@@ -430,7 +445,19 @@ export function importSpecs(
       // Add tags
       setTags(db, spec.id, "spec", spec.tags || []);
       added++;
+
+      // Track specs with parent_id for second pass
+      if (spec.parent_id) {
+        specsWithParents.push(spec);
+      }
     }
+  }
+
+  // Second pass: set parent_id for newly added specs (now all parents exist)
+  for (const spec of specsWithParents) {
+    updateSpec(db, spec.id, {
+      parent_id: spec.parent_id,
+    });
   }
 
   // Add relationships
@@ -472,12 +499,12 @@ export function importSpecs(
     }
   }
 
-  // Update relationships
+  // Update relationships (only remove outgoing to preserve incoming relationships)
   if (!skipRelationships) {
     for (const id of changes.updated) {
       const spec = specs.find((s) => s.id === id);
       if (spec) {
-        removeAllRelationships(db, spec.id, "spec");
+        removeOutgoingRelationships(db, spec.id, "spec");
         for (const rel of spec.relationships || []) {
           addRelationship(db, {
             from_id: rel.from,
@@ -566,7 +593,8 @@ export function importIssues(
   let updated = 0;
   let deleted = 0;
 
-  // Add new issues
+  // Add new issues (first pass: without parent_id to handle out-of-order parents)
+  const issuesWithParents: IssueJSONL[] = [];
   for (const id of changes.added) {
     const issue = issues.find((i) => i.id === id);
     if (issue) {
@@ -578,7 +606,7 @@ export function importIssues(
         status: issue.status,
         priority: issue.priority,
         assignee: issue.assignee,
-        parent_id: issue.parent_id,
+        // Skip parent_id in first pass - will be set in second pass
         archived: issue.archived,
         archived_at: issue.archived_at,
         created_at: issue.created_at,
@@ -587,7 +615,19 @@ export function importIssues(
       });
       setTags(db, issue.id, "issue", issue.tags || []);
       added++;
+
+      // Track issues with parent_id for second pass
+      if (issue.parent_id) {
+        issuesWithParents.push(issue);
+      }
     }
+  }
+
+  // Second pass: set parent_id for newly added issues (now all parents exist)
+  for (const issue of issuesWithParents) {
+    updateIssue(db, issue.id, {
+      parent_id: issue.parent_id,
+    });
   }
 
   // Add relationships
@@ -629,12 +669,12 @@ export function importIssues(
     }
   }
 
-  // Update relationships
+  // Update relationships (only remove outgoing to preserve incoming relationships)
   if (!skipRelationships) {
     for (const id of changes.updated) {
       const issue = issues.find((i) => i.id === id);
       if (issue) {
-        removeAllRelationships(db, issue.id, "issue");
+        removeOutgoingRelationships(db, issue.id, "issue");
         for (const rel of issue.relationships || []) {
           addRelationship(db, {
             from_id: rel.from,
@@ -779,12 +819,61 @@ export async function importFromJSONL(
   const specChanges = detectChanges(existingSpecs, incomingSpecs, forceUpdateIds);
   const issueChanges = detectChanges(existingIssues, incomingIssues, forceUpdateIds);
 
+  // Collect markdown file paths for entities to be deleted (before deletion)
+  // We need to do this before the transaction because the entities will be gone after
+  const markdownFilesToDelete: string[] = [];
+  if (!dryRun) {
+    // Collect spec file paths
+    for (const id of specChanges.deleted) {
+      const spec = getSpec(db, id);
+      if (spec && spec.file_path) {
+        markdownFilesToDelete.push(path.join(inputDir, spec.file_path));
+      }
+    }
+    // Collect issue file paths (issues use standard path format)
+    for (const id of issueChanges.deleted) {
+      markdownFilesToDelete.push(path.join(inputDir, "issues", `${id}.md`));
+    }
+  }
+
   // Apply changes in transaction
   const result: ImportResult = {
     specs: { added: 0, updated: 0, deleted: 0 },
     issues: { added: 0, updated: 0, deleted: 0 },
     collisions:
       resolvedCollisions.length > 0 ? resolvedCollisions : allCollisions,
+    warnings: [],
+  };
+
+  // Helper to try adding a relationship, collecting warnings for missing entities
+  const tryAddRelationship = (
+    rel: { from: string; from_type: "spec" | "issue"; to: string; to_type: "spec" | "issue"; type: string },
+    sourceEntityId: string
+  ): void => {
+    try {
+      addRelationship(db, {
+        from_id: rel.from,
+        from_type: rel.from_type,
+        to_id: rel.to,
+        to_type: rel.to_type,
+        relationship_type: rel.type as any,
+      });
+    } catch (error: any) {
+      // Check if this is a "not found" error for missing entities
+      const message = error?.message || String(error);
+      if (message.includes("not found:")) {
+        result.warnings!.push({
+          type: "missing_entity",
+          message: `Skipping relationship: ${message}`,
+          entityId: sourceEntityId,
+          relationshipFrom: rel.from,
+          relationshipTo: rel.to,
+        });
+      } else {
+        // Re-throw other errors
+        throw error;
+      }
+    }
   };
 
   if (!dryRun) {
@@ -805,30 +894,18 @@ export async function importFromJSONL(
         const spec = incomingSpecs.find((s) => s.id === id);
         if (spec && spec.relationships && spec.relationships.length > 0) {
           for (const rel of spec.relationships) {
-            addRelationship(db, {
-              from_id: rel.from,
-              from_type: rel.from_type,
-              to_id: rel.to,
-              to_type: rel.to_type,
-              relationship_type: rel.type,
-            });
+            tryAddRelationship(rel, id);
           }
         }
       }
 
-      // Import spec relationships for updated specs
+      // Import spec relationships for updated specs (only remove outgoing to preserve incoming)
       for (const id of specChanges.updated) {
         const spec = incomingSpecs.find((s) => s.id === id);
         if (spec) {
-          removeAllRelationships(db, spec.id, "spec");
+          removeOutgoingRelationships(db, spec.id, "spec");
           for (const rel of spec.relationships || []) {
-            addRelationship(db, {
-              from_id: rel.from,
-              from_type: rel.from_type,
-              to_id: rel.to,
-              to_type: rel.to_type,
-              relationship_type: rel.type,
-            });
+            tryAddRelationship(rel, id);
           }
         }
       }
@@ -838,30 +915,18 @@ export async function importFromJSONL(
         const issue = incomingIssues.find((i) => i.id === id);
         if (issue && issue.relationships && issue.relationships.length > 0) {
           for (const rel of issue.relationships) {
-            addRelationship(db, {
-              from_id: rel.from,
-              from_type: rel.from_type,
-              to_id: rel.to,
-              to_type: rel.to_type,
-              relationship_type: rel.type,
-            });
+            tryAddRelationship(rel, id);
           }
         }
       }
 
-      // Import issue relationships for updated issues
+      // Import issue relationships for updated issues (only remove outgoing to preserve incoming)
       for (const id of issueChanges.updated) {
         const issue = incomingIssues.find((i) => i.id === id);
         if (issue) {
-          removeAllRelationships(db, issue.id, "issue");
+          removeOutgoingRelationships(db, issue.id, "issue");
           for (const rel of issue.relationships || []) {
-            addRelationship(db, {
-              from_id: rel.from,
-              from_type: rel.from_type,
-              to_id: rel.to,
-              to_type: rel.to_type,
-              relationship_type: rel.type,
-            });
+            tryAddRelationship(rel, id);
           }
         }
       }
@@ -871,9 +936,31 @@ export async function importFromJSONL(
       // References within the imported data should already be using the correct IDs
       // Updating all references globally would incorrectly change references to the local entity
     });
+
+    // Clean up markdown files for deleted entities (after successful DB transaction)
+    for (const filePath of markdownFilesToDelete) {
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (err) {
+          // Log but don't fail - file cleanup is best-effort
+          console.warn(`Failed to delete markdown file: ${filePath}`, err);
+        }
+      }
+    }
   } else {
     result.specs = importSpecs(db, incomingSpecs, specChanges, dryRun);
     result.issues = importIssues(db, incomingIssues, issueChanges, dryRun);
+  }
+
+  // Log warnings for skipped relationships (non-fatal issues)
+  if (result.warnings && result.warnings.length > 0) {
+    console.warn(
+      `[Import] ${result.warnings.length} relationship(s) skipped due to missing entities:`
+    );
+    for (const warning of result.warnings) {
+      console.warn(`  - ${warning.message}`);
+    }
   }
 
   return result;

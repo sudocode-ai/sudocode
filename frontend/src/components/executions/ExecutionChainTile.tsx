@@ -200,6 +200,7 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
     setIsSyncPreviewOpen,
     performSync,
     isPreviewing,
+    fetchSyncPreview,
   } = useAgentActions({
     execution: lastExecutionForActions,
     issueId: rootExecutionForIssue?.issue_id ?? '',
@@ -209,6 +210,12 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
     onCleanupComplete: handleActionComplete,
     onCommitComplete: handleActionComplete,
   })
+
+  // Handle refresh sync preview
+  const handleRefreshSyncPreview = useCallback(() => {
+    if (!lastExecutionForActions) return
+    fetchSyncPreview(lastExecutionForActions.id)
+  }, [lastExecutionForActions, fetchSyncPreview])
 
   // WebSocket context for real-time updates
   const { connected, subscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
@@ -657,6 +664,7 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
           }}
           isPreviewing={isPreviewing}
           targetBranch={lastExecution.target_branch ?? undefined}
+          onRefresh={handleRefreshSyncPreview}
         />
       )}
     </>

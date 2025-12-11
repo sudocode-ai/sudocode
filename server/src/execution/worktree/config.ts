@@ -36,7 +36,7 @@ export const DEFAULT_WORKTREE_CONFIG: WorktreeConfig = {
   enableSparseCheckout: false,
   sparseCheckoutPatterns: undefined,
   branchPrefix: 'sudocode',
-  cleanupOrphanedWorktreesOnStartup: true,
+  cleanupOrphanedWorktreesOnStartup: false,
 };
 
 /**

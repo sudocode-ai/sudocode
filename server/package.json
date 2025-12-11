@@ -1,15 +1,16 @@
 {
   "name": "@sudocode-ai/local-server",
-  "version": "0.1.9",
+  "version": "0.1.11",
   "description": "Local backend server for sudocode - provides REST API and WebSocket endpoints",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "sudocode-server": "dist/cli.js"
+    "sudocode-server": "dist/cli.js",
+    "sudocode-workflow-mcp": "dist/workflow/mcp/index.js"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && chmod +x dist/cli.js && node scripts/copy-frontend.js",
+    "build": "tsc && chmod +x dist/cli.js dist/workflow/mcp/index.js && node scripts/copy-frontend.js",
     "start": "node dist/index.js",
     "test": "NODE_ENV=test vitest",
     "test:e2e": "RUN_E2E_TESTS=true NODE_ENV=test vitest --run",
@@ -41,10 +42,11 @@
   },
   "dependencies": {
     "@ag-ui/core": "^0.0.39",
-    "@sudocode-ai/cli": "^0.1.9",
-    "@sudocode-ai/types": "^0.1.9",
+    "@modelcontextprotocol/sdk": "^1.24.1",
+    "@sudocode-ai/cli": "^0.1.11",
+    "@sudocode-ai/types": "^0.1.11",
     "@types/ws": "^8.18.1",
-    "agent-execution-engine": "^0.0.12",
+    "agent-execution-engine": "^0.0.15",
     "async-mutex": "^0.5.0",
     "better-sqlite3": "^11.10.0",
     "cors": "^2.8.5",

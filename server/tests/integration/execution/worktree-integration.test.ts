@@ -352,18 +352,19 @@ describe("Worktree Integration Tests", () => {
       expect(fs.existsSync(result1.worktreePath)).toBeTruthy();
       expect(fs.existsSync(result2.worktreePath)).toBeTruthy();
 
-      // Mark executions as completed in DB without cleaning up worktrees
+      // Mark executions as completed/failed in DB
       updateExecution(db, result1.execution.id, { status: "completed" });
       updateExecution(db, result2.execution.id, { status: "failed" });
 
       // Run orphaned cleanup
       await service.cleanupOrphanedWorktrees();
 
-      // Verify worktrees were cleaned up from filesystem
-      expect(!fs.existsSync(result1.worktreePath)).toBeTruthy();
-      expect(!fs.existsSync(result2.worktreePath)).toBeTruthy();
+      // Verify worktrees are PRESERVED (execution records still exist)
+      // Only truly orphaned worktrees (no execution record) should be cleaned up
+      expect(fs.existsSync(result1.worktreePath)).toBeTruthy();
+      expect(fs.existsSync(result2.worktreePath)).toBeTruthy();
 
-      // Verify execution records still have worktree_path (for follow-up executions)
+      // Verify execution records still have worktree_path
       const exec1 = getExecution(db, result1.execution.id);
       const exec2 = getExecution(db, result2.execution.id);
       expect(exec1?.worktree_path).toBe(result1.worktreePath);

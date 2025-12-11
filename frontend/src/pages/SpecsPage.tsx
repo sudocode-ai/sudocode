@@ -1,11 +1,13 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSpecs } from '@/hooks/useSpecs'
 import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
 import { useProject } from '@/hooks/useProject'
 import { useProjectById } from '@/hooks/useProjects'
+import { useWorkflows, useWorkflowMutations } from '@/hooks/useWorkflows'
 import { SpecList } from '@/components/specs/SpecList'
 import { SpecEditor } from '@/components/specs/SpecEditor'
+import { CreateWorkflowDialog } from '@/components/workflows'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -18,6 +20,7 @@ import {
 } from '@/components/ui/select'
 import { Archive, Plus, Search, GitBranch } from 'lucide-react'
 import type { Spec } from '@/types/api'
+import type { Workflow, WorkflowSource } from '@/types/workflow'
 
 type SortOption = 'priority' | 'newest' | 'last-updated'
 
@@ -28,8 +31,13 @@ export default function SpecsPage() {
   const { data: repoInfo } = useRepositoryInfo()
   const { currentProjectId } = useProject()
   const { data: currentProject } = useProjectById(currentProjectId)
+  const { data: workflows = [] } = useWorkflows()
+  const { create: createWorkflow, isCreating: isCreatingWorkflow } = useWorkflowMutations()
+
   const [showEditor, setShowEditor] = useState(false)
   const [filterText, setFilterText] = useState('')
+  const [workflowDialogOpen, setWorkflowDialogOpen] = useState(false)
+  const [workflowDefaultSource, setWorkflowDefaultSource] = useState<WorkflowSource | undefined>()
   const [sortOption, setSortOption] = useState<SortOption>(() => {
     // Initialize from localStorage if available
     try {
@@ -43,6 +51,35 @@ export default function SpecsPage() {
     return 'priority'
   })
   const navigate = useNavigate()
+
+  // Compute active workflows per spec
+  const activeWorkflowsPerSpec = useMemo(() => {
+    const map = new Map()
+    workflows.forEach((workflow: Workflow) => {
+      if (
+        workflow.source.type === 'spec' &&
+        ['running', 'paused'].includes(workflow.status)
+      ) {
+        map.set(workflow.source.specId, workflow)
+      }
+    })
+    return map
+  }, [workflows])
+
+  // Handle running spec as workflow
+  const handleRunAsWorkflow = useCallback((spec: Spec) => {
+    setWorkflowDefaultSource({ type: 'spec', specId: spec.id })
+    setWorkflowDialogOpen(true)
+  }, [])
+
+  // Handle workflow creation
+  const handleCreateWorkflow = useCallback(
+    async (options: Parameters<typeof createWorkflow>[0]) => {
+      await createWorkflow(options)
+      setWorkflowDialogOpen(false)
+    },
+    [createWorkflow]
+  )
 
   const handleSave = (spec: Spec) => {
     setShowEditor(false)
@@ -67,6 +104,7 @@ export default function SpecsPage() {
       ? specs.filter((spec) => {
           const searchText = filterText.toLowerCase()
           return (
+            spec.id.toLowerCase().includes(searchText) ||
             spec.title.toLowerCase().includes(searchText) ||
             (spec.content && spec.content.toLowerCase().includes(searchText))
           )
@@ -179,9 +217,23 @@ export default function SpecsPage() {
         </div>
 
         <div className="flex-1 overflow-auto">
-          <SpecList specs={filteredAndSortedSpecs} loading={isLoading} />
+          <SpecList
+            specs={filteredAndSortedSpecs}
+            loading={isLoading}
+            activeWorkflows={activeWorkflowsPerSpec}
+            onRunAsWorkflow={handleRunAsWorkflow}
+          />
         </div>
       </div>
+
+      {/* Create Workflow Dialog */}
+      <CreateWorkflowDialog
+        open={workflowDialogOpen}
+        onOpenChange={setWorkflowDialogOpen}
+        onCreate={handleCreateWorkflow}
+        defaultSource={workflowDefaultSource}
+        isCreating={isCreatingWorkflow}
+      />
     </div>
   )
 }

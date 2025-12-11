@@ -1,8 +1,77 @@
-# sudocode
+<div align="center">
+    <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="media/banner-otto-dusk.gif">
+        <source media="(prefers-color-scheme: light)" srcset="media/banner-otto-day.gif">
+        <img alt="sudocode banner" src="media/banner-otto-day.gif">
+    </picture>
+</div>
 
-sudocode is a lightweight context management system for coding agents that lives in your repo. Capture user intent as durable specs and track agent activity as issues.
+<h1 align="center">sudocode</h1>
 
-Adding sudocode into your repo adds instant organizational capabilities to your coding agents. They'll gain the ability to track context over long-horizon tasks and work collaboratively on complex tasks.
+<div align="center">
+<a target="_blank" href="https://opensource.org/licenses/Apache-2.0" style="background:none">
+    <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" style="height: 22px;" />
+</a><a target="_blank" href="https://www.npmjs.com/package/sudocode" style="background:none">
+    <img src="https://img.shields.io/badge/npm-sudocode-orange" style="height: 22px;" />
+</a><a target="_blank" href="https://docs.sudocode.ai" style="background:none">
+    <img src="https://img.shields.io/badge/Docs-docs-green" style="height: 22px;" alt="Documentation" />
+</a><a target="_blank" href="https://discord.gg/5t8GUW65EW" style="background:none">
+    <img src="https://img.shields.io/discord/1115708641052471446?logo=discord&logoColor=5865F2&label=Discord&color=5865F2" style="height: 22px;" alt="Discord" />
+</a>
+</div>
+<br/>
+<p align="center">
+  <code>npm install -g sudocode</code>
+</p>
+
+<p align="center">
+<b>Automate the logistics of managing context and agents. Direct the work instead of babysitting agents.</b></p>
+
+sudocode is a lightweight agent orchestration system that lives in your repo. Adding sudocode into your repo adds instant organizational capabilities to your coding agents. They'll gain the ability to track context over long-horizon tasks and work collaboratively on complex tasks.
+
+### Key capabilities
+
+- Automate context handoff for complex tasks with sudocode's git-native agent memory system
+- Bring order to chaos by organizing your requirements, background context, and implementation plans into structured, executable issue graphs
+- Visualize outputs and execution feedback in real-time
+- Run as many Claude Code/Codex/Cursor (+more) agents in parallel as you can handle
+- Isolate agent work in worktrees and creates checkpoints
+
+### How it works
+
+sudocode tracks human-specified requirements and objectives (what to do) as specs, and agent runtime context and plans (how to implement) as issues. These are trackable in git as a form of verson-controlled memory for your agents. Specs/issues are both human and agent-editable. This allows agents to manage their own context and leave contextual breadcrumbs as they run for all agents to reference.
+
+Specs and issues form the backbone for advanced agent coordination and automation. Use specs to define high-level requirements and let agents carry out the implementation and manage their own issues.
+
+### How to use it
+
+The sudocode package includes a CLI, local server/UI, and an MCP server.
+
+Use the CLI for managing specs and issues in sudocode's agent memory system. It contains a complete interface for viewing, editing, and managing relationships between entities.
+
+Use the local server to automatically sync memory and enable agent execution and visualization. The issue kanban view helps you track issue status and progress. You can spawn new agents, update agent implementation plans, and provide feedback or guidance to running agents in a single, focused view.
+
+<div style="margin: 2em 0;">
+  <img src="media/screenshots/issue-kanban.png" alt="Issue kanban view">
+</div>
+
+The spec editor view boosts spec-driven development to new heights. Edit and review specs with a full-featured block or markdown editor. Agents leave feedback on specs as they execute, so you can track their work and stay in the know for with the code they produce.
+
+<div style="margin: 2em 0;">
+  <img src="media/screenshots/spec-viewer.png" alt="Spec editor view">
+</div>
+
+Once you have a dependency graph of issues, you can also automate the implementation of each issue in the graph as a workflow. This runs each issue in topological order and accumulates changes in a temp branch/worktree. As it's executing, each issue will have its own commit, so you can revert backwards in the commit history if you want to continue developing from a specific point.
+
+<div style="margin: 2em 0;">
+  <img src="media/screenshots/workflow.png" alt="Workflow automation view">
+</div>
+
+If you're up for it, you can even monitor all running agent trajectories at the same time.
+
+<div style="margin: 2em 0;">
+  <img src="media/screenshots/execution-panel.png" alt="Execution monitoring panel">
+</div>
 
 **sudocode** provides a structured yet flexible system for organizing the chaos of human-AI collaboration in software development.
 
@@ -14,53 +83,18 @@ npm install -g sudocode
 
 # Initialize a sudocode project in your project directory.
 sudocode init
-```
 
-**Note:** If you use multiple Node.js versions (via nvm or similar), use `npx` to avoid native module version conflicts:
-
-```bash
-npx sudocode init
-npx sudocode spec list
-```
-
-Or install locally in your project:
-
-```bash
-npm install --save-dev sudocode
-npx sudocode init
-```
-
-**Troubleshooting:** If you get "NODE_MODULE_VERSION" errors after switching Node versions with a global install:
-
-```bash
-# Reinstall with your current Node version
-npm uninstall -g sudocode
-npm install -g sudocode
-```
-
-You can also install the sudocode MCP server (stdio):
-```json
-{
-  "mcpServers": {
-    "sudocode": {
-      "command": "sudocode-mcp"
-    }
-  }
-}
+# Run the local sudocode server from anywhere
+sudocode server
 ```
 
 For Claude Code, you can install the plugin:
 ```bash
-# In Claude Code
-/plugin marketplace add sudocode-ai/sudocode
-/plugin install sudocode
-
-# From a Terminal
 claude plugin marketplace add sudocode-ai/sudocode
 claude plugin install sudocode
 ```
 
-Check out our [Installation Guide](https://docs.sudocode.ai/installation) for instructions on setting up other agents.
+Check out our [Installation Guide](https://docs.sudocode.ai/quickstart) for instructions on setting up other agents.
 
 ## Context-as-Code
 

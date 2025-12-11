@@ -54,7 +54,7 @@ export function RelationshipList({
     return (
       <Card
         key={`${rel.from_id}-${rel.to_id}-${rel.relationship_type}`}
-        className="group flex items-center gap-2 p-2 transition-colors hover:bg-accent/50"
+        className="group flex items-center gap-2 p-1 transition-colors hover:bg-accent/50"
       >
         {/* Relationship type badge */}
         <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium text-white ${color}`}>
@@ -66,10 +66,7 @@ export function RelationshipList({
 
         {/* Target entity with hover card */}
         <div className="min-w-0 flex-1">
-          <EntityBadge
-            entityId={targetId}
-            entityType={targetType}
-          />
+          <EntityBadge entityId={targetId} entityType={targetType} showTitle />
         </div>
 
         {/* Delete button - only visible on hover */}
@@ -103,7 +100,7 @@ export function RelationshipList({
 
     return (
       <TooltipProvider delayDuration={300}>
-        <div className="space-y-2">
+        <div>
           {allRelationships.map(({ rel, direction }) => renderRelationship(rel, direction))}
         </div>
       </TooltipProvider>
@@ -112,16 +109,14 @@ export function RelationshipList({
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="space-y-4">
+      <div className="space-y-2">
         {/* Outgoing relationships */}
         {grouped.outgoing.length > 0 && (
           <div>
             <h4 className="mb-2 text-sm font-medium text-muted-foreground">
               Outgoing ({grouped.outgoing.length})
             </h4>
-            <div className="space-y-2">
-              {grouped.outgoing.map((rel) => renderRelationship(rel, 'outgoing'))}
-            </div>
+            <div>{grouped.outgoing.map((rel) => renderRelationship(rel, 'outgoing'))}</div>
           </div>
         )}
 
@@ -131,9 +126,7 @@ export function RelationshipList({
             <h4 className="mb-2 text-sm font-medium text-muted-foreground">
               Incoming ({grouped.incoming.length})
             </h4>
-            <div className="space-y-2">
-              {grouped.incoming.map((rel) => renderRelationship(rel, 'incoming'))}
-            </div>
+            <div>{grouped.incoming.map((rel) => renderRelationship(rel, 'incoming'))}</div>
           </div>
         )}
       </div>

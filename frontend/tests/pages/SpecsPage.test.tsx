@@ -18,6 +18,13 @@ vi.mock('@/lib/api', () => ({
     getById: vi.fn(),
     getFeedback: vi.fn(),
   },
+  issuesApi: {
+    getAll: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    getById: vi.fn(),
+  },
   repositoryApi: {
     getInfo: vi.fn().mockResolvedValue({
       name: 'test-repo',

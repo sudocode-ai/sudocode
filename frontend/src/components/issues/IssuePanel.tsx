@@ -18,12 +18,12 @@ import {
   Copy,
   Check,
   ArrowDown,
+  ArrowUp,
 } from 'lucide-react'
 import type { Issue, Relationship, EntityType, RelationshipType, IssueStatus } from '@/types/api'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import { EntityBadge } from '@/components/entities'
 import {
   Select,
@@ -66,6 +66,7 @@ interface IssuePanelProps {
   showViewToggleInline?: boolean
   feedback?: IssueFeedback[]
   autoFocusAgentConfig?: boolean
+  issues?: Issue[] // All issues for computing children
 }
 
 const STATUS_OPTIONS: { value: IssueStatus; label: string }[] = [
@@ -100,6 +101,7 @@ export function IssuePanel({
   showViewToggleInline = true,
   feedback = [],
   autoFocusAgentConfig = false,
+  issues = [],
 }: IssuePanelProps) {
   const navigate = useNavigate()
   const [title, setTitle] = useState(issue.title)
@@ -152,6 +154,7 @@ export function IssuePanel({
   const [shouldAutoScroll, setShouldAutoScroll] = useState(false)
   const [isScrollable, setIsScrollable] = useState(false)
   const lastScrollTopRef = useRef(0)
+  const isScrollingToTopRef = useRef(false)
 
   // WebSocket for real-time updates
   const { subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
@@ -174,6 +177,11 @@ export function IssuePanel({
     return latestExecution.status === 'running'
   }, [latestExecution])
 
+  // Compute child issues (issues whose parent_id matches this issue's id)
+  const childIssues = useMemo(() => {
+    return issues.filter((i) => i.parent_id === issue.id)
+  }, [issues, issue.id])
+
   // Scroll to bottom helper
   const scrollToBottom = useCallback(() => {
     const container = scrollContainerRef.current
@@ -188,6 +196,31 @@ export function IssuePanel({
     } else {
       container.scrollTop = container.scrollHeight
     }
+  }, [])
+
+  // Scroll to top helper
+  const scrollToTop = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    // Mark that we're programmatically scrolling to top to prevent
+    // handleScroll from re-enabling auto-scroll during the animation
+    isScrollingToTopRef.current = true
+
+    // Smooth scroll to top (with fallback for environments without scrollTo)
+    if (container.scrollTo) {
+      container.scrollTo({
+        top: 0,
+        behavior: 'smooth',
+      })
+    } else {
+      container.scrollTop = 0
+    }
+
+    // Clear the flag after animation completes (smooth scroll typically takes ~300-500ms)
+    setTimeout(() => {
+      isScrollingToTopRef.current = false
+    }, 600)
   }, [])
 
   // Handle scroll events to detect manual scrolling
@@ -208,6 +241,9 @@ export function IssuePanel({
     // Detect if user scrolled up (manual scroll)
     const scrolledUp = scrollTop < lastScrollTopRef.current
     lastScrollTopRef.current = scrollTop
+
+    // Don't modify auto-scroll state during programmatic scroll-to-top
+    if (isScrollingToTopRef.current) return
 
     if (scrolledUp && !isAtBottom) {
       // User manually scrolled up - disable auto-scroll
@@ -651,6 +687,13 @@ export function IssuePanel({
     const handleEscKey = (event: KeyboardEvent) => {
       if (!onClose) return
 
+      // Check if any dialog/alertdialog is currently open in the DOM
+      const hasOpenDialog =
+        document.querySelector('[role="dialog"][data-state="open"]') ||
+        document.querySelector('[role="alertdialog"][data-state="open"]')
+
+      if (hasOpenDialog) return // Let dialog handle ESC
+
       // Don't close if ESC is pressed while a dialog or dropdown is open
       if (showDeleteDialog || showAddRelationship) return
 
@@ -878,13 +921,13 @@ export function IssuePanel({
         {/* Top Navigation Bar */}
         {!hideTopControls && (
           <div className="flex items-center justify-between px-6 py-3">
-            <div className="flex items-center gap-4">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
               {onClose && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       onClick={onClose}
-                      className="text-muted-foreground hover:text-foreground"
+                      className="flex-shrink-0 text-muted-foreground hover:text-foreground"
                       aria-label="Back"
                     >
                       <ArrowLeft className="h-4 w-4" />
@@ -898,7 +941,7 @@ export function IssuePanel({
                   <TooltipTrigger asChild>
                     <button
                       onClick={() => navigate(`/issues/${issue.id}`)}
-                      className="text-muted-foreground hover:text-foreground"
+                      className="flex-shrink-0 text-muted-foreground hover:text-foreground"
                       aria-label="Open in full page"
                     >
                       <ExpandIcon className="h-4 w-4" />
@@ -907,32 +950,24 @@ export function IssuePanel({
                   <TooltipContent>Open in full page</TooltipContent>
                 </Tooltip>
               )}
+              {/* Title */}
+              <textarea
+                value={title}
+                onChange={(e) => handleTitleChange(e.target.value)}
+                placeholder="Issue title..."
+                disabled={isUpdating}
+                rows={1}
+                className="min-w-0 flex-1 resize-none overflow-hidden border-none bg-transparent px-0 text-lg font-semibold leading-tight shadow-none outline-none focus:ring-0"
+                style={{ maxHeight: '2.5em' }}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement
+                  target.style.height = 'auto'
+                  target.style.height = `${Math.min(target.scrollHeight, 40)}px`
+                }}
+              />
             </div>
 
             <div className="flex items-center gap-4">
-              {/* View mode toggle - shown inline in panel */}
-              {showViewToggleInline && (
-                <div className="mr-4 flex gap-1 rounded-md border border-border bg-muted/30 p-1">
-                  <Button
-                    variant={viewMode === 'formatted' ? 'outline' : 'ghost'}
-                    size="sm"
-                    onClick={() => handleViewModeChange('formatted')}
-                    className={`h-7 rounded-sm ${viewMode === 'formatted' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
-                  >
-                    <FileText className="mr-2 h-4 w-4" />
-                    Formatted
-                  </Button>
-                  <Button
-                    variant={viewMode === 'markdown' ? 'outline' : 'ghost'}
-                    size="sm"
-                    onClick={() => handleViewModeChange('markdown')}
-                    className={`h-7 rounded-sm ${viewMode === 'markdown' ? 'shadow-sm' : 'text-muted-foreground hover:bg-muted'}`}
-                  >
-                    <Code2 className="mr-2 h-4 w-4" />
-                    Markdown
-                  </Button>
-                </div>
-              )}
               {(onArchive || onUnarchive) && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -980,62 +1015,67 @@ export function IssuePanel({
           onScroll={handleScroll}
         >
           <div className="mx-auto w-full max-w-7xl space-y-4 px-6">
-            {/* Issue ID and Title */}
-            <div className="space-y-2 pb-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="group relative flex items-center gap-1">
-                    <Badge variant="issue" className="font-mono">
-                      {issue.id}
-                    </Badge>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={handleCopyId}
-                          className="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-                        >
-                          {isCopied ? (
-                            <Check className="h-3.5 w-3.5" />
-                          ) : (
-                            <Copy className="h-3.5 w-3.5" />
-                          )}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{isCopied ? 'Copied!' : 'Copy ID to Clipboard'}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                  {issue.parent_id && (
-                    <>
-                      <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">Parent: </span>
-                      <EntityBadge
-                        entityId={issue.parent_id}
-                        entityType="issue"
-                      />
-                    </>
-                  )}
+            {/* Entity badge and save status */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="group relative flex items-center gap-1">
+                  <Badge variant="issue" className="font-mono">
+                    {issue.id}
+                  </Badge>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCopyId}
+                        className="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+                      >
+                        {isCopied ? (
+                          <Check className="h-3.5 w-3.5" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{isCopied ? 'Copied!' : 'Copy ID to Clipboard'}</p>
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
-                {onUpdate && (
-                  <div className="text-xs italic text-muted-foreground">
-                    {isUpdating
-                      ? 'Saving...'
-                      : hasChanges
-                        ? 'Unsaved changes...'
-                        : 'All changes saved'}
-                  </div>
+                {issue.parent_id && (
+                  <>
+                    <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Parent: </span>
+                    <EntityBadge entityId={issue.parent_id} entityType="issue" showTitle />
+                  </>
+                )}
+                {childIssues.length > 0 && (
+                  <>
+                    <span className="text-sm text-muted-foreground">
+                      {childIssues.length === 1 ? 'Child:' : 'Children:'}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1">
+                      {childIssues.map((child) => (
+                        <EntityBadge
+                          key={child.id}
+                          entityId={child.id}
+                          entityType="issue"
+                          displayText={child.title}
+                        />
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
-              <Input
-                value={title}
-                onChange={(e) => handleTitleChange(e.target.value)}
-                placeholder="Issue title..."
-                disabled={isUpdating}
-                className="border-none bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
-              />
+              {onUpdate && (
+                <div className="text-xs italic text-muted-foreground">
+                  {isUpdating
+                    ? 'Saving...'
+                    : hasChanges
+                      ? 'Unsaved changes...'
+                      : 'All changes saved'}
+                </div>
+              )}
             </div>
 
             {/* Metadata Row */}
@@ -1141,24 +1181,53 @@ export function IssuePanel({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-medium text-muted-foreground">Description</h3>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => setIsDescriptionCollapsed(!isDescriptionCollapsed)}
-                  className="h-6 gap-1 text-muted-foreground"
-                >
-                  {isDescriptionCollapsed ? (
-                    <>
-                      <ChevronDown className="h-4 w-4" />
-                      Expand
-                    </>
-                  ) : (
-                    <>
-                      <ChevronUp className="h-4 w-4" />
-                      Collapse
-                    </>
+                <div className="flex items-center gap-1">
+                  {/* View mode toggle */}
+                  {showViewToggleInline && (
+                    <div className="flex rounded border border-border/50 bg-muted/30 p-0.5">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => handleViewModeChange('formatted')}
+                            className={`rounded p-1 ${viewMode === 'formatted' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                          >
+                            <FileText className="h-4 w-4" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>Formatted</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => handleViewModeChange('markdown')}
+                            className={`rounded p-1 ${viewMode === 'markdown' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                          >
+                            <Code2 className="h-4 w-4" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>Markdown</TooltipContent>
+                      </Tooltip>
+                    </div>
                   )}
-                </Button>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => setIsDescriptionCollapsed(!isDescriptionCollapsed)}
+                    className="h-6 gap-1 text-muted-foreground"
+                  >
+                    {isDescriptionCollapsed ? (
+                      <>
+                        <ChevronDown className="h-4 w-4" />
+                        Expand
+                      </>
+                    ) : (
+                      <>
+                        <ChevronUp className="h-4 w-4" />
+                        Collapse
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
               <div className="relative">
                 <div
@@ -1265,29 +1334,54 @@ export function IssuePanel({
               <div ref={activityBottomRef} />
             </div>
 
-            {/* Scroll to Bottom FAB - shows when container is scrollable */}
+            {/* Scroll FABs - shows when container is scrollable */}
             {isScrollable && (
-              <div className="fixed bottom-32 right-10 z-10">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={() => {
-                        setShouldAutoScroll(true)
-                        scrollToBottom()
-                      }}
-                      className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-secondary shadow-lg transition-colors hover:bg-primary hover:text-accent-foreground"
-                      type="button"
-                      data-testid="scroll-to-bottom-fab"
-                      aria-label="Scroll to Bottom"
-                    >
-                      <ArrowDown className="h-5 w-5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="left">
-                    <p>Scroll to Bottom</p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
+              <>
+                {/* Scroll to Top FAB */}
+                <div className="fixed bottom-44 right-10 z-10">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => {
+                          setShouldAutoScroll(false)
+                          scrollToTop()
+                        }}
+                        className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-secondary shadow-lg transition-colors hover:bg-primary hover:text-accent-foreground"
+                        type="button"
+                        data-testid="scroll-to-top-fab"
+                        aria-label="Scroll to Top"
+                      >
+                        <ArrowUp className="h-5 w-5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="left">
+                      <p>Scroll to Top</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                {/* Scroll to Bottom FAB */}
+                <div className="fixed bottom-32 right-10 z-10">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => {
+                          setShouldAutoScroll(true)
+                          scrollToBottom()
+                        }}
+                        className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-secondary shadow-lg transition-colors hover:bg-primary hover:text-accent-foreground"
+                        type="button"
+                        data-testid="scroll-to-bottom-fab"
+                        aria-label="Scroll to Bottom"
+                      >
+                        <ArrowDown className="h-5 w-5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="left">
+                      <p>Scroll to Bottom</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </>
             )}
           </div>
         </div>

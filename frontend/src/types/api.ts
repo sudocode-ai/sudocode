@@ -170,6 +170,21 @@ export interface WebSocketMessage {
     | 'execution_deleted'
     | 'project_opened'
     | 'project_closed'
+    | 'workflow_created'
+    | 'workflow_updated'
+    | 'workflow_deleted'
+    | 'workflow_started'
+    | 'workflow_paused'
+    | 'workflow_resumed'
+    | 'workflow_completed'
+    | 'workflow_failed'
+    | 'workflow_cancelled'
+    | 'workflow_step_started'
+    | 'workflow_step_completed'
+    | 'workflow_step_failed'
+    | 'workflow_step_skipped'
+    | 'workflow_escalation_requested'
+    | 'workflow_escalation_resolved'
     | 'error'
   projectId?: string // Project ID for project-scoped messages
   data?: Issue | Spec | Relationship | IssueFeedback | Execution | any
@@ -181,7 +196,7 @@ export interface WebSocketMessage {
 export interface WebSocketSubscribeMessage {
   type: 'subscribe' | 'unsubscribe' | 'ping'
   project_id?: string // Required for project-scoped subscriptions
-  entity_type?: 'issue' | 'spec' | 'execution' | 'all'
+  entity_type?: 'issue' | 'spec' | 'execution' | 'workflow' | 'all'
   entity_id?: string
 }
 

@@ -7,9 +7,9 @@ import { initDatabase } from "./db.js";
 import { TransportManager } from "../execution/transport/transport-manager.js";
 import { ExecutionService } from "./execution-service.js";
 import { ExecutionLogsStore } from "./execution-logs-store.js";
+import { ExecutionLifecycleService } from "./execution-lifecycle.js";
 import { WorktreeManager } from "../execution/worktree/manager.js";
 import { getWorktreeConfig } from "../execution/worktree/config.js";
-import { ExecutionLifecycleService } from "./execution-lifecycle.js";
 import { startServerWatcher } from "./watcher.js";
 import type { ProjectError, Result } from "../types/project.js";
 import { Ok, Err } from "../types/project.js";
@@ -20,6 +20,12 @@ import {
   performInitialization,
   isInitialized,
 } from "@sudocode-ai/cli/dist/cli/init-commands.js";
+import { WorkflowEventEmitter } from "../workflow/workflow-event-emitter.js";
+import { SequentialWorkflowEngine } from "../workflow/engines/sequential-engine.js";
+import { OrchestratorWorkflowEngine } from "../workflow/engines/orchestrator-engine.js";
+import { WorkflowWakeupService } from "../workflow/services/wakeup-service.js";
+import { WorkflowPromptBuilder } from "../workflow/services/prompt-builder.js";
+import { WorkflowBroadcastService } from "./workflow-broadcast-service.js";
 
 interface CachedDatabase {
   db: Database.Database;
@@ -52,6 +58,9 @@ export class ProjectManager {
 
   /** Whether file watching is enabled */
   private readonly watchEnabled: boolean;
+
+  /** Actual server URL (updated after dynamic port discovery) */
+  private actualServerUrl: string | null = null;
 
   constructor(registry: ProjectRegistry, options?: { watchEnabled?: boolean }) {
     this.registry = registry;
@@ -125,7 +134,110 @@ export class ProjectManager {
 
       await context.initialize();
 
-      // 7. Start file watcher if enabled
+      // 7. Initialize workflow engines and broadcast service
+      const workflowEventEmitter = new WorkflowEventEmitter();
+
+      // Create lifecycle service for workflow worktree management
+      const lifecycleService = new ExecutionLifecycleService(
+        db,
+        projectPath,
+        worktreeManager
+      );
+
+      // Create sequential workflow engine
+      const sequentialWorkflowEngine = new SequentialWorkflowEngine(
+        db,
+        executionService,
+        lifecycleService,
+        projectPath,
+        workflowEventEmitter
+      );
+
+      // Create orchestrator workflow engine with its dependencies
+      const promptBuilder = new WorkflowPromptBuilder();
+      const wakeupService = new WorkflowWakeupService({
+        db,
+        executionService,
+        promptBuilder,
+        eventEmitter: workflowEventEmitter,
+      });
+      // Use actual server URL if known, otherwise fall back to default
+      // (will be updated after port discovery via updateServerUrl())
+      const serverUrl =
+        this.actualServerUrl ||
+        `http://localhost:${process.env.SUDOCODE_PORT || "3000"}`;
+
+      const orchestratorWorkflowEngine = new OrchestratorWorkflowEngine({
+        db,
+        executionService,
+        lifecycleService,
+        wakeupService,
+        eventEmitter: workflowEventEmitter,
+        config: {
+          repoPath: projectPath,
+          dbPath: path.join(projectPath, ".sudocode", "cache.db"),
+          serverUrl,
+          projectId,
+        },
+      });
+
+      const workflowBroadcastService = new WorkflowBroadcastService(
+        workflowEventEmitter,
+        () => projectId // Simple lookup - this project owns all its workflows
+      );
+
+      context.sequentialWorkflowEngine = sequentialWorkflowEngine;
+      context.orchestratorWorkflowEngine = orchestratorWorkflowEngine;
+      context.workflowBroadcastService = workflowBroadcastService;
+
+      // 7b. Run workflow recovery
+      console.log(
+        `[project-manager] Starting workflow recovery for ${projectId}...`
+      );
+
+      // Sequential engine recovery (must run before wakeup service)
+      try {
+        await sequentialWorkflowEngine.recoverWorkflows();
+      } catch (error) {
+        console.error(
+          `[project-manager] Failed to recover sequential workflows for ${projectId}:`,
+          error
+        );
+        // Don't fail the open operation
+      }
+
+      // Orchestrator engine recovery
+      try {
+        if (orchestratorWorkflowEngine.markStaleExecutionsAsFailed) {
+          await orchestratorWorkflowEngine.markStaleExecutionsAsFailed();
+        }
+        if (orchestratorWorkflowEngine.recoverOrphanedWorkflows) {
+          await orchestratorWorkflowEngine.recoverOrphanedWorkflows();
+        }
+      } catch (error) {
+        console.error(
+          `[project-manager] Failed to recover orchestrator workflows for ${projectId}:`,
+          error
+        );
+        // Don't fail the open operation
+      }
+
+      // Wakeup service recovery (recovers await conditions and pending wakeups)
+      try {
+        await wakeupService.recoverState();
+      } catch (error) {
+        console.error(
+          `[project-manager] Failed to recover wakeup service state for ${projectId}:`,
+          error
+        );
+        // Don't fail the open operation
+      }
+
+      console.log(
+        `[project-manager] Workflow recovery complete for ${projectId}`
+      );
+
+      // 8. Start file watcher if enabled
       if (this.watchEnabled) {
         context.watcher = startServerWatcher({
           db,
@@ -184,23 +296,24 @@ export class ProjectManager {
       }
 
       // 8. Cleanup orphaned worktrees on first open
-      if (worktreeConfig.cleanupOrphanedWorktreesOnStartup) {
-        try {
-          const lifecycleService = new ExecutionLifecycleService(
-            db,
-            projectPath,
-            worktreeManager
-          );
-          await lifecycleService.cleanupOrphanedWorktrees();
-          console.log(`Cleaned up orphaned worktrees for ${projectId}`);
-        } catch (error) {
-          console.warn(
-            `Failed to cleanup orphaned worktrees for ${projectId}:`,
-            error
-          );
-          // Don't fail the open operation
-        }
-      }
+      // TODO: Re-enable periodic cleanup when worktree orphan detection is stable.
+      // if (worktreeConfig.cleanupOrphanedWorktreesOnStartup) {
+      //   try {
+      //     const lifecycleService = new ExecutionLifecycleService(
+      //       db,
+      //       projectPath,
+      //       worktreeManager
+      //     );
+      //     await lifecycleService.cleanupOrphanedWorktrees();
+      //     console.log(`Cleaned up orphaned worktrees for ${projectId}`);
+      //   } catch (error) {
+      //     console.warn(
+      //       `Failed to cleanup orphaned worktrees for ${projectId}:`,
+      //       error
+      //     );
+      //     // Don't fail the open operation
+      //   }
+      // }
 
       // 9. Register and track
       this.registry.registerProject(projectPath);
@@ -464,6 +577,22 @@ export class ProjectManager {
     this.dbCache.set(projectId, cached);
     console.log(
       `Database cached for ${projectId} (TTL: ${this.DB_CACHE_TTL}ms)`
+    );
+  }
+
+  /**
+   * Update the server URL for all open projects.
+   * Called after dynamic port discovery to propagate the actual server URL.
+   */
+  updateServerUrl(serverUrl: string): void {
+    // Store for newly opened projects
+    this.actualServerUrl = serverUrl;
+
+    for (const project of this.openProjects.values()) {
+      project.updateServerUrl(serverUrl);
+    }
+    console.log(
+      `Server URL updated to ${serverUrl} for ${this.openProjects.size} projects`
     );
   }
 

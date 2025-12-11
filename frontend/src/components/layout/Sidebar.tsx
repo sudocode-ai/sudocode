@@ -1,6 +1,15 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { FileText, ListTodo, X, Settings, HelpCircle, PlayCircle, GitBranch } from 'lucide-react'
+import {
+  FileText,
+  ListTodo,
+  X,
+  Settings,
+  HelpCircle,
+  PlayCircle,
+  GitBranch,
+  Network,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ProjectSwitcher } from '@/components/projects/ProjectSwitcher'
@@ -32,6 +41,11 @@ export default function Sidebar({ open, collapsed, onClose }: SidebarProps) {
       path: '/specs',
       label: 'Specs',
       icon: FileText,
+    },
+    {
+      path: '/workflows',
+      label: 'Workflows',
+      icon: Network,
     },
     {
       path: '/executions',

@@ -28,6 +28,21 @@ export interface ConflictCheckResult {
 }
 
 /**
+ * Result of working tree status check
+ * Categorizes uncommitted changes into JSONL files vs other files
+ */
+export interface WorkingTreeStatus {
+  /** Whether the working tree is completely clean */
+  isClean: boolean;
+  /** Whether there are only JSONL uncommitted changes (can be auto-merged) */
+  hasOnlyJsonlChanges: boolean;
+  /** List of uncommitted JSONL files (.sudocode/*.jsonl) */
+  uncommittedJsonlFiles: string[];
+  /** List of other uncommitted files (non-JSONL) */
+  uncommittedOtherFiles: string[];
+}
+
+/**
  * Result of cherry-pick operation
  */
 export interface CherryPickResult {
@@ -349,18 +364,87 @@ export class GitSyncCli {
   }
 
   /**
-   * Check if working tree is clean (no uncommitted changes)
+   * Check if working tree is clean (no uncommitted changes to tracked files)
    * Equivalent to: git status --porcelain
+   *
+   * Ignores untracked files (??) since they don't interfere with checkout/merge operations.
+   * Only considers modifications to tracked files (M, A, D, R, C, U prefixes).
    *
    * @returns true if working tree is clean, false otherwise
    */
   isWorkingTreeClean(): boolean {
     try {
       const output = this.execGit('git status --porcelain');
-      return output.trim().length === 0;
+      // Filter out untracked files (??) - they don't cause issues with checkout/merge
+      const trackedChanges = output
+        .trim()
+        .split('\n')
+        .filter((line) => line.length > 0 && !line.startsWith('??'));
+      return trackedChanges.length === 0;
     } catch (error) {
       // If git status fails, assume not clean
       return false;
+    }
+  }
+
+  /**
+   * Get detailed working tree status, categorizing uncommitted changes
+   * into JSONL files (.sudocode/*.jsonl) vs other files.
+   *
+   * This allows sync operations to handle JSONL changes specially
+   * (auto-merge them) while still blocking on other uncommitted changes.
+   *
+   * @returns WorkingTreeStatus with categorized uncommitted files
+   */
+  getWorkingTreeStatus(): WorkingTreeStatus {
+    try {
+      const output = this.execGit('git status --porcelain');
+      // Filter out untracked files (??) - they don't cause issues with checkout/merge
+      // Note: Don't use .trim() on the whole output as it removes leading spaces from status codes
+      const trackedChanges = output
+        .split('\n')
+        .filter((line) => line.length > 0 && !line.startsWith('??'));
+
+      const uncommittedJsonlFiles: string[] = [];
+      const uncommittedOtherFiles: string[] = [];
+
+      for (const line of trackedChanges) {
+        // Format: "XY filename" where XY is status code (positions 0-1), space at position 2, filename from position 3
+        // Extract filename starting at position 3 (after "XY ")
+        const filePath = line.substring(3);
+        if (filePath) {
+          // Check if it's a .sudocode JSONL file
+          if (
+            filePath.startsWith('.sudocode/') &&
+            filePath.endsWith('.jsonl')
+          ) {
+            uncommittedJsonlFiles.push(filePath);
+          } else {
+            uncommittedOtherFiles.push(filePath);
+          }
+        }
+      }
+
+      const isClean = trackedChanges.length === 0;
+      const hasOnlyJsonlChanges =
+        !isClean &&
+        uncommittedOtherFiles.length === 0 &&
+        uncommittedJsonlFiles.length > 0;
+
+      return {
+        isClean,
+        hasOnlyJsonlChanges,
+        uncommittedJsonlFiles,
+        uncommittedOtherFiles,
+      };
+    } catch (error) {
+      // If git status fails, assume not clean with unknown files
+      return {
+        isClean: false,
+        hasOnlyJsonlChanges: false,
+        uncommittedJsonlFiles: [],
+        uncommittedOtherFiles: ['<unknown - git status failed>'],
+      };
     }
   }
 

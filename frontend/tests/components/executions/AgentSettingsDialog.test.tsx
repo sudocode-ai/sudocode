@@ -39,25 +39,29 @@ describe('AgentSettingsDialog', () => {
       )
 
       expect(screen.getByText('Advanced Agent Settings')).toBeInTheDocument()
-      expect(screen.getByText('Execution Settings')).toBeInTheDocument()
-      expect(screen.getByLabelText('Worktree Cleanup Mode')).toBeInTheDocument()
+      // Check for section headers in the new layout (using heading role to get section headers)
+      expect(screen.getByRole('heading', { name: 'Model & Agent' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Execution' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Advanced' })).toBeInTheDocument()
+      // Check for individual settings
       expect(screen.getByLabelText('Timeout (ms)')).toBeInTheDocument()
       expect(screen.getByLabelText('Max Tokens')).toBeInTheDocument()
       expect(screen.getByLabelText('Temperature')).toBeInTheDocument()
     })
 
-    it('should not render Codex config when agent is not codex', () => {
+    it('should show placeholder when no agent selected', () => {
       render(
         <AgentSettingsDialog
           open={true}
           config={defaultConfig}
           onConfigChange={mockOnConfigChange}
           onClose={mockOnClose}
-          agentType="claude-code"
         />
       )
 
-      expect(screen.queryByText('Codex Configuration')).not.toBeInTheDocument()
+      expect(
+        screen.getByText('Select an agent to see model and agent-specific settings.')
+      ).toBeInTheDocument()
     })
 
     it('should render Codex config when agent is codex', () => {
@@ -74,32 +78,13 @@ describe('AgentSettingsDialog', () => {
         />
       )
 
-      expect(screen.getByText('Codex Configuration')).toBeInTheDocument()
+      // CodexConfigForm should be rendered in the Model & Agent section
       expect(screen.getByLabelText(/Model/i)).toBeInTheDocument()
       expect(screen.getByLabelText(/Full Auto Mode/i)).toBeInTheDocument()
     })
   })
 
   describe('configuration changes', () => {
-    it('should handle cleanup mode changes', () => {
-      render(
-        <AgentSettingsDialog
-          open={true}
-          config={defaultConfig}
-          onConfigChange={mockOnConfigChange}
-          onClose={mockOnClose}
-        />
-      )
-
-      const cleanupSelect = screen.getByLabelText('Worktree Cleanup Mode')
-      fireEvent.click(cleanupSelect)
-
-      const autoOption = screen.getByText('Auto Cleanup')
-      fireEvent.click(autoOption)
-
-      expect(mockOnConfigChange).toHaveBeenCalledWith({ cleanupMode: 'auto' })
-    })
-
     it('should handle timeout changes', () => {
       render(
         <AgentSettingsDialog

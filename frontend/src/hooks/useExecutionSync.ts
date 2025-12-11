@@ -49,8 +49,14 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
       const errorMessage = mapErrorToUserMessage(error.message)
       setSyncError(errorMessage)
       setSyncStatus('error')
+      toast.error('Failed to load merge preview', {
+        description: errorMessage,
+      })
     },
   })
+
+  // Track the current sync mode for toast messages
+  const [currentSyncMode, setCurrentSyncMode] = useState<SyncMode | null>(null)
 
   // Sync mutation
   const syncMutation = useMutation({
@@ -59,23 +65,26 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
       mode,
       commitMessage,
       includeUncommitted,
+      overrideLocalChanges,
     }: {
       executionId: string
       mode: SyncMode
       commitMessage?: string
       includeUncommitted?: boolean
+      overrideLocalChanges?: boolean
     }) => {
       if (mode === 'stage') {
-        return executionsApi.syncStage(executionId, { includeUncommitted })
+        return executionsApi.syncStage(executionId, { includeUncommitted, overrideLocalChanges })
       }
       const request = commitMessage ? { mode, commitMessage } : { mode }
       return mode === 'squash'
         ? executionsApi.syncSquash(executionId, request)
         : executionsApi.syncPreserve(executionId, request)
     },
-    onMutate: () => {
+    onMutate: ({ mode }) => {
       setSyncStatus('syncing')
       setSyncError(null)
+      setCurrentSyncMode(mode)
       setIsSyncPreviewOpen(false)
       setIsSyncProgressOpen(true)
     },
@@ -84,6 +93,14 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
 
       if (data.success) {
         setSyncStatus('success')
+
+        // Show mode-specific success toast
+        const fileText =
+          data.filesChanged === 1 ? '1 file changed' : `${data.filesChanged} files changed`
+        const successMessage = getSuccessMessage(currentSyncMode)
+        toast.success(successMessage, {
+          description: fileText,
+        })
 
         // Invalidate execution queries to refresh data
         queryClient.invalidateQueries({ queryKey: ['executions'] })
@@ -94,6 +111,24 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
         const errorMessage = data.error || 'Sync failed'
         setSyncError(errorMessage)
         setSyncStatus('error')
+        const failureMessage = getFailureMessage(currentSyncMode)
+
+        // Show detailed toast with conflicting files if available
+        if (data.hasConflicts && data.filesWithConflicts && data.filesWithConflicts.length > 0) {
+          const conflictList = data.filesWithConflicts.slice(0, 5).join('\n• ')
+          const moreText =
+            data.filesWithConflicts.length > 5
+              ? `\n...and ${data.filesWithConflicts.length - 5} more`
+              : ''
+          toast.error(failureMessage, {
+            description: `Resolve conflicts in:\n• ${conflictList}${moreText}`,
+            duration: 10000, // Show longer for conflict resolution
+          })
+        } else {
+          toast.error(failureMessage, {
+            description: errorMessage,
+          })
+        }
         options?.onSyncError?.(errorMessage)
       }
     },
@@ -101,6 +136,10 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
       const errorMessage = mapErrorToUserMessage(error.message)
       setSyncError(errorMessage)
       setSyncStatus('error')
+      const failureMessage = getFailureMessage(currentSyncMode)
+      toast.error(failureMessage, {
+        description: errorMessage,
+      })
       options?.onSyncError?.(errorMessage)
     },
   })
@@ -122,13 +161,14 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
     (
       executionId: string,
       mode: SyncMode,
-      options?: { commitMessage?: string; includeUncommitted?: boolean }
+      options?: { commitMessage?: string; includeUncommitted?: boolean; overrideLocalChanges?: boolean }
     ) => {
       syncMutation.mutate({
         executionId,
         mode,
         commitMessage: options?.commitMessage,
         includeUncommitted: options?.includeUncommitted,
+        overrideLocalChanges: options?.overrideLocalChanges,
       })
     },
     [syncMutation]
@@ -218,6 +258,38 @@ export function useExecutionSync(options?: UseExecutionSyncOptions) {
     // Loading states
     isPreviewing: previewMutation.isPending,
     isSyncing: syncMutation.isPending,
+  }
+}
+
+/**
+ * Get mode-specific success message
+ */
+function getSuccessMessage(mode: SyncMode | null): string {
+  switch (mode) {
+    case 'squash':
+      return 'Squash and merge completed'
+    case 'preserve':
+      return 'Commits merged successfully'
+    case 'stage':
+      return 'Changes staged successfully'
+    default:
+      return 'Changes merged successfully'
+  }
+}
+
+/**
+ * Get mode-specific failure message
+ */
+function getFailureMessage(mode: SyncMode | null): string {
+  switch (mode) {
+    case 'squash':
+      return 'Squash and merge failed'
+    case 'preserve':
+      return 'Merge commits failed'
+    case 'stage':
+      return 'Failed to stage changes'
+    default:
+      return 'Merge failed'
   }
 }
 

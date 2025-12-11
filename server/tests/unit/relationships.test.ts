@@ -92,7 +92,7 @@ describe("Relationships API", () => {
       .set("X-Project-ID", projectId)
       .send({ title: "Test Spec", content: "# Test" });
     testSpecId = specResponse.body.data.id;
-  });
+  }, 60000); // Increase timeout for setup with ProjectManager
 
   afterAll(async () => {
     // Clean up export debouncer first

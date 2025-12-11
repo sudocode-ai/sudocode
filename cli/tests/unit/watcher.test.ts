@@ -9,7 +9,6 @@ import type Database from "better-sqlite3";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { getSpecByFilePath } from "../../src/operations/specs.js";
 
 describe("File Watcher", () => {
   let db: Database.Database;
@@ -267,11 +266,25 @@ Content version: `;
       expect(changesProcessed).toBeGreaterThan(0);
     });
 
-    it("should delete spec from database when file is deleted", async () => {
+    it("should NOT delete spec from database when file is deleted (DB is source of truth)", async () => {
       const logs: string[] = [];
       const errors: Error[] = [];
 
-      // Create a markdown file BEFORE starting watcher
+      // First create the spec in the database (DB is source of truth for entity existence)
+      const { createSpec, getSpec } = await import(
+        "../../src/operations/specs.js"
+      );
+      createSpec(db, {
+        id: "spec-delete-001",
+        uuid: "test-uuid-delete-001",
+        title: "Test Delete Spec",
+        file_path: "specs/test-delete.md",
+        content:
+          "This spec will have its markdown deleted but DB entry preserved.",
+        priority: 2,
+      });
+
+      // Create the corresponding markdown file
       const specPath = path.join(tempDir, "specs", "test-delete.md");
       const content = `---
 id: spec-delete-001
@@ -284,73 +297,67 @@ file_path: specs/test-delete.md
 
 # Test Delete Spec
 
-This spec will be deleted.
+This spec will have its markdown deleted but DB entry preserved.
 `;
       fs.writeFileSync(specPath, content, "utf8");
 
-      // Start watcher with ignoreInitial: false to detect and sync the file
+      // Start watcher with ignoreInitial: false
       control = startWatcher({
         db,
         baseDir: tempDir,
-        ignoreInitial: false, // Detect existing files
+        ignoreInitial: false,
         onLog: (msg) => logs.push(msg),
         onError: (err) => errors.push(err),
       });
 
-      // Wait for watcher to start and process initial file
+      // Wait for watcher to start
       await new Promise((resolve) => setTimeout(resolve, 800));
 
-      // Import getSpec to verify the spec exists
-      const { getSpec } = await import("../../src/operations/specs.js");
-
-      // Verify spec was created in database
+      // Verify spec exists in database
       let spec = getSpec(db, "spec-delete-001");
       expect(spec).not.toBeNull();
       expect(spec?.title).toBe("Test Delete Spec");
-
-      // Verify spec exists in JSONL
-      const jsonlPath = path.join(tempDir, "specs.jsonl");
-      let jsonlContent = fs.readFileSync(jsonlPath, "utf8");
-      expect(jsonlContent).toContain("spec-delete-001");
 
       // Delete the markdown file
       fs.unlinkSync(specPath);
 
       // Wait for deletion to be processed
-      // awaitWriteFinish + debounce + processing
       await new Promise((resolve) => setTimeout(resolve, 800));
 
-      // Verify spec was deleted from database
+      // Verify spec was NOT deleted from database (DB is source of truth)
       spec = getSpec(db, "spec-delete-001");
-      expect(spec).toBeNull();
+      expect(spec).not.toBeNull();
+      expect(spec?.title).toBe("Test Delete Spec");
 
-      // Verify spec was removed from JSONL
-      jsonlContent = fs.readFileSync(jsonlPath, "utf8");
-      expect(jsonlContent).not.toContain("spec-delete-001");
-
-      // Verify deletion was logged
+      // Verify deletion was logged (informational only, no DB deletion)
+      expect(logs.some((log) => log.includes("Markdown file deleted"))).toBe(
+        true
+      );
       expect(
-        logs.some((log) => log.includes("Deleted spec spec-delete-001"))
+        logs.some((log) => log.includes("DB/JSONL is source of truth"))
       ).toBe(true);
-      expect(logs.some((log) => log.includes("unlink"))).toBe(true);
 
       // No errors should occur
       expect(errors.length).toBe(0);
     });
 
-    it("should handle deletion of spec without frontmatter (identified by file path)", async () => {
+    it("should delete orphaned markdown file without frontmatter (no corresponding DB entry)", async () => {
       const logs: string[] = [];
       const errors: Error[] = [];
 
       // Create a markdown file WITHOUT frontmatter BEFORE starting watcher
-      const specPath = path.join(tempDir, "specs", "no-frontmatter-delete.md");
-      const content = `# No Frontmatter Delete Test
+      // Since DB/JSONL is source of truth, this file has no corresponding DB entry
+      const specPath = path.join(tempDir, "specs", "no-frontmatter-orphan.md");
+      const content = `# No Frontmatter Orphan Test
 
-This spec has no frontmatter and will be deleted.
+This spec has no frontmatter and no DB entry, so it should be deleted as orphaned.
 `;
       fs.writeFileSync(specPath, content, "utf8");
 
-      // Start watcher with ignoreInitial: false to detect and sync the file
+      // Verify file exists before watcher starts
+      expect(fs.existsSync(specPath)).toBe(true);
+
+      // Start watcher with ignoreInitial: false to detect and clean up orphaned files
       control = startWatcher({
         db,
         baseDir: tempDir,
@@ -359,40 +366,17 @@ This spec has no frontmatter and will be deleted.
         onError: (err) => errors.push(err),
       });
 
-      // Wait for watcher to start and process initial file
+      // Wait for watcher to start and process the orphaned file
       await new Promise((resolve) => setTimeout(resolve, 800));
 
-      // Verify spec was auto-created in database (by file path)
-      const relPath = "specs/no-frontmatter-delete.md";
-      let spec = getSpecByFilePath(db, relPath);
-      expect(spec).not.toBeNull();
-      const specId = spec?.id;
-      expect(specId).toBeDefined();
+      // Verify orphaned file was deleted (DB/JSONL is source of truth)
+      expect(fs.existsSync(specPath)).toBe(false);
 
-      // Verify spec exists in JSONL
-      const jsonlPath = path.join(tempDir, "specs.jsonl");
-      let jsonlContent = fs.readFileSync(jsonlPath, "utf8");
-      expect(jsonlContent).toContain(specId!);
-
-      // Delete the markdown file
-      fs.unlinkSync(specPath);
-
-      // Wait for deletion to be processed
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      // Verify spec was deleted from database (by file path lookup)
-      spec = getSpecByFilePath(db, relPath);
-      expect(spec).toBeNull();
-
-      // Verify spec was removed from JSONL
-      jsonlContent = fs.readFileSync(jsonlPath, "utf8");
-      expect(jsonlContent).not.toContain(specId!);
-
-      // Verify deletion was logged
-      expect(logs.some((log) => log.includes(`Deleted spec ${specId}`))).toBe(
+      // Verify orphaned file deletion was logged
+      expect(logs.some((log) => log.includes("Orphaned file detected"))).toBe(
         true
       );
-      expect(logs.some((log) => log.includes("unlink"))).toBe(true);
+      expect(logs.some((log) => log.includes("Deleted orphaned"))).toBe(true);
 
       // No errors should occur
       expect(errors.length).toBe(0);
@@ -460,7 +444,11 @@ This spec has no frontmatter and will be deleted.
       await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Verify markdown file was created with unified naming scheme
-      const issueMdPath = path.join(tempDir, "issues", "issue-001_test_issue_from_jsonl.md");
+      const issueMdPath = path.join(
+        tempDir,
+        "issues",
+        "issue-001_test_issue_from_jsonl.md"
+      );
       expect(fs.existsSync(issueMdPath)).toBe(true);
 
       // Verify markdown content
@@ -534,7 +522,18 @@ This spec has no frontmatter and will be deleted.
       const logs: string[] = [];
       const errors: Error[] = [];
 
-      // Create initial markdown file
+      // First create the issue in the database (DB is source of truth for entity existence)
+      const { createIssue } = await import("../../src/operations/issues.js");
+      createIssue(db, {
+        id: "issue-match-001",
+        uuid: "test-uuid-match-001",
+        title: "Test Content Match",
+        content: "# Test Content Match\n\nThis is the issue content.",
+        status: "open",
+        priority: 2,
+      });
+
+      // Create initial markdown file with matching content
       const issuePath = path.join(tempDir, "issues", "issue-match-001.md");
       const issueContent = `---
 id: issue-match-001
@@ -550,7 +549,11 @@ This is the issue content.
 `;
       fs.writeFileSync(issuePath, issueContent, "utf8");
 
-      // Start watcher to import the file
+      // Export to JSONL so the issue exists in JSONL too
+      const { exportToJSONL } = await import("../../src/export.js");
+      await exportToJSONL(db, { outputDir: tempDir });
+
+      // Start watcher
       control = startWatcher({
         db,
         baseDir: tempDir,
@@ -591,7 +594,18 @@ This is the issue content.
       const logs: string[] = [];
       const errors: Error[] = [];
 
-      // Create initial markdown file
+      // First create the issue in the database (DB is source of truth for entity existence)
+      const { createIssue } = await import("../../src/operations/issues.js");
+      createIssue(db, {
+        id: "issue-match-002",
+        uuid: "test-uuid-match-002",
+        title: "Test Markdown Match",
+        content: "# Test Markdown Match\n\nThis is the issue content.",
+        status: "open",
+        priority: 2,
+      });
+
+      // Create initial markdown file with matching content
       const issuePath = path.join(tempDir, "issues", "issue-match-002.md");
       const issueContent = `---
 id: issue-match-002
@@ -606,7 +620,7 @@ This is the issue content.
 `;
       fs.writeFileSync(issuePath, issueContent, "utf8");
 
-      // Start watcher to import the file
+      // Start watcher
       control = startWatcher({
         db,
         baseDir: tempDir,
@@ -756,7 +770,11 @@ Updated content.
         expect(syncCount).toBe(0);
 
         // Verify the file exists and has correct content with unified naming scheme
-        const issueMdPath = path.join(tempDir, "issues", "issue-osc-001_test_no_oscillation.md");
+        const issueMdPath = path.join(
+          tempDir,
+          "issues",
+          "issue-osc-001_test_no_oscillation.md"
+        );
         expect(fs.existsSync(issueMdPath)).toBe(true);
 
         expect(errors.length).toBe(0);
@@ -1073,8 +1091,7 @@ Updated content.
       expect(
         logs.some(
           (log) =>
-            log.includes("database is newer") ||
-            log.includes("Skipping sync")
+            log.includes("database is newer") || log.includes("Skipping sync")
         )
       ).toBe(true);
 
@@ -1190,7 +1207,24 @@ Updated content.
       const logs: string[] = [];
       const errors: Error[] = [];
 
-      // Create initial markdown file with known content
+      // First create the issue in the database with an OLD timestamp (DB is source of truth for entity existence)
+      // Use an old timestamp so the markdown file will be considered newer
+      const pastTime = new Date(Date.now() - 60000).toISOString(); // 1 minute ago
+      const { createIssue, getIssue, updateIssue } = await import(
+        "../../src/operations/issues.js"
+      );
+      createIssue(db, {
+        id: "issue-timestamp-001",
+        uuid: "test-uuid-timestamp-001",
+        title: "Test Timestamp OLD",
+        content: "Old content",
+        status: "open",
+        priority: 2,
+      });
+      // Set the updated_at to past so markdown will be considered newer
+      updateIssue(db, "issue-timestamp-001", { updated_at: pastTime });
+
+      // Create initial markdown file with updated content
       const issuePath = path.join(tempDir, "issues", "issue-timestamp-001.md");
       const issueContent = `---
 id: issue-timestamp-001
@@ -1201,7 +1235,7 @@ priority: 2
 
 # Test Timestamp
 
-Initial content.
+Updated content.
 `;
       fs.writeFileSync(issuePath, issueContent, "utf8");
 
@@ -1222,7 +1256,6 @@ Initial content.
       await new Promise((resolve) => setTimeout(resolve, 800));
 
       // Get the issue from database
-      const { getIssue } = await import("../../src/operations/issues.js");
       const issue = getIssue(db, "issue-timestamp-001");
 
       expect(issue).toBeDefined();
@@ -1246,8 +1279,28 @@ Initial content.
         const logs: string[] = [];
         const errors: Error[] = [];
 
+        // First create the issue in the database with an OLD timestamp (DB is source of truth for entity existence)
+        const pastTime = new Date(Date.now() - 60000).toISOString(); // 1 minute ago
+        const { createIssue, getIssue, updateIssue } = await import(
+          "../../src/operations/issues.js"
+        );
+        createIssue(db, {
+          id: "issue-multi-edit-001",
+          uuid: "test-uuid-multi-001",
+          title: "Multi Edit Test",
+          content: "Version 0",
+          status: "open",
+          priority: 2,
+        });
+        // Set the updated_at to past so markdown will be considered newer
+        updateIssue(db, "issue-multi-edit-001", { updated_at: pastTime });
+
         // Create initial markdown file
-        const issuePath = path.join(tempDir, "issues", "issue-multi-edit-001.md");
+        const issuePath = path.join(
+          tempDir,
+          "issues",
+          "issue-multi-edit-001.md"
+        );
         const initialContent = `---
 id: issue-multi-edit-001
 title: Multi Edit Test
@@ -1273,8 +1326,6 @@ Version 1
         // Wait for initial sync
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
-        const { getIssue } = await import("../../src/operations/issues.js");
-
         // First edit
         logs.length = 0;
         const edit1Content = initialContent.replace("Version 1", "Version 2");
@@ -1283,7 +1334,9 @@ Version 1
 
         let issue = getIssue(db, "issue-multi-edit-001");
         expect(issue?.content).toContain("Version 2");
-        expect(logs.some((log) => log.includes("Synced issue issue-multi-edit-001"))).toBe(true);
+        expect(
+          logs.some((log) => log.includes("Synced issue issue-multi-edit-001"))
+        ).toBe(true);
 
         // Second edit (shortly after)
         logs.length = 0;
@@ -1293,7 +1346,9 @@ Version 1
 
         issue = getIssue(db, "issue-multi-edit-001");
         expect(issue?.content).toContain("Version 3");
-        expect(logs.some((log) => log.includes("Synced issue issue-multi-edit-001"))).toBe(true);
+        expect(
+          logs.some((log) => log.includes("Synced issue issue-multi-edit-001"))
+        ).toBe(true);
 
         // Third edit
         logs.length = 0;
@@ -1303,18 +1358,33 @@ Version 1
 
         issue = getIssue(db, "issue-multi-edit-001");
         expect(issue?.content).toContain("Version 4");
-        expect(logs.some((log) => log.includes("Synced issue issue-multi-edit-001"))).toBe(true);
+        expect(
+          logs.some((log) => log.includes("Synced issue issue-multi-edit-001"))
+        ).toBe(true);
 
         expect(errors.length).toBe(0);
       },
       { timeout: 10000 }
     );
 
-    it("should skip sync when database is genuinely newer than file (via direct DB update)", async () => {
+    it("should sync DB to markdown when database is genuinely newer than file (via direct DB update)", async () => {
       const logs: string[] = [];
       const errors: Error[] = [];
 
-      // Create initial markdown file
+      // First create the issue in the database (DB is source of truth for entity existence)
+      const { createIssue, updateIssue, getIssue } = await import(
+        "../../src/operations/issues.js"
+      );
+      createIssue(db, {
+        id: "issue-db-newer-001",
+        uuid: "test-uuid-db-newer-001",
+        title: "DB Newer Test",
+        content: "Original content.",
+        status: "open",
+        priority: 2,
+      });
+
+      // Create initial markdown file with DIFFERENT content from DB
       const issuePath = path.join(tempDir, "issues", "issue-db-newer-001.md");
       const issueContent = `---
 id: issue-db-newer-001
@@ -1325,9 +1395,13 @@ priority: 2
 
 # DB Newer Test
 
-Original content.
+OLD file content.
 `;
       fs.writeFileSync(issuePath, issueContent, "utf8");
+
+      // Set the file timestamp to the past so DB will be newer
+      const pastFileTime = new Date(Date.now() - 60000); // 1 minute ago
+      fs.utimesSync(issuePath, pastFileTime, pastFileTime);
 
       // Start watcher
       control = startWatcher({
@@ -1338,31 +1412,15 @@ Original content.
         onError: (err) => errors.push(err),
       });
 
-      // Wait for initial sync
-      await new Promise((resolve) => setTimeout(resolve, 800));
-
-      // Clear logs
-      logs.length = 0;
-
-      // Update database directly with a future timestamp (simulating server update)
-      const { updateIssue } = await import("../../src/operations/issues.js");
-      const futureTime = new Date(Date.now() + 10000).toISOString(); // 10 seconds in future
-      updateIssue(db, "issue-db-newer-001", {
-        content: "Content updated via database",
-        updated_at: futureTime,
-      });
-
-      // Now touch the markdown file (changing mtime but not content)
-      fs.utimesSync(issuePath, new Date(), new Date());
-
-      // Wait for watcher to process
+      // Wait for watcher to process - should see "DB is newer" because:
+      // 1. Content differs between markdown and DB
+      // 2. DB timestamp (recent) is newer than file timestamp (1 min ago)
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
-      // Should see "Skipping sync" message because database is newer
+      // Should see "DB is newer" message because database is newer
       expect(
         logs.some((log) =>
-          log.includes("Skipping sync for issue issue-db-newer-001") &&
-          log.includes("database is newer")
+          log.includes("DB is newer for issue issue-db-newer-001")
         )
       ).toBe(true);
 
@@ -1373,7 +1431,23 @@ Original content.
       const logs: string[] = [];
       const errors: Error[] = [];
 
-      // Create markdown file
+      // First create the spec in the database with an OLD timestamp (DB is source of truth for entity existence)
+      const pastTime = new Date(Date.now() - 60000).toISOString(); // 1 minute ago
+      const { createSpec, getSpec, updateSpec } = await import(
+        "../../src/operations/specs.js"
+      );
+      createSpec(db, {
+        id: "spec-timestamp-chain",
+        uuid: "test-uuid-chain-001",
+        title: "Timestamp Chain Test OLD",
+        file_path: "specs/spec-timestamp-chain.md",
+        content: "Old content.",
+        priority: 2,
+      });
+      // Set the updated_at to past so markdown will be considered newer
+      updateSpec(db, "spec-timestamp-chain", { updated_at: pastTime });
+
+      // Create markdown file with updated content
       const specPath = path.join(tempDir, "specs", "spec-timestamp-chain.md");
       const specContent = `---
 id: spec-timestamp-chain
@@ -1404,7 +1478,6 @@ Test content.
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
       // Check database timestamp
-      const { getSpec } = await import("../../src/operations/specs.js");
       const spec = getSpec(db, "spec-timestamp-chain");
       expect(spec).toBeDefined();
 
@@ -1416,7 +1489,10 @@ Test content.
         // Check JSONL file contains the same timestamp
         const jsonlPath = path.join(tempDir, "specs.jsonl");
         const jsonlContent = fs.readFileSync(jsonlPath, "utf8");
-        const lines = jsonlContent.trim().split("\n").filter((l) => l.trim());
+        const lines = jsonlContent
+          .trim()
+          .split("\n")
+          .filter((l) => l.trim());
         const specLine = lines.find((l) => l.includes("spec-timestamp-chain"));
 
         expect(specLine).toBeDefined();
@@ -1440,7 +1516,9 @@ Test content.
       // Create spec and issue in database with initial feedback
       const { createSpec } = await import("../../src/operations/specs.js");
       const { createIssue } = await import("../../src/operations/issues.js");
-      const { createFeedback } = await import("../../src/operations/feedback.js");
+      const { createFeedback } = await import(
+        "../../src/operations/feedback.js"
+      );
 
       createSpec(db, {
         id: "s-fb001",
@@ -1989,7 +2067,10 @@ Test content.
       // Modify JSONL to set parent_id
       const issuesJsonlPath = path.join(tempDir, "issues.jsonl");
       const content = fs.readFileSync(issuesJsonlPath, "utf8");
-      const lines = content.trim().split("\n").filter((l) => l.trim());
+      const lines = content
+        .trim()
+        .split("\n")
+        .filter((l) => l.trim());
       const updatedLines = lines.map((line) => {
         const issue = JSON.parse(line);
         if (issue.id === "issue-child-001") {

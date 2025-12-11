@@ -306,6 +306,97 @@ describe('IssuePanel', () => {
     expect(screen.queryByText('ISSUE-000')).not.toBeInTheDocument()
   })
 
+  describe('Children Badges', () => {
+    const childIssue1: Issue = {
+      id: 'ISSUE-002',
+      uuid: 'test-uuid-2',
+      title: 'Child Issue 1',
+      content: 'Child content 1',
+      status: 'open',
+      priority: 2,
+      created_at: '2024-01-01T10:00:00Z',
+      updated_at: '2024-01-02T15:30:00Z',
+      parent_id: 'ISSUE-001',
+    }
+
+    const childIssue2: Issue = {
+      id: 'ISSUE-003',
+      uuid: 'test-uuid-3',
+      title: 'Child Issue 2',
+      content: 'Child content 2',
+      status: 'in_progress',
+      priority: 1,
+      created_at: '2024-01-01T10:00:00Z',
+      updated_at: '2024-01-02T15:30:00Z',
+      parent_id: 'ISSUE-001',
+    }
+
+    const unrelatedIssue: Issue = {
+      id: 'ISSUE-004',
+      uuid: 'test-uuid-4',
+      title: 'Unrelated Issue',
+      content: 'Unrelated content',
+      status: 'open',
+      priority: 3,
+      created_at: '2024-01-01T10:00:00Z',
+      updated_at: '2024-01-02T15:30:00Z',
+      parent_id: undefined,
+    }
+
+    it('should render child badges when issues prop contains children', () => {
+      const allIssues = [mockIssue, childIssue1, childIssue2, unrelatedIssue]
+
+      renderWithProviders(<IssuePanel issue={mockIssue} issues={allIssues} />)
+
+      // Should show "Children:" label (plural)
+      expect(screen.getByText('Children:')).toBeInTheDocument()
+
+      // Should show child issue badges with their titles
+      expect(screen.getByText('Child Issue 1')).toBeInTheDocument()
+      expect(screen.getByText('Child Issue 2')).toBeInTheDocument()
+
+      // Should not show unrelated issue
+      expect(screen.queryByText('Unrelated Issue')).not.toBeInTheDocument()
+    })
+
+    it('should render singular "Child:" label when there is only one child', () => {
+      const allIssues = [mockIssue, childIssue1, unrelatedIssue]
+
+      renderWithProviders(<IssuePanel issue={mockIssue} issues={allIssues} />)
+
+      // Should show "Child:" label (singular)
+      expect(screen.getByText('Child:')).toBeInTheDocument()
+      expect(screen.queryByText('Children:')).not.toBeInTheDocument()
+
+      // Should show child issue badge
+      expect(screen.getByText('Child Issue 1')).toBeInTheDocument()
+    })
+
+    it('should not show children section when there are no child issues', () => {
+      const allIssues = [mockIssue, unrelatedIssue]
+
+      renderWithProviders(<IssuePanel issue={mockIssue} issues={allIssues} />)
+
+      // Should not show Child/Children label
+      expect(screen.queryByText('Child:')).not.toBeInTheDocument()
+      expect(screen.queryByText('Children:')).not.toBeInTheDocument()
+    })
+
+    it('should not show children section when issues prop is empty', () => {
+      renderWithProviders(<IssuePanel issue={mockIssue} issues={[]} />)
+
+      expect(screen.queryByText('Child:')).not.toBeInTheDocument()
+      expect(screen.queryByText('Children:')).not.toBeInTheDocument()
+    })
+
+    it('should not show children section when issues prop is not provided', () => {
+      renderWithProviders(<IssuePanel issue={mockIssue} />)
+
+      expect(screen.queryByText('Child:')).not.toBeInTheDocument()
+      expect(screen.queryByText('Children:')).not.toBeInTheDocument()
+    })
+  })
+
   it('should render Archive button when issue is not archived', () => {
     const onArchive = vi.fn()
 

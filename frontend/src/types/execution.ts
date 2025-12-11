@@ -51,7 +51,7 @@ export interface ExecutionConfig {
   createBaseBranch?: boolean // If true, create baseBranch from current HEAD
   branchName?: string // Override auto-generated branch name
   cleanupMode?: CleanupMode // When to cleanup worktree
-  reuseWorktreeId?: string // If set, reuse existing worktree instead of creating new one
+  reuseWorktreePath?: string // If set, reuse existing worktree at this path
 
   // Workflow settings
   checkpointInterval?: number // Steps between checkpoints
@@ -190,6 +190,26 @@ export interface UncommittedFileStats {
   deletions: number
 }
 
+/**
+ * Info about potential local conflicts when including uncommitted files
+ */
+export interface PotentialLocalConflicts {
+  /** Number of files that may have merge conflicts */
+  count: number
+  /** List of files that may have merge conflicts */
+  files: string[]
+}
+
+/**
+ * Info about local uncommitted JSONL files that will be auto-merged during sync
+ */
+export interface LocalUncommittedJsonl {
+  /** List of uncommitted JSONL files in the local working tree */
+  files: string[]
+  /** Whether these files will be auto-merged during sync */
+  willAutoMerge: boolean
+}
+
 export interface SyncPreviewResult {
   canSync: boolean
   conflicts: ConflictReport
@@ -200,6 +220,10 @@ export interface SyncPreviewResult {
   uncommittedJSONLChanges?: boolean
   /** Stats about uncommitted changes in worktree (not included in sync by default) */
   uncommittedChanges?: UncommittedFileStats
+  /** Files that may have merge conflicts if "include uncommitted" is selected */
+  potentialLocalConflicts?: PotentialLocalConflicts
+  /** Local uncommitted JSONL files that will be auto-merged during sync */
+  localUncommittedJsonl?: LocalUncommittedJsonl
   executionStatus: ExecutionStatus
   warnings: string[]
 }
@@ -210,6 +234,8 @@ export interface SyncResult {
   filesChanged: number
   /** Whether there are unresolved merge conflicts (user must resolve manually) */
   hasConflicts?: boolean
+  /** List of files that have merge conflicts requiring manual resolution */
+  filesWithConflicts?: string[]
   /** Number of uncommitted files copied from worktree (stage sync only) */
   uncommittedFilesIncluded?: number
   error?: string

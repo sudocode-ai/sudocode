@@ -7,6 +7,7 @@
  * @module services/execution-lifecycle
  */
 
+import fs from "fs";
 import path from "path";
 import type Database from "better-sqlite3";
 import type { AgentType, Execution } from "@sudocode-ai/types";
@@ -18,6 +19,32 @@ import {
 import { getWorktreeConfig } from "../execution/worktree/config.js";
 import { createExecution, getExecution } from "./executions.js";
 import { randomUUID } from "crypto";
+
+/**
+ * Parameters for creating a workflow-level worktree
+ */
+export interface CreateWorkflowWorktreeParams {
+  /** Workflow ID (used for path generation) */
+  workflowId: string;
+  /** Workflow title (used for branch name generation) */
+  workflowTitle: string;
+  /** Base branch to create the workflow branch from */
+  baseBranch: string;
+  /** Path to the git repository */
+  repoPath: string;
+  /** If set, reuse existing worktree at this path instead of creating new */
+  reuseWorktreePath?: string;
+}
+
+/**
+ * Result of creating a workflow worktree
+ */
+export interface CreateWorkflowWorktreeResult {
+  /** Path to the worktree directory */
+  worktreePath: string;
+  /** Name of the branch in the worktree */
+  branchName: string;
+}
 
 /**
  * Parameters for creating an execution with worktree
@@ -32,6 +59,7 @@ export interface CreateExecutionWithWorktreeParams {
   prompt?: string;
   config?: string; // JSON string of execution configuration
   createTargetBranch?: boolean; // If true, create targetBranch from current HEAD
+  parentExecutionId?: string; // Link to parent execution (for follow-up/resume chains)
 }
 
 /**
@@ -130,9 +158,8 @@ export class ExecutionLifecycleService {
     if (!branches.includes(targetBranch)) {
       if (createTargetBranch) {
         // Create the branch from current HEAD
-        const currentBranch = await this.worktreeManager.getCurrentBranch(
-          repoPath
-        );
+        const currentBranch =
+          await this.worktreeManager.getCurrentBranch(repoPath);
         await this.worktreeManager.createBranch(
           repoPath,
           targetBranch,
@@ -179,7 +206,9 @@ export class ExecutionLifecycleService {
           cwd: repoPath,
           encoding: "utf-8",
         }).trim();
-        console.log(`[ExecutionLifecycle] Captured before_commit: ${beforeCommit}`);
+        console.log(
+          `[ExecutionLifecycle] Captured before_commit: ${beforeCommit}`
+        );
       } catch (error) {
         console.warn(
           "[ExecutionLifecycle] Failed to capture before_commit:",
@@ -211,6 +240,7 @@ export class ExecutionLifecycleService {
         target_branch: targetBranch,
         branch_name: branchName,
         worktree_path: worktreePath,
+        parent_execution_id: params.parentExecutionId,
       });
 
       return {
@@ -312,7 +342,10 @@ export class ExecutionLifecycleService {
         // Follow-up executions need this path to recreate the worktree
       } catch (error: any) {
         // Check if error is due to worktree already being deleted
-        if (error.code === "ENOENT" || error.message?.includes("does not exist")) {
+        if (
+          error.code === "ENOENT" ||
+          error.message?.includes("does not exist")
+        ) {
           console.log(
             `Worktree already deleted for execution ${executionId}, skipping cleanup`
           );
@@ -331,8 +364,8 @@ export class ExecutionLifecycleService {
    * Clean up orphaned worktrees
    *
    * Finds worktrees that are registered in git but don't have
-   * corresponding execution records, or vice versa.
-   * Also cleans up worktrees for finished executions (completed/failed/stopped).
+   * corresponding execution records (i.e., the execution was deleted).
+   * Worktrees for existing executions (regardless of status) are preserved.
    */
   async cleanupOrphanedWorktrees(): Promise<void> {
     const repoPath = this.repoPath;
@@ -358,13 +391,14 @@ export class ExecutionLifecycleService {
         const worktreePath = worktree.path;
 
         // Try to extract execution ID from path
+        // TODO: This requires a reverse query, since its possible for worktrees to exist without executions.
         const executionId = path.basename(worktreePath);
 
         // Check if execution exists in database
         const execution = getExecution(this.db, executionId);
 
         if (!execution) {
-          // Orphaned worktree - cleanup
+          // Orphaned worktree - no execution record exists, cleanup
           console.log(
             `Cleaning up orphaned worktree: ${worktreePath} (no execution found)`
           );
@@ -376,40 +410,132 @@ export class ExecutionLifecycleService {
               error
             );
           }
-        } else if (
-          execution.status === "completed" ||
-          execution.status === "failed" ||
-          execution.status === "stopped"
-        ) {
-          // Execution is finished but worktree still exists
-          // Check if we should cleanup based on execution config
-          if (!this.shouldCleanupExecution(executionId)) {
-            console.log(
-              `Skipping cleanup for finished execution ${executionId} (manual cleanup mode)`
-            );
-            continue;
-          }
-
-          console.log(
-            `Cleaning up worktree for finished execution ${executionId} (status: ${execution.status})`
-          );
-          try {
-            await this.worktreeManager.cleanupWorktree(worktreePath, repoPath);
-            // NOTE: We do NOT set worktree_path to null in the database
-            // Follow-up executions need this path to recreate the worktree
-          } catch (error) {
-            console.error(
-              `Failed to cleanup worktree for finished execution ${executionId}:`,
-              error
-            );
-          }
         }
+        // Worktrees for existing executions (any status) are preserved
       }
     } catch (error) {
       console.error(
         `Failed to cleanup orphaned worktrees in ${repoPath}:`,
         error
       );
+    }
+  }
+
+  /**
+   * Create a workflow-level worktree
+   *
+   * Creates a worktree that will be shared across all executions in a workflow.
+   * The orchestrator and all step executions run in this same worktree.
+   *
+   * @param params - Workflow worktree creation parameters
+   * @returns Worktree path and branch name
+   * @throws Error if creation fails
+   */
+  async createWorkflowWorktree(
+    params: CreateWorkflowWorktreeParams
+  ): Promise<CreateWorkflowWorktreeResult> {
+    const { workflowId, workflowTitle, baseBranch, repoPath, reuseWorktreePath } =
+      params;
+
+    // If reuseWorktreePath is specified, validate and return it
+    if (reuseWorktreePath) {
+      // Validate path exists
+      if (!fs.existsSync(reuseWorktreePath)) {
+        throw new Error(
+          `Cannot reuse worktree: path does not exist: ${reuseWorktreePath}`
+        );
+      }
+
+      // Validate it's a git worktree
+      const gitPath = path.join(reuseWorktreePath, ".git");
+      if (!fs.existsSync(gitPath)) {
+        throw new Error(
+          `Cannot reuse worktree: not a valid git worktree: ${reuseWorktreePath}`
+        );
+      }
+
+      // Get branch name from the worktree
+      let branchName: string;
+      try {
+        branchName = execSync("git rev-parse --abbrev-ref HEAD", {
+          cwd: reuseWorktreePath,
+          encoding: "utf-8",
+        }).trim();
+      } catch {
+        throw new Error(
+          `Cannot reuse worktree: failed to get branch name from: ${reuseWorktreePath}`
+        );
+      }
+
+      console.log(
+        `[ExecutionLifecycle] Reusing existing worktree: ${reuseWorktreePath} (branch: ${branchName})`
+      );
+
+      return {
+        worktreePath: reuseWorktreePath,
+        branchName,
+      };
+    }
+
+    // Validate git repository
+    const isValidRepo = await this.worktreeManager.isValidRepo(repoPath);
+    if (!isValidRepo) {
+      throw new Error(`Not a git repository: ${repoPath}`);
+    }
+
+    // Validate base branch exists
+    const branches = await this.worktreeManager.listBranches(repoPath);
+    if (!branches.includes(baseBranch)) {
+      throw new Error(`Base branch does not exist: ${baseBranch}`);
+    }
+
+    const config = this.worktreeManager.getConfig();
+
+    // Generate branch name: {branchPrefix}/workflow/{workflowId-8-chars}/{sanitized-title}
+    const sanitizedTitle = sanitizeForBranchName(workflowTitle);
+    const workflowIdShort = workflowId.replace("wf-", "").substring(0, 8);
+    let branchName = `${config.branchPrefix}/workflow/${workflowIdShort}/${sanitizedTitle}`;
+
+    // Handle branch name collision by appending -N suffix
+    let suffix = 1;
+    let finalBranchName = branchName;
+    while (branches.includes(finalBranchName)) {
+      suffix++;
+      finalBranchName = `${branchName}-${suffix}`;
+    }
+    branchName = finalBranchName;
+
+    // Generate worktree path: {repoPath}/{worktreeStoragePath}/workflow-{workflowId}
+    const worktreePath = path.join(
+      repoPath,
+      config.worktreeStoragePath,
+      `workflow-${workflowId}`
+    );
+
+    // Create the worktree
+    try {
+      await this.worktreeManager.createWorktree({
+        repoPath,
+        branchName,
+        worktreePath,
+        baseBranch,
+        createBranch: true, // Always create a new branch for workflows
+      });
+
+      console.log(
+        `[ExecutionLifecycle] Created workflow worktree: ${worktreePath} (branch: ${branchName})`
+      );
+
+      return {
+        worktreePath,
+        branchName,
+      };
+    } catch (error) {
+      console.error(
+        `[ExecutionLifecycle] Failed to create workflow worktree:`,
+        error
+      );
+      throw error;
     }
   }
 }

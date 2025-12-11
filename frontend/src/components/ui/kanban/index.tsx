@@ -69,6 +69,7 @@ export type KanbanCardProps = {
   parent: string
   children?: ReactNode
   className?: string
+  style?: React.CSSProperties
   onClick?: () => void
   tabIndex?: number
   forwardedRef?: Ref<HTMLDivElement>
@@ -83,6 +84,7 @@ export const KanbanCard = ({
   parent,
   children,
   className,
+  style,
   onClick,
   tabIndex,
   forwardedRef,
@@ -138,6 +140,7 @@ export const KanbanCard = ({
         isOpen && 'ring-2 ring-inset ring-secondary-foreground',
         className
       )}
+      style={style}
       {...listeners}
       {...attributes}
       ref={combinedRef}
