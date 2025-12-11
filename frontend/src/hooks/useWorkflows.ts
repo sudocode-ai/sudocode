@@ -146,7 +146,7 @@ export function useWorkflows(params?: ListWorkflowsParams) {
 
 export function useWorkflow(id: string | undefined) {
   const queryClient = useQueryClient()
-  const { addMessageHandler, removeMessageHandler } = useWebSocketContext()
+  const { connected, subscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
 
   // Fetch the workflow
   const workflowQuery = useQuery({
@@ -185,8 +185,14 @@ export function useWorkflow(id: string | undefined) {
 
     const handlerId = `workflow-detail-${id}`
     addMessageHandler(handlerId, handleMessage)
+
+    // Subscribe to workflow updates (needed for WebSocket server to send messages)
+    if (connected) {
+      subscribe('workflow')
+    }
+
     return () => removeMessageHandler(handlerId)
-  }, [id, queryClient, addMessageHandler, removeMessageHandler])
+  }, [id, connected, subscribe, queryClient, addMessageHandler, removeMessageHandler])
 
   // Get all issues (we'll filter to the ones we need)
   // Using the cached issues list to avoid N+1 queries

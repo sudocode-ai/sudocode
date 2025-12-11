@@ -167,6 +167,7 @@ export function InlineExecutionView({
     setIsSyncPreviewOpen,
     performSync,
     isPreviewing,
+    fetchSyncPreview,
   } = useAgentActions({
     execution: lastExecutionForActions,
     issueId: rootExecutionForIssue?.issue_id ?? '',
@@ -176,6 +177,12 @@ export function InlineExecutionView({
     onCleanupComplete: handleActionComplete,
     onCommitComplete: handleActionComplete,
   })
+
+  // Handle refresh sync preview
+  const handleRefreshSyncPreview = useCallback(() => {
+    if (!lastExecutionForActions) return
+    fetchSyncPreview(lastExecutionForActions.id)
+  }, [lastExecutionForActions, fetchSyncPreview])
 
   // Load execution chain and set up WebSocket subscription
   useEffect(() => {
@@ -804,6 +811,7 @@ export function InlineExecutionView({
           }}
           isPreviewing={isPreviewing}
           targetBranch={lastExecution.target_branch ?? undefined}
+          onRefresh={handleRefreshSyncPreview}
         />
       )}
     </>

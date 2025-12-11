@@ -223,8 +223,9 @@ describe("WorktreeSyncService Foundation", () => {
         stdio: "pipe",
       });
 
-      // Make local tree dirty
-      fs.writeFileSync(path.join(testRepo, "dirty.txt"), "uncommitted content");
+      // Make local tree dirty by modifying a tracked file (not untracked)
+      // Note: untracked files are ignored by isWorkingTreeClean()
+      fs.writeFileSync(path.join(testRepo, ".gitkeep"), "modified content");
 
       const execution = {
         id: "exec-test-1",
@@ -281,9 +282,17 @@ describe("WorktreeSyncService Foundation", () => {
       expect(isClean).toBe(true);
     });
 
-    it("should return false for dirty working tree", () => {
-      // Make tree dirty
-      fs.writeFileSync(path.join(testRepo, "dirty.txt"), "content");
+    it("should return true for untracked files (ignored)", () => {
+      // Untracked files should be ignored - they don't interfere with checkout/merge
+      fs.writeFileSync(path.join(testRepo, "untracked.txt"), "content");
+
+      const isClean = (service as any)._isLocalTreeClean();
+      expect(isClean).toBe(true);
+    });
+
+    it("should return false for modified tracked files", () => {
+      // Modify a tracked file to make tree dirty
+      fs.writeFileSync(path.join(testRepo, ".gitkeep"), "modified content");
 
       const isClean = (service as any)._isLocalTreeClean();
       expect(isClean).toBe(false);
@@ -1360,8 +1369,9 @@ describe("WorktreeSyncService Foundation", () => {
         stdio: "pipe",
       });
 
-      // Make local tree dirty
-      fs.writeFileSync(path.join(testRepo, "dirty.txt"), "uncommitted content");
+      // Make local tree dirty by modifying a tracked file (not untracked)
+      // Note: untracked files are ignored by isWorkingTreeClean()
+      fs.writeFileSync(path.join(testRepo, ".gitkeep"), "modified content");
 
       // Create execution
       createExecution(db, {

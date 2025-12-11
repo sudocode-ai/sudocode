@@ -33,7 +33,7 @@
     "start:server": "SUDOCODE_DIR=$(pwd)/.sudocode npm start --workspace=server",
     "link": "./scripts/link.sh",
     "unlink": "npm unlink -g @sudocode-ai/cli @sudocode-ai/local-server @sudocode-ai/mcp",
-    "version": "./scripts/version.sh",
+    "version": "./scripts/version.sh && npm install",
     "publish": "./scripts/publish.sh",
     "publish:dry-run": "./scripts/publish.sh --dry-run --skip-tests",
     "sync-deps": "node scripts/sync-dependencies.js"

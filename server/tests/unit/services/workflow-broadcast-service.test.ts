@@ -84,7 +84,7 @@ describe("WorkflowBroadcastService", () => {
         "project-123",
         "wf-123",
         "paused",
-        { timestamp: 1234567890 }
+        { timestamp: 1234567890, workflowId: "wf-123" }
       );
     });
 
@@ -99,7 +99,7 @@ describe("WorkflowBroadcastService", () => {
         "project-123",
         "wf-123",
         "resumed",
-        { timestamp: 1234567890 }
+        { timestamp: 1234567890, workflowId: "wf-123" }
       );
     });
 
@@ -115,7 +115,10 @@ describe("WorkflowBroadcastService", () => {
         "project-123",
         "wf-123",
         "completed",
-        { workflow: { ...mockWorkflow, status: "completed" }, timestamp: 1234567890 }
+        {
+          workflow: { ...mockWorkflow, status: "completed" },
+          timestamp: 1234567890,
+        }
       );
     });
 
@@ -131,7 +134,7 @@ describe("WorkflowBroadcastService", () => {
         "project-123",
         "wf-123",
         "failed",
-        { error: "Something went wrong", timestamp: 1234567890 }
+        { error: "Something went wrong", timestamp: 1234567890, workflowId: "wf-123" }
       );
     });
 
@@ -146,7 +149,7 @@ describe("WorkflowBroadcastService", () => {
         "project-123",
         "wf-123",
         "cancelled",
-        { timestamp: 1234567890 }
+        { timestamp: 1234567890, workflowId: "wf-123" }
       );
     });
   });
@@ -164,7 +167,7 @@ describe("WorkflowBroadcastService", () => {
         "project-123",
         "wf-123",
         "started",
-        { step: mockStep, timestamp: 1234567890 }
+        { step: mockStep, timestamp: 1234567890, workflowId: "wf-123" }
       );
     });
 
@@ -185,6 +188,7 @@ describe("WorkflowBroadcastService", () => {
           step: { ...mockStep, status: "completed" },
           executionId: "exec-456",
           timestamp: 1234567890,
+          workflowId: "wf-123",
         }
       );
     });
@@ -206,6 +210,7 @@ describe("WorkflowBroadcastService", () => {
           step: { ...mockStep, status: "failed" },
           error: "Step failed",
           timestamp: 1234567890,
+          workflowId: "wf-123",
         }
       );
     });
@@ -227,6 +232,7 @@ describe("WorkflowBroadcastService", () => {
           step: { ...mockStep, status: "skipped" },
           reason: "Dependency failed",
           timestamp: 1234567890,
+          workflowId: "wf-123",
         }
       );
     });

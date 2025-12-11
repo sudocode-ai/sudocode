@@ -75,12 +75,14 @@ export class WorkflowBroadcastService {
 
       case "workflow_paused":
         broadcastWorkflowUpdate(projectId, event.workflowId, "paused", {
+          workflowId: event.workflowId,
           timestamp: event.timestamp,
         });
         break;
 
       case "workflow_resumed":
         broadcastWorkflowUpdate(projectId, event.workflowId, "resumed", {
+          workflowId: event.workflowId,
           timestamp: event.timestamp,
         });
         break;
@@ -94,6 +96,7 @@ export class WorkflowBroadcastService {
 
       case "workflow_failed":
         broadcastWorkflowUpdate(projectId, event.workflowId, "failed", {
+          workflowId: event.workflowId,
           error: event.error,
           timestamp: event.timestamp,
         });
@@ -101,6 +104,7 @@ export class WorkflowBroadcastService {
 
       case "workflow_cancelled":
         broadcastWorkflowUpdate(projectId, event.workflowId, "cancelled", {
+          workflowId: event.workflowId,
           timestamp: event.timestamp,
         });
         break;
@@ -108,6 +112,7 @@ export class WorkflowBroadcastService {
       // Step events
       case "step_started":
         broadcastWorkflowStepUpdate(projectId, event.workflowId, "started", {
+          workflowId: event.workflowId,
           step: event.step,
           timestamp: event.timestamp,
         });
@@ -115,6 +120,7 @@ export class WorkflowBroadcastService {
 
       case "step_completed":
         broadcastWorkflowStepUpdate(projectId, event.workflowId, "completed", {
+          workflowId: event.workflowId,
           step: event.step,
           executionId: event.executionId,
           timestamp: event.timestamp,
@@ -123,6 +129,7 @@ export class WorkflowBroadcastService {
 
       case "step_failed":
         broadcastWorkflowStepUpdate(projectId, event.workflowId, "failed", {
+          workflowId: event.workflowId,
           step: event.step,
           error: event.error,
           timestamp: event.timestamp,
@@ -131,6 +138,7 @@ export class WorkflowBroadcastService {
 
       case "step_skipped":
         broadcastWorkflowStepUpdate(projectId, event.workflowId, "skipped", {
+          workflowId: event.workflowId,
           step: event.step,
           reason: event.reason,
           timestamp: event.timestamp,
@@ -149,6 +157,7 @@ export class WorkflowBroadcastService {
           event.workflowId,
           "escalation_requested",
           {
+            workflowId: event.workflowId,
             escalationId: event.escalationId,
             message: event.message,
             options: event.options,
@@ -164,6 +173,7 @@ export class WorkflowBroadcastService {
           event.workflowId,
           "escalation_resolved",
           {
+            workflowId: event.workflowId,
             escalationId: event.escalationId,
             action: event.action,
             message: event.message,

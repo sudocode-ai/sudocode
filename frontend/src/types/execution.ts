@@ -200,6 +200,16 @@ export interface PotentialLocalConflicts {
   files: string[]
 }
 
+/**
+ * Info about local uncommitted JSONL files that will be auto-merged during sync
+ */
+export interface LocalUncommittedJsonl {
+  /** List of uncommitted JSONL files in the local working tree */
+  files: string[]
+  /** Whether these files will be auto-merged during sync */
+  willAutoMerge: boolean
+}
+
 export interface SyncPreviewResult {
   canSync: boolean
   conflicts: ConflictReport
@@ -212,6 +222,8 @@ export interface SyncPreviewResult {
   uncommittedChanges?: UncommittedFileStats
   /** Files that may have merge conflicts if "include uncommitted" is selected */
   potentialLocalConflicts?: PotentialLocalConflicts
+  /** Local uncommitted JSONL files that will be auto-merged during sync */
+  localUncommittedJsonl?: LocalUncommittedJsonl
   executionStatus: ExecutionStatus
   warnings: string[]
 }

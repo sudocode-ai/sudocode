@@ -86,6 +86,16 @@ export interface PotentialLocalConflicts {
 }
 
 /**
+ * Info about local uncommitted JSONL files that will be auto-merged during sync
+ */
+export interface LocalUncommittedJsonl {
+  /** List of uncommitted JSONL files in the local working tree */
+  files: string[];
+  /** Whether these files will be auto-merged during sync */
+  willAutoMerge: boolean;
+}
+
+/**
  * Sync preview result
  */
 export interface SyncPreviewResult {
@@ -100,6 +110,8 @@ export interface SyncPreviewResult {
   uncommittedChanges?: UncommittedFileStats;
   /** Files that may have merge conflicts if "include uncommitted" is selected */
   potentialLocalConflicts?: PotentialLocalConflicts;
+  /** Local uncommitted JSONL files that will be auto-merged during sync */
+  localUncommittedJsonl?: LocalUncommittedJsonl;
   executionStatus: ExecutionStatus;
   warnings: string[];
 }
@@ -213,12 +225,32 @@ export class WorktreeSyncService {
     const warnings: string[] = [];
     let canSync = true;
 
-    // Check if local working tree is clean (soft precondition - we can still show preview)
-    if (!this.gitSync.isWorkingTreeClean()) {
-      warnings.push(
-        "Local working tree has uncommitted changes. Stash or commit them first."
-      );
-      canSync = false;
+    // Check local working tree status (categorizes JSONL vs other uncommitted changes)
+    const localWorkingTreeStatus = this.gitSync.getWorkingTreeStatus();
+    let localUncommittedJsonl: LocalUncommittedJsonl | undefined;
+
+    if (!localWorkingTreeStatus.isClean) {
+      if (localWorkingTreeStatus.hasOnlyJsonlChanges) {
+        // Only JSONL files uncommitted - can still sync, will auto-merge
+        localUncommittedJsonl = {
+          files: localWorkingTreeStatus.uncommittedJsonlFiles,
+          willAutoMerge: true,
+        };
+        // Don't add warning - info will be shown in UI
+      } else {
+        // Non-JSONL files are uncommitted - block sync
+        warnings.push(
+          "Local working tree has uncommitted changes. Stash or commit them first."
+        );
+        canSync = false;
+        // Still include JSONL info for context
+        if (localWorkingTreeStatus.uncommittedJsonlFiles.length > 0) {
+          localUncommittedJsonl = {
+            files: localWorkingTreeStatus.uncommittedJsonlFiles,
+            willAutoMerge: false, // Can't auto-merge if there are other uncommitted files
+          };
+        }
+      }
     }
 
     // Warn if execution is running/paused
@@ -257,6 +289,7 @@ export class WorktreeSyncService {
       uncommittedJSONLChanges: uncommittedJSONL,
       uncommittedChanges,
       potentialLocalConflicts,
+      localUncommittedJsonl,
       executionStatus: execution.status,
       warnings,
     };
@@ -340,18 +373,21 @@ export class WorktreeSyncService {
    * Checks:
    * - Worktree exists
    * - Worktree branch exists
-   * - Local working tree is clean
+   * - Local working tree is clean (or only has JSONL changes which can be auto-merged)
    * - Target branch exists
    * - Branches have common base
    *
    * @param execution - Execution to validate
+   * @param options - Options to control validation behavior
+   * @param options.skipDirtyWorkingTreeCheck - Skip the dirty working tree check entirely
+   * @param options.allowJsonlOnlyChanges - Allow sync if only JSONL files are uncommitted (they'll be auto-merged)
    * @throws WorktreeSyncError if any precondition fails
    */
   private async _validateSyncPreconditions(
     execution: Execution,
-    options?: { skipDirtyWorkingTreeCheck?: boolean }
+    options?: { skipDirtyWorkingTreeCheck?: boolean; allowJsonlOnlyChanges?: boolean }
   ): Promise<void> {
-    const { skipDirtyWorkingTreeCheck = false } = options || {};
+    const { skipDirtyWorkingTreeCheck = false, allowJsonlOnlyChanges = false } = options || {};
 
     // 1. Check worktree path exists
     if (!execution.worktree_path) {
@@ -389,11 +425,27 @@ export class WorktreeSyncService {
     }
 
     // 6. Check local working tree is clean (skip for stage mode since it doesn't commit)
-    if (!skipDirtyWorkingTreeCheck && !this.gitSync.isWorkingTreeClean()) {
-      throw new WorktreeSyncError(
-        "Local working tree has uncommitted changes. Stash or commit them first.",
-        WorktreeSyncErrorCode.DIRTY_WORKING_TREE
-      );
+    if (!skipDirtyWorkingTreeCheck) {
+      const workingTreeStatus = this.gitSync.getWorkingTreeStatus();
+
+      if (!workingTreeStatus.isClean) {
+        // If only JSONL files are uncommitted and allowJsonlOnlyChanges is true, allow sync
+        if (allowJsonlOnlyChanges && workingTreeStatus.hasOnlyJsonlChanges) {
+          // This is OK - JSONL files will be auto-merged
+        } else if (workingTreeStatus.uncommittedOtherFiles.length > 0) {
+          // Non-JSONL files are uncommitted - block sync
+          throw new WorktreeSyncError(
+            "Local working tree has uncommitted changes. Stash or commit them first.",
+            WorktreeSyncErrorCode.DIRTY_WORKING_TREE
+          );
+        } else {
+          // Only JSONL files but allowJsonlOnlyChanges is false - block sync
+          throw new WorktreeSyncError(
+            "Local working tree has uncommitted changes. Stash or commit them first.",
+            WorktreeSyncErrorCode.DIRTY_WORKING_TREE
+          );
+        }
+      }
     }
 
     // 7. Verify branches have common base
@@ -406,6 +458,136 @@ export class WorktreeSyncService {
         error
       );
     }
+  }
+
+  /**
+   * Saved state of uncommitted JSONL files for restoration after merge
+   */
+  private _savedUncommittedJsonl: Map<
+    string,
+    { uncommittedContent: string; preCommittedContent: string }
+  > | null = null;
+
+  /**
+   * Save uncommitted JSONL files before merge operation
+   *
+   * Reads both the uncommitted (working tree) and committed (HEAD) versions
+   * of each JSONL file, then resets the working tree copy to HEAD.
+   * The saved versions can be restored with _restoreUncommittedJsonl().
+   *
+   * @returns Map of file paths to their uncommitted and pre-committed content
+   */
+  private async _saveUncommittedJsonl(): Promise<
+    Map<string, { uncommittedContent: string; preCommittedContent: string }>
+  > {
+    const status = this.gitSync.getWorkingTreeStatus();
+    const savedFiles = new Map<
+      string,
+      { uncommittedContent: string; preCommittedContent: string }
+    >();
+
+    for (const filePath of status.uncommittedJsonlFiles) {
+      const fullPath = path.join(this.repoPath, filePath);
+
+      // Read current uncommitted content from working tree
+      let uncommittedContent = "";
+      if (fs.existsSync(fullPath)) {
+        uncommittedContent = fs.readFileSync(fullPath, "utf8");
+      }
+
+      // Read committed version from HEAD
+      let preCommittedContent = "";
+      try {
+        preCommittedContent = execSync(
+          `git show HEAD:${this._escapeShellArg(filePath)}`,
+          {
+            cwd: this.repoPath,
+            encoding: "utf8",
+            stdio: "pipe",
+          }
+        );
+      } catch {
+        // File might not exist at HEAD (new file), use empty content
+        preCommittedContent = "";
+      }
+
+      savedFiles.set(filePath, { uncommittedContent, preCommittedContent });
+
+      // Reset the file to HEAD so it doesn't interfere with merge
+      try {
+        execSync(`git checkout HEAD -- ${this._escapeShellArg(filePath)}`, {
+          cwd: this.repoPath,
+          stdio: "pipe",
+        });
+      } catch {
+        // If file doesn't exist at HEAD, remove it from working tree
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath);
+        }
+      }
+    }
+
+    this._savedUncommittedJsonl = savedFiles;
+    return savedFiles;
+  }
+
+  /**
+   * Restore uncommitted JSONL files after merge operation
+   *
+   * Performs a three-way merge:
+   * - base: pre-merge committed version (from HEAD before merge)
+   * - ours: saved uncommitted local changes
+   * - theirs: post-merge result
+   *
+   * The merged result is written back to the working tree.
+   */
+  private async _restoreUncommittedJsonl(): Promise<void> {
+    if (!this._savedUncommittedJsonl || this._savedUncommittedJsonl.size === 0) {
+      return;
+    }
+
+    for (const [filePath, saved] of this._savedUncommittedJsonl) {
+      const fullPath = path.join(this.repoPath, filePath);
+
+      // Read post-merge version from working tree
+      let postMergeContent = "";
+      if (fs.existsSync(fullPath)) {
+        postMergeContent = fs.readFileSync(fullPath, "utf8");
+      }
+
+      // Parse all three versions as JSONL entities
+      const parseJsonl = (content: string): JSONLEntity[] => {
+        if (!content.trim()) return [];
+        return content
+          .split("\n")
+          .filter((line) => line.trim())
+          .map((line) => {
+            try {
+              return JSON.parse(line);
+            } catch {
+              return null;
+            }
+          })
+          .filter((entity): entity is JSONLEntity => entity !== null);
+      };
+
+      const baseEntities = parseJsonl(saved.preCommittedContent);
+      const oursEntities = parseJsonl(saved.uncommittedContent);
+      const theirsEntities = parseJsonl(postMergeContent);
+
+      // Perform three-way merge using the merge resolver
+      const { entities: merged } = mergeThreeWay(
+        baseEntities,
+        oursEntities,
+        theirsEntities
+      );
+
+      // Write merged result back to working tree
+      await writeJSONL(fullPath, merged);
+    }
+
+    // Clear saved state
+    this._savedUncommittedJsonl = null;
   }
 
   /**
@@ -1293,10 +1475,14 @@ Synced changes from worktree execution.`;
     // 1. Load and validate execution
     const execution = await this._loadAndValidateExecution(executionId);
 
-    // 2. Validate preconditions
-    await this._validateSyncPreconditions(execution);
+    // 2. Validate preconditions (allow JSONL-only changes, they'll be auto-merged)
+    await this._validateSyncPreconditions(execution, { allowJsonlOnlyChanges: true });
 
-    // 3. Preview sync to get info (we'll proceed even with conflicts)
+    // 3. Save uncommitted JSONL files before merge (will be restored after)
+    const savedJsonlFiles = await this._saveUncommittedJsonl();
+    const hasUncommittedJsonl = savedJsonlFiles.size > 0;
+
+    // 4. Preview sync to get info (we'll proceed even with conflicts)
     const preview = await this.previewSync(executionId);
 
     // 4. Check if there are any commits to merge
@@ -1375,7 +1561,12 @@ Synced changes from worktree execution.`;
       // 10. Create commit
       const finalCommit = this._createCommit(commitMessage);
 
-      // 11. Return success result
+      // 11. Restore uncommitted JSONL files with three-way merge
+      if (hasUncommittedJsonl) {
+        await this._restoreUncommittedJsonl();
+      }
+
+      // 12. Return success result
       return {
         success: true,
         finalCommit,
@@ -1383,6 +1574,18 @@ Synced changes from worktree execution.`;
         cleanupOffered: true,
       };
     } catch (error: any) {
+      // Restore uncommitted JSONL files even on failure (to avoid losing user changes)
+      if (hasUncommittedJsonl) {
+        try {
+          await this._restoreUncommittedJsonl();
+        } catch (restoreError: any) {
+          console.error(
+            "Failed to restore uncommitted JSONL files:",
+            restoreError
+          );
+        }
+      }
+
       // Rollback to safety snapshot on failure
       if (safetyTag) {
         try {
@@ -1602,10 +1805,14 @@ Synced changes from worktree execution.`;
     // 1. Load and validate execution
     const execution = await this._loadAndValidateExecution(executionId);
 
-    // 2. Validate preconditions
-    await this._validateSyncPreconditions(execution);
+    // 2. Validate preconditions (allow JSONL-only changes, they'll be auto-merged)
+    await this._validateSyncPreconditions(execution, { allowJsonlOnlyChanges: true });
 
-    // 3. Preview sync to get info
+    // 3. Save uncommitted JSONL files before merge (will be restored after)
+    const savedJsonlFiles = await this._saveUncommittedJsonl();
+    const hasUncommittedJsonl = savedJsonlFiles.size > 0;
+
+    // 4. Preview sync to get info
     const preview = await this.previewSync(executionId);
 
     // 4. Check if there are any commits to merge
@@ -1744,7 +1951,12 @@ Synced changes from worktree execution.`;
         stdio: "pipe",
       }).trim();
 
-      // 13. Return success result
+      // 13. Restore uncommitted JSONL files with three-way merge
+      if (hasUncommittedJsonl) {
+        await this._restoreUncommittedJsonl();
+      }
+
+      // 14. Return success result
       return {
         success: true,
         finalCommit,
@@ -1752,6 +1964,18 @@ Synced changes from worktree execution.`;
         cleanupOffered: true,
       };
     } catch (error: any) {
+      // Restore uncommitted JSONL files even on failure (to avoid losing user changes)
+      if (hasUncommittedJsonl) {
+        try {
+          await this._restoreUncommittedJsonl();
+        } catch (restoreError: any) {
+          console.error(
+            "Failed to restore uncommitted JSONL files:",
+            restoreError
+          );
+        }
+      }
+
       // Rollback to safety snapshot on failure
       if (safetyTag) {
         try {

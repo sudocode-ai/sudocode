@@ -296,16 +296,25 @@ describe('GitSyncCli', () => {
       expect(gitSync.isWorkingTreeClean()).toBe(true);
     });
 
-    it('should return false for dirty working tree', () => {
-      // Add untracked file
+    it('should return true for untracked files (ignored)', () => {
+      // Add untracked file - should be ignored since untracked files
+      // don't interfere with checkout/merge operations
       fs.writeFileSync(path.join(testRepoPath, 'untracked.txt'), 'untracked\n');
+
+      expect(gitSync.isWorkingTreeClean()).toBe(true);
+    });
+
+    it('should return false for modified tracked files', () => {
+      // Modify existing tracked file
+      fs.writeFileSync(path.join(testRepoPath, 'README.md'), '# Modified\n');
 
       expect(gitSync.isWorkingTreeClean()).toBe(false);
     });
 
-    it('should return false for uncommitted changes', () => {
-      // Modify existing file
-      fs.writeFileSync(path.join(testRepoPath, 'README.md'), '# Modified\n');
+    it('should return false for staged changes', () => {
+      // Stage a new file
+      fs.writeFileSync(path.join(testRepoPath, 'staged.txt'), 'staged content\n');
+      execSync('git add staged.txt', { cwd: testRepoPath, stdio: 'pipe' });
 
       expect(gitSync.isWorkingTreeClean()).toBe(false);
     });

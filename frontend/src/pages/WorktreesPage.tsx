@@ -53,7 +53,20 @@ export default function WorktreesPage() {
   const [hasInitializedFromUrl, setHasInitializedFromUrl] = useState(false)
 
   // Sync state management for dialogs
-  const { syncPreview, isSyncPreviewOpen, performSync, setIsSyncPreviewOpen } = useExecutionSync()
+  const {
+    syncPreview,
+    isSyncPreviewOpen,
+    performSync,
+    setIsSyncPreviewOpen,
+    fetchSyncPreview,
+    isPreviewing,
+  } = useExecutionSync()
+
+  // Handle refresh sync preview
+  const handleRefreshSyncPreview = useCallback(() => {
+    if (!selectedWorktree) return
+    fetchSyncPreview(selectedWorktree.id)
+  }, [selectedWorktree, fetchSyncPreview])
 
   // Initialize selected worktree from URL hash on mount
   useEffect(() => {
@@ -260,8 +273,9 @@ export default function WorktreesPage() {
           onClose={() => setIsSyncPreviewOpen(false)}
           onConfirmSync={(mode, options) => performSync(selectedWorktree.id, mode, options)}
           onOpenIDE={() => {}}
-          isPreviewing={false}
+          isPreviewing={isPreviewing}
           targetBranch={selectedWorktree.target_branch ?? undefined}
+          onRefresh={handleRefreshSyncPreview}
         />
       )}
     </div>

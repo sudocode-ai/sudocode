@@ -572,11 +572,22 @@ describe("GitSyncCli Integration", () => {
     it("should detect dirty working tree", () => {
       testRepo = createTestRepo();
 
-      // Make uncommitted change
-      fs.writeFileSync(path.join(testRepo, "dirty.txt"), "uncommitted content");
+      // Make uncommitted change to a tracked file (not untracked)
+      // Note: untracked files are ignored by isWorkingTreeClean()
+      fs.writeFileSync(path.join(testRepo, ".gitkeep"), "modified content");
 
       const gitSync = new GitSyncCli(testRepo);
       expect(gitSync.isWorkingTreeClean()).toBe(false);
+    });
+
+    it("should ignore untracked files", () => {
+      testRepo = createTestRepo();
+
+      // Add untracked file - should be ignored
+      fs.writeFileSync(path.join(testRepo, "untracked.txt"), "untracked content");
+
+      const gitSync = new GitSyncCli(testRepo);
+      expect(gitSync.isWorkingTreeClean()).toBe(true);
     });
   });
 
