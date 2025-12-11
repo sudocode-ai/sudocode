@@ -1,6 +1,6 @@
 {
   "name": "sudocode",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "private": true,
   "description": "Git-native spec and issue management for AI-assisted software development",
   "type": "module",
@@ -33,7 +33,7 @@
     "start:server": "SUDOCODE_DIR=$(pwd)/.sudocode npm start --workspace=server",
     "link": "./scripts/link.sh",
     "unlink": "npm unlink -g @sudocode-ai/cli @sudocode-ai/local-server @sudocode-ai/mcp",
-    "version": "./scripts/version.sh && npm install",
+    "version": "./scripts/version.sh",
     "publish": "./scripts/publish.sh",
     "publish:dry-run": "./scripts/publish.sh --dry-run --skip-tests",
     "sync-deps": "node scripts/sync-dependencies.js"
