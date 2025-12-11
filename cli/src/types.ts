@@ -24,4 +24,8 @@ export type {
   FeedbackJSONL,
   RelationshipJSONL,
   Config,
+  // Integration types
+  ExternalLink,
+  SyncDirection,
+  IntegrationProviderName,
 } from "@sudocode-ai/types";

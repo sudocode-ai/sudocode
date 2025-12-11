@@ -27,7 +27,7 @@ import { generateSpecId, generateIssueId } from "./id-generator.js";
 import type { Spec, Issue, IssueStatus } from "@sudocode-ai/types";
 import { isValidIssueStatus } from "./validation.js";
 
-export interface SyncResult {
+export interface MarkdownSyncResult {
   success: boolean;
   action: "created" | "updated" | "no-change";
   entityId: string;
@@ -135,7 +135,7 @@ export async function syncMarkdownToJSONL(
   db: Database.Database,
   mdPath: string,
   options: SyncOptions = {}
-): Promise<SyncResult> {
+): Promise<MarkdownSyncResult> {
   const {
     outputDir = ".sudocode",
     autoExport = true,
@@ -310,7 +310,7 @@ export async function syncJSONLToMarkdown(
   entityId: string,
   entityType: "spec" | "issue",
   mdPath: string
-): Promise<SyncResult> {
+): Promise<MarkdownSyncResult> {
   try {
     // Get entity from database
     const entity =
