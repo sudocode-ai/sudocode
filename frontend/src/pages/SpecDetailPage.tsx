@@ -569,6 +569,8 @@ export default function SpecDetailPage() {
               </Tooltip>
             </TooltipProvider>
 
+            {/* Run as Workflow - hidden for now */}
+
             {spec.archived ? (
               <Button
                 variant="outline"
@@ -966,6 +968,8 @@ export default function SpecDetailPage() {
         onConfirm={handleDelete}
         isDeleting={isDeleting}
       />
+
+      {/* Create Workflow Dialog - hidden for now */}
     </div>
   )
 }

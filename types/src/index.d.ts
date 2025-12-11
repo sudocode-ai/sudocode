@@ -291,3 +291,40 @@ export type {
   ExecutionChangesResult,
   ChangesSnapshot,
 } from './artifacts.js';
+
+/**
+ * Workflow types for multi-issue orchestration
+ * See workflows.d.ts for detailed workflow types
+ */
+export type {
+  // Status types
+  WorkflowStatus,
+  WorkflowStepStatus,
+  // Source types
+  WorkflowSource,
+  WorkflowSourceSpec,
+  WorkflowSourceIssues,
+  WorkflowSourceRootIssue,
+  WorkflowSourceGoal,
+  // Escalation types (Human-in-the-Loop)
+  EscalationStatus,
+  EscalationResponse,
+  EscalationData,
+  // Configuration types
+  WorkflowParallelism,
+  WorkflowFailureStrategy,
+  WorkflowAutonomyLevel,
+  WorkflowConfig,
+  // Core entity types
+  WorkflowStep,
+  Workflow,
+  // Event types
+  WorkflowEventType,
+  WorkflowEvent,
+  // Database row types
+  WorkflowRow,
+  WorkflowEventRow,
+  // Utility types
+  CreateWorkflowOptions,
+  DependencyGraph,
+} from "./workflows.js";

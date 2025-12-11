@@ -687,6 +687,13 @@ export function IssuePanel({
     const handleEscKey = (event: KeyboardEvent) => {
       if (!onClose) return
 
+      // Check if any dialog/alertdialog is currently open in the DOM
+      const hasOpenDialog =
+        document.querySelector('[role="dialog"][data-state="open"]') ||
+        document.querySelector('[role="alertdialog"][data-state="open"]')
+
+      if (hasOpenDialog) return // Let dialog handle ESC
+
       // Don't close if ESC is pressed while a dialog or dropdown is open
       if (showDeleteDialog || showAddRelationship) return
 

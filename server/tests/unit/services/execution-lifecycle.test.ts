@@ -543,6 +543,179 @@ describe("ExecutionLifecycleService", () => {
     });
   });
 
+  describe("createWorkflowWorktree", () => {
+    it("should create workflow worktree with proper branch naming", async () => {
+      const mockWorktreeManager = createMockWorktreeManager();
+
+      const service = new ExecutionLifecycleService(
+        db,
+        testDir,
+        mockWorktreeManager
+      );
+
+      const result = await service.createWorkflowWorktree({
+        workflowId: "wf-12345678",
+        workflowTitle: "My Test Workflow",
+        baseBranch: "main",
+        repoPath: testDir,
+      });
+
+      // Verify branch name format: sudocode/workflow/{id-without-wf-prefix}/{sanitized-title}
+      expect(result.branchName.startsWith("sudocode/workflow/")).toBeTruthy();
+      // The wf- prefix is stripped, so it should be 12345678 not wf-12345678
+      expect(result.branchName.includes("12345678")).toBeTruthy();
+      expect(result.branchName.includes("my-test-workflow")).toBeTruthy();
+
+      // Verify worktree path format
+      expect(result.worktreePath.includes(".sudocode/worktrees")).toBeTruthy();
+      expect(result.worktreePath.includes("workflow-wf-12345678")).toBeTruthy();
+
+      // Verify worktree manager was called
+      expect(mockWorktreeManager.createWorktreeCalls.length).toBe(1);
+      const createCall = mockWorktreeManager.createWorktreeCalls[0];
+      expect(createCall.baseBranch).toBe("main");
+      expect(createCall.createBranch).toBe(true);
+    });
+
+    it("should reuse existing worktree path when provided", async () => {
+      // This test requires a real git worktree since the implementation
+      // validates the worktree and uses git commands to get the branch name.
+      // For unit tests, we'll create a minimal mock that shows the behavior.
+
+      // Create a real git repo for this test
+      const gitTestDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), "sudocode-test-reuse-")
+      );
+
+      try {
+        // Initialize git repo
+        const { execSync } = await import("child_process");
+        execSync("git init", { cwd: gitTestDir });
+        execSync('git config user.email "test@example.com"', { cwd: gitTestDir });
+        execSync('git config user.name "Test User"', { cwd: gitTestDir });
+        fs.writeFileSync(path.join(gitTestDir, "README.md"), "# Test\n");
+        execSync("git add .", { cwd: gitTestDir });
+        execSync('git commit -m "Initial commit"', { cwd: gitTestDir });
+        execSync("git checkout -b existing-branch", { cwd: gitTestDir });
+
+        const mockWorktreeManager = createMockWorktreeManager();
+
+        const service = new ExecutionLifecycleService(
+          db,
+          testDir,
+          mockWorktreeManager
+        );
+
+        const result = await service.createWorkflowWorktree({
+          workflowId: "wf-12345678",
+          workflowTitle: "My Test Workflow",
+          baseBranch: "main",
+          repoPath: testDir,
+          reuseWorktreePath: gitTestDir,
+        });
+
+        // Should return existing path and branch
+        expect(result.worktreePath).toBe(gitTestDir);
+        expect(result.branchName).toBe("existing-branch");
+
+        // Should NOT create new worktree
+        expect(mockWorktreeManager.createWorktreeCalls.length).toBe(0);
+      } finally {
+        // Cleanup
+        fs.rmSync(gitTestDir, { recursive: true, force: true });
+      }
+    });
+
+    it("should throw error when reuseWorktreePath does not exist", async () => {
+      const mockWorktreeManager = createMockWorktreeManager();
+
+      const service = new ExecutionLifecycleService(
+        db,
+        testDir,
+        mockWorktreeManager
+      );
+
+      await expect(
+        service.createWorkflowWorktree({
+          workflowId: "wf-12345678",
+          workflowTitle: "My Test Workflow",
+          baseBranch: "main",
+          repoPath: testDir,
+          reuseWorktreePath: "/non/existent/path",
+        })
+      ).rejects.toThrow("Cannot reuse worktree: path does not exist");
+    });
+
+    it("should handle branch name collision with suffix", async () => {
+      // Branch format is: {prefix}/workflow/{workflowId without 'wf-' prefix, first 8 chars}/{sanitized-title}
+      // For workflowId "wf-12345678", it becomes "sudocode/workflow/12345678/my-test-workflow"
+      const mockWorktreeManager = createMockWorktreeManager({
+        branches: ["main", "sudocode/workflow/12345678/my-test-workflow"],
+      });
+
+      const service = new ExecutionLifecycleService(
+        db,
+        testDir,
+        mockWorktreeManager
+      );
+
+      const result = await service.createWorkflowWorktree({
+        workflowId: "wf-12345678",
+        workflowTitle: "My Test Workflow",
+        baseBranch: "main",
+        repoPath: testDir,
+      });
+
+      // Should have collision suffix (-2) since base branch exists
+      // Collision detection starts at suffix=1 and checks if branch exists before incrementing
+      expect(result.branchName.endsWith("-2")).toBeTruthy();
+    });
+
+    it("should throw error for invalid repo path", async () => {
+      const mockWorktreeManager = createMockWorktreeManager();
+      // Override isValidRepo to return false
+      mockWorktreeManager.isValidRepo = async () => false;
+
+      const service = new ExecutionLifecycleService(
+        db,
+        testDir,
+        mockWorktreeManager
+      );
+
+      await expect(
+        service.createWorkflowWorktree({
+          workflowId: "wf-12345678",
+          workflowTitle: "My Test Workflow",
+          baseBranch: "main",
+          repoPath: "/invalid/repo",
+        })
+      ).rejects.toThrow("Not a git repository");
+    });
+
+    it("should sanitize workflow title in branch name", async () => {
+      const mockWorktreeManager = createMockWorktreeManager();
+
+      const service = new ExecutionLifecycleService(
+        db,
+        testDir,
+        mockWorktreeManager
+      );
+
+      const result = await service.createWorkflowWorktree({
+        workflowId: "wf-abc123",
+        workflowTitle: "Fix: Bug / Auth Issues!",
+        baseBranch: "main",
+        repoPath: testDir,
+      });
+
+      // Branch should be sanitized - extract the title portion after the last slash
+      const titlePortion = result.branchName.split("/").pop();
+      expect(titlePortion?.includes("fix-bug-auth-issues")).toBeTruthy();
+      expect(!titlePortion?.includes(":")).toBeTruthy();
+      expect(!titlePortion?.includes("!")).toBeTruthy();
+    });
+  });
+
   describe("sanitizeForBranchName", () => {
     it("should convert to lowercase", () => {
       expect(sanitizeForBranchName("UPPERCASE Text")).toBe("uppercase-text");

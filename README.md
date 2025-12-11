@@ -51,15 +51,27 @@ Use the CLI for managing specs and issues in sudocode's agent memory system. It 
 
 Use the local server to automatically sync memory and enable agent execution and visualization. The issue kanban view helps you track issue status and progress. You can spawn new agents, update agent implementation plans, and provide feedback or guidance to running agents in a single, focused view.
 
-<img src="media/screenshots/issue-kanban.png">
+<div style="margin: 2em 0;">
+  <img src="media/screenshots/issue-kanban.png" alt="Issue kanban view">
+</div>
 
 The spec editor view boosts spec-driven development to new heights. Edit and review specs with a full-featured block or markdown editor. Agents leave feedback on specs as they execute, so you can track their work and stay in the know for with the code they produce.
 
-<img src="media/screenshots/spec-viewer.png">
+<div style="margin: 2em 0;">
+  <img src="media/screenshots/spec-viewer.png" alt="Spec editor view">
+</div>
+
+Once you have a dependency graph of issues, you can also automate the implementation of each issue in the graph as a workflow. This runs each issue in topological order and accumulates changes in a temp branch/worktree. As it's executing, each issue will have its own commit, so you can revert backwards in the commit history if you want to continue developing from a specific point.
+
+<div style="margin: 2em 0;">
+  <img src="media/screenshots/workflow.png" alt="Workflow automation view">
+</div>
 
 If you're up for it, you can even monitor all running agent trajectories at the same time.
 
-<img src="media/screenshots/execution-panel.png">
+<div style="margin: 2em 0;">
+  <img src="media/screenshots/execution-panel.png" alt="Execution monitoring panel">
+</div>
 
 **sudocode** provides a structured yet flexible system for organizing the chaos of human-AI collaboration in software development.
 

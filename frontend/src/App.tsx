@@ -17,6 +17,8 @@ import ExecutionDetailPage from '@/pages/ExecutionDetailPage'
 import WorktreesPage from '@/pages/WorktreesPage'
 import ProjectsPage from '@/pages/ProjectsPage'
 import ExecutionsPage from '@/pages/ExecutionsPage'
+import WorkflowsPage from '@/pages/WorkflowsPage'
+import WorkflowDetailPage from '@/pages/WorkflowDetailPage'
 
 // Configure TanStack Query
 const queryClient = new QueryClient({
@@ -110,6 +112,22 @@ function App() {
                     element={
                       <ProtectedRoute>
                         <ExecutionDetailPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="workflows"
+                    element={
+                      <ProtectedRoute>
+                        <WorkflowsPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="workflows/:id"
+                    element={
+                      <ProtectedRoute>
+                        <WorkflowDetailPage />
                       </ProtectedRoute>
                     }
                   />

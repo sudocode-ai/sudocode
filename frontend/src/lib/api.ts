@@ -37,6 +37,14 @@ import type {
   OpenProjectRequest,
   InitProjectRequest,
 } from '@/types/project'
+import type {
+  Workflow,
+  WorkflowStatus,
+  WorkflowEvent,
+  CreateWorkflowOptions,
+  PendingEscalationResponse,
+  EscalationResponseRequest,
+} from '@/types/workflow'
 
 // Create axios instance
 const api: AxiosInstance = axios.create({
@@ -414,6 +422,88 @@ export const projectsApi = {
 
   // Initialize a new project
   init: (data: InitProjectRequest) => post<ProjectInfo>('/projects/init', data),
+}
+
+/**
+ * Workflows API
+ */
+export interface ListWorkflowsParams {
+  status?: WorkflowStatus | WorkflowStatus[]
+  limit?: number
+  offset?: number
+  sortBy?: 'created_at' | 'updated_at'
+  order?: 'asc' | 'desc'
+}
+
+export const workflowsApi = {
+  // List workflows with optional filters
+  list: (params?: ListWorkflowsParams) => {
+    const queryParams = new URLSearchParams()
+
+    if (params?.limit !== undefined) queryParams.append('limit', String(params.limit))
+    if (params?.offset !== undefined) queryParams.append('offset', String(params.offset))
+    if (params?.status) {
+      if (Array.isArray(params.status)) {
+        queryParams.append('status', params.status.join(','))
+      } else {
+        queryParams.append('status', params.status)
+      }
+    }
+    if (params?.sortBy) queryParams.append('sortBy', params.sortBy)
+    if (params?.order) queryParams.append('order', params.order)
+
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : ''
+    return get<Workflow[]>(`/workflows${query}`)
+  },
+
+  // Create workflow from source
+  create: (options: CreateWorkflowOptions) => post<Workflow>('/workflows', options),
+
+  // Get single workflow by ID
+  get: (id: string) => get<Workflow>(`/workflows/${id}`),
+
+  // Delete workflow with optional cleanup options
+  delete: (id: string, options?: { deleteWorktree?: boolean; deleteBranch?: boolean }) => {
+    const queryParams = new URLSearchParams()
+    if (options?.deleteWorktree) queryParams.append('deleteWorktree', 'true')
+    if (options?.deleteBranch) queryParams.append('deleteBranch', 'true')
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : ''
+    return del(`/workflows/${id}${query}`)
+  },
+
+  // Start a pending workflow
+  start: (id: string) => post<Workflow>(`/workflows/${id}/start`),
+
+  // Pause a running workflow
+  pause: (id: string) => post<Workflow>(`/workflows/${id}/pause`),
+
+  // Resume a paused workflow with optional message
+  resume: (id: string, message?: string) =>
+    post<Workflow>(`/workflows/${id}/resume`, message ? { message } : undefined),
+
+  // Cancel a workflow
+  cancel: (id: string) => post<Workflow>(`/workflows/${id}/cancel`),
+
+  // Retry a failed step
+  retryStep: (workflowId: string, stepId: string) =>
+    post<Workflow>(`/workflows/${workflowId}/steps/${stepId}/retry`),
+
+  // Skip a step (with optional reason)
+  skipStep: (workflowId: string, stepId: string, reason?: string) =>
+    post<Workflow>(`/workflows/${workflowId}/steps/${stepId}/skip`, { reason }),
+
+  // Get workflow event history
+  getEvents: (id: string) => get<WorkflowEvent[]>(`/workflows/${id}/events`),
+
+  // Get pending escalation for workflow
+  getEscalation: (id: string) => get<PendingEscalationResponse>(`/workflows/${id}/escalation`),
+
+  // Respond to pending escalation
+  respondToEscalation: (id: string, response: EscalationResponseRequest) =>
+    post<{ workflow: Workflow; escalation: { id: string; action: string; resolvedAt: string } }>(
+      `/workflows/${id}/escalation/respond`,
+      response
+    ),
 }
 
 export default api

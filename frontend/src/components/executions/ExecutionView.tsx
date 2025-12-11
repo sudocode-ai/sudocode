@@ -76,6 +76,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
     openWorktreeInIDE,
     setIsSyncPreviewOpen,
     isPreviewing,
+    fetchSyncPreview,
   } = useExecutionSync()
 
   // Accumulated tool calls from all executions in the chain
@@ -419,6 +420,13 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
     },
     [chainData, performSync]
   )
+
+  // Handle refresh sync preview (refetch to get fresh data)
+  const handleRefreshSyncPreview = useCallback(() => {
+    if (!chainData || chainData.executions.length === 0) return
+    const rootExecution = chainData.executions[0]
+    fetchSyncPreview(rootExecution.id)
+  }, [chainData, fetchSyncPreview])
 
   // Handle scroll events to detect manual scrolling
   const handleScroll = useCallback(() => {
@@ -1112,6 +1120,7 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
             onOpenIDE={handleOpenInIDE}
             isPreviewing={isPreviewing}
             targetBranch={rootExecution.target_branch ?? undefined}
+            onRefresh={handleRefreshSyncPreview}
           />
         )}
 

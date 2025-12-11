@@ -7,11 +7,12 @@ import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { Execution } from '@/types/execution'
+import { TooltipProvider } from '@radix-ui/react-tooltip'
 
 interface BranchSelectorProps {
   branches: string[]
   value: string
-  onChange: (value: string, isNew?: boolean, worktreeId?: string) => void
+  onChange: (value: string, isNew?: boolean, worktreePath?: string) => void
   disabled?: boolean
   placeholder?: string
   allowCreate?: boolean
@@ -20,6 +21,8 @@ interface BranchSelectorProps {
   currentBranch?: string
   /** Optional worktrees to show alongside branches */
   worktrees?: Execution[]
+  /** Set to true when used inside a Dialog/Modal to enable proper scrolling */
+  inModal?: boolean
   /** Callback when the selector is opened - use to refresh branch list */
   onOpen?: () => void
 }
@@ -34,6 +37,7 @@ export function BranchSelector({
   className,
   currentBranch,
   worktrees = [],
+  inModal = false,
   onOpen,
 }: BranchSelectorProps) {
   const [open, setOpen] = useState(false)
@@ -101,12 +105,12 @@ export function BranchSelector({
   }
 
   const handleWorktreeSelect = (worktree: Execution) => {
-    if (!worktree.branch_name) {
-      console.error('Selected worktree has no branch name')
+    if (!worktree.branch_name || !worktree.worktree_path) {
+      console.error('Selected worktree has no branch name or path')
       return
     }
-    // Pass worktree ID to indicate we want to reuse this worktree
-    onChange(worktree.branch_name, false, worktree.id)
+    // Pass worktree path to indicate we want to reuse this worktree
+    onChange(worktree.branch_name, false, worktree.worktree_path)
     setOpen(false)
     setSearchTerm('')
   }
@@ -119,29 +123,31 @@ export function BranchSelector({
   }
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <Tooltip open={open ? false : undefined}>
-        <TooltipTrigger asChild>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              role="combobox"
-              aria-expanded={open}
-              className={cn('h-8 justify-between text-xs font-normal', className)}
-              disabled={disabled}
-            >
-              <div className="flex min-w-0 items-center gap-1.5">
-                <GitBranch className="h-3 w-3 flex-shrink-0" />
-                <span className="truncate">{value || placeholder}</span>
-              </div>
-              <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
-            </Button>
-          </PopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p className="max-w-[300px] break-all">{value}</p>
-        </TooltipContent>
-      </Tooltip>
+    <Popover open={open} onOpenChange={handleOpenChange} modal={inModal}>
+      <TooltipProvider>
+        <Tooltip open={open ? false : undefined}>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={open}
+                className={cn('h-8 justify-between text-xs font-normal', className)}
+                disabled={disabled}
+              >
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <GitBranch className="h-3 w-3 flex-shrink-0" />
+                  <span className="truncate">{value || placeholder}</span>
+                </div>
+                <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p className="max-w-[300px] break-all">{value}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <PopoverContent className="w-[280px] p-0" align="start">
         <div className="flex flex-col">
           <div className="border-b p-2">
@@ -176,7 +182,7 @@ export function BranchSelector({
               )}
             </div>
           )}
-          <div className="max-h-60 overflow-auto">
+          <div className="max-h-60 overflow-y-auto overscroll-contain">
             {/* Create new branch option */}
             {canCreateNew && (
               <button

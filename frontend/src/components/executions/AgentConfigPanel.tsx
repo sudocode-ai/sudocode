@@ -556,23 +556,23 @@ export function AgentConfigPanel({
     }
   }, [issueId, isFollowUp, variant])
 
-  // Validate reuseWorktreeId when worktrees change
+  // Validate reuseWorktreePath when worktrees change
   // If the stored worktree no longer exists, clear it and fall back to current branch
   useEffect(() => {
     if (isFollowUp || variant === 'compact') return
-    if (!config.reuseWorktreeId) return
+    if (!config.reuseWorktreePath) return
 
     // Check if the stored worktree still exists
-    const worktreeExists = worktrees.some((w) => w.id === config.reuseWorktreeId)
+    const worktreeExists = worktrees.some((w) => w.worktree_path === config.reuseWorktreePath)
     if (!worktreeExists) {
       // Worktree no longer exists, clear it and fall back to current branch
       setConfig((prev) => ({
         ...prev,
-        reuseWorktreeId: undefined,
+        reuseWorktreePath: undefined,
         baseBranch: currentBranch || prev.baseBranch,
       }))
     }
-  }, [worktrees, config.reuseWorktreeId, isFollowUp, variant, currentBranch])
+  }, [worktrees, config.reuseWorktreePath, isFollowUp, variant, currentBranch])
 
   // Auto-focus textarea when panel opens or issue changes
   useEffect(() => {
@@ -882,11 +882,11 @@ export function AgentConfigPanel({
                       availableBranches.length > 0 ? availableBranches : [config.baseBranch]
                     }
                     value={config.baseBranch}
-                    onChange={(branch, isNew, worktreeId) => {
+                    onChange={(branch, isNew, worktreePath) => {
                       updateConfig({
                         baseBranch: branch,
                         createBaseBranch: isNew || false,
-                        reuseWorktreeId: worktreeId, // If worktreeId is set, reuse that worktree
+                        reuseWorktreePath: worktreePath, // If worktreePath is set, reuse that worktree
                       })
                     }}
                     disabled={loading || (isFollowUp && !forceNewExecution)}

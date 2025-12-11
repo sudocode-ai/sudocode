@@ -11,6 +11,7 @@ import type {
   IAgentAdapter,
   NormalizedEntry,
 } from "agent-execution-engine/agents";
+import type { FileChangeStat } from "@sudocode-ai/types";
 import {
   ClaudeCodeExecutor,
   CodexExecutor,
@@ -30,6 +31,7 @@ import { updateExecution, getExecution } from "../../services/executions.js";
 import { broadcastExecutionUpdate } from "../../services/websocket.js";
 import { execSync } from "child_process";
 import { ExecutionChangesService } from "../../services/execution-changes-service.js";
+import { notifyExecutionEvent } from "../../services/execution-event-callbacks.js";
 
 /**
  * Base executor interface that all agent executors implement
@@ -159,7 +161,11 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
           outputFormat: (agentConfig as any).outputFormat ?? "stream-json",
           verbose: (agentConfig as any).verbose ?? true,
           dangerouslySkipPermissions:
-            (agentConfig as any).dangerouslySkipPermissions ?? true,
+            (agentConfig as any).dangerouslySkipPermissions ?? false,
+          restrictToWorkDir: (agentConfig as any).restrictToWorkDir ?? true,
+          directoryGuardHookPath: (agentConfig as any).directoryGuardHookPath,
+          mcpServers: (agentConfig as any).mcpServers,
+          appendSystemPrompt: (agentConfig as any).appendSystemPrompt,
         }) as IAgentExecutor;
 
       case "codex":
@@ -227,6 +233,54 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
       }
 
       // 5. Execute task with agent executor
+      // Check if task has MCP servers or other runtime config that requires a fresh executor
+      let executor = this.executor;
+      const taskMcpServers = (task.metadata as any)?.mcpServers;
+      const taskAppendSystemPrompt = (task.metadata as any)?.appendSystemPrompt;
+      const taskDangerouslySkipPermissions = (task.metadata as any)
+        ?.dangerouslySkipPermissions;
+      const taskResume = (task.metadata as any)?.resume;
+
+      // Debug: Log what we received in task metadata
+      console.log(
+        `[AgentExecutorWrapper] Task metadata for ${executionId}:`,
+        {
+          agentType: this.agentType,
+          hasMcpServers: !!taskMcpServers,
+          mcpServerNames: taskMcpServers
+            ? Object.keys(taskMcpServers)
+            : "none",
+          hasAppendSystemPrompt: !!taskAppendSystemPrompt,
+          dangerouslySkipPermissions: taskDangerouslySkipPermissions,
+          resume: taskResume,
+        }
+      );
+
+      if (
+        this.agentType === "claude-code" &&
+        (taskMcpServers ||
+          taskAppendSystemPrompt ||
+          taskDangerouslySkipPermissions ||
+          taskResume)
+      ) {
+        // Create a task-specific executor with merged config
+        console.log(
+          `[AgentExecutorWrapper] Creating task-specific executor for ${executionId}`,
+          {
+            mcpServers: taskMcpServers ? Object.keys(taskMcpServers) : "none",
+            dangerouslySkipPermissions: taskDangerouslySkipPermissions,
+            resume: taskResume,
+          }
+        );
+        executor = this.createExecutor(this.agentType, {
+          ...this._agentConfig,
+          mcpServers: taskMcpServers,
+          appendSystemPrompt: taskAppendSystemPrompt,
+          dangerouslySkipPermissions: taskDangerouslySkipPermissions,
+          resume: taskResume,
+        } as TConfig);
+      }
+
       console.log(
         `[AgentExecutorWrapper] Spawning ${this.adapter.metadata.name} process for ${executionId}`,
         {
@@ -235,7 +289,7 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
           promptLength: task.prompt.length,
         }
       );
-      const spawned = await this.executor.executeTask(task);
+      const spawned = await executor.executeTask(task);
       console.log(
         `[AgentExecutorWrapper] ${this.adapter.metadata.name} process spawned for ${executionId}`,
         {
@@ -728,7 +782,7 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
 
       if (changesResult.available && changesResult.captured) {
         // Extract just the file paths from the changes
-        const filePaths = changesResult.captured.files.map((f) => f.path);
+        const filePaths = changesResult.captured.files.map((f: FileChangeStat) => f.path);
         filesChangedJson = JSON.stringify(filePaths);
         console.log(
           `[AgentExecutorWrapper] Captured ${filePaths.length} file changes for execution ${executionId}`
@@ -764,6 +818,13 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
         updatedExecution,
         updatedExecution.issue_id || undefined
       );
+
+      // Notify callbacks for workflow integration
+      await notifyExecutionEvent("completed", {
+        executionId,
+        workflowId: updatedExecution.workflow_execution_id ?? undefined,
+        issueId: updatedExecution.issue_id ?? undefined,
+      });
     }
   }
 
@@ -789,7 +850,7 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
       const changesResult = await changesService.getChanges(executionId);
 
       if (changesResult.available && changesResult.captured) {
-        const filePaths = changesResult.captured.files.map((f) => f.path);
+        const filePaths = changesResult.captured.files.map((f: FileChangeStat) => f.path);
         filesChangedJson = JSON.stringify(filePaths);
         console.log(
           `[AgentExecutorWrapper] Captured ${filePaths.length} file changes for failed execution ${executionId}`
@@ -818,6 +879,14 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
         execution,
         execution.issue_id || undefined
       );
+
+      // Notify callbacks for workflow integration
+      await notifyExecutionEvent("failed", {
+        executionId,
+        workflowId: execution.workflow_execution_id ?? undefined,
+        issueId: execution.issue_id ?? undefined,
+        error: error.message,
+      });
     }
   }
 

@@ -9,6 +9,14 @@ import {
 import { IssueCard } from './IssueCard'
 import type { Issue, IssueStatus } from '@sudocode-ai/types'
 import type { Execution } from '@/types/execution'
+import type { WorkflowStepStatus } from '@/types/workflow'
+
+/** Workflow info for an issue */
+interface IssueWorkflowInfo {
+  workflowId: string
+  workflowTitle?: string
+  stepStatus: WorkflowStepStatus
+}
 
 const columnOrder: IssueStatus[] = ['blocked', 'open', 'in_progress', 'needs_review', 'closed']
 
@@ -38,6 +46,8 @@ interface IssueKanbanBoardProps {
   collapsedColumns?: Set<IssueStatus>
   onToggleColumnCollapse?: (status: IssueStatus) => void
   latestExecutions?: Record<string, Execution | null> // Pre-fetched executions by issue ID
+  /** Workflow info by issue ID (for issues in active workflows) */
+  issueWorkflows?: Map<string, IssueWorkflowInfo>
   displayStatusOverrides?: Record<string, IssueStatus> // Issues showing in different column due to execution status
 }
 
@@ -50,6 +60,7 @@ function IssueKanbanBoard({
   collapsedColumns = new Set(),
   onToggleColumnCollapse,
   latestExecutions,
+  issueWorkflows,
   displayStatusOverrides,
 }: IssueKanbanBoardProps) {
   const renderDragOverlay = (activeId: string | null) => {
@@ -69,6 +80,7 @@ function IssueKanbanBoard({
             isOpen={false}
             showExecutionPreview={true}
             latestExecution={latestExecutions?.[issue.id]}
+            workflowInfo={issueWorkflows?.get(issue.id)}
             displayStatusOverride={displayStatusOverrides?.[issue.id]}
           />
         )
@@ -110,6 +122,7 @@ function IssueKanbanBoard({
                   isOpen={selectedIssue?.id === issue.id}
                   showExecutionPreview={true}
                   latestExecution={latestExecutions?.[issue.id]}
+                  workflowInfo={issueWorkflows?.get(issue.id)}
                   displayStatusOverride={displayStatusOverrides?.[issue.id]}
                 />
               ))}

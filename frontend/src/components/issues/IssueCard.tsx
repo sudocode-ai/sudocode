@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { KanbanCard } from '@/components/ui/kanban'
 import type { Issue, IssueStatus } from '@sudocode-ai/types'
 import type { Execution } from '@/types/execution'
+import type { WorkflowStepStatus } from '@/types/workflow'
 import { Copy, Check, Play, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { ExecutionPreview } from '@/components/executions/ExecutionPreview'
+import { WorkflowIndicator } from './WorkflowIndicator'
+import { getColorFromId } from '@/utils/colors'
 
 // Priority badge colors - using darker shades for better contrast with white text
 const priorityColors: Record<number, string> = {
@@ -26,6 +29,13 @@ const priorityLabels: Record<number, string> = {
   4: 'P4',
 }
 
+/** Workflow membership info for the issue */
+interface WorkflowInfo {
+  workflowId: string
+  workflowTitle?: string
+  stepStatus: WorkflowStepStatus
+}
+
 interface IssueCardProps {
   issue: Issue
   index: number
@@ -34,6 +44,8 @@ interface IssueCardProps {
   isOpen?: boolean
   showExecutionPreview?: boolean // Whether to show execution preview for running executions
   latestExecution?: Execution | null // Pre-fetched execution from parent
+  /** Workflow membership info (if issue is part of an active workflow) */
+  workflowInfo?: WorkflowInfo
   displayStatusOverride?: IssueStatus // If set, this issue is shown in a different column due to execution status
 }
 
@@ -46,6 +58,7 @@ export function IssueCard({
   showExecutionPreview = false,
   latestExecution,
   displayStatusOverride,
+  workflowInfo,
 }: IssueCardProps) {
   const navigate = useNavigate()
   const [isCopied, setIsCopied] = useState(false)
@@ -92,6 +105,17 @@ export function IssueCard({
     })
   }, [isOpen])
 
+  // Generate workflow border color from workflow ID
+  const workflowBorderStyle = useMemo(() => {
+    if (!workflowInfo?.workflowId) return undefined
+    const color = getColorFromId(workflowInfo.workflowId)
+    return {
+      borderLeftWidth: '4px',
+      borderLeftStyle: 'solid' as const,
+      borderLeftColor: color,
+    }
+  }, [workflowInfo?.workflowId])
+
   return (
     <KanbanCard
       key={issue.id}
@@ -103,6 +127,7 @@ export function IssueCard({
       isOpen={isOpen}
       forwardedRef={localRef}
       className={issue.archived ? 'opacity-60' : ''}
+      style={workflowBorderStyle}
     >
       <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
         <div className="flex w-full items-center justify-between gap-2">
@@ -128,40 +153,50 @@ export function IssueCard({
           </div>
           {/* Right-aligned badges */}
           <div className="flex items-center gap-1">
-            {/* Visual indicator for execution-based column placement */}
-            {displayStatusOverride && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="inline-flex items-center justify-center rounded-full bg-blue-100 p-1 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
-                      {displayStatusOverride === 'in_progress' ? (
-                        <Play className="h-4 w-4 fill-current" />
-                      ) : (
-                        <CheckCircle2 className="h-4 w-4" />
-                      )}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>
-                      {displayStatusOverride === 'in_progress'
-                        ? 'Running execution'
-                        : 'Completed execution awaiting review'}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Actual status: {issue.status.replace('_', ' ')}
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-            {/* Priority Badge */}
-            {issue.priority !== undefined && issue.priority <= 3 && (
-              <span
-                className={`shrink-0 rounded-full px-1.5 py-0.5 text-xs text-white ${priorityColors[issue.priority]}`}
-              >
-                {priorityLabels[issue.priority]}
-              </span>
-            )}
+            <div className="flex items-center gap-1.5">
+              {/* Workflow Indicator */}
+              {workflowInfo && (
+                <WorkflowIndicator
+                  workflowId={workflowInfo.workflowId}
+                  workflowTitle={workflowInfo.workflowTitle}
+                  stepStatus={workflowInfo.stepStatus}
+                />
+              )}
+              {/* Visual indicator for execution-based column placement */}
+              {displayStatusOverride && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex items-center justify-center rounded-full bg-blue-100 p-1 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+                        {displayStatusOverride === 'in_progress' ? (
+                          <Play className="h-3 w-3 fill-current" />
+                        ) : (
+                          <CheckCircle2 className="h-4 w-4" />
+                        )}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        {displayStatusOverride === 'in_progress'
+                          ? 'Running execution'
+                          : 'Completed execution awaiting review'}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Actual status: {issue.status.replace('_', ' ')}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              {/* Priority Badge */}
+              {issue.priority !== undefined && issue.priority <= 3 && (
+                <span
+                  className={`shrink-0 rounded-full px-1.5 py-0.5 text-xs text-white ${priorityColors[issue.priority]}`}
+                >
+                  {priorityLabels[issue.priority]}
+                </span>
+              )}
+            </div>
           </div>
         </div>
         <h4 className="text-md line-clamp-2 min-w-0 flex-1 font-medium">{issue.title}</h4>

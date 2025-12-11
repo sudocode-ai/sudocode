@@ -400,15 +400,49 @@ describe("Validation failures", () => {
     }
   });
 
-  it("should fail if local working tree is dirty", async () => {
-    // Make local tree dirty
-    fs.writeFileSync(path.join(testEnv.repo, "dirty.txt"), "uncommitted");
+  it("should fail if local working tree is dirty with non-JSONL files", async () => {
+    // Make local tree dirty by modifying a tracked file (not untracked)
+    // Note: untracked files are ignored by isWorkingTreeClean()
+    fs.writeFileSync(path.join(testEnv.repo, ".gitkeep"), "modified");
 
     const preview = await service.previewSync(testEnv.execution.id);
     expect(preview.canSync).toBe(false);
     expect(
       preview.warnings.some((w) => w.includes("uncommitted changes"))
     ).toBe(true);
+  });
+
+  it("should allow sync when only JSONL files are uncommitted", async () => {
+    // First, add a commit to the worktree so we have something to sync
+    commitFile(testEnv.worktree, "src/feature.ts", "worktree content", "Add feature");
+
+    // Create .sudocode directory in main repo if it doesn't exist
+    const sudocodeDir = path.join(testEnv.repo, ".sudocode");
+    if (!fs.existsSync(sudocodeDir)) {
+      fs.mkdirSync(sudocodeDir, { recursive: true });
+    }
+
+    // Create and track a JSONL file, then modify it
+    const jsonlPath = path.join(sudocodeDir, "issues.jsonl");
+    fs.writeFileSync(jsonlPath, '{"id": "i-1", "uuid": "test-1", "title": "Test"}\n');
+    execSync("git add .sudocode/issues.jsonl", { cwd: testEnv.repo, stdio: "pipe" });
+    execSync('git commit -m "Add issues.jsonl"', { cwd: testEnv.repo, stdio: "pipe" });
+
+    // Modify the JSONL file (uncommitted change)
+    fs.writeFileSync(jsonlPath, '{"id": "i-1", "uuid": "test-1", "title": "Modified"}\n');
+
+    const preview = await service.previewSync(testEnv.execution.id);
+
+    // canSync should be true because only JSONL files are uncommitted
+    expect(preview.canSync).toBe(true);
+    // Should not have a warning about uncommitted changes
+    expect(
+      preview.warnings.some((w) => w.includes("uncommitted changes"))
+    ).toBe(false);
+    // Should indicate JSONL will be auto-merged
+    expect(preview.localUncommittedJsonl).toBeDefined();
+    expect(preview.localUncommittedJsonl?.willAutoMerge).toBe(true);
+    expect(preview.localUncommittedJsonl?.files).toContain(".sudocode/issues.jsonl");
   });
 
   it("should fail if worktree missing", async () => {

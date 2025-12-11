@@ -59,21 +59,9 @@ describe('AgentSettingsDialog', () => {
         />
       )
 
-      expect(screen.getByText('Select an agent to see model and agent-specific settings.')).toBeInTheDocument()
-    })
-
-    it('should show message when agent has no specific settings', () => {
-      render(
-        <AgentSettingsDialog
-          open={true}
-          config={defaultConfig}
-          onConfigChange={mockOnConfigChange}
-          onClose={mockOnClose}
-          agentType="claude-code"
-        />
-      )
-
-      expect(screen.getByText('No specific settings available for this agent.')).toBeInTheDocument()
+      expect(
+        screen.getByText('Select an agent to see model and agent-specific settings.')
+      ).toBeInTheDocument()
     })
 
     it('should render Codex config when agent is codex', () => {

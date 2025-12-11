@@ -311,7 +311,7 @@ function parseSubscriptionString(sub: string): WebSocketSubscribeMessage | null 
     }
   }
 
-  if (entityType === 'issue' || entityType === 'spec' || entityType === 'execution') {
+  if (entityType === 'issue' || entityType === 'spec' || entityType === 'execution' || entityType === 'workflow') {
     return {
       type: 'subscribe',
       project_id: projectId,
