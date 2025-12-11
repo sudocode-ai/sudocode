@@ -1,0 +1,25 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true,
+    "excludedCommands": ["docker"],
+    "network": {
+      "allowUnixSockets": ["/var/run/docker.sock"],
+      "allowLocalBinding": true
+    }
+  },
+  "permissions": {
+    "allow": [
+      "Read(./**)",
+      "Read(**)"
+    ],
+    "deny": [
+      "Read(/**)",
+      "Read(~/**)",
+      "Read(~/.ssh/**)",
+      "Read(**/.env)",
+      "Read(**/secrets.json)",
+      "Read(**/*.pem)"
+    ]
+  }
+}
