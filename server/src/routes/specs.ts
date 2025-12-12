@@ -123,8 +123,8 @@ export function createSpecsRouter(): Router {
       const outputDir = req.project!.sudocodeDir;
       const { id, uuid } = generateSpecId(req.project!.db, outputDir);
 
-      // Generate file path for the spec
-      const file_path = path.join(outputDir, "specs", `${id}.md`);
+      // Generate file path for the spec (relative path)
+      const file_path = `specs/${id}.md`;
 
       // Create spec using CLI operation
       const spec = createNewSpec(req.project!.db, {

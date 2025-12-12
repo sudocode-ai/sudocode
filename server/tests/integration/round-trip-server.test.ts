@@ -778,9 +778,9 @@ describe("Server Round-Trip Integration Tests", () => {
       const specId = createResponse.body.data.id;
       await waitForExport();
 
-      // Get the file path from the created spec (already absolute)
+      // Get the file path from the created spec and convert to absolute
       const dbSpecBefore = getSpec(db, specId);
-      const mdPath = dbSpecBefore!.file_path;
+      const mdPath = path.join(sudocodeDir, dbSpecBefore!.file_path);
 
       // Step 2: Update markdown file directly (simulating user editing markdown)
       writeMarkdownFile(
@@ -898,9 +898,9 @@ describe("Server Round-Trip Integration Tests", () => {
       expect(issueOutgoing).toHaveLength(1);
       expect(issueOutgoing[0].relationship_type).toBe("implements");
 
-      // Step 3: Update spec via markdown (file_path is already absolute)
+      // Step 3: Update spec via markdown
       const dbSpecBefore = getSpec(db, specId);
-      const mdPath = dbSpecBefore!.file_path;
+      const mdPath = path.join(sudocodeDir, dbSpecBefore!.file_path);
 
       writeMarkdownFile(
         mdPath,
@@ -1164,9 +1164,9 @@ describe("Server Round-Trip Integration Tests", () => {
 
       await waitForExport();
 
-      // Update spec via markdown (file_path is already absolute)
+      // Update spec via markdown
       const dbSpecBefore = getSpec(db, specId);
-      const mdPath = dbSpecBefore!.file_path;
+      const mdPath = path.join(sudocodeDir, dbSpecBefore!.file_path);
 
       writeMarkdownFile(
         mdPath,

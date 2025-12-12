@@ -207,6 +207,33 @@ describe("Specs API", () => {
       expect(response.body.data.content).toBe("");
       expect(response.body.data.priority).toBe(2);
     });
+
+    it("should create spec with relative file_path", async () => {
+      const newSpec = {
+        title: "Spec for File Path Test",
+        content: "Testing file path generation",
+      };
+
+      const response = await request(app)
+        .post("/api/specs").set("X-Project-ID", projectId)
+        .send(newSpec)
+        .expect(201);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.file_path).toBeTruthy();
+
+      const filePath = response.body.data.file_path;
+      const specId = response.body.data.id;
+
+      // Verify file_path is relative, not absolute
+      expect(path.isAbsolute(filePath)).toBe(false);
+
+      // Verify file_path matches the pattern specs/{id}.md
+      expect(filePath).toBe(`specs/${specId}.md`);
+
+      // Verify file_path starts with specs/
+      expect(filePath.startsWith("specs/")).toBe(true);
+    });
   });
 
   describe("GET /api/specs/:id", () => {
