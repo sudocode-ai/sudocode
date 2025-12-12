@@ -59,6 +59,7 @@ PACKAGES=(
   "mcp:@sudocode-ai/mcp:$VERSION"
   "server:@sudocode-ai/local-server:$VERSION"
   "frontend:@sudocode-ai/local-ui:$VERSION"
+  "plugins/integration-beads:@sudocode-ai/integration-beads:$VERSION"
   "sudocode:sudocode:$META_VERSION"
   ".:root:$VERSION"
 )
@@ -195,6 +196,9 @@ for pkg in "${PACKAGES[@]}"; do
       if (pkg.devDependencies && pkg.devDependencies['@sudocode-ai/types']) {
         pkg.devDependencies['@sudocode-ai/types'] = '^$VERSION';
       }
+      if (pkg.peerDependencies && pkg.peerDependencies['@sudocode-ai/types']) {
+        pkg.peerDependencies['@sudocode-ai/types'] = '^$VERSION';
+      }
       fs.writeFileSync('$PKG_FILE', JSON.stringify(pkg, null, 2) + '\n');
     "
   fi
@@ -210,6 +214,9 @@ for pkg in "${PACKAGES[@]}"; do
       }
       if (pkg.devDependencies && pkg.devDependencies['@sudocode-ai/cli']) {
         pkg.devDependencies['@sudocode-ai/cli'] = '^$VERSION';
+      }
+      if (pkg.peerDependencies && pkg.peerDependencies['@sudocode-ai/cli']) {
+        pkg.peerDependencies['@sudocode-ai/cli'] = '^$VERSION';
       }
       fs.writeFileSync('$PKG_FILE', JSON.stringify(pkg, null, 2) + '\n');
     "
