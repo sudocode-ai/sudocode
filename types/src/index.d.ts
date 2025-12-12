@@ -1,6 +1,60 @@
 /**
  * Core entity types for sudocode
  */
+
+import type { IntegrationsConfig } from "./integrations.js";
+
+// =============================================================================
+// Integration Types (External Links)
+// =============================================================================
+
+/**
+ * Direction of sync between sudocode and external system
+ */
+export type SyncDirection = "inbound" | "outbound" | "bidirectional";
+
+/**
+ * Strategy for resolving conflicts during sync
+ */
+export type ConflictResolution =
+  | "newest-wins"
+  | "sudocode-wins"
+  | "external-wins"
+  | "manual";
+
+/**
+ * Integration provider name - any string to support plugins
+ * First-party providers: "beads", "jira", "spec-kit", "openspec"
+ * Third-party plugins can use any unique name
+ */
+export type IntegrationProviderName = string;
+
+/**
+ * Represents a link between a sudocode entity (Spec/Issue) and an external system
+ */
+export interface ExternalLink {
+  /** The integration provider this link belongs to (plugin name) */
+  provider: string;
+  /** Unique identifier in the external system */
+  external_id: string;
+  /** URL to view/edit in external system (optional) */
+  external_url?: string;
+  /** Whether sync is enabled for this link */
+  sync_enabled: boolean;
+  /** Direction of sync */
+  sync_direction: SyncDirection;
+  /** When this entity was last synced */
+  last_synced_at?: string;
+  /** Last known update time in external system */
+  external_updated_at?: string;
+  /** Provider-specific metadata */
+  metadata?: Record<string, unknown>;
+}
+
+// =============================================================================
+// Core Entities
+// =============================================================================
+
 export interface Spec {
   id: string;
   title: string;
@@ -14,6 +68,7 @@ export interface Spec {
   updated_at: string;
   parent_id?: string;
   parent_uuid?: string;
+  external_links?: ExternalLink[];
 }
 
 export interface Issue {
@@ -31,6 +86,7 @@ export interface Issue {
   closed_at?: string;
   parent_id?: string;
   parent_uuid?: string;
+  external_links?: ExternalLink[];
 }
 
 export type IssueStatus =
@@ -203,6 +259,8 @@ export interface Config {
   version: string;
   /** Worktree configuration (optional) */
   worktree?: WorktreeConfig;
+  /** Integration configurations (optional) */
+  integrations?: IntegrationsConfig;
 }
 
 /**
@@ -290,7 +348,7 @@ export type {
   FileChangeStat,
   ExecutionChangesResult,
   ChangesSnapshot,
-} from './artifacts.js';
+} from "./artifacts.js";
 
 /**
  * Workflow types for multi-issue orchestration
@@ -328,3 +386,25 @@ export type {
   CreateWorkflowOptions,
   DependencyGraph,
 } from "./workflows.js";
+
+/**
+ * Integration types for third-party systems
+ * See integrations.d.ts for detailed integration types
+ */
+export type {
+  // Configuration types
+  IntegrationProviderConfig,
+  IntegrationsConfig,
+  IntegrationConfig, // Deprecated alias
+  // Plugin types
+  IntegrationPlugin,
+  IntegrationProvider,
+  PluginValidationResult,
+  PluginTestResult,
+  PluginConfigSchema,
+  // Sync types
+  ExternalEntity,
+  ExternalChange,
+  SyncResult,
+  SyncConflict,
+} from "./integrations.js";

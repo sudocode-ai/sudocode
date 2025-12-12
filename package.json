@@ -10,7 +10,8 @@
     "mcp",
     "server",
     "sudocode",
-    "frontend"
+    "frontend",
+    "plugins/*"
   ],
   "scripts": {
     "build": "npm run build --workspace=types && npm run build --workspace=cli && npm run build --workspace=mcp && npm run build --workspace=frontend && npm run build --workspace=server",

@@ -1,0 +1,9 @@
+# Build output
+dist/
+
+# Dependencies (hoisted to monorepo root)
+node_modules/
+
+# Test artifacts - prevent beads from initializing in plugin directory
+.beads/
+*.db

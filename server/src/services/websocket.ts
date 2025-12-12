@@ -755,3 +755,14 @@ export function broadcastWorkflowStepUpdate(
     data,
   });
 }
+
+/**
+ * Broadcast a generic message to all subscribers for a specific project
+ * Used for integration sync events and other project-wide notifications
+ */
+export function broadcastToProject(
+  projectId: string,
+  message: { type: string; [key: string]: unknown }
+): void {
+  websocketManager.broadcastGeneric(projectId, message as ServerMessage);
+}

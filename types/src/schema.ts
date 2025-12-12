@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS specs (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     parent_id TEXT,
     parent_uuid TEXT,
+    external_links TEXT,
     FOREIGN KEY (parent_id) REFERENCES specs(id) ON DELETE SET NULL,
     FOREIGN KEY (parent_uuid) REFERENCES specs(uuid) ON DELETE SET NULL
 );
@@ -62,6 +63,7 @@ CREATE TABLE IF NOT EXISTS issues (
     closed_at DATETIME,
     parent_id TEXT,
     parent_uuid TEXT,
+    external_links TEXT,
     FOREIGN KEY (parent_id) REFERENCES issues(id) ON DELETE SET NULL,
     FOREIGN KEY (parent_uuid) REFERENCES issues(uuid) ON DELETE SET NULL
 );

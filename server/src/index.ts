@@ -17,6 +17,7 @@ import { createExecutionStreamRoutes } from "./routes/executions-stream.js";
 import { createEditorsRouter } from "./routes/editors.js";
 import { createProjectsRouter } from "./routes/projects.js";
 import { createConfigRouter } from "./routes/config.js";
+import { createPluginsRouter } from "./routes/plugins.js";
 import { createFilesRouter } from "./routes/files.js";
 import { createRepoInfoRouter } from "./routes/repo-info.js";
 import { createAgentsRouter } from "./routes/agents.js";
@@ -152,6 +153,7 @@ app.use(
   createWorkflowsRouter()
 );
 app.use("/api/config", requireProject(projectManager), createConfigRouter());
+app.use("/api/plugins", requireProject(projectManager), createPluginsRouter());
 app.use(
   "/api/repo-info",
   requireProject(projectManager),

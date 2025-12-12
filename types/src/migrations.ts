@@ -179,9 +179,7 @@ const MIGRATIONS: Migration[] = [
       // Rename new table
       db.exec(`ALTER TABLE execution_logs_new RENAME TO execution_logs;`);
 
-      console.log(
-        "  ✓ Added normalized_entry column to execution_logs table"
-      );
+      console.log("  ✓ Added normalized_entry column to execution_logs table");
     },
     down: (db: Database.Database) => {
       // Rollback: remove normalized_entry column
@@ -241,8 +239,9 @@ const MIGRATIONS: Migration[] = [
       }
 
       // Check if already migrated (no CHECK constraint on agent_type)
-      const hasCheckConstraint = tableSchema.sql.includes("agent_type") &&
-                                  tableSchema.sql.match(/agent_type[^,]*CHECK/i);
+      const hasCheckConstraint =
+        tableSchema.sql.includes("agent_type") &&
+        tableSchema.sql.match(/agent_type[^,]*CHECK/i);
       const hasDefaultValue = tableSchema.sql.match(/agent_type[^,]*DEFAULT/i);
       const hasNotNull = tableSchema.sql.match(/agent_type[^,]*NOT NULL/i);
 
@@ -402,6 +401,83 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 4,
+    name: "add-external-links-column",
+    up: (db: Database.Database) => {
+      console.log(
+        "  [migration-4] Starting add-external-links-column migration"
+      );
+
+      // Check if specs table exists
+      const specsTables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='specs'"
+        )
+        .all() as Array<{ name: string }>;
+
+      console.log(
+        `  [migration-4] specs table exists: ${specsTables.length > 0}`
+      );
+
+      if (specsTables.length > 0) {
+        // Add external_links column to specs table if it doesn't exist
+        const specsInfo = db.pragma("table_info(specs)") as Array<{
+          name: string;
+        }>;
+        const specsHasColumn = specsInfo.some(
+          (col) => col.name === "external_links"
+        );
+        console.log(
+          `  [migration-4] specs.external_links column exists: ${specsHasColumn}`
+        );
+
+        if (!specsHasColumn) {
+          db.exec(`ALTER TABLE specs ADD COLUMN external_links TEXT;`);
+          console.log("  ✓ Added external_links column to specs table");
+        }
+      }
+
+      // Check if issues table exists
+      const issuesTables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='issues'"
+        )
+        .all() as Array<{ name: string }>;
+
+      console.log(
+        `  [migration-4] issues table exists: ${issuesTables.length > 0}`
+      );
+
+      if (issuesTables.length > 0) {
+        // Add external_links column to issues table if it doesn't exist
+        const issuesInfo = db.pragma("table_info(issues)") as Array<{
+          name: string;
+        }>;
+        const issuesHasColumn = issuesInfo.some(
+          (col) => col.name === "external_links"
+        );
+        console.log(
+          `  [migration-4] issues.external_links column exists: ${issuesHasColumn}`
+        );
+
+        if (!issuesHasColumn) {
+          db.exec(`ALTER TABLE issues ADD COLUMN external_links TEXT;`);
+          console.log("  ✓ Added external_links column to issues table");
+        }
+      }
+
+      console.log("  [migration-4] Migration complete");
+    },
+    down: (db: Database.Database) => {
+      // SQLite doesn't support DROP COLUMN in older versions
+      // For rollback, we'd need to recreate the tables without the column
+      // This is a non-destructive migration, so rollback is optional
+      console.log(
+        "  Note: external_links column cannot be removed (SQLite limitation)"
+      );
+    },
+  },
 ];
 
 /**
@@ -441,12 +517,17 @@ export function recordMigration(
  */
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getCurrentMigrationVersion(db);
+  console.log(
+    `[migrations] Current database migration version: ${currentVersion}`
+  );
+  console.log(`[migrations] Total available migrations: ${MIGRATIONS.length}`);
 
   const pendingMigrations = MIGRATIONS.filter(
     (m) => m.version > currentVersion
   );
 
   if (pendingMigrations.length === 0) {
+    console.log(`[migrations] No pending migrations to run`);
     return;
   }
 

@@ -19,6 +19,7 @@ import {
   Check,
   ArrowDown,
   ArrowUp,
+  Link,
 } from 'lucide-react'
 import type { Issue, Relationship, EntityType, RelationshipType, IssueStatus } from '@/types/api'
 import { Card } from '@/components/ui/card'
@@ -1042,6 +1043,14 @@ export function IssuePanel({
                     </TooltipContent>
                   </Tooltip>
                 </div>
+                {issue.external_links &&
+                  issue.external_links.length > 0 &&
+                  issue.external_links.map((link) => (
+                    <Badge key={`${link.provider}-${link.external_id}`} variant="issue">
+                      <Link className="mr-1 h-3 w-3" />
+                      {link.provider}: {link.external_id}
+                    </Badge>
+                  ))}
                 {issue.parent_id && (
                   <>
                     <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />

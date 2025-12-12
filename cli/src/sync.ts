@@ -27,7 +27,7 @@ import { generateSpecId, generateIssueId } from "./id-generator.js";
 import type { Spec, Issue, IssueStatus } from "@sudocode-ai/types";
 import { isValidIssueStatus } from "./validation.js";
 
-export interface SyncResult {
+export interface MarkdownSyncResult {
   success: boolean;
   action: "created" | "updated" | "no-change";
   entityId: string;
@@ -135,7 +135,7 @@ export async function syncMarkdownToJSONL(
   db: Database.Database,
   mdPath: string,
   options: SyncOptions = {}
-): Promise<SyncResult> {
+): Promise<MarkdownSyncResult> {
   const {
     outputDir = ".sudocode",
     autoExport = true,
@@ -310,7 +310,7 @@ export async function syncJSONLToMarkdown(
   entityId: string,
   entityType: "spec" | "issue",
   mdPath: string
-): Promise<SyncResult> {
+): Promise<MarkdownSyncResult> {
   try {
     // Get entity from database
     const entity =
@@ -438,10 +438,11 @@ async function syncSpec(
       oldSpec?.file_path !== specData.file_path;
 
     // Only update timestamp if content actually changed
+    // Note: external_links is handled separately via JSONL import, not markdown sync
     updateSpec(db, id, {
       ...specData,
       ...(contentChanged && fileModTime ? { updated_at: fileModTime } : {}),
-    });
+    } as any);
 
     // Relocate feedback anchors if content changed
     if (oldContent !== content) {
@@ -540,10 +541,11 @@ async function syncIssue(
       oldIssue?.parent_id !== issueData.parent_id;
 
     // Only update timestamp if content actually changed
+    // Note: external_links is handled separately via JSONL import, not markdown sync
     updateIssue(db, id, {
       ...issueData,
       ...(contentChanged && fileModTime ? { updated_at: fileModTime } : {}),
-    });
+    } as any);
   }
 
   // Sync tags

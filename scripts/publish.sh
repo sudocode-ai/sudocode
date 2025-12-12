@@ -76,6 +76,11 @@ echo "=========================================="
 npm run clean || true
 npm run build
 
+# Build plugins (not included in main build)
+echo ""
+echo "Building plugins..."
+npm run build --workspace=plugins/integration-beads
+
 echo ""
 echo "✓ All packages built successfully"
 echo ""
@@ -86,6 +91,7 @@ PACKAGES=(
   "cli:@sudocode-ai/cli"
   "mcp:@sudocode-ai/mcp"
   "server:@sudocode-ai/local-server"
+  "plugins/integration-beads:@sudocode-ai/integration-beads"
   "sudocode:sudocode"
 )
 

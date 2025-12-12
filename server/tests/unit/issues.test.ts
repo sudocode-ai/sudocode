@@ -326,6 +326,65 @@ describe("Issues API", () => {
     });
   });
 
+  describe("DELETE /api/issues/:id with external links", () => {
+    let issueWithLinks: string;
+
+    beforeAll(async () => {
+      // Create an issue that we'll manually add external links to
+      const response = await request(app)
+        .post("/api/issues").set("X-Project-ID", projectId)
+        .send({ title: "Issue with External Links" });
+      issueWithLinks = response.body.data.id;
+
+      // Manually write external_links to the JSONL file
+      const sudocodeDir = path.join(testProjectPath, ".sudocode");
+      const issuesJsonlPath = path.join(sudocodeDir, "issues.jsonl");
+
+      // Read the current JSONL
+      const content = fs.readFileSync(issuesJsonlPath, "utf-8");
+      const lines = content.trim().split("\n").map((line) => JSON.parse(line));
+
+      // Find and update our issue with external_links
+      const index = lines.findIndex((line: any) => line.id === issueWithLinks);
+      if (index >= 0) {
+        lines[index].external_links = [
+          {
+            provider: "beads",
+            external_id: "beads-123",
+            sync_enabled: true,
+            sync_direction: "bidirectional",
+          },
+        ];
+      }
+
+      // Write back
+      fs.writeFileSync(
+        issuesJsonlPath,
+        lines.map((line) => JSON.stringify(line)).join("\n") + "\n"
+      );
+    });
+
+    it("should delete issue with external links", async () => {
+      // Note: Without an actual integrationSyncService on the project,
+      // this just tests that deletion still works when external links exist
+      const response = await request(app)
+        .delete(`/api/issues/${issueWithLinks}`).set("X-Project-ID", projectId)
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.id).toBe(issueWithLinks);
+      expect(response.body.data.deleted).toBe(true);
+    });
+
+    it("should not find deleted issue with external links", async () => {
+      const response = await request(app)
+        .get(`/api/issues/${issueWithLinks}`).set("X-Project-ID", projectId)
+        .expect(404);
+
+      expect(response.body.success).toBe(false);
+    });
+  });
+
   describe("Integration tests", () => {
     it("should list the created issues", async () => {
       const response = await request(app)

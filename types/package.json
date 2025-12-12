@@ -21,6 +21,10 @@
       "types": "./src/workflows.d.ts",
       "default": "./src/workflows.d.ts"
     },
+    "./integrations": {
+      "types": "./src/integrations.d.ts",
+      "default": "./src/integrations.d.ts"
+    },
     "./schema": {
       "types": "./dist/schema.d.ts",
       "default": "./dist/schema.js"
@@ -60,6 +64,7 @@
     "src/agents.d.ts",
     "src/artifacts.d.ts",
     "src/workflows.d.ts",
+    "src/integrations.d.ts",
     "dist"
   ],
   "devDependencies": {

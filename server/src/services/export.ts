@@ -116,9 +116,11 @@ export function triggerExport(db: Database.Database, outputDir?: string): void {
 /**
  * Execute export immediately (bypass debouncing)
  * Exports to both JSONL and Markdown files
+ * @param db - Database connection
+ * @param outputDir - Optional output directory (defaults to getSudocodeDir())
  */
-export async function executeExportNow(db: Database.Database): Promise<void> {
-  await executeFullExport(db);
+export async function executeExportNow(db: Database.Database, outputDir?: string): Promise<void> {
+  await executeFullExport(db, outputDir);
 }
 
 /**

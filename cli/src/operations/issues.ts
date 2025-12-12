@@ -10,6 +10,21 @@ import {
   getOutgoingRelationships,
 } from "./relationships.js";
 
+/**
+ * Parse external_links JSON field from SQLite row
+ */
+function parseExternalLinks(row: any): Issue | null {
+  if (!row) return null;
+  if (typeof row.external_links === "string") {
+    try {
+      row.external_links = JSON.parse(row.external_links);
+    } catch {
+      row.external_links = undefined;
+    }
+  }
+  return row as Issue;
+}
+
 export interface CreateIssueInput {
   id: string;
   uuid?: string;
@@ -24,6 +39,7 @@ export interface CreateIssueInput {
   created_at?: string;
   updated_at?: string;
   closed_at?: string;
+  external_links?: string; // JSON string of ExternalLink[]
 }
 
 export interface UpdateIssueInput {
@@ -37,6 +53,7 @@ export interface UpdateIssueInput {
   archived_at?: string;
   updated_at?: string;
   closed_at?: string;
+  external_links?: string; // JSON string of ExternalLink[]
 }
 
 export interface ListIssuesOptions {
@@ -80,6 +97,7 @@ export function createIssue(
     "parent_id",
     "parent_uuid",
     "archived",
+    "external_links",
   ];
   const values = [
     "@id",
@@ -92,6 +110,7 @@ export function createIssue(
     "@parent_id",
     "@parent_uuid",
     "@archived",
+    "@external_links",
   ];
 
   if (input.created_at) {
@@ -128,6 +147,7 @@ export function createIssue(
       parent_uuid = excluded.parent_uuid,
       archived = excluded.archived,
       archived_at = excluded.archived_at,
+      external_links = excluded.external_links,
       ${input.created_at ? "created_at = excluded.created_at," : ""}
       ${input.updated_at ? "updated_at = excluded.updated_at" : "updated_at = CURRENT_TIMESTAMP"}
   `);
@@ -144,6 +164,7 @@ export function createIssue(
       parent_id: input.parent_id ?? null,
       parent_uuid: parent_uuid,
       archived: input.archived ? 1 : 0,
+      external_links: input.external_links ?? null,
     };
 
     // Add optional timestamp parameters
@@ -183,7 +204,8 @@ export function getIssue(db: Database.Database, id: string): Issue | null {
     SELECT * FROM issues WHERE id = ?
   `);
 
-  return (stmt.get(id) as Issue | undefined) ?? null;
+  const row = stmt.get(id);
+  return parseExternalLinks(row);
 }
 
 /**
@@ -282,6 +304,10 @@ export function updateIssue(
     // archived_at provided without archived change
     updates.push("archived_at = @archived_at");
     params.archived_at = input.archived_at;
+  }
+  if (input.external_links !== undefined) {
+    updates.push("external_links = @external_links");
+    params.external_links = input.external_links;
   }
 
   // Handle updated_at - use provided value or set to current timestamp
@@ -497,7 +523,8 @@ export function listIssues(
   }
 
   const stmt = db.prepare(query);
-  return stmt.all(params) as Issue[];
+  const rows = stmt.all(params) as any[];
+  return rows.map((row) => parseExternalLinks(row)!);
 }
 
 /**
@@ -507,7 +534,8 @@ export function getReadyIssues(db: Database.Database): Issue[] {
   const stmt = db.prepare(
     "SELECT * FROM ready_issues ORDER BY priority DESC, created_at DESC"
   );
-  return stmt.all() as Issue[];
+  const rows = stmt.all() as any[];
+  return rows.map((row) => parseExternalLinks(row)!);
 }
 
 /**
@@ -517,7 +545,8 @@ export function getBlockedIssues(db: Database.Database): any[] {
   const stmt = db.prepare(
     "SELECT * FROM blocked_issues ORDER BY priority DESC, created_at DESC"
   );
-  return stmt.all();
+  const rows = stmt.all() as any[];
+  return rows.map((row) => parseExternalLinks(row)!);
 }
 
 /**
@@ -564,5 +593,6 @@ export function searchIssues(
   }
 
   const stmt = db.prepare(sql);
-  return stmt.all(params) as Issue[];
+  const rows = stmt.all(params) as any[];
+  return rows.map((row) => parseExternalLinks(row)!);
 }

@@ -13,8 +13,9 @@ import {
   deleteExistingIssue,
 } from "../services/issues.js";
 import { generateIssueId } from "@sudocode-ai/cli/dist/id-generator.js";
+import { getIssueFromJsonl } from "@sudocode-ai/cli/dist/operations/external-links.js";
 import { broadcastIssueUpdate } from "../services/websocket.js";
-import { triggerExport, syncEntityToMarkdown } from "../services/export.js";
+import { triggerExport, executeExportNow, syncEntityToMarkdown } from "../services/export.js";
 import * as path from "path";
 import * as fs from "fs";
 
@@ -171,7 +172,7 @@ export function createIssuesRouter(): Router {
   /**
    * PUT /api/issues/:id - Update an existing issue
    */
-  router.put("/:id", (req: Request, res: Response) => {
+  router.put("/:id", async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const {
@@ -232,8 +233,20 @@ export function createIssuesRouter(): Router {
       // Update issue using CLI operation
       const issue = updateExistingIssue(req.project!.db, id, updateInput);
 
-      // Trigger export to JSONL files
-      triggerExport(req.project!.db, req.project!.sudocodeDir);
+      // If integration sync is enabled, export immediately so JSONL is updated before sync
+      // Otherwise use debounced export
+      if (req.project!.integrationSyncService) {
+        // Execute export now to ensure JSONL is updated before integration sync
+        await executeExportNow(req.project!.db, req.project!.sudocodeDir);
+
+        // Sync to external integrations
+        req.project!.integrationSyncService.syncEntity(issue.id).catch((error) => {
+          console.error(`Failed to sync issue ${issue.id} to external integrations:`, error);
+        });
+      } else {
+        // Trigger debounced export when no integration sync is needed
+        triggerExport(req.project!.db, req.project!.sudocodeDir);
+      }
 
       // Sync this specific issue to its markdown file (don't wait for it)
       syncEntityToMarkdown(req.project!.db, issue.id, "issue", req.project!.sudocodeDir).catch((error) => {
@@ -272,7 +285,7 @@ export function createIssuesRouter(): Router {
   /**
    * DELETE /api/issues/:id - Delete an issue
    */
-  router.delete("/:id", (req: Request, res: Response) => {
+  router.delete("/:id", async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -286,6 +299,10 @@ export function createIssuesRouter(): Router {
         });
         return;
       }
+
+      // Read external_links from JSONL BEFORE deleting (for outbound propagation)
+      const jsonlIssue = getIssueFromJsonl(req.project!.sudocodeDir, id);
+      const externalLinks = jsonlIssue?.external_links || [];
 
       // Save file_path before deletion (issues use standard path format)
       const markdownPath = path.join(
@@ -309,6 +326,13 @@ export function createIssuesRouter(): Router {
 
         // Trigger export to JSONL files
         triggerExport(req.project!.db, req.project!.sudocodeDir);
+
+        // Propagate deletion to external systems (if any links exist)
+        if (externalLinks.length > 0 && req.project!.integrationSyncService) {
+          req.project!.integrationSyncService.handleEntityDeleted(id, externalLinks).catch((error) => {
+            console.error(`[issues] Failed to propagate deletion to external systems:`, error);
+          });
+        }
 
         // Broadcast issue deletion to WebSocket clients
         broadcastIssueUpdate(req.project!.id, id, "deleted", { id });

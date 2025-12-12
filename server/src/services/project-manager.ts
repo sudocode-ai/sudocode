@@ -21,6 +21,7 @@ import {
   isInitialized,
 } from "@sudocode-ai/cli/dist/cli/init-commands.js";
 import { WorkflowEventEmitter } from "../workflow/workflow-event-emitter.js";
+import { createIntegrationSyncService } from "./integration-sync-service.js";
 import { SequentialWorkflowEngine } from "../workflow/engines/sequential-engine.js";
 import { OrchestratorWorkflowEngine } from "../workflow/engines/orchestrator-engine.js";
 import { WorkflowWakeupService } from "../workflow/services/wakeup-service.js";
@@ -315,7 +316,32 @@ export class ProjectManager {
       //   }
       // }
 
-      // 9. Register and track
+      // 9. Initialize integration sync service for external systems
+      try {
+        const integrationSyncService = createIntegrationSyncService({
+          projectId,
+          projectPath,
+          sudocodeDir,
+        });
+        context.integrationSyncService = integrationSyncService;
+
+        // Start in background (don't block project open on integration startup)
+        integrationSyncService.start().catch((error) => {
+          console.warn(
+            `[project-manager] Failed to start integration sync for ${projectId}:`,
+            error
+          );
+          // Don't fail the open operation
+        });
+      } catch (error) {
+        console.warn(
+          `[project-manager] Failed to create integration sync service for ${projectId}:`,
+          error
+        );
+        // Don't fail the open operation
+      }
+
+      // 10. Register and track
       this.registry.registerProject(projectPath);
       this.registry.updateLastOpened(projectId);
       await this.registry.save();

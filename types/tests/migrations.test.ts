@@ -136,18 +136,24 @@ describe("Database Migrations", () => {
       `);
 
       // Insert test data
-      db.prepare(
-        "INSERT INTO issues (id, uuid, title) VALUES (?, ?, ?)"
-      ).run("i-test", "uuid-issue", "Test Issue");
+      db.prepare("INSERT INTO issues (id, uuid, title) VALUES (?, ?, ?)").run(
+        "i-test",
+        "uuid-issue",
+        "Test Issue"
+      );
+
+      db.prepare("INSERT INTO specs (id, uuid, title) VALUES (?, ?, ?)").run(
+        "s-test",
+        "uuid-spec",
+        "Test Spec"
+      );
 
       db.prepare(
-        "INSERT INTO specs (id, uuid, title) VALUES (?, ?, ?)"
-      ).run("s-test", "uuid-spec", "Test Spec");
-
-      db.prepare(`
+        `
         INSERT INTO issue_feedback (id, issue_id, issue_uuid, spec_id, spec_uuid, feedback_type, content)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      `
+      ).run(
         "fb-1",
         "i-test",
         "uuid-issue",
@@ -456,17 +462,21 @@ describe("Database Migrations", () => {
       `);
 
       // Insert test data with various agent_type values
-      db.prepare(`
+      db.prepare(
+        `
         INSERT INTO executions (
           id, target_branch, branch_name, status, agent_type
         ) VALUES (?, ?, ?, ?, ?)
-      `).run("exec-1", "main", "test-branch-1", "running", "claude-code");
+      `
+      ).run("exec-1", "main", "test-branch-1", "running", "claude-code");
 
-      db.prepare(`
+      db.prepare(
+        `
         INSERT INTO executions (
           id, target_branch, branch_name, status, agent_type
         ) VALUES (?, ?, ?, ?, ?)
-      `).run("exec-2", "main", "test-branch-2", "completed", null);
+      `
+      ).run("exec-2", "main", "test-branch-2", "completed", null);
     });
 
     it("should make agent_type nullable", () => {
@@ -477,7 +487,9 @@ describe("Database Migrations", () => {
         notnull: number;
       }>;
 
-      const agentTypeColumn = tableInfo.find((col) => col.name === "agent_type");
+      const agentTypeColumn = tableInfo.find(
+        (col) => col.name === "agent_type"
+      );
       expect(agentTypeColumn).toBeDefined();
       expect(agentTypeColumn!.notnull).toBe(0); // 0 means nullable
     });
@@ -490,7 +502,9 @@ describe("Database Migrations", () => {
         dflt_value: string | null;
       }>;
 
-      const agentTypeColumn = tableInfo.find((col) => col.name === "agent_type");
+      const agentTypeColumn = tableInfo.find(
+        (col) => col.name === "agent_type"
+      );
       expect(agentTypeColumn).toBeDefined();
       expect(agentTypeColumn!.dflt_value).toBeNull();
     });
@@ -531,20 +545,24 @@ describe("Database Migrations", () => {
 
       // Should allow inserting with custom agent types
       expect(() => {
-        db.prepare(`
+        db.prepare(
+          `
           INSERT INTO executions (
             id, target_branch, branch_name, status, agent_type
           ) VALUES (?, ?, ?, ?, ?)
-        `).run("exec-3", "main", "test-branch-3", "running", "custom-agent");
+        `
+        ).run("exec-3", "main", "test-branch-3", "running", "custom-agent");
       }).not.toThrow();
 
       // Should allow NULL
       expect(() => {
-        db.prepare(`
+        db.prepare(
+          `
           INSERT INTO executions (
             id, target_branch, branch_name, status, agent_type
           ) VALUES (?, ?, ?, ?, ?)
-        `).run("exec-4", "main", "test-branch-4", "running", null);
+        `
+        ).run("exec-4", "main", "test-branch-4", "running", null);
       }).not.toThrow();
 
       // Verify the custom agent type was stored
@@ -630,6 +648,188 @@ describe("Database Migrations", () => {
     });
   });
 
+  describe("Migration 4: add-external-links-column", () => {
+    beforeEach(() => {
+      // Create old schema without external_links columns
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS specs (
+          id TEXT PRIMARY KEY,
+          uuid TEXT NOT NULL UNIQUE,
+          title TEXT NOT NULL,
+          file_path TEXT NOT NULL,
+          content TEXT NOT NULL DEFAULT '',
+          priority INTEGER NOT NULL DEFAULT 2,
+          archived INTEGER NOT NULL DEFAULT 0,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          parent_id TEXT,
+          parent_uuid TEXT
+        )
+      `);
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS issues (
+          id TEXT PRIMARY KEY,
+          uuid TEXT NOT NULL UNIQUE,
+          title TEXT NOT NULL,
+          content TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'open',
+          priority INTEGER NOT NULL DEFAULT 2,
+          archived INTEGER NOT NULL DEFAULT 0,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          parent_id TEXT,
+          parent_uuid TEXT
+        )
+      `);
+
+      // Insert test data
+      db.prepare(
+        "INSERT INTO specs (id, uuid, title, file_path) VALUES (?, ?, ?, ?)"
+      ).run("s-test", "uuid-spec", "Test Spec", "specs/test.md");
+
+      db.prepare("INSERT INTO issues (id, uuid, title) VALUES (?, ?, ?)").run(
+        "i-test",
+        "uuid-issue",
+        "Test Issue"
+      );
+    });
+
+    it("should add external_links column to specs table", () => {
+      runMigrations(db);
+
+      const tableInfo = db.pragma("table_info(specs)") as Array<{
+        name: string;
+      }>;
+
+      const columnNames = tableInfo.map((col) => col.name);
+      expect(columnNames).toContain("external_links");
+    });
+
+    it("should add external_links column to issues table", () => {
+      runMigrations(db);
+
+      const tableInfo = db.pragma("table_info(issues)") as Array<{
+        name: string;
+      }>;
+
+      const columnNames = tableInfo.map((col) => col.name);
+      expect(columnNames).toContain("external_links");
+    });
+
+    it("should preserve existing data", () => {
+      runMigrations(db);
+
+      const spec = db
+        .prepare("SELECT * FROM specs WHERE id = ?")
+        .get("s-test") as {
+        id: string;
+        title: string;
+        external_links: string | null;
+      };
+
+      expect(spec).toBeDefined();
+      expect(spec.id).toBe("s-test");
+      expect(spec.title).toBe("Test Spec");
+      expect(spec.external_links).toBeNull();
+
+      const issue = db
+        .prepare("SELECT * FROM issues WHERE id = ?")
+        .get("i-test") as {
+        id: string;
+        title: string;
+        external_links: string | null;
+      };
+
+      expect(issue).toBeDefined();
+      expect(issue.id).toBe("i-test");
+      expect(issue.title).toBe("Test Issue");
+      expect(issue.external_links).toBeNull();
+    });
+
+    it("should allow storing JSON in external_links column", () => {
+      runMigrations(db);
+
+      const externalLinks = JSON.stringify([
+        {
+          provider: "beads",
+          external_id: "beads-123",
+          url: "https://example.com",
+        },
+      ]);
+
+      db.prepare("UPDATE specs SET external_links = ? WHERE id = ?").run(
+        externalLinks,
+        "s-test"
+      );
+
+      const spec = db
+        .prepare("SELECT external_links FROM specs WHERE id = ?")
+        .get("s-test") as { external_links: string };
+
+      expect(spec.external_links).toBe(externalLinks);
+      expect(JSON.parse(spec.external_links)).toEqual([
+        {
+          provider: "beads",
+          external_id: "beads-123",
+          url: "https://example.com",
+        },
+      ]);
+    });
+
+    it("should be idempotent (safe to run multiple times)", () => {
+      runMigrations(db);
+      runMigrations(db); // Run again
+
+      // Should not throw and data should still be intact
+      const spec = db
+        .prepare("SELECT * FROM specs WHERE id = ?")
+        .get("s-test") as { id: string };
+
+      expect(spec).toBeDefined();
+      expect(spec.id).toBe("s-test");
+    });
+
+    it("should handle new databases without specs/issues tables", () => {
+      // Create a new database without tables
+      const newDb = new Database(":memory:");
+
+      // Should not throw when running migration on database without tables
+      expect(() => runMigrations(newDb)).not.toThrow();
+
+      newDb.close();
+    });
+
+    it("should handle databases that already have external_links column", () => {
+      // Create database with new schema already in place
+      const newDb = new Database(":memory:");
+
+      newDb.exec(`
+        CREATE TABLE IF NOT EXISTS specs (
+          id TEXT PRIMARY KEY,
+          uuid TEXT NOT NULL UNIQUE,
+          title TEXT NOT NULL,
+          file_path TEXT NOT NULL,
+          external_links TEXT
+        )
+      `);
+
+      newDb.exec(`
+        CREATE TABLE IF NOT EXISTS issues (
+          id TEXT PRIMARY KEY,
+          uuid TEXT NOT NULL UNIQUE,
+          title TEXT NOT NULL,
+          external_links TEXT
+        )
+      `);
+
+      // Should not throw when running migration on already-migrated database
+      expect(() => runMigrations(newDb)).not.toThrow();
+
+      newDb.close();
+    });
+  });
+
   describe("runMigrations", () => {
     it("should run all pending migrations in order", () => {
       // Create old schema for both migrations
@@ -691,21 +891,23 @@ describe("Database Migrations", () => {
 
       runMigrations(db);
 
-      // Should have run all three migrations
-      expect(getCurrentMigrationVersion(db)).toBe(3);
+      // Should have run all four migrations
+      expect(getCurrentMigrationVersion(db)).toBe(4);
 
       // Verify all migrations were applied
       const migrations = db
         .prepare("SELECT * FROM migrations ORDER BY version")
         .all() as Array<{ version: number; name: string }>;
 
-      expect(migrations).toHaveLength(3);
+      expect(migrations).toHaveLength(4);
       expect(migrations[0].version).toBe(1);
       expect(migrations[0].name).toBe("generalize-feedback-table");
       expect(migrations[1].version).toBe(2);
       expect(migrations[1].name).toBe("add-normalized-entry-support");
       expect(migrations[2].version).toBe(3);
       expect(migrations[2].name).toBe("remove-agent-type-constraints");
+      expect(migrations[3].version).toBe(4);
+      expect(migrations[3].name).toBe("add-external-links-column");
     });
 
     it("should skip already-applied migrations", () => {
@@ -744,18 +946,37 @@ describe("Database Migrations", () => {
         )
       `);
 
+      // Create specs and issues tables for migration 4
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS specs (
+          id TEXT PRIMARY KEY,
+          uuid TEXT NOT NULL UNIQUE,
+          title TEXT NOT NULL,
+          file_path TEXT NOT NULL
+        )
+      `);
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS issues (
+          id TEXT PRIMARY KEY,
+          uuid TEXT NOT NULL UNIQUE,
+          title TEXT NOT NULL
+        )
+      `);
+
       runMigrations(db);
 
-      // Should run migrations 2 and 3
-      expect(getCurrentMigrationVersion(db)).toBe(3);
+      // Should run migrations 2, 3, and 4
+      expect(getCurrentMigrationVersion(db)).toBe(4);
 
       const migrations = db
         .prepare("SELECT * FROM migrations ORDER BY version")
         .all() as Array<{ version: number; name: string }>;
 
-      expect(migrations).toHaveLength(3);
+      expect(migrations).toHaveLength(4);
       expect(migrations[1].version).toBe(2);
       expect(migrations[2].version).toBe(3);
+      expect(migrations[3].version).toBe(4);
     });
 
     it("should not run if no pending migrations", () => {
@@ -780,13 +1001,17 @@ describe("Database Migrations", () => {
         3,
         "remove-agent-type-constraints"
       );
+      db.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        4,
+        "add-external-links-column"
+      );
 
-      expect(getCurrentMigrationVersion(db)).toBe(3);
+      expect(getCurrentMigrationVersion(db)).toBe(4);
 
       // Should not throw, just skip
       expect(() => runMigrations(db)).not.toThrow();
 
-      expect(getCurrentMigrationVersion(db)).toBe(3);
+      expect(getCurrentMigrationVersion(db)).toBe(4);
     });
   });
 });

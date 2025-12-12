@@ -10,6 +10,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { toast } from 'sonner'
 import { ExecutionPreview } from '@/components/executions/ExecutionPreview'
 import { WorkflowIndicator } from './WorkflowIndicator'
+import { SyncIndicator } from './SyncIndicator'
 import { getColorFromId } from '@/utils/colors'
 
 // Priority badge colors - using darker shades for better contrast with white text
@@ -161,6 +162,10 @@ export function IssueCard({
                   workflowTitle={workflowInfo.workflowTitle}
                   stepStatus={workflowInfo.stepStatus}
                 />
+              )}
+              {/* Sync Indicator for external integrations */}
+              {issue.external_links && issue.external_links.length > 0 && (
+                <SyncIndicator externalLinks={issue.external_links} />
               )}
               {/* Visual indicator for execution-based column placement */}
               {displayStatusOverride && (

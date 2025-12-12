@@ -8,6 +8,7 @@ import type { ExecutionWorkerPool } from "./execution-worker-pool.js";
 import type { IWorkflowEngine } from "../workflow/workflow-engine.js";
 import type { WorkflowBroadcastService } from "./workflow-broadcast-service.js";
 import type { WorkflowEngineType } from "@sudocode-ai/types/workflows";
+import type { IntegrationSyncService } from "./integration-sync-service.js";
 
 /**
  * ProjectContext encapsulates all services and resources for a single open project.
@@ -69,6 +70,9 @@ export class ProjectContext {
   /** Workflow broadcast service for WebSocket events (optional) */
   workflowBroadcastService: WorkflowBroadcastService | undefined;
 
+  /** Integration sync service for external system synchronization (optional) */
+  integrationSyncService: IntegrationSyncService | undefined;
+
   /** File watcher for detecting changes */
   watcher: ServerWatcherControl | null = null;
 
@@ -128,6 +132,12 @@ export class ProjectContext {
       if (this.workflowBroadcastService) {
         this.workflowBroadcastService.dispose();
         this.workflowBroadcastService = undefined;
+      }
+
+      // 3b. Stop integration sync service
+      if (this.integrationSyncService) {
+        await this.integrationSyncService.stop();
+        this.integrationSyncService = undefined;
       }
 
       // 4. Stop file watcher

@@ -6,6 +6,21 @@ import type Database from "better-sqlite3";
 import type { Spec } from "../types.js";
 import { generateUUID } from "../id-generator.js";
 
+/**
+ * Parse external_links JSON field from SQLite row
+ */
+function parseExternalLinks(row: any): Spec | null {
+  if (!row) return null;
+  if (typeof row.external_links === "string") {
+    try {
+      row.external_links = JSON.parse(row.external_links);
+    } catch {
+      row.external_links = undefined;
+    }
+  }
+  return row as Spec;
+}
+
 export interface CreateSpecInput {
   id: string;
   uuid?: string;
@@ -18,6 +33,7 @@ export interface CreateSpecInput {
   archived_at?: string;
   created_at?: string;
   updated_at?: string;
+  external_links?: string; // JSON string of ExternalLink[]
 }
 
 export interface UpdateSpecInput {
@@ -29,6 +45,7 @@ export interface UpdateSpecInput {
   archived?: boolean;
   archived_at?: string;
   updated_at?: string;
+  external_links?: string; // JSON string of ExternalLink[]
 }
 
 export interface ListSpecsOptions {
@@ -69,6 +86,7 @@ export function createSpec(
     "parent_id",
     "parent_uuid",
     "archived",
+    "external_links",
   ];
   const values = [
     "@id",
@@ -80,6 +98,7 @@ export function createSpec(
     "@parent_id",
     "@parent_uuid",
     "@archived",
+    "@external_links",
   ];
 
   if (input.created_at) {
@@ -111,6 +130,7 @@ export function createSpec(
       parent_uuid = excluded.parent_uuid,
       archived = excluded.archived,
       archived_at = excluded.archived_at,
+      external_links = excluded.external_links,
       ${input.created_at ? "created_at = excluded.created_at," : ""}
       ${input.updated_at ? "updated_at = excluded.updated_at" : "updated_at = CURRENT_TIMESTAMP"}
   `);
@@ -126,6 +146,7 @@ export function createSpec(
       parent_id: input.parent_id ?? null,
       parent_uuid: parent_uuid,
       archived: input.archived ? 1 : 0,
+      external_links: input.external_links ?? null,
     };
 
     // Add optional timestamp parameters
@@ -162,7 +183,8 @@ export function getSpec(db: Database.Database, id: string): Spec | null {
     SELECT * FROM specs WHERE id = ?
   `);
 
-  return (stmt.get(id) as Spec | undefined) ?? null;
+  const row = stmt.get(id);
+  return parseExternalLinks(row);
 }
 
 /**
@@ -176,7 +198,8 @@ export function getSpecByFilePath(
     SELECT * FROM specs WHERE file_path = ?
   `);
 
-  return (stmt.get(filePath) as Spec | undefined) ?? null;
+  const row = stmt.get(filePath);
+  return parseExternalLinks(row);
 }
 
 /**
@@ -247,6 +270,10 @@ export function updateSpec(
     // archived_at provided without archived change
     updates.push("archived_at = @archived_at");
     params.archived_at = input.archived_at;
+  }
+  if (input.external_links !== undefined) {
+    updates.push("external_links = @external_links");
+    params.external_links = input.external_links;
   }
 
   // Handle updated_at - use provided value or set to current timestamp
@@ -343,7 +370,8 @@ export function listSpecs(
   }
 
   const stmt = db.prepare(query);
-  return stmt.all(params) as Spec[];
+  const rows = stmt.all(params) as any[];
+  return rows.map((row) => parseExternalLinks(row)!);
 }
 
 /**
@@ -380,5 +408,6 @@ export function searchSpecs(
   }
 
   const stmt = db.prepare(sql);
-  return stmt.all(params) as Spec[];
+  const rows = stmt.all(params) as any[];
+  return rows.map((row) => parseExternalLinks(row)!);
 }
