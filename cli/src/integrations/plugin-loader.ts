@@ -22,6 +22,7 @@ import type {
  */
 const FIRST_PARTY_PLUGINS: Record<string, string> = {
   beads: "@sudocode-ai/integration-beads",
+  "spec-kit": "@sudocode-ai/integration-speckit",
 };
 
 /**
