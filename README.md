@@ -200,20 +200,14 @@ Open execution worktrees directly in your preferred IDE with a single click. The
 
 **Configuration:**
 
-Create `.sudocode/config.local.json` (gitignored) to set your preferred editor:
+Editor settings are in `.sudocode/config.json` (gitignored, created during init):
 
 ```json
 {
   "editor": {
-    "editorType": "vs-code",
-    "customCommand": null
+    "editorType": "vs-code"
   }
 }
-```
-
-Or copy from the example:
-```bash
-cp .sudocode/config.local.json.example .sudocode/config.local.json
 ```
 
 **Supported Editor Types:**

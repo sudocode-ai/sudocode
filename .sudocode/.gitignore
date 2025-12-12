@@ -2,4 +2,4 @@ cache.db*
 issues/
 specs/
 worktrees/
-config.local.json
+config.json

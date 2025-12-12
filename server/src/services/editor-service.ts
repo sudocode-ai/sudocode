@@ -42,7 +42,7 @@ export class EditorService {
   }
 
   /**
-   * Load editor configuration from .sudocode/config.local.json
+   * Load editor configuration from .sudocode/config.json
    * Falls back to default (VS Code) if file doesn't exist
    */
   async loadConfig(): Promise<EditorConfig> {
@@ -55,11 +55,7 @@ export class EditorService {
       return this.configCache;
     }
 
-    const configPath = path.join(
-      this.repoPath,
-      ".sudocode",
-      "config.local.json"
-    );
+    const configPath = path.join(this.repoPath, ".sudocode", "config.json");
 
     try {
       const content = await fs.readFile(configPath, "utf-8");
