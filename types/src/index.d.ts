@@ -252,6 +252,28 @@ export interface WorktreeConfig {
 }
 
 /**
+ * Supported editor types for opening worktrees
+ */
+export type EditorType =
+  | "vs-code"
+  | "cursor"
+  | "windsurf"
+  | "intellij"
+  | "zed"
+  | "xcode"
+  | "custom";
+
+/**
+ * Editor configuration for IDE integration
+ */
+export interface EditorConfig {
+  /** The editor type to use */
+  editorType: EditorType;
+  /** Custom command when editorType is 'custom' */
+  customCommand?: string;
+}
+
+/**
  * Config metadata file structure (.sudocode/config.json)
  */
 export interface Config {
@@ -261,6 +283,8 @@ export interface Config {
   worktree?: WorktreeConfig;
   /** Integration configurations (optional) */
   integrations?: IntegrationsConfig;
+  /** Editor configuration (optional) */
+  editor?: EditorConfig;
 }
 
 /**

@@ -42,7 +42,7 @@ describe('EditorService', () => {
   })
 
   describe('loadConfig', () => {
-    it('should load config from .sudocode/config.local.json', async () => {
+    it('should load config from .sudocode/config.json', async () => {
       const mockConfig = {
         editor: {
           editorType: 'cursor',
@@ -56,7 +56,7 @@ describe('EditorService', () => {
 
       expect(config.editorType).toBe('cursor')
       expect(fs.readFile).toHaveBeenCalledWith(
-        expect.stringContaining('.sudocode/config.local.json'),
+        expect.stringContaining('.sudocode/config.json'),
         'utf-8'
       )
     })

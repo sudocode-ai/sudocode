@@ -63,7 +63,7 @@ export async function performInitialization(
     database = initDatabase({ path: dbPath });
   }
 
-  // Create config.json (version-controlled)
+  // Create config.json (local, gitignored)
   const config = {
     version: VERSION,
     worktree: {
@@ -73,6 +73,9 @@ export async function performInitialization(
       enableSparseCheckout: false,
       branchPrefix: "sudocode",
       cleanupOrphanedWorktreesOnStartup: false,
+    },
+    editor: {
+      editorType: "vs-code",
     },
   };
   fs.writeFileSync(
@@ -152,7 +155,7 @@ export async function performInitialization(
 issues/
 specs/
 worktrees/
-config.local.json`;
+config.json`;
   fs.writeFileSync(path.join(dir, ".gitignore"), gitignoreContent, "utf8");
 
   database.close();

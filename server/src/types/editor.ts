@@ -17,7 +17,7 @@ export enum EditorType {
 
 /**
  * Editor configuration interface
- * Loaded from .sudocode/config.local.json
+ * Loaded from .sudocode/config.json
  */
 export interface EditorConfig {
   editorType: EditorType;

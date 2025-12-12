@@ -325,7 +325,7 @@ Cursor IDE agent:
 
 ### Configuration File (`.sudocode/config.json`)
 
-Use this to capture persistent configs.
+Local configuration file (gitignored). Created during `sudocode init`.
 
 ```json
 {
@@ -337,6 +337,9 @@ Use this to capture persistent configs.
     "enableSparseCheckout": false,
     "branchPrefix": "sudocode",
     "cleanupOrphanedWorktreesOnStartup": true
+  },
+  "editor": {
+    "editorType": "vs-code"
   }
 }
 ```
@@ -459,7 +462,7 @@ idx_feedback_to             (to_id)
 .sudocode/
 ├── specs/           # Markdown + specs.jsonl (git-tracked)
 ├── issues/          # issues.jsonl (git-tracked)
-├── config.json      # Configuration (git-tracked)
+├── config.json      # Configuration (gitignored)
 ├── cache.db         # SQLite cache (gitignored)
 └── worktrees/       # Execution isolation (gitignored)
 ```
