@@ -312,25 +312,34 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
               const isRequired = plugin.configSchema?.required?.includes(key) || prop.required
               const value = options[key] ?? prop.default ?? ''
 
-              return (
+              return prop.type === 'boolean' ? (
+                <div key={key} className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-xs">
+                      {prop.title || key}
+                      {isRequired && <span className="ml-1 text-destructive">*</span>}
+                    </Label>
+                    {prop.description && (
+                      <p className="text-[10px] text-muted-foreground">{prop.description}</p>
+                    )}
+                  </div>
+                  <Switch
+                    checked={Boolean(value)}
+                    onCheckedChange={(checked) => updatePluginOption(plugin.name, key, checked)}
+                  />
+                </div>
+              ) : (
                 <div key={key} className="space-y-1">
                   <Label className="text-xs">
                     {prop.title || key}
                     {isRequired && <span className="ml-1 text-destructive">*</span>}
                   </Label>
-                  {prop.type === 'boolean' ? (
-                    <Switch
-                      checked={Boolean(value)}
-                      onCheckedChange={(checked) => updatePluginOption(plugin.name, key, checked)}
-                    />
-                  ) : (
-                    <Input
-                      value={String(value)}
-                      onChange={(e) => updatePluginOption(plugin.name, key, e.target.value)}
-                      placeholder={prop.description}
-                      className="h-8 text-sm"
-                    />
-                  )}
+                  <Input
+                    value={String(value)}
+                    onChange={(e) => updatePluginOption(plugin.name, key, e.target.value)}
+                    placeholder={prop.description}
+                    className="h-8 text-sm"
+                  />
                   {prop.description && (
                     <p className="text-[10px] text-muted-foreground">{prop.description}</p>
                   )}
@@ -354,7 +363,9 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             </div>
             <Switch
               checked={config.auto_sync ?? false}
-              onCheckedChange={(checked) => updateIntegrationConfig(plugin.name, 'auto_sync', checked)}
+              onCheckedChange={(checked) =>
+                updateIntegrationConfig(plugin.name, 'auto_sync', checked)
+              }
             />
           </div>
 
@@ -368,7 +379,9 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             </div>
             <Switch
               checked={config.auto_import ?? true}
-              onCheckedChange={(checked) => updateIntegrationConfig(plugin.name, 'auto_import', checked)}
+              onCheckedChange={(checked) =>
+                updateIntegrationConfig(plugin.name, 'auto_import', checked)
+              }
             />
           </div>
 
@@ -377,7 +390,9 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             <Label className="text-xs">Delete Behavior</Label>
             <Select
               value={config.delete_behavior ?? 'close'}
-              onValueChange={(value) => updateIntegrationConfig(plugin.name, 'delete_behavior', value)}
+              onValueChange={(value) =>
+                updateIntegrationConfig(plugin.name, 'delete_behavior', value)
+              }
             >
               <SelectTrigger className="h-8 text-sm">
                 <SelectValue />
@@ -398,7 +413,9 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             <Label className="text-xs">Conflict Resolution</Label>
             <Select
               value={config.conflict_resolution ?? 'newest-wins'}
-              onValueChange={(value) => updateIntegrationConfig(plugin.name, 'conflict_resolution', value)}
+              onValueChange={(value) =>
+                updateIntegrationConfig(plugin.name, 'conflict_resolution', value)
+              }
             >
               <SelectTrigger className="h-8 text-sm">
                 <SelectValue />
@@ -420,7 +437,9 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             <Label className="text-xs">Default Sync Direction</Label>
             <Select
               value={config.default_sync_direction ?? 'bidirectional'}
-              onValueChange={(value) => updateIntegrationConfig(plugin.name, 'default_sync_direction', value)}
+              onValueChange={(value) =>
+                updateIntegrationConfig(plugin.name, 'default_sync_direction', value)
+              }
             >
               <SelectTrigger className="h-8 text-sm">
                 <SelectValue />
