@@ -576,7 +576,7 @@ export class WorktreeSyncService {
       const theirsEntities = parseJsonl(postMergeContent);
 
       // Perform three-way merge using the merge resolver
-      const { entities: merged } = mergeThreeWay(
+      const { entities: merged } = await mergeThreeWay(
         baseEntities,
         oursEntities,
         theirsEntities
@@ -820,7 +820,7 @@ export class WorktreeSyncService {
         );
 
         // Perform three-way merge
-        const { entities: merged } = mergeThreeWay(
+        const { entities: merged } = await mergeThreeWay(
           baseVersion,
           ourVersion,
           theirVersion
