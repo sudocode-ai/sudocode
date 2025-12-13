@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Copy,
   Terminal,
+  Settings2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
@@ -81,6 +82,18 @@ interface PluginTestResult {
 }
 
 type SettingsTab = 'general' | 'integrations'
+
+// Section configuration for sidebar navigation
+interface Section {
+  id: SettingsTab
+  label: string
+  icon: React.ReactNode
+}
+
+const SECTIONS: Section[] = [
+  { id: 'general', label: 'General', icon: <Settings2 className="h-4 w-4" /> },
+  { id: 'integrations', label: 'Integrations', icon: <Plug className="h-4 w-4" /> },
+]
 
 export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   const { theme, setTheme } = useTheme()
@@ -484,44 +497,64 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="flex max-h-[80vh] max-w-lg flex-col overflow-hidden">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[85vh] max-w-4xl flex-col gap-0 overflow-hidden p-0">
+        <DialogHeader className="border-b px-6 pb-4 pt-6">
           <DialogTitle>Settings</DialogTitle>
         </DialogHeader>
 
-        {/* Tabs */}
-        <div className="flex gap-1 border-b border-border pb-2">
-          <button
-            onClick={() => setActiveTab('general')}
-            className={cn(
-              'rounded-md px-3 py-1.5 text-sm transition-colors',
-              activeTab === 'general'
-                ? 'bg-accent text-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            General
-          </button>
-          <button
-            onClick={() => setActiveTab('integrations')}
-            className={cn(
-              'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors',
-              activeTab === 'integrations'
-                ? 'bg-accent text-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            <Plug className="h-3.5 w-3.5" />
-            Integrations
-          </button>
-        </div>
+        <div className="flex min-h-0 flex-1">
+          {/* Left Navigation Sidebar */}
+          <nav className="hidden w-48 shrink-0 flex-col border-r bg-muted/30 py-4 md:flex">
+            {SECTIONS.map((section) => (
+              <button
+                key={section.id}
+                onClick={() => setActiveTab(section.id)}
+                className={cn(
+                  'flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors',
+                  'hover:bg-muted/50',
+                  activeTab === section.id
+                    ? 'border-r-2 border-primary bg-muted font-medium text-foreground'
+                    : 'text-muted-foreground'
+                )}
+              >
+                {section.icon}
+                <span>{section.label}</span>
+              </button>
+            ))}
+          </nav>
 
-        <div className="flex-1 overflow-y-auto pb-4">
+          {/* Mobile Navigation (dropdown style) */}
+          <div className="border-b px-4 pb-4 pt-4 md:hidden">
+            <Select value={activeTab} onValueChange={(value) => setActiveTab(value as SettingsTab)}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SECTIONS.map((section) => (
+                  <SelectItem key={section.id} value={section.id}>
+                    <div className="flex items-center gap-2">
+                      {section.icon}
+                      <span>{section.label}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Content Area */}
+          <div
+            className="flex-1 overflow-y-auto px-6 py-4"
+            style={{ maxHeight: 'calc(85vh - 140px)' }}
+          >
           {activeTab === 'general' && (
             <div className="space-y-6">
               {/* Theme Section */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-medium text-foreground">Appearance</h3>
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Sun className="h-5 w-5 text-muted-foreground" />
+                  <h3 className="text-base font-semibold">Appearance</h3>
+                </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Theme</span>
                   <button
@@ -547,8 +580,11 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
               </div>
 
               {/* Version Section */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-medium text-foreground">Version</h3>
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Terminal className="h-5 w-5 text-muted-foreground" />
+                  <h3 className="text-base font-semibold">Version</h3>
+                </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">CLI</span>
@@ -574,10 +610,17 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
           )}
 
           {activeTab === 'integrations' && (
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Configure integrations with external issue tracking systems.
-              </p>
+            <div className="space-y-6">
+              {/* Section Header */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Plug className="h-5 w-5 text-muted-foreground" />
+                  <h3 className="text-base font-semibold">Integrations</h3>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Configure integrations with external issue tracking systems.
+                </p>
+              </div>
 
               {/* Install plugin dropdown */}
               <div className="flex items-center gap-2">
@@ -720,6 +763,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
               )}
             </div>
           )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>
