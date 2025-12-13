@@ -5,10 +5,14 @@
  * - UUID-based deduplication
  * - Timestamp-based prioritization
  * - Metadata merging (relationships, tags)
+ * - YAML-based three-way merge for line-level text merging
  */
 
 import * as fs from "fs";
 import type { IssueJSONL, SpecJSONL } from "./types.js";
+import { jsonToYaml, yamlToJson } from "./yaml-converter.js";
+import { mergeYaml } from "./git-merge.js";
+import { resolveYamlConflicts, hasConflicts } from "./yaml-conflict-resolver.js";
 
 export type JSONLEntity = IssueJSONL | SpecJSONL | Record<string, any>;
 
@@ -403,16 +407,120 @@ export function resolveEntities<T extends JSONLEntity>(
 
 /**
  * Three-way merge for git merge driver
- * Merges base, ours, and theirs versions
+ * Merges base, ours, and theirs versions using YAML-based line-level merging
  */
-export function mergeThreeWay<T extends JSONLEntity>(
+export async function mergeThreeWay<T extends JSONLEntity>(
   base: T[],
   ours: T[],
   theirs: T[]
-): ResolvedResult<T> {
-  // Collect all entities from all three versions
-  const allEntities = [...base, ...ours, ...theirs];
+): Promise<ResolvedResult<T>> {
+  // Group entities by UUID for all three versions
+  const baseByUuid = new Map<string, T>();
+  const oursByUuid = new Map<string, T>();
+  const theirsByUuid = new Map<string, T>();
 
-  // Use standard resolution logic
-  return resolveEntities(allEntities);
+  for (const entity of base) {
+    baseByUuid.set(entity.uuid, entity);
+  }
+  for (const entity of ours) {
+    oursByUuid.set(entity.uuid, entity);
+  }
+  for (const entity of theirs) {
+    theirsByUuid.set(entity.uuid, entity);
+  }
+
+  // Collect all unique UUIDs
+  const allUuids = new Set([
+    ...baseByUuid.keys(),
+    ...oursByUuid.keys(),
+    ...theirsByUuid.keys(),
+  ]);
+
+  const mergedEntities: T[] = [];
+
+  // Process each UUID
+  for (const uuid of allUuids) {
+    const baseEntity = baseByUuid.get(uuid);
+    const oursEntity = oursByUuid.get(uuid);
+    const theirsEntity = theirsByUuid.get(uuid);
+
+    // Case 1: Entity exists in all three versions → YAML merge
+    if (baseEntity && oursEntity && theirsEntity) {
+      try {
+        // Convert to YAML
+        const baseYaml = jsonToYaml(baseEntity);
+        const oursYaml = jsonToYaml(oursEntity);
+        const theirsYaml = jsonToYaml(theirsEntity);
+
+        // Run git merge
+        const { merged: mergedYaml, hasConflicts: hasConflictsFlag } =
+          await mergeYaml(baseYaml, oursYaml, theirsYaml);
+
+        let resolvedYaml = mergedYaml;
+
+        // Resolve any remaining conflicts using latest-wins strategy
+        if (hasConflictsFlag && hasConflicts(mergedYaml)) {
+          resolvedYaml = resolveYamlConflicts(
+            mergedYaml,
+            oursEntity as any,
+            theirsEntity as any
+          );
+        }
+
+        // Convert back to JSON
+        const mergedEntity = yamlToJson<T>(resolvedYaml);
+
+        // Merge metadata (relationships, tags, feedback)
+        const finalEntity = mergeMetadata([
+          baseEntity,
+          oursEntity,
+          theirsEntity,
+          mergedEntity,
+        ]) as T;
+
+        mergedEntities.push(finalEntity);
+      } catch (error) {
+        // Fallback to metadata merge if YAML merge fails
+        console.warn(
+          `YAML merge failed for UUID ${uuid}, falling back to metadata merge:`,
+          error instanceof Error ? error.message : String(error)
+        );
+        const fallbackEntity = mergeMetadata([
+          baseEntity,
+          oursEntity,
+          theirsEntity,
+        ]) as T;
+        mergedEntities.push(fallbackEntity);
+      }
+    }
+    // Case 2: Entity only in base and ours (deleted in theirs)
+    else if (baseEntity && oursEntity && !theirsEntity) {
+      // Keep ours version (theirs deleted it)
+      mergedEntities.push(oursEntity);
+    }
+    // Case 3: Entity only in base and theirs (deleted in ours)
+    else if (baseEntity && !oursEntity && theirsEntity) {
+      // Keep theirs version (ours deleted it)
+      mergedEntities.push(theirsEntity);
+    }
+    // Case 4: Entity only in ours (added in ours)
+    else if (!baseEntity && oursEntity && !theirsEntity) {
+      mergedEntities.push(oursEntity);
+    }
+    // Case 5: Entity only in theirs (added in theirs)
+    else if (!baseEntity && !oursEntity && theirsEntity) {
+      mergedEntities.push(theirsEntity);
+    }
+    // Case 6: Entity in ours and theirs but not base (added on both sides)
+    else if (!baseEntity && oursEntity && theirsEntity) {
+      // Merge both versions
+      const merged = mergeMetadata([oursEntity, theirsEntity]) as T;
+      mergedEntities.push(merged);
+    }
+    // Case 7: Entity only in base (deleted in both)
+    // Don't include in merged result
+  }
+
+  // Use standard resolution logic for final deduplication and sorting
+  return resolveEntities(mergedEntities);
 }
