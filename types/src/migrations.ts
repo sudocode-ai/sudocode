@@ -517,17 +517,12 @@ export function recordMigration(
  */
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getCurrentMigrationVersion(db);
-  console.log(
-    `[migrations] Current database migration version: ${currentVersion}`
-  );
-  console.log(`[migrations] Total available migrations: ${MIGRATIONS.length}`);
 
   const pendingMigrations = MIGRATIONS.filter(
     (m) => m.version > currentVersion
   );
 
   if (pendingMigrations.length === 0) {
-    console.log(`[migrations] No pending migrations to run`);
     return;
   }
 
