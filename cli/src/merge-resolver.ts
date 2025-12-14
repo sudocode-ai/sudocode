@@ -444,7 +444,7 @@ export async function mergeThreeWay<T extends JSONLEntity>(
     const oursEntity = oursByUuid.get(uuid);
     const theirsEntity = theirsByUuid.get(uuid);
 
-    // Case 1: Entity exists in all three versions → YAML merge
+    // Special case: All three versions exist → YAML merge for line-level resolution
     if (baseEntity && oursEntity && theirsEntity) {
       try {
         // Convert to YAML
@@ -493,32 +493,12 @@ export async function mergeThreeWay<T extends JSONLEntity>(
         mergedEntities.push(fallbackEntity);
       }
     }
-    // Case 2: Entity only in base and ours (deleted in theirs)
-    else if (baseEntity && oursEntity && !theirsEntity) {
-      // Keep ours version (theirs deleted it)
-      mergedEntities.push(oursEntity);
+    // All other cases: add available entities, let resolveEntities handle deduplication
+    else {
+      if (oursEntity) mergedEntities.push(oursEntity);
+      if (theirsEntity) mergedEntities.push(theirsEntity);
+      // Note: baseEntity only exists means both sides deleted it, so we skip it
     }
-    // Case 3: Entity only in base and theirs (deleted in ours)
-    else if (baseEntity && !oursEntity && theirsEntity) {
-      // Keep theirs version (ours deleted it)
-      mergedEntities.push(theirsEntity);
-    }
-    // Case 4: Entity only in ours (added in ours)
-    else if (!baseEntity && oursEntity && !theirsEntity) {
-      mergedEntities.push(oursEntity);
-    }
-    // Case 5: Entity only in theirs (added in theirs)
-    else if (!baseEntity && !oursEntity && theirsEntity) {
-      mergedEntities.push(theirsEntity);
-    }
-    // Case 6: Entity in ours and theirs but not base (added on both sides)
-    else if (!baseEntity && oursEntity && theirsEntity) {
-      // Merge both versions
-      const merged = mergeMetadata([oursEntity, theirsEntity]) as T;
-      mergedEntities.push(merged);
-    }
-    // Case 7: Entity only in base (deleted in both)
-    // Don't include in merged result
   }
 
   // Use standard resolution logic for final deduplication and sorting
