@@ -90,7 +90,7 @@ export class ClaudeCodeAdapter implements IAgentAdapter<ClaudeCodeConfig> {
       print: true,
       outputFormat: "stream-json",
       verbose: true, // Required for stream-json with print
-      dangerouslySkipPermissions: false,
+      dangerouslySkipPermissions: true,
     };
   }
 }
