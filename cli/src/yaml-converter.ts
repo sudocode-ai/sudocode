@@ -45,23 +45,14 @@ export function jsonToYaml(
       noCompatMode: true, // Use YAML 1.2
       quotingType: '"', // Use double quotes for consistency
       forceQuotes: false, // Only quote when necessary
+      // Use literal block style for multi-line strings to preserve line breaks
+      styles: {
+        "!!str": preserveLineBreaks ? "literal" : "plain",
+      },
       // Customize how strings are folded
       condenseFlow: false,
       // Schema determines type interpretation
       schema: yaml.JSON_SCHEMA,
-      // Custom string style resolver to use literal style only for multi-line strings
-      styles: preserveLineBreaks
-        ? {
-            "!!str": (value: string) => {
-              // Use literal style (|) for multi-line strings (containing newlines)
-              // Use plain/quoted style for single-line strings
-              if (value && typeof value === "string" && value.includes("\n")) {
-                return "literal";
-              }
-              return "plain";
-            },
-          }
-        : undefined,
     });
 
     return yamlString;

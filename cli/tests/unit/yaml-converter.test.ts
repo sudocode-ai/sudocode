@@ -432,6 +432,84 @@ status: open`;
     });
   });
 
+  describe("YAML format validation", () => {
+    it("should use literal style (|-) for multi-line strings", () => {
+      const issue: Issue = {
+        id: "i-test",
+        uuid: "550e8400-e29b-41d4-a716-446655440002",
+        title: "Multi-line test",
+        status: "open",
+        content: "Line 1\nLine 2\nLine 3",
+        priority: 1,
+        created_at: "2025-01-01T00:00:00Z",
+        updated_at: "2025-01-01T00:00:00Z",
+      };
+
+      const yaml = jsonToYaml(issue);
+
+      // Should use literal block style for multi-line content
+      expect(yaml).toMatch(/content: \|-?\n/);
+      // Each line should be on its own line (not escaped)
+      expect(yaml).toContain("  Line 1");
+      expect(yaml).toContain("  Line 2");
+      expect(yaml).toContain("  Line 3");
+      // Should NOT use quoted/escaped format
+      expect(yaml).not.toContain("Line 1\\nLine 2");
+    });
+
+    it("should use plain style for single-line strings", () => {
+      const issue: Issue = {
+        id: "i-test",
+        uuid: "550e8400-e29b-41d4-a716-446655440000",
+        title: "Short title",
+        status: "open",
+        content: "This is a single line without newlines",
+        priority: 1,
+        created_at: "2025-01-01T00:00:00Z",
+        updated_at: "2025-01-01T00:00:00Z",
+      };
+
+      const yaml = jsonToYaml(issue);
+
+      // Should use plain style (no quotes, no literal block)
+      expect(yaml).toContain("content: This is a single line without newlines");
+      // Should NOT use literal block style
+      expect(yaml).not.toMatch(/content: \|-?\n/);
+      // Should NOT be quoted (unless necessary)
+      expect(yaml).not.toContain('content: "This is a single line without newlines"');
+    });
+
+    it("should use block style for arrays", () => {
+      const spec: Spec = {
+        id: "s-test",
+        uuid: "550e8400-e29b-41d4-a716-446655440005",
+        title: "Spec with external links",
+        file_path: "/path/to/spec.md",
+        content: "Test",
+        priority: 0,
+        created_at: "2025-01-01T00:00:00Z",
+        updated_at: "2025-01-01T00:00:00Z",
+        external_links: [
+          {
+            provider: "jira",
+            external_id: "PROJ-123",
+            external_url: "https://jira.example.com/PROJ-123",
+            sync_enabled: true,
+            sync_direction: "bidirectional",
+          },
+        ],
+      };
+
+      const yaml = jsonToYaml(spec);
+
+      // Should use block style with dashes
+      expect(yaml).toContain("external_links:");
+      expect(yaml).toMatch(/external_links:\n  - /);
+      // Should NOT use flow style [...]
+      expect(yaml).not.toContain("external_links: [");
+    });
+  });
+
   describe("Edge cases", () => {
     it("should handle empty arrays", () => {
       const spec: Spec = {
