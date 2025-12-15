@@ -34,6 +34,28 @@ import { ExecutionChangesService } from "../../services/execution-changes-servic
 import { notifyExecutionEvent } from "../../services/execution-event-callbacks.js";
 
 /**
+ * Merge agent config with overrides, filtering undefined values.
+ *
+ * Enables functional composition of configs where undefined values
+ * are treated as "not present" rather than explicit values.
+ *
+ * @param base - Base agent configuration
+ * @param overrides - Partial overrides to apply (undefined values ignored)
+ * @returns Merged configuration with undefined values filtered out
+ */
+function mergeAgentConfig<T extends Record<string, any>>(
+  base: T,
+  overrides: Record<string, any>
+): T {
+  return {
+    ...base,
+    ...Object.fromEntries(
+      Object.entries(overrides).filter(([_, v]) => v !== undefined)
+    ),
+  } as T;
+}
+
+/**
  * Base executor interface that all agent executors implement
  */
 interface IAgentExecutor {
@@ -260,7 +282,7 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
         this.agentType === "claude-code" &&
         (taskMcpServers ||
           taskAppendSystemPrompt ||
-          taskDangerouslySkipPermissions ||
+          taskDangerouslySkipPermissions !== undefined ||
           taskResume)
       ) {
         // Create a task-specific executor with merged config
@@ -272,13 +294,17 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
             resume: taskResume,
           }
         );
-        executor = this.createExecutor(this.agentType, {
-          ...this._agentConfig,
+
+        // Functionally compose task-specific config
+        // mergeAgentConfig filters undefined values, treating them as "not present"
+        const taskSpecificConfig = mergeAgentConfig(this._agentConfig, {
           mcpServers: taskMcpServers,
           appendSystemPrompt: taskAppendSystemPrompt,
           dangerouslySkipPermissions: taskDangerouslySkipPermissions,
           resume: taskResume,
-        } as TConfig);
+        });
+
+        executor = this.createExecutor(this.agentType, taskSpecificConfig);
       }
 
       console.log(

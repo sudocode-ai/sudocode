@@ -92,9 +92,20 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
   // Get adapter from registry (will throw if not found)
   const adapter = agentRegistryService.getAdapter(agentType);
 
-  // Validate configuration
+  // Merge adapter defaults with provided config
+  // Filter undefined values so they don't override defaults
+  const defaults = adapter.getDefaultConfig?.() || {};
+  const filteredConfig = Object.fromEntries(
+    Object.entries(agentConfig).filter(([_, v]) => v !== undefined)
+  );
+  const mergedConfig = {
+    ...defaults,
+    ...filteredConfig,
+  } as TConfig;
+
+  // Validate merged configuration
   if (adapter.validateConfig) {
-    const validationErrors = adapter.validateConfig(agentConfig);
+    const validationErrors = adapter.validateConfig(mergedConfig);
     if (validationErrors.length > 0) {
       throw new AgentConfigValidationError(agentType, validationErrors);
     }
@@ -112,7 +123,7 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
 
   const wrapperConfig: AgentExecutorWrapperConfig<any> = {
     adapter,
-    agentConfig,
+    agentConfig: mergedConfig,
     agentType,
     lifecycleService: factoryConfig.lifecycleService,
     logsStore: factoryConfig.logsStore,
