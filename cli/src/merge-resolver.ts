@@ -9,6 +9,10 @@
 
 import * as fs from "fs";
 import type { IssueJSONL, SpecJSONL } from "./types.js";
+import type { Issue, Spec } from "@sudocode-ai/types";
+import { jsonToYaml, yamlToJson } from "./yaml-converter.js";
+import { mergeYaml } from "./git-merge.js";
+import { resolveYamlConflicts } from "./yaml-conflict-resolver.js";
 
 export type JSONLEntity = IssueJSONL | SpecJSONL | Record<string, any>;
 
@@ -215,6 +219,23 @@ function generateConflictId(originalId: string, uuid: string): string {
 }
 
 /**
+ * Extract metadata fields (relationships, tags, feedback) from entity
+ */
+function extractMetadata<T extends JSONLEntity>(entity: T): Partial<T> {
+  const metadata: any = {};
+  if ((entity as any).relationships !== undefined) {
+    metadata.relationships = (entity as any).relationships;
+  }
+  if ((entity as any).tags !== undefined) {
+    metadata.tags = (entity as any).tags;
+  }
+  if ((entity as any).feedback !== undefined) {
+    metadata.feedback = (entity as any).feedback;
+  }
+  return metadata as Partial<T>;
+}
+
+/**
  * Merge metadata from multiple versions of same entity
  */
 export function mergeMetadata<T extends JSONLEntity>(entities: T[]): T {
@@ -403,16 +424,132 @@ export function resolveEntities<T extends JSONLEntity>(
 
 /**
  * Three-way merge for git merge driver
- * Merges base, ours, and theirs versions
+ * Merges base, ours, and theirs versions using metadata-first YAML approach
  */
-export function mergeThreeWay<T extends JSONLEntity>(
+export async function mergeThreeWay<T extends JSONLEntity>(
   base: T[],
   ours: T[],
   theirs: T[]
-): ResolvedResult<T> {
-  // Collect all entities from all three versions
-  const allEntities = [...base, ...ours, ...theirs];
+): Promise<ResolvedResult<T>> {
+  // 1. Group entities by UUID for all three versions
+  const baseByUuid = new Map<string, T>();
+  const oursByUuid = new Map<string, T>();
+  const theirsByUuid = new Map<string, T>();
 
-  // Use standard resolution logic
-  return resolveEntities(allEntities);
+  for (const entity of base) {
+    baseByUuid.set(entity.uuid, entity);
+  }
+  for (const entity of ours) {
+    oursByUuid.set(entity.uuid, entity);
+  }
+  for (const entity of theirs) {
+    theirsByUuid.set(entity.uuid, entity);
+  }
+
+  // 2. Collect all unique UUIDs
+  const allUuids = new Set([
+    ...baseByUuid.keys(),
+    ...oursByUuid.keys(),
+    ...theirsByUuid.keys(),
+  ]);
+
+  const mergedEntities: T[] = [];
+  const conflicts: ConflictResolution[] = [];
+
+  // 3. For each UUID:
+  for (const uuid of allUuids) {
+    const baseEntity = baseByUuid.get(uuid);
+    const oursEntity = oursByUuid.get(uuid);
+    const theirsEntity = theirsByUuid.get(uuid);
+
+    // a. If all three versions exist → YAML merge with metadata-first
+    if (baseEntity && oursEntity && theirsEntity) {
+      try {
+        // **STEP 1: Merge metadata FIRST**
+        const mergedMeta = mergeMetadata([baseEntity, oursEntity, theirsEntity]);
+        const metadata = extractMetadata(mergedMeta);
+
+        // Apply merged metadata to all three versions
+        const baseWithMeta = { ...baseEntity, ...metadata };
+        const oursWithMeta = { ...oursEntity, ...metadata };
+        const theirsWithMeta = { ...theirsEntity, ...metadata };
+
+        // **STEP 2: Convert to YAML**
+        const baseYaml = jsonToYaml(baseWithMeta);
+        const oursYaml = jsonToYaml(oursWithMeta);
+        const theirsYaml = jsonToYaml(theirsWithMeta);
+
+        // **STEP 3: Run git merge**
+        const { merged: mergedYaml, hasConflicts } = await mergeYaml(
+          baseYaml,
+          oursYaml,
+          theirsYaml
+        );
+
+        // **STEP 4: Resolve remaining conflicts**
+        let resolvedYaml = mergedYaml;
+        if (hasConflicts) {
+          resolvedYaml = resolveYamlConflicts(mergedYaml, oursEntity as Issue | Spec, theirsEntity as Issue | Spec);
+        }
+
+        // **STEP 5: Convert back to JSON**
+        const finalEntity = yamlToJson<T>(resolvedYaml);
+        mergedEntities.push(finalEntity);
+
+        if (hasConflicts) {
+          conflicts.push({
+            type: "same-uuid-same-id",
+            uuid,
+            originalIds: [baseEntity.id],
+            resolvedIds: [finalEntity.id],
+            action: "YAML merge with conflict resolution (latest-wins)",
+          });
+        }
+      } catch (error) {
+        // Fallback to pure metadata merge
+        console.warn(
+          `YAML merge failed for UUID ${uuid}, falling back to metadata merge:`,
+          error
+        );
+        const fallback = mergeMetadata([baseEntity, oursEntity, theirsEntity]) as T;
+        mergedEntities.push(fallback);
+
+        conflicts.push({
+          type: "same-uuid-same-id",
+          uuid,
+          originalIds: [baseEntity.id],
+          resolvedIds: [fallback.id],
+          action: "Metadata merge (YAML merge failed)",
+        });
+      }
+    }
+    // b. Otherwise (missing versions) → add available entities
+    else {
+      // Modification wins over deletion - preserve work
+      if (oursEntity) {
+        mergedEntities.push(oursEntity);
+      }
+      if (theirsEntity && !oursEntity) {
+        // Only add theirs if ours doesn't exist
+        mergedEntities.push(theirsEntity);
+      }
+      // Skip baseEntity only (deleted on both sides)
+    }
+  }
+
+  // 4. Sort by created_at, then by id (for ties)
+  mergedEntities.sort((a, b) => {
+    const cmp = (a.created_at || "").localeCompare(b.created_at || "");
+    return cmp !== 0 ? cmp : (a.id || "").localeCompare(b.id || "");
+  });
+
+  // 5. Return with stats
+  return {
+    entities: mergedEntities,
+    stats: {
+      totalInput: base.length + ours.length + theirs.length,
+      totalOutput: mergedEntities.length,
+      conflicts,
+    },
+  };
 }

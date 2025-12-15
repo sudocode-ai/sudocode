@@ -241,7 +241,7 @@ export async function handleMergeDriver(
     });
 
     // Perform three-way merge
-    const { entities: merged } = mergeThreeWay(
+    const { entities: merged } = await mergeThreeWay(
       baseEntities,
       ourEntities,
       theirEntities
