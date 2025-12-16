@@ -329,7 +329,7 @@ describe('Sandbox - Docker Support', () => {
     expect(result.exitCode).toBe(0);
   });
 
-  test.skip('should allow docker commands with filesystem restrictions', async () => {
+  test('should allow docker commands with filesystem restrictions', async () => {
     if (await shouldSkipSandboxTest()) return;
 
     const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'docker-test-'));
