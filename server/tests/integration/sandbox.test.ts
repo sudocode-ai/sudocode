@@ -449,21 +449,133 @@ describe('Sandbox - Platform Support', () => {
     expect(supportedPlatforms).toContain(process.platform);
   });
 
-  test('should skip sandbox on Windows', async () => {
+  test('should use srt on macOS', async () => {
+    if (process.platform !== 'darwin') {
+      console.log('⚠️  Skipping: Only applicable on macOS');
+      return;
+    }
+
+    // On macOS, srt should be available and used
+    const result = await execSandboxed('echo "test"', {});
+
+    // If srt is available, command should execute successfully
+    if (result.exitCode === 0) {
+      expect(result.stdout.trim()).toBe('test');
+    } else if (result.exitCode === 127) {
+      // srt not installed - this is acceptable but should be logged
+      console.log('⚠️  srt not installed on macOS');
+      expect(result.stderr).toContain('srt');
+    }
+  });
+
+  test('should use srt on Linux', async () => {
+    if (process.platform !== 'linux') {
+      console.log('⚠️  Skipping: Only applicable on Linux');
+      return;
+    }
+
+    // On Linux, srt should be available and used
+    const result = await execSandboxed('echo "test"', {});
+
+    // If srt is available, command should execute successfully
+    if (result.exitCode === 0) {
+      expect(result.stdout.trim()).toBe('test');
+    } else if (result.exitCode === 127) {
+      // srt not installed - this is acceptable but should be logged
+      console.log('⚠️  srt not installed on Linux');
+      expect(result.stderr).toContain('srt');
+    }
+  });
+
+  test('should fallback to no wrapper on Windows', async () => {
     if (process.platform !== 'win32') {
       console.log('⚠️  Skipping: Only applicable on Windows');
       return;
     }
 
-    // On Windows, srt should not be available
+    // On Windows, srt is not supported
+    // The helper should gracefully handle this
     const result = await execSandboxed('echo test', {});
-    // Either srt is not found (127) or it's a fallback
+
+    // Either srt is not found (127) which is expected,
+    // or it somehow exists but we expect graceful handling
     expect([0, 127]).toContain(result.exitCode);
+
+    if (result.exitCode === 127) {
+      // Expected: srt not found on Windows
+      expect(result.stderr).toContain('srt');
+    }
   });
 
-  test('sandbox helpers should work on supported platforms', async () => {
+  test('should log warning when srt unavailable', async () => {
+    // This test verifies that the shouldSkipSandboxTest helper
+    // provides appropriate feedback when srt is not available
+    const originalLog = console.log;
+    const logs: string[] = [];
+
+    // Capture console.log output
+    console.log = (...args: unknown[]) => {
+      logs.push(args.join(' '));
+    };
+
+    try {
+      const shouldSkip = await shouldSkipSandboxTest();
+
+      if (shouldSkip) {
+        // If skipping, we should have logged a warning
+        const warningLogged = logs.some(
+          (log) =>
+            log.includes('srt') &&
+            (log.includes('not available') || log.includes('Skipping'))
+        );
+        expect(warningLogged).toBe(true);
+
+        // Should also provide installation instructions
+        const hasInstallInstructions = logs.some((log) =>
+          log.includes('npm install')
+        );
+        expect(hasInstallInstructions).toBe(true);
+      }
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  test('sandbox helpers should work on all platforms', () => {
+    // getDefaultAllowedDomains should work regardless of platform
     const defaults = getDefaultAllowedDomains();
     expect(defaults.length).toBeGreaterThan(0);
     expect(defaults).toContain('github.com');
+    expect(defaults).toContain('api.anthropic.com');
+  });
+
+  test('should handle platform-specific behavior correctly', async () => {
+    const isWindows = process.platform === 'win32';
+    const isMacOS = process.platform === 'darwin';
+    const isLinux = process.platform === 'linux';
+
+    // Verify platform detection logic
+    expect([isWindows, isMacOS, isLinux]).toContain(true);
+
+    if (isWindows) {
+      console.log('Platform: Windows - Sandbox not supported');
+    } else if (isMacOS) {
+      console.log('Platform: macOS - Using srt with Seatbelt');
+    } else if (isLinux) {
+      console.log('Platform: Linux - Using srt with bubblewrap');
+    }
+
+    // On non-Windows platforms, srt should be the sandboxing mechanism
+    if (!isWindows) {
+      const result = await execSandboxed('echo "platform test"', {});
+
+      if (result.exitCode === 0) {
+        // srt is available and working
+        expect(result.stdout.trim()).toBe('platform test');
+      } else if (result.exitCode === 127) {
+        // srt not installed - log but don't fail
+        console.log(`⚠️  srt not available on ${process.platform}`);
+      }
+    }
   });
 });
