@@ -476,8 +476,41 @@ export function mergeThreeWay<T extends JSONLEntity>(
     }
   }
 
-  // Step 9: Sort by created_at (git-friendly)
-  mergedEntities.sort((a, b) => {
+  // Step 9: Handle ID collisions across different UUIDs (hash collisions)
+  // This can happen when two different entities (different UUIDs) independently
+  // generate the same hash-based ID (e.g., i-x7k9 from different UUIDs)
+  const idCounts = new Map<string, number>();
+  const finalResolved: T[] = [];
+
+  for (const entity of mergedEntities) {
+    const currentId = entity.id;
+
+    if (!idCounts.has(currentId)) {
+      // First entity with this ID
+      idCounts.set(currentId, 1);
+      finalResolved.push(entity);
+    } else {
+      // ID collision - rename with suffix
+      const count = idCounts.get(currentId)!;
+      const newEntity = { ...entity } as T;
+      const newId = `${currentId}.${count}`;
+      newEntity.id = newId;
+
+      idCounts.set(currentId, count + 1);
+      finalResolved.push(newEntity);
+
+      stats.conflicts.push({
+        type: 'different-uuids',
+        uuid: entity.uuid,
+        originalIds: [currentId],
+        resolvedIds: [newId],
+        action: `Renamed ID to resolve hash collision (different UUIDs)`,
+      });
+    }
+  }
+
+  // Step 10: Sort by created_at (git-friendly)
+  finalResolved.sort((a, b) => {
     const aDate = a.created_at || '';
     const bDate = b.created_at || '';
     if (aDate < bDate) return -1;
@@ -485,9 +518,9 @@ export function mergeThreeWay<T extends JSONLEntity>(
     return (a.id || '').localeCompare(b.id || '');
   });
 
-  stats.totalOutput = mergedEntities.length;
+  stats.totalOutput = finalResolved.length;
 
-  return { entities: mergedEntities, stats };
+  return { entities: finalResolved, stats };
 }
 
 /**

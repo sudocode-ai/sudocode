@@ -745,6 +745,89 @@ describe('Merge Resolver', () => {
         expect(stats.totalInput).toBe(2); // base + ours
         expect(stats.totalOutput).toBe(1); // merged result
       });
+
+      it('should handle hash collision (same ID, different UUID)', () => {
+        const base: JSONLEntity[] = [];
+
+        const ours: JSONLEntity[] = [
+          {
+            id: 'i-x7k9',
+            uuid: 'uuid-1',
+            title: 'Entity from branch A',
+            created_at: '2025-01-01T00:00:00Z',
+            updated_at: '2025-01-01T00:00:00Z',
+          },
+        ];
+
+        const theirs: JSONLEntity[] = [
+          {
+            id: 'i-x7k9', // Same ID!
+            uuid: 'uuid-2', // Different UUID!
+            title: 'Entity from branch B',
+            created_at: '2025-01-02T00:00:00Z',
+            updated_at: '2025-01-02T00:00:00Z',
+          },
+        ];
+
+        const { entities: merged, stats } = mergeThreeWay(base, ours, theirs);
+
+        // Both entities should be kept
+        expect(merged).toHaveLength(2);
+
+        // First entity keeps original ID
+        expect(merged[0].id).toBe('i-x7k9');
+        expect(merged[0].uuid).toBe('uuid-1');
+
+        // Second entity gets renamed with .1 suffix
+        expect(merged[1].id).toBe('i-x7k9.1');
+        expect(merged[1].uuid).toBe('uuid-2');
+
+        // Should have conflict record for hash collision
+        expect(stats.conflicts.some((c) => c.type === 'different-uuids')).toBe(true);
+        expect(stats.conflicts.some((c) => c.action.includes('hash collision'))).toBe(true);
+      });
+
+      it('should handle multiple hash collisions', () => {
+        const base: JSONLEntity[] = [];
+
+        const ours: JSONLEntity[] = [
+          {
+            id: 'i-x7k9',
+            uuid: 'uuid-1',
+            created_at: '2025-01-01T00:00:00Z',
+            updated_at: '2025-01-01T00:00:00Z',
+          },
+          {
+            id: 'i-x7k9', // Same ID!
+            uuid: 'uuid-2', // Different UUID!
+            created_at: '2025-01-02T00:00:00Z',
+            updated_at: '2025-01-02T00:00:00Z',
+          },
+        ];
+
+        const theirs: JSONLEntity[] = [
+          {
+            id: 'i-x7k9', // Same ID!
+            uuid: 'uuid-3', // Different UUID!
+            created_at: '2025-01-03T00:00:00Z',
+            updated_at: '2025-01-03T00:00:00Z',
+          },
+        ];
+
+        const { entities: merged, stats } = mergeThreeWay(base, ours, theirs);
+
+        // All three entities should be kept
+        expect(merged).toHaveLength(3);
+
+        // First keeps original, subsequent get .1, .2, etc.
+        expect(merged[0].id).toBe('i-x7k9');
+        expect(merged[1].id).toBe('i-x7k9.1');
+        expect(merged[2].id).toBe('i-x7k9.2');
+
+        // Two hash collision conflicts (second and third entities)
+        const hashCollisions = stats.conflicts.filter((c) => c.type === 'different-uuids');
+        expect(hashCollisions).toHaveLength(2);
+      });
     });
   });
 });
