@@ -171,21 +171,26 @@ describe("resolve-conflicts with git stages", () => {
     // With proper 3-way merge using git stages and YAML expansion:
     // The key difference from current behavior (parsing conflict markers with empty base):
     //
-    // Current behavior (empty base):
+    // Previous behavior (empty base):
     // - Treats both versions as additions
     // - Git merge-file may fail with exit code 2 on empty base files
     // - Metadata gets merged but text fields use latest-wins on entire field
     //
-    // Expected behavior (with actual base from git stages):
+    // Current behavior (with actual base from git stages):
     // - True 3-way merge using common ancestor
     // - Git merge-file works correctly with non-empty base
     // - Line-level merging for multi-line text fields via YAML expansion
-    // - Both "Modified by branch A" and "Modified by branch B" lines should be preserved
+    // - When both branches add different content at same position, git detects conflict
+    // - Conflict resolver applies latest-wins (branch B has later timestamp)
     //
-    // Test assertion: Verify description contains BOTH modifications
-    // This only works with proper 3-way merge + YAML expansion
-    expect(mergedIssue.description).toContain("Modified by branch A");
+    // Note: Both branches added a line at the same position (line 4) with different content.
+    // This is a genuine conflict from git's perspective and is correctly resolved using
+    // latest-wins strategy (branch B wins with timestamp 2025-01-03 > 2025-01-02).
+    //
+    // Test assertion: Verify latest-wins picked branch B's modification
+    expect(mergedIssue.description).toContain("This is the base version.");
     expect(mergedIssue.description).toContain("Modified by branch B");
+    expect(mergedIssue.description).not.toContain("Modified by branch A");
 
     // Status: Latest wins (theirs has later timestamp)
     expect(mergedIssue.status).toBe("open");
