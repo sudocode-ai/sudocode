@@ -550,27 +550,6 @@ export function mergeThreeWay<T extends JSONLEntity>(
       continue;
     }
 
-    if (!baseEntity && oursEntity && theirsEntity) {
-      // Added in both (simulated 3-way or concurrent additions)
-      // Step 2: Merge metadata FIRST
-      const merged = mergeMetadata([oursEntity, theirsEntity]);
-      mergedEntities.push(merged);
-
-      stats.conflicts.push({
-        type: 'same-uuid-same-id',
-        uuid,
-        originalIds: [oursEntity.id, theirsEntity.id],
-        resolvedIds: [merged.id],
-        action: 'Concurrent addition: merged metadata and kept most recent version',
-      });
-      continue;
-    }
-
-    if (baseEntity && !oursEntity && !theirsEntity) {
-      // Deleted in both: skip
-      continue;
-    }
-
     if (baseEntity && oursEntity && !theirsEntity) {
       // Modified in ours, deleted in theirs: modification wins
       mergedEntities.push(oursEntity);
@@ -597,21 +576,27 @@ export function mergeThreeWay<T extends JSONLEntity>(
       continue;
     }
 
-    // baseEntity && oursEntity && theirsEntity
-    // All three versions exist: perform YAML-based three-way merge
+    // At this point, we have either:
+    // 1. baseEntity && oursEntity && theirsEntity (true 3-way merge)
+    // 2. !baseEntity && oursEntity && theirsEntity (concurrent additions, simulated 3-way)
+    // Both cases use the same YAML merge pipeline
 
-    // Step 2-3: Merge metadata FIRST, apply to all three versions
-    // TypeScript: We know all three exist at this point from the conditionals above
-    const allVersions = [baseEntity!, oursEntity!, theirsEntity!];
-    const metadataMerged = mergeMetadata(allVersions);
+    // Step 2-3: Merge metadata FIRST, apply to all versions
+    const versionsForMetadata = [baseEntity, oursEntity, theirsEntity].filter(
+      (v) => v !== undefined
+    ) as T[];
+    const metadataMerged = mergeMetadata(versionsForMetadata);
 
-    // Apply merged metadata to all three versions
-    const baseWithMetadata = { ...baseEntity!, ...extractMetadata(metadataMerged) };
+    // Apply merged metadata to all versions that exist
+    const baseWithMetadata = baseEntity
+      ? { ...baseEntity, ...extractMetadata(metadataMerged) }
+      : undefined;
     const oursWithMetadata = { ...oursEntity!, ...extractMetadata(metadataMerged) };
     const theirsWithMetadata = { ...theirsEntity!, ...extractMetadata(metadataMerged) };
 
     // Step 4: Convert to YAML
-    const baseYaml = toYaml(baseWithMetadata);
+    // For simulated 3-way (no base), use empty string - git merge-file handles this
+    const baseYaml = baseWithMetadata ? toYaml(baseWithMetadata) : '';
     const oursYaml = toYaml(oursWithMetadata);
     const theirsYaml = toYaml(theirsWithMetadata);
 
@@ -630,12 +615,15 @@ export function mergeThreeWay<T extends JSONLEntity>(
       finalYaml = resolveResult.content;
 
       if (resolveResult.conflictsResolved > 0) {
+        const action = baseEntity
+          ? `Three-way merge with ${resolveResult.conflictsResolved} YAML conflicts resolved`
+          : `Concurrent addition: merged with ${resolveResult.conflictsResolved} YAML conflicts resolved`;
         stats.conflicts.push({
           type: 'same-uuid-same-id',
           uuid,
-          originalIds: [baseEntity!.id],
+          originalIds: baseEntity ? [baseEntity.id] : [oursEntity!.id, theirsEntity!.id],
           resolvedIds: [oursEntity!.id, theirsEntity!.id],
-          action: `Three-way merge with ${resolveResult.conflictsResolved} YAML conflicts resolved`,
+          action,
         });
       }
     }
@@ -646,13 +634,13 @@ export function mergeThreeWay<T extends JSONLEntity>(
       mergedEntities.push(mergedEntity);
     } catch (error) {
       // Fallback to metadata merge if YAML conversion fails
-      const fallback = mergeMetadata([oursEntity!, theirsEntity!]);
+      const fallback = mergeMetadata(versionsForMetadata);
       mergedEntities.push(fallback);
 
       stats.conflicts.push({
         type: 'same-uuid-same-id',
         uuid,
-        originalIds: [baseEntity!.id],
+        originalIds: baseEntity ? [baseEntity.id] : [oursEntity!.id, theirsEntity!.id],
         resolvedIds: [fallback.id],
         action: `YAML merge failed, fell back to metadata merge: ${(error as Error).message}`,
       });
