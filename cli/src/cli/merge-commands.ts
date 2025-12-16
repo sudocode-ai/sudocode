@@ -10,7 +10,6 @@ import type Database from "better-sqlite3";
 import {
   hasGitConflictMarkers,
   parseMergeConflictFile,
-  resolveEntities,
   mergeThreeWay,
 } from "../merge-resolver.js";
 import { readJSONL, writeJSONL, type JSONLEntity } from "../jsonl.js";
@@ -133,15 +132,19 @@ async function resolveFile(
   // Parse conflicts
   const sections = parseMergeConflictFile(content);
 
-  // Extract all entities (from both clean and conflict sections)
-  const allEntities: JSONLEntity[] = [];
+  // Separate ours and theirs entities
+  const oursEntities: JSONLEntity[] = [];
+  const theirsEntities: JSONLEntity[] = [];
 
   for (const section of sections) {
     if (section.type === "clean") {
+      // Add clean sections to BOTH ours and theirs
       for (const line of section.lines) {
         if (line.trim()) {
           try {
-            allEntities.push(JSON.parse(line));
+            const entity = JSON.parse(line);
+            oursEntities.push(entity);
+            theirsEntities.push(entity);
           } catch (e) {
             console.warn(
               chalk.yellow(
@@ -152,15 +155,29 @@ async function resolveFile(
         }
       }
     } else {
-      // Conflict section - include both ours and theirs
-      for (const line of [...(section.ours || []), ...(section.theirs || [])]) {
+      // Conflict section - separate ours and theirs
+      for (const line of section.ours || []) {
         if (line.trim()) {
           try {
-            allEntities.push(JSON.parse(line));
+            oursEntities.push(JSON.parse(line));
           } catch (e) {
             console.warn(
               chalk.yellow(
-                `Warning: Skipping malformed line: ${line.slice(0, 50)}...`
+                `Warning: Skipping malformed line in ours: ${line.slice(0, 50)}...`
+              )
+            );
+          }
+        }
+      }
+
+      for (const line of section.theirs || []) {
+        if (line.trim()) {
+          try {
+            theirsEntities.push(JSON.parse(line));
+          } catch (e) {
+            console.warn(
+              chalk.yellow(
+                `Warning: Skipping malformed line in theirs: ${line.slice(0, 50)}...`
               )
             );
           }
@@ -169,10 +186,12 @@ async function resolveFile(
     }
   }
 
-  // Resolve conflicts
-  const { entities: resolved, stats } = resolveEntities(allEntities, {
-    verbose: options.verbose,
-  });
+  // Use mergeThreeWay with empty base (simulated 3-way merge)
+  const { entities: resolved, stats } = mergeThreeWay(
+    [],
+    oursEntities,
+    theirsEntities
+  );
 
   // Write back if not dry-run
   if (!options.dryRun) {

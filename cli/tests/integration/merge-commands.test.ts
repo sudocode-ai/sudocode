@@ -48,13 +48,14 @@ describe("Merge Commands Integration", () => {
       const issuesPath = path.join(tmpDir, "issues.jsonl");
 
       // Create conflicted issues.jsonl
+      // Clean sections + conflict with different UUIDs
       const conflictContent = `{"id":"ISSUE-001","uuid":"uuid-1","title":"Before","created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z","relationships":[],"tags":[]}
 <<<<<<< HEAD
 {"id":"ISSUE-002","uuid":"uuid-2","title":"Ours","created_at":"2025-01-02T00:00:00Z","updated_at":"2025-01-02T00:00:00Z","relationships":[],"tags":[]}
 =======
-{"id":"ISSUE-002","uuid":"uuid-3","title":"Theirs","created_at":"2025-01-03T00:00:00Z","updated_at":"2025-01-03T00:00:00Z","relationships":[],"tags":[]}
+{"id":"ISSUE-003","uuid":"uuid-3","title":"Theirs","created_at":"2025-01-03T00:00:00Z","updated_at":"2025-01-03T00:00:00Z","relationships":[],"tags":[]}
 >>>>>>> feature
-{"id":"ISSUE-003","uuid":"uuid-4","title":"After","created_at":"2025-01-04T00:00:00Z","updated_at":"2025-01-04T00:00:00Z","relationships":[],"tags":[]}
+{"id":"ISSUE-004","uuid":"uuid-4","title":"After","created_at":"2025-01-04T00:00:00Z","updated_at":"2025-01-04T00:00:00Z","relationships":[],"tags":[]}
 `;
 
       fs.writeFileSync(issuesPath, conflictContent);
@@ -65,11 +66,14 @@ describe("Merge Commands Integration", () => {
       // Read resolved file
       const resolved = await readJSONL(issuesPath);
 
-      expect(resolved).toHaveLength(4); // 3 original + 1 renamed
-      expect(resolved[0].id).toBe("ISSUE-001");
-      expect(resolved[1].id).toBe("ISSUE-002");
-      expect(resolved[2].id).toBe("ISSUE-002.1"); // Second UUID gets renamed
-      expect(resolved[3].id).toBe("ISSUE-003");
+      // With mergeThreeWay and empty base:
+      // - Clean sections added to both ours and theirs
+      // - Different UUIDs in conflict section = both kept
+      expect(resolved).toHaveLength(4);
+      expect(resolved[0].id).toBe("ISSUE-001"); // Clean, both sides
+      expect(resolved[1].id).toBe("ISSUE-002"); // Added in ours only
+      expect(resolved[2].id).toBe("ISSUE-003"); // Added in theirs only
+      expect(resolved[3].id).toBe("ISSUE-004"); // Clean, both sides
     });
 
     it("should handle --dry-run mode without writing", async () => {
@@ -493,6 +497,79 @@ describe("Merge Commands Integration", () => {
         process.exit = originalExit;
         process.chdir(originalCwd);
       }
+    });
+  });
+
+  describe("Three-way merge with empty base", () => {
+    it("should handle concurrent additions with same UUID", async () => {
+      const issuesPath = path.join(tmpDir, "issues.jsonl");
+
+      // Same UUID in conflict - should merge metadata
+      const conflictContent = `<<<<<<< HEAD
+{"id":"i-001","uuid":"uuid-1","title":"Our Version","content":"Our content","created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-02T00:00:00Z","relationships":[],"tags":["ours"]}
+=======
+{"id":"i-001","uuid":"uuid-1","title":"Their Version","content":"Their content","created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-03T00:00:00Z","relationships":[],"tags":["theirs"]}
+>>>>>>> feature
+`;
+
+      fs.writeFileSync(issuesPath, conflictContent);
+
+      await handleResolveConflicts(ctx, {});
+
+      const resolved = await readJSONL(issuesPath);
+
+      // Same UUID = concurrent addition, merge metadata, keep most recent
+      expect(resolved).toHaveLength(1);
+      expect(resolved[0].id).toBe("i-001");
+      expect(resolved[0].title).toBe("Their Version"); // Most recent wins
+      expect(resolved[0].tags).toContain("ours"); // Metadata merged
+      expect(resolved[0].tags).toContain("theirs");
+    });
+
+    it("should handle different UUIDs in conflict", async () => {
+      const issuesPath = path.join(tmpDir, "issues.jsonl");
+
+      // Different UUIDs in conflict - both kept
+      const conflictContent = `<<<<<<< HEAD
+{"id":"i-001","uuid":"uuid-1","title":"Ours","created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z","relationships":[],"tags":[]}
+=======
+{"id":"i-002","uuid":"uuid-2","title":"Theirs","created_at":"2025-01-02T00:00:00Z","updated_at":"2025-01-02T00:00:00Z","relationships":[],"tags":[]}
+>>>>>>> feature
+`;
+
+      fs.writeFileSync(issuesPath, conflictContent);
+
+      await handleResolveConflicts(ctx, {});
+
+      const resolved = await readJSONL(issuesPath);
+
+      // Different UUIDs = separate additions, both kept
+      expect(resolved).toHaveLength(2);
+      expect(resolved.map(e => e.id).sort()).toEqual(["i-001", "i-002"]);
+    });
+
+    it("should add clean sections to both ours and theirs", async () => {
+      const issuesPath = path.join(tmpDir, "issues.jsonl");
+
+      // Clean sections should appear in final result
+      const conflictContent = `{"id":"i-before","uuid":"uuid-before","title":"Before","created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z","relationships":[],"tags":[]}
+<<<<<<< HEAD
+{"id":"i-ours","uuid":"uuid-ours","title":"Ours","created_at":"2025-01-02T00:00:00Z","updated_at":"2025-01-02T00:00:00Z","relationships":[],"tags":[]}
+=======
+{"id":"i-theirs","uuid":"uuid-theirs","title":"Theirs","created_at":"2025-01-03T00:00:00Z","updated_at":"2025-01-03T00:00:00Z","relationships":[],"tags":[]}
+>>>>>>> feature
+{"id":"i-after","uuid":"uuid-after","title":"After","created_at":"2025-01-04T00:00:00Z","updated_at":"2025-01-04T00:00:00Z","relationships":[],"tags":[]}
+`;
+
+      fs.writeFileSync(issuesPath, conflictContent);
+
+      await handleResolveConflicts(ctx, {});
+
+      const resolved = await readJSONL(issuesPath);
+
+      // Clean sections + conflict entities
+      expect(resolved).toHaveLength(4);
+      expect(resolved.map(e => e.id).sort()).toEqual(["i-after", "i-before", "i-ours", "i-theirs"]);
     });
   });
 
