@@ -2,7 +2,7 @@
  * Unit tests for Git Merge-File Wrapper
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   mergeYamlContent,
   mergeYamlContentSync,
@@ -277,30 +277,6 @@ describe("Git Merge-File Wrapper", () => {
       // Conflict markers should be present in both
       expect(syncResult.content).toContain("<<<<<<");
       expect(asyncResult.content).toContain("<<<<<<");
-    });
-  });
-
-  describe("Error Handling", () => {
-    it("should handle git command not available", async () => {
-      // This test would require mocking execFile to simulate git not being installed
-      // For now, we assume git is available in the test environment
-      // In a real scenario, you'd mock the execFile function
-    });
-
-    it("should clean up temp files even on error", async () => {
-      // This test verifies that temp files are cleaned up
-      // The cleanup is in a finally block, so it should always execute
-      const input: MergeInput = {
-        base: "title: Test",
-        ours: "title: Test",
-        theirs: "title: Test",
-      };
-
-      await mergeYamlContent(input);
-
-      // If we could track temp files, we'd verify they're deleted
-      // For now, we just ensure the function completes successfully
-      expect(true).toBe(true);
     });
   });
 

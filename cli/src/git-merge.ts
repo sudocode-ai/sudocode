@@ -119,8 +119,13 @@ export async function mergeYamlContent(input: MergeInput): Promise<MergeResult> 
       }
 
       // Exit code > 1 means a fatal error occurred
+      // Include stderr output which contains the actual git error message
+      const stderr = error.stderr?.toString().trim();
+      const stdout = error.stdout?.toString().trim();
+      const errorDetails = stderr || stdout || error.message || 'Unknown error';
+
       throw new Error(
-        `Git merge-file command failed: ${error.message || 'Unknown error'}`
+        `Git merge-file command failed: ${errorDetails}`
       );
     }
   } finally {
@@ -188,8 +193,13 @@ export function mergeYamlContentSync(input: MergeInput): MergeResult {
       }
 
       // Exit code > 1 means a fatal error occurred
+      // Include stderr output which contains the actual git error message
+      const stderr = error.stderr?.toString().trim();
+      const stdout = error.stdout?.toString().trim();
+      const errorDetails = stderr || stdout || error.message || 'Unknown error';
+
       throw new Error(
-        `Git merge-file command failed: ${error.message || 'Unknown error'}`
+        `Git merge-file command failed: ${errorDetails}`
       );
     }
   } finally {
