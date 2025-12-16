@@ -19,22 +19,19 @@
  *   - Supports true 3-way (with base) and simulated 3-way (base = [])
  *   - Returns merged entities with conflict statistics
  *
- * ## Legacy API (Deprecated)
+ * ## Helper Functions
  *
- * **`resolveEntities(entities)`** - DEPRECATED two-way merge
- *   - Only considers "ours" and "theirs" without a common base
- *   - Kept for backward compatibility with existing tests
- *   - Use `mergeThreeWay()` instead for new code
+ * **`mergeMetadata(entities)`** - Merge metadata from multiple entity versions
+ *   - Unions tags, relationships, and feedback
+ *   - Keeps most recent version as base
+ *   - Used internally by mergeThreeWay
  *
- * ## Migration Path
+ * **`parseMergeConflictFile(content)`** - Parse git conflict markers
+ *   - Extracts clean sections and conflict sections
+ *   - Returns structured representation
  *
- * All usages have been migrated to `mergeThreeWay()`:
- * - ✅ `_resolveJSONLFile()` - Updated to use mergeThreeWay
- * - ✅ `_mergeJSONLFiles()` - Updated to use mergeThreeWay
- * - ✅ `resolveFile()` - Updated to use mergeThreeWay
- * - ✅ Tests - Legacy tests remain for `resolveEntities()`
- *
- * See deprecation notice on `resolveEntities()` for migration examples.
+ * **`hasGitConflictMarkers(filePath)`** - Check for conflict markers
+ *   - Fast check for `<<<<<<<`, `=======`, `>>>>>>>`
  */
 
 import * as fs from "fs";
@@ -241,13 +238,6 @@ function compareTimestamps(
 }
 
 /**
- * Generate deterministic conflict ID
- */
-function generateConflictId(originalId: string, uuid: string): string {
-  return `${originalId}-conflict-${uuid.slice(0, 8)}`;
-}
-
-/**
  * Merge metadata from multiple versions of same entity
  */
 export function mergeMetadata<T extends JSONLEntity>(entities: T[]): T {
@@ -304,167 +294,6 @@ export function mergeMetadata<T extends JSONLEntity>(entities: T[]): T {
   }
 
   return base;
-}
-
-/**
- * Resolve all entities using UUID-based deduplication
- * Handles different UUIDs, same UUID conflicts, and metadata merging
- *
- * @deprecated Use `mergeThreeWay()` instead for proper three-way merge support.
- *
- * This function implements a two-way merge strategy that only considers
- * "ours" and "theirs" versions without a common base. This can lead to
- * suboptimal conflict resolution and lost changes.
- *
- * **Migration Guide:**
- *
- * Before (two-way merge):
- * ```typescript
- * const { entities, stats } = resolveEntities([...oursEntities, ...theirsEntities]);
- * ```
- *
- * After (three-way merge):
- * ```typescript
- * const { entities, stats } = mergeThreeWay(
- *   baseEntities,    // Common ancestor version (or [] for simulated 3-way)
- *   oursEntities,    // Current/local changes
- *   theirsEntities   // Incoming changes
- * );
- * ```
- *
- * **Key Benefits of mergeThreeWay:**
- * - Proper three-way merge algorithm using common base
- * - YAML-based line-level conflict resolution
- * - Automatic conflict resolver for remaining conflicts
- * - Better handling of concurrent modifications
- * - Metadata merging across all three versions
- * - Support for entity deletions (modification wins over deletion)
- *
- * **Note:** This function may be removed in a future version.
- * It is currently kept for backward compatibility with existing tests.
- */
-export function resolveEntities<T extends JSONLEntity>(
-  entities: T[],
-  options: ResolveOptions = {}
-): ResolvedResult<T> {
-  const stats: ResolutionStats = {
-    totalInput: entities.length,
-    totalOutput: 0,
-    conflicts: [],
-  };
-
-  // Group entities by UUID
-  const byUuid = new Map<string, T[]>();
-  for (const entity of entities) {
-    if (!byUuid.has(entity.uuid)) {
-      byUuid.set(entity.uuid, []);
-    }
-    byUuid.get(entity.uuid)!.push(entity);
-  }
-
-  const resolved: T[] = [];
-
-  // Process each UUID group
-  for (const [uuid, group] of Array.from(byUuid.entries())) {
-    if (group.length === 1) {
-      // No conflict - single entity with this UUID
-      resolved.push(group[0]);
-      continue;
-    }
-
-    // Check if all have same ID
-    const ids = new Set(group.map((e) => e.id));
-
-    if (ids.size === 1) {
-      // Same UUID, same ID → Keep most recent, merge metadata
-      const merged = mergeMetadata(group);
-      resolved.push(merged);
-
-      stats.conflicts.push({
-        type: "same-uuid-same-id",
-        uuid,
-        originalIds: [group[0].id],
-        resolvedIds: [merged.id],
-        action: `Kept most recent version, merged ${group.length} versions`,
-      });
-    } else {
-      // Same UUID, different IDs → Keep all, rename duplicates
-      const sorted = [...group].sort((a, b) =>
-        compareTimestamps(a.updated_at, b.updated_at)
-      );
-
-      // Keep most recent ID as-is
-      const keeper = sorted[sorted.length - 1];
-      resolved.push(keeper);
-
-      const originalIds: string[] = [];
-      const resolvedIds: string[] = [keeper.id];
-
-      // Rename older versions
-      for (let i = 0; i < sorted.length - 1; i++) {
-        const entity = { ...sorted[i] } as T;
-        originalIds.push(entity.id);
-
-        // Always rename older versions
-        entity.id = generateConflictId(entity.id, uuid);
-
-        resolvedIds.push(entity.id);
-        resolved.push(entity);
-      }
-
-      stats.conflicts.push({
-        type: "same-uuid-different-id",
-        uuid,
-        originalIds,
-        resolvedIds,
-        action: `Renamed ${sorted.length - 1} conflicting IDs`,
-      });
-    }
-  }
-
-  // Handle ID collisions across different UUIDs (hash collisions)
-  const idCounts = new Map<string, number>();
-  const finalResolved: T[] = [];
-
-  for (const entity of resolved) {
-    const currentId = entity.id;
-
-    if (!idCounts.has(currentId)) {
-      // First entity with this ID
-      idCounts.set(currentId, 1);
-      finalResolved.push(entity);
-    } else {
-      // ID collision - rename with suffix
-      const count = idCounts.get(currentId)!;
-      const newEntity = { ...entity } as T;
-      const newId = `${currentId}.${count}`;
-      newEntity.id = newId;
-
-      idCounts.set(currentId, count + 1);
-      finalResolved.push(newEntity);
-
-      stats.conflicts.push({
-        type: "different-uuids",
-        uuid: entity.uuid,
-        originalIds: [currentId],
-        resolvedIds: [newId],
-        action: `Renamed ID to resolve hash collision (different UUIDs)`,
-      });
-    }
-  }
-
-  // Sort by created_at (git-friendly)
-  finalResolved.sort((a, b) => {
-    const aDate = a.created_at || "";
-    const bDate = b.created_at || "";
-    if (aDate < bDate) return -1;
-    if (aDate > bDate) return 1;
-    return (a.id || "").localeCompare(b.id || "");
-  });
-
-  stats.totalOutput = finalResolved.length;
-
-  return { entities: finalResolved, stats };
 }
 
 /**
