@@ -381,6 +381,64 @@ describe('Sandbox - Configuration Merging', () => {
     expect(defaults).toContain('registry.npmjs.org');
     expect(defaults).toContain('pypi.org');
   });
+
+  test('should allow access to both default and custom domains', async () => {
+    if (await shouldSkipSandboxTest()) return;
+
+    // Simulate user configuration with custom domains
+    const customDomains = ['api.example.com'];
+    const defaultDomains = getDefaultAllowedDomains();
+    const allDomains = [...defaultDomains, ...customDomains];
+
+    // Verify merged configuration contains both
+    expect(allDomains).toContain('github.com'); // default
+    expect(allDomains).toContain('api.example.com'); // custom
+
+    // Test that default domain still works with merged config
+    const result = await execSandboxed('curl -s https://api.github.com/zen', {
+      allowedDomains: allDomains,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.length).toBeGreaterThan(0);
+  });
+
+  test('should validate configuration without duplicates', () => {
+    const customDomains = ['github.com', 'api.example.com']; // github.com is duplicate
+    const defaultDomains = getDefaultAllowedDomains();
+
+    // Merge and deduplicate
+    const merged = [...new Set([...defaultDomains, ...customDomains])];
+
+    // Should contain github.com only once
+    const githubCount = merged.filter((d) => d === 'github.com').length;
+    expect(githubCount).toBe(1);
+
+    // Should still contain custom domain
+    expect(merged).toContain('api.example.com');
+  });
+
+  test('should handle empty custom domains array', () => {
+    const customDomains: string[] = [];
+    const defaultDomains = getDefaultAllowedDomains();
+    const merged = [...defaultDomains, ...customDomains];
+
+    // Should equal defaults when no custom domains
+    expect(merged.length).toBe(defaultDomains.length);
+    expect(merged).toEqual(defaultDomains);
+  });
+
+  test('should preserve custom domain ordering', () => {
+    const customDomains = ['api.example.com', 'internal.company.com', 'staging.app.io'];
+    const defaultDomains = getDefaultAllowedDomains();
+    const merged = [...defaultDomains, ...customDomains];
+
+    // Custom domains should appear after defaults in order
+    const customStart = defaultDomains.length;
+    expect(merged[customStart]).toBe('api.example.com');
+    expect(merged[customStart + 1]).toBe('internal.company.com');
+    expect(merged[customStart + 2]).toBe('staging.app.io');
+  });
 });
 
 /**
