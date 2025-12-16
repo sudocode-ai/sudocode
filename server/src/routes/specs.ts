@@ -13,8 +13,13 @@ import {
   deleteExistingSpec,
 } from "../services/specs.js";
 import { generateSpecId } from "@sudocode-ai/cli/dist/id-generator.js";
+import { getSpecFromJsonl } from "@sudocode-ai/cli/dist/operations/external-links.js";
 import { broadcastSpecUpdate } from "../services/websocket.js";
-import { triggerExport, syncEntityToMarkdown } from "../services/export.js";
+import {
+  triggerExport,
+  executeExportNow,
+  syncEntityToMarkdown,
+} from "../services/export.js";
 import * as path from "path";
 import * as fs from "fs";
 
@@ -141,7 +146,12 @@ export function createSpecsRouter(): Router {
       triggerExport(req.project!.db, req.project!.sudocodeDir);
 
       // Sync this specific spec to its markdown file (don't wait for it)
-      syncEntityToMarkdown(req.project!.db, spec.id, "spec", req.project!.sudocodeDir).catch((error) => {
+      syncEntityToMarkdown(
+        req.project!.db,
+        spec.id,
+        "spec",
+        req.project!.sudocodeDir
+      ).catch((error) => {
         console.error(`Failed to sync spec ${spec.id} to markdown:`, error);
       });
 
@@ -166,7 +176,7 @@ export function createSpecsRouter(): Router {
   /**
    * PUT /api/specs/:id - Update an existing spec
    */
-  router.put("/:id", (req: Request, res: Response) => {
+  router.put("/:id", async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const { title, content, priority, parent_id, archived } = req.body;
@@ -215,11 +225,33 @@ export function createSpecsRouter(): Router {
       // Update spec using CLI operation
       const spec = updateExistingSpec(req.project!.db, id, updateInput);
 
-      // Trigger export to JSONL files
-      triggerExport(req.project!.db, req.project!.sudocodeDir);
+      // If integration sync is enabled, export immediately so JSONL is updated before sync
+      // Otherwise use debounced export
+      if (req.project!.integrationSyncService) {
+        // Execute export now to ensure JSONL is updated before integration sync
+        await executeExportNow(req.project!.db, req.project!.sudocodeDir);
+
+        // Sync to external integrations (for bidirectional/outbound sync)
+        req
+          .project!.integrationSyncService.syncEntity(spec.id)
+          .catch((error) => {
+            console.error(
+              `Failed to sync spec ${spec.id} to external integrations:`,
+              error
+            );
+          });
+      } else {
+        // Trigger debounced export when no integration sync is needed
+        triggerExport(req.project!.db, req.project!.sudocodeDir);
+      }
 
       // Sync this specific spec to its markdown file (don't wait for it)
-      syncEntityToMarkdown(req.project!.db, spec.id, "spec", req.project!.sudocodeDir).catch((error) => {
+      syncEntityToMarkdown(
+        req.project!.db,
+        spec.id,
+        "spec",
+        req.project!.sudocodeDir
+      ).catch((error) => {
         console.error(`Failed to sync spec ${spec.id} to markdown:`, error);
       });
 
@@ -255,7 +287,7 @@ export function createSpecsRouter(): Router {
   /**
    * DELETE /api/specs/:id - Delete a spec
    */
-  router.delete("/:id", (req: Request, res: Response) => {
+  router.delete("/:id", async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
@@ -275,6 +307,10 @@ export function createSpecsRouter(): Router {
         ? path.join(req.project!.sudocodeDir, existingSpec.file_path)
         : null;
 
+      // Save external links before deletion (for outbound sync)
+      const specFromJsonl = getSpecFromJsonl(req.project!.sudocodeDir, id);
+      const externalLinks = specFromJsonl?.external_links || [];
+
       // Delete spec using CLI operation
       const deleted = deleteExistingSpec(req.project!.db, id);
 
@@ -284,12 +320,30 @@ export function createSpecsRouter(): Router {
           try {
             fs.unlinkSync(markdownPath);
           } catch (err) {
-            console.warn(`Failed to delete markdown file: ${markdownPath}`, err);
+            console.warn(
+              `Failed to delete markdown file: ${markdownPath}`,
+              err
+            );
           }
         }
 
         // Trigger export to JSONL files
         triggerExport(req.project!.db, req.project!.sudocodeDir);
+
+        // Propagate deletion to external systems (if any links exist)
+        if (externalLinks.length > 0 && req.project!.integrationSyncService) {
+          req
+            .project!.integrationSyncService.handleEntityDeleted(
+              id,
+              externalLinks
+            )
+            .catch((error) => {
+              console.error(
+                `[specs] Failed to propagate deletion to external systems:`,
+                error
+              );
+            });
+        }
 
         // Broadcast spec deletion to WebSocket clients
         broadcastSpecUpdate(req.project!.id, id, "deleted", { id });

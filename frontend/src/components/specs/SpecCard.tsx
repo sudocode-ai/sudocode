@@ -4,6 +4,7 @@ import { Play, Loader2, Pause } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { SyncIndicator } from '@/components/issues/SyncIndicator'
 import type { Spec } from '@/types/api'
 import type { Workflow } from '@/types/workflow'
 import { cn } from '@/lib/utils'
@@ -113,6 +114,10 @@ export function SpecCard({
               )}
             </div>
             <div className="flex items-center gap-2">
+              {/* Sync Indicator for external integrations */}
+              {spec.external_links && spec.external_links.length > 0 && (
+                <SyncIndicator externalLinks={spec.external_links} variant="spec" />
+              )}
               {spec.priority !== undefined && spec.priority <= 3 && (
                 <span
                   className={`shrink-0 rounded-full px-2 py-0.5 text-xs text-white ${priorityColors[spec.priority]}`}

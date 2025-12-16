@@ -8,14 +8,21 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils'
 import type { ExternalLink } from '@sudocode-ai/types'
 
+const variantStyles = {
+  issue: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300',
+  spec: 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300',
+}
+
 export interface SyncIndicatorProps {
   /** External links showing sync status */
   externalLinks: ExternalLink[]
+  /** Color variant - matches entity type */
+  variant?: 'issue' | 'spec'
   /** Optional className */
   className?: string
 }
 
-export function SyncIndicator({ externalLinks, className }: SyncIndicatorProps) {
+export function SyncIndicator({ externalLinks, variant = 'issue', className }: SyncIndicatorProps) {
   if (!externalLinks || externalLinks.length === 0) {
     return null
   }
@@ -26,7 +33,8 @@ export function SyncIndicator({ externalLinks, className }: SyncIndicatorProps) 
         <TooltipTrigger asChild>
           <span
             className={cn(
-              'inline-flex items-center justify-center rounded-full bg-blue-100 p-1 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300',
+              'inline-flex items-center justify-center rounded-full p-1',
+              variantStyles[variant],
               className
             )}
           >

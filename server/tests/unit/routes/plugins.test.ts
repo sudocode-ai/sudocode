@@ -74,11 +74,13 @@ vi.mock("@sudocode-ai/cli/dist/integrations/index.js", () => ({
 }));
 
 // Helper to create mock request/response
-function createMockReqRes(overrides: {
-  params?: Record<string, string>;
-  body?: unknown;
-  query?: Record<string, string>;
-} = {}) {
+function createMockReqRes(
+  overrides: {
+    params?: Record<string, string>;
+    body?: unknown;
+    query?: Record<string, string>;
+  } = {}
+) {
   const req = {
     params: overrides.params || {},
     body: overrides.body || {},
@@ -446,6 +448,169 @@ describe("Plugins Router", () => {
           data: expect.objectContaining({
             success: true,
           }),
+        })
+      );
+    });
+  });
+
+  describe("POST /:name/sync", () => {
+    it("should return 500 when integrationSyncService is not available", async () => {
+      const { req, res } = createMockReqRes({
+        params: { name: "beads" },
+      });
+      // No integrationSyncService on project
+      req.project!.integrationSyncService = undefined;
+
+      const handler = findHandler(router, "/:name/sync", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.stringContaining("not available"),
+        })
+      );
+    });
+
+    it("should sync provider and return results", async () => {
+      const mockSyncResults = [
+        {
+          entity_id: "i-abc1",
+          external_id: "ext-1",
+          action: "created",
+          success: true,
+        },
+        {
+          entity_id: "i-abc2",
+          external_id: "ext-2",
+          action: "updated",
+          success: true,
+        },
+        {
+          entity_id: "",
+          external_id: "ext-3",
+          action: "skipped",
+          success: true,
+        },
+      ];
+
+      const { req, res } = createMockReqRes({
+        params: { name: "beads" },
+      });
+      req.project!.integrationSyncService = {
+        syncProvider: vi.fn().mockResolvedValue(mockSyncResults),
+      } as unknown as typeof req.project.integrationSyncService;
+
+      const handler = findHandler(router, "/:name/sync", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({
+            message: expect.stringContaining("beads"),
+            results: mockSyncResults,
+          }),
+        })
+      );
+      expect(
+        req.project!.integrationSyncService!.syncProvider
+      ).toHaveBeenCalledWith("beads");
+    });
+
+    it("should return 500 when sync fails", async () => {
+      const { req, res } = createMockReqRes({
+        params: { name: "beads" },
+      });
+      req.project!.integrationSyncService = {
+        syncProvider: vi
+          .fn()
+          .mockRejectedValue(new Error("Provider not found")),
+      } as unknown as typeof req.project.integrationSyncService;
+
+      const handler = findHandler(router, "/:name/sync", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.stringContaining("Provider not found"),
+        })
+      );
+    });
+  });
+
+  describe("POST /sync", () => {
+    it("should return 500 when integrationSyncService is not available", async () => {
+      const { req, res } = createMockReqRes();
+      req.project!.integrationSyncService = undefined;
+
+      const handler = findHandler(router, "/sync", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.stringContaining("not available"),
+        })
+      );
+    });
+
+    it("should sync all providers and return results", async () => {
+      const mockSyncResults = [
+        {
+          entity_id: "i-abc1",
+          external_id: "ext-1",
+          action: "created",
+          success: true,
+        },
+        {
+          entity_id: "s-xyz2",
+          external_id: "ext-2",
+          action: "created",
+          success: true,
+        },
+      ];
+
+      const { req, res } = createMockReqRes();
+      req.project!.integrationSyncService = {
+        syncAll: vi.fn().mockResolvedValue(mockSyncResults),
+      } as unknown as typeof req.project.integrationSyncService;
+
+      const handler = findHandler(router, "/sync", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({
+            message: expect.stringContaining("all providers"),
+            results: mockSyncResults,
+          }),
+        })
+      );
+      expect(req.project!.integrationSyncService!.syncAll).toHaveBeenCalled();
+    });
+
+    it("should return 500 when syncAll fails", async () => {
+      const { req, res } = createMockReqRes();
+      req.project!.integrationSyncService = {
+        syncAll: vi.fn().mockRejectedValue(new Error("Sync failed")),
+      } as unknown as typeof req.project.integrationSyncService;
+
+      const handler = findHandler(router, "/sync", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.stringContaining("Sync failed"),
         })
       );
     });

@@ -19,7 +19,7 @@ import type {
   Execution,
 } from "@sudocode-ai/types";
 import { getExecution } from "./executions.js";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 
 /**
  * Service for calculating code changes from execution commits
@@ -43,7 +43,9 @@ export class ExecutionChangesService {
     // 1. Load execution from database
     const execution = getExecution(this.db, executionId);
     if (!execution) {
-      console.log(`[ExecutionChangesService] Execution not found: ${executionId}`);
+      console.log(
+        `[ExecutionChangesService] Execution not found: ${executionId}`
+      );
       return {
         available: false,
         reason: "incomplete_execution",
@@ -59,9 +61,17 @@ export class ExecutionChangesService {
 
     // 2. Validate status (must have started executing)
     // Allow running, completed, stopped, failed, cancelled - reject pending, preparing, paused
-    const validStatuses = ["running", "completed", "stopped", "failed", "cancelled"];
+    const validStatuses = [
+      "running",
+      "completed",
+      "stopped",
+      "failed",
+      "cancelled",
+    ];
     if (!validStatuses.includes(execution.status)) {
-      console.log(`[ExecutionChangesService] Execution not started: ${execution.status}`);
+      console.log(
+        `[ExecutionChangesService] Execution not started: ${execution.status}`
+      );
       return {
         available: false,
         reason: "incomplete_execution",
@@ -72,15 +82,19 @@ export class ExecutionChangesService {
     const rootExecution = this.getRootExecution(execution);
     const beforeCommit = rootExecution.before_commit || execution.before_commit;
 
-    console.log(`[ExecutionChangesService] Root execution ${rootExecution.id}:`, {
-      before_commit: rootExecution.before_commit,
-      after_commit: rootExecution.after_commit,
-    });
-    console.log(`[ExecutionChangesService] Computed beforeCommit: ${beforeCommit}`);
+    console.log(
+      `[ExecutionChangesService] Root execution ${rootExecution.id}:`,
+      {
+        before_commit: rootExecution.before_commit,
+        after_commit: rootExecution.after_commit,
+      }
+    );
+    console.log(
+      `[ExecutionChangesService] Computed beforeCommit: ${beforeCommit}`
+    );
 
     // 4. Validate before_commit exists (required for calculating any changes)
     if (!beforeCommit) {
-      console.log(`[ExecutionChangesService] Missing before_commit - cannot calculate changes`);
       return {
         available: false,
         reason: "missing_commits",
@@ -89,7 +103,7 @@ export class ExecutionChangesService {
 
     // 5. Get branch and worktree information
     const branchName = execution.branch_name;
-    const executionMode = execution.mode as 'worktree' | 'local' | null;
+    const executionMode = execution.mode as "worktree" | "local" | null;
     const worktreeExists = execution.worktree_path
       ? existsSync(execution.worktree_path)
       : false;
@@ -136,7 +150,11 @@ export class ExecutionChangesService {
       const uncommittedResult = await this.getUncommittedChanges(
         execution.worktree_path
       );
-      if (uncommittedResult.available && uncommittedResult.changes && uncommittedResult.changes.files.length > 0) {
+      if (
+        uncommittedResult.available &&
+        uncommittedResult.changes &&
+        uncommittedResult.changes.files.length > 0
+      ) {
         uncommittedSnapshot = {
           files: uncommittedResult.changes.files,
           summary: uncommittedResult.changes.summary,
@@ -647,7 +665,10 @@ export class ExecutionChangesService {
 
       return parseInt(output, 10) || 0;
     } catch (error) {
-      console.error("[ExecutionChangesService] Error counting commits ahead:", error);
+      console.error(
+        "[ExecutionChangesService] Error counting commits ahead:",
+        error
+      );
       return 0;
     }
   }
@@ -680,7 +701,7 @@ export class ExecutionChangesService {
 
         try {
           if (existsSync(fullPath)) {
-            const content = require("fs").readFileSync(fullPath, "utf-8");
+            const content = readFileSync(fullPath, "utf-8");
             additions = content.split("\n").length;
           }
         } catch (error) {
@@ -713,7 +734,10 @@ export class ExecutionChangesService {
    * @param filePath - Path to the file
    * @returns Object with oldContent and newContent
    */
-  async getFileDiff(executionId: string, filePath: string): Promise<{
+  async getFileDiff(
+    executionId: string,
+    filePath: string
+  ): Promise<{
     success: boolean;
     oldContent?: string;
     newContent?: string;
@@ -728,7 +752,8 @@ export class ExecutionChangesService {
 
       // 2. Find root execution for before_commit
       const rootExecution = this.getRootExecution(execution);
-      const beforeCommit = rootExecution.before_commit || execution.before_commit;
+      const beforeCommit =
+        rootExecution.before_commit || execution.before_commit;
       const afterCommit = execution.after_commit;
 
       if (!beforeCommit) {
@@ -739,7 +764,9 @@ export class ExecutionChangesService {
       let newContent = "";
 
       // Normalize file path - remove leading './' if present
-      const normalizedPath = filePath.startsWith('./') ? filePath.slice(2) : filePath;
+      const normalizedPath = filePath.startsWith("./")
+        ? filePath.slice(2)
+        : filePath;
 
       console.log(`[ExecutionChangesService] Getting diff for ${filePath}:`, {
         beforeCommit,
@@ -758,17 +785,24 @@ export class ExecutionChangesService {
           stdio: "pipe",
           maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large files
         });
-        console.log(`[ExecutionChangesService] Old content length: ${oldContent.length}`);
+        console.log(
+          `[ExecutionChangesService] Old content length: ${oldContent.length}`
+        );
       } catch (error) {
         // File might not exist in before_commit (new file)
-        console.log(`[ExecutionChangesService] Failed to get old content:`, error instanceof Error ? error.message : error);
+        console.log(
+          `[ExecutionChangesService] Failed to get old content:`,
+          error instanceof Error ? error.message : error
+        );
         oldContent = "";
       }
 
       // 4. Get new content (depends on whether we have committed or uncommitted changes)
       if (afterCommit && afterCommit !== beforeCommit) {
         // Committed changes - get from after_commit
-        console.log(`[ExecutionChangesService] Fetching new content from after_commit: ${afterCommit}`);
+        console.log(
+          `[ExecutionChangesService] Fetching new content from after_commit: ${afterCommit}`
+        );
         try {
           const cmd = `git show ${afterCommit}:${normalizedPath}`;
           console.log(`[ExecutionChangesService] Running: ${cmd}`);
@@ -778,15 +812,25 @@ export class ExecutionChangesService {
             stdio: "pipe",
             maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large files
           });
-          console.log(`[ExecutionChangesService] New content length: ${newContent.length}`);
+          console.log(
+            `[ExecutionChangesService] New content length: ${newContent.length}`
+          );
         } catch (error) {
           // File might have been deleted
-          console.log(`[ExecutionChangesService] Failed to get new content:`, error instanceof Error ? error.message : error);
+          console.log(
+            `[ExecutionChangesService] Failed to get new content:`,
+            error instanceof Error ? error.message : error
+          );
           newContent = "";
         }
-      } else if (execution.worktree_path && existsSync(execution.worktree_path)) {
+      } else if (
+        execution.worktree_path &&
+        existsSync(execution.worktree_path)
+      ) {
         // Uncommitted changes - get from working tree
-        console.log(`[ExecutionChangesService] Fetching new content from worktree: ${execution.worktree_path}`);
+        console.log(
+          `[ExecutionChangesService] Fetching new content from worktree: ${execution.worktree_path}`
+        );
         try {
           const { readFileSync } = await import("fs");
           const { join } = await import("path");
@@ -794,7 +838,9 @@ export class ExecutionChangesService {
           console.log(`[ExecutionChangesService] Checking file: ${fullPath}`);
           if (existsSync(fullPath)) {
             newContent = readFileSync(fullPath, "utf-8");
-            console.log(`[ExecutionChangesService] New content length: ${newContent.length}`);
+            console.log(
+              `[ExecutionChangesService] New content length: ${newContent.length}`
+            );
           } else {
             // File might have been deleted
             console.log(`[ExecutionChangesService] File deleted in worktree`);
@@ -813,14 +859,18 @@ export class ExecutionChangesService {
             stdio: "pipe",
             maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large files
           });
-          console.log(`[ExecutionChangesService] New content length: ${newContent.length}`);
+          console.log(
+            `[ExecutionChangesService] New content length: ${newContent.length}`
+          );
         } catch (error) {
           console.log(`[ExecutionChangesService] File deleted at HEAD`);
           newContent = "";
         }
       }
 
-      console.log(`[ExecutionChangesService] Returning diff - oldContent: ${oldContent.length} chars, newContent: ${newContent.length} chars`);
+      console.log(
+        `[ExecutionChangesService] Returning diff - oldContent: ${oldContent.length} chars, newContent: ${newContent.length} chars`
+      );
 
       return {
         success: true,
@@ -828,7 +878,10 @@ export class ExecutionChangesService {
         newContent,
       };
     } catch (error) {
-      console.error("[ExecutionChangesService] Error getting file diff:", error);
+      console.error(
+        "[ExecutionChangesService] Error getting file diff:",
+        error
+      );
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error),

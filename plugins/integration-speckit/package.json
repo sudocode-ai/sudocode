@@ -1,7 +1,7 @@
 {
-  "name": "@sudocode-ai/integration-beads",
-  "version": "0.1.14",
-  "description": "Beads integration plugin for sudocode",
+  "name": "@sudocode-ai/integration-speckit",
+  "version": "0.1.12",
+  "description": "Spec-kit integration plugin for sudocode",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,13 +17,12 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest --run",
-    "test:cli": "RUN_CLI_TESTS=true vitest --run",
     "clean": "rm -rf dist"
   },
   "keywords": [
     "sudocode",
     "integration",
-    "beads",
+    "spec-kit",
     "plugin"
   ],
   "author": "sudocode-ai",
@@ -32,11 +31,10 @@
     "chokidar": "^4.0.3"
   },
   "peerDependencies": {
-    "@sudocode-ai/types": "^0.1.14"
+    "@sudocode-ai/types": "^0.1.0"
   },
   "devDependencies": {
-    "@beads/bd": "^0.29.0",
-    "@sudocode-ai/types": "^0.1.14",
+    "@sudocode-ai/types": "*",
     "@types/node": "^22.10.2",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
