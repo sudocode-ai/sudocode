@@ -498,4 +498,182 @@ User logout endpoint with session cleanup`,
       expect(merged[0].tags).toContain('tag-from-theirs');
     });
   });
+
+  describe('Simulated 3-way merge (empty base)', () => {
+    it('should treat concurrent additions as conflicts and merge them', () => {
+      const base: JSONLEntity[] = [];
+
+      const ours: JSONLEntity[] = [
+        {
+          id: 'i-new',
+          uuid: 'uuid-new',
+          title: 'New Feature (ours)',
+          description: 'Added by ours',
+          status: 'open',
+          created_at: '2025-01-01T00:00:00Z',
+          updated_at: '2025-01-02T00:00:00Z',
+          tags: ['ours-tag'],
+          relationships: [],
+        },
+      ];
+
+      const theirs: JSONLEntity[] = [
+        {
+          id: 'i-new',
+          uuid: 'uuid-new',
+          title: 'New Feature (theirs)',
+          description: 'Added by theirs',
+          status: 'in_progress',
+          created_at: '2025-01-01T00:00:00Z',
+          updated_at: '2025-01-03T00:00:00Z',
+          tags: ['theirs-tag'],
+          relationships: [],
+        },
+      ];
+
+      const { entities: merged, stats } = mergeThreeWay(base, ours, theirs);
+
+      expect(merged).toHaveLength(1);
+      expect(stats.conflicts.some((c) => c.action.includes('Concurrent addition'))).toBe(true);
+
+      const result = merged[0];
+
+      // Latest timestamp wins (theirs: 2025-01-03)
+      expect(result.title).toBe('New Feature (theirs)');
+      expect(result.status).toBe('in_progress');
+
+      // Metadata merged from both
+      expect(result.tags).toContain('ours-tag');
+      expect(result.tags).toContain('theirs-tag');
+    });
+
+    it('should handle one-sided additions correctly', () => {
+      const base: JSONLEntity[] = [];
+
+      const ours: JSONLEntity[] = [
+        {
+          id: 'i-ours-only',
+          uuid: 'uuid-ours',
+          title: 'Added by ours',
+          created_at: '2025-01-01T00:00:00Z',
+          updated_at: '2025-01-01T00:00:00Z',
+        },
+      ];
+
+      const theirs: JSONLEntity[] = [
+        {
+          id: 'i-theirs-only',
+          uuid: 'uuid-theirs',
+          title: 'Added by theirs',
+          created_at: '2025-01-02T00:00:00Z',
+          updated_at: '2025-01-02T00:00:00Z',
+        },
+      ];
+
+      const { entities: merged } = mergeThreeWay(base, ours, theirs);
+
+      expect(merged).toHaveLength(2);
+      expect(merged.find((e) => e.uuid === 'uuid-ours')?.title).toBe('Added by ours');
+      expect(merged.find((e) => e.uuid === 'uuid-theirs')?.title).toBe('Added by theirs');
+    });
+
+    it('should merge multi-line descriptions with YAML line-level merging', () => {
+      const base: JSONLEntity[] = [];
+
+      const ours: JSONLEntity[] = [
+        {
+          id: 's-doc',
+          uuid: 'uuid-doc',
+          title: 'Documentation',
+          description: `Line 1: Added by ours
+Line 2: Common
+Line 3: Added by ours`,
+          created_at: '2025-01-01T00:00:00Z',
+          updated_at: '2025-01-02T00:00:00Z',
+        },
+      ];
+
+      const theirs: JSONLEntity[] = [
+        {
+          id: 's-doc',
+          uuid: 'uuid-doc',
+          title: 'Documentation',
+          description: `Line 1: Common
+Line 2: Common
+Line 3: Added by theirs`,
+          created_at: '2025-01-01T00:00:00Z',
+          updated_at: '2025-01-03T00:00:00Z',
+        },
+      ];
+
+      const { entities: merged } = mergeThreeWay(base, ours, theirs);
+
+      expect(merged).toHaveLength(1);
+
+      // YAML merge should combine non-conflicting lines
+      const result = merged[0];
+      expect(result.description).toBeTruthy();
+    });
+
+    it('should union metadata even in simulated 3-way', () => {
+      const base: JSONLEntity[] = [];
+
+      const ours: JSONLEntity[] = [
+        {
+          id: 'i-meta',
+          uuid: 'uuid-meta',
+          title: 'Feature',
+          created_at: '2025-01-01T00:00:00Z',
+          updated_at: '2025-01-02T00:00:00Z',
+          tags: ['backend', 'ours-specific'],
+          relationships: [
+            {
+              from: 'i-meta',
+              from_type: 'issue',
+              to: 's-ours',
+              to_type: 'spec',
+              type: 'implements',
+            },
+          ],
+        },
+      ];
+
+      const theirs: JSONLEntity[] = [
+        {
+          id: 'i-meta',
+          uuid: 'uuid-meta',
+          title: 'Feature',
+          created_at: '2025-01-01T00:00:00Z',
+          updated_at: '2025-01-03T00:00:00Z',
+          tags: ['backend', 'theirs-specific'],
+          relationships: [
+            {
+              from: 'i-meta',
+              from_type: 'issue',
+              to: 'i-theirs',
+              to_type: 'issue',
+              type: 'blocks',
+            },
+          ],
+        },
+      ];
+
+      const { entities: merged } = mergeThreeWay(base, ours, theirs);
+
+      expect(merged).toHaveLength(1);
+
+      const result = merged[0];
+
+      // All tags should be present
+      expect(result.tags).toHaveLength(3);
+      expect(result.tags).toContain('backend');
+      expect(result.tags).toContain('ours-specific');
+      expect(result.tags).toContain('theirs-specific');
+
+      // All relationships should be present
+      expect(result.relationships).toHaveLength(2);
+      expect(result.relationships.some((r: any) => r.to === 's-ours')).toBe(true);
+      expect(result.relationships.some((r: any) => r.to === 'i-theirs')).toBe(true);
+    });
+  });
 });
