@@ -9,6 +9,9 @@
 
 import * as fs from "fs";
 import type { IssueJSONL, SpecJSONL } from "./types.js";
+import { toYaml, fromYaml } from "./yaml-converter.js";
+import { mergeYamlContentSync } from "./git-merge.js";
+import { resolveConflicts } from "./yaml-conflict-resolver.js";
 
 export type JSONLEntity = IssueJSONL | SpecJSONL | Record<string, any>;
 
@@ -402,17 +405,228 @@ export function resolveEntities<T extends JSONLEntity>(
 }
 
 /**
- * Three-way merge for git merge driver
- * Merges base, ours, and theirs versions
+ * Three-way merge for git merge driver using YAML expansion
+ * Merges base, ours, and theirs versions with line-level conflict resolution
+ *
+ * This function supports both:
+ * - True 3-way merge: base from merge-base commit (normal git merge)
+ * - Simulated 3-way merge: base = [] (empty array, treats all as additions)
+ *
+ * Algorithm:
+ * 1. Group entities by UUID across all three versions
+ * 2. Merge metadata FIRST (tags, relationships, feedback) across all versions
+ * 3. Apply merged metadata to all three versions before YAML conversion
+ * 4. Convert entities to YAML using yaml-converter
+ * 5. Use git merge-file for line-level text merging
+ * 6. Apply conflict resolver for remaining conflicts
+ * 7. Convert merged YAML back to JSON
+ * 8. Handle entity deletions (modification wins over deletion)
+ * 9. Sort by created_at (git-friendly)
+ *
+ * @param base - Base version (can be empty array for simulated 3-way)
+ * @param ours - Our version (current/local changes)
+ * @param theirs - Their version (incoming changes)
+ * @returns ResolvedResult with merged entities and statistics
  */
 export function mergeThreeWay<T extends JSONLEntity>(
   base: T[],
   ours: T[],
   theirs: T[]
 ): ResolvedResult<T> {
-  // Collect all entities from all three versions
-  const allEntities = [...base, ...ours, ...theirs];
+  const stats: ResolutionStats = {
+    totalInput: base.length + ours.length + theirs.length,
+    totalOutput: 0,
+    conflicts: [],
+  };
 
-  // Use standard resolution logic
-  return resolveEntities(allEntities);
+  // Step 1: Group entities by UUID across all three versions
+  const byUuid = new Map<string, { base?: T; ours?: T; theirs?: T }>();
+
+  for (const entity of base) {
+    if (!byUuid.has(entity.uuid)) {
+      byUuid.set(entity.uuid, {});
+    }
+    byUuid.get(entity.uuid)!.base = entity;
+  }
+
+  for (const entity of ours) {
+    if (!byUuid.has(entity.uuid)) {
+      byUuid.set(entity.uuid, {});
+    }
+    byUuid.get(entity.uuid)!.ours = entity;
+  }
+
+  for (const entity of theirs) {
+    if (!byUuid.has(entity.uuid)) {
+      byUuid.set(entity.uuid, {});
+    }
+    byUuid.get(entity.uuid)!.theirs = entity;
+  }
+
+  const mergedEntities: T[] = [];
+
+  // Step 2-8: Process each UUID group
+  for (const [uuid, versions] of Array.from(byUuid.entries())) {
+    const { base: baseEntity, ours: oursEntity, theirs: theirsEntity } = versions;
+
+    // Handle entity deletions (modification wins over deletion)
+    if (!oursEntity && !theirsEntity) {
+      // Deleted in both: skip
+      continue;
+    }
+
+    if (!baseEntity && !oursEntity && theirsEntity) {
+      // Added in theirs only
+      mergedEntities.push(theirsEntity);
+      continue;
+    }
+
+    if (!baseEntity && oursEntity && !theirsEntity) {
+      // Added in ours only
+      mergedEntities.push(oursEntity);
+      continue;
+    }
+
+    if (!baseEntity && oursEntity && theirsEntity) {
+      // Added in both (simulated 3-way or concurrent additions)
+      // Step 2: Merge metadata FIRST
+      const merged = mergeMetadata([oursEntity, theirsEntity]);
+      mergedEntities.push(merged);
+
+      stats.conflicts.push({
+        type: 'same-uuid-same-id',
+        uuid,
+        originalIds: [oursEntity.id, theirsEntity.id],
+        resolvedIds: [merged.id],
+        action: 'Concurrent addition: merged metadata and kept most recent version',
+      });
+      continue;
+    }
+
+    if (baseEntity && !oursEntity && !theirsEntity) {
+      // Deleted in both: skip
+      continue;
+    }
+
+    if (baseEntity && oursEntity && !theirsEntity) {
+      // Modified in ours, deleted in theirs: modification wins
+      mergedEntities.push(oursEntity);
+      stats.conflicts.push({
+        type: 'same-uuid-same-id',
+        uuid,
+        originalIds: [baseEntity.id],
+        resolvedIds: [oursEntity.id],
+        action: 'Modified in ours, deleted in theirs: kept modification',
+      });
+      continue;
+    }
+
+    if (baseEntity && !oursEntity && theirsEntity) {
+      // Deleted in ours, modified in theirs: modification wins
+      mergedEntities.push(theirsEntity);
+      stats.conflicts.push({
+        type: 'same-uuid-same-id',
+        uuid,
+        originalIds: [baseEntity.id],
+        resolvedIds: [theirsEntity.id],
+        action: 'Deleted in ours, modified in theirs: kept modification',
+      });
+      continue;
+    }
+
+    // baseEntity && oursEntity && theirsEntity
+    // All three versions exist: perform YAML-based three-way merge
+
+    // Step 2-3: Merge metadata FIRST, apply to all three versions
+    // TypeScript: We know all three exist at this point from the conditionals above
+    const allVersions = [baseEntity!, oursEntity!, theirsEntity!];
+    const metadataMerged = mergeMetadata(allVersions);
+
+    // Apply merged metadata to all three versions
+    const baseWithMetadata = { ...baseEntity!, ...extractMetadata(metadataMerged) };
+    const oursWithMetadata = { ...oursEntity!, ...extractMetadata(metadataMerged) };
+    const theirsWithMetadata = { ...theirsEntity!, ...extractMetadata(metadataMerged) };
+
+    // Step 4: Convert to YAML
+    const baseYaml = toYaml(baseWithMetadata);
+    const oursYaml = toYaml(oursWithMetadata);
+    const theirsYaml = toYaml(theirsWithMetadata);
+
+    // Step 5: Use git merge-file for line-level text merging
+    const gitMergeResult = mergeYamlContentSync({
+      base: baseYaml,
+      ours: oursYaml,
+      theirs: theirsYaml,
+    });
+
+    let finalYaml = gitMergeResult.content;
+
+    // Step 6: Apply conflict resolver if conflicts remain
+    if (gitMergeResult.hasConflicts) {
+      const resolveResult = resolveConflicts(finalYaml);
+      finalYaml = resolveResult.content;
+
+      if (resolveResult.conflictsResolved > 0) {
+        stats.conflicts.push({
+          type: 'same-uuid-same-id',
+          uuid,
+          originalIds: [baseEntity!.id],
+          resolvedIds: [oursEntity!.id, theirsEntity!.id],
+          action: `Three-way merge with ${resolveResult.conflictsResolved} YAML conflicts resolved`,
+        });
+      }
+    }
+
+    // Step 7: Convert merged YAML back to JSON
+    try {
+      const mergedEntity = fromYaml(finalYaml) as T;
+      mergedEntities.push(mergedEntity);
+    } catch (error) {
+      // Fallback to metadata merge if YAML conversion fails
+      const fallback = mergeMetadata([oursEntity!, theirsEntity!]);
+      mergedEntities.push(fallback);
+
+      stats.conflicts.push({
+        type: 'same-uuid-same-id',
+        uuid,
+        originalIds: [baseEntity!.id],
+        resolvedIds: [fallback.id],
+        action: `YAML merge failed, fell back to metadata merge: ${(error as Error).message}`,
+      });
+    }
+  }
+
+  // Step 9: Sort by created_at (git-friendly)
+  mergedEntities.sort((a, b) => {
+    const aDate = a.created_at || '';
+    const bDate = b.created_at || '';
+    if (aDate < bDate) return -1;
+    if (aDate > bDate) return 1;
+    return (a.id || '').localeCompare(b.id || '');
+  });
+
+  stats.totalOutput = mergedEntities.length;
+
+  return { entities: mergedEntities, stats };
+}
+
+/**
+ * Extract metadata fields (tags, relationships, feedback) from an entity
+ */
+function extractMetadata<T extends JSONLEntity>(entity: T): Partial<T> {
+  const metadata: any = {};
+
+  if ((entity as any).tags) {
+    metadata.tags = (entity as any).tags;
+  }
+
+  if ((entity as any).relationships) {
+    metadata.relationships = (entity as any).relationships;
+  }
+
+  if ((entity as any).feedback) {
+    metadata.feedback = (entity as any).feedback;
+  }
+
+  return metadata;
 }
