@@ -184,6 +184,249 @@ describe('Sandbox - Filesystem Restrictions', () => {
       expect(result.exitCode).not.toBe(0);
     }
   });
+
+  test('should block Python scripts from reading outside allowed directory', async () => {
+    if (await shouldSkipSandboxTest()) return;
+
+    const outsideFile = path.join(os.tmpdir(), 'secret-python.txt');
+    fs.writeFileSync(outsideFile, 'secret data');
+
+    try {
+      const result = await execSandboxed(
+        `python3 -c "import sys; print(open('${outsideFile}').read())"`,
+        {
+          allowRead: [testDir],
+          allowWrite: [testDir],
+        }
+      );
+
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stdout).not.toContain('secret data');
+    } finally {
+      if (fs.existsSync(outsideFile)) {
+        fs.unlinkSync(outsideFile);
+      }
+    }
+  });
+
+  test('should block Python scripts from writing outside allowed directory', async () => {
+    if (await shouldSkipSandboxTest()) return;
+
+    const targetFile = path.join(os.tmpdir(), 'leaked-python.txt');
+
+    // Ensure file doesn't exist
+    if (fs.existsSync(targetFile)) {
+      fs.unlinkSync(targetFile);
+    }
+
+    try {
+      const result = await execSandboxed(
+        `python3 -c "with open('${targetFile}', 'w') as f: f.write('leaked')"`,
+        {
+          allowRead: [testDir],
+          allowWrite: [testDir],
+        }
+      );
+
+      expect(result.exitCode).not.toBe(0);
+      expect(fs.existsSync(targetFile)).toBe(false);
+    } finally {
+      if (fs.existsSync(targetFile)) {
+        fs.unlinkSync(targetFile);
+      }
+    }
+  });
+
+  test('should block Python scripts from deleting files outside allowed directory', async () => {
+    if (await shouldSkipSandboxTest()) return;
+
+    const targetFile = path.join(os.tmpdir(), 'to-delete-python.txt');
+    fs.writeFileSync(targetFile, 'should not be deleted');
+
+    try {
+      const result = await execSandboxed(
+        `python3 -c "import os; os.remove('${targetFile}')"`,
+        {
+          allowRead: [testDir],
+          allowWrite: [testDir],
+        }
+      );
+
+      expect(result.exitCode).not.toBe(0);
+      expect(fs.existsSync(targetFile)).toBe(true);
+      expect(fs.readFileSync(targetFile, 'utf-8')).toBe('should not be deleted');
+    } finally {
+      if (fs.existsSync(targetFile)) {
+        fs.unlinkSync(targetFile);
+      }
+    }
+  });
+
+  test('should block Node.js scripts from reading outside allowed directory', async () => {
+    if (await shouldSkipSandboxTest()) return;
+
+    const outsideFile = path.join(os.tmpdir(), 'secret-node.txt');
+    fs.writeFileSync(outsideFile, 'secret data');
+
+    try {
+      const result = await execSandboxed(
+        `node -e "console.log(require('fs').readFileSync('${outsideFile}', 'utf-8'))"`,
+        {
+          allowRead: [testDir],
+          allowWrite: [testDir],
+        }
+      );
+
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stdout).not.toContain('secret data');
+    } finally {
+      if (fs.existsSync(outsideFile)) {
+        fs.unlinkSync(outsideFile);
+      }
+    }
+  });
+
+  test('should block Node.js scripts from writing outside allowed directory', async () => {
+    if (await shouldSkipSandboxTest()) return;
+
+    const targetFile = path.join(os.tmpdir(), 'leaked-node.txt');
+
+    // Ensure file doesn't exist
+    if (fs.existsSync(targetFile)) {
+      fs.unlinkSync(targetFile);
+    }
+
+    try {
+      const result = await execSandboxed(
+        `node -e "require('fs').writeFileSync('${targetFile}', 'leaked')"`,
+        {
+          allowRead: [testDir],
+          allowWrite: [testDir],
+        }
+      );
+
+      expect(result.exitCode).not.toBe(0);
+      expect(fs.existsSync(targetFile)).toBe(false);
+    } finally {
+      if (fs.existsSync(targetFile)) {
+        fs.unlinkSync(targetFile);
+      }
+    }
+  });
+
+  test('should block Node.js scripts from deleting files outside allowed directory', async () => {
+    if (await shouldSkipSandboxTest()) return;
+
+    const targetFile = path.join(os.tmpdir(), 'to-delete-node.txt');
+    fs.writeFileSync(targetFile, 'should not be deleted');
+
+    try {
+      const result = await execSandboxed(
+        `node -e "require('fs').unlinkSync('${targetFile}')"`,
+        {
+          allowRead: [testDir],
+          allowWrite: [testDir],
+        }
+      );
+
+      expect(result.exitCode).not.toBe(0);
+      expect(fs.existsSync(targetFile)).toBe(true);
+      expect(fs.readFileSync(targetFile, 'utf-8')).toBe('should not be deleted');
+    } finally {
+      if (fs.existsSync(targetFile)) {
+        fs.unlinkSync(targetFile);
+      }
+    }
+  });
+
+  test('should block bash scripts from reading outside allowed directory', async () => {
+    if (await shouldSkipSandboxTest()) return;
+
+    const outsideFile = path.join(os.tmpdir(), 'secret-bash.txt');
+    const scriptFile = path.join(testDir, 'read-script.sh');
+
+    fs.writeFileSync(outsideFile, 'secret data');
+    fs.writeFileSync(
+      scriptFile,
+      `#!/bin/bash\ncat "${outsideFile}"\necho "script completed"`
+    );
+    fs.chmodSync(scriptFile, 0o755);
+
+    try {
+      const result = await execSandboxed(`bash ${scriptFile}`, {
+        allowRead: [testDir],
+        allowWrite: [testDir],
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stdout).not.toContain('secret data');
+    } finally {
+      if (fs.existsSync(outsideFile)) {
+        fs.unlinkSync(outsideFile);
+      }
+    }
+  });
+
+  test('should block bash scripts from writing outside allowed directory', async () => {
+    if (await shouldSkipSandboxTest()) return;
+
+    const targetFile = path.join(os.tmpdir(), 'leaked-bash.txt');
+    const scriptFile = path.join(testDir, 'write-script.sh');
+
+    // Ensure target doesn't exist
+    if (fs.existsSync(targetFile)) {
+      fs.unlinkSync(targetFile);
+    }
+
+    fs.writeFileSync(
+      scriptFile,
+      `#!/bin/bash\necho "leaked" > "${targetFile}"\necho "script completed"`
+    );
+    fs.chmodSync(scriptFile, 0o755);
+
+    try {
+      const result = await execSandboxed(`bash ${scriptFile}`, {
+        allowRead: [testDir],
+        allowWrite: [testDir],
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      expect(fs.existsSync(targetFile)).toBe(false);
+    } finally {
+      if (fs.existsSync(targetFile)) {
+        fs.unlinkSync(targetFile);
+      }
+    }
+  });
+
+  test('should block bash scripts from deleting files outside allowed directory', async () => {
+    if (await shouldSkipSandboxTest()) return;
+
+    const targetFile = path.join(os.tmpdir(), 'to-delete-bash.txt');
+    const scriptFile = path.join(testDir, 'delete-script.sh');
+
+    fs.writeFileSync(targetFile, 'should not be deleted');
+    fs.writeFileSync(
+      scriptFile,
+      `#!/bin/bash\nrm "${targetFile}"\necho "script completed"`
+    );
+    fs.chmodSync(scriptFile, 0o755);
+
+    try {
+      const result = await execSandboxed(`bash ${scriptFile}`, {
+        allowRead: [testDir],
+        allowWrite: [testDir],
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      expect(fs.existsSync(targetFile)).toBe(true);
+      expect(fs.readFileSync(targetFile, 'utf-8')).toBe('should not be deleted');
+    } finally {
+      if (fs.existsSync(targetFile)) {
+        fs.unlinkSync(targetFile);
+      }
+    }
+  });
 });
 
 /**
