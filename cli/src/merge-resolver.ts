@@ -1,10 +1,40 @@
 /**
  * JSONL merge conflict resolution
  *
- * Resolves git merge conflicts in issues.jsonl and specs.jsonl using:
- * - UUID-based deduplication
- * - Timestamp-based prioritization
- * - Metadata merging (relationships, tags)
+ * Resolves git merge conflicts in issues.jsonl and specs.jsonl using
+ * a universal three-way merge algorithm:
+ *
+ * - **Three-way merge**: Uses base (common ancestor), ours, theirs
+ * - **YAML expansion**: Converts JSON entities to YAML for line-level merging
+ * - **Line-level resolution**: Uses git merge-file for text-based merging
+ * - **Automatic conflict resolver**: Applies latest-wins strategy for remaining conflicts
+ * - **Metadata merging**: Unions tags, relationships, feedback across all versions
+ * - **Deletion handling**: Modification wins over deletion
+ * - **Simulated 3-way**: Supports empty base (treats all as additions)
+ *
+ * ## Primary API
+ *
+ * **`mergeThreeWay(base, ours, theirs)`** - Universal three-way merge
+ *   - Use for all JSONL merge operations
+ *   - Supports true 3-way (with base) and simulated 3-way (base = [])
+ *   - Returns merged entities with conflict statistics
+ *
+ * ## Legacy API (Deprecated)
+ *
+ * **`resolveEntities(entities)`** - DEPRECATED two-way merge
+ *   - Only considers "ours" and "theirs" without a common base
+ *   - Kept for backward compatibility with existing tests
+ *   - Use `mergeThreeWay()` instead for new code
+ *
+ * ## Migration Path
+ *
+ * All usages have been migrated to `mergeThreeWay()`:
+ * - ✅ `_resolveJSONLFile()` - Updated to use mergeThreeWay
+ * - ✅ `_mergeJSONLFiles()` - Updated to use mergeThreeWay
+ * - ✅ `resolveFile()` - Updated to use mergeThreeWay
+ * - ✅ Tests - Legacy tests remain for `resolveEntities()`
+ *
+ * See deprecation notice on `resolveEntities()` for migration examples.
  */
 
 import * as fs from "fs";
@@ -279,6 +309,39 @@ export function mergeMetadata<T extends JSONLEntity>(entities: T[]): T {
 /**
  * Resolve all entities using UUID-based deduplication
  * Handles different UUIDs, same UUID conflicts, and metadata merging
+ *
+ * @deprecated Use `mergeThreeWay()` instead for proper three-way merge support.
+ *
+ * This function implements a two-way merge strategy that only considers
+ * "ours" and "theirs" versions without a common base. This can lead to
+ * suboptimal conflict resolution and lost changes.
+ *
+ * **Migration Guide:**
+ *
+ * Before (two-way merge):
+ * ```typescript
+ * const { entities, stats } = resolveEntities([...oursEntities, ...theirsEntities]);
+ * ```
+ *
+ * After (three-way merge):
+ * ```typescript
+ * const { entities, stats } = mergeThreeWay(
+ *   baseEntities,    // Common ancestor version (or [] for simulated 3-way)
+ *   oursEntities,    // Current/local changes
+ *   theirsEntities   // Incoming changes
+ * );
+ * ```
+ *
+ * **Key Benefits of mergeThreeWay:**
+ * - Proper three-way merge algorithm using common base
+ * - YAML-based line-level conflict resolution
+ * - Automatic conflict resolver for remaining conflicts
+ * - Better handling of concurrent modifications
+ * - Metadata merging across all three versions
+ * - Support for entity deletions (modification wins over deletion)
+ *
+ * **Note:** This function may be removed in a future version.
+ * It is currently kept for backward compatibility with existing tests.
  */
 export function resolveEntities<T extends JSONLEntity>(
   entities: T[],
