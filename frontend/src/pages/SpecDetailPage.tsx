@@ -39,6 +39,7 @@ import {
   X,
   ChevronsUpDown,
   ArrowLeft,
+  Link,
 } from 'lucide-react'
 import type { IssueFeedback, Relationship, EntityType, RelationshipType } from '@/types/api'
 import { relationshipsApi } from '@/lib/api'
@@ -683,6 +684,15 @@ export default function SpecDetailPage() {
                       </Tooltip>
                     </TooltipProvider>
                   </div>
+                  {/* External Link Badges */}
+                  {spec.external_links &&
+                    spec.external_links.length > 0 &&
+                    spec.external_links.map((link) => (
+                      <Badge key={`${link.provider}-${link.external_id}`} variant="spec">
+                        <Link className="mr-1 h-3 w-3" />
+                        {link.provider}: {link.external_id}
+                      </Badge>
+                    ))}
                   {/* Parent spec selector */}
                   <div className="flex items-center gap-1">
                     <span className="text-sm text-muted-foreground">Parent:</span>
