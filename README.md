@@ -94,7 +94,7 @@ claude plugin marketplace add sudocode-ai/sudocode
 claude plugin install sudocode
 ```
 
-Check out our [Installation Guide](https://docs.sudocode.ai/quickstart) for instructions on setting up other agents.
+Check out our [Quick Start Guide](https://docs.sudocode.ai/quickstart#step-4%3A-set-up-your-agent) for instructions on setting up other agents.
 
 ## Context-as-Code
 
