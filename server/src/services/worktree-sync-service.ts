@@ -26,7 +26,6 @@ import {
   mergeThreeWay,
   hasGitConflictMarkers,
   parseMergeConflictFile,
-  resolveEntities,
 } from "@sudocode-ai/cli/dist/merge-resolver.js";
 import {
   writeJSONL,
@@ -1161,9 +1160,12 @@ export class WorktreeSyncService {
       skipErrors: true,
     });
 
-    // Combine and resolve using UUID-based deduplication
-    const allEntities = [...localEntities, ...worktreeEntities];
-    const { entities: merged } = resolveEntities(allEntities);
+    // Merge using three-way merge with empty base
+    const { entities: merged } = mergeThreeWay(
+      [],
+      localEntities,
+      worktreeEntities
+    );
 
     // Write merged result back to local file
     await writeJSONL(localFilePath, merged);
@@ -1322,29 +1324,39 @@ export class WorktreeSyncService {
     // Parse conflicts
     const sections = parseMergeConflictFile(content);
 
-    // Extract all entities (from both clean and conflict sections)
-    const allEntities: JSONLEntity[] = [];
+    // Separate ours and theirs arrays
+    const oursEntities: JSONLEntity[] = [];
+    const theirsEntities: JSONLEntity[] = [];
 
     for (const section of sections) {
       if (section.type === "clean") {
+        // Add clean sections to BOTH ours and theirs
         for (const line of section.lines) {
           if (line.trim()) {
             try {
-              allEntities.push(JSON.parse(line));
+              const entity = JSON.parse(line);
+              oursEntities.push(entity);
+              theirsEntities.push(entity);
             } catch {
               // Skip malformed lines
             }
           }
         }
       } else {
-        // Conflict section - include both ours and theirs
-        for (const line of [
-          ...(section.ours || []),
-          ...(section.theirs || []),
-        ]) {
+        // Conflict section - add ours to ours, theirs to theirs
+        for (const line of section.ours || []) {
           if (line.trim()) {
             try {
-              allEntities.push(JSON.parse(line));
+              oursEntities.push(JSON.parse(line));
+            } catch {
+              // Skip malformed lines
+            }
+          }
+        }
+        for (const line of section.theirs || []) {
+          if (line.trim()) {
+            try {
+              theirsEntities.push(JSON.parse(line));
             } catch {
               // Skip malformed lines
             }
@@ -1353,10 +1365,12 @@ export class WorktreeSyncService {
       }
     }
 
-    // Resolve conflicts
-    const { entities: resolved } = resolveEntities(allEntities, {
-      verbose: false,
-    });
+    // Resolve conflicts using universal three-way merge with empty base
+    const { entities: resolved } = mergeThreeWay(
+      [],
+      oursEntities,
+      theirsEntities
+    );
 
     // Write back resolved entities
     await writeJSONL(filePath, resolved);
