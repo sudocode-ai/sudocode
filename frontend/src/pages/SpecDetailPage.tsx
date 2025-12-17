@@ -6,12 +6,14 @@ import { useSpecRelationships } from '@/hooks/useSpecRelationships'
 import { useIssues } from '@/hooks/useIssues'
 import { useFeedback } from '@/hooks/useFeedback'
 import { useWorkflowMutations, useWorkflows } from '@/hooks/useWorkflows'
+import { useRefreshEntity } from '@/hooks/useRefreshEntity'
 import { SpecViewerTiptap } from '@/components/specs/SpecViewerTiptap'
 import { AlignedFeedbackPanel } from '@/components/specs/AlignedFeedbackPanel'
 import { AddFeedbackDialog } from '@/components/specs/AddFeedbackDialog'
 import { TableOfContentsPanel } from '@/components/specs/TableOfContentsPanel'
 import { CreateWorkflowDialog } from '@/components/workflows'
 import { AdhocExecutionDialog } from '@/components/executions/AdhocExecutionDialog'
+import { ExternalLinkBadge, RefreshConflictDialog, StaleLinkWarning } from '@/components/import'
 import { useFeedbackPositions } from '@/hooks/useFeedbackPositions'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -42,13 +44,13 @@ import {
   X,
   ChevronsUpDown,
   ArrowLeft,
-  Link,
   Play,
   Lightbulb,
   Loader2,
 } from 'lucide-react'
 import type { IssueFeedback, Relationship, EntityType, RelationshipType } from '@/types/api'
 import type { WorkflowSource } from '@/types/workflow'
+import type { FieldChange } from '@/lib/api'
 import { relationshipsApi } from '@/lib/api'
 import { DeleteSpecDialog } from '@/components/specs/DeleteSpecDialog'
 import { EntityBadge } from '@/components/entities/EntityBadge'
@@ -77,18 +79,24 @@ export default function SpecDetailPage() {
   const { issues } = useIssues()
   const { specs, updateSpec, isUpdating, archiveSpec, unarchiveSpec, deleteSpec } = useSpecs()
   const { createFeedback, updateFeedback, deleteFeedback } = useFeedback(id || '')
-  const { create: createWorkflow, start: startWorkflow, isCreating: isCreatingWorkflow } = useWorkflowMutations()
+  const {
+    create: createWorkflow,
+    start: startWorkflow,
+    isCreating: isCreatingWorkflow,
+  } = useWorkflowMutations()
   const { data: workflows } = useWorkflows()
 
   // Find a running workflow for this spec
   const runningWorkflowForSpec = useMemo(() => {
     if (!id || !workflows) return null
-    return workflows.find(
-      (w) =>
-        w.source.type === 'spec' &&
-        w.source.specId === id &&
-        (w.status === 'running' || w.status === 'paused')
-    ) || null
+    return (
+      workflows.find(
+        (w) =>
+          w.source.type === 'spec' &&
+          w.source.specId === id &&
+          (w.status === 'running' || w.status === 'paused')
+      ) || null
+    )
   }, [id, workflows])
 
   const [selectedLine, setSelectedLine] = useState<number | null>(null)
@@ -113,6 +121,11 @@ export default function SpecDetailPage() {
   const [workflowDefaultSource, setWorkflowDefaultSource] = useState<WorkflowSource | undefined>()
   const [planDialogOpen, setPlanDialogOpen] = useState(false)
 
+  // Refresh state
+  const [showRefreshConflictDialog, setShowRefreshConflictDialog] = useState(false)
+  const [refreshConflictChanges, setRefreshConflictChanges] = useState<FieldChange[]>([])
+  const [staleLinkDismissed, setStaleLinkDismissed] = useState(false)
+
   // Local state for editable fields
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
@@ -121,6 +134,32 @@ export default function SpecDetailPage() {
 
   // Relationships via hook with WebSocket real-time updates
   const { relationships } = useSpecRelationships(id)
+
+  // Refresh hook for external links
+  const {
+    refresh: refreshSpec,
+    forceRefresh: forceRefreshSpec,
+    isRefreshing,
+    isForceRefreshing,
+  } = useRefreshEntity({
+    entityId: id || '',
+    entityType: 'spec',
+    onConflict: (result) => {
+      if (result.changes) {
+        setRefreshConflictChanges(result.changes)
+        setShowRefreshConflictDialog(true)
+      }
+    },
+    onStale: () => {
+      // Stale links will be detected from the spec.external_links data
+      // which is refreshed via WebSocket/query invalidation
+      setStaleLinkDismissed(false)
+    },
+    onSuccess: () => {
+      setShowRefreshConflictDialog(false)
+      setRefreshConflictChanges([])
+    },
+  })
 
   // Parent editing state
   const [isEditingParent, setIsEditingParent] = useState(false)
@@ -814,14 +853,16 @@ Create actionable issues that implement its requirements. Each issue should be s
                       </Tooltip>
                     </TooltipProvider>
                   </div>
-                  {/* External Link Badges */}
+                  {/* External Link Badges with Refresh */}
                   {spec.external_links &&
                     spec.external_links.length > 0 &&
                     spec.external_links.map((link) => (
-                      <Badge key={`${link.provider}-${link.external_id}`} variant="spec">
-                        <Link className="mr-1 h-3 w-3" />
-                        {link.provider}: {link.external_id}
-                      </Badge>
+                      <ExternalLinkBadge
+                        key={`${link.provider}-${link.external_id}`}
+                        link={link}
+                        onRefresh={() => refreshSpec()}
+                        isRefreshing={isRefreshing || isForceRefreshing}
+                      />
                     ))}
                   {/* Parent spec selector */}
                   <div className="flex items-center gap-1">
@@ -1042,6 +1083,20 @@ Create actionable issues that implement its requirements. Each issue should be s
                   </div>
                 </div>
 
+                {/* Stale Link Warning */}
+                {spec.external_links &&
+                  spec.external_links.some((link) => link.metadata?.stale === true) &&
+                  !staleLinkDismissed && (
+                    <StaleLinkWarning
+                      link={spec.external_links.find((link) => link.metadata?.stale === true)!}
+                      onUnlink={() => {
+                        // TODO: Implement unlink functionality via API
+                        toast.info('Unlink functionality coming soon')
+                      }}
+                      onDismiss={() => setStaleLinkDismissed(true)}
+                    />
+                  )}
+
                 {/* Content */}
                 {content !== undefined ? (
                   <SpecViewerTiptap
@@ -1123,6 +1178,22 @@ Create actionable issues that implement its requirements. Each issue should be s
         defaultPrompt={planImplementationPrompt}
         title="Plan Implementation"
         description="Create implementing issues for this spec using an AI agent."
+      />
+
+      {/* Refresh Conflict Dialog */}
+      <RefreshConflictDialog
+        open={showRefreshConflictDialog}
+        changes={refreshConflictChanges}
+        onKeepLocal={() => {
+          setShowRefreshConflictDialog(false)
+          setRefreshConflictChanges([])
+        }}
+        onOverwrite={() => forceRefreshSpec()}
+        onCancel={() => {
+          setShowRefreshConflictDialog(false)
+          setRefreshConflictChanges([])
+        }}
+        isOverwriting={isForceRefreshing}
       />
     </div>
   )

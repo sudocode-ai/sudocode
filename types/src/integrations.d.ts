@@ -232,6 +232,64 @@ export interface ExternalEntity {
 }
 
 /**
+ * Represents a comment from an external system
+ * Used for importing discussion threads alongside entities
+ */
+export interface ExternalComment {
+  /** Unique identifier in the external system */
+  id: string;
+  /** Comment author (username or display name) */
+  author: string;
+  /** Comment body/content */
+  body: string;
+  /** When the comment was created (ISO 8601) */
+  created_at: string;
+  /** URL to view the comment in external system (optional) */
+  url?: string;
+}
+
+/**
+ * Interface for providers that support on-demand import
+ * Implement this interface to enable URL-based import capabilities
+ */
+export interface OnDemandImportCapable {
+  /**
+   * Check if this provider can handle the given URL
+   * @param url - URL to check
+   * @returns true if this provider can import from this URL
+   */
+  canHandleUrl?(url: string): boolean;
+
+  /**
+   * Parse a URL to extract entity information
+   * @param url - URL to parse
+   * @returns Parsed entity info or null if URL cannot be parsed
+   */
+  parseUrl?(url: string): { externalId: string; metadata?: Record<string, unknown> } | null;
+
+  /**
+   * Fetch an entity by its URL
+   * @param url - URL to fetch from
+   * @returns The external entity or null if not found
+   */
+  fetchByUrl?(url: string): Promise<ExternalEntity | null>;
+
+  /**
+   * Refresh multiple entities by their external IDs
+   * @param externalIds - Array of external IDs to refresh
+   * @returns Array of entities (null for any that couldn't be fetched)
+   */
+  refreshEntities?(externalIds: string[]): Promise<(ExternalEntity | null)[]>;
+
+  /**
+   * Fetch comments for an entity
+   * @param externalId - External ID of the entity
+   * @returns Array of comments
+   */
+  fetchComments?(externalId: string): Promise<ExternalComment[]>;
+}
+
+/**
  * Represents a change detected in an external system
  * Used for incremental sync operations
  */
@@ -292,6 +350,12 @@ export interface IntegrationProvider {
   readonly supportsWatch: boolean;
   /** Whether this provider supports polling for changes */
   readonly supportsPolling: boolean;
+  /** Whether this provider supports on-demand import via URL */
+  readonly supportsOnDemandImport: boolean;
+  /** Whether this provider supports search operations */
+  readonly supportsSearch: boolean;
+  /** Whether this provider supports pushing changes to external system */
+  readonly supportsPush: boolean;
 
   // ===========================================================================
   // Lifecycle

@@ -1,0 +1,601 @@
+/**
+ * Tests for import API routes
+ */
+
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
+import { createImportRouter } from "../../../src/routes/import.js";
+import type { Request, Response } from "express";
+import * as fs from "fs";
+
+// Mock fs module
+vi.mock("fs", async () => {
+  const actual = await vi.importActual<typeof fs>("fs");
+  return {
+    ...actual,
+    existsSync: vi.fn(),
+    readFileSync: vi.fn(),
+    writeFileSync: vi.fn(),
+  };
+});
+
+// Mock provider that supports on-demand import
+const mockOnDemandProvider = {
+  name: "github",
+  supportsWatch: false,
+  supportsPolling: false,
+  supportsOnDemandImport: true,
+  supportsSearch: true,
+  supportsPush: false,
+  initialize: vi.fn().mockResolvedValue(undefined),
+  dispose: vi.fn().mockResolvedValue(undefined),
+  canHandleUrl: vi.fn((url: string) => url.includes("github.com")),
+  parseUrl: vi.fn((url: string) => {
+    const match = url.match(/github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)/);
+    if (match) {
+      return { externalId: `${match[1]}/${match[2]}#${match[3]}` };
+    }
+    return null;
+  }),
+  fetchByUrl: vi.fn(),
+  fetchComments: vi.fn(),
+  fetchEntity: vi.fn(),
+  searchEntities: vi.fn(),
+  createEntity: vi.fn(),
+  updateEntity: vi.fn(),
+  getChangesSince: vi.fn(),
+  mapToSudocode: vi.fn(),
+  mapFromSudocode: vi.fn(),
+};
+
+// Mock plugin loader
+vi.mock("@sudocode-ai/cli/dist/integrations/index.js", () => ({
+  getFirstPartyPlugins: vi.fn(() => [
+    { name: "github", package: "@sudocode-ai/integration-github" },
+  ]),
+  loadPlugin: vi.fn(async (name: string) => {
+    if (name === "github") {
+      return {
+        name: "github",
+        displayName: "GitHub",
+        version: "0.1.0",
+        description: "GitHub integration plugin",
+        validateConfig: () => ({ valid: true, errors: [], warnings: [] }),
+        testConnection: async () => ({
+          success: true,
+          configured: true,
+          enabled: true,
+        }),
+        createProvider: () => mockOnDemandProvider,
+      };
+    }
+    return null;
+  }),
+  testProviderConnection: vi.fn(async () => ({
+    success: true,
+    configured: true,
+    enabled: true,
+    details: { mocked: true },
+  })),
+}));
+
+// Mock external-links operations
+vi.mock("@sudocode-ai/cli/dist/operations/external-links.js", () => ({
+  findSpecsByExternalLink: vi.fn(() => []),
+  findIssuesByExternalLink: vi.fn(() => []),
+  createSpecFromExternal: vi.fn((sudocodeDir: string, input: any) => ({
+    id: "s-test123",
+    uuid: "test-uuid-123",
+    title: input.title,
+    content: input.content,
+    file_path: `specs/s-test123.md`,
+    priority: input.priority || 2,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    external_links: [
+      {
+        provider: input.external.provider,
+        external_id: input.external.external_id,
+        sync_enabled: true,
+        sync_direction: input.external.sync_direction,
+      },
+    ],
+    relationships: [],
+    tags: [],
+  })),
+}));
+
+// Mock export service
+vi.mock("../../../src/services/export.js", () => ({
+  triggerExport: vi.fn(),
+  syncEntityToMarkdown: vi.fn().mockResolvedValue(undefined),
+}));
+
+// Mock websocket service
+vi.mock("../../../src/services/websocket.js", () => ({
+  broadcastSpecUpdate: vi.fn(),
+}));
+
+
+// Helper to create mock request/response
+function createMockReqRes(
+  overrides: {
+    params?: Record<string, string>;
+    body?: unknown;
+    query?: Record<string, string>;
+  } = {}
+) {
+  const req = {
+    params: overrides.params || {},
+    body: overrides.body || {},
+    query: overrides.query || {},
+    project: {
+      id: "test-project",
+      path: "/test/project",
+      sudocodeDir: "/test/project/.sudocode",
+      db: {},
+    },
+  } as unknown as Request;
+
+  const res = {
+    json: vi.fn(),
+    status: vi.fn().mockReturnThis(),
+  } as unknown as Response;
+
+  return { req, res };
+}
+
+// Helper to find route handler
+function findHandler(
+  router: ReturnType<typeof createImportRouter>,
+  path: string,
+  method: "get" | "post" | "put" | "delete"
+) {
+  return router.stack.find(
+    (layer) => layer.route?.path === path && layer.route?.methods[method]
+  )?.route?.stack[0].handle;
+}
+
+describe("Import Router", () => {
+  let router: ReturnType<typeof createImportRouter>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    router = createImportRouter();
+
+    // Setup default mocks
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({}));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe("GET /providers", () => {
+    it("should list available import providers", async () => {
+      const { req, res } = createMockReqRes();
+
+      const handler = findHandler(router, "/providers", "get");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({
+            providers: expect.arrayContaining([
+              expect.objectContaining({
+                name: "github",
+                displayName: "GitHub",
+                supportsOnDemandImport: true,
+                supportsSearch: true,
+                configured: true,
+                authMethod: "gh-cli",
+              }),
+            ]),
+          }),
+        })
+      );
+    });
+
+    it("should only include providers that support on-demand import", async () => {
+      const { req, res } = createMockReqRes();
+
+      const handler = findHandler(router, "/providers", "get");
+      await handler!(req, res, () => {});
+
+      const response = vi.mocked(res.json).mock.calls[0][0];
+      expect(response.data.providers.every((p: any) => p.supportsOnDemandImport)).toBe(true);
+    });
+  });
+
+  describe("POST /preview", () => {
+    it("should return 400 if URL is missing", async () => {
+      const { req, res } = createMockReqRes({ body: {} });
+
+      const handler = findHandler(router, "/preview", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: "URL is required",
+        })
+      );
+    });
+
+    it("should return 422 if no provider can handle the URL", async () => {
+      mockOnDemandProvider.canHandleUrl.mockReturnValueOnce(false);
+
+      const { req, res } = createMockReqRes({
+        body: { url: "https://unknown.com/issue/123" },
+      });
+
+      const handler = findHandler(router, "/preview", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: "No provider found",
+        })
+      );
+    });
+
+    it("should return 404 if entity is not found", async () => {
+      mockOnDemandProvider.canHandleUrl.mockReturnValueOnce(true);
+      mockOnDemandProvider.fetchByUrl.mockResolvedValueOnce(null);
+
+      const { req, res } = createMockReqRes({
+        body: { url: "https://github.com/owner/repo/issues/999" },
+      });
+
+      const handler = findHandler(router, "/preview", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: "Entity not found",
+        })
+      );
+    });
+
+    it("should return preview data for valid URL", async () => {
+      const mockEntity = {
+        id: "owner/repo#123",
+        type: "issue" as const,
+        title: "Test Issue",
+        description: "Test description",
+        status: "open",
+        url: "https://github.com/owner/repo/issues/123",
+      };
+
+      mockOnDemandProvider.canHandleUrl.mockReturnValueOnce(true);
+      mockOnDemandProvider.fetchByUrl.mockResolvedValueOnce(mockEntity);
+      mockOnDemandProvider.fetchComments.mockResolvedValueOnce([
+        { id: "c1", author: "user", body: "comment 1", created_at: "2024-01-01" },
+        { id: "c2", author: "user", body: "comment 2", created_at: "2024-01-02" },
+      ]);
+
+      const { req, res } = createMockReqRes({
+        body: { url: "https://github.com/owner/repo/issues/123" },
+      });
+
+      const handler = findHandler(router, "/preview", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({
+            provider: "github",
+            entity: mockEntity,
+            commentsCount: 2,
+          }),
+        })
+      );
+    });
+
+    it("should detect already imported entities", async () => {
+      const mockEntity = {
+        id: "owner/repo#123",
+        type: "issue" as const,
+        title: "Test Issue",
+        description: "Test description",
+      };
+
+      mockOnDemandProvider.canHandleUrl.mockReturnValueOnce(true);
+      mockOnDemandProvider.fetchByUrl.mockResolvedValueOnce(mockEntity);
+
+      // Mock that entity is already imported
+      const { findSpecsByExternalLink } = await import(
+        "@sudocode-ai/cli/dist/operations/external-links.js"
+      );
+      vi.mocked(findSpecsByExternalLink).mockReturnValueOnce([
+        {
+          id: "s-existing",
+          uuid: "existing-uuid",
+          title: "Existing Spec",
+          file_path: "specs/s-existing.md",
+          content: "",
+          priority: 2,
+          created_at: "2024-01-01",
+          updated_at: "2024-01-01",
+          external_links: [
+            {
+              provider: "github",
+              external_id: "owner/repo#123",
+              sync_enabled: true,
+              sync_direction: "inbound",
+              last_synced_at: "2024-01-01T00:00:00Z",
+            },
+          ],
+          relationships: [],
+          tags: [],
+        },
+      ]);
+
+      const { req, res } = createMockReqRes({
+        body: { url: "https://github.com/owner/repo/issues/123" },
+      });
+
+      const handler = findHandler(router, "/preview", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({
+            alreadyLinked: expect.objectContaining({
+              entityId: "s-existing",
+              entityType: "spec",
+              lastSyncedAt: "2024-01-01T00:00:00Z",
+            }),
+          }),
+        })
+      );
+    });
+  });
+
+  describe("POST /", () => {
+    it("should return 400 if URL is missing", async () => {
+      const { req, res } = createMockReqRes({ body: {} });
+
+      const handler = findHandler(router, "/", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: "URL is required",
+        })
+      );
+    });
+
+    it("should return 422 if no provider can handle the URL", async () => {
+      mockOnDemandProvider.canHandleUrl.mockReturnValueOnce(false);
+
+      const { req, res } = createMockReqRes({
+        body: { url: "https://unknown.com/issue/123" },
+      });
+
+      const handler = findHandler(router, "/", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(422);
+    });
+
+    it("should return 404 if entity is not found", async () => {
+      mockOnDemandProvider.canHandleUrl.mockReturnValueOnce(true);
+      mockOnDemandProvider.fetchByUrl.mockResolvedValueOnce(null);
+
+      const { req, res } = createMockReqRes({
+        body: { url: "https://github.com/owner/repo/issues/999" },
+      });
+
+      const handler = findHandler(router, "/", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it("should return 409 if entity is already imported", async () => {
+      const mockEntity = {
+        id: "owner/repo#123",
+        type: "issue" as const,
+        title: "Test Issue",
+        description: "Test description",
+      };
+
+      mockOnDemandProvider.canHandleUrl.mockReturnValueOnce(true);
+      mockOnDemandProvider.fetchByUrl.mockResolvedValueOnce(mockEntity);
+
+      // Mock that entity is already imported
+      const { findSpecsByExternalLink } = await import(
+        "@sudocode-ai/cli/dist/operations/external-links.js"
+      );
+      vi.mocked(findSpecsByExternalLink).mockReturnValueOnce([
+        {
+          id: "s-existing",
+          uuid: "existing-uuid",
+          title: "Existing Spec",
+          file_path: "specs/s-existing.md",
+          content: "",
+          priority: 2,
+          created_at: "2024-01-01",
+          updated_at: "2024-01-01",
+          external_links: [],
+          relationships: [],
+          tags: [],
+        },
+      ]);
+
+      const { req, res } = createMockReqRes({
+        body: { url: "https://github.com/owner/repo/issues/123" },
+      });
+
+      const handler = findHandler(router, "/", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: "Already imported",
+          data: expect.objectContaining({
+            entityId: "s-existing",
+            entityType: "spec",
+          }),
+        })
+      );
+    });
+
+    it("should successfully import entity and create spec", async () => {
+      const mockEntity = {
+        id: "owner/repo#123",
+        type: "issue" as const,
+        title: "Test Issue",
+        description: "Test description",
+        status: "open",
+        url: "https://github.com/owner/repo/issues/123",
+        updated_at: "2024-01-01T00:00:00Z",
+      };
+
+      mockOnDemandProvider.canHandleUrl.mockReturnValueOnce(true);
+      mockOnDemandProvider.fetchByUrl.mockResolvedValueOnce(mockEntity);
+
+      const { req, res } = createMockReqRes({
+        body: { url: "https://github.com/owner/repo/issues/123" },
+      });
+
+      const handler = findHandler(router, "/", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({
+            entityId: "s-test123",
+            entityType: "spec",
+            externalLink: expect.objectContaining({
+              provider: "github",
+              external_id: "owner/repo#123",
+              sync_enabled: true,
+              sync_direction: "inbound",
+              content_hash: expect.any(String),
+              imported_at: expect.any(String),
+            }),
+          }),
+        })
+      );
+    });
+
+    it("should count comments when includeComments requested", async () => {
+      const mockEntity = {
+        id: "owner/repo#123",
+        type: "issue" as const,
+        title: "Test Issue",
+        description: "Test description",
+        url: "https://github.com/owner/repo/issues/123",
+      };
+
+      const mockComments = [
+        { id: "c1", author: "user1", body: "First comment", created_at: "2024-01-01" },
+        { id: "c2", author: "user2", body: "Second comment", created_at: "2024-01-02" },
+      ];
+
+      mockOnDemandProvider.canHandleUrl.mockReturnValueOnce(true);
+      mockOnDemandProvider.fetchByUrl.mockResolvedValueOnce(mockEntity);
+      mockOnDemandProvider.fetchComments.mockResolvedValueOnce(mockComments);
+
+      const { req, res } = createMockReqRes({
+        body: {
+          url: "https://github.com/owner/repo/issues/123",
+          options: { includeComments: true },
+        },
+      });
+
+      const handler = findHandler(router, "/", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(201);
+
+      // Comments are counted but not yet imported as feedback (future enhancement)
+      const response = vi.mocked(res.json).mock.calls[0][0];
+      expect(response.data.feedbackCount).toBe(2);
+    });
+
+    it("should respect priority option", async () => {
+      const mockEntity = {
+        id: "owner/repo#456",
+        type: "issue" as const,
+        title: "High Priority Issue",
+        description: "Important issue",
+        url: "https://github.com/owner/repo/issues/456",
+      };
+
+      mockOnDemandProvider.canHandleUrl.mockReturnValueOnce(true);
+      mockOnDemandProvider.fetchByUrl.mockResolvedValueOnce(mockEntity);
+
+      const { createSpecFromExternal } = await import(
+        "@sudocode-ai/cli/dist/operations/external-links.js"
+      );
+
+      const { req, res } = createMockReqRes({
+        body: {
+          url: "https://github.com/owner/repo/issues/456",
+          options: { priority: 0 },
+        },
+      });
+
+      const handler = findHandler(router, "/", "post");
+      await handler!(req, res, () => {});
+
+      expect(vi.mocked(createSpecFromExternal)).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          priority: 0,
+        })
+      );
+    });
+
+    it("should trigger export and broadcast after import", async () => {
+      const mockEntity = {
+        id: "owner/repo#789",
+        type: "issue" as const,
+        title: "Test Issue",
+        description: "Test",
+        url: "https://github.com/owner/repo/issues/789",
+      };
+
+      mockOnDemandProvider.canHandleUrl.mockReturnValueOnce(true);
+      mockOnDemandProvider.fetchByUrl.mockResolvedValueOnce(mockEntity);
+
+      const { triggerExport } = await import("../../../src/services/export.js");
+      const { broadcastSpecUpdate } = await import("../../../src/services/websocket.js");
+
+      const { req, res } = createMockReqRes({
+        body: { url: "https://github.com/owner/repo/issues/789" },
+      });
+
+      const handler = findHandler(router, "/", "post");
+      await handler!(req, res, () => {});
+
+      expect(vi.mocked(triggerExport)).toHaveBeenCalled();
+      expect(vi.mocked(broadcastSpecUpdate)).toHaveBeenCalledWith(
+        "test-project",
+        "s-test123",
+        "created",
+        expect.any(Object)
+      );
+    });
+  });
+});

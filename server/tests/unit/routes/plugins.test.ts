@@ -60,6 +60,7 @@ vi.mock("@sudocode-ai/cli/dist/integrations/index.js", () => ({
     }
     return null;
   }),
+  isPluginInstalledGlobally: vi.fn((name: string) => installedPlugins.has(name)),
   validateProviderConfig: vi.fn(async (name: string, config: unknown) => ({
     valid: true,
     errors: [],

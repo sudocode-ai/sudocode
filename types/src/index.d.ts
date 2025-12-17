@@ -49,6 +49,12 @@ export interface ExternalLink {
   external_updated_at?: string;
   /** Provider-specific metadata */
   metadata?: Record<string, unknown>;
+  /** When this entity was initially imported (ISO 8601) */
+  imported_at?: string;
+  /** Hash of external content for change detection */
+  content_hash?: string;
+  /** Metadata captured during import (separate from sync metadata) */
+  import_metadata?: Record<string, unknown>;
 }
 
 // =============================================================================
@@ -431,4 +437,7 @@ export type {
   ExternalChange,
   SyncResult,
   SyncConflict,
+  // On-demand import types
+  OnDemandImportCapable,
+  ExternalComment,
 } from "./integrations.js";

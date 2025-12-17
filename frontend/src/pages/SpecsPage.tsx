@@ -7,6 +7,7 @@ import { useProjectById } from '@/hooks/useProjects'
 import { useWorkflows } from '@/hooks/useWorkflows'
 import { SpecList } from '@/components/specs/SpecList'
 import { SpecEditor } from '@/components/specs/SpecEditor'
+import { ImportDialog } from '@/components/import'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -17,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Archive, Plus, Search, GitBranch } from 'lucide-react'
+import { Archive, Plus, Search, GitBranch, Download } from 'lucide-react'
 import type { Spec } from '@/types/api'
 import type { Workflow } from '@/types/workflow'
 
@@ -33,6 +34,7 @@ export default function SpecsPage() {
   const { data: workflows = [] } = useWorkflows()
 
   const [showEditor, setShowEditor] = useState(false)
+  const [showImportDialog, setShowImportDialog] = useState(false)
   const [filterText, setFilterText] = useState('')
   const [sortOption, setSortOption] = useState<SortOption>(() => {
     // Initialize from localStorage if available
@@ -171,6 +173,14 @@ export default function SpecsPage() {
             Archived
           </Button>
           <Button
+            onClick={() => setShowImportDialog(true)}
+            variant="outline"
+            size="sm"
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Import
+          </Button>
+          <Button
             onClick={() => setShowEditor(true)}
             variant="default"
             size="sm"
@@ -181,6 +191,12 @@ export default function SpecsPage() {
           </Button>
         </div>
       </div>
+
+      {/* Import Dialog */}
+      <ImportDialog
+        open={showImportDialog}
+        onClose={() => setShowImportDialog(false)}
+      />
 
       {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden px-8 py-4">
