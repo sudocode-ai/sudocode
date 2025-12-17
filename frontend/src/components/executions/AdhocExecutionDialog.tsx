@@ -16,12 +16,24 @@ import { toast } from 'sonner'
 interface AdhocExecutionDialogProps {
   open: boolean
   onClose: () => void
+  /** Default prompt to pre-populate the textarea */
+  defaultPrompt?: string
+  /** Custom title for the dialog */
+  title?: string
+  /** Custom description for the dialog */
+  description?: string
 }
 
 /**
  * Dialog for creating adhoc executions not tied to an issue
  */
-export function AdhocExecutionDialog({ open, onClose }: AdhocExecutionDialogProps) {
+export function AdhocExecutionDialog({
+  open,
+  onClose,
+  defaultPrompt,
+  title = 'New Execution',
+  description = 'Start a standalone execution without linking to a specific issue.',
+}: AdhocExecutionDialogProps) {
   const navigate = useNavigate()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -72,10 +84,8 @@ export function AdhocExecutionDialog({ open, onClose }: AdhocExecutionDialogProp
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>New Execution</DialogTitle>
-          <DialogDescription>
-            Start a standalone execution without linking to a specific issue.
-          </DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -97,6 +107,7 @@ export function AdhocExecutionDialog({ open, onClose }: AdhocExecutionDialogProp
             variant="full"
             autoFocus={true}
             promptPlaceholder="Describe what you want the agent to do... (@ for context)"
+            defaultPrompt={defaultPrompt}
             lastExecution={{
               id: '',
               mode: 'local',

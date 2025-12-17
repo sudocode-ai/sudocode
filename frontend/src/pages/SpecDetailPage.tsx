@@ -11,6 +11,7 @@ import { AlignedFeedbackPanel } from '@/components/specs/AlignedFeedbackPanel'
 import { AddFeedbackDialog } from '@/components/specs/AddFeedbackDialog'
 import { TableOfContentsPanel } from '@/components/specs/TableOfContentsPanel'
 import { CreateWorkflowDialog } from '@/components/workflows'
+import { AdhocExecutionDialog } from '@/components/executions/AdhocExecutionDialog'
 import { useFeedbackPositions } from '@/hooks/useFeedbackPositions'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -43,6 +44,7 @@ import {
   ArrowLeft,
   Link,
   Play,
+  Lightbulb,
 } from 'lucide-react'
 import type { IssueFeedback, Relationship, EntityType, RelationshipType } from '@/types/api'
 import type { WorkflowSource } from '@/types/workflow'
@@ -96,6 +98,7 @@ export default function SpecDetailPage() {
   const [isCopied, setIsCopied] = useState(false)
   const [workflowDialogOpen, setWorkflowDialogOpen] = useState(false)
   const [workflowDefaultSource, setWorkflowDefaultSource] = useState<WorkflowSource | undefined>()
+  const [planDialogOpen, setPlanDialogOpen] = useState(false)
 
   // Local state for editable fields
   const [title, setTitle] = useState('')
@@ -137,6 +140,16 @@ export default function SpecDetailPage() {
       (issue) => implementingIssueIds.includes(issue.id) && issue.status !== 'closed'
     ).length
   }, [id, relationships, issues])
+
+  // Default prompt for planning implementation
+  const planImplementationPrompt = useMemo(() => {
+    if (!spec) return ''
+    return `Plan the implementation of spec [[${spec.id}]]
+
+First review the spec content and the existing codebase. Ask clarifying questions if there are any ambiguities.
+
+Create actionable issues that implement its requirements. Each issue should be specific, well-scoped, and include clear acceptance criteria. Make sure to link each issue back to the spec and capture anly blocking dependencies.`
+  }, [spec])
 
   // Compute all descendant IDs to prevent circular parent references
   const descendantIds = useMemo(() => {
@@ -592,25 +605,17 @@ export default function SpecDetailPage() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
-                    variant="outline"
+                    variant={openImplementingIssuesCount === 0 ? 'default' : 'outline'}
                     size="sm"
-                    onClick={() => setShowFeedbackPanel(!showFeedbackPanel)}
+                    onClick={() => setPlanDialogOpen(true)}
                   >
-                    {showFeedbackPanel ? (
-                      <MessageSquareOff className="h-4 w-4" />
-                    ) : (
-                      <MessageSquare className="h-4 w-4" />
-                    )}
-                    {feedback.length > 0 && (
-                      <span className="ml-2 rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
-                        {feedback.length}
-                      </span>
-                    )}
+                    <Lightbulb className="h-4 w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">
+                      {openImplementingIssuesCount === 0 ? 'Plan Implementation' : 'Plan'}
+                    </span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>
-                  <p>{showFeedbackPanel ? 'Hide' : 'Show'} feedback</p>
-                </TooltipContent>
+                <TooltipContent>Plan out implementing issues for this spec</TooltipContent>
               </Tooltip>
             </TooltipProvider>
 
@@ -637,6 +642,32 @@ export default function SpecDetailPage() {
                 </Tooltip>
               </TooltipProvider>
             )}
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowFeedbackPanel(!showFeedbackPanel)}
+                  >
+                    {showFeedbackPanel ? (
+                      <MessageSquareOff className="h-4 w-4" />
+                    ) : (
+                      <MessageSquare className="h-4 w-4" />
+                    )}
+                    {feedback.length > 0 && (
+                      <span className="ml-2 rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
+                        {feedback.length}
+                      </span>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{showFeedbackPanel ? 'Hide' : 'Show'} feedback</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
 
             {spec.archived ? (
               <Button
@@ -1051,6 +1082,14 @@ export default function SpecDetailPage() {
         onCreate={handleCreateWorkflow}
         defaultSource={workflowDefaultSource}
         isCreating={isCreatingWorkflow}
+      />
+
+      <AdhocExecutionDialog
+        open={planDialogOpen}
+        onClose={() => setPlanDialogOpen(false)}
+        defaultPrompt={planImplementationPrompt}
+        title="Plan Implementation"
+        description="Create implementing issues for this spec using an AI agent."
       />
     </div>
   )
