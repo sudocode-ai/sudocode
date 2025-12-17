@@ -1,9 +1,11 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Play, Loader2, Pause } from 'lucide-react'
+import { Loader2, Pause, Copy, Check } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { SyncIndicator } from '@/components/issues/SyncIndicator'
+import { toast } from 'sonner'
 import type { Spec } from '@/types/api'
 import type { Workflow } from '@/types/workflow'
 import { cn } from '@/lib/utils'
@@ -30,31 +32,36 @@ interface SpecCardProps {
   onClick?: (spec: Spec) => void
   /** Active workflow for this spec (if any) */
   activeWorkflow?: Workflow
-  /** Whether spec has implementing issues */
-  hasImplementingIssues?: boolean
-  /** Callback to run spec as workflow */
-  onRunAsWorkflow?: (spec: Spec) => void
 }
 
 export function SpecCard({
   spec,
   onClick,
   activeWorkflow,
-  hasImplementingIssues = true, // Default to true until API supports bulk relationship fetch
-  onRunAsWorkflow,
 }: SpecCardProps) {
   const navigate = useNavigate()
+  const [isCopied, setIsCopied] = useState(false)
 
   const handleClick = useCallback(() => {
     onClick?.(spec)
   }, [spec, onClick])
 
-  const handleRunWorkflow = useCallback(
-    (e: React.MouseEvent) => {
+  const handleCopyId = useCallback(
+    async (e: React.MouseEvent) => {
       e.stopPropagation() // Prevent card click
-      onRunAsWorkflow?.(spec)
+      try {
+        await navigator.clipboard.writeText(spec.id)
+        setIsCopied(true)
+        setTimeout(() => setIsCopied(false), 2000)
+        toast.success('ID copied to clipboard', {
+          duration: 2000,
+        })
+      } catch (error) {
+        console.error('Failed to copy ID:', error)
+        toast.error('Failed to copy ID')
+      }
     },
-    [spec, onRunAsWorkflow]
+    [spec.id]
   )
 
   const handleWorkflowBadgeClick = useCallback(
@@ -82,7 +89,24 @@ export function SpecCard({
           {/* Header with ID, priority, and workflow indicator */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="font-mono text-xs text-muted-foreground">{spec.id}</span>
+              <div className="group flex items-center gap-1">
+                <span className="font-mono text-xs text-muted-foreground">{spec.id}</span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCopyId}
+                      className="h-5 w-5 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+                    >
+                      {isCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{isCopied ? 'Copied!' : 'Copy ID to Clipboard'}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               {/* Active workflow indicator */}
               {activeWorkflow && (
                 <Tooltip>
@@ -113,6 +137,10 @@ export function SpecCard({
               )}
             </div>
             <div className="flex items-center gap-2">
+              {/* Sync Indicator for external integrations */}
+              {spec.external_links && spec.external_links.length > 0 && (
+                <SyncIndicator externalLinks={spec.external_links} variant="spec" />
+              )}
               {spec.priority !== undefined && spec.priority <= 3 && (
                 <span
                   className={`shrink-0 rounded-full px-2 py-0.5 text-xs text-white ${priorityColors[spec.priority]}`}
@@ -129,35 +157,10 @@ export function SpecCard({
           {/* Preview */}
           {preview && <p className="line-clamp-3 text-sm text-muted-foreground">{preview}</p>}
 
-          {/* Footer with file path and workflow button */}
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              {spec.file_path && (
-                <p className="truncate font-mono text-xs text-muted-foreground">{spec.file_path}</p>
-              )}
-            </div>
-            {/* Run as Workflow button */}
-            {onRunAsWorkflow && !activeWorkflow && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleRunWorkflow}
-                    disabled={!hasImplementingIssues}
-                    className="h-7 px-2 text-muted-foreground hover:text-foreground"
-                  >
-                    <Play className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {hasImplementingIssues
-                    ? 'Run as Workflow'
-                    : 'No implementing issues'}
-                </TooltipContent>
-              </Tooltip>
-            )}
-          </div>
+          {/* Footer with file path */}
+          {spec.file_path && (
+            <p className="truncate font-mono text-xs text-muted-foreground">{spec.file_path}</p>
+          )}
         </div>
       </Card>
     </TooltipProvider>

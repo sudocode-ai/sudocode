@@ -134,10 +134,12 @@ function StatusBadge({ status }: StatusBadgeProps) {
 interface ProgressIndicatorProps {
   completed: number
   total: number
+  workflowStatus: WorkflowStatus
 }
 
-function ProgressIndicator({ completed, total }: ProgressIndicatorProps) {
+function ProgressIndicator({ completed, total, workflowStatus }: ProgressIndicatorProps) {
   const percentage = total > 0 ? Math.round((completed / total) * 100) : 0
+  const isActive = workflowStatus === 'running'
 
   return (
     <div className="flex items-center gap-3">
@@ -150,7 +152,7 @@ function ProgressIndicator({ completed, total }: ProgressIndicatorProps) {
               'h-2 w-2 rounded-full transition-colors',
               i < completed
                 ? 'bg-green-500'
-                : i === completed
+                : i === completed && isActive
                   ? 'bg-blue-500 animate-pulse'
                   : 'bg-muted'
             )}
@@ -279,10 +281,10 @@ export function WorkflowCard({
 
       <CardContent className="pb-3 space-y-3">
         {/* Progress */}
-        <ProgressIndicator completed={completedSteps} total={totalSteps} />
+        <ProgressIndicator completed={completedSteps} total={totalSteps} workflowStatus={status} />
 
-        {/* Current step indicator */}
-        {runningStep && (
+        {/* Current step indicator - only show if workflow is actually running */}
+        {runningStep && status === 'running' && (
           <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             <span className="truncate">Running: {runningStep.issueId}</span>

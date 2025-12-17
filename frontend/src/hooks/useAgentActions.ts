@@ -31,9 +31,9 @@ interface UseAgentActionsOptions {
   execution?: Execution | null
 
   /**
-   * Issue ID for context
+   * Issue ID for context (optional for adhoc executions)
    */
-  issueId: string
+  issueId?: string
 
   /**
    * Whether actions should be disabled (e.g., when another operation is in progress)

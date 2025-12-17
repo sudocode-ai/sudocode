@@ -8,6 +8,7 @@ import {
   Filter,
   PanelLeft,
   PanelLeftClose,
+  Play,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -22,10 +23,15 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ExecutionsSidebar } from '@/components/executions/ExecutionsSidebar'
 import { ExecutionsGrid } from '@/components/executions/ExecutionsGrid'
+import { AdhocExecutionDialog } from '@/components/executions/AdhocExecutionDialog'
 import { useExecutions } from '@/hooks/useExecutions'
 import { useIssues } from '@/hooks/useIssues'
 import type { Execution, ExecutionStatus } from '@/types/execution'
 import type { IssueStatus } from '@/types/api'
+
+// Special filter value for executions without an issue
+const NO_ISSUE_FILTER = 'NO_ISSUE' as const
+type IssueStatusFilter = IssueStatus | typeof NO_ISSUE_FILTER
 
 // localStorage keys for persistence
 const GRID_COLUMNS_STORAGE_KEY = 'sudocode:executions:gridColumns'
@@ -43,13 +49,14 @@ const MAX_ROWS = 3
 // All possible execution statuses
 const ALL_STATUSES: ExecutionStatus[] = ['running', 'completed', 'failed', 'cancelled', 'stopped']
 
-// All possible issue statuses
-const ALL_ISSUE_STATUSES: IssueStatus[] = [
+// All possible issue statuses (including "No issue" for adhoc executions)
+const ALL_ISSUE_STATUSES: IssueStatusFilter[] = [
   'open',
   'in_progress',
   'blocked',
   'needs_review',
   'closed',
+  NO_ISSUE_FILTER,
 ]
 
 // Helper to load Set from localStorage
@@ -135,9 +142,13 @@ export default function ExecutionsPage() {
   )
 
   // Issue status filters (Set for O(1) lookup, persisted to localStorage)
-  const [issueStatusFilters, setIssueStatusFilters] = useState<Set<IssueStatus>>(() =>
-    loadSetFromStorage<IssueStatus>(ISSUE_STATUS_FILTERS_STORAGE_KEY)
+  // Includes special NO_ISSUE_FILTER for adhoc executions
+  const [issueStatusFilters, setIssueStatusFilters] = useState<Set<IssueStatusFilter>>(() =>
+    loadSetFromStorage<IssueStatusFilter>(ISSUE_STATUS_FILTERS_STORAGE_KEY)
   )
+
+  // Adhoc execution dialog state
+  const [isAdhocDialogOpen, setIsAdhocDialogOpen] = useState(false)
 
   // Visible execution IDs (Set for O(1) lookup)
   // Default: show all executions
@@ -227,7 +238,7 @@ export default function ExecutionsPage() {
 
   // Handle issue status filter toggle
   const handleIssueStatusToggle = useCallback(
-    (status: IssueStatus) => {
+    (status: IssueStatusFilter) => {
       const newFilters = new Set(issueStatusFilters)
       if (newFilters.has(status)) {
         newFilters.delete(status)
@@ -252,7 +263,11 @@ export default function ExecutionsPage() {
       // Apply issue status filter
       if (issueStatusFilters.size > 0) {
         filtered = filtered.filter((e) => {
-          if (!e.issue_id) return false // Exclude executions without issues
+          // Handle adhoc executions (no issue_id)
+          if (!e.issue_id) {
+            return issueStatusFilters.has(NO_ISSUE_FILTER)
+          }
+          // Handle executions with issues
           const issueStatus = issueStatusMap.get(e.issue_id)
           return issueStatus && issueStatusFilters.has(issueStatus)
         })
@@ -456,7 +471,7 @@ export default function ExecutionsPage() {
                   onCheckedChange={() => handleIssueStatusToggle(status)}
                   className="text-xs capitalize"
                 >
-                  {status.replace('_', ' ')}
+                  {status === NO_ISSUE_FILTER ? 'No issue (standalone)' : status.replace('_', ' ')}
                 </DropdownMenuCheckboxItem>
               ))}
             </DropdownMenuContent>
@@ -513,6 +528,23 @@ export default function ExecutionsPage() {
               </Button>
             </div>
           </div>
+          {/* New Execution button */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => setIsAdhocDialogOpen(true)}
+                  className="gap-1"
+                >
+                  <Play className="h-3 w-3" />
+                  New Execution
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Start a new execution</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
 
@@ -581,6 +613,9 @@ export default function ExecutionsPage() {
           </Panel>
         </PanelGroup>
       )}
+
+      {/* Adhoc Execution Dialog */}
+      <AdhocExecutionDialog open={isAdhocDialogOpen} onClose={() => setIsAdhocDialogOpen(false)} />
     </div>
   )
 }

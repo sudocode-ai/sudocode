@@ -94,7 +94,27 @@ claude plugin marketplace add sudocode-ai/sudocode
 claude plugin install sudocode
 ```
 
-Check out our [Installation Guide](https://docs.sudocode.ai/quickstart) for instructions on setting up other agents.
+Check out our [Quick Start Guide](https://docs.sudocode.ai/quickstart#step-4%3A-set-up-your-agent) for instructions on setting up other agents.
+
+## External Integrations
+
+sudocode now supports syncing with external spec and issue tracking systems through a plugin-based integration framework. This allows you to maintain specs and issues in your preferred tools while keeping sudocode's agent memory system in sync.
+
+**Supported Integrations:**
+
+| Integration | Description | Sync Direction |
+|-------------|-------------|----------------|
+| **[Beads](https://github.com/steveyegge/beads)** | Git-native issues system | Bidirectional |
+| **[Spec-Kit](https://github.com/spec-kit/spec-kit)** | Markdown-based specification system | Bidirectional |
+| **[OpenSpec](https://github.com/openspec/openspec)** | Structured spec and change proposal system | Bidirectional |
+| **Jira** | Atlassian issue tracking | *Coming soon* |
+| **Linear** | Modern issue tracking | *Coming soon* |
+
+In the sudocode UI, enable integrations in Settings > Integrations. Via the CLI, update with `sudocode plugin`.
+
+Integrations automatically create specs, issues, and relationships between synced entities and support real-time file watching for immediate sync updates. Use sudocode to link and implement work items across different systems.
+
+We're actively adding support for new integration targets. Please file an issue or drop a message for anything you would like sudocode to support!
 
 ## Context-as-Code
 
@@ -296,7 +316,3 @@ sudocode embraces:
 1. **Context-as-Code**: Version-controlled, human-readable requirements and plans are persisted in source control
 2. **Git-Native**: Everything lives in git—no external databases or services
 3. **Flexible Structure**: Markdown content is free-form; structure emerges from user-defined conventions and usage patterns
-
-## Acknowledgments
-
-sudocode is inspired by the git-native issues system pioneered by [Beads](https://github.com/steveyegge/beads).

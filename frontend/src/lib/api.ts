@@ -251,9 +251,13 @@ export interface ListExecutionsResponse {
 }
 
 export const executionsApi = {
-  // Create and start execution
+  // Create and start execution for an issue
   create: (issueId: string, request: CreateExecutionRequest) =>
     post<Execution>(`/issues/${issueId}/executions`, request),
+
+  // Create and start an adhoc execution (not tied to an issue)
+  createAdhoc: (request: CreateExecutionRequest) =>
+    post<Execution>(`/executions`, request),
 
   // Get execution by ID
   getById: (executionId: string) => get<Execution>(`/executions/${executionId}`),

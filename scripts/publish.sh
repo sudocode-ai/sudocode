@@ -80,6 +80,8 @@ npm run build
 echo ""
 echo "Building plugins..."
 npm run build --workspace=plugins/integration-beads
+npm run build --workspace=plugins/integration-openspec
+npm run build --workspace=plugins/integration-speckit
 
 echo ""
 echo "✓ All packages built successfully"
@@ -92,6 +94,8 @@ PACKAGES=(
   "mcp:@sudocode-ai/mcp"
   "server:@sudocode-ai/local-server"
   "plugins/integration-beads:@sudocode-ai/integration-beads"
+  "plugins/integration-openspec:@sudocode-ai/integration-openspec"
+  "plugins/integration-speckit:@sudocode-ai/integration-speckit"
   "sudocode:sudocode"
 )
 
@@ -140,6 +144,9 @@ echo "=========================================="
 echo "Publishing packages..."
 echo "=========================================="
 
+# Save repo root to handle nested package directories correctly
+REPO_ROOT=$(pwd)
+
 for pkg in "${PACKAGES[@]}"; do
   IFS=':' read -r dir name <<< "$pkg"
 
@@ -157,7 +164,7 @@ for pkg in "${PACKAGES[@]}"; do
   echo "Publishing $name..."
   echo "------------------------------------------"
 
-  cd "$dir"
+  cd "$REPO_ROOT/$dir"
 
   # Get package version
   VERSION=$(node -p "require('./package.json').version")
@@ -168,19 +175,19 @@ for pkg in "${PACKAGES[@]}"; do
     echo "Dry run: npm publish --access public --tag $TAG $DRY_RUN"
     npm publish --access public --tag "$TAG" $DRY_RUN || {
       echo "Error: Failed to publish $name (dry run)"
-      cd ..
+      cd "$REPO_ROOT"
       exit 1
     }
   else
     npm publish --access public --tag "$TAG" || {
       echo "Error: Failed to publish $name"
-      cd ..
+      cd "$REPO_ROOT"
       exit 1
     }
     echo "✓ Published $name@$VERSION with tag '$TAG'"
   fi
 
-  cd ..
+  cd "$REPO_ROOT"
 done
 
 echo ""

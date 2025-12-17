@@ -11,6 +11,9 @@ import type {
   IntegrationProviderName,
   IssueStatus,
   SyncDirection,
+  RelationshipJSONL,
+  EntityType,
+  RelationshipType,
 } from "../types.js";
 import { readJSONLSync, writeJSONLSync } from "../jsonl.js";
 import {
@@ -367,6 +370,92 @@ function generateIssueIdFromJsonl(sudocodeDir: string): {
 }
 
 /**
+ * Resolve an external ID to a sudocode ID
+ * Searches both specs and issues for the linked entity
+ */
+function resolveExternalIdToSudocodeId(
+  sudocodeDir: string,
+  provider: IntegrationProviderName,
+  externalId: string,
+  expectedType: "spec" | "issue"
+): { id: string; type: EntityType } | null {
+  if (expectedType === "spec") {
+    const specs = findSpecsByExternalLink(sudocodeDir, provider, externalId);
+    if (specs.length > 0) {
+      return { id: specs[0].id, type: "spec" };
+    }
+  } else {
+    const issues = findIssuesByExternalLink(sudocodeDir, provider, externalId);
+    if (issues.length > 0) {
+      return { id: issues[0].id, type: "issue" };
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolve external relationships to sudocode relationships
+ * Only includes relationships where the target entity has already been imported
+ */
+function resolveExternalRelationships(
+  sudocodeDir: string,
+  fromId: string,
+  fromType: EntityType,
+  provider: IntegrationProviderName,
+  externalRelationships: ExternalRelationshipInput[] | undefined
+): RelationshipJSONL[] {
+  if (!externalRelationships || externalRelationships.length === 0) {
+    return [];
+  }
+
+  const relationships: RelationshipJSONL[] = [];
+
+  for (const extRel of externalRelationships) {
+    const resolved = resolveExternalIdToSudocodeId(
+      sudocodeDir,
+      provider,
+      extRel.targetExternalId,
+      extRel.targetType
+    );
+
+    if (resolved) {
+      relationships.push({
+        from: fromId,
+        from_type: fromType,
+        to: resolved.id,
+        to_type: resolved.type,
+        type: extRel.relationshipType as RelationshipType,
+      });
+    } else {
+      // Log that we couldn't resolve the relationship
+      console.log(
+        `[external-links] Could not resolve relationship target: ${extRel.targetExternalId} (${extRel.targetType}) - entity not yet imported`
+      );
+    }
+  }
+
+  return relationships;
+}
+
+/**
+ * Relationship input for creating entities from external sources
+ */
+export interface ExternalRelationshipInput {
+  /** Target entity ID in the external system */
+  targetExternalId: string;
+  /** Target entity type */
+  targetType: "spec" | "issue";
+  /** Relationship type */
+  relationshipType:
+    | "implements"
+    | "blocks"
+    | "depends-on"
+    | "references"
+    | "related"
+    | "discovered-from";
+}
+
+/**
  * Input for creating an issue from an external entity
  */
 export interface CreateIssueFromExternalInput {
@@ -384,11 +473,13 @@ export interface CreateIssueFromExternalInput {
     external_id: string;
     sync_direction?: SyncDirection;
   };
+  /** Relationships to other external entities (will be resolved to sudocode IDs) */
+  relationships?: ExternalRelationshipInput[];
 }
 
 /**
  * Create a new sudocode issue from an external entity
- * Automatically establishes the external_link
+ * Automatically establishes the external_link and resolves relationships
  *
  * @param sudocodeDir - Path to .sudocode directory
  * @param input - Issue data and external link info
@@ -404,6 +495,15 @@ export function createIssueFromExternal(
   const { id, uuid } = generateIssueIdFromJsonl(sudocodeDir);
   const now = new Date().toISOString();
 
+  // Resolve external relationships to sudocode relationships
+  const relationships = resolveExternalRelationships(
+    sudocodeDir,
+    id,
+    "issue",
+    input.external.provider,
+    input.relationships
+  );
+
   const newIssue: IssueJSONL = {
     id,
     uuid,
@@ -413,7 +513,7 @@ export function createIssueFromExternal(
     priority: input.priority ?? 2,
     created_at: now,
     updated_at: now,
-    relationships: [],
+    relationships,
     tags: [],
     external_links: [
       {
@@ -485,4 +585,113 @@ export function closeIssueInJsonl(
 
   writeJSONLSync(issuesPath, issues);
   return issues[index];
+}
+
+/**
+ * Generate a unique spec ID without database
+ * Uses JSONL to check for collisions
+ */
+function generateSpecIdFromJsonl(sudocodeDir: string): {
+  id: string;
+  uuid: string;
+} {
+  const specsPath = getSpecsJsonlPath(sudocodeDir);
+  const specs = readJSONLSync<SpecJSONL>(specsPath, { skipErrors: true });
+  const existingIds = new Set(specs.map((s) => s.id));
+
+  const uuid = generateUUID();
+  const baseLength = getAdaptiveHashLength(specs.length);
+
+  // Try progressively longer hashes on collision
+  for (let length = baseLength; length <= 8; length++) {
+    const hash = hashUUIDToBase36(uuid, length);
+    const candidate = `s-${hash}`;
+
+    if (!existingIds.has(candidate)) {
+      return { id: candidate, uuid };
+    }
+  }
+
+  throw new Error(
+    `Failed to generate unique spec ID after trying lengths ${baseLength}-8`
+  );
+}
+
+/**
+ * Input for creating a spec from an external entity
+ */
+export interface CreateSpecFromExternalInput {
+  /** Spec title */
+  title: string;
+  /** Spec content/description */
+  content?: string;
+  /** Priority (0-4) */
+  priority?: number;
+  /** External system info for auto-linking */
+  external: {
+    provider: IntegrationProviderName;
+    external_id: string;
+    sync_direction?: SyncDirection;
+  };
+  /** Relationships to other external entities (will be resolved to sudocode IDs) */
+  relationships?: ExternalRelationshipInput[];
+}
+
+/**
+ * Create a new sudocode spec from an external entity
+ * Automatically establishes the external_link and resolves relationships
+ *
+ * @param sudocodeDir - Path to .sudocode directory
+ * @param input - Spec data and external link info
+ * @returns The created spec
+ */
+export function createSpecFromExternal(
+  sudocodeDir: string,
+  input: CreateSpecFromExternalInput
+): SpecJSONL {
+  const specsPath = getSpecsJsonlPath(sudocodeDir);
+  const specs = readJSONLSync<SpecJSONL>(specsPath, { skipErrors: true });
+
+  const { id, uuid } = generateSpecIdFromJsonl(sudocodeDir);
+  const now = new Date().toISOString();
+
+  // Generate file_path from id (required for SpecJSONL)
+  // File path is just a reference for imported specs - actual files are in the external system
+  const file_path = `specs/${id}.md`;
+
+  // Resolve external relationships to sudocode relationships
+  const relationships = resolveExternalRelationships(
+    sudocodeDir,
+    id,
+    "spec",
+    input.external.provider,
+    input.relationships
+  );
+
+  const newSpec: SpecJSONL = {
+    id,
+    uuid,
+    title: input.title,
+    file_path,
+    content: input.content || "",
+    priority: input.priority ?? 2,
+    created_at: now,
+    updated_at: now,
+    relationships,
+    tags: [],
+    external_links: [
+      {
+        provider: input.external.provider,
+        external_id: input.external.external_id,
+        sync_enabled: true,
+        sync_direction: input.external.sync_direction || "bidirectional",
+        last_synced_at: now,
+      },
+    ],
+  };
+
+  specs.push(newSpec);
+  writeJSONLSync(specsPath, specs);
+
+  return newSpec;
 }

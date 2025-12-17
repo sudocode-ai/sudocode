@@ -17,6 +17,7 @@ import {
   loadPlugin,
   validateProviderConfig,
   testProviderConnection,
+  isPluginInstalledGlobally,
 } from "@sudocode-ai/cli/dist/integrations/index.js";
 
 /**
@@ -65,7 +66,11 @@ export interface PluginInfo {
     auto_sync?: boolean;
     auto_import?: boolean;
     delete_behavior?: "close" | "delete" | "ignore";
-    conflict_resolution?: "newest-wins" | "sudocode-wins" | "external-wins" | "manual";
+    conflict_resolution?:
+      | "newest-wins"
+      | "sudocode-wins"
+      | "external-wins"
+      | "manual";
     default_sync_direction?: "inbound" | "outbound" | "bidirectional";
   };
 }
@@ -86,7 +91,9 @@ export function createPluginsRouter(): Router {
 
       const plugins: PluginInfo[] = await Promise.all(
         firstPartyPlugins.map(async (p) => {
-          const installed = await isPluginInstalled(p.name);
+          // Only check for global installations to avoid detecting workspace plugins
+          // during development (when server is linked from monorepo)
+          const installed = isPluginInstalledGlobally(p.name);
           const providerConfig = integrations[p.name];
           const activated = !!providerConfig;
           const enabled = providerConfig?.enabled ?? false;
@@ -236,7 +243,9 @@ export function createPluginsRouter(): Router {
   router.post("/:name/activate", async (req: Request, res: Response) => {
     try {
       const { name } = req.params;
-      const { options = {} } = req.body as { options?: Record<string, unknown> };
+      const { options = {} } = req.body as {
+        options?: Record<string, unknown>;
+      };
 
       // Check if plugin is installed
       const installed = await isPluginInstalled(name);
@@ -372,7 +381,11 @@ export function createPluginsRouter(): Router {
           auto_sync?: boolean;
           auto_import?: boolean;
           delete_behavior?: "close" | "delete" | "ignore";
-          conflict_resolution?: "newest-wins" | "sudocode-wins" | "external-wins" | "manual";
+          conflict_resolution?:
+            | "newest-wins"
+            | "sudocode-wins"
+            | "external-wins"
+            | "manual";
           default_sync_direction?: "inbound" | "outbound" | "bidirectional";
         };
       };
@@ -430,10 +443,12 @@ export function createPluginsRouter(): Router {
         integrations[name].delete_behavior = integrationConfig.delete_behavior;
       }
       if (integrationConfig.conflict_resolution !== undefined) {
-        integrations[name].conflict_resolution = integrationConfig.conflict_resolution;
+        integrations[name].conflict_resolution =
+          integrationConfig.conflict_resolution;
       }
       if (integrationConfig.default_sync_direction !== undefined) {
-        integrations[name].default_sync_direction = integrationConfig.default_sync_direction;
+        integrations[name].default_sync_direction =
+          integrationConfig.default_sync_direction;
       }
 
       config.integrations = integrations;
@@ -505,16 +520,18 @@ export function createPluginsRouter(): Router {
       const { package: packageName } = req.body as { package?: string };
 
       // Determine the package to install
-      const targetPackage =
-        packageName || `@sudocode-ai/integration-${name}`;
+      const targetPackage = packageName || `@sudocode-ai/integration-${name}`;
 
-      // Check if already installed
-      const alreadyInstalled = await isPluginInstalled(name);
-      if (alreadyInstalled) {
+      // Check if already installed globally
+      // We only check global installations to avoid detecting workspace/local packages
+      // during development in the monorepo
+      const isGloballyInstalled = isPluginInstalledGlobally(name);
+
+      if (isGloballyInstalled) {
         res.status(200).json({
           success: true,
           data: {
-            message: `Plugin '${name}' is already installed`,
+            message: `Plugin '${name}' is already installed globally`,
             alreadyInstalled: true,
           },
         });
@@ -546,26 +563,86 @@ export function createPluginsRouter(): Router {
         return;
       }
 
-      // Load plugin to get info
-      const plugin = await loadPlugin(name);
-
       res.status(200).json({
         success: true,
         data: {
-          message: `Plugin '${name}' installed successfully`,
-          plugin: plugin
-            ? {
-                name,
-                displayName: plugin.displayName,
-                version: plugin.version,
-                description: plugin.description,
-              }
-            : { name },
+          message: `Plugin '${name}' installed successfully. Please restart the server to use it.`,
+          requiresRestart: true,
+          plugin: { name },
         },
       });
     } catch (error) {
       console.error("Failed to install plugin:", error);
       res.status(500).json({ error: "Failed to install plugin" });
+    }
+  });
+
+  /**
+   * POST /api/plugins/:name/sync - Trigger a full sync for a plugin
+   *
+   * Manually triggers sync to import all external entities
+   */
+  router.post("/:name/sync", async (req: Request, res: Response) => {
+    try {
+      const { name } = req.params;
+
+      if (!req.project!.integrationSyncService) {
+        res.status(500).json({
+          success: false,
+          error: "Integration sync service not available",
+        });
+        return;
+      }
+
+      const results =
+        await req.project!.integrationSyncService.syncProvider(name);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          message: `Sync completed for '${name}'`,
+          results,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to sync plugin:", error);
+      res.status(500).json({
+        success: false,
+        error: `Failed to sync plugin: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  });
+
+  /**
+   * POST /api/plugins/sync - Trigger a full sync for all enabled plugins
+   *
+   * Manually triggers sync to import all external entities from all providers
+   */
+  router.post("/sync", async (req: Request, res: Response) => {
+    try {
+      if (!req.project!.integrationSyncService) {
+        res.status(500).json({
+          success: false,
+          error: "Integration sync service not available",
+        });
+        return;
+      }
+
+      const results = await req.project!.integrationSyncService.syncAll();
+
+      res.status(200).json({
+        success: true,
+        data: {
+          message: "Sync completed for all providers",
+          results,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to sync all plugins:", error);
+      res.status(500).json({
+        success: false,
+        error: `Failed to sync: ${error instanceof Error ? error.message : String(error)}`,
+      });
     }
   });
 

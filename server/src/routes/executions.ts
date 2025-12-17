@@ -198,6 +198,109 @@ export function createExecutionsRouter(): Router {
   });
 
   /**
+   * POST /api/executions
+   *
+   * Create and start an adhoc execution (not tied to an issue)
+   *
+   * Request body:
+   * - prompt: string (required) - The prompt for the execution
+   * - config?: ExecutionConfig - Execution configuration
+   * - agentType?: string - Agent type (defaults to 'claude-code')
+   */
+  router.post("/executions", async (req: Request, res: Response) => {
+    try {
+      const { config, prompt, agentType } = req.body;
+
+      // Validate required fields - prompt is required for adhoc executions
+      if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "Prompt is required for adhoc executions",
+        });
+        return;
+      }
+
+      // Validate agentType if provided
+      if (agentType) {
+        // Check if agent exists in registry
+        if (!agentRegistryService.hasAgent(agentType)) {
+          const availableAgents = agentRegistryService
+            .getAvailableAgents()
+            .map((a) => a.name);
+          throw new AgentNotFoundError(agentType, availableAgents);
+        }
+
+        // Check if agent is implemented
+        if (!agentRegistryService.isAgentImplemented(agentType)) {
+          throw new AgentNotImplementedError(agentType);
+        }
+      }
+
+      // Create execution with null issueId (adhoc execution)
+      const execution = await req.project!.executionService!.createExecution(
+        null, // No issue for adhoc executions
+        config || {},
+        prompt,
+        agentType // Optional, defaults to 'claude-code' in service
+      );
+
+      res.status(201).json({
+        success: true,
+        data: execution,
+      });
+    } catch (error) {
+      console.error("[API Route] ERROR: Failed to create adhoc execution:", error);
+
+      // Handle agent-specific errors with enhanced error responses
+      if (error instanceof AgentNotFoundError) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          error: error.message,
+          code: error.code,
+          details: error.details,
+        });
+        return;
+      }
+
+      if (error instanceof AgentNotImplementedError) {
+        res.status(501).json({
+          success: false,
+          data: null,
+          error: error.message,
+          code: error.code,
+          details: error.details,
+        });
+        return;
+      }
+
+      if (error instanceof AgentError) {
+        // Generic agent error (400 by default)
+        res.status(400).json({
+          success: false,
+          data: null,
+          error: error.message,
+          code: error.code,
+          details: error.details,
+        });
+        return;
+      }
+
+      // Handle other errors
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: errorMessage,
+        message: "Failed to create adhoc execution",
+      });
+    }
+  });
+
+  /**
    * POST /api/issues/:issueId/executions
    *
    * Create and start a new execution

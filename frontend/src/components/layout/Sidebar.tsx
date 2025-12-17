@@ -116,14 +116,14 @@ export default function Sidebar({ open, collapsed, onClose }: SidebarProps) {
                 to={item.path}
                 onClick={onClose}
                 className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                  'flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors',
                   active
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                    ? 'rounded-r-lg border-l-[3px] border-l-primary bg-accent text-foreground'
+                    : 'rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground',
                   collapsed && 'justify-center px-2'
                 )}
               >
-                <Icon className={'h-5 w-5 flex-shrink-0' + (active ? ' text-white' : '')} />
+                <Icon className="h-5 w-5 flex-shrink-0" />
                 {!collapsed && <span>{item.label}</span>}
               </Link>
             )

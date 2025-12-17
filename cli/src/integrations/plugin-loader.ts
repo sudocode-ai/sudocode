@@ -4,6 +4,7 @@
  * Handles dynamic loading of integration plugins via:
  * - npm packages (e.g., "@sudocode-ai/integration-beads")
  * - Local paths (e.g., "./plugins/my-integration")
+ * - Globally installed packages
  *
  * First-party plugins are loaded by short name:
  * - "beads" -> "@sudocode-ai/integration-beads"
@@ -16,18 +17,65 @@ import type {
   PluginValidationResult,
   PluginTestResult,
 } from "@sudocode-ai/types";
+import { execSync } from "child_process";
+import { existsSync } from "fs";
+import * as path from "path";
+import { fileURLToPath, pathToFileURL } from "url";
 
 /**
  * Mapping of first-party plugin short names to npm package names
  */
 const FIRST_PARTY_PLUGINS: Record<string, string> = {
   beads: "@sudocode-ai/integration-beads",
+  "spec-kit": "@sudocode-ai/integration-speckit",
+  openspec: "@sudocode-ai/integration-openspec",
 };
 
 /**
  * Cache for loaded plugins
  */
 const pluginCache = new Map<string, IntegrationPlugin>();
+
+/**
+ * Cache for global node_modules path (computed once)
+ */
+let globalNodeModulesCache: string | null = null;
+
+/**
+ * Get the global node_modules directory path
+ */
+function getGlobalNodeModules(): string | null {
+  if (globalNodeModulesCache !== null) {
+    return globalNodeModulesCache;
+  }
+
+  try {
+    const result = execSync("npm root -g", { encoding: "utf-8" }).trim();
+    globalNodeModulesCache = result;
+    return result;
+  } catch (error) {
+    console.warn("Failed to get global node_modules path:", error);
+    return null;
+  }
+}
+
+/**
+ * Check if a plugin package exists globally (without loading it)
+ *
+ * @param pluginId - Plugin identifier (short name, npm package, or local path)
+ * @returns true if the package exists in global node_modules
+ */
+export function isPluginInstalledGlobally(pluginId: string): boolean {
+  const packageName = resolvePluginPath(pluginId);
+  const globalNodeModules = getGlobalNodeModules();
+
+  if (!globalNodeModules) {
+    return false;
+  }
+
+  const packagePath = path.join(globalNodeModules, packageName);
+  return existsSync(packagePath);
+}
 
 /**
  * Resolve a plugin identifier to an importable module path
@@ -51,6 +99,48 @@ export function resolvePluginPath(pluginId: string): string {
 }
 
 /**
+ * Try to resolve a global package path
+ *
+ * @param packageName - npm package name (e.g., "@sudocode-ai/integration-beads")
+ * @returns Full file:// URL to the package, or null if not found
+ */
+function resolveGlobalPackage(packageName: string): string | null {
+  const globalNodeModules = getGlobalNodeModules();
+  if (!globalNodeModules) {
+    return null;
+  }
+
+  const packagePath = path.join(globalNodeModules, packageName);
+  if (!existsSync(packagePath)) {
+    return null;
+  }
+
+  // Check for package.json to find the main entry point
+  const packageJsonPath = path.join(packagePath, "package.json");
+  if (!existsSync(packageJsonPath)) {
+    return null;
+  }
+
+  try {
+    const packageJson = JSON.parse(
+      require("fs").readFileSync(packageJsonPath, "utf-8")
+    );
+    const mainEntry = packageJson.main || "index.js";
+    const fullPath = path.join(packagePath, mainEntry);
+
+    if (!existsSync(fullPath)) {
+      return null;
+    }
+
+    // Convert to file:// URL for import()
+    return pathToFileURL(fullPath).href;
+  } catch (error) {
+    console.warn(`Failed to resolve global package ${packageName}:`, error);
+    return null;
+  }
+}
+
+/**
  * Load a plugin by its identifier
  *
  * @param pluginId - Plugin identifier (short name, npm package, or local path)
@@ -67,14 +157,11 @@ export async function loadPlugin(
 
   const modulePath = resolvePluginPath(pluginId);
 
+  // Try regular import first (for local node_modules or linked packages)
   try {
-    // Dynamic import
     const module = await import(modulePath);
-
-    // Plugin should be the default export
     const plugin: IntegrationPlugin = module.default || module;
 
-    // Validate plugin has required fields
     if (!isValidPlugin(plugin)) {
       console.error(
         `Invalid plugin '${pluginId}': missing required fields (name, displayName, version, validateConfig, testConnection, createProvider)`
@@ -82,18 +169,40 @@ export async function loadPlugin(
       return null;
     }
 
-    // Cache the plugin
     pluginCache.set(pluginId, plugin);
     return plugin;
   } catch (error) {
-    // Plugin not installed or failed to load
-    const err = error as Error;
-    if (
-      err.code === "ERR_MODULE_NOT_FOUND" ||
-      err.code === "MODULE_NOT_FOUND"
-    ) {
+    const err = error as { code?: string; message?: string };
+
+    // If module not found, try global packages
+    if (err.code === "ERR_MODULE_NOT_FOUND" || err.code === "MODULE_NOT_FOUND") {
+      const globalPath = resolveGlobalPackage(modulePath);
+
+      if (globalPath) {
+        try {
+          const module = await import(globalPath);
+          const plugin: IntegrationPlugin = module.default || module;
+
+          if (!isValidPlugin(plugin)) {
+            console.error(
+              `Invalid plugin '${pluginId}': missing required fields (name, displayName, version, validateConfig, testConnection, createProvider)`
+            );
+            return null;
+          }
+
+          pluginCache.set(pluginId, plugin);
+          return plugin;
+        } catch (globalError) {
+          console.error(
+            `Failed to load global plugin '${pluginId}':`,
+            (globalError as Error).message
+          );
+          return null;
+        }
+      }
+
       console.warn(
-        `Plugin '${pluginId}' not installed. Install with: npm install ${modulePath}`
+        `Plugin '${pluginId}' not installed. Install with: npm install -g ${modulePath}`
       );
     } else {
       console.error(`Failed to load plugin '${pluginId}':`, err.message);

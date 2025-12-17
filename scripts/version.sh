@@ -60,6 +60,8 @@ PACKAGES=(
   "server:@sudocode-ai/local-server:$VERSION"
   "frontend:@sudocode-ai/local-ui:$VERSION"
   "plugins/integration-beads:@sudocode-ai/integration-beads:$VERSION"
+  "plugins/integration-openspec:@sudocode-ai/integration-openspec:$VERSION"
+  "plugins/integration-speckit:@sudocode-ai/integration-speckit:$VERSION"
   "sudocode:sudocode:$META_VERSION"
   ".:root:$VERSION"
 )

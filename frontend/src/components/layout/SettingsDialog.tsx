@@ -5,6 +5,8 @@ import { useTheme } from '@/contexts/ThemeContext'
 import {
   Sun,
   Moon,
+  Monitor,
+  Palette,
   Plug,
   Check,
   X,
@@ -15,6 +17,7 @@ import {
   Terminal,
   Settings2,
 } from 'lucide-react'
+import type { ColorTheme } from '@/themes'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
 import { Switch } from '@/components/ui/switch'
@@ -95,8 +98,34 @@ const SECTIONS: Section[] = [
   { id: 'integrations', label: 'Integrations', icon: <Plug className="h-4 w-4" /> },
 ]
 
+// Theme preview swatch component
+function ThemePreviewSwatch({ theme }: { theme: ColorTheme }) {
+  return (
+    <div className="flex h-4 w-6 overflow-hidden rounded-sm border border-border">
+      <div
+        className="w-1/2"
+        style={{ backgroundColor: `hsl(${theme.colors.background})` }}
+      />
+      <div
+        className="w-1/2"
+        style={{ backgroundColor: `hsl(${theme.colors.primary})` }}
+      />
+    </div>
+  )
+}
+
 export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
-  const { theme, setTheme } = useTheme()
+  const {
+    mode,
+    setMode,
+    actualMode,
+    lightTheme,
+    darkTheme,
+    setLightTheme,
+    setDarkTheme,
+    availableLightThemes,
+    availableDarkThemes,
+  } = useTheme()
   const [versions, setVersions] = useState<VersionInfo | null>(null)
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
@@ -105,6 +134,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   const [testingPlugin, setTestingPlugin] = useState<string | null>(null)
   const [testResults, setTestResults] = useState<Record<string, PluginTestResult>>({})
   const [savingPlugin, setSavingPlugin] = useState<string | null>(null)
+  const [syncingPlugin, setSyncingPlugin] = useState<string | null>(null)
   const [pluginOptions, setPluginOptions] = useState<Record<string, Record<string, unknown>>>({})
   const [integrationConfigs, setIntegrationConfigs] = useState<
     Record<string, PluginInfo['integrationConfig']>
@@ -116,11 +146,9 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   // Preset plugins available for installation
   const presetPlugins = [
     { name: 'beads', package: '@sudocode-ai/integration-beads', displayName: 'Beads' },
+    { name: 'spec-kit', package: '@sudocode-ai/integration-speckit', displayName: 'Spec-Kit' },
+    { name: 'openspec', package: '@sudocode-ai/integration-openspec', displayName: 'OpenSpec' },
   ]
-
-  const toggleTheme = () => {
-    setTheme(theme === 'dark' ? 'light' : 'dark')
-  }
 
   useEffect(() => {
     const fetchVersions = async () => {
@@ -239,6 +267,36 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
     }
   }
 
+  const handleSyncPlugin = async (pluginName: string) => {
+    setSyncingPlugin(pluginName)
+    try {
+      const result = await api.post<
+        {
+          message: string
+          results: Array<{ entity_id: string; action: string; success: boolean }>
+        },
+        { message: string; results: Array<{ entity_id: string; action: string; success: boolean }> }
+      >(`/plugins/${pluginName}/sync`, {})
+
+      const created = result.results?.filter((r) => r.action === 'created' && r.success).length || 0
+      const updated = result.results?.filter((r) => r.action === 'updated' && r.success).length || 0
+      const total = result.results?.length || 0
+
+      if (created > 0 || updated > 0) {
+        toast.success(`Sync complete: ${created} created, ${updated} updated`)
+      } else if (total > 0) {
+        toast.info(`Sync complete: ${total} entities checked, no changes needed`)
+      } else {
+        toast.info('Sync complete: no entities found')
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to sync'
+      toast.error(message)
+    } finally {
+      setSyncingPlugin(null)
+    }
+  }
+
   const updatePluginOption = (pluginName: string, key: string, value: unknown) => {
     setPluginOptions((prev) => ({
       ...prev,
@@ -282,25 +340,32 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
     setInstalling(true)
     try {
       const result = await api.post<
-        { message: string; alreadyInstalled?: boolean },
-        { message: string; alreadyInstalled?: boolean }
+        { message: string; alreadyInstalled?: boolean; requiresRestart?: boolean },
+        { message: string; alreadyInstalled?: boolean; requiresRestart?: boolean }
       >(`/plugins/${preset.name}/install`, { package: preset.package })
 
       if (result?.alreadyInstalled) {
         toast.info(`${preset.displayName} is already installed`)
+      } else if (result?.requiresRestart) {
+        toast.success(
+          `${preset.displayName} installed successfully. Please restart the server to use it.`,
+          { duration: 10000 }
+        )
       } else {
         toast.success(`${preset.displayName} installed successfully`)
       }
-      // Refresh plugins list
-      const data = await api.get<{ plugins: PluginInfo[] }, { plugins: PluginInfo[] }>('/plugins')
-      setPlugins(data.plugins)
-      // Initialize options for newly installed plugin
-      const newPlugin = data.plugins.find((p) => p.name === preset.name)
-      if (newPlugin) {
-        setPluginOptions((prev) => ({
-          ...prev,
-          [preset.name]: newPlugin.options || {},
-        }))
+      // Note: Don't refresh plugins list if restart is required
+      // The plugin won't be loadable until after restart
+      if (!result?.requiresRestart) {
+        const data = await api.get<{ plugins: PluginInfo[] }, { plugins: PluginInfo[] }>('/plugins')
+        setPlugins(data.plugins)
+        const newPlugin = data.plugins.find((p) => p.name === preset.name)
+        if (newPlugin) {
+          setPluginOptions((prev) => ({
+            ...prev,
+            [preset.name]: newPlugin.options || {},
+          }))
+        }
       }
       setSelectedPreset('')
     } catch (error) {
@@ -325,25 +390,34 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
               const isRequired = plugin.configSchema?.required?.includes(key) || prop.required
               const value = options[key] ?? prop.default ?? ''
 
-              return (
+              return prop.type === 'boolean' ? (
+                <div key={key} className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-xs">
+                      {prop.title || key}
+                      {isRequired && <span className="ml-1 text-destructive">*</span>}
+                    </Label>
+                    {prop.description && (
+                      <p className="text-[10px] text-muted-foreground">{prop.description}</p>
+                    )}
+                  </div>
+                  <Switch
+                    checked={Boolean(value)}
+                    onCheckedChange={(checked) => updatePluginOption(plugin.name, key, checked)}
+                  />
+                </div>
+              ) : (
                 <div key={key} className="space-y-1">
                   <Label className="text-xs">
                     {prop.title || key}
                     {isRequired && <span className="ml-1 text-destructive">*</span>}
                   </Label>
-                  {prop.type === 'boolean' ? (
-                    <Switch
-                      checked={Boolean(value)}
-                      onCheckedChange={(checked) => updatePluginOption(plugin.name, key, checked)}
-                    />
-                  ) : (
-                    <Input
-                      value={String(value)}
-                      onChange={(e) => updatePluginOption(plugin.name, key, e.target.value)}
-                      placeholder={prop.description}
-                      className="h-8 text-sm"
-                    />
-                  )}
+                  <Input
+                    value={String(value)}
+                    onChange={(e) => updatePluginOption(plugin.name, key, e.target.value)}
+                    placeholder={prop.description}
+                    className="h-8 text-sm"
+                  />
                   {prop.description && (
                     <p className="text-[10px] text-muted-foreground">{prop.description}</p>
                   )}
@@ -367,7 +441,9 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             </div>
             <Switch
               checked={config.auto_sync ?? false}
-              onCheckedChange={(checked) => updateIntegrationConfig(plugin.name, 'auto_sync', checked)}
+              onCheckedChange={(checked) =>
+                updateIntegrationConfig(plugin.name, 'auto_sync', checked)
+              }
             />
           </div>
 
@@ -381,7 +457,9 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             </div>
             <Switch
               checked={config.auto_import ?? true}
-              onCheckedChange={(checked) => updateIntegrationConfig(plugin.name, 'auto_import', checked)}
+              onCheckedChange={(checked) =>
+                updateIntegrationConfig(plugin.name, 'auto_import', checked)
+              }
             />
           </div>
 
@@ -390,7 +468,9 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             <Label className="text-xs">Delete Behavior</Label>
             <Select
               value={config.delete_behavior ?? 'close'}
-              onValueChange={(value) => updateIntegrationConfig(plugin.name, 'delete_behavior', value)}
+              onValueChange={(value) =>
+                updateIntegrationConfig(plugin.name, 'delete_behavior', value)
+              }
             >
               <SelectTrigger className="h-8 text-sm">
                 <SelectValue />
@@ -411,7 +491,9 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             <Label className="text-xs">Conflict Resolution</Label>
             <Select
               value={config.conflict_resolution ?? 'newest-wins'}
-              onValueChange={(value) => updateIntegrationConfig(plugin.name, 'conflict_resolution', value)}
+              onValueChange={(value) =>
+                updateIntegrationConfig(plugin.name, 'conflict_resolution', value)
+              }
             >
               <SelectTrigger className="h-8 text-sm">
                 <SelectValue />
@@ -433,7 +515,9 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             <Label className="text-xs">Default Sync Direction</Label>
             <Select
               value={config.default_sync_direction ?? 'bidirectional'}
-              onValueChange={(value) => updateIntegrationConfig(plugin.name, 'default_sync_direction', value)}
+              onValueChange={(value) =>
+                updateIntegrationConfig(plugin.name, 'default_sync_direction', value)
+              }
             >
               <SelectTrigger className="h-8 text-sm">
                 <SelectValue />
@@ -469,6 +553,24 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
               <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
             ) : null}
             Test Connection
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => handleSyncPlugin(plugin.name)}
+            disabled={syncingPlugin === plugin.name || !plugin.enabled}
+            title={
+              !plugin.enabled
+                ? 'Enable the plugin to sync'
+                : 'Import all entities from external system'
+            }
+          >
+            {syncingPlugin === plugin.name ? (
+              <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-1 h-3 w-3" />
+            )}
+            Sync Now
           </Button>
         </div>
 
@@ -547,222 +649,273 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             className="flex-1 overflow-y-auto px-6 py-4"
             style={{ maxHeight: 'calc(85vh - 140px)' }}
           >
-          {activeTab === 'general' && (
-            <div className="space-y-6">
-              {/* Theme Section */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Sun className="h-5 w-5 text-muted-foreground" />
-                  <h3 className="text-base font-semibold">Appearance</h3>
+            {activeTab === 'general' && (
+              <div className="space-y-6">
+                {/* Theme Section */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Palette className="h-5 w-5 text-muted-foreground" />
+                    <h3 className="text-base font-semibold">Appearance</h3>
+                  </div>
+
+                  {/* Mode and Theme Selection - inline */}
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <span className="text-sm text-muted-foreground">Theme</span>
+                      <p className="text-xs text-muted-foreground/70">
+                        {actualMode === 'dark' ? 'Dark mode theme' : 'Light mode theme'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {/* Mode Selector */}
+                      <Select value={mode} onValueChange={(value) => setMode(value as 'light' | 'dark' | 'system')}>
+                        <SelectTrigger className="w-32">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="system">
+                            <div className="flex items-center gap-2">
+                              <Monitor className="h-4 w-4" />
+                              System
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="light">
+                            <div className="flex items-center gap-2">
+                              <Sun className="h-4 w-4" />
+                              Light
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="dark">
+                            <div className="flex items-center gap-2">
+                              <Moon className="h-4 w-4" />
+                              Dark
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      {/* Theme Selector - based on active mode */}
+                      {actualMode === 'dark' ? (
+                        <Select value={darkTheme.id} onValueChange={setDarkTheme}>
+                          <SelectTrigger className="w-40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableDarkThemes.map((t) => (
+                              <SelectItem key={t.id} value={t.id}>
+                                <div className="flex items-center gap-2">
+                                  <ThemePreviewSwatch theme={t} />
+                                  {t.name}
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Select value={lightTheme.id} onValueChange={setLightTheme}>
+                          <SelectTrigger className="w-40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableLightThemes.map((t) => (
+                              <SelectItem key={t.id} value={t.id}>
+                                <div className="flex items-center gap-2">
+                                  <ThemePreviewSwatch theme={t} />
+                                  {t.name}
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Theme</span>
-                  <button
-                    onClick={toggleTheme}
-                    className={cn(
-                      'flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                      'bg-accent text-foreground hover:bg-accent/80'
-                    )}
+
+                {/* Version Section */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Terminal className="h-5 w-5 text-muted-foreground" />
+                    <h3 className="text-base font-semibold">Version</h3>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">CLI</span>
+                      <span className="font-mono text-sm text-foreground">
+                        {versions?.cli ?? 'Loading...'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Server</span>
+                      <span className="font-mono text-sm text-foreground">
+                        {versions?.server ?? 'Loading...'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Frontend</span>
+                      <span className="font-mono text-sm text-foreground">
+                        {versions?.frontend ?? 'Loading...'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'integrations' && (
+              <div className="space-y-6">
+                {/* Section Header */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Plug className="h-5 w-5 text-muted-foreground" />
+                    <h3 className="text-base font-semibold">Integrations</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Configure integrations with external issue tracking systems.
+                  </p>
+                </div>
+
+                {/* Install plugin dropdown */}
+                <div className="flex items-center gap-2">
+                  <Select value={selectedPreset} onValueChange={setSelectedPreset}>
+                    <SelectTrigger className="h-8 flex-1">
+                      <SelectValue placeholder="Select a plugin to install..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {presetPlugins.map((preset) => (
+                        <SelectItem
+                          key={preset.name}
+                          value={preset.name}
+                          disabled={plugins.some((p) => p.name === preset.name && p.installed)}
+                        >
+                          {preset.displayName}
+                          {plugins.some((p) => p.name === preset.name && p.installed) && (
+                            <span className="ml-2 text-xs text-muted-foreground">(installed)</span>
+                          )}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    size="sm"
+                    onClick={handleInstallPlugin}
+                    disabled={!selectedPreset || installing}
+                    className="h-8"
                   >
-                    {theme === 'dark' ? (
+                    {installing ? (
                       <>
-                        <Sun className="h-4 w-4" />
-                        <span>Light Mode</span>
+                        <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                        Installing...
                       </>
                     ) : (
-                      <>
-                        <Moon className="h-4 w-4" />
-                        <span>Dark Mode</span>
-                      </>
+                      'Install'
                     )}
-                  </button>
+                  </Button>
                 </div>
-              </div>
 
-              {/* Version Section */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Terminal className="h-5 w-5 text-muted-foreground" />
-                  <h3 className="text-base font-semibold">Version</h3>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">CLI</span>
-                    <span className="font-mono text-sm text-foreground">
-                      {versions?.cli ?? 'Loading...'}
-                    </span>
+                {loadingPlugins ? (
+                  <div className="flex items-center justify-center py-8">
+                    <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Server</span>
-                    <span className="font-mono text-sm text-foreground">
-                      {versions?.server ?? 'Loading...'}
-                    </span>
+                ) : plugins.length === 0 ? (
+                  <div className="py-8 text-center text-muted-foreground">
+                    <Plug className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                    <p className="text-sm">No plugins available</p>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Frontend</span>
-                    <span className="font-mono text-sm text-foreground">
-                      {versions?.frontend ?? 'Loading...'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'integrations' && (
-            <div className="space-y-6">
-              {/* Section Header */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Plug className="h-5 w-5 text-muted-foreground" />
-                  <h3 className="text-base font-semibold">Integrations</h3>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Configure integrations with external issue tracking systems.
-                </p>
-              </div>
-
-              {/* Install plugin dropdown */}
-              <div className="flex items-center gap-2">
-                <Select value={selectedPreset} onValueChange={setSelectedPreset}>
-                  <SelectTrigger className="h-8 flex-1">
-                    <SelectValue placeholder="Select a plugin to install..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {presetPlugins.map((preset) => (
-                      <SelectItem
-                        key={preset.name}
-                        value={preset.name}
-                        disabled={plugins.some((p) => p.name === preset.name && p.installed)}
-                      >
-                        {preset.displayName}
-                        {plugins.some((p) => p.name === preset.name && p.installed) && (
-                          <span className="ml-2 text-xs text-muted-foreground">(installed)</span>
-                        )}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  size="sm"
-                  onClick={handleInstallPlugin}
-                  disabled={!selectedPreset || installing}
-                  className="h-8"
-                >
-                  {installing ? (
-                    <>
-                      <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
-                      Installing...
-                    </>
-                  ) : (
-                    'Install'
-                  )}
-                </Button>
-              </div>
-
-              {loadingPlugins ? (
-                <div className="flex items-center justify-center py-8">
-                  <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
-              ) : plugins.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground">
-                  <Plug className="mx-auto mb-2 h-8 w-8 opacity-50" />
-                  <p className="text-sm">No plugins available</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {plugins.map((plugin) => (
-                    <div key={plugin.name} className="rounded-lg border border-border p-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium">
-                                {plugin.displayName || plugin.name}
-                              </span>
-                              {plugin.version && (
-                                <span className="text-xs text-muted-foreground">
-                                  v{plugin.version}
+                ) : (
+                  <div className="space-y-2">
+                    {plugins.map((plugin) => (
+                      <div key={plugin.name} className="rounded-lg border border-border p-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium">
+                                  {plugin.displayName || plugin.name}
                                 </span>
-                              )}
-                              {!plugin.installed && (
-                                <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                                  Available
-                                </span>
+                                {plugin.version && (
+                                  <span className="text-xs text-muted-foreground">
+                                    v{plugin.version}
+                                  </span>
+                                )}
+                                {!plugin.installed && (
+                                  <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                                    Available
+                                  </span>
+                                )}
+                              </div>
+                              {plugin.description && (
+                                <p className="mt-0.5 text-xs text-muted-foreground">
+                                  {plugin.description}
+                                </p>
                               )}
                             </div>
-                            {plugin.description && (
-                              <p className="mt-0.5 text-xs text-muted-foreground">
-                                {plugin.description}
-                              </p>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {plugin.installed && (
+                              <>
+                                <Switch
+                                  checked={plugin.enabled}
+                                  onCheckedChange={() => handleTogglePlugin(plugin)}
+                                />
+                                <button
+                                  onClick={() =>
+                                    setExpandedPlugin(
+                                      expandedPlugin === plugin.name ? null : plugin.name
+                                    )
+                                  }
+                                  className="rounded p-1 hover:bg-accent"
+                                >
+                                  {expandedPlugin === plugin.name ? (
+                                    <ChevronUp className="h-4 w-4" />
+                                  ) : (
+                                    <ChevronDown className="h-4 w-4" />
+                                  )}
+                                </button>
+                              </>
                             )}
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                          {plugin.installed && (
-                            <>
-                              <Switch
-                                checked={plugin.enabled}
-                                onCheckedChange={() => handleTogglePlugin(plugin)}
-                              />
-                              <button
-                                onClick={() =>
-                                  setExpandedPlugin(
-                                    expandedPlugin === plugin.name ? null : plugin.name
-                                  )
-                                }
-                                className="rounded p-1 hover:bg-accent"
+                        {expandedPlugin === plugin.name &&
+                          plugin.installed &&
+                          renderPluginConfig(plugin)}
+
+                        {!plugin.installed && (
+                          <div className="mt-3 border-t border-border pt-3">
+                            <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+                              <Terminal className="h-3 w-3" />
+                              <span>Install via npm:</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <code className="flex-1 rounded bg-muted px-2 py-1.5 font-mono text-xs">
+                                npm install {plugin.package}
+                              </code>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2"
+                                onClick={() => copyInstallCommand(plugin.name, plugin.package)}
                               >
-                                {expandedPlugin === plugin.name ? (
-                                  <ChevronUp className="h-4 w-4" />
+                                {copiedCommand === plugin.name ? (
+                                  <Check className="h-3 w-3 text-green-500" />
                                 ) : (
-                                  <ChevronDown className="h-4 w-4" />
+                                  <Copy className="h-3 w-3" />
                                 )}
-                              </button>
-                            </>
-                          )}
-                        </div>
+                              </Button>
+                            </div>
+                            <p className="mt-2 text-[10px] text-muted-foreground">
+                              After installing, restart the server to activate the plugin.
+                            </p>
+                          </div>
+                        )}
                       </div>
-
-                      {expandedPlugin === plugin.name &&
-                        plugin.installed &&
-                        renderPluginConfig(plugin)}
-
-                      {!plugin.installed && (
-                        <div className="mt-3 border-t border-border pt-3">
-                          <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-                            <Terminal className="h-3 w-3" />
-                            <span>Install via npm:</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <code className="flex-1 rounded bg-muted px-2 py-1.5 font-mono text-xs">
-                              npm install {plugin.package}
-                            </code>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2"
-                              onClick={() => copyInstallCommand(plugin.name, plugin.package)}
-                            >
-                              {copiedCommand === plugin.name ? (
-                                <Check className="h-3 w-3 text-green-500" />
-                              ) : (
-                                <Copy className="h-3 w-3" />
-                              )}
-                            </Button>
-                          </div>
-                          <p className="mt-2 text-[10px] text-muted-foreground">
-                            After installing, restart the server to activate the plugin.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </DialogContent>

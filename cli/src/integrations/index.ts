@@ -13,6 +13,7 @@ export {
   testProviderConnection,
   getFirstPartyPlugins,
   clearPluginCache,
+  isPluginInstalledGlobally,
 } from "./plugin-loader.js";
 
 // Configuration validation

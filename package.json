@@ -1,6 +1,6 @@
 {
   "name": "sudocode",
-  "version": "0.1.12",
+  "version": "0.1.14",
   "private": true,
   "description": "Git-native spec and issue management for AI-assisted software development",
   "type": "module",
@@ -19,6 +19,7 @@
     "build:mcp": "npm run build --workspace=mcp",
     "build:server": "npm run build:frontend && npm run build --workspace=server",
     "build:frontend": "npm run build --workspace=frontend",
+    "build:plugins": "npm run build --workspace=plugins/integration-beads && npm run build --workspace=plugins/integration-speckit && npm run build --workspace=plugins/integration-openspec",
     "test": "vitest run",
     "test:summary": "DEBUG_PRINT_LIMIT=0 vitest run --reporter=dot --silent --hideSkippedTests",
     "test:all": "npm test --workspaces --if-present",

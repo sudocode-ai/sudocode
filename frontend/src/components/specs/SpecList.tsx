@@ -9,10 +9,6 @@ interface SpecListProps {
   emptyMessage?: string
   /** Map of spec ID to active workflow (if any) */
   activeWorkflows?: Map<string, Workflow>
-  /** Set of spec IDs that have implementing issues */
-  specsWithImplementingIssues?: Set<string>
-  /** Callback to run spec as workflow */
-  onRunAsWorkflow?: (spec: Spec) => void
 }
 
 export function SpecList({
@@ -20,8 +16,6 @@ export function SpecList({
   loading = false,
   emptyMessage = 'No specs found',
   activeWorkflows,
-  specsWithImplementingIssues,
-  onRunAsWorkflow,
 }: SpecListProps) {
   const navigate = useNavigate()
 
@@ -59,8 +53,6 @@ export function SpecList({
           spec={spec}
           onClick={handleSpecClick}
           activeWorkflow={activeWorkflows?.get(spec.id)}
-          hasImplementingIssues={specsWithImplementingIssues?.has(spec.id)}
-          onRunAsWorkflow={onRunAsWorkflow}
         />
       ))}
     </div>

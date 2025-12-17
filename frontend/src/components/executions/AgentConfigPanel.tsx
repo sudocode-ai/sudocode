@@ -33,7 +33,10 @@ import type { CodexConfig } from './CodexConfigForm'
 import type { CopilotConfig } from './CopilotConfigForm'
 
 interface AgentConfigPanelProps {
-  issueId: string
+  /**
+   * Issue ID for context (optional for adhoc executions)
+   */
+  issueId?: string
   onStart: (config: ExecutionConfig, prompt: string, agentType?: string, forceNew?: boolean) => void
   disabled?: boolean
   onSelectOpenChange?: (isOpen: boolean) => void
@@ -121,6 +124,10 @@ interface AgentConfigPanelProps {
    * Whether the worktree still exists on disk
    */
   worktreeExists?: boolean
+  /**
+   * Default prompt to pre-populate the textarea
+   */
+  defaultPrompt?: string
 }
 
 // TODO: Move this somewhere more central.
@@ -270,9 +277,10 @@ export function AgentConfigPanel({
   hasUncommittedChanges,
   commitsAhead,
   worktreeExists = true,
+  defaultPrompt,
 }: AgentConfigPanelProps) {
   const [loading, setLoading] = useState(false)
-  const [prompt, setPrompt] = useState('')
+  const [prompt, setPrompt] = useState(defaultPrompt || '')
   const [internalForceNewExecution, setInternalForceNewExecution] = useState(false)
   const [availableBranches, setAvailableBranches] = useState<string[]>([])
   const [currentBranch, setCurrentBranch] = useState<string>('')
@@ -413,6 +421,13 @@ export function AgentConfigPanel({
       setForceNewExecution(true)
     }
   }, [isWorktreeCleaned, forceNewExecution, setForceNewExecution])
+
+  // Update prompt when defaultPrompt changes
+  useEffect(() => {
+    if (defaultPrompt !== undefined) {
+      setPrompt(defaultPrompt)
+    }
+  }, [defaultPrompt])
 
   // Reset config when issue or lastExecution changes (issue switching)
   useEffect(() => {
@@ -614,9 +629,15 @@ export function AgentConfigPanel({
     }
 
     // Use default prompt for first messages when no prompt is provided
-    const finalPrompt = prompt.trim() || (!isFollowUp ? `Implement issue [[${issueId}]]` : '')
+    // For adhoc executions (no issueId), prompt is always required
+    const finalPrompt = prompt.trim() || (!isFollowUp && issueId ? `Implement issue [[${issueId}]]` : '')
 
-    onStart(config, finalPrompt, selectedAgentType, forceNewExecution)
+    // For local mode, don't send baseBranch - let the server use the current branch
+    const finalConfig = config.mode === 'local'
+      ? { ...config, baseBranch: undefined }
+      : config
+
+    onStart(finalConfig, finalPrompt, selectedAgentType, forceNewExecution)
     setPrompt('') // Clear the prompt after submission
     setForceNewExecution(false) // Reset the flag after submission
   }
@@ -644,11 +665,11 @@ export function AgentConfigPanel({
     // Shift+Enter creates newline (default behavior, no need to handle)
   }
 
-  // Allow empty prompts for first messages (not follow-ups)
-  // For follow-ups, require a prompt
+  // Allow empty prompts for first messages (not follow-ups) when there's an issue
+  // For follow-ups or adhoc executions (no issueId), require a prompt
   // Note: We don't block based on agent availability - we just show warnings
   // Users can still attempt to run unavailable agents (will fail at execution time)
-  const canStart = !loading && (prompt.trim().length > 0 || !isFollowUp) && !disabled
+  const canStart = !loading && (prompt.trim().length > 0 || (!isFollowUp && !!issueId)) && !disabled
 
   // Compact mode: inline textarea with submit/cancel button
   if (variant === 'compact') {
@@ -758,7 +779,9 @@ export function AgentConfigPanel({
                       : allowModeToggle
                         ? 'Continue the previous conversation... (ctrl+k for new, @ for context)'
                         : 'Continue the previous conversation... (@ for context)'
-                    : 'Add additional context (optional) for the agent... (@ for context)')
+                    : issueId
+                      ? 'Add additional context (optional) for the agent... (@ for context)'
+                      : 'Enter a prompt for the agent... (@ for context)')
           }
           disabled={loading || disabled}
           className="max-h-[300px] min-h-0 resize-none overflow-y-auto border-none bg-muted/80 py-2 text-sm shadow-none transition-[height] duration-100 focus-visible:ring-0 focus-visible:ring-offset-0"

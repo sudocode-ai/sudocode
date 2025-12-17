@@ -97,6 +97,189 @@ describe("Executions API Routes - Agent Type Validation", () => {
     app.use("/api", createExecutionsRouter());
   });
 
+  describe("POST /api/executions - Adhoc Executions (no issue)", () => {
+    it("should create adhoc execution with prompt and agentType", async () => {
+      const mockAdhocExecution = {
+        id: "exec-adhoc-123",
+        issue_id: null,
+        agent_type: "claude-code",
+        status: "running",
+        mode: "local",
+        prompt: "Run the tests",
+        config: "{}",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as Execution;
+
+      mockExecutionService.createExecution = vi
+        .fn()
+        .mockResolvedValue(mockAdhocExecution);
+
+      const response = await request(app).post("/api/executions").send({
+        prompt: "Run the tests",
+        agentType: "claude-code",
+      });
+
+      expect(response.status).toBe(201);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toEqual(mockAdhocExecution);
+      expect(mockExecutionService.createExecution).toHaveBeenCalledWith(
+        null, // No issueId for adhoc executions
+        {},
+        "Run the tests",
+        "claude-code"
+      );
+    });
+
+    it("should create adhoc execution without agentType (defaults to claude-code)", async () => {
+      const mockAdhocExecution = {
+        id: "exec-adhoc-123",
+        issue_id: null,
+        agent_type: "claude-code",
+        status: "running",
+      } as Execution;
+
+      mockExecutionService.createExecution = vi
+        .fn()
+        .mockResolvedValue(mockAdhocExecution);
+
+      const response = await request(app).post("/api/executions").send({
+        prompt: "Run the tests",
+      });
+
+      expect(response.status).toBe(201);
+      expect(response.body.success).toBe(true);
+      expect(mockExecutionService.createExecution).toHaveBeenCalledWith(
+        null,
+        {},
+        "Run the tests",
+        undefined // No agentType provided, service will default to 'claude-code'
+      );
+    });
+
+    it("should return 400 when prompt is missing", async () => {
+      const response = await request(app).post("/api/executions").send({
+        agentType: "claude-code",
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe(
+        "Prompt is required for adhoc executions"
+      );
+      expect(mockExecutionService.createExecution).not.toHaveBeenCalled();
+    });
+
+    it("should return 400 when prompt is empty string", async () => {
+      const response = await request(app).post("/api/executions").send({
+        prompt: "",
+        agentType: "claude-code",
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe(
+        "Prompt is required for adhoc executions"
+      );
+      expect(mockExecutionService.createExecution).not.toHaveBeenCalled();
+    });
+
+    it("should return 400 when prompt is only whitespace", async () => {
+      const response = await request(app).post("/api/executions").send({
+        prompt: "   ",
+        agentType: "claude-code",
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe(
+        "Prompt is required for adhoc executions"
+      );
+      expect(mockExecutionService.createExecution).not.toHaveBeenCalled();
+    });
+
+    it("should return 501 when agentType is not implemented", async () => {
+      const response = await request(app).post("/api/executions").send({
+        prompt: "Run the tests",
+        agentType: "codex",
+      });
+
+      expect(response.status).toBe(501);
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toBe("Agent 'codex' is not yet implemented");
+      expect(response.body.code).toBe("AGENT_NOT_IMPLEMENTED");
+      expect(mockExecutionService.createExecution).not.toHaveBeenCalled();
+    });
+
+    it("should return 400 when agentType is invalid/not found", async () => {
+      const response = await request(app).post("/api/executions").send({
+        prompt: "Run the tests",
+        agentType: "unknown-agent",
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toBe(
+        "Agent 'unknown-agent' not found in registry"
+      );
+      expect(response.body.code).toBe("AGENT_NOT_FOUND");
+      expect(mockExecutionService.createExecution).not.toHaveBeenCalled();
+    });
+
+    it("should pass config to execution service when provided", async () => {
+      const mockAdhocExecution = {
+        id: "exec-adhoc-123",
+        issue_id: null,
+        agent_type: "claude-code",
+        status: "running",
+        mode: "local",
+      } as Execution;
+
+      mockExecutionService.createExecution = vi
+        .fn()
+        .mockResolvedValue(mockAdhocExecution);
+
+      const response = await request(app)
+        .post("/api/executions")
+        .send({
+          prompt: "Run the tests",
+          agentType: "claude-code",
+          config: {
+            mode: "local",
+            baseBranch: "develop",
+          },
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.success).toBe(true);
+      expect(mockExecutionService.createExecution).toHaveBeenCalledWith(
+        null,
+        {
+          mode: "local",
+          baseBranch: "develop",
+        },
+        "Run the tests",
+        "claude-code"
+      );
+    });
+
+    it("should return 500 on service error", async () => {
+      mockExecutionService.createExecution = vi
+        .fn()
+        .mockRejectedValue(new Error("Database connection failed"));
+
+      const response = await request(app).post("/api/executions").send({
+        prompt: "Run the tests",
+        agentType: "claude-code",
+      });
+
+      expect(response.status).toBe(500);
+      expect(response.body.success).toBe(false);
+      expect(response.body.error_data).toBe("Database connection failed");
+      expect(response.body.message).toBe("Failed to create adhoc execution");
+    });
+  });
+
   describe("POST /api/issues/:issueId/executions - agentType parameter", () => {
     it("should create execution with agentType='claude-code'", async () => {
       const response = await request(app)
