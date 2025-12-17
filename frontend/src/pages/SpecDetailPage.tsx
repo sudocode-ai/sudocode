@@ -44,7 +44,6 @@ import {
   X,
   ChevronsUpDown,
   ArrowLeft,
-  Play,
   Lightbulb,
   Loader2,
 } from 'lucide-react'
@@ -666,9 +665,7 @@ Create actionable issues that implement its requirements. Each issue should be s
                     onClick={() => setPlanDialogOpen(true)}
                   >
                     <Lightbulb className="h-4 w-4 sm:mr-2" />
-                    <span className="hidden sm:inline">
-                      {openImplementingIssuesCount === 0 ? 'Plan Implementation' : 'Plan'}
-                    </span>
+                    <span className="hidden sm:inline">Plan</span>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Plan out implementing issues for this spec</TooltipContent>
@@ -691,29 +688,30 @@ Create actionable issues that implement its requirements. Each issue should be s
                   <TooltipContent>View running workflow</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-            ) : openImplementingIssuesCount > 0 ? (
+            ) : (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      variant="default"
+                      variant={openImplementingIssuesCount === 0 ? 'outline' : 'default'}
                       size="sm"
                       onClick={handleRunAsWorkflow}
-                      disabled={isCreatingWorkflow}
+                      disabled={isCreatingWorkflow || openImplementingIssuesCount === 0}
                     >
-                      <Play className="h-4 w-4 sm:mr-2" />
-                      <span className="hidden sm:inline">Run as Workflow</span>
+                      <span className="hidden sm:inline">Run Workflow</span>
                       <Badge variant="secondary" className="ml-2 h-5 min-w-5 px-1.5">
                         {openImplementingIssuesCount}
                       </Badge>
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {`Run ${openImplementingIssuesCount} implementing issue${openImplementingIssuesCount > 1 ? 's' : ''} as workflow`}
+                    {openImplementingIssuesCount === 0
+                      ? 'No implementing issues to run'
+                      : `Run ${openImplementingIssuesCount} implementing issue${openImplementingIssuesCount > 1 ? 's' : ''} as workflow`}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-            ) : null}
+            )}
 
             <TooltipProvider>
               <Tooltip>
@@ -741,27 +739,32 @@ Create actionable issues that implement its requirements. Each issue should be s
               </Tooltip>
             </TooltipProvider>
 
-            {spec.archived ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => unarchiveSpec(spec.id)}
-                disabled={isUpdating}
-              >
-                <ArchiveRestore className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Unarchive</span>
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => archiveSpec(spec.id)}
-                disabled={isUpdating}
-              >
-                <Archive className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Archive</span>
-              </Button>
-            )}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  {spec.archived ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => unarchiveSpec(spec.id)}
+                      disabled={isUpdating}
+                    >
+                      <ArchiveRestore className="h-4 w-4" />
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => archiveSpec(spec.id)}
+                      disabled={isUpdating}
+                    >
+                      <Archive className="h-4 w-4" />
+                    </Button>
+                  )}
+                </TooltipTrigger>
+                <TooltipContent>{spec.archived ? 'Unarchive spec' : 'Archive spec'}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
 
             <TooltipProvider>
               <Tooltip>
