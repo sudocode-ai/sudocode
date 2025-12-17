@@ -80,6 +80,8 @@ npm run build
 echo ""
 echo "Building plugins..."
 npm run build --workspace=plugins/integration-beads
+npm run build --workspace=plugins/integration-openspec
+npm run build --workspace=plugins/integration-speckit
 
 echo ""
 echo "✓ All packages built successfully"
@@ -92,6 +94,8 @@ PACKAGES=(
   "mcp:@sudocode-ai/mcp"
   "server:@sudocode-ai/local-server"
   "plugins/integration-beads:@sudocode-ai/integration-beads"
+  "plugins/integration-openspec:@sudocode-ai/integration-openspec"
+  "plugins/integration-speckit:@sudocode-ai/integration-speckit"
   "sudocode:sudocode"
 )
 

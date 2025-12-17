@@ -1,7 +1,7 @@
 {
-  "name": "@sudocode-ai/integration-speckit",
+  "name": "@sudocode-ai/integration-openspec",
   "version": "0.1.14",
-  "description": "Spec-kit integration plugin for sudocode",
+  "description": "OpenSpec integration plugin for sudocode",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -22,7 +22,7 @@
   "keywords": [
     "sudocode",
     "integration",
-    "spec-kit",
+    "openspec",
     "plugin"
   ],
   "author": "sudocode-ai",
@@ -34,6 +34,7 @@
     "@sudocode-ai/types": "^0.1.14"
   },
   "devDependencies": {
+    "@fission-ai/openspec": "^0.16.0",
     "@sudocode-ai/types": "*",
     "@types/node": "^22.10.2",
     "typescript": "^5.8.3",
