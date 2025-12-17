@@ -302,7 +302,7 @@ export function CreateWorkflowDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 space-y-2 overflow-y-auto px-1">
+        <div className="flex-1 space-y-4 overflow-y-auto px-1">
           {/* Title - hidden, using default titles */}
 
           {/* Engine Type Selection - hidden, defaulting to sequential */}
@@ -454,16 +454,26 @@ export function CreateWorkflowDialog({
           </div>
 
           {/* Advanced Configuration */}
-          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+          <Collapsible
+            open={advancedOpen}
+            onOpenChange={setAdvancedOpen}
+            className="my-4 rounded-md border"
+          >
             <CollapsibleTrigger asChild>
-              <Button variant="ghost" className="w-full justify-between">
-                Advanced Configuration
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-2 rounded-b-none hover:bg-muted/50"
+              >
                 <ChevronDown
-                  className={cn('h-4 w-4 transition-transform', advancedOpen && 'rotate-180')}
+                  className={cn(
+                    'h-4 w-4 text-muted-foreground transition-transform',
+                    advancedOpen && 'rotate-180'
+                  )}
                 />
+                <span className="text-muted-foreground">Advanced Options</span>
               </Button>
             </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-4 pt-4">
+            <CollapsibleContent className="space-y-4 border-t px-4 py-4">
               {/* Execution Mode - parallel disabled for now, only sequential supported */}
 
               {/* On Failure */}
