@@ -15,6 +15,8 @@ import type {
   ExternalEntity,
   ExternalComment,
   ExternalChange,
+  SearchOptions,
+  SearchResult,
   Spec,
   Issue,
 } from "@sudocode-ai/types";
@@ -277,19 +279,65 @@ class GitHubProvider implements IntegrationProvider, OnDemandImportCapable {
   // IntegrationProvider Implementation
   // ===========================================================================
 
-  async searchEntities(query?: string): Promise<ExternalEntity[]> {
-    if (!query) {
-      console.warn("[github] Search requires a query");
-      return [];
-    }
+  async searchEntities(
+    query?: string,
+    options?: SearchOptions
+  ): Promise<ExternalEntity[] | SearchResult> {
+    const page = options?.page || 1;
+    const perPage = Math.min(options?.perPage || 20, 100);
 
     try {
-      // Use GitHub search API
-      const result = await ghApi<{ items: GitHubIssue[] }>(
-        `/search/issues?q=${encodeURIComponent(query)}&per_page=20`
+      // If we have a repo but no query, list issues from that repo
+      if (!query && options?.repo) {
+        const [owner, repo] = options.repo.split("/");
+        if (!owner || !repo) {
+          console.warn("[github] Invalid repo format, expected owner/repo");
+          return { results: [], pagination: { page, perPage, hasMore: false } };
+        }
+
+        // Use GitHub Issues API to list repo issues
+        // Note: GitHub's Issues API returns both issues and PRs, so we filter out PRs
+        const allItems = await ghApi<GitHubIssue[]>(
+          `/repos/${owner}/${repo}/issues?state=all&per_page=${perPage}&page=${page}&sort=updated&direction=desc`
+        );
+
+        // Filter out pull requests (they have a pull_request property)
+        const issues = allItems.filter((item) => !item.pull_request);
+
+        const results = issues.map((issue) =>
+          mapGitHubIssueToExternal(issue, owner, repo)
+        );
+
+        return {
+          results,
+          pagination: {
+            page,
+            perPage,
+            // Note: hasMore may be inaccurate since we filter client-side
+            hasMore: allItems.length === perPage,
+          },
+        };
+      }
+
+      // If no query and no repo, return empty
+      if (!query) {
+        console.warn("[github] Search requires a query or repo");
+        return [];
+      }
+
+      // Use GitHub search API with pagination
+      // Add is:issue to exclude PRs from search results
+      const searchQuery = query.includes("is:issue") || query.includes("is:pr")
+        ? query
+        : `${query} is:issue`;
+      const result = await ghApi<{ items: GitHubIssue[]; total_count: number }>(
+        `/search/issues?q=${encodeURIComponent(searchQuery)}&per_page=${perPage}&page=${page}`
       );
 
-      return result.items.map((issue) => {
+      // Filter out any PRs that might still come through
+      const issues = result.items.filter((item) => !item.pull_request);
+
+      const results = issues.map((issue) => {
         // Extract owner/repo from html_url
         const urlMatch = issue.html_url.match(
           /github\.com\/([^/]+)\/([^/]+)\/issues\/\d+/
@@ -298,9 +346,25 @@ class GitHubProvider implements IntegrationProvider, OnDemandImportCapable {
         const repo = urlMatch?.[2] || "unknown";
         return mapGitHubIssueToExternal(issue, owner, repo);
       });
+
+      // If options were provided, return SearchResult with pagination
+      if (options) {
+        return {
+          results,
+          pagination: {
+            page,
+            perPage,
+            hasMore: result.total_count > page * perPage,
+            totalCount: result.total_count,
+          },
+        };
+      }
+
+      // For backward compatibility, return just the array if no options
+      return results;
     } catch (error) {
       console.error("[github] Search failed:", error);
-      return [];
+      return options ? { results: [], pagination: { page, perPage, hasMore: false } } : [];
     }
   }
 

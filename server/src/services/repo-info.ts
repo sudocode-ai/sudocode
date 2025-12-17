@@ -9,6 +9,10 @@ export interface RepositoryInfo {
   name: string;
   branch: string;
   path: string;
+  /** Full owner/repo identifier from git remote (e.g., "anthropic/sudocode") */
+  ownerRepo?: string;
+  /** Git hosting provider (e.g., "github", "gitlab", "bitbucket") */
+  gitProvider?: string;
 }
 
 export interface BranchInfo {
@@ -34,8 +38,11 @@ export async function getRepositoryInfo(
     throw new Error("Not a git repository");
   }
 
-  // Get repository name from git remote URL
+  // Get repository name and owner/repo from git remote URL
   let repoName = path.basename(repoPath); // Fallback to directory name
+  let ownerRepo: string | undefined;
+  let gitProvider: string | undefined;
+
   try {
     const remoteOutput = gitCli["execGit"](
       "git remote get-url origin",
@@ -43,13 +50,45 @@ export async function getRepositoryInfo(
     );
     const remoteUrl = remoteOutput.trim();
 
-    // Extract repo name from various URL formats:
+    // Extract owner/repo from various URL formats:
     // - https://github.com/user/repo.git
     // - git@github.com:user/repo.git
     // - https://github.com/user/repo
-    const match = remoteUrl.match(/\/([^\/]+?)(\.git)?$/);
-    if (match && match[1]) {
-      repoName = match[1];
+    // - https://gitlab.com/user/repo.git
+    // - git@gitlab.com:user/repo.git
+
+    // Detect provider from URL
+    if (remoteUrl.includes("github.com")) {
+      gitProvider = "github";
+    } else if (remoteUrl.includes("gitlab.com")) {
+      gitProvider = "gitlab";
+    } else if (remoteUrl.includes("bitbucket.org")) {
+      gitProvider = "bitbucket";
+    }
+
+    // Extract owner/repo - handle both HTTPS and SSH formats
+    let ownerRepoMatch;
+    if (remoteUrl.startsWith("git@")) {
+      // SSH format: git@github.com:owner/repo.git
+      ownerRepoMatch = remoteUrl.match(/:([^/]+\/[^/]+?)(\.git)?$/);
+    } else {
+      // HTTPS format: https://github.com/owner/repo.git
+      ownerRepoMatch = remoteUrl.match(/(?:github\.com|gitlab\.com|bitbucket\.org)\/([^/]+\/[^/]+?)(\.git)?$/);
+    }
+
+    if (ownerRepoMatch && ownerRepoMatch[1]) {
+      ownerRepo = ownerRepoMatch[1];
+      // Extract repo name from owner/repo
+      const parts = ownerRepo.split("/");
+      if (parts.length === 2) {
+        repoName = parts[1];
+      }
+    } else {
+      // Fallback: just extract repo name
+      const match = remoteUrl.match(/\/([^\/]+?)(\.git)?$/);
+      if (match && match[1]) {
+        repoName = match[1];
+      }
     }
   } catch (error) {
     // No remote or error getting remote - use directory name as fallback
@@ -72,6 +111,8 @@ export async function getRepositoryInfo(
     name: repoName,
     branch,
     path: repoPath,
+    ownerRepo,
+    gitProvider,
   };
 }
 

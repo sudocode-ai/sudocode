@@ -446,4 +446,7 @@ export type {
   // On-demand import types
   OnDemandImportCapable,
   ExternalComment,
+  // Search types
+  SearchOptions,
+  SearchResult,
 } from "./integrations.js";

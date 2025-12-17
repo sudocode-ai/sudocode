@@ -232,6 +232,33 @@ export interface ExternalEntity {
 }
 
 /**
+ * Options for searching entities
+ */
+export interface SearchOptions {
+  /** Repository to search in (e.g., "owner/repo") */
+  repo?: string;
+  /** Page number for pagination (1-indexed) */
+  page?: number;
+  /** Number of results per page */
+  perPage?: number;
+}
+
+/**
+ * Result of a search operation with pagination info
+ */
+export interface SearchResult {
+  /** List of matching entities */
+  results: ExternalEntity[];
+  /** Pagination info */
+  pagination?: {
+    page: number;
+    perPage: number;
+    hasMore: boolean;
+    totalCount?: number;
+  };
+}
+
+/**
  * Represents a comment from an external system
  * Used for importing discussion threads alongside entities
  */
@@ -375,7 +402,10 @@ export interface IntegrationProvider {
   fetchEntity(externalId: string): Promise<ExternalEntity | null>;
 
   /** Search for entities in the external system */
-  searchEntities(query?: string): Promise<ExternalEntity[]>;
+  searchEntities(
+    query?: string,
+    options?: SearchOptions
+  ): Promise<ExternalEntity[] | SearchResult>;
 
   /** Create a new entity in the external system */
   createEntity(entity: Partial<Spec | Issue>): Promise<string>;

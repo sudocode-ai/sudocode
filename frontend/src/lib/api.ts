@@ -565,6 +565,53 @@ export interface ImportResponse {
   feedbackCount?: number
 }
 
+export interface ImportSearchRequest {
+  provider: string
+  query?: string
+  repo?: string
+  page?: number
+  perPage?: number
+}
+
+export interface ImportSearchResponse {
+  provider: string
+  query?: string
+  repo?: string
+  results: ExternalEntity[]
+  pagination?: {
+    page: number
+    perPage: number
+    hasMore: boolean
+    totalCount?: number
+  }
+}
+
+export interface BatchImportRequest {
+  provider: string
+  externalIds: string[]
+  options?: {
+    includeComments?: boolean
+    tags?: string[]
+    priority?: number
+  }
+}
+
+export interface BatchImportItemResult {
+  externalId: string
+  success: boolean
+  entityId?: string
+  action: 'created' | 'updated' | 'failed'
+  error?: string
+}
+
+export interface BatchImportResponse {
+  provider: string
+  created: number
+  updated: number
+  failed: number
+  results: BatchImportItemResult[]
+}
+
 /**
  * Import API
  */
@@ -578,6 +625,14 @@ export const importApi = {
   // Import entity and create spec
   import: (url: string, options?: ImportOptions) =>
     post<ImportResponse>('/import', { url, options }),
+
+  // Search for entities in external systems
+  search: (params: ImportSearchRequest) =>
+    post<ImportSearchResponse>('/import/search', params),
+
+  // Batch import entities (creates or updates)
+  batchImport: (params: BatchImportRequest) =>
+    post<BatchImportResponse>('/import/batch', params),
 }
 
 /**

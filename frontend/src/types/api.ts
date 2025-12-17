@@ -28,6 +28,10 @@ export interface RepositoryInfo {
   name: string
   branch: string
   path: string
+  /** Full owner/repo identifier from git remote (e.g., "anthropic/sudocode") */
+  ownerRepo?: string
+  /** Git hosting provider (e.g., "github", "gitlab", "bitbucket") */
+  gitProvider?: string
 }
 
 export interface BranchInfo {

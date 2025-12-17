@@ -1,5 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { importApi, ImportOptions, ImportPreviewResponse, ImportResponse } from '@/lib/api'
+import {
+  importApi,
+  ImportOptions,
+  ImportPreviewResponse,
+  ImportResponse,
+  ImportSearchRequest,
+  ImportSearchResponse,
+  BatchImportRequest,
+  BatchImportResponse,
+} from '@/lib/api'
 import { useProject } from '@/hooks/useProject'
 
 /**
@@ -47,6 +56,39 @@ export function useImport() {
     mutationKey: ['import', currentProjectId],
     onSuccess: () => {
       // Invalidate specs list to show the newly imported spec
+      queryClient.invalidateQueries({ queryKey: ['specs', currentProjectId] })
+    },
+  })
+}
+
+/**
+ * Hook for searching entities in external systems
+ */
+export function useImportSearch() {
+  const { currentProjectId } = useProject()
+
+  return useMutation<ImportSearchResponse, Error, ImportSearchRequest>({
+    mutationFn: async (params) => {
+      return importApi.search(params)
+    },
+    mutationKey: ['import-search', currentProjectId],
+  })
+}
+
+/**
+ * Hook for batch importing entities with upsert behavior
+ */
+export function useBatchImport() {
+  const queryClient = useQueryClient()
+  const { currentProjectId } = useProject()
+
+  return useMutation<BatchImportResponse, Error, BatchImportRequest>({
+    mutationFn: async (params) => {
+      return importApi.batchImport(params)
+    },
+    mutationKey: ['batch-import', currentProjectId],
+    onSuccess: () => {
+      // Invalidate specs list to show newly imported/updated specs
       queryClient.invalidateQueries({ queryKey: ['specs', currentProjectId] })
     },
   })

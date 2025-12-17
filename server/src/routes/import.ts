@@ -100,6 +100,86 @@ export interface BulkRefreshRequest {
 }
 
 /**
+ * Search request body for POST /api/import/search
+ */
+export interface ImportSearchRequest {
+  /** Provider name to search (required) */
+  provider: string;
+  /** Search query (optional - if not provided, lists issues from repo) */
+  query?: string;
+  /** Repository to search in (e.g., "owner/repo") - used for listing without query */
+  repo?: string;
+  /** Page number for pagination (1-indexed, default: 1) */
+  page?: number;
+  /** Number of results per page (default: 20, max: 100) */
+  perPage?: number;
+}
+
+/**
+ * Search response for POST /api/import/search
+ */
+export interface ImportSearchResponse {
+  provider: string;
+  query?: string;
+  repo?: string;
+  results: ExternalEntity[];
+  /** Pagination info */
+  pagination?: {
+    page: number;
+    perPage: number;
+    hasMore: boolean;
+  };
+}
+
+/**
+ * Batch import request body for POST /api/import/batch
+ */
+export interface BatchImportRequest {
+  /** Provider name (required) */
+  provider: string;
+  /** Array of external IDs to import */
+  externalIds: string[];
+  /** Import options applied to all items */
+  options?: {
+    includeComments?: boolean;
+    tags?: string[];
+    priority?: number;
+  };
+}
+
+/**
+ * Result for a single item in batch import
+ */
+export interface BatchImportItemResult {
+  /** External ID that was imported */
+  externalId: string;
+  /** Whether the import succeeded */
+  success: boolean;
+  /** The sudocode entity ID (spec ID) */
+  entityId?: string;
+  /** Action taken: created, updated, or failed */
+  action: "created" | "updated" | "failed";
+  /** Error message if failed */
+  error?: string;
+}
+
+/**
+ * Batch import response for POST /api/import/batch
+ */
+export interface BatchImportResponse {
+  /** Provider used */
+  provider: string;
+  /** Number of entities created */
+  created: number;
+  /** Number of entities updated */
+  updated: number;
+  /** Number of entities that failed */
+  failed: number;
+  /** Per-item results */
+  results: BatchImportItemResult[];
+}
+
+/**
  * Helper to read config.json
  */
 function readConfig(sudocodeDir: string): Record<string, unknown> {
@@ -486,6 +566,367 @@ export function createImportRouter(): Router {
       res.status(500).json({
         success: false,
         error: "Preview failed",
+        message: errorMessage,
+      });
+    }
+  });
+
+  /**
+   * POST /api/import/search - Search for entities in external systems
+   *
+   * Searches a provider for entities matching a query, or lists issues from a repo
+   */
+  router.post("/search", async (req: Request, res: Response) => {
+    try {
+      const {
+        provider: providerName,
+        query,
+        repo,
+        page = 1,
+        perPage = 20,
+      } = req.body as ImportSearchRequest;
+
+      if (!providerName || typeof providerName !== "string") {
+        res.status(400).json({
+          success: false,
+          error: "Provider is required",
+          message: "Request body must include a valid provider name",
+        });
+        return;
+      }
+
+      // Either query or repo must be provided
+      if (!query && !repo) {
+        res.status(400).json({
+          success: false,
+          error: "Query or repo is required",
+          message:
+            "Request body must include a search query or repo to list issues from",
+        });
+        return;
+      }
+
+      // Get config
+      const config = readConfig(req.project!.sudocodeDir);
+      const integrations = (config.integrations || {}) as IntegrationsConfig;
+
+      // Try to load the provider
+      const plugin = await loadPlugin(providerName);
+
+      if (!plugin) {
+        res.status(404).json({
+          success: false,
+          error: "Provider not found",
+          message: `Provider "${providerName}" is not installed`,
+        });
+        return;
+      }
+
+      const providerConfig = integrations[providerName];
+      const provider = plugin.createProvider(
+        providerConfig?.options || {},
+        req.project!.path
+      );
+
+      // Check if provider supports search
+      if (!provider.supportsSearch) {
+        res.status(422).json({
+          success: false,
+          error: "Search not supported",
+          message: `Provider "${providerName}" does not support search`,
+        });
+        return;
+      }
+
+      // Initialize provider
+      await provider.initialize();
+
+      // Search for entities with options
+      const searchResult = await provider.searchEntities(query, {
+        repo,
+        page,
+        perPage: Math.min(perPage, 100),
+      });
+
+      // Clean up provider
+      await provider.dispose();
+
+      // Handle both old array format and new SearchResult format
+      const isSearchResult =
+        searchResult &&
+        typeof searchResult === "object" &&
+        "results" in searchResult;
+      const results = isSearchResult
+        ? (searchResult as { results: ExternalEntity[] }).results
+        : (searchResult as ExternalEntity[]);
+      const pagination = isSearchResult
+        ? (searchResult as { pagination?: ImportSearchResponse["pagination"] })
+            .pagination
+        : undefined;
+
+      const response: ImportSearchResponse = {
+        provider: providerName,
+        query,
+        repo,
+        results,
+        pagination,
+      };
+
+      res.status(200).json({
+        success: true,
+        data: response,
+      });
+    } catch (error) {
+      console.error("[import] Search failed:", error);
+
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      if (
+        errorMessage.includes("not authenticated") ||
+        errorMessage.includes("auth")
+      ) {
+        res.status(401).json({
+          success: false,
+          error: "Authentication required",
+          message: errorMessage,
+        });
+        return;
+      }
+
+      res.status(500).json({
+        success: false,
+        error: "Search failed",
+        message: errorMessage,
+      });
+    }
+  });
+
+  /**
+   * POST /api/import/batch - Batch import entities with upsert behavior
+   *
+   * Creates or updates specs from external entities. If an entity is already
+   * imported, it updates the existing spec instead of creating a duplicate.
+   */
+  router.post("/batch", async (req: Request, res: Response) => {
+    try {
+      const {
+        provider: providerName,
+        externalIds,
+        options = {},
+      } = req.body as BatchImportRequest;
+
+      // Validation
+      if (!providerName || typeof providerName !== "string") {
+        res.status(400).json({
+          success: false,
+          error: "Provider is required",
+          message: "Request body must include a valid provider name",
+        });
+        return;
+      }
+
+      if (!Array.isArray(externalIds) || externalIds.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: "External IDs required",
+          message: "Request body must include a non-empty array of external IDs",
+        });
+        return;
+      }
+
+      // Get config
+      const config = readConfig(req.project!.sudocodeDir);
+      const integrations = (config.integrations || {}) as IntegrationsConfig;
+
+      // Load the provider
+      const plugin = await loadPlugin(providerName);
+      if (!plugin) {
+        res.status(404).json({
+          success: false,
+          error: "Provider not found",
+          message: `Provider "${providerName}" is not installed`,
+        });
+        return;
+      }
+
+      const providerConfig = integrations[providerName];
+      const provider = plugin.createProvider(
+        providerConfig?.options || {},
+        req.project!.path
+      );
+
+      // Check capabilities
+      if (!isOnDemandCapable(provider)) {
+        res.status(422).json({
+          success: false,
+          error: "Import not supported",
+          message: `Provider "${providerName}" does not support on-demand import`,
+        });
+        return;
+      }
+
+      // Initialize provider
+      await provider.initialize();
+
+      const results: BatchImportItemResult[] = [];
+      let created = 0;
+      let updated = 0;
+      let failed = 0;
+
+      // Process each external ID
+      for (const externalId of externalIds) {
+        try {
+          // Fetch the entity
+          const entity = await provider.fetchEntity(externalId);
+
+          if (!entity) {
+            results.push({
+              externalId,
+              success: false,
+              action: "failed",
+              error: "Entity not found",
+            });
+            failed++;
+            continue;
+          }
+
+          // Check if already imported
+          const existingSpecs = findSpecsByExternalLink(
+            req.project!.sudocodeDir,
+            providerName,
+            entity.id
+          );
+
+          const now = new Date().toISOString();
+
+          if (existingSpecs.length > 0) {
+            // Update existing spec
+            const existingSpec = existingSpecs[0];
+
+            // Import updateSpec from CLI
+            const { updateSpec } = await import(
+              "@sudocode-ai/cli/dist/operations/specs.js"
+            );
+            const { updateSpecExternalLinkSync } = await import(
+              "@sudocode-ai/cli/dist/operations/external-links.js"
+            );
+
+            // Update the spec content
+            updateSpec(req.project!.db, existingSpec.id, {
+              title: entity.title,
+              content: entity.description || "",
+              priority: options.priority ?? entity.priority ?? existingSpec.priority,
+            });
+
+            // Update the external link sync timestamp
+            updateSpecExternalLinkSync(
+              req.project!.sudocodeDir,
+              existingSpec.id,
+              entity.id,
+              {
+                last_synced_at: now,
+                external_updated_at: entity.updated_at,
+              }
+            );
+
+            // Broadcast update
+            broadcastSpecUpdate(req.project!.id, existingSpec.id, "updated", {
+              ...existingSpec,
+              title: entity.title,
+              content: entity.description || "",
+            });
+
+            results.push({
+              externalId,
+              success: true,
+              entityId: existingSpec.id,
+              action: "updated",
+            });
+            updated++;
+          } else {
+            // Create new spec
+            const spec = createSpecFromExternal(req.project!.sudocodeDir, {
+              title: entity.title,
+              content: entity.description || "",
+              priority: options.priority ?? entity.priority ?? 2,
+              external: {
+                provider: providerName,
+                external_id: entity.id,
+                sync_direction: "inbound",
+              },
+              relationships: entity.relationships?.map((r) => ({
+                targetExternalId: r.targetId,
+                targetType: r.targetType,
+                relationshipType: r.relationshipType,
+              })),
+            });
+
+            // Broadcast creation
+            broadcastSpecUpdate(req.project!.id, spec.id, "created", spec);
+
+            results.push({
+              externalId,
+              success: true,
+              entityId: spec.id,
+              action: "created",
+            });
+            created++;
+          }
+        } catch (itemError) {
+          const errorMessage =
+            itemError instanceof Error ? itemError.message : String(itemError);
+          results.push({
+            externalId,
+            success: false,
+            action: "failed",
+            error: errorMessage,
+          });
+          failed++;
+        }
+      }
+
+      // Clean up provider
+      await provider.dispose();
+
+      // Trigger export if any changes were made
+      if (created > 0 || updated > 0) {
+        triggerExport(req.project!.db, req.project!.sudocodeDir);
+      }
+
+      const response: BatchImportResponse = {
+        provider: providerName,
+        created,
+        updated,
+        failed,
+        results,
+      };
+
+      res.status(200).json({
+        success: true,
+        data: response,
+      });
+    } catch (error) {
+      console.error("[import] Batch import failed:", error);
+
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      if (
+        errorMessage.includes("not authenticated") ||
+        errorMessage.includes("auth")
+      ) {
+        res.status(401).json({
+          success: false,
+          error: "Authentication required",
+          message: errorMessage,
+        });
+        return;
+      }
+
+      res.status(500).json({
+        success: false,
+        error: "Batch import failed",
         message: errorMessage,
       });
     }

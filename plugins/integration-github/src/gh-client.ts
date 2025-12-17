@@ -238,6 +238,10 @@ export interface GitHubIssue {
   created_at: string;
   updated_at: string;
   closed_at: string | null;
+  /** Present only on pull requests - used to filter them out */
+  pull_request?: {
+    url: string;
+  };
 }
 
 /**
