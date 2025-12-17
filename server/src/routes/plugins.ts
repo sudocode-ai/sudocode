@@ -99,9 +99,9 @@ export function createPluginsRouter(): Router {
 
       const plugins: PluginInfo[] = await Promise.all(
         firstPartyPlugins.map(async (p) => {
-          // Only check for global installations to avoid detecting workspace plugins
-          // during development (when server is linked from monorepo)
-          const installed = isPluginInstalledGlobally(p.name);
+          // Check if plugin is installed (local node_modules or global)
+          // This detects both metapackage dependencies and global installations
+          const installed = await isPluginInstalled(p.name);
           const providerConfig = integrations[p.name];
           const activated = !!providerConfig;
           const enabled = providerConfig?.enabled ?? false;
@@ -591,16 +591,16 @@ export function createPluginsRouter(): Router {
       // Determine the package to install
       const targetPackage = packageName || `@sudocode-ai/integration-${name}`;
 
-      // Check if already installed globally
-      // We only check global installations to avoid detecting workspace/local packages
-      // during development in the monorepo
-      const isGloballyInstalled = isPluginInstalledGlobally(name);
+      // Check if already installed (local node_modules or global)
+      const alreadyInstalled = await isPluginInstalled(name);
 
-      if (isGloballyInstalled) {
+      if (alreadyInstalled) {
+        // Determine if it's global or local for better messaging
+        const isGlobal = isPluginInstalledGlobally(name);
         res.status(200).json({
           success: true,
           data: {
-            message: `Plugin '${name}' is already installed globally`,
+            message: `Plugin '${name}' is already installed${isGlobal ? " globally" : " (via metapackage or local node_modules)"}`,
             alreadyInstalled: true,
           },
         });

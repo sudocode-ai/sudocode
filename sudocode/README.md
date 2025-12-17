@@ -1,59 +1,68 @@
 # sudocode
 
-Git-native spec and issue management for AI-assisted software development.
+Lightweight agent orchestration tool for AI-assisted software development.
 
 ## Overview
 
-Sudocode is a git-native workflow tool designed for AI-assisted development. It stores specs and issues as JSONL files alongside your code, enabling version control, branching, and merging of your project management data just like code.
+sudocode is a lightweight agent orchestration system that lives in your repo. Adding sudocode into your repo adds instant organizational capabilities to your coding agents. They'll gain the ability to track context over long-horizon tasks and work collaboratively on complex tasks. sudocode manages git worktrees so you can run multiple agents in parallel in isolation with minimal management.
 
-**Key Features:**
-- **Git-native** - All data stored in `.sudocode/` as JSONL, versioned with your code
-- **Anchored feedback** - Link issues to specific lines in specs with smart relocation
-- **Relationship tracking** - Model dependencies, blockers, and implementations
-- **MCP integration** - Works seamlessly with Claude and other AI assistants
-- **Fast local cache** - SQLite for instant queries without parsing JSONL
-- **Bidirectional sync** - Export to markdown, edit, import back
+## Key capabilities
+
+- Automate context handoff for complex tasks with sudocode's git-native agent memory system
+- Bring order to chaos by organizing your requirements, background context, and implementation plans into structured, executable issue graphs
+- Visualize outputs and execution feedback in real-time
+- Run as many Claude Code/Codex/Cursor (+more) agents in parallel as you can handle
+- Isolate agent work in worktrees and creates checkpoints
+- Load work items from external sources (GitHub Issues, Spec Kit, openspec, beads, etc) and orchestrate agents to implement them
+
+## Quick Start
+
+```bash
+# Install globally (recommended: use npx instead to avoid Node version conflicts)
+npm install -g sudocode
+
+# Initialize a sudocode project in your project directory.
+sudocode init
+
+# Run the local sudocode server from anywhere
+sudocode server
+```
+
+For Claude Code, you can install the plugin:
+```bash
+claude plugin marketplace add sudocode-ai/sudocode
+claude plugin install sudocode
+```
+
+Check out our [Quick Start Guide](https://docs.sudocode.ai/quickstart#step-4%3A-set-up-your-agent) for instructions on setting up other agents.
+
+## How to use it
+
+The sudocode package includes a CLI, local server/UI, and an MCP server.
+
+Use the CLI for managing specs and issues in sudocode's agent memory system. It contains a complete interface for viewing, editing, and managing relationships between entities.
+
+Use the local server to automatically sync memory and enable agent execution and visualization. The issue kanban view helps you track issue status and progress. You can spawn new agents, update agent implementation plans, and provide feedback or guidance to running agents in a single, focused view.
 
 ## What's Included
 
 This meta-package bundles all sudocode components:
 
+### Core Packages
+
 - **@sudocode-ai/cli** - Command-line interface (`sudocode` command)
 - **@sudocode-ai/mcp** - Model Context Protocol server for AI assistants
+- **@sudocode-ai/local-server** - Local backend server with execution engine
 - **@sudocode-ai/types** - TypeScript type definitions
 
-## Installation
+### Integration Plugins
 
-```bash
-npm install -g sudocode
-```
+sudocode supports bi-directional syncs and imports with multiple third-party data sources. Create a discussion/issue on our repo to suggest any other data sources you'd like us to support!
 
-After installation, both `sudocode` (also aliased as `sdc`) commands will be available.
-
-## Quick Start
-
-```bash
-# Initialize in your project
-sudocode init
-
-# Create your first spec
-sudocode spec create "User authentication system" -p 4
-
-# Create an issue
-sudocode issue create "Implement OAuth login" -p 3 -a alice
-
-# Link the issue to the spec
-sudocode link ISSUE-1 SPEC-1 --type implements
-
-# Show what's ready to work on
-sudocode ready
-
-# Update issue status
-sudocode issue update ISSUE-1 --status in_progress
-
-# View project status
-sudocode status
-```
+- **@sudocode-ai/integration-github** - Import GitHub issues using `gh` CLI
+- **@sudocode-ai/integration-beads** - Sync with Beads local file-based issue tracking
+- **@sudocode-ai/integration-openspec** - Sync with OpenSpec standardized specification format
+- **@sudocode-ai/integration-speckit** - Sync with spec-kit markdown-based specification system
 
 ## Core Commands
 
@@ -216,8 +225,15 @@ The JSONL files are designed to be merged in git like code - each line is a comp
 You can also install packages individually:
 
 ```bash
+# Core packages
 npm install -g @sudocode-ai/cli             # CLI only
 npm install -g @sudocode-ai/mcp             # MCP server only
-npm install -g @sudocode-ai/local-server    # Under construction!
+npm install -g @sudocode-ai/local-server    # Local backend server
 npm install @sudocode-ai/types              # Types only (for development)
+
+# Integration plugins
+npm install @sudocode-ai/integration-github   # GitHub issues import
+npm install @sudocode-ai/integration-beads    # Beads sync
+npm install @sudocode-ai/integration-openspec # OpenSpec sync
+npm install @sudocode-ai/integration-speckit  # Spec-kit sync
 ```
