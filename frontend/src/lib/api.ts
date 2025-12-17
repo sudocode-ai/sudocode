@@ -604,11 +604,11 @@ export interface RefreshResponse {
 export const refreshApi = {
   // Refresh a spec from external source
   refreshSpec: (specId: string, force?: boolean) =>
-    post<RefreshResponse>(`/specs/${specId}/refresh${force ? '?force=true' : ''}`),
+    post<RefreshResponse>(`/specs/${specId}/refresh_from_external${force ? '?force=true' : ''}`),
 
   // Refresh an issue from external source
   refreshIssue: (issueId: string, force?: boolean) =>
-    post<RefreshResponse>(`/issues/${issueId}/refresh${force ? '?force=true' : ''}`),
+    post<RefreshResponse>(`/issues/${issueId}/refresh_from_external${force ? '?force=true' : ''}`),
 }
 
 export default api

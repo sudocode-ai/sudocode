@@ -5,6 +5,7 @@ import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
 import { useProject } from '@/hooks/useProject'
 import { useProjectById } from '@/hooks/useProjects'
 import { useWorkflows } from '@/hooks/useWorkflows'
+import { useImportProviders } from '@/hooks/useImport'
 import { SpecList } from '@/components/specs/SpecList'
 import { SpecEditor } from '@/components/specs/SpecEditor'
 import { ImportDialog } from '@/components/import'
@@ -32,6 +33,12 @@ export default function SpecsPage() {
   const { currentProjectId } = useProject()
   const { data: currentProject } = useProjectById(currentProjectId)
   const { data: workflows = [] } = useWorkflows()
+  const { data: importProviders = [] } = useImportProviders()
+
+  // Check if any import providers are configured and support on-demand import
+  const hasConfiguredImportProviders = importProviders.some(
+    (p) => p.configured && p.supportsOnDemandImport
+  )
 
   const [showEditor, setShowEditor] = useState(false)
   const [showImportDialog, setShowImportDialog] = useState(false)
@@ -172,14 +179,16 @@ export default function SpecsPage() {
             <Archive className="h-4 w-4" />
             Archived
           </Button>
-          <Button
-            onClick={() => setShowImportDialog(true)}
-            variant="outline"
-            size="sm"
-          >
-            <Download className="mr-2 h-4 w-4" />
-            Import
-          </Button>
+          {hasConfiguredImportProviders && (
+            <Button
+              onClick={() => setShowImportDialog(true)}
+              variant="outline"
+              size="sm"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Import
+            </Button>
+          )}
           <Button
             onClick={() => setShowEditor(true)}
             variant="default"
