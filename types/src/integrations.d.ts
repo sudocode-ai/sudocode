@@ -194,6 +194,18 @@ export interface IntegrationPlugin {
  * Represents an entity from an external system
  * Normalized structure for cross-provider compatibility
  */
+/**
+ * Represents a relationship from this entity to another
+ */
+export interface ExternalRelationship {
+  /** Target entity ID in the external system */
+  targetId: string;
+  /** Target entity type */
+  targetType: "spec" | "issue";
+  /** Relationship type */
+  relationshipType: "implements" | "blocks" | "depends-on" | "references" | "related" | "discovered-from";
+}
+
 export interface ExternalEntity {
   /** Unique identifier in the external system */
   id: string;
@@ -213,6 +225,8 @@ export interface ExternalEntity {
   created_at?: string;
   /** When last updated in external system (optional, ISO 8601) */
   updated_at?: string;
+  /** Relationships from this entity to other entities (optional) */
+  relationships?: ExternalRelationship[];
   /** Raw data from external system (for provider-specific handling) */
   raw?: unknown;
 }
