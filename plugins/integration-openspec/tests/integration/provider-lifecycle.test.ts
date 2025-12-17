@@ -401,10 +401,11 @@ describe("OpenSpecProvider Lifecycle", () => {
       ).rejects.toThrow();
     });
 
-    it("should throw on updateEntity (not implemented)", async () => {
-      await expect(
-        provider.updateEntity("os-test", { title: "Updated" })
-      ).rejects.toThrow();
+    it("should handle updateEntity for non-existent entity gracefully", async () => {
+      // updateEntity should not throw, just log error for non-existent entity
+      await provider.updateEntity("os-nonexistent", { title: "Updated" });
+      // Should complete without throwing
+      expect(true).toBe(true);
     });
 
     it("should handle dispose gracefully", async () => {

@@ -434,6 +434,123 @@ The system SHALL authenticate users via JWT tokens.
     });
   });
 
+  describe("Proposed specs (specs inside changes)", () => {
+    it("should import proposed specs from changes/[name]/specs/", async () => {
+      // Create a change with a proposed NEW spec (no existing spec in specs/)
+      const changeDir = join(changesDir, "add-auth");
+      mkdirSync(changeDir, { recursive: true });
+      writeFileSync(join(changeDir, "proposal.md"), SAMPLE_PROPOSAL);
+      writeFileSync(join(changeDir, "tasks.md"), SAMPLE_TASKS);
+
+      // Create a proposed spec inside the change
+      const proposedSpecDir = join(changeDir, "specs", "auth");
+      mkdirSync(proposedSpecDir, { recursive: true });
+      writeFileSync(
+        join(proposedSpecDir, "spec.md"),
+        `# Auth Specification
+
+## Purpose
+Handle user authentication.
+
+## ADDED Requirements
+
+### Requirement: JWT Authentication
+The system SHALL use JWT tokens for authentication.
+`
+      );
+
+      const provider = openSpecPlugin.createProvider(
+        { path: "openspec", spec_prefix: "os", issue_prefix: "osc" },
+        tempDir
+      );
+      await provider.initialize();
+
+      const entities = await provider.searchEntities();
+      const specs = entities.filter((e) => e.type === "spec");
+      const issues = entities.filter((e) => e.type === "issue");
+
+      // Should have 1 proposed spec and 1 issue
+      expect(specs.length).toBe(1);
+      expect(issues.length).toBe(1);
+
+      // Spec should be marked as proposed
+      expect(specs[0].raw?.isProposed).toBe(true);
+      expect(specs[0].raw?.proposedByChange).toBe("add-auth");
+    });
+
+    it("should NOT duplicate specs that already exist in specs/", async () => {
+      // Create an existing spec in specs/
+      const existingSpecDir = join(specsDir, "auth");
+      mkdirSync(existingSpecDir, { recursive: true });
+      writeFileSync(
+        join(existingSpecDir, "spec.md"),
+        "# Auth Specification\n\n## Purpose\nExisting auth spec."
+      );
+
+      // Create a change with a delta to the existing spec
+      const changeDir = join(changesDir, "add-2fa");
+      mkdirSync(changeDir, { recursive: true });
+      writeFileSync(join(changeDir, "proposal.md"), SAMPLE_PROPOSAL);
+
+      // Delta spec (modifies existing)
+      const deltaSpecDir = join(changeDir, "specs", "auth");
+      mkdirSync(deltaSpecDir, { recursive: true });
+      writeFileSync(
+        join(deltaSpecDir, "spec.md"),
+        "# Delta for Auth\n\n## ADDED Requirements\n2FA support"
+      );
+
+      const provider = openSpecPlugin.createProvider(
+        { path: "openspec", spec_prefix: "os", issue_prefix: "osc" },
+        tempDir
+      );
+      await provider.initialize();
+
+      const entities = await provider.searchEntities();
+      const specs = entities.filter((e) => e.type === "spec");
+
+      // Should only have 1 spec (the approved one)
+      expect(specs.length).toBe(1);
+      expect(specs[0].raw?.isProposed).toBeUndefined();
+    });
+
+    it("should create implements relationship from change to proposed spec", async () => {
+      // Create a change with a proposed spec
+      const changeDir = join(changesDir, "add-notifications");
+      mkdirSync(changeDir, { recursive: true });
+      writeFileSync(join(changeDir, "proposal.md"), SAMPLE_PROPOSAL);
+      writeFileSync(join(changeDir, "tasks.md"), "# Tasks\n\n- [ ] Implement");
+
+      const proposedSpecDir = join(changeDir, "specs", "notifications");
+      mkdirSync(proposedSpecDir, { recursive: true });
+      writeFileSync(
+        join(proposedSpecDir, "spec.md"),
+        "# Notifications Specification\n\n## Purpose\nSend notifications."
+      );
+
+      const provider = openSpecPlugin.createProvider(
+        { path: "openspec", spec_prefix: "os", issue_prefix: "osc" },
+        tempDir
+      );
+      await provider.initialize();
+
+      const entities = await provider.searchEntities();
+      const spec = entities.find((e) => e.type === "spec");
+      const issue = entities.find((e) => e.type === "issue");
+
+      // Proposed spec should NOT have relationships (unidirectional)
+      expect(spec?.relationships).toBeUndefined();
+
+      // Change implements the proposed spec
+      expect(issue?.relationships).toBeDefined();
+      expect(
+        issue?.relationships?.some(
+          (r) => r.targetId === spec?.id && r.relationshipType === "implements"
+        )
+      ).toBe(true);
+    });
+  });
+
   describe("Multiple specs and changes", () => {
     it("should handle multiple specs", async () => {
       // Create multiple specs

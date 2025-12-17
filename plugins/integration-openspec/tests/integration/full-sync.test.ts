@@ -82,6 +82,14 @@ function createSpec(
 }
 
 /**
+ * Proposed spec content for a change
+ */
+interface ProposedSpec {
+  capability: string;
+  content: string;
+}
+
+/**
  * Create a change directory with optional files
  */
 function createChange(
@@ -92,6 +100,7 @@ function createChange(
     tasks?: string;
     design?: string;
     affectedSpecs?: string[];
+    proposedSpecs?: ProposedSpec[];
     archived?: boolean;
     archiveDate?: string;
   } = {}
@@ -117,12 +126,23 @@ function createChange(
     writeFileSync(join(changeDir, "design.md"), options.design);
   }
 
-  // Create delta directories for affected specs
+  // Create delta directories for affected specs (empty - just for relationship detection)
   if (options.affectedSpecs && options.affectedSpecs.length > 0) {
     const deltaSpecsDir = join(changeDir, "specs");
     mkdirSync(deltaSpecsDir, { recursive: true });
     for (const spec of options.affectedSpecs) {
       mkdirSync(join(deltaSpecsDir, spec), { recursive: true });
+    }
+  }
+
+  // Create proposed specs with content (new specs proposed by this change)
+  if (options.proposedSpecs && options.proposedSpecs.length > 0) {
+    const deltaSpecsDir = join(changeDir, "specs");
+    mkdirSync(deltaSpecsDir, { recursive: true });
+    for (const proposedSpec of options.proposedSpecs) {
+      const specDir = join(deltaSpecsDir, proposedSpec.capability);
+      mkdirSync(specDir, { recursive: true });
+      writeFileSync(join(specDir, "spec.md"), proposedSpec.content);
     }
   }
 
@@ -187,6 +207,33 @@ const SAMPLE_TASKS_PARTIAL = `# Tasks
 - [ ] Create command structure
 - [x] Add template parsing
 - [ ] Setup CLI framework
+`;
+
+const SAMPLE_PROPOSED_SPEC = `# Authentication Specification
+
+## Purpose
+Handle user authentication and session management.
+
+## ADDED Requirements
+
+### Requirement: User Login
+The system SHALL authenticate users via JWT tokens.
+
+#### Scenario: Valid credentials
+- **GIVEN** a user submits valid credentials
+- **WHEN** the login request is processed
+- **THEN** a JWT token is returned
+`;
+
+const SAMPLE_PROPOSED_SPEC_2 = `# Notification Specification
+
+## Purpose
+Send notifications to users.
+
+## ADDED Requirements
+
+### Requirement: Email Notifications
+The system SHALL send email notifications for important events.
 `;
 
 // ============================================================================
@@ -299,6 +346,210 @@ describe("Import Tests", () => {
     const entities = await provider.searchEntities();
     expect(entities.length).toBe(1);
     expect(entities[0].type).toBe("issue");
+  });
+});
+
+// ============================================================================
+// Proposed Specs Tests
+// ============================================================================
+
+describe("Proposed Specs Tests", () => {
+  let ctx: TestContext;
+
+  beforeEach(() => {
+    ctx = createTestContext();
+  });
+
+  afterEach(() => {
+    ctx.cleanup();
+  });
+
+  it("should import proposed specs from changes/[name]/specs/", async () => {
+    // Create a change with a proposed NEW spec (no existing spec in specs/)
+    createChange(ctx, "add-auth", {
+      proposal: SAMPLE_PROPOSAL,
+      tasks: SAMPLE_TASKS,
+      proposedSpecs: [
+        { capability: "auth", content: SAMPLE_PROPOSED_SPEC },
+      ],
+    });
+
+    const provider = openSpecPlugin.createProvider(
+      { path: "openspec", spec_prefix: "os", issue_prefix: "osc" },
+      ctx.testDir
+    );
+    await provider.initialize();
+
+    const entities = await provider.searchEntities();
+    const specs = entities.filter((e) => e.type === "spec");
+    const issues = entities.filter((e) => e.type === "issue");
+
+    // Should have 1 proposed spec and 1 issue
+    expect(specs.length).toBe(1);
+    expect(issues.length).toBe(1);
+
+    // Spec should be marked as proposed
+    const proposedSpec = specs[0];
+    expect(proposedSpec.title).toBe("Authentication Specification");
+    expect(proposedSpec.raw?.isProposed).toBe(true);
+    expect(proposedSpec.raw?.proposedByChange).toBe("add-auth");
+  });
+
+  it("should NOT duplicate specs that already exist in specs/", async () => {
+    // Create an existing spec in specs/
+    createSpec(ctx, "auth", SAMPLE_SPEC);
+
+    // Create a change with a delta to the existing spec
+    createChange(ctx, "add-2fa", {
+      proposal: SAMPLE_PROPOSAL,
+      tasks: SAMPLE_TASKS,
+      proposedSpecs: [
+        { capability: "auth", content: SAMPLE_PROPOSED_SPEC },
+      ],
+    });
+
+    const provider = openSpecPlugin.createProvider(
+      { path: "openspec", spec_prefix: "os", issue_prefix: "osc" },
+      ctx.testDir
+    );
+    await provider.initialize();
+
+    const entities = await provider.searchEntities();
+    const specs = entities.filter((e) => e.type === "spec");
+
+    // Should only have 1 spec (the approved one, not the delta)
+    expect(specs.length).toBe(1);
+    expect(specs[0].raw?.isProposed).toBeUndefined();
+  });
+
+  it("should create implements relationship from change to proposed spec", async () => {
+    createChange(ctx, "add-auth", {
+      proposal: SAMPLE_PROPOSAL,
+      tasks: SAMPLE_TASKS,
+      proposedSpecs: [
+        { capability: "auth", content: SAMPLE_PROPOSED_SPEC },
+      ],
+    });
+
+    const provider = openSpecPlugin.createProvider(
+      { path: "openspec", spec_prefix: "os", issue_prefix: "osc" },
+      ctx.testDir
+    );
+    await provider.initialize();
+
+    const entities = await provider.searchEntities();
+    const spec = entities.find((e) => e.type === "spec");
+    const issue = entities.find((e) => e.type === "issue");
+
+    expect(spec).toBeDefined();
+    expect(issue).toBeDefined();
+
+    // Proposed spec should NOT have relationships (unidirectional)
+    expect(spec?.relationships).toBeUndefined();
+
+    // Change should implement the proposed spec
+    expect(issue?.relationships).toBeDefined();
+    expect(issue?.relationships?.some((r) =>
+      r.targetId === spec?.id && r.relationshipType === "implements"
+    )).toBe(true);
+  });
+
+  it("should handle multiple proposed specs in one change", async () => {
+    createChange(ctx, "add-features", {
+      proposal: SAMPLE_PROPOSAL,
+      tasks: SAMPLE_TASKS,
+      proposedSpecs: [
+        { capability: "auth", content: SAMPLE_PROPOSED_SPEC },
+        { capability: "notifications", content: SAMPLE_PROPOSED_SPEC_2 },
+      ],
+    });
+
+    const provider = openSpecPlugin.createProvider(
+      { path: "openspec", spec_prefix: "os", issue_prefix: "osc" },
+      ctx.testDir
+    );
+    await provider.initialize();
+
+    const entities = await provider.searchEntities();
+    const specs = entities.filter((e) => e.type === "spec");
+    const issues = entities.filter((e) => e.type === "issue");
+
+    expect(specs.length).toBe(2);
+    expect(issues.length).toBe(1);
+
+    // Both specs should be proposed
+    for (const spec of specs) {
+      expect(spec.raw?.isProposed).toBe(true);
+      expect(spec.raw?.proposedByChange).toBe("add-features");
+    }
+
+    // Issue should implement both proposed specs
+    const issue = issues[0];
+    expect(issue.relationships?.length).toBe(2);
+  });
+
+  it("should handle mix of proposed specs and delta to existing specs", async () => {
+    // Create an existing spec
+    createSpec(ctx, "api-design", SAMPLE_SPEC_2);
+
+    // Create a change that proposes a new spec AND modifies existing
+    createChange(ctx, "add-auth-and-update-api", {
+      proposal: SAMPLE_PROPOSAL,
+      tasks: SAMPLE_TASKS,
+      proposedSpecs: [
+        { capability: "auth", content: SAMPLE_PROPOSED_SPEC },
+        { capability: "api-design", content: "# Delta for API\n\n## Changes\nSome updates" },
+      ],
+    });
+
+    const provider = openSpecPlugin.createProvider(
+      { path: "openspec", spec_prefix: "os", issue_prefix: "osc" },
+      ctx.testDir
+    );
+    await provider.initialize();
+
+    const entities = await provider.searchEntities();
+    const specs = entities.filter((e) => e.type === "spec");
+
+    // Should have 2 specs: 1 approved (api-design) + 1 proposed (auth)
+    expect(specs.length).toBe(2);
+
+    const approvedSpec = specs.find((s) => !s.raw?.isProposed);
+    const proposedSpec = specs.find((s) => s.raw?.isProposed);
+
+    expect(approvedSpec).toBeDefined();
+    expect(approvedSpec?.title).toBe("API Design Specification");
+
+    expect(proposedSpec).toBeDefined();
+    expect(proposedSpec?.title).toBe("Authentication Specification");
+    expect(proposedSpec?.raw?.isProposed).toBe(true);
+  });
+
+  it("should map proposed specs to sudocode format", async () => {
+    createChange(ctx, "add-auth", {
+      proposal: SAMPLE_PROPOSAL,
+      tasks: SAMPLE_TASKS,
+      proposedSpecs: [
+        { capability: "auth", content: SAMPLE_PROPOSED_SPEC },
+      ],
+    });
+
+    const provider = openSpecPlugin.createProvider(
+      { path: "openspec", spec_prefix: "os", issue_prefix: "osc" },
+      ctx.testDir
+    );
+    await provider.initialize();
+
+    const entities = await provider.searchEntities();
+    const proposedSpec = entities.find((e) => e.type === "spec");
+
+    expect(proposedSpec).toBeDefined();
+
+    const mapped = provider.mapToSudocode(proposedSpec!);
+    expect(mapped.spec).toBeDefined();
+    expect(mapped.spec?.title).toBe("Authentication Specification");
+    // Proposed specs don't have relationships (change has the implements link)
+    expect(mapped.relationships).toBeUndefined();
   });
 });
 

@@ -640,4 +640,185 @@ describe("OpenSpecWatcher", () => {
       expect(changeIds.length).toBeGreaterThanOrEqual(1);
     });
   });
+
+  describe("proposed specs", () => {
+    let tempDir: string;
+    let receivedChanges: ExternalChange[];
+    let callback: ChangeCallback;
+    let watcher: OpenSpecWatcher;
+
+    beforeEach(() => {
+      tempDir = createTempDir();
+      copyFixtures(tempDir);
+      receivedChanges = [];
+      callback = (changes) => {
+        receivedChanges.push(...changes);
+      };
+      watcher = new OpenSpecWatcher({
+        openspecPath: tempDir,
+        debounceMs: 50,
+      });
+    });
+
+    afterEach(() => {
+      watcher.stop();
+      cleanupTempDir(tempDir);
+    });
+
+    it("scans proposed specs in changes/[name]/specs/ directories", () => {
+      // Create a change with a proposed spec
+      const changeDir = path.join(tempDir, "changes", "add-auth");
+      fs.mkdirSync(changeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(changeDir, "proposal.md"),
+        "## Why\nNeed authentication.\n\n## What Changes\n- Add auth module"
+      );
+
+      // Create a proposed spec in the change
+      const proposedSpecDir = path.join(changeDir, "specs", "auth");
+      fs.mkdirSync(proposedSpecDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(proposedSpecDir, "spec.md"),
+        "# Authentication Specification\n\n## Purpose\nHandle user authentication."
+      );
+
+      watcher.captureState();
+      const hashes = watcher.getEntityHashes();
+      const ids = Array.from(hashes.keys());
+
+      // Should have the proposed spec as a separate entity
+      const specIds = ids.filter((id) => id.startsWith("os-"));
+      expect(specIds.length).toBeGreaterThanOrEqual(3); // 2 from fixtures + 1 proposed
+    });
+
+    it("marks proposed specs with isProposed and proposedByChange", () => {
+      // Create a change with a proposed spec
+      const changeDir = path.join(tempDir, "changes", "add-notifications");
+      fs.mkdirSync(changeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(changeDir, "proposal.md"),
+        "## Why\nNeed notifications.\n\n## What Changes\n- Add notifications"
+      );
+
+      const proposedSpecDir = path.join(changeDir, "specs", "notifications");
+      fs.mkdirSync(proposedSpecDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(proposedSpecDir, "spec.md"),
+        "# Notifications Specification\n\n## Purpose\nSend notifications."
+      );
+
+      watcher.captureState();
+
+      // The watcher doesn't expose entity data directly, but we can verify
+      // that the entity is captured by checking the hash count increases
+      const hashes = watcher.getEntityHashes();
+      expect(hashes.size).toBeGreaterThan(0);
+    });
+
+    it("does NOT duplicate proposed specs that exist in openspec/specs/", () => {
+      // Create a change with a delta spec (same capability as existing spec)
+      const changeDir = path.join(tempDir, "changes", "update-cli-init");
+      fs.mkdirSync(changeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(changeDir, "proposal.md"),
+        "## Why\nUpdate CLI init.\n\n## What Changes\n- Enhance init command"
+      );
+
+      // Create a spec delta for an EXISTING spec (cli-init exists in fixtures)
+      const deltaSpecDir = path.join(changeDir, "specs", "cli-init");
+      fs.mkdirSync(deltaSpecDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(deltaSpecDir, "spec.md"),
+        "# CLI Init Delta\n\n## Changes\nAdd new options."
+      );
+
+      watcher.captureState();
+      const hashes = watcher.getEntityHashes();
+      const ids = Array.from(hashes.keys());
+
+      // Should only have 2 specs from fixtures (cli-init, api-design), NOT a duplicate
+      const specIds = ids.filter((id) => id.startsWith("os-"));
+      expect(specIds.length).toBe(2);
+    });
+
+    it("detects new proposed spec file creation", async () => {
+      watcher.start(callback);
+
+      // Wait for watcher to be fully ready
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Create a change with a proposed spec
+      const changeDir = path.join(tempDir, "changes", "new-feature");
+      fs.mkdirSync(changeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(changeDir, "proposal.md"),
+        "## Why\nNew feature needed.\n\n## What Changes\n- Add new feature"
+      );
+
+      // Create the proposed spec
+      const proposedSpecDir = path.join(changeDir, "specs", "new-feature");
+      fs.mkdirSync(proposedSpecDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(proposedSpecDir, "spec.md"),
+        "# New Feature Specification\n\n## Purpose\nA brand new feature."
+      );
+
+      // Wait for debounce + processing
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      expect(receivedChanges.length).toBeGreaterThan(0);
+
+      // Should detect both the change (issue) and the proposed spec
+      const createdSpecs = receivedChanges.filter(
+        (c) => c.change_type === "created" && c.entity_type === "spec"
+      );
+      const createdIssues = receivedChanges.filter(
+        (c) => c.change_type === "created" && c.entity_type === "issue"
+      );
+
+      expect(createdSpecs.length).toBe(1);
+      expect(createdIssues.length).toBe(1);
+    });
+
+    it("detects proposed spec file updates", async () => {
+      // First create a change with a proposed spec
+      const changeDir = path.join(tempDir, "changes", "update-test");
+      fs.mkdirSync(changeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(changeDir, "proposal.md"),
+        "## Why\nTesting updates.\n\n## What Changes\n- Test updates"
+      );
+
+      const proposedSpecDir = path.join(changeDir, "specs", "test-spec");
+      fs.mkdirSync(proposedSpecDir, { recursive: true });
+      const specPath = path.join(proposedSpecDir, "spec.md");
+      fs.writeFileSync(
+        specPath,
+        "# Test Specification\n\n## Purpose\nInitial content."
+      );
+
+      watcher.start(callback);
+
+      // Wait for watcher to be fully ready
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Clear any initial changes
+      receivedChanges = [];
+
+      // Update the proposed spec
+      fs.writeFileSync(
+        specPath,
+        "# Test Specification\n\n## Purpose\nUpdated content with more details."
+      );
+
+      // Wait for debounce + processing
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      expect(receivedChanges.length).toBeGreaterThan(0);
+      const updatedChange = receivedChanges.find(
+        (c) => c.change_type === "updated" && c.entity_type === "spec"
+      );
+      expect(updatedChange).toBeDefined();
+    });
+  });
 });

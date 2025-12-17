@@ -162,10 +162,19 @@ export class OpenSpecWatcher {
         return true;
       }
 
-      // Check if it's in changes/ directory (proposal.md, tasks.md, design.md)
+      // Check if it's in changes/ directory
       if (relativePath.startsWith("changes" + path.sep)) {
         const fileName = path.basename(filePath);
-        return ["proposal.md", "tasks.md", "design.md"].includes(fileName);
+
+        // Watch proposal.md, tasks.md, design.md in change directories
+        if (["proposal.md", "tasks.md", "design.md"].includes(fileName)) {
+          return true;
+        }
+
+        // Watch spec.md files in changes/[name]/specs/[cap]/spec.md (proposed specs)
+        if (fileName === "spec.md" && relativePath.includes(path.sep + "specs" + path.sep)) {
+          return true;
+        }
       }
 
       return false;
@@ -486,9 +495,16 @@ export class OpenSpecWatcher {
 
   /**
    * Scan all entities in the OpenSpec directory
+   * IMPORTANT: Returns specs FIRST, then issues to ensure proper relationship resolution
    */
   private scanAllEntities(): ExternalEntity[] {
-    const entities: ExternalEntity[] = [];
+    // IMPORTANT: We collect specs FIRST, then issues
+    // This ensures specs exist before issues that reference them are synced
+    const specEntities: ExternalEntity[] = [];
+    const issueEntities: ExternalEntity[] = [];
+
+    // Track which specs exist in openspec/specs/ (approved specs)
+    const approvedSpecs = new Set<string>();
 
     // Scan specs directory
     const specsDir = path.join(this.openspecPath, "specs");
@@ -502,10 +518,12 @@ export class OpenSpecWatcher {
           const specPath = path.join(specsDir, entry.name, "spec.md");
           if (!existsSync(specPath)) continue;
 
+          approvedSpecs.add(entry.name);
+
           try {
             const spec = parseSpecFile(specPath);
             const specId = generateSpecId(entry.name, this.specPrefix);
-            entities.push(this.specToExternalEntity(spec, specId));
+            specEntities.push(this.specToExternalEntity(spec, specId));
           } catch (error) {
             console.error(
               `[openspec-watcher] Error parsing spec at ${specPath}:`,
@@ -531,7 +549,41 @@ export class OpenSpecWatcher {
           try {
             const change = parseChangeDirectory(changePath);
             const changeId = generateChangeId(change.name, this.changePrefix);
-            entities.push(this.changeToExternalEntity(change, changeId));
+            issueEntities.push(this.changeToExternalEntity(change, changeId));
+
+            // Scan for proposed specs inside this change
+            // These are NEW specs in changes/[name]/specs/[cap]/spec.md
+            const changeSpecsDir = path.join(changePath, "specs");
+            if (existsSync(changeSpecsDir)) {
+              const specDirEntries = readdirSync(changeSpecsDir, { withFileTypes: true });
+              for (const specEntry of specDirEntries) {
+                if (!specEntry.isDirectory()) continue;
+
+                const proposedSpecPath = path.join(changeSpecsDir, specEntry.name, "spec.md");
+                if (!existsSync(proposedSpecPath)) continue;
+
+                // Only create a separate spec entity for NEW specs
+                // (those not in openspec/specs/)
+                const isNewSpec = !approvedSpecs.has(specEntry.name);
+                if (isNewSpec) {
+                  try {
+                    const proposedSpec = parseSpecFile(proposedSpecPath);
+                    const proposedSpecId = generateSpecId(specEntry.name, this.specPrefix);
+                    // Add proposed specs to specEntities so they're synced before issues
+                    specEntities.push(this.proposedSpecToExternalEntity(
+                      proposedSpec,
+                      proposedSpecId,
+                      change.name
+                    ));
+                  } catch (error) {
+                    console.error(
+                      `[openspec-watcher] Error parsing proposed spec at ${proposedSpecPath}:`,
+                      error
+                    );
+                  }
+                }
+              }
+            }
           } catch (error) {
             console.error(
               `[openspec-watcher] Error parsing change at ${changePath}:`,
@@ -547,7 +599,9 @@ export class OpenSpecWatcher {
       }
     }
 
-    return entities;
+    // Return specs FIRST, then issues
+    // This ensures specs are created before issues that implement them
+    return [...specEntities, ...issueEntities];
   }
 
   /**
@@ -591,6 +645,42 @@ export class OpenSpecWatcher {
         purpose: spec.purpose,
         requirements: spec.requirements,
         filePath: spec.filePath,
+      },
+    };
+  }
+
+  /**
+   * Convert a proposed spec (from changes/[name]/specs/) to ExternalEntity
+   *
+   * Proposed specs are NEW specs that don't exist in openspec/specs/ yet.
+   * They are marked with isProposed: true in the raw data.
+   */
+  private proposedSpecToExternalEntity(
+    spec: ParsedOpenSpecSpec,
+    id: string,
+    changeName: string
+  ): ExternalEntity {
+    // Read raw file content for description
+    let rawContent = spec.rawContent;
+    try {
+      rawContent = readFileSync(spec.filePath, "utf-8");
+    } catch {
+      // Fall back to parsed content
+    }
+
+    return {
+      id,
+      type: "spec",
+      title: spec.title,
+      description: rawContent,
+      priority: 2,
+      raw: {
+        capability: spec.capability,
+        purpose: spec.purpose,
+        requirements: spec.requirements,
+        filePath: spec.filePath,
+        isProposed: true,
+        proposedByChange: changeName,
       },
     };
   }

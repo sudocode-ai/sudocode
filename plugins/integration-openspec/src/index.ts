@@ -33,6 +33,9 @@ import {
 import { generateSpecId, generateChangeId, parseOpenSpecId } from "./id-generator.js";
 import { OpenSpecWatcher, type ChangeCallback } from "./watcher.js";
 
+// Import writers for bidirectional sync
+import { updateAllTasksCompletion, updateSpecContent } from "./writer/index.js";
+
 /**
  * OpenSpec specific configuration options
  */
@@ -295,11 +298,18 @@ class OpenSpecProvider implements IntegrationProvider {
   async searchEntities(query?: string): Promise<ExternalEntity[]> {
     console.log(`[openspec] searchEntities called with query: ${query}`);
 
-    const entities: ExternalEntity[] = [];
+    // IMPORTANT: We collect specs FIRST, then issues
+    // This ensures specs exist before issues that reference them are synced
+    const specEntities: ExternalEntity[] = [];
+    const issueEntities: ExternalEntity[] = [];
+
     const specPrefix = this.options.spec_prefix || "os";
     const issuePrefix = this.options.issue_prefix || "osc";
 
-    // Scan specs/ directory for OpenSpec specs
+    // Track which specs exist in openspec/specs/ (approved specs)
+    const approvedSpecs = new Set<string>();
+
+    // Scan specs/ directory for OpenSpec specs (approved/current)
     const specsDir = path.join(this.resolvedPath, "specs");
     if (existsSync(specsDir)) {
       try {
@@ -311,13 +321,15 @@ class OpenSpecProvider implements IntegrationProvider {
           const specPath = path.join(specsDir, entry.name, "spec.md");
           if (!existsSync(specPath)) continue;
 
+          approvedSpecs.add(entry.name);
+
           try {
             const spec = parseSpecFile(specPath);
             const specId = generateSpecId(entry.name, specPrefix);
             const entity = this.specToExternalEntity(spec, specId);
 
             if (this.matchesQuery(entity, query)) {
-              entities.push(entity);
+              specEntities.push(entity);
             }
           } catch (error) {
             console.error(`[openspec] Error parsing spec at ${specPath}:`, error);
@@ -329,6 +341,7 @@ class OpenSpecProvider implements IntegrationProvider {
     }
 
     // Scan changes/ directory for OpenSpec changes (map to issues)
+    // Also extract proposed specs from changes/[name]/specs/[cap]/spec.md
     const changesDir = path.join(this.resolvedPath, "changes");
     if (existsSync(changesDir)) {
       try {
@@ -341,7 +354,46 @@ class OpenSpecProvider implements IntegrationProvider {
             const entity = this.changeToExternalEntity(change, changeId);
 
             if (this.matchesQuery(entity, query)) {
-              entities.push(entity);
+              issueEntities.push(entity);
+            }
+
+            // Scan for proposed specs inside this change
+            // These are NEW specs or deltas in changes/[name]/specs/[cap]/spec.md
+            const changeSpecsDir = path.join(changePath, "specs");
+            if (existsSync(changeSpecsDir)) {
+              const specDirEntries = readdirSync(changeSpecsDir, { withFileTypes: true });
+              for (const specEntry of specDirEntries) {
+                if (!specEntry.isDirectory()) continue;
+
+                const proposedSpecPath = path.join(changeSpecsDir, specEntry.name, "spec.md");
+                if (!existsSync(proposedSpecPath)) continue;
+
+                // Check if this is a NEW spec (not in openspec/specs/) or a delta
+                const isNewSpec = !approvedSpecs.has(specEntry.name);
+
+                try {
+                  const proposedSpec = parseSpecFile(proposedSpecPath);
+                  const proposedSpecId = generateSpecId(specEntry.name, specPrefix);
+
+                  // Only create a separate spec entity for NEW specs
+                  // Deltas to existing specs are just tracked via relationships
+                  if (isNewSpec) {
+                    const proposedEntity = this.proposedSpecToExternalEntity(
+                      proposedSpec,
+                      proposedSpecId,
+                      changeId,
+                      change.name
+                    );
+
+                    if (this.matchesQuery(proposedEntity, query)) {
+                      // Add proposed specs to specEntities so they're synced before issues
+                      specEntities.push(proposedEntity);
+                    }
+                  }
+                } catch (error) {
+                  console.error(`[openspec] Error parsing proposed spec at ${proposedSpecPath}:`, error);
+                }
+              }
             }
           } catch (error) {
             console.error(`[openspec] Error parsing change at ${changePath}:`, error);
@@ -352,7 +404,10 @@ class OpenSpecProvider implements IntegrationProvider {
       }
     }
 
-    console.log(`[openspec] searchEntities found ${entities.length} entities`);
+    // Return specs FIRST, then issues
+    // This ensures specs are created before issues that implement them
+    const entities = [...specEntities, ...issueEntities];
+    console.log(`[openspec] searchEntities found ${entities.length} entities (${specEntities.length} specs, ${issueEntities.length} issues)`);
     return entities;
   }
 
@@ -367,9 +422,91 @@ class OpenSpecProvider implements IntegrationProvider {
     externalId: string,
     entity: Partial<Spec | Issue>
   ): Promise<void> {
-    console.log(`[openspec] updateEntity called for ${externalId}:`, entity);
-    // TODO: Implement entity updates based on OpenSpec format
-    throw new Error("updateEntity not yet implemented for OpenSpec");
+    console.log(`[openspec] updateEntity called for ${externalId}:`, JSON.stringify(entity));
+
+    // Find the entity in our current state to get file paths
+    const currentEntities = await this.searchEntities();
+    const targetEntity = currentEntities.find((e) => e.id === externalId);
+
+    if (!targetEntity) {
+      console.error(`[openspec] Entity not found: ${externalId}`);
+      return;
+    }
+
+    if (targetEntity.type === "spec") {
+      // Update spec.md file
+      const rawData = targetEntity.raw as Record<string, unknown> | undefined;
+      const filePath = rawData?.filePath as string | undefined;
+      if (filePath && entity.content !== undefined) {
+        updateSpecContent(filePath, entity.content);
+        console.log(`[openspec] Updated spec at ${filePath}`);
+      }
+    } else if (targetEntity.type === "issue") {
+      // Update change files (tasks.md)
+      const rawData = targetEntity.raw as Record<string, unknown> | undefined;
+      const changeName = rawData?.name as string | undefined;
+      if (changeName) {
+        await this.updateChangeByName(changeName, entity as Partial<Issue>);
+      }
+    }
+
+    // Update watcher hash cache to prevent detecting our write as a change
+    if (this.watcher) {
+      const refreshedEntities = await this.searchEntities();
+      const updatedEntity = refreshedEntities.find((e) => e.id === externalId);
+      if (updatedEntity) {
+        const newHash = this.computeEntityHash(updatedEntity);
+        this.watcher.updateEntityHash(externalId, newHash);
+      }
+    }
+
+    // Refresh entity hash cache
+    for (const e of currentEntities) {
+      this.entityHashes.set(e.id, this.computeEntityHash(e));
+    }
+  }
+
+  /**
+   * Update a change's files (tasks.md) with changes from sudocode
+   */
+  private async updateChangeByName(
+    changeName: string,
+    entity: Partial<Issue>
+  ): Promise<void> {
+    // Find change directory
+    let changePath: string | null = null;
+    const changesDir = path.join(this.resolvedPath, "changes");
+
+    if (existsSync(changesDir)) {
+      const changePaths = scanChangeDirectories(changesDir, true);
+      for (const cp of changePaths) {
+        if (path.basename(cp) === changeName) {
+          changePath = cp;
+          break;
+        }
+      }
+    }
+
+    if (!changePath) {
+      console.error(`[openspec] Change directory not found: ${changeName}`);
+      return;
+    }
+
+    // Handle status changes - update tasks.md checkboxes
+    if (entity.status !== undefined) {
+      const tasksPath = path.join(changePath, "tasks.md");
+      if (existsSync(tasksPath)) {
+        // Mark all tasks as completed when issue is closed
+        const completed = entity.status === "closed";
+        if (completed) {
+          updateAllTasksCompletion(tasksPath, true);
+          console.log(`[openspec] Marked all tasks as completed in ${tasksPath}`);
+        }
+        // Note: We don't uncheck tasks when reopening - that would be destructive
+      }
+    }
+
+    console.log(`[openspec] Updated change at ${changePath}`);
   }
 
   async deleteEntity(externalId: string): Promise<void> {
@@ -495,6 +632,8 @@ class OpenSpecProvider implements IntegrationProvider {
         content: external.description || "",
         priority: external.priority ?? 2,
       },
+      // Pass through relationships for proposed specs (references to change)
+      relationships: external.relationships,
     };
   }
 
@@ -576,6 +715,44 @@ class OpenSpecProvider implements IntegrationProvider {
         purpose: spec.purpose,
         requirements: spec.requirements,
         filePath: spec.filePath,
+      },
+    };
+  }
+
+  /**
+   * Convert a proposed spec (from changes/[name]/specs/) to ExternalEntity
+   *
+   * Proposed specs are NEW specs that don't exist in openspec/specs/ yet.
+   * They are marked with a "proposed" tag. The change has the implements
+   * relationship to the spec (not bidirectional).
+   */
+  private proposedSpecToExternalEntity(
+    spec: ParsedOpenSpecSpec,
+    id: string,
+    _changeId: string,
+    changeName: string
+  ): ExternalEntity {
+    // Read raw file content for description
+    let rawContent = spec.rawContent;
+    try {
+      rawContent = readFileSync(spec.filePath, "utf-8");
+    } catch {
+      // Fall back to parsed content
+    }
+
+    return {
+      id,
+      type: "spec",
+      title: spec.title,
+      description: rawContent,
+      priority: 2,
+      raw: {
+        capability: spec.capability,
+        purpose: spec.purpose,
+        requirements: spec.requirements,
+        filePath: spec.filePath,
+        isProposed: true,
+        proposedByChange: changeName,
       },
     };
   }
