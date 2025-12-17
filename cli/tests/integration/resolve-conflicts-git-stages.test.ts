@@ -372,4 +372,289 @@ describe("resolve-conflicts with git stages", () => {
     const afterContent = fs.readFileSync(issuesPath, "utf8");
     expect(afterContent).toBe(content);
   });
+
+  it("should NOT delete file content when run on non-conflicted file in git repo", async () => {
+    // This is the CRITICAL data loss bug test
+    // Previously, running resolve-conflicts on a non-conflicted file would:
+    // 1. tryGetGitStages() returns { base: [], ours: [], theirs: [] } (not null!)
+    // 2. mergeThreeWay([], [], []) produces empty result
+    // 3. Empty result gets written to file → DATA LOSS
+
+    // Initialize git repo
+    git(["init"], tmpDir);
+    git(["config", "user.email", "test@example.com"], tmpDir);
+    git(["config", "user.name", "Test User"], tmpDir);
+
+    const issuesPath = path.join(tmpDir, "issues.jsonl");
+
+    // Create a normal issues.jsonl with important data
+    const importantData = `{"id":"i-important","uuid":"uuid-important","title":"Critical Data","description":"This data must NOT be lost!","status":"open","priority":0,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z","relationships":[],"tags":["critical","production"]}
+`;
+    fs.writeFileSync(issuesPath, importantData);
+    git(["add", "issues.jsonl"], tmpDir);
+    git(["commit", "-m", "Add important data"], tmpDir);
+
+    // Verify file is NOT in conflict state
+    const output = execFileSync("git", ["ls-files", "-u", "issues.jsonl"], {
+      cwd: tmpDir,
+      encoding: "utf8",
+    });
+    expect(output.trim()).toBe(""); // No unmerged entries
+
+    // Run resolve-conflicts (should be a no-op)
+    await handleResolveConflicts(ctx, {});
+
+    // CRITICAL ASSERTION: File content must be preserved
+    const afterContent = fs.readFileSync(issuesPath, "utf8");
+    expect(afterContent).toBe(importantData);
+    expect(afterContent).toContain("Critical Data");
+    expect(afterContent).toContain("This data must NOT be lost!");
+    expect(afterContent.length).toBeGreaterThan(0);
+  });
+
+  it("should NOT delete file content when run on already-resolved file", async () => {
+    // Test the scenario where conflicts existed but were already resolved
+    // Running resolve-conflicts again should NOT delete the resolved data
+
+    // Setup git repo with merge that was already resolved
+    git(["init"], tmpDir);
+    git(["config", "user.email", "test@example.com"], tmpDir);
+    git(["config", "user.name", "Test User"], tmpDir);
+
+    const issuesPath = path.join(tmpDir, "issues.jsonl");
+
+    // Base version
+    const baseContent = `{"id":"i-resolved","uuid":"uuid-1","title":"Resolved Issue","status":"open","priority":1,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z","relationships":[],"tags":[]}
+`;
+    fs.writeFileSync(issuesPath, baseContent);
+    git(["add", "issues.jsonl"], tmpDir);
+    git(["commit", "-m", "Initial commit"], tmpDir);
+
+    // Branch A
+    git(["checkout", "-b", "branch-a"], tmpDir);
+    const branchAContent = `{"id":"i-resolved","uuid":"uuid-1","title":"Resolved Issue","description":"Modified by A","status":"in_progress","priority":1,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-02T00:00:00Z","relationships":[],"tags":["branch-a"]}
+`;
+    fs.writeFileSync(issuesPath, branchAContent);
+    git(["add", "issues.jsonl"], tmpDir);
+    git(["commit", "-m", "Branch A changes"], tmpDir);
+
+    // Branch B
+    git(["checkout", "main"], tmpDir);
+    git(["checkout", "-b", "branch-b"], tmpDir);
+    const branchBContent = `{"id":"i-resolved","uuid":"uuid-1","title":"Resolved Issue","description":"Modified by B","status":"open","priority":2,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-03T00:00:00Z","relationships":[],"tags":["branch-b"]}
+`;
+    fs.writeFileSync(issuesPath, branchBContent);
+    git(["add", "issues.jsonl"], tmpDir);
+    git(["commit", "-m", "Branch B changes"], tmpDir);
+
+    // Merge and create conflict
+    git(["checkout", "branch-a"], tmpDir);
+    git(["merge", "branch-b"], tmpDir); // Creates conflict
+
+    // Manually resolve the conflict (simulating user resolution)
+    const manuallyResolvedContent = `{"id":"i-resolved","uuid":"uuid-1","title":"Resolved Issue","description":"Manually merged A and B","status":"in_progress","priority":2,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-03T00:00:00Z","relationships":[],"tags":["branch-a","branch-b"]}
+`;
+    fs.writeFileSync(issuesPath, manuallyResolvedContent);
+
+    // Mark as resolved with git add
+    git(["add", "issues.jsonl"], tmpDir);
+
+    // Verify file is no longer in conflict state (no unmerged entries)
+    const output = execFileSync("git", ["ls-files", "-u", "issues.jsonl"], {
+      cwd: tmpDir,
+      encoding: "utf8",
+    });
+    expect(output.trim()).toBe(""); // No unmerged entries after git add
+
+    // Run resolve-conflicts (should be a no-op since already resolved)
+    await handleResolveConflicts(ctx, {});
+
+    // CRITICAL ASSERTION: Manually resolved content must be preserved
+    const afterContent = fs.readFileSync(issuesPath, "utf8");
+    expect(afterContent).toBe(manuallyResolvedContent);
+    expect(afterContent).toContain("Manually merged A and B");
+    expect(afterContent.length).toBeGreaterThan(0);
+  });
+
+  it("should NOT delete file content when run on file that never had conflicts", async () => {
+    // Test running resolve-conflicts on a file that was never in conflict
+
+    // Initialize git repo
+    git(["init"], tmpDir);
+    git(["config", "user.email", "test@example.com"], tmpDir);
+    git(["config", "user.name", "Test User"], tmpDir);
+
+    const issuesPath = path.join(tmpDir, "issues.jsonl");
+
+    // Create and commit issues.jsonl (never had conflicts)
+    const cleanData = `{"id":"i-clean","uuid":"uuid-clean","title":"Clean Issue","description":"Never been in conflict","status":"open","priority":1,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z","relationships":[],"tags":[]}
+`;
+    fs.writeFileSync(issuesPath, cleanData);
+    git(["add", "issues.jsonl"], tmpDir);
+    git(["commit", "-m", "Add clean file"], tmpDir);
+
+    // Run resolve-conflicts
+    await handleResolveConflicts(ctx, {});
+
+    // CRITICAL ASSERTION: Clean data must be preserved
+    const afterContent = fs.readFileSync(issuesPath, "utf8");
+    expect(afterContent).toBe(cleanData);
+    expect(afterContent).toContain("Never been in conflict");
+    expect(afterContent.length).toBeGreaterThan(0);
+  });
+
+  it("should handle partial conflicts (only one JSONL file in conflict)", async () => {
+    // Test scenario where issues.jsonl has conflict but specs.jsonl doesn't
+    // Previously this could delete specs.jsonl content
+
+    // Setup git repo with conflict in issues.jsonl only
+    git(["init"], tmpDir);
+    git(["config", "user.email", "test@example.com"], tmpDir);
+    git(["config", "user.name", "Test User"], tmpDir);
+
+    const issuesPath = path.join(tmpDir, "issues.jsonl");
+    const specsPath = path.join(tmpDir, "specs.jsonl");
+
+    // Initial commit with both files
+    const issuesBase = `{"id":"i-1","uuid":"uuid-1","title":"Issue","status":"open","priority":1,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z","relationships":[],"tags":[]}
+`;
+    const specsBase = `{"id":"s-1","uuid":"uuid-s1","title":"Important Spec","description":"This spec must be preserved!","file_path":".sudocode/specs/s-1.md","created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z","relationships":[],"tags":[]}
+`;
+    fs.writeFileSync(issuesPath, issuesBase);
+    fs.writeFileSync(specsPath, specsBase);
+    git(["add", "."], tmpDir);
+    git(["commit", "-m", "Initial commit"], tmpDir);
+
+    // Branch A: Only modify issues.jsonl
+    git(["checkout", "-b", "branch-a"], tmpDir);
+    const issuesA = `{"id":"i-1","uuid":"uuid-1","title":"Issue","description":"Modified by A","status":"in_progress","priority":1,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-02T00:00:00Z","relationships":[],"tags":[]}
+`;
+    fs.writeFileSync(issuesPath, issuesA);
+    git(["add", "issues.jsonl"], tmpDir);
+    git(["commit", "-m", "Modify issues only"], tmpDir);
+
+    // Branch B: Only modify issues.jsonl (differently)
+    git(["checkout", "main"], tmpDir);
+    git(["checkout", "-b", "branch-b"], tmpDir);
+    const issuesB = `{"id":"i-1","uuid":"uuid-1","title":"Issue","description":"Modified by B","status":"open","priority":2,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-03T00:00:00Z","relationships":[],"tags":[]}
+`;
+    fs.writeFileSync(issuesPath, issuesB);
+    git(["add", "issues.jsonl"], tmpDir);
+    git(["commit", "-m", "Modify issues differently"], tmpDir);
+
+    // Merge (creates conflict in issues.jsonl only)
+    git(["checkout", "branch-a"], tmpDir);
+    git(["merge", "branch-b"], tmpDir);
+
+    // Verify only issues.jsonl is in conflict
+    const issuesConflict = execFileSync(
+      "git",
+      ["ls-files", "-u", "issues.jsonl"],
+      { cwd: tmpDir, encoding: "utf8" }
+    );
+    const specsConflict = execFileSync(
+      "git",
+      ["ls-files", "-u", "specs.jsonl"],
+      { cwd: tmpDir, encoding: "utf8" }
+    );
+    expect(issuesConflict.trim().length).toBeGreaterThan(0); // Has conflict
+    expect(specsConflict.trim()).toBe(""); // No conflict
+
+    // Run resolve-conflicts
+    await handleResolveConflicts(ctx, {});
+
+    // CRITICAL ASSERTION: specs.jsonl must be preserved (it wasn't in conflict)
+    const specsAfter = fs.readFileSync(specsPath, "utf8");
+    expect(specsAfter).toBe(specsBase);
+    expect(specsAfter).toContain("This spec must be preserved!");
+    expect(specsAfter.length).toBeGreaterThan(0);
+
+    // issues.jsonl should be resolved
+    const issuesAfter = fs.readFileSync(issuesPath, "utf8");
+    expect(issuesAfter).not.toContain("<<<<<<< HEAD");
+    expect(issuesAfter.length).toBeGreaterThan(0);
+  });
+
+  it("should ignore conflicts in non-JSONL files", async () => {
+    // Test that resolve-conflicts only handles issues.jsonl and specs.jsonl
+    // and doesn't try to resolve conflicts in other files like README.md
+
+    // Setup git repo with conflicts in both JSONL and non-JSONL files
+    git(["init"], tmpDir);
+    git(["config", "user.email", "test@example.com"], tmpDir);
+    git(["config", "user.name", "Test User"], tmpDir);
+
+    const issuesPath = path.join(tmpDir, "issues.jsonl");
+    const readmePath = path.join(tmpDir, "README.md");
+
+    // Initial commit with both files
+    const issuesBase = `{"id":"i-1","uuid":"uuid-1","title":"Issue","status":"open","priority":1,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z","relationships":[],"tags":[]}
+`;
+    const readmeBase = "# Project\n\nBase content.\n";
+    fs.writeFileSync(issuesPath, issuesBase);
+    fs.writeFileSync(readmePath, readmeBase);
+    git(["add", "."], tmpDir);
+    git(["commit", "-m", "Initial commit"], tmpDir);
+
+    // Branch A: Modify both files
+    git(["checkout", "-b", "branch-a"], tmpDir);
+    const issuesA = `{"id":"i-1","uuid":"uuid-1","title":"Issue","description":"Modified by A","status":"in_progress","priority":1,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-02T00:00:00Z","relationships":[],"tags":[]}
+`;
+    const readmeA = "# Project\n\nModified by branch A.\n";
+    fs.writeFileSync(issuesPath, issuesA);
+    fs.writeFileSync(readmePath, readmeA);
+    git(["add", "."], tmpDir);
+    git(["commit", "-m", "Modify both files"], tmpDir);
+
+    // Branch B: Modify both files differently
+    git(["checkout", "main"], tmpDir);
+    git(["checkout", "-b", "branch-b"], tmpDir);
+    const issuesB = `{"id":"i-1","uuid":"uuid-1","title":"Issue","description":"Modified by B","status":"open","priority":2,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-03T00:00:00Z","relationships":[],"tags":[]}
+`;
+    const readmeB = "# Project\n\nModified by branch B.\n";
+    fs.writeFileSync(issuesPath, issuesB);
+    fs.writeFileSync(readmePath, readmeB);
+    git(["add", "."], tmpDir);
+    git(["commit", "-m", "Modify both files differently"], tmpDir);
+
+    // Merge (creates conflicts in both files)
+    git(["checkout", "branch-a"], tmpDir);
+    git(["merge", "branch-b"], tmpDir);
+
+    // Verify both files are in conflict
+    const issuesConflict = execFileSync(
+      "git",
+      ["ls-files", "-u", "issues.jsonl"],
+      { cwd: tmpDir, encoding: "utf8" }
+    );
+    const readmeConflict = execFileSync(
+      "git",
+      ["ls-files", "-u", "README.md"],
+      { cwd: tmpDir, encoding: "utf8" }
+    );
+    expect(issuesConflict.trim().length).toBeGreaterThan(0); // Has conflict
+    expect(readmeConflict.trim().length).toBeGreaterThan(0); // Has conflict
+
+    // Run resolve-conflicts (should only resolve issues.jsonl)
+    await handleResolveConflicts(ctx, {});
+
+    // issues.jsonl should be resolved
+    const issuesAfter = fs.readFileSync(issuesPath, "utf8");
+    expect(issuesAfter).not.toContain("<<<<<<< HEAD");
+    expect(issuesAfter.length).toBeGreaterThan(0);
+
+    // README.md should STILL have conflict markers (not touched by resolve-conflicts)
+    const readmeAfter = fs.readFileSync(readmePath, "utf8");
+    expect(readmeAfter).toContain("<<<<<<< HEAD");
+    expect(readmeAfter).toContain("=======");
+    expect(readmeAfter).toContain(">>>>>>>");
+
+    // Verify README.md is still in git conflict state
+    const readmeStillConflicted = execFileSync(
+      "git",
+      ["ls-files", "-u", "README.md"],
+      { cwd: tmpDir, encoding: "utf8" }
+    );
+    expect(readmeStillConflicted.trim().length).toBeGreaterThan(0);
+  });
 });

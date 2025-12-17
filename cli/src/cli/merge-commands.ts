@@ -65,11 +65,12 @@ export async function handleResolveConflicts(
   const issuesPath = path.join(ctx.outputDir, "issues.jsonl");
   const specsPath = path.join(ctx.outputDir, "specs.jsonl");
 
-  // Check for actual git merge conflicts (files with git stages)
+  // Check for actual git merge conflicts using git ls-files -u
+  // This is the most reliable way to detect unmerged entries
   const issuesHasConflict =
-    fs.existsSync(issuesPath) && tryGetGitStages(issuesPath) !== null;
+    fs.existsSync(issuesPath) && isFileInConflict(issuesPath);
   const specsHasConflict =
-    fs.existsSync(specsPath) && tryGetGitStages(specsPath) !== null;
+    fs.existsSync(specsPath) && isFileInConflict(specsPath);
 
   if (!issuesHasConflict && !specsHasConflict) {
     if (!ctx.jsonOutput) {
@@ -165,6 +166,42 @@ function readGitStage(stage: 1 | 2 | 3, relativePath: string, cwd: string): JSON
 }
 
 /**
+ * Check if a file is actually in git conflict state
+ *
+ * @param filePath - Absolute path to the file
+ * @returns true if file has unmerged entries (is in conflict state)
+ */
+function isFileInConflict(filePath: string): boolean {
+  try {
+    // Get repository root
+    const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      encoding: 'utf8',
+      cwd: path.dirname(filePath),
+    }).trim();
+
+    // Resolve symlinks to get canonical paths (e.g., /var -> /private/var on macOS)
+    const realRepoRoot = fs.realpathSync(repoRoot);
+    const realFilePath = fs.realpathSync(filePath);
+
+    // Calculate relative path from repo root
+    const relativePath = path.relative(realRepoRoot, realFilePath);
+
+    // Check if file has unmerged entries using git ls-files -u
+    // This is the most reliable way to check for conflict state
+    const output = execFileSync('git', ['ls-files', '-u', relativePath], {
+      encoding: 'utf8',
+      cwd: realRepoRoot,
+    });
+
+    // If output is non-empty, file has unmerged entries (is in conflict)
+    return output.trim().length > 0;
+  } catch {
+    // If any git command fails, file is not in conflict
+    return false;
+  }
+}
+
+/**
  * Try to get git stages (base/ours/theirs) for a file in merge state
  *
  * @param filePath - Absolute path to the file
@@ -191,6 +228,13 @@ function tryGetGitStages(filePath: string): { base: JSONLEntity[], ours: JSONLEn
       const base = readGitStage(1, relativePath, realRepoRoot);
       const ours = readGitStage(2, relativePath, realRepoRoot);
       const theirs = readGitStage(3, relativePath, realRepoRoot);
+
+      // CRITICAL DEFENSE: Check if we have actual content
+      // If both ours and theirs are empty, we're not in a real conflict state
+      // This prevents data loss when tryGetGitStages is called on non-conflicted files
+      if (ours.length === 0 && theirs.length === 0) {
+        return null;
+      }
 
       // If we successfully read at least ours and theirs, we're in a merge state
       // (base might not exist for files added in both branches)
