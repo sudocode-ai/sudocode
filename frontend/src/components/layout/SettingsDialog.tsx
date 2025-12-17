@@ -5,6 +5,8 @@ import { useTheme } from '@/contexts/ThemeContext'
 import {
   Sun,
   Moon,
+  Monitor,
+  Palette,
   Plug,
   Check,
   X,
@@ -15,6 +17,7 @@ import {
   Terminal,
   Settings2,
 } from 'lucide-react'
+import type { ColorTheme } from '@/themes'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
 import { Switch } from '@/components/ui/switch'
@@ -95,8 +98,34 @@ const SECTIONS: Section[] = [
   { id: 'integrations', label: 'Integrations', icon: <Plug className="h-4 w-4" /> },
 ]
 
+// Theme preview swatch component
+function ThemePreviewSwatch({ theme }: { theme: ColorTheme }) {
+  return (
+    <div className="flex h-4 w-6 overflow-hidden rounded-sm border border-border">
+      <div
+        className="w-1/2"
+        style={{ backgroundColor: `hsl(${theme.colors.background})` }}
+      />
+      <div
+        className="w-1/2"
+        style={{ backgroundColor: `hsl(${theme.colors.primary})` }}
+      />
+    </div>
+  )
+}
+
 export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
-  const { theme, setTheme } = useTheme()
+  const {
+    mode,
+    setMode,
+    actualMode,
+    lightTheme,
+    darkTheme,
+    setLightTheme,
+    setDarkTheme,
+    availableLightThemes,
+    availableDarkThemes,
+  } = useTheme()
   const [versions, setVersions] = useState<VersionInfo | null>(null)
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
@@ -118,10 +147,6 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   const presetPlugins = [
     { name: 'beads', package: '@sudocode-ai/integration-beads', displayName: 'Beads' },
   ]
-
-  const toggleTheme = () => {
-    setTheme(theme === 'dark' ? 'light' : 'dark')
-  }
 
   useEffect(() => {
     const fetchVersions = async () => {
@@ -620,30 +645,81 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                 {/* Theme Section */}
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">
-                    <Sun className="h-5 w-5 text-muted-foreground" />
+                    <Palette className="h-5 w-5 text-muted-foreground" />
                     <h3 className="text-base font-semibold">Appearance</h3>
                   </div>
+
+                  {/* Mode and Theme Selection - inline */}
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Theme</span>
-                    <button
-                      onClick={toggleTheme}
-                      className={cn(
-                        'flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                        'bg-accent text-foreground hover:bg-accent/80'
-                      )}
-                    >
-                      {theme === 'dark' ? (
-                        <>
-                          <Sun className="h-4 w-4" />
-                          <span>Light Mode</span>
-                        </>
+                    <div className="space-y-0.5">
+                      <span className="text-sm text-muted-foreground">Theme</span>
+                      <p className="text-xs text-muted-foreground/70">
+                        {actualMode === 'dark' ? 'Dark mode theme' : 'Light mode theme'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {/* Mode Selector */}
+                      <Select value={mode} onValueChange={(value) => setMode(value as 'light' | 'dark' | 'system')}>
+                        <SelectTrigger className="w-32">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="system">
+                            <div className="flex items-center gap-2">
+                              <Monitor className="h-4 w-4" />
+                              System
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="light">
+                            <div className="flex items-center gap-2">
+                              <Sun className="h-4 w-4" />
+                              Light
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="dark">
+                            <div className="flex items-center gap-2">
+                              <Moon className="h-4 w-4" />
+                              Dark
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      {/* Theme Selector - based on active mode */}
+                      {actualMode === 'dark' ? (
+                        <Select value={darkTheme.id} onValueChange={setDarkTheme}>
+                          <SelectTrigger className="w-40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableDarkThemes.map((t) => (
+                              <SelectItem key={t.id} value={t.id}>
+                                <div className="flex items-center gap-2">
+                                  <ThemePreviewSwatch theme={t} />
+                                  {t.name}
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       ) : (
-                        <>
-                          <Moon className="h-4 w-4" />
-                          <span>Dark Mode</span>
-                        </>
+                        <Select value={lightTheme.id} onValueChange={setLightTheme}>
+                          <SelectTrigger className="w-40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableLightThemes.map((t) => (
+                              <SelectItem key={t.id} value={t.id}>
+                                <div className="flex items-center gap-2">
+                                  <ThemePreviewSwatch theme={t} />
+                                  {t.name}
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       )}
-                    </button>
+                    </div>
                   </div>
                 </div>
 

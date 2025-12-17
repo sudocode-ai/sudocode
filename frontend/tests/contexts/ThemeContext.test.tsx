@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext'
 
+// Storage keys used by ThemeContext
+const STORAGE_KEY_MODE = 'sudocode-theme-mode'
+const LEGACY_STORAGE_KEY = 'theme'
+
 // Mock localStorage
 const localStorageMock = (() => {
   let store: Record<string, string> = {}
@@ -71,8 +75,20 @@ describe('ThemeContext', () => {
     expect(result.current.actualTheme).toBe('light')
   })
 
-  it('should load theme from localStorage', () => {
-    localStorageMock.setItem('theme', 'dark')
+  it('should load theme from localStorage (legacy key migration)', () => {
+    // Test migration from legacy 'theme' key
+    localStorageMock.setItem(LEGACY_STORAGE_KEY, 'dark')
+
+    const { result } = renderHook(() => useTheme(), {
+      wrapper: ThemeProvider,
+    })
+
+    expect(result.current.theme).toBe('dark')
+    expect(result.current.actualTheme).toBe('dark')
+  })
+
+  it('should load theme from new localStorage key', () => {
+    localStorageMock.setItem(STORAGE_KEY_MODE, 'dark')
 
     const { result } = renderHook(() => useTheme(), {
       wrapper: ThemeProvider,
@@ -93,7 +109,7 @@ describe('ThemeContext', () => {
 
     expect(result.current.theme).toBe('light')
     expect(result.current.actualTheme).toBe('light')
-    expect(localStorageMock.getItem('theme')).toBe('light')
+    expect(localStorageMock.getItem(STORAGE_KEY_MODE)).toBe('light')
   })
 
   it('should set theme to dark', () => {
@@ -107,7 +123,7 @@ describe('ThemeContext', () => {
 
     expect(result.current.theme).toBe('dark')
     expect(result.current.actualTheme).toBe('dark')
-    expect(localStorageMock.getItem('theme')).toBe('dark')
+    expect(localStorageMock.getItem(STORAGE_KEY_MODE)).toBe('dark')
   })
 
   it('should set theme to system', () => {
@@ -121,7 +137,7 @@ describe('ThemeContext', () => {
 
     expect(result.current.theme).toBe('system')
     expect(result.current.actualTheme).toBe('light') // Based on our mock
-    expect(localStorageMock.getItem('theme')).toBe('system')
+    expect(localStorageMock.getItem(STORAGE_KEY_MODE)).toBe('system')
   })
 
   it('should use system dark theme when system is selected and OS prefers dark', () => {
@@ -147,17 +163,17 @@ describe('ThemeContext', () => {
     act(() => {
       result.current.setTheme('dark')
     })
-    expect(localStorageMock.getItem('theme')).toBe('dark')
+    expect(localStorageMock.getItem(STORAGE_KEY_MODE)).toBe('dark')
 
     act(() => {
       result.current.setTheme('light')
     })
-    expect(localStorageMock.getItem('theme')).toBe('light')
+    expect(localStorageMock.getItem(STORAGE_KEY_MODE)).toBe('light')
 
     act(() => {
       result.current.setTheme('system')
     })
-    expect(localStorageMock.getItem('theme')).toBe('system')
+    expect(localStorageMock.getItem(STORAGE_KEY_MODE)).toBe('system')
   })
 
   it('should apply theme class to document root', () => {
