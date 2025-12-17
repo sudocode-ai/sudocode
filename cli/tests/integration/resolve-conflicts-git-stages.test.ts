@@ -1,12 +1,17 @@
 /**
  * Integration test for resolve-conflicts using git stages
  *
- * This test demonstrates that resolve-conflicts should use git stages
- * (base/ours/theirs) from the git index instead of parsing conflict markers
- * with an empty base.
+ * This test verifies that resolve-conflicts correctly uses git stages
+ * (base/ours/theirs) from the git index for proper three-way merging.
  *
- * Current status: FAILING - demonstrates missing functionality
- * Will PASS after i-38xm is implemented
+ * Key behaviors tested:
+ * - Reading base/ours/theirs from git index stages (:1:, :2:, :3:)
+ * - Performing true 3-way merge with actual base (not empty array)
+ * - Handling missing base stage (file added in both branches)
+ * - Graceful handling when not in a git merge state
+ *
+ * Note: Tests run in isolated temporary directories and do not affect
+ * the user's active git repository.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -148,13 +153,13 @@ describe("resolve-conflicts with git stages", () => {
     expect(conflictedContent).toContain(">>>>>>>");
 
     // Run resolve-conflicts
-    // Expected behavior (after i-38xm):
-    // 1. Should detect we're in a git merge state
-    // 2. Should read base from :1:issues.jsonl
-    // 3. Should read ours from :2:issues.jsonl
-    // 4. Should read theirs from :3:issues.jsonl
-    // 5. Should call mergeThreeWay(base, ours, theirs) with actual base
-    // 6. Should successfully merge using YAML expansion for text fields
+    // Expected behavior:
+    // 1. Detects we're in a git merge state
+    // 2. Reads base from :1:issues.jsonl
+    // 3. Reads ours from :2:issues.jsonl
+    // 4. Reads theirs from :3:issues.jsonl
+    // 5. Calls mergeThreeWay(base, ours, theirs) with actual base
+    // 6. Merges using YAML expansion for text fields
     await handleResolveConflicts(ctx, {});
 
     // Read resolved file
@@ -212,19 +217,19 @@ describe("resolve-conflicts with git stages", () => {
     expect(finalContent).not.toContain(">>>>>>>");
   });
 
-  it("should handle file added in one branch only", async () => {
+  it("should handle file added in both branches (missing base stage)", async () => {
     // Initialize git repo
     git(["init"], tmpDir);
     git(["config", "user.email", "test@example.com"], tmpDir);
     git(["config", "user.name", "Test User"], tmpDir);
 
-    // Initial commit with README
+    // Initial commit with README (no issues.jsonl yet)
     const readmePath = path.join(tmpDir, "README.md");
     fs.writeFileSync(readmePath, "# Test Repo\n");
     git(["add", "README.md"], tmpDir);
     git(["commit", "-m", "Initial commit"], tmpDir);
 
-    // Branch A: Add issues.jsonl
+    // Branch A: Add issues.jsonl with one issue
     git(["checkout", "-b", "branch-a"], tmpDir);
     const issuesPath = path.join(tmpDir, "issues.jsonl");
     const issueContent = `{"id":"i-new","uuid":"uuid-new","title":"New Issue","status":"open","priority":1,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z","relationships":[],"tags":[]}
@@ -233,7 +238,7 @@ describe("resolve-conflicts with git stages", () => {
     git(["add", "issues.jsonl"], tmpDir);
     git(["commit", "-m", "Add issues.jsonl"], tmpDir);
 
-    // Branch B: Also add issues.jsonl with different content
+    // Branch B: Add issues.jsonl with different issue
     git(["checkout", "main"], tmpDir);
     git(["checkout", "-b", "branch-b"], tmpDir);
     const differentIssueContent = `{"id":"i-different","uuid":"uuid-different","title":"Different Issue","status":"open","priority":2,"created_at":"2025-01-02T00:00:00Z","updated_at":"2025-01-02T00:00:00Z","relationships":[],"tags":[]}
@@ -242,17 +247,16 @@ describe("resolve-conflicts with git stages", () => {
     git(["add", "issues.jsonl"], tmpDir);
     git(["commit", "-m", "Add different issues.jsonl"], tmpDir);
 
-    // Merge (creates conflict for added file)
+    // Merge branch-b into branch-a (creates conflict)
     git(["checkout", "branch-a"], tmpDir);
-    git(["merge", "branch-b"], tmpDir); // Will create conflict
+    git(["merge", "branch-b"], tmpDir);
 
-    // Verify git stages
-    // Stage 1 (base) should not exist for added files
+    // Verify git stages - base stage doesn't exist for files added in both branches
     try {
       git(["show", ":1:issues.jsonl"], tmpDir);
       throw new Error("Expected stage 1 to not exist for added file");
     } catch (err: any) {
-      // Expected - stage 1 doesn't exist for added files
+      // Expected - stage 1 (base) doesn't exist
       expect(
         err.message.includes("exists on disk, but not in") ||
           err.message.includes("path") ||
@@ -260,38 +264,108 @@ describe("resolve-conflicts with git stages", () => {
       ).toBe(true);
     }
 
-    // Stages 2 and 3 should exist
+    // Stages 2 (ours) and 3 (theirs) should exist
     const stage2 = git(["show", ":2:issues.jsonl"], tmpDir);
     const stage3 = git(["show", ":3:issues.jsonl"], tmpDir);
     expect(stage2).toBe(issueContent);
     expect(stage3).toBe(differentIssueContent);
 
     // Run resolve-conflicts
-    // Expected: Should handle missing base (empty array) gracefully
+    // Should handle missing base gracefully by using empty array
     await handleResolveConflicts(ctx, {});
 
     // Read resolved file
     const resolved = await readJSONL(issuesPath);
 
-    // Both issues should be included (different UUIDs)
+    // Both issues should be included (different UUIDs, simulated 3-way merge)
     expect(resolved).toHaveLength(2);
     expect(resolved.map((r) => r.id).sort()).toEqual(
       ["i-different", "i-new"].sort()
     );
   });
 
-  it("should error gracefully when not in a git merge state", async () => {
-    // Create a normal (non-conflicted) issues.jsonl
+  it("should merge non-overlapping edits to different paragraphs via YAML expansion", async () => {
+    // This test demonstrates the KEY VALUE of YAML expansion:
+    // When two branches edit DIFFERENT paragraphs of the same multi-line field,
+    // YAML line-level merging should preserve both edits.
+
+    // Initialize git repo
+    git(["init"], tmpDir);
+    git(["config", "user.email", "test@example.com"], tmpDir);
+    git(["config", "user.name", "Test User"], tmpDir);
+
+    const issuesPath = path.join(tmpDir, "issues.jsonl");
+
+    // Base version: Multi-paragraph description
+    const baseContent = `{"id":"i-doc","uuid":"uuid-doc","title":"Documentation","description":"## Overview\\n\\nThis is the overview paragraph.\\n\\n## Details\\n\\nThis is the details paragraph.\\n\\n## Conclusion\\n\\nThis is the conclusion paragraph.","status":"open","priority":1,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z","relationships":[],"tags":[]}
+`;
+    fs.writeFileSync(issuesPath, baseContent);
+    git(["add", "issues.jsonl"], tmpDir);
+    git(["commit", "-m", "Initial commit"], tmpDir);
+
+    // Branch A: Edit ONLY the overview paragraph (line 3)
+    git(["checkout", "-b", "branch-a"], tmpDir);
+    const oursContent = `{"id":"i-doc","uuid":"uuid-doc","title":"Documentation","description":"## Overview\\n\\nThis is the UPDATED overview paragraph from branch A.\\n\\n## Details\\n\\nThis is the details paragraph.\\n\\n## Conclusion\\n\\nThis is the conclusion paragraph.","status":"open","priority":1,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-02T00:00:00Z","relationships":[],"tags":[]}
+`;
+    fs.writeFileSync(issuesPath, oursContent);
+    git(["add", "issues.jsonl"], tmpDir);
+    git(["commit", "-m", "Update overview"], tmpDir);
+
+    // Branch B: Edit ONLY the conclusion paragraph (line 9)
+    git(["checkout", "main"], tmpDir);
+    git(["checkout", "-b", "branch-b"], tmpDir);
+    const theirsContent = `{"id":"i-doc","uuid":"uuid-doc","title":"Documentation","description":"## Overview\\n\\nThis is the overview paragraph.\\n\\n## Details\\n\\nThis is the details paragraph.\\n\\n## Conclusion\\n\\nThis is the UPDATED conclusion paragraph from branch B.","status":"open","priority":1,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-03T00:00:00Z","relationships":[],"tags":[]}
+`;
+    fs.writeFileSync(issuesPath, theirsContent);
+    git(["add", "issues.jsonl"], tmpDir);
+    git(["commit", "-m", "Update conclusion"], tmpDir);
+
+    // Merge branch-b into branch-a
+    git(["checkout", "branch-a"], tmpDir);
+    git(["merge", "branch-b"], tmpDir);
+
+    // Verify git stages exist
+    const stages = verifyGitStages(tmpDir, "issues.jsonl");
+    expect(stages.base).toBe(baseContent);
+    expect(stages.ours).toBe(oursContent);
+    expect(stages.theirs).toBe(theirsContent);
+
+    // Run resolve-conflicts
+    await handleResolveConflicts(ctx, {});
+
+    // Read resolved file
+    const resolved = await readJSONL(issuesPath);
+    expect(resolved).toHaveLength(1);
+
+    const mergedIssue = resolved[0];
+
+    // THE KEY ASSERTION: YAML expansion enables line-level merging
+    // Both edits should be preserved because they're on different lines:
+    // - Branch A's edit to overview (line 3)
+    // - Branch B's edit to conclusion (line 9)
+    //
+    // With YAML expansion, git sees these as non-overlapping changes
+    // and auto-merges them without conflicts.
+    expect(mergedIssue.description).toContain("UPDATED overview paragraph from branch A");
+    expect(mergedIssue.description).toContain("UPDATED conclusion paragraph from branch B");
+    expect(mergedIssue.description).toContain("## Details"); // Unchanged section preserved
+
+    // Verify no conflict markers remain
+    const finalContent = fs.readFileSync(issuesPath, "utf8");
+    expect(finalContent).not.toContain("<<<<<<< HEAD");
+    expect(finalContent).not.toContain("=======");
+    expect(finalContent).not.toContain(">>>>>>>");
+  });
+
+  it("should handle non-conflicted files gracefully", async () => {
+    // Create a normal (non-conflicted) issues.jsonl file
     const issuesPath = path.join(tmpDir, "issues.jsonl");
     const content = `{"id":"i-normal","uuid":"uuid-1","title":"Normal Issue","status":"open","priority":1,"created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z","relationships":[],"tags":[]}
 `;
     fs.writeFileSync(issuesPath, content);
 
-    // Try to resolve (should detect no git merge state)
-    // Expected after i-38xm: Should throw error or skip file with message
-    // Current behavior: Will try to parse conflict markers (none exist) and succeed as no-op
-
-    // For now, we just verify it doesn't crash
+    // Run resolve-conflicts on non-conflicted file
+    // Should complete successfully as a no-op
     await expect(handleResolveConflicts(ctx, {})).resolves.toBeUndefined();
 
     // File should be unchanged
