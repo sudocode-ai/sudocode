@@ -822,6 +822,104 @@ describe('AgentConfigPanel', () => {
 
       consoleWarnSpy.mockRestore()
     })
+
+    it('should merge lastExecution.mode with localStorage settings when no full config provided', async () => {
+      const user = userEvent.setup()
+
+      // Set localStorage with cleanupMode but worktree mode
+      localStorage.setItem(
+        'sudocode:lastExecutionConfig',
+        JSON.stringify({
+          mode: 'worktree',
+          cleanupMode: 'auto',
+        })
+      )
+
+      // Provide lastExecution with only mode override (no full config)
+      const lastExecutionModeOnly = {
+        id: '',
+        mode: 'local',
+        // No config property - simulates AdhocExecutionDialog usage
+      }
+
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          lastExecution={lastExecutionModeOnly}
+        />
+      )
+
+      await waitFor(() => {
+        // Mode should be overridden to 'local' from lastExecution
+        expect(screen.getByText('Run local')).toBeInTheDocument()
+      })
+
+      // Now submit and verify the merged config
+      const textarea = await screen.findByPlaceholderText(
+        'Add additional context (optional) for the agent... (@ for context)'
+      )
+      await user.type(textarea, 'Test prompt')
+
+      const runButton = screen.getByRole('button', { name: /Submit/i })
+      await user.click(runButton)
+
+      // Should have mode from lastExecution override but cleanupMode preserved from localStorage
+      expect(mockOnStart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: 'local', // From lastExecution override
+          cleanupMode: 'auto', // Preserved from localStorage
+        }),
+        'Test prompt',
+        expect.any(String),
+        false
+      )
+    })
+
+    it('should use defaults when lastExecution.mode provided but no localStorage', async () => {
+      const user = userEvent.setup()
+
+      // Ensure localStorage is empty
+      localStorage.clear()
+
+      // Provide lastExecution with only mode override
+      const lastExecutionModeOnly = {
+        id: '',
+        mode: 'local',
+      }
+
+      renderWithProviders(
+        <AgentConfigPanel
+          issueId="i-test1"
+          onStart={mockOnStart}
+          lastExecution={lastExecutionModeOnly}
+        />
+      )
+
+      await waitFor(() => {
+        // Mode should be 'local' from lastExecution
+        expect(screen.getByText('Run local')).toBeInTheDocument()
+      })
+
+      // Submit and verify the config uses defaults for other fields
+      const textarea = await screen.findByPlaceholderText(
+        'Add additional context (optional) for the agent... (@ for context)'
+      )
+      await user.type(textarea, 'Test prompt')
+
+      const runButton = screen.getByRole('button', { name: /Submit/i })
+      await user.click(runButton)
+
+      expect(mockOnStart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: 'local', // From lastExecution override
+          cleanupMode: 'manual', // Default value
+        }),
+        'Test prompt',
+        expect.any(String),
+        false
+      )
+    })
   })
 
   describe('Follow-up Mode', () => {
