@@ -189,6 +189,9 @@ export class ExecutionService {
       throw new Error("Prompt cannot be empty");
     }
 
+    // 2. Build execution config with auto-injected MCP servers
+    const mergedConfig = await this.buildExecutionConfig(agentType, config);
+
     // Get issue if issueId is provided (orchestrator executions don't have an issue)
     let issue: { id: string; title: string } | undefined;
     if (issueId) {
@@ -212,34 +215,34 @@ export class ExecutionService {
       // Fall back to "main" if we can't determine current branch
     }
 
-    // 2. Determine execution mode and create execution with worktree
+    // 3. Determine execution mode and create execution with worktree
     // Store the original (unexpanded) prompt in the database
-    const mode = config.mode || "worktree";
+    const mode = mergedConfig.mode || "worktree";
     let execution: Execution;
     let workDir: string;
 
     // Worktree mode requires either an issue or a reuseWorktreePath
-    if (mode === "worktree" && !issueId && !config.reuseWorktreePath) {
+    if (mode === "worktree" && !issueId && !mergedConfig.reuseWorktreePath) {
       throw new Error(
         "Worktree mode requires either an issueId or reuseWorktreePath"
       );
     }
 
-    if (mode === "worktree" && (issueId || config.reuseWorktreePath)) {
+    if (mode === "worktree" && (issueId || mergedConfig.reuseWorktreePath)) {
       // Check if we're reusing an existing worktree
-      if (config.reuseWorktreePath) {
+      if (mergedConfig.reuseWorktreePath) {
         // Validate worktree exists
-        if (!fs.existsSync(config.reuseWorktreePath)) {
+        if (!fs.existsSync(mergedConfig.reuseWorktreePath)) {
           throw new Error(
-            `Cannot reuse worktree: path does not exist: ${config.reuseWorktreePath}`
+            `Cannot reuse worktree: path does not exist: ${mergedConfig.reuseWorktreePath}`
           );
         }
 
         // Validate it's a git worktree by checking for .git
-        const gitPath = path.join(config.reuseWorktreePath, ".git");
+        const gitPath = path.join(mergedConfig.reuseWorktreePath, ".git");
         if (!fs.existsSync(gitPath)) {
           throw new Error(
-            `Cannot reuse worktree: not a valid git worktree: ${config.reuseWorktreePath}`
+            `Cannot reuse worktree: not a valid git worktree: ${mergedConfig.reuseWorktreePath}`
           );
         }
 
@@ -247,12 +250,12 @@ export class ExecutionService {
         let branchName: string;
         try {
           branchName = execSync("git rev-parse --abbrev-ref HEAD", {
-            cwd: config.reuseWorktreePath,
+            cwd: mergedConfig.reuseWorktreePath,
             encoding: "utf-8",
           }).trim();
         } catch {
           throw new Error(
-            `Cannot reuse worktree: failed to get branch name from: ${config.reuseWorktreePath}`
+            `Cannot reuse worktree: failed to get branch name from: ${mergedConfig.reuseWorktreePath}`
           );
         }
 
@@ -260,7 +263,7 @@ export class ExecutionService {
         let beforeCommit: string | undefined;
         try {
           beforeCommit = execSync("git rev-parse HEAD", {
-            cwd: config.reuseWorktreePath,
+            cwd: mergedConfig.reuseWorktreePath,
             encoding: "utf-8",
           }).trim();
           console.log(
@@ -282,15 +285,15 @@ export class ExecutionService {
           agent_type: agentType,
           mode: mode,
           prompt: prompt,
-          config: JSON.stringify(config),
-          target_branch: config.baseBranch || branchName,
+          config: JSON.stringify(mergedConfig),
+          target_branch: mergedConfig.baseBranch || branchName,
           branch_name: branchName,
-          worktree_path: config.reuseWorktreePath,
-          parent_execution_id: config.parentExecutionId,
+          worktree_path: mergedConfig.reuseWorktreePath,
+          parent_execution_id: mergedConfig.parentExecutionId,
           before_commit: beforeCommit,
         });
 
-        workDir = config.reuseWorktreePath;
+        workDir = mergedConfig.reuseWorktreePath;
       } else {
         // Create execution with isolated worktree
         // This path requires issueId and issue (reuseWorktreePath not provided)
@@ -303,13 +306,13 @@ export class ExecutionService {
           issueId,
           issueTitle: issue.title,
           agentType: agentType,
-          targetBranch: config.baseBranch || defaultBranch,
+          targetBranch: mergedConfig.baseBranch || defaultBranch,
           repoPath: this.repoPath,
           mode: mode,
           prompt: prompt, // Store original (unexpanded) prompt
-          config: JSON.stringify(config),
-          createTargetBranch: config.createBaseBranch || false,
-          parentExecutionId: config.parentExecutionId,
+          config: JSON.stringify(mergedConfig),
+          createTargetBranch: mergedConfig.createBaseBranch || false,
+          parentExecutionId: mergedConfig.parentExecutionId,
         });
 
         execution = result.execution;
@@ -324,10 +327,10 @@ export class ExecutionService {
         agent_type: agentType,
         mode: mode,
         prompt: prompt, // Store original (unexpanded) prompt
-        config: JSON.stringify(config),
-        target_branch: config.baseBranch || defaultBranch,
-        branch_name: config.baseBranch || defaultBranch,
-        parent_execution_id: config.parentExecutionId,
+        config: JSON.stringify(mergedConfig),
+        target_branch: mergedConfig.baseBranch || defaultBranch,
+        branch_name: mergedConfig.baseBranch || defaultBranch,
+        parent_execution_id: mergedConfig.parentExecutionId,
       });
       workDir = this.repoPath;
 
@@ -424,7 +427,7 @@ export class ExecutionService {
       captureFileChanges: _captureFileChanges,
       captureToolCalls: _captureToolCalls,
       ...agentConfig
-    } = config;
+    } = mergedConfig;
 
     const wrapper = createExecutorForAgent(
       agentType,
@@ -443,13 +446,13 @@ export class ExecutionService {
     );
 
     // Log incoming config for debugging
-    console.log("[ExecutionService] createExecution config:", {
-      hasMcpServers: !!config.mcpServers,
-      mcpServerNames: config.mcpServers
-        ? Object.keys(config.mcpServers)
+    console.log("[ExecutionService] createExecution mergedConfig:", {
+      hasMcpServers: !!mergedConfig.mcpServers,
+      mcpServerNames: mergedConfig.mcpServers
+        ? Object.keys(mergedConfig.mcpServers)
         : "none",
-      hasAppendSystemPrompt: !!config.appendSystemPrompt,
-      dangerouslySkipPermissions: config.dangerouslySkipPermissions,
+      hasAppendSystemPrompt: !!mergedConfig.appendSystemPrompt,
+      dangerouslySkipPermissions: mergedConfig.dangerouslySkipPermissions,
     });
 
     // Log agentConfig being passed to executor
@@ -474,7 +477,7 @@ export class ExecutionService {
     // Merge worktree context with any existing appendSystemPrompt
     const combinedAppendSystemPrompt = [
       worktreeContext,
-      config.appendSystemPrompt || "",
+      mergedConfig.appendSystemPrompt || "",
     ]
       .filter(Boolean)
       .join("\n");
@@ -487,18 +490,18 @@ export class ExecutionService {
       prompt: resolvedPrompt,
       workDir: workDir,
       config: {
-        timeout: config.timeout,
+        timeout: mergedConfig.timeout,
       },
       metadata: {
-        model: config.model || "claude-sonnet-4",
-        captureFileChanges: config.captureFileChanges ?? true,
-        captureToolCalls: config.captureToolCalls ?? true,
+        model: mergedConfig.model || "claude-sonnet-4",
+        captureFileChanges: mergedConfig.captureFileChanges ?? true,
+        captureToolCalls: mergedConfig.captureToolCalls ?? true,
         issueId: issueId ?? undefined,
         executionId: execution.id,
-        mcpServers: config.mcpServers,
+        mcpServers: mergedConfig.mcpServers,
         appendSystemPrompt: combinedAppendSystemPrompt || undefined,
-        dangerouslySkipPermissions: config.dangerouslySkipPermissions,
-        resume: config.resume,
+        dangerouslySkipPermissions: mergedConfig.dangerouslySkipPermissions,
+        resume: mergedConfig.resume,
       },
       priority: 0,
       dependencies: [],
@@ -1347,15 +1350,72 @@ ${feedback}`;
   }
 
   /**
+   * Build execution config with auto-injected MCP servers
+   *
+   * This method handles the auto-injection of sudocode-mcp into the execution config
+   * when it's not already configured. It:
+   * 1. Checks if sudocode-mcp package is installed (throws error if not)
+   * 2. Checks if the agent already has sudocode-mcp configured
+   * 3. Auto-injects sudocode-mcp to mcpServers if needed
+   * 4. Preserves all user-provided MCP servers
+   *
+   * @param agentType - The type of agent to execute
+   * @param userConfig - User-provided execution configuration
+   * @returns Merged execution configuration with auto-injected MCP servers
+   * @throws Error if sudocode-mcp package is not installed
+   */
+  private async buildExecutionConfig(
+    agentType: AgentType,
+    userConfig: ExecutionConfig
+  ): Promise<ExecutionConfig> {
+    // Start with user config
+    const mergedConfig = { ...userConfig };
+
+    // 1. Detect if sudocode-mcp package is installed
+    const isInstalled = await this.detectSudocodeMcp();
+    if (!isInstalled) {
+      throw new Error(
+        "sudocode-mcp package not found. Please install sudocode to enable MCP tools.\nVisit: https://github.com/sudocode-ai/sudocode"
+      );
+    }
+
+    // 2. Check if agent already has sudocode-mcp configured
+    const mcpPresent = await this.detectAgentMcp(agentType);
+
+    // 3. Auto-inject sudocode-mcp if not configured and not already in userConfig
+    if (!mcpPresent && !userConfig.mcpServers?.["sudocode-mcp"]) {
+      console.info(
+        "[ExecutionService] Adding sudocode-mcp to mcpServers (auto-injection)"
+      );
+      mergedConfig.mcpServers = {
+        ...(userConfig.mcpServers || {}),
+        "sudocode-mcp": {
+          command: "sudocode-mcp",
+          args: [],
+        },
+      };
+    } else if (mcpPresent) {
+      console.info(
+        "[ExecutionService] Skipping sudocode-mcp injection (already configured in agent)"
+      );
+    } else if (userConfig.mcpServers?.["sudocode-mcp"]) {
+      console.info(
+        "[ExecutionService] Skipping sudocode-mcp injection (user provided in config)"
+      );
+    }
+
+    return mergedConfig;
+  }
+
+  /**
    * Detect if sudocode-mcp command is available in PATH
    *
    * This checks if the sudocode-mcp package is installed on the system by
    * attempting to locate the command using `which` (Unix) or `where` (Windows).
    *
    * @returns true if sudocode-mcp is available, false otherwise
-   * @internal Used by buildExecutionConfig (to be implemented in i-1xk5)
+   * @internal Used by buildExecutionConfig
    */
-  // @ts-expect-error - Used by buildExecutionConfig (to be implemented in i-1xk5)
   private async detectSudocodeMcp(): Promise<boolean> {
     try {
       // Use 'which' on Unix systems, 'where' on Windows
@@ -1382,9 +1442,8 @@ ${feedback}`;
    *
    * @param agentType - The type of agent to check
    * @returns true if configured, false otherwise
-   * @internal Used by buildExecutionConfig (to be implemented in i-1xk5)
+   * @internal Used by buildExecutionConfig
    */
-  // @ts-expect-error - Used by buildExecutionConfig (to be implemented in i-1xk5)
   private async detectAgentMcp(agentType: AgentType): Promise<boolean> {
     // For claude-code, check ~/.claude/settings.json
     if (agentType === "claude-code") {
