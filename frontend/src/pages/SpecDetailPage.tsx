@@ -5,7 +5,7 @@ import { useSpec, useSpecFeedback, useSpecs } from '@/hooks/useSpecs'
 import { useSpecRelationships } from '@/hooks/useSpecRelationships'
 import { useIssues } from '@/hooks/useIssues'
 import { useFeedback } from '@/hooks/useFeedback'
-import { useWorkflowMutations } from '@/hooks/useWorkflows'
+import { useWorkflowMutations, useWorkflows } from '@/hooks/useWorkflows'
 import { SpecViewerTiptap } from '@/components/specs/SpecViewerTiptap'
 import { AlignedFeedbackPanel } from '@/components/specs/AlignedFeedbackPanel'
 import { AddFeedbackDialog } from '@/components/specs/AddFeedbackDialog'
@@ -45,6 +45,7 @@ import {
   Link,
   Play,
   Lightbulb,
+  Loader2,
 } from 'lucide-react'
 import type { IssueFeedback, Relationship, EntityType, RelationshipType } from '@/types/api'
 import type { WorkflowSource } from '@/types/workflow'
@@ -76,7 +77,19 @@ export default function SpecDetailPage() {
   const { issues } = useIssues()
   const { specs, updateSpec, isUpdating, archiveSpec, unarchiveSpec, deleteSpec } = useSpecs()
   const { createFeedback, updateFeedback, deleteFeedback } = useFeedback(id || '')
-  const { create: createWorkflow, isCreating: isCreatingWorkflow } = useWorkflowMutations()
+  const { create: createWorkflow, start: startWorkflow, isCreating: isCreatingWorkflow } = useWorkflowMutations()
+  const { data: workflows } = useWorkflows()
+
+  // Find a running workflow for this spec
+  const runningWorkflowForSpec = useMemo(() => {
+    if (!id || !workflows) return null
+    return workflows.find(
+      (w) =>
+        w.source.type === 'spec' &&
+        w.source.specId === id &&
+        (w.status === 'running' || w.status === 'paused')
+    ) || null
+  }, [id, workflows])
 
   const [selectedLine, setSelectedLine] = useState<number | null>(null)
   const [_selectedText, setSelectedText] = useState<string | null>(null) // Reserved for future text selection feature
@@ -355,11 +368,13 @@ Create actionable issues that implement its requirements. Each issue should be s
   const handleCreateWorkflow = useCallback(
     async (options: Parameters<typeof createWorkflow>[0]) => {
       const workflow = await createWorkflow(options)
+      // Start the workflow immediately after creation
+      await startWorkflow(workflow.id)
       setWorkflowDialogOpen(false)
       // Navigate to the created workflow's detail page
       navigate(`/workflows/${workflow.id}`)
     },
-    [createWorkflow, navigate]
+    [createWorkflow, startWorkflow, navigate]
   )
 
   if (isLoading) {
@@ -621,7 +636,23 @@ Create actionable issues that implement its requirements. Each issue should be s
               </Tooltip>
             </TooltipProvider>
 
-            {openImplementingIssuesCount > 0 && (
+            {runningWorkflowForSpec ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => navigate(`/workflows/${runningWorkflowForSpec.id}`)}
+                    >
+                      <Loader2 className="h-4 w-4 animate-spin sm:mr-2" />
+                      <span className="hidden sm:inline">Running Workflow</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>View running workflow</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : openImplementingIssuesCount > 0 ? (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -643,7 +674,7 @@ Create actionable issues that implement its requirements. Each issue should be s
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-            )}
+            ) : null}
 
             <TooltipProvider>
               <Tooltip>
