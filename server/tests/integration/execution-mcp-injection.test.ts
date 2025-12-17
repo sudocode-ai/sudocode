@@ -13,21 +13,13 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
-import Database from 'better-sqlite3';
-import { ExecutionService } from '../../src/services/execution-service.js';
-import { ExecutionLifecycleService } from '../../src/services/execution-lifecycle.js';
-import { ExecutionLogsStore } from '../../src/services/execution-logs-store.js';
-import { TransportManager } from '../../src/execution/transport/transport-manager.js';
 import {
-  EXECUTIONS_TABLE,
-  EXECUTION_LOGS_TABLE,
-  ISSUES_TABLE,
-  SPECS_TABLE,
-  RELATIONSHIPS_TABLE,
-  TAGS_TABLE,
-  DB_CONFIG,
-} from '@sudocode-ai/types/schema';
-import { runMigrations } from '@sudocode-ai/types/migrations';
+  createExecutionServiceSetup,
+  createTestDatabase,
+  mockSudocodeMcpDetection,
+  mockAgentMcpDetection,
+  getCapturedExecutorConfig,
+} from './execution/helpers/execution-test-utils.js';
 import * as fs from 'fs/promises';
 import { createIssue } from '@sudocode-ai/cli/dist/operations/index.js';
 
@@ -76,65 +68,9 @@ vi.mock('../../src/execution/executors/executor-factory.js', () => {
   };
 });
 
-/**
- * Create a mock WorktreeManager for testing
- */
-function createMockWorktreeManager(): any {
-  return {
-    createWorktree: vi.fn().mockResolvedValue({
-      path: '/tmp/test-worktree',
-      branch: 'test-branch',
-    }),
-    removeWorktree: vi.fn().mockResolvedValue(undefined),
-    listWorktrees: vi.fn().mockResolvedValue([]),
-    listBranches: vi.fn().mockResolvedValue(['main', 'test-branch']),
-    isValidRepo: vi.fn().mockResolvedValue(true),
-    getCurrentBranch: vi.fn().mockResolvedValue('main'),
-    branchExists: vi.fn().mockResolvedValue(true),
-    createBranch: vi.fn().mockResolvedValue(undefined),
-    getCommitHash: vi.fn().mockResolvedValue('abc123'),
-    getWorktreePath: vi.fn().mockReturnValue('/tmp/test-worktree'),
-    getRepoRoot: vi.fn().mockResolvedValue('/test/repo'),
-    getConfig: vi.fn().mockReturnValue({
-      worktreeStoragePath: '/tmp/test-worktrees',
-      autoCreateBranches: true,
-      autoDeleteBranches: false,
-      branchPrefix: 'sudocode',
-    }),
-    cleanup: vi.fn().mockResolvedValue(undefined),
-  };
-}
-
 describe('MCP Auto-Injection Integration Tests', () => {
-  let db: Database.Database;
-  let service: ExecutionService;
-  let lifecycleService: ExecutionLifecycleService;
-  let logsStore: ExecutionLogsStore;
-  let transportManager: TransportManager;
+  let setup: ReturnType<typeof createExecutionServiceSetup>;
   let testRepoPath: string;
-
-  /**
-   * Setup test database with required schema
-   */
-  function createTestDatabase(): Database.Database {
-    const db = new Database(':memory:');
-
-    // Apply configuration
-    db.exec(DB_CONFIG);
-
-    // Create tables
-    db.exec(ISSUES_TABLE);
-    db.exec(SPECS_TABLE);
-    db.exec(RELATIONSHIPS_TABLE);
-    db.exec(TAGS_TABLE);
-    db.exec(EXECUTIONS_TABLE);
-    db.exec(EXECUTION_LOGS_TABLE);
-
-    // Run migrations
-    runMigrations(db);
-
-    return db;
-  }
 
   beforeAll(() => {
     testRepoPath = '/tmp/test-repo-mcp-injection';
@@ -142,33 +78,14 @@ describe('MCP Auto-Injection Integration Tests', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-
-    // Create fresh database for each test
-    db = createTestDatabase();
-
-    // Create mock worktree manager
-    const mockWorktreeManager = createMockWorktreeManager();
-
-    // Create services with mocked worktree manager
-    lifecycleService = new ExecutionLifecycleService(db, testRepoPath, mockWorktreeManager);
-    logsStore = new ExecutionLogsStore(db);
-    transportManager = new TransportManager();
-
-    // Create ExecutionService
-    service = new ExecutionService(
-      db,
-      'test-project-id',
-      testRepoPath,
-      lifecycleService,
-      transportManager,
-      logsStore
-    );
+    // Create ExecutionService setup with all dependencies
+    setup = createExecutionServiceSetup('test-project-id', testRepoPath);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     try {
-      db.close();
+      setup.db.close();
     } catch {
       // Ignore cleanup errors
     }
@@ -179,51 +96,11 @@ describe('MCP Auto-Injection Integration Tests', () => {
   });
 
   /**
-   * Helper to mock sudocode-mcp package detection (via which/where command)
-   */
-  async function mockSudocodeMcpDetection(isInstalled: boolean) {
-    const { execFileNoThrow } = await import('../../src/utils/execFileNoThrow.js');
-
-    if (isInstalled) {
-      vi.mocked(execFileNoThrow).mockResolvedValue({
-        stdout: '/usr/local/bin/sudocode-mcp\n',
-        stderr: '',
-        status: 0,
-      });
-    } else {
-      vi.mocked(execFileNoThrow).mockResolvedValue({
-        stdout: '',
-        stderr: 'not found',
-        status: 1,
-      });
-    }
-  }
-
-  /**
-   * Helper to mock agent MCP configuration detection (settings.json for claude-code)
-   */
-  function mockAgentMcpDetection(isConfigured: boolean) {
-    const mockSettings = isConfigured
-      ? {
-          $schema: 'https://json.schemastore.org/claude-code-settings.json',
-          enabledPlugins: {
-            'sudocode@sudocode-marketplace': true,
-          },
-        }
-      : {
-          $schema: 'https://json.schemastore.org/claude-code-settings.json',
-          enabledPlugins: {},
-        };
-
-    vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(mockSettings));
-  }
-
-  /**
    * Helper to create a test issue in the database
    */
   function createTestIssue(issueId: string, title: string): void {
     createIssue(
-      db,
+      setup.db,
       {
         id: issueId,
         title,
@@ -233,14 +110,6 @@ describe('MCP Auto-Injection Integration Tests', () => {
       },
       testRepoPath
     );
-  }
-
-  /**
-   * Helper to get the captured config from the mock executor factory
-   */
-  async function getCapturedExecutorConfig(): Promise<any> {
-    const factory = await import('../../src/execution/executors/executor-factory.js');
-    return factory.__getCapturedConfig();
   }
 
   describe('End-to-end execution tests', () => {
@@ -254,7 +123,7 @@ describe('MCP Auto-Injection Integration Tests', () => {
       createTestIssue(issueId, 'Test Issue for MCP Injection');
 
       // Create execution
-      const execution = await service.createExecution(
+      const execution = await setup.service.createExecution(
         issueId,
         { mode: 'worktree' },
         'Test prompt',
@@ -285,7 +154,7 @@ describe('MCP Auto-Injection Integration Tests', () => {
       createTestIssue(issueId, 'Test Issue - Plugin Already Configured');
 
       // Create execution
-      const execution = await service.createExecution(
+      const execution = await setup.service.createExecution(
         issueId,
         { mode: 'worktree' },
         'Test prompt',
@@ -313,7 +182,7 @@ describe('MCP Auto-Injection Integration Tests', () => {
 
       // Attempt to create execution - should fail
       await expect(
-        service.createExecution(issueId, { mode: 'worktree' }, 'Test prompt', 'claude-code')
+        setup.service.createExecution(issueId, { mode: 'worktree' }, 'Test prompt', 'claude-code')
       ).rejects.toThrow();
     });
 
@@ -327,7 +196,7 @@ describe('MCP Auto-Injection Integration Tests', () => {
       createTestIssue(issueId, 'Test Issue - Verify Tools Available');
 
       // Create execution
-      const execution = await service.createExecution(
+      const execution = await setup.service.createExecution(
         issueId,
         { mode: 'worktree' },
         'Test prompt',
@@ -370,7 +239,7 @@ describe('MCP Auto-Injection Integration Tests', () => {
         },
       };
 
-      const execution = await service.createExecution(
+      const execution = await setup.service.createExecution(
         issueId,
         userConfig,
         'Test prompt',
@@ -407,7 +276,7 @@ describe('MCP Auto-Injection Integration Tests', () => {
 
       // Attempt to create execution
       try {
-        await service.createExecution(issueId, { mode: 'worktree' }, 'Test prompt', 'claude-code');
+        await setup.service.createExecution(issueId, { mode: 'worktree' }, 'Test prompt', 'claude-code');
         expect.fail('Should have thrown error');
       } catch (error) {
         expect(error).toBeInstanceOf(Error);
@@ -430,7 +299,7 @@ describe('MCP Auto-Injection Integration Tests', () => {
 
       // Attempt to create execution
       try {
-        await service.createExecution(issueId, { mode: 'worktree' }, 'Test prompt', 'claude-code');
+        await setup.service.createExecution(issueId, { mode: 'worktree' }, 'Test prompt', 'claude-code');
         expect.fail('Should have thrown error');
       } catch (error) {
         expect(error).toBeInstanceOf(Error);
@@ -455,7 +324,7 @@ describe('MCP Auto-Injection Integration Tests', () => {
       createTestIssue(issueId, 'Test Issue - Detection Failure');
 
       // Create execution - should NOT fail despite detection error
-      const execution = await service.createExecution(
+      const execution = await setup.service.createExecution(
         issueId,
         { mode: 'worktree' },
         'Test prompt',
@@ -481,7 +350,7 @@ describe('MCP Auto-Injection Integration Tests', () => {
 
       // Create adhoc execution (issueId = null) in local mode
       // Worktree mode requires an issue or reuseWorktreePath
-      const execution = await service.createExecution(
+      const execution = await setup.service.createExecution(
         null,
         { mode: 'local' },
         'Adhoc prompt',
@@ -508,7 +377,7 @@ describe('MCP Auto-Injection Integration Tests', () => {
       createTestIssue(issueId, 'Test Issue - Issue-Based');
 
       // Create issue-based execution
-      const execution = await service.createExecution(
+      const execution = await setup.service.createExecution(
         issueId,
         { mode: 'worktree' },
         'Issue prompt',
@@ -535,7 +404,7 @@ describe('MCP Auto-Injection Integration Tests', () => {
       createTestIssue(issueId, 'Test Issue - Workflow Sub-Execution');
 
       // Create workflow sub-execution (with workflow context)
-      const execution = await service.createExecution(
+      const execution = await setup.service.createExecution(
         issueId,
         { mode: 'worktree' },
         'Workflow step prompt',
@@ -575,7 +444,7 @@ describe('MCP Auto-Injection Integration Tests', () => {
         appendSystemPrompt: 'Be concise',
       };
 
-      const execution = await service.createExecution(
+      const execution = await setup.service.createExecution(
         issueId,
         userConfig,
         'Test prompt',
@@ -618,7 +487,7 @@ describe('MCP Auto-Injection Integration Tests', () => {
         },
       };
 
-      const execution = await service.createExecution(
+      const execution = await setup.service.createExecution(
         issueId,
         userConfig,
         'Test prompt',
@@ -655,7 +524,7 @@ describe('MCP Auto-Injection Integration Tests', () => {
       createTestIssue(issueId, 'Test Issue - Claude Code Agent');
 
       // Create execution with claude-code agent
-      const execution = await service.createExecution(
+      const execution = await setup.service.createExecution(
         issueId,
         { mode: 'worktree' },
         'Test prompt',
@@ -691,7 +560,7 @@ describe('MCP Auto-Injection Integration Tests', () => {
         const issueId = `i-test-${issueCounter++}`;
         createTestIssue(issueId, `Test Issue - ${agentType} Agent`);
 
-        const execution = await service.createExecution(
+        const execution = await setup.service.createExecution(
           issueId,
           { mode: 'worktree' },
           'Test prompt',

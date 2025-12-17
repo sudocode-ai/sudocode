@@ -4,42 +4,41 @@
  * Tests the MCP auto-injection logic for sudocode-mcp plugin.
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { ExecutionConfig } from "../../../src/services/execution-service.js";
 import type { AgentType } from "@sudocode-ai/types/agents";
+import {
+  createExecutionServiceSetup,
+  mockSudocodeMcpDetection,
+  mockAgentMcpDetection,
+} from "../../integration/execution/helpers/execution-test-utils.js";
 
-// Mock the ExecutionService to test the private method
-class TestableExecutionService {
-  // Expose private methods for testing
-  async buildExecutionConfig(
-    agentType: AgentType,
-    userConfig: ExecutionConfig
-  ): Promise<ExecutionConfig> {
-    throw new Error("Method not implemented - should be mocked in tests");
-  }
-
-  async detectSudocodeMcp(): Promise<boolean> {
-    throw new Error("Method not implemented - should be mocked in tests");
-  }
-
-  async detectAgentMcp(agentType: AgentType): Promise<boolean> {
-    throw new Error("Method not implemented - should be mocked in tests");
-  }
-}
+/**
+ * Mock modules
+ */
+vi.mock("fs/promises");
+vi.mock("../../../src/utils/execFileNoThrow.js", () => ({
+  execFileNoThrow: vi.fn(),
+}));
 
 describe("ExecutionService.buildExecutionConfig", () => {
-  let service: TestableExecutionService;
+  let service: any; // Use 'any' to access private methods
+  let setup: ReturnType<typeof createExecutionServiceSetup>;
 
   beforeEach(() => {
-    service = new TestableExecutionService();
     vi.clearAllMocks();
+    setup = createExecutionServiceSetup();
+    service = setup.service;
+  });
+
+  afterEach(() => {
+    setup.db.close();
   });
 
   describe("sudocode-mcp detection and error handling", () => {
     it("should throw error with helpful message when detectSudocodeMcp() returns false", async () => {
       // Mock detectSudocodeMcp to return false (package not installed)
-      vi.spyOn(service, "detectSudocodeMcp").mockResolvedValue(false);
-      vi.spyOn(service, "detectAgentMcp").mockResolvedValue(false);
+      await mockSudocodeMcpDetection(false);
 
       const userConfig: ExecutionConfig = {
         mode: "worktree",
@@ -53,21 +52,7 @@ describe("ExecutionService.buildExecutionConfig", () => {
 
     it("should include github.com/sudocode-ai/sudocode link in error message", async () => {
       // Mock detectSudocodeMcp to return false
-      vi.spyOn(service, "detectSudocodeMcp").mockResolvedValue(false);
-      vi.spyOn(service, "detectAgentMcp").mockResolvedValue(false);
-
-      // Mock buildExecutionConfig to throw error with proper message
-      vi.spyOn(service, "buildExecutionConfig").mockImplementation(
-        async () => {
-          const isInstalled = await service.detectSudocodeMcp();
-          if (!isInstalled) {
-            throw new Error(
-              "sudocode-mcp package not found. Please install sudocode from github.com/sudocode-ai/sudocode"
-            );
-          }
-          return {};
-        }
-      );
+      await mockSudocodeMcpDetection(false);
 
       const userConfig: ExecutionConfig = {
         mode: "worktree",
@@ -86,21 +71,7 @@ describe("ExecutionService.buildExecutionConfig", () => {
 
     it("should include installation instructions in error message", async () => {
       // Mock detectSudocodeMcp to return false
-      vi.spyOn(service, "detectSudocodeMcp").mockResolvedValue(false);
-      vi.spyOn(service, "detectAgentMcp").mockResolvedValue(false);
-
-      // Mock buildExecutionConfig to throw error with proper message
-      vi.spyOn(service, "buildExecutionConfig").mockImplementation(
-        async () => {
-          const isInstalled = await service.detectSudocodeMcp();
-          if (!isInstalled) {
-            throw new Error(
-              "sudocode-mcp package not found. Please install sudocode from github.com/sudocode-ai/sudocode"
-            );
-          }
-          return {};
-        }
-      );
+      await mockSudocodeMcpDetection(false);
 
       const userConfig: ExecutionConfig = {
         mode: "worktree",
@@ -121,33 +92,8 @@ describe("ExecutionService.buildExecutionConfig", () => {
   describe("MCP server auto-injection", () => {
     it("should add sudocode-mcp to mcpServers when detectAgentMcp() returns false", async () => {
       // Mock: sudocode-mcp package is installed, but not configured in agent
-      vi.spyOn(service, "detectSudocodeMcp").mockResolvedValue(true);
-      vi.spyOn(service, "detectAgentMcp").mockResolvedValue(false);
-
-      // Override buildExecutionConfig to implement the logic we're testing
-      vi.spyOn(service, "buildExecutionConfig").mockImplementation(
-        async (agentType: AgentType, userConfig: ExecutionConfig) => {
-          const isInstalled = await service.detectSudocodeMcp();
-          if (!isInstalled) {
-            throw new Error("sudocode-mcp not installed");
-          }
-
-          const mcpPresent = await service.detectAgentMcp(agentType);
-          const mergedConfig = { ...userConfig };
-
-          if (!mcpPresent) {
-            mergedConfig.mcpServers = {
-              ...(userConfig.mcpServers || {}),
-              "sudocode-mcp": {
-                command: "sudocode-mcp",
-                args: [],
-              },
-            };
-          }
-
-          return mergedConfig;
-        }
-      );
+      await mockSudocodeMcpDetection(true);
+      mockAgentMcpDetection(false);
 
       const userConfig: ExecutionConfig = {
         mode: "worktree",
@@ -167,38 +113,8 @@ describe("ExecutionService.buildExecutionConfig", () => {
 
     it("should skip injection when detectAgentMcp() returns true (plugin already configured)", async () => {
       // Mock: both package and agent plugin are present
-      vi.spyOn(service, "detectSudocodeMcp").mockResolvedValue(true);
-      vi.spyOn(service, "detectAgentMcp").mockResolvedValue(true);
-
-      vi.spyOn(service, "buildExecutionConfig").mockImplementation(
-        async (agentType: AgentType, userConfig: ExecutionConfig) => {
-          const isInstalled = await service.detectSudocodeMcp();
-          if (!isInstalled) {
-            throw new Error("sudocode-mcp not installed");
-          }
-
-          const mcpPresent = await service.detectAgentMcp(agentType);
-          const mergedConfig = { ...userConfig };
-
-          if (!mcpPresent && !userConfig.mcpServers?.["sudocode-mcp"]) {
-            mergedConfig.mcpServers = {
-              ...(userConfig.mcpServers || {}),
-              "sudocode-mcp": {
-                command: "sudocode-mcp",
-                args: [],
-              },
-            };
-          } else if (mcpPresent) {
-            // Remove sudocode-mcp from mcpServers to avoid duplication with plugin
-            if (userConfig.mcpServers) {
-              const { "sudocode-mcp": _removed, ...rest } = userConfig.mcpServers;
-              mergedConfig.mcpServers = Object.keys(rest).length > 0 ? rest : undefined;
-            }
-          }
-
-          return mergedConfig;
-        }
-      );
+      await mockSudocodeMcpDetection(true);
+      mockAgentMcpDetection(true);
 
       const userConfig: ExecutionConfig = {
         mode: "worktree",

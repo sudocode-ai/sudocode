@@ -9,8 +9,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "fs/promises";
 import * as os from "os";
 import * as path from "path";
-import { ExecutionService } from "../../../src/services/execution-service.js";
-import Database from "better-sqlite3";
+import {
+  createExecutionServiceSetup,
+  mockSudocodeMcpDetection,
+  mockAgentMcpDetection,
+} from "../../integration/execution/helpers/execution-test-utils.js";
 
 /**
  * Mock modules before importing ExecutionService
@@ -27,37 +30,25 @@ vi.mock("../../../src/utils/execFileNoThrow.js", () => ({
 
 describe("ExecutionService - MCP Detection", () => {
   let service: any; // Use 'any' to access private methods
-  let db: Database.Database;
+  let setup: ReturnType<typeof createExecutionServiceSetup>;
 
   beforeEach(() => {
     vi.clearAllMocks();
 
-    // Create an in-memory database for testing
-    db = new Database(":memory:");
-
-    // Create ExecutionService instance
-    // We'll use 'any' type to access private methods
-    service = new ExecutionService(
-      db,
-      "test-project-id",
-      "/test/repo/path"
-    );
+    // Create ExecutionService setup with all dependencies
+    setup = createExecutionServiceSetup("test-project-id", "/test/repo/path");
+    service = setup.service;
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-    db.close();
+    setup.db.close();
   });
 
   describe("detectSudocodeMcp", () => {
     it("should return true when sudocode-mcp package is available in PATH", async () => {
       // Mock successful command execution (sudocode-mcp exists in PATH)
-      const { execFileNoThrow } = await import("../../../src/utils/execFileNoThrow.js");
-      vi.mocked(execFileNoThrow).mockResolvedValue({
-        stdout: "/usr/local/bin/sudocode-mcp\n",
-        stderr: "",
-        status: 0,
-      });
+      await mockSudocodeMcpDetection(true);
 
       const result = await service.detectSudocodeMcp();
       expect(result).toBe(true);
@@ -65,12 +56,7 @@ describe("ExecutionService - MCP Detection", () => {
 
     it("should return false when sudocode-mcp package is not available", async () => {
       // Mock failed command execution (sudocode-mcp not found)
-      const { execFileNoThrow } = await import("../../../src/utils/execFileNoThrow.js");
-      vi.mocked(execFileNoThrow).mockResolvedValue({
-        stdout: "",
-        stderr: "not found",
-        status: 1,
-      });
+      await mockSudocodeMcpDetection(false);
 
       const result = await service.detectSudocodeMcp();
       expect(result).toBe(false);
@@ -96,14 +82,7 @@ describe("ExecutionService - MCP Detection", () => {
 
     it("should return true when settings.json has sudocode plugin enabled", async () => {
       // Mock successful file read with plugin enabled
-      const mockSettings = {
-        $schema: "https://json.schemastore.org/claude-code-settings.json",
-        enabledPlugins: {
-          "sudocode@sudocode-marketplace": true,
-        },
-      };
-
-      vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(mockSettings));
+      mockAgentMcpDetection(true);
 
       const result = await service.detectAgentMcp("claude-code");
       expect(result).toBe(true);
@@ -112,14 +91,7 @@ describe("ExecutionService - MCP Detection", () => {
 
     it("should return false when settings.json exists but plugin is not enabled", async () => {
       // Mock file read with plugin disabled or missing
-      const mockSettings = {
-        $schema: "https://json.schemastore.org/claude-code-settings.json",
-        enabledPlugins: {
-          "other-plugin@marketplace": true,
-        },
-      };
-
-      vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(mockSettings));
+      mockAgentMcpDetection(false);
 
       const result = await service.detectAgentMcp("claude-code");
       expect(result).toBe(false);
@@ -206,12 +178,7 @@ describe("ExecutionService - MCP Detection", () => {
   describe("Integration - buildExecutionConfig", () => {
     it("should throw error when detectSudocodeMcp() returns false", async () => {
       // Mock sudocode-mcp not installed
-      const { execFileNoThrow } = await import("../../../src/utils/execFileNoThrow.js");
-      vi.mocked(execFileNoThrow).mockResolvedValue({
-        stdout: "",
-        stderr: "not found",
-        status: 1,
-      });
+      await mockSudocodeMcpDetection(false);
 
       await expect(
         service.buildExecutionConfig('claude-code', {})
@@ -220,18 +187,8 @@ describe("ExecutionService - MCP Detection", () => {
 
     it("should add sudocode-mcp to mcpServers when detectAgentMcp() returns false", async () => {
       // Mock sudocode-mcp installed but not configured for agent
-      const { execFileNoThrow } = await import("../../../src/utils/execFileNoThrow.js");
-      vi.mocked(execFileNoThrow).mockResolvedValue({
-        stdout: "/usr/local/bin/sudocode-mcp\n",
-        stderr: "",
-        status: 0,
-      });
-
-      // Mock agent MCP detection as false (not configured)
-      const mockSettings = {
-        enabledPlugins: {},
-      };
-      vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(mockSettings));
+      await mockSudocodeMcpDetection(true);
+      mockAgentMcpDetection(false);
 
       const result = await service.buildExecutionConfig('claude-code', {});
       expect(result.mcpServers).toBeDefined();
@@ -243,19 +200,8 @@ describe("ExecutionService - MCP Detection", () => {
 
     it("should skip injection when detectAgentMcp() returns true (plugin already configured)", async () => {
       // Mock sudocode-mcp installed AND configured
-      const { execFileNoThrow } = await import("../../../src/utils/execFileNoThrow.js");
-      vi.mocked(execFileNoThrow).mockResolvedValue({
-        stdout: "/usr/local/bin/sudocode-mcp\n",
-        stderr: "",
-        status: 0,
-      });
-
-      const mockSettings = {
-        enabledPlugins: {
-          "sudocode@sudocode-marketplace": true,
-        },
-      };
-      vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(mockSettings));
+      await mockSudocodeMcpDetection(true);
+      mockAgentMcpDetection(true);
 
       const result = await service.buildExecutionConfig('claude-code', {});
       expect(result.mcpServers?.['sudocode-mcp']).toBeUndefined();
@@ -263,15 +209,8 @@ describe("ExecutionService - MCP Detection", () => {
 
     it("should preserve user-provided MCP servers when auto-injecting", async () => {
       // Mock sudocode-mcp installed but not configured
-      const { execFileNoThrow } = await import("../../../src/utils/execFileNoThrow.js");
-      vi.mocked(execFileNoThrow).mockResolvedValue({
-        stdout: "/usr/local/bin/sudocode-mcp\n",
-        stderr: "",
-        status: 0,
-      });
-
-      const mockSettings = { enabledPlugins: {} };
-      vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(mockSettings));
+      await mockSudocodeMcpDetection(true);
+      mockAgentMcpDetection(false);
 
       const userConfig = {
         mcpServers: {
@@ -289,15 +228,8 @@ describe("ExecutionService - MCP Detection", () => {
 
     it("should not duplicate sudocode-mcp if user already provided it", async () => {
       // Mock sudocode-mcp installed
-      const { execFileNoThrow } = await import("../../../src/utils/execFileNoThrow.js");
-      vi.mocked(execFileNoThrow).mockResolvedValue({
-        stdout: "/usr/local/bin/sudocode-mcp\n",
-        stderr: "",
-        status: 0,
-      });
-
-      const mockSettings = { enabledPlugins: {} };
-      vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(mockSettings));
+      await mockSudocodeMcpDetection(true);
+      mockAgentMcpDetection(false);
 
       const userConfig = {
         mcpServers: {
