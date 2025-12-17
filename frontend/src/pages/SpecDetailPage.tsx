@@ -614,31 +614,29 @@ export default function SpecDetailPage() {
               </Tooltip>
             </TooltipProvider>
 
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRunAsWorkflow}
-                    disabled={openImplementingIssuesCount === 0 || isCreatingWorkflow}
-                  >
-                    <Play className="h-4 w-4 sm:mr-2" />
-                    <span className="hidden sm:inline">Run as Workflow</span>
-                    {openImplementingIssuesCount > 0 && (
+            {openImplementingIssuesCount > 0 && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleRunAsWorkflow}
+                      disabled={isCreatingWorkflow}
+                    >
+                      <Play className="h-4 w-4 sm:mr-2" />
+                      <span className="hidden sm:inline">Run as Workflow</span>
                       <Badge variant="secondary" className="ml-2 h-5 min-w-5 px-1.5">
                         {openImplementingIssuesCount}
                       </Badge>
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {openImplementingIssuesCount > 0
-                    ? `Run ${openImplementingIssuesCount} implementing issue${openImplementingIssuesCount > 1 ? 's' : ''} as workflow`
-                    : 'No open implementing issues'}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {`Run ${openImplementingIssuesCount} implementing issue${openImplementingIssuesCount > 1 ? 's' : ''} as workflow`}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
 
             {spec.archived ? (
               <Button
