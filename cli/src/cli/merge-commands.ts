@@ -9,8 +9,6 @@ import * as os from "os";
 import type Database from "better-sqlite3";
 import { execFileSync } from "child_process";
 import {
-  hasGitConflictMarkers,
-  parseMergeConflictFile,
   mergeThreeWay,
 } from "../merge-resolver.js";
 import { readJSONL, writeJSONL, type JSONLEntity } from "../jsonl.js";
@@ -67,11 +65,11 @@ export async function handleResolveConflicts(
   const issuesPath = path.join(ctx.outputDir, "issues.jsonl");
   const specsPath = path.join(ctx.outputDir, "specs.jsonl");
 
-  // Check for conflicts
+  // Check for actual git merge conflicts (files with git stages)
   const issuesHasConflict =
-    fs.existsSync(issuesPath) && hasGitConflictMarkers(issuesPath);
+    fs.existsSync(issuesPath) && tryGetGitStages(issuesPath) !== null;
   const specsHasConflict =
-    fs.existsSync(specsPath) && hasGitConflictMarkers(specsPath);
+    fs.existsSync(specsPath) && tryGetGitStages(specsPath) !== null;
 
   if (!issuesHasConflict && !specsHasConflict) {
     if (!ctx.jsonOutput) {
@@ -134,7 +132,7 @@ function readGitStage(stage: 1 | 2 | 3, relativePath: string, cwd: string): JSON
     const content = execFileSync(
       'git',
       ['show', `:${stage}:${relativePath}`],
-      { encoding: 'utf8', cwd }
+      { encoding: 'utf8', cwd, maxBuffer: 50 * 1024 * 1024 } // 50MB buffer for large JSONL files
     );
 
     // Parse JSONL: split by newline, filter empty lines, parse each as JSON
@@ -154,6 +152,13 @@ function readGitStage(stage: 1 | 2 | 3, relativePath: string, cwd: string): JSON
     // If stage doesn't exist (e.g., file added in one branch), return empty array
     if (error.status === 128 || error.stderr?.includes('does not exist') || error.stderr?.includes('not at stage')) {
       return [];
+    }
+    // Provide helpful error for buffer overflow
+    if (error.code === 'ENOBUFS' || error.message?.includes('ENOBUFS')) {
+      throw new Error(
+        `File too large to read from git stage. The file exceeds the buffer limit. ` +
+        `This is likely a bug - please report it with the file size.`
+      );
     }
     throw error;
   }
