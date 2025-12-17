@@ -18,7 +18,7 @@ import type {
   PluginTestResult,
 } from "@sudocode-ai/types";
 import { execSync } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import * as path from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 
@@ -26,9 +26,10 @@ import { fileURLToPath, pathToFileURL } from "url";
  * Mapping of first-party plugin short names to npm package names
  */
 const FIRST_PARTY_PLUGINS: Record<string, string> = {
-  beads: "@sudocode-ai/integration-beads",
+  github: "@sudocode-ai/integration-github",
   "spec-kit": "@sudocode-ai/integration-speckit",
   openspec: "@sudocode-ai/integration-openspec",
+  beads: "@sudocode-ai/integration-beads",
 };
 
 /**
@@ -123,7 +124,7 @@ function resolveGlobalPackage(packageName: string): string | null {
 
   try {
     const packageJson = JSON.parse(
-      require("fs").readFileSync(packageJsonPath, "utf-8")
+      readFileSync(packageJsonPath, "utf-8")
     );
     const mainEntry = packageJson.main || "index.js";
     const fullPath = path.join(packagePath, mainEntry);
@@ -175,7 +176,10 @@ export async function loadPlugin(
     const err = error as { code?: string; message?: string };
 
     // If module not found, try global packages
-    if (err.code === "ERR_MODULE_NOT_FOUND" || err.code === "MODULE_NOT_FOUND") {
+    if (
+      err.code === "ERR_MODULE_NOT_FOUND" ||
+      err.code === "MODULE_NOT_FOUND"
+    ) {
       const globalPath = resolveGlobalPackage(modulePath);
 
       if (globalPath) {

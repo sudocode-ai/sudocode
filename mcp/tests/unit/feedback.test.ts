@@ -15,7 +15,7 @@ describe('Feedback Tools', () => {
   });
 
   describe('addFeedback', () => {
-    it('should call exec with add feedback command', async () => {
+    it('should call exec with add feedback command (with issue_id)', async () => {
       mockClient.exec.mockResolvedValue({});
 
       await feedbackTools.addFeedback(mockClient, {
@@ -24,9 +24,24 @@ describe('Feedback Tools', () => {
         content: 'This is unclear',
       });
 
+      // CLI args: feedback add <target-id> [issue-id]
       expect(mockClient.exec).toHaveBeenCalledWith([
-        'feedback', 'add', 'sg-1', 'sg-spec-1',
+        'feedback', 'add', 'sg-spec-1', 'sg-1',
         '--content', 'This is unclear',
+      ]);
+    });
+
+    it('should call exec without issue_id for anonymous feedback', async () => {
+      mockClient.exec.mockResolvedValue({});
+
+      await feedbackTools.addFeedback(mockClient, {
+        to_id: 'sg-spec-1',
+        content: 'Anonymous feedback',
+      });
+
+      expect(mockClient.exec).toHaveBeenCalledWith([
+        'feedback', 'add', 'sg-spec-1',
+        '--content', 'Anonymous feedback',
       ]);
     });
 
@@ -41,7 +56,7 @@ describe('Feedback Tools', () => {
       });
 
       expect(mockClient.exec).toHaveBeenCalledWith([
-        'feedback', 'add', 'sg-1', 'sg-spec-1',
+        'feedback', 'add', 'sg-spec-1', 'sg-1',
         '--content', 'Needs clarification',
         '--type', 'comment',
       ]);
@@ -58,7 +73,7 @@ describe('Feedback Tools', () => {
       });
 
       expect(mockClient.exec).toHaveBeenCalledWith([
-        'feedback', 'add', 'sg-1', 'sg-spec-1',
+        'feedback', 'add', 'sg-spec-1', 'sg-1',
         '--content', 'Fix this line',
         '--line', '42',
       ]);
@@ -75,7 +90,7 @@ describe('Feedback Tools', () => {
       });
 
       expect(mockClient.exec).toHaveBeenCalledWith([
-        'feedback', 'add', 'sg-1', 'sg-spec-1',
+        'feedback', 'add', 'sg-spec-1', 'sg-1',
         '--content', 'This text needs updating',
         '--text', 'original text',
       ]);
@@ -94,12 +109,13 @@ describe('Feedback Tools', () => {
       });
 
       expect(mockClient.exec).toHaveBeenCalledWith([
-        'feedback', 'add', 'sg-1', 'sg-spec-1',
+        'feedback', 'add', 'sg-spec-1', 'sg-1',
         '--content', 'Needs clarification',
         '--type', 'comment',
         '--line', '42',
         '--text', 'some text',
       ]);
     });
+
   });
 });

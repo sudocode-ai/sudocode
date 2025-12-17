@@ -379,8 +379,8 @@ const feedback = program
   .description("Manage feedback from issues");
 
 feedback
-  .command("add <issue-id> <target-id>")
-  .description("Add feedback to a target from an issue")
+  .command("add <target-id> [issue-id]")
+  .description("Add feedback to a target (optionally from an issue)")
   .option("-l, --line <number>", "Line number in target to anchor feedback")
   .option("-t, --text <text>", "Text to search for anchor")
   .option(
@@ -390,7 +390,7 @@ feedback
   )
   .option("-c, --content <text>", "Feedback content (required)")
   .option("-a, --agent <name>", "Agent name")
-  .action(async (issueId, targetId, options) => {
+  .action(async (targetId, issueId, options) => {
     await handleFeedbackAdd(getContext(), issueId, targetId, options);
   });
 

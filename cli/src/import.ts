@@ -558,16 +558,17 @@ function syncIssueFeedback(
       const fromId = (fb as any).from_id || (fb as any).issue_id;
       const toId = (fb as any).to_id || (fb as any).spec_id;
 
-      if (!fromId || !toId) {
+      // to_id is required, but from_id is optional (external feedback)
+      if (!toId) {
         console.warn(
-          `Skipping feedback ${fb.id}: missing from_id/to_id or issue_id/spec_id`
+          `Skipping feedback ${fb.id}: missing to_id or spec_id`
         );
         continue;
       }
 
       createFeedback(db, {
         id: fb.id,
-        from_id: fromId,
+        from_id: fromId, // Can be undefined for anonymous feedback
         to_id: toId,
         feedback_type: fb.feedback_type,
         content: fb.content,

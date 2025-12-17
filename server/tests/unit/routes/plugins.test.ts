@@ -18,16 +18,54 @@ vi.mock("fs", async () => {
   };
 });
 
-// Track which plugins are "installed"
-const installedPlugins = new Set(["beads"]);
+// Track which plugins are "installed" (simulates either local or global)
+const installedPlugins = new Set(["beads", "github"]);
+
+// Track which plugins are installed globally (subset of installedPlugins)
+const globallyInstalledPlugins = new Set(["beads"]);
+
+// Plugin capabilities for different plugin types
+const pluginCapabilities: Record<
+  string,
+  {
+    supportsWatch: boolean;
+    supportsPolling: boolean;
+    supportsOnDemandImport: boolean;
+    supportsSearch: boolean;
+    supportsPush: boolean;
+  }
+> = {
+  beads: {
+    supportsWatch: true,
+    supportsPolling: false,
+    supportsOnDemandImport: false,
+    supportsSearch: false,
+    supportsPush: false,
+  },
+  github: {
+    supportsWatch: false,
+    supportsPolling: false,
+    supportsOnDemandImport: true,
+    supportsSearch: true,
+    supportsPush: false,
+  },
+};
 
 // Mock the plugin loader
 vi.mock("@sudocode-ai/cli/dist/integrations/index.js", () => ({
   getFirstPartyPlugins: vi.fn(() => [
     { name: "beads", package: "@sudocode-ai/integration-beads" },
+    { name: "github", package: "@sudocode-ai/integration-github" },
   ]),
   loadPlugin: vi.fn(async (name: string) => {
     if (installedPlugins.has(name)) {
+      const capabilities = pluginCapabilities[name] || {
+        supportsWatch: false,
+        supportsPolling: false,
+        supportsOnDemandImport: false,
+        supportsSearch: false,
+        supportsPush: false,
+      };
       return {
         name,
         displayName: name.charAt(0).toUpperCase() + name.slice(1),
@@ -35,13 +73,14 @@ vi.mock("@sudocode-ai/cli/dist/integrations/index.js", () => ({
         description: `${name} integration plugin`,
         configSchema: {
           type: "object",
-          properties: {
-            path: { type: "string", required: true },
-          },
-          required: ["path"],
+          properties:
+            name === "beads"
+              ? { path: { type: "string", required: true } }
+              : {}, // github has empty properties
+          required: name === "beads" ? ["path"] : [],
         },
         validateConfig: (options: Record<string, unknown>) => {
-          if (!options.path) {
+          if (name === "beads" && !options.path) {
             return {
               valid: false,
               errors: ["path is required"],
@@ -55,11 +94,18 @@ vi.mock("@sudocode-ai/cli/dist/integrations/index.js", () => ({
           configured: true,
           enabled: true,
         }),
-        createProvider: () => ({}),
+        createProvider: () => ({
+          supportsWatch: capabilities.supportsWatch,
+          supportsPolling: capabilities.supportsPolling,
+          supportsOnDemandImport: capabilities.supportsOnDemandImport,
+          supportsSearch: capabilities.supportsSearch,
+          supportsPush: capabilities.supportsPush,
+        }),
       };
     }
     return null;
   }),
+  isPluginInstalledGlobally: vi.fn((name: string) => globallyInstalledPlugins.has(name)),
   validateProviderConfig: vi.fn(async (name: string, config: unknown) => ({
     valid: true,
     errors: [],
@@ -177,6 +223,111 @@ describe("Plugins Router", () => {
         activated: true,
         enabled: true,
       });
+    });
+
+    it("should return capabilities for configured plugins", async () => {
+      const { req, res } = createMockReqRes();
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        JSON.stringify({
+          integrations: {
+            beads: {
+              enabled: true,
+              options: { path: ".beads" },
+            },
+            github: {
+              enabled: true,
+            },
+          },
+        })
+      );
+
+      const handler = findHandler(router, "/", "get");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const response = vi.mocked(res.json).mock.calls[0][0];
+
+      // Check beads capabilities (supports watch)
+      const beadsPlugin = response.data.plugins.find(
+        (p: { name: string }) => p.name === "beads"
+      );
+      expect(beadsPlugin.capabilities).toEqual({
+        supportsWatch: true,
+        supportsPolling: false,
+        supportsOnDemandImport: false,
+        supportsSearch: false,
+        supportsPush: false,
+      });
+
+      // Check github capabilities (supports on-demand import and search)
+      const githubPlugin = response.data.plugins.find(
+        (p: { name: string }) => p.name === "github"
+      );
+      expect(githubPlugin.capabilities).toEqual({
+        supportsWatch: false,
+        supportsPolling: false,
+        supportsOnDemandImport: true,
+        supportsSearch: true,
+        supportsPush: false,
+      });
+    });
+
+    it("should return capabilities for installed plugins even if not configured", async () => {
+      const { req, res } = createMockReqRes();
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({}));
+
+      const handler = findHandler(router, "/", "get");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const response = vi.mocked(res.json).mock.calls[0][0];
+
+      // Beads should have capabilities since it's installed (even though not configured)
+      const beadsPlugin = response.data.plugins.find(
+        (p: { name: string }) => p.name === "beads"
+      );
+      expect(beadsPlugin.capabilities).toEqual({
+        supportsWatch: true,
+        supportsPolling: false,
+        supportsOnDemandImport: false,
+        supportsSearch: false,
+        supportsPush: false,
+      });
+
+      // Github should also have capabilities
+      const githubPlugin = response.data.plugins.find(
+        (p: { name: string }) => p.name === "github"
+      );
+      expect(githubPlugin.capabilities).toEqual({
+        supportsWatch: false,
+        supportsPolling: false,
+        supportsOnDemandImport: true,
+        supportsSearch: true,
+        supportsPush: false,
+      });
+    });
+
+    it("should detect plugin installed via metapackage (not globally)", async () => {
+      // github is in installedPlugins but NOT in globallyInstalledPlugins
+      // This simulates a plugin installed via metapackage
+      const { req, res } = createMockReqRes();
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({}));
+
+      const handler = findHandler(router, "/", "get");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const response = vi.mocked(res.json).mock.calls[0][0];
+
+      // Github should be detected as installed even though it's not global
+      const githubPlugin = response.data.plugins.find(
+        (p: { name: string }) => p.name === "github"
+      );
+      expect(githubPlugin.installed).toBe(true);
+      expect(githubPlugin.capabilities).toBeDefined();
     });
   });
 
@@ -447,6 +598,57 @@ describe("Plugins Router", () => {
           success: true,
           data: expect.objectContaining({
             success: true,
+          }),
+        })
+      );
+    });
+  });
+
+  describe("POST /:name/install", () => {
+    it("should return already installed for globally installed plugin", async () => {
+      // beads is in both installedPlugins and globallyInstalledPlugins
+      const { req, res } = createMockReqRes({
+        params: { name: "beads" },
+        body: {},
+      });
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({}));
+
+      const handler = findHandler(router, "/:name/install", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({
+            message: expect.stringContaining("already installed globally"),
+            alreadyInstalled: true,
+          }),
+        })
+      );
+    });
+
+    it("should return already installed for metapackage/local plugin", async () => {
+      // github is in installedPlugins but NOT in globallyInstalledPlugins
+      // This simulates a plugin installed via metapackage
+      const { req, res } = createMockReqRes({
+        params: { name: "github" },
+        body: {},
+      });
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({}));
+
+      const handler = findHandler(router, "/:name/install", "post");
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({
+            message: expect.stringContaining("via metapackage or local node_modules"),
+            alreadyInstalled: true,
           }),
         })
       );

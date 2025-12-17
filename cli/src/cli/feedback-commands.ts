@@ -38,12 +38,13 @@ export interface FeedbackAddOptions {
 }
 
 /**
- * Add feedback to a spec or issue from an issue
+ * Add feedback to a spec or issue
+ * Can be from an issue (issueId provided) or anonymous (no issueId)
  * Entity type is automatically inferred from the ID prefix
  */
 export async function handleFeedbackAdd(
   ctx: CommandContext,
-  issueId: string,
+  issueId: string | undefined,
   toId: string,
   options: FeedbackAddOptions
 ): Promise<void> {
@@ -60,11 +61,13 @@ export async function handleFeedbackAdd(
     // Infer target type from ID
     const toType = getEntityTypeFromId(toId);
 
-    // Validate issue exists
-    const issue = getIssue(ctx.db, issueId);
-    if (!issue) {
-      console.error(chalk.red(`✗ Issue not found: ${issueId}`));
-      process.exit(1);
+    // Validate issue exists if issueId is provided
+    if (issueId) {
+      const issue = getIssue(ctx.db, issueId);
+      if (!issue) {
+        console.error(chalk.red(`✗ Issue not found: ${issueId}`));
+        process.exit(1);
+      }
     }
 
     // Validate target exists and get content
@@ -105,7 +108,7 @@ export async function handleFeedbackAdd(
 
     // Create feedback
     const feedback = createFeedback(ctx.db, {
-      from_id: issueId,
+      from_id: issueId, // Can be undefined for anonymous feedback
       to_id: toId,
       feedback_type: options.type as FeedbackType,
       content: options.content,
@@ -120,7 +123,11 @@ export async function handleFeedbackAdd(
       console.log(JSON.stringify(feedback, null, 2));
     } else {
       console.log(chalk.green('✓ Created feedback'), chalk.cyan(feedback.id));
-      console.log(chalk.gray(`  From: ${issueId}`));
+      if (issueId) {
+        console.log(chalk.gray(`  From: ${issueId}`));
+      } else {
+        console.log(chalk.gray(`  From: anonymous`));
+      }
       console.log(chalk.gray(`  To: ${toId} (${toType})`));
       console.log(chalk.gray(`  Type: ${options.type}`));
       if (anchor) {
@@ -184,11 +191,14 @@ export async function handleFeedbackList(
             : chalk.red)
           : chalk.gray;
 
+        // Format the "from" source
+        const fromLabel = feedback.from_id || 'anonymous';
+
         console.log(
           chalk.cyan(feedback.id),
           statusColor(`[${feedback.dismissed ? 'dismissed' : 'active'}]`),
           anchor ? anchorStatusColor(`[${anchor.anchor_status}]`) : '',
-          chalk.gray(`${feedback.from_id} → ${feedback.to_id} (${toType})`)
+          chalk.gray(`${fromLabel} → ${feedback.to_id} (${toType})`)
         );
         if (anchor) {
           console.log(
@@ -234,7 +244,9 @@ export async function handleFeedbackShow(
       console.log();
       console.log(chalk.bold.cyan(feedback.id), chalk.bold(feedback.feedback_type));
       console.log(chalk.gray('─'.repeat(60)));
-      console.log(chalk.gray('From:'), feedback.from_id);
+      // Format the "from" source
+      const fromLabel = feedback.from_id || 'anonymous';
+      console.log(chalk.gray('From:'), fromLabel);
       console.log(chalk.gray('To:'), `${feedback.to_id} (${toType})`);
       console.log(chalk.gray('Status:'), feedback.dismissed ? 'Dismissed' : 'Active');
       console.log(chalk.gray('Agent:'), feedback.agent);
@@ -334,10 +346,13 @@ export async function handleFeedbackStale(
 
         const toType = getEntityTypeFromId(feedback.to_id);
 
+        // Format the "from" source
+        const fromLabel = feedback.from_id || 'anonymous';
+
         console.log(
           chalk.cyan(feedback.id),
           chalk.red('[stale]'),
-          chalk.gray(`${feedback.from_id} → ${feedback.to_id} (${toType})`)
+          chalk.gray(`${fromLabel} → ${feedback.to_id} (${toType})`)
         );
         console.log(
           chalk.gray(`  Original: ${anchor.original_location?.section_heading || 'Unknown'} (line ${anchor.original_location?.line_number})`)

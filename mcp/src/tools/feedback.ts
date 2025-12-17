@@ -7,7 +7,8 @@ import { Feedback, FeedbackType } from "../types.js";
 
 // Tool parameter types
 export interface AddFeedbackParams {
-  issue_id: string;
+  /** Issue ID that's providing the feedback (optional for anonymous feedback) */
+  issue_id?: string;
   to_id: string;
   content: string;
   type?: FeedbackType;
@@ -24,7 +25,13 @@ export async function addFeedback(
   client: SudocodeClient,
   params: AddFeedbackParams
 ): Promise<Feedback> {
-  const args = ["feedback", "add", params.issue_id, params.to_id];
+  // Build CLI args: feedback add <target-id> [issue-id]
+  // target-id (to_id) is required, issue_id is optional
+  const args = ["feedback", "add", params.to_id];
+
+  if (params.issue_id) {
+    args.push(params.issue_id);
+  }
 
   args.push("--content", params.content);
 

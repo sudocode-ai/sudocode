@@ -68,6 +68,14 @@ interface PluginInfo {
     required?: string[]
   }
   options?: Record<string, unknown>
+  // Plugin capabilities
+  capabilities?: {
+    supportsWatch: boolean
+    supportsPolling: boolean
+    supportsOnDemandImport: boolean
+    supportsSearch: boolean
+    supportsPush: boolean
+  }
   // Integration-level config (separate from plugin-specific options)
   integrationConfig?: {
     auto_sync?: boolean
@@ -102,14 +110,8 @@ const SECTIONS: Section[] = [
 function ThemePreviewSwatch({ theme }: { theme: ColorTheme }) {
   return (
     <div className="flex h-4 w-6 overflow-hidden rounded-sm border border-border">
-      <div
-        className="w-1/2"
-        style={{ backgroundColor: `hsl(${theme.colors.background})` }}
-      />
-      <div
-        className="w-1/2"
-        style={{ backgroundColor: `hsl(${theme.colors.primary})` }}
-      />
+      <div className="w-1/2" style={{ backgroundColor: `hsl(${theme.colors.background})` }} />
+      <div className="w-1/2" style={{ backgroundColor: `hsl(${theme.colors.primary})` }} />
     </div>
   )
 }
@@ -145,9 +147,10 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
 
   // Preset plugins available for installation
   const presetPlugins = [
-    { name: 'beads', package: '@sudocode-ai/integration-beads', displayName: 'Beads' },
+    { name: 'github', package: '@sudocode-ai/integration-github', displayName: 'GitHub Issues' },
     { name: 'spec-kit', package: '@sudocode-ai/integration-speckit', displayName: 'Spec-Kit' },
     { name: 'openspec', package: '@sudocode-ai/integration-openspec', displayName: 'OpenSpec' },
+    { name: 'beads', package: '@sudocode-ai/integration-beads', displayName: 'Beads' },
   ]
 
   useEffect(() => {
@@ -382,8 +385,8 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
 
     return (
       <div className="mt-3 space-y-4 border-t border-border pt-3">
-        {/* Plugin-specific options */}
-        {plugin.configSchema?.properties && (
+        {/* Plugin-specific options - only show if there are actual properties */}
+        {plugin.configSchema?.properties && Object.keys(plugin.configSchema.properties).length > 0 && (
           <div className="space-y-3">
             <h4 className="text-xs font-medium text-muted-foreground">Plugin Settings</h4>
             {Object.entries(plugin.configSchema.properties).map(([key, prop]) => {
@@ -427,41 +430,42 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
           </div>
         )}
 
-        {/* Integration-level settings */}
-        <div className="space-y-3">
-          <h4 className="text-xs font-medium text-muted-foreground">Sync Settings</h4>
+        {/* Integration-level settings - only show for plugins that support real-time sync */}
+        {(plugin.capabilities?.supportsWatch || plugin.capabilities?.supportsPolling) && (
+          <div className="space-y-3">
+            <h4 className="text-xs font-medium text-muted-foreground">Sync Settings</h4>
 
-          {/* Auto Sync */}
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label className="text-xs">Auto Sync</Label>
-              <p className="text-[10px] text-muted-foreground">
-                Automatically sync changes in real-time
-              </p>
+            {/* Auto Sync */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-xs">Auto Sync</Label>
+                <p className="text-[10px] text-muted-foreground">
+                  Automatically sync changes in real-time
+                </p>
+              </div>
+              <Switch
+                checked={config.auto_sync ?? false}
+                onCheckedChange={(checked) =>
+                  updateIntegrationConfig(plugin.name, 'auto_sync', checked)
+                }
+              />
             </div>
-            <Switch
-              checked={config.auto_sync ?? false}
-              onCheckedChange={(checked) =>
-                updateIntegrationConfig(plugin.name, 'auto_sync', checked)
-              }
-            />
-          </div>
 
-          {/* Auto Import */}
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label className="text-xs">Auto Import</Label>
-              <p className="text-[10px] text-muted-foreground">
-                Automatically import new issues from external system
-              </p>
+            {/* Auto Import */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-xs">Auto Import</Label>
+                <p className="text-[10px] text-muted-foreground">
+                  Automatically import new issues from external system
+                </p>
+              </div>
+              <Switch
+                checked={config.auto_import ?? true}
+                onCheckedChange={(checked) =>
+                  updateIntegrationConfig(plugin.name, 'auto_import', checked)
+                }
+              />
             </div>
-            <Switch
-              checked={config.auto_import ?? true}
-              onCheckedChange={(checked) =>
-                updateIntegrationConfig(plugin.name, 'auto_import', checked)
-              }
-            />
-          </div>
 
           {/* Delete Behavior */}
           <div className="space-y-1">
@@ -532,7 +536,8 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
               Default sync direction for newly linked issues
             </p>
           </div>
-        </div>
+          </div>
+        )}
 
         <div className="flex gap-2 pt-2">
           <Button
@@ -554,24 +559,27 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             ) : null}
             Test Connection
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => handleSyncPlugin(plugin.name)}
-            disabled={syncingPlugin === plugin.name || !plugin.enabled}
-            title={
-              !plugin.enabled
-                ? 'Enable the plugin to sync'
-                : 'Import all entities from external system'
-            }
-          >
-            {syncingPlugin === plugin.name ? (
-              <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-1 h-3 w-3" />
-            )}
-            Sync Now
-          </Button>
+          {/* Only show Sync Now for plugins that support real-time sync */}
+          {(plugin.capabilities?.supportsWatch || plugin.capabilities?.supportsPolling) && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleSyncPlugin(plugin.name)}
+              disabled={syncingPlugin === plugin.name || !plugin.enabled}
+              title={
+                !plugin.enabled
+                  ? 'Enable the plugin to sync'
+                  : 'Import all entities from external system'
+              }
+            >
+              {syncingPlugin === plugin.name ? (
+                <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-1 h-3 w-3" />
+              )}
+              Sync Now
+            </Button>
+          )}
         </div>
 
         {testResults[plugin.name] && (
@@ -668,7 +676,10 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                     </div>
                     <div className="flex items-center gap-2">
                       {/* Mode Selector */}
-                      <Select value={mode} onValueChange={(value) => setMode(value as 'light' | 'dark' | 'system')}>
+                      <Select
+                        value={mode}
+                        onValueChange={(value) => setMode(value as 'light' | 'dark' | 'system')}
+                      >
                         <SelectTrigger className="w-32">
                           <SelectValue />
                         </SelectTrigger>

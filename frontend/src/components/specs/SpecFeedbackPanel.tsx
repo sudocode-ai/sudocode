@@ -65,14 +65,9 @@ export function SpecFeedbackPanel({
     content: string
     anchor?: any
   }) => {
-    if (!issueId) {
-      console.error('Cannot create feedback without issue ID')
-      return
-    }
-
     await createFeedback({
       to_id: specId,
-      issue_id: issueId,
+      issue_id: issueId,  // Can be undefined for anonymous feedback
       feedback_type: data.type,
       content: data.content,
       anchor: data.anchor,
@@ -110,8 +105,7 @@ export function SpecFeedbackPanel({
             variant="ghost"
             size="sm"
             onClick={() => setShowForm(!showForm)}
-            disabled={!issueId}
-            title={!issueId ? 'Link an issue first' : 'Add feedback'}
+            title="Add feedback"
           >
             <Plus className="h-4 w-4" />
           </Button>

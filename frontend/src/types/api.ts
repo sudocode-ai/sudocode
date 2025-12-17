@@ -28,6 +28,10 @@ export interface RepositoryInfo {
   name: string
   branch: string
   path: string
+  /** Full owner/repo identifier from git remote (e.g., "anthropic/sudocode") */
+  ownerRepo?: string
+  /** Git hosting provider (e.g., "github", "gitlab", "bitbucket") */
+  gitProvider?: string
 }
 
 export interface BranchInfo {
@@ -134,7 +138,7 @@ export interface DeleteRelationshipRequest {
  * Feedback API types
  */
 export interface CreateFeedbackRequest {
-  issue_id: string
+  issue_id?: string  // Optional for anonymous feedback
   to_id: string
   feedback_type: FeedbackType
   content: string

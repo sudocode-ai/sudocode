@@ -62,6 +62,7 @@ PACKAGES=(
   "plugins/integration-beads:@sudocode-ai/integration-beads:$VERSION"
   "plugins/integration-openspec:@sudocode-ai/integration-openspec:$VERSION"
   "plugins/integration-speckit:@sudocode-ai/integration-speckit:$VERSION"
+  "plugins/integration-github:@sudocode-ai/integration-github:$VERSION"
   "sudocode:sudocode:$META_VERSION"
   ".:root:$VERSION"
 )

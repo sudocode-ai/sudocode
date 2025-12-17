@@ -344,7 +344,7 @@ export class SudocodeMCPServer {
                 issue_id: {
                   type: "string",
                   description:
-                    "Issue ID that's providing the feedback (format 'i-xxxx'). This is the issue documenting results or leaving notes.",
+                    "Issue ID that's providing the feedback (format 'i-xxxx'). This is the issue documenting results or leaving notes. Optional for anonymous feedback.",
                 },
                 to_id: {
                   type: "string",
@@ -378,7 +378,7 @@ export class SudocodeMCPServer {
                 //   description: "Agent providing feedback",
                 // },
               },
-              required: ["issue_id", "to_id"],
+              required: ["to_id"],
             },
           },
         ],

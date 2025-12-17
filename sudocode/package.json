@@ -23,6 +23,10 @@
     "@sudocode-ai/types": "^0.1.14",
     "@sudocode-ai/cli": "^0.1.14",
     "@sudocode-ai/mcp": "^0.1.14",
-    "@sudocode-ai/local-server": "^0.1.14"
+    "@sudocode-ai/local-server": "^0.1.14",
+    "@sudocode-ai/integration-github": "^0.1.14",
+    "@sudocode-ai/integration-beads": "^0.1.14",
+    "@sudocode-ai/integration-openspec": "^0.1.14",
+    "@sudocode-ai/integration-speckit": "^0.1.14"
   }
 }

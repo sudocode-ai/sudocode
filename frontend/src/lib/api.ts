@@ -510,4 +510,160 @@ export const workflowsApi = {
     ),
 }
 
+/**
+ * Import API types
+ */
+export interface ImportProviderInfo {
+  name: string
+  displayName: string
+  supportsOnDemandImport: boolean
+  supportsSearch: boolean
+  urlPatterns: string[]
+  configured: boolean
+  authMethod: 'gh-cli' | 'token' | 'oauth' | 'none'
+}
+
+export interface ExternalEntity {
+  id: string
+  type: 'spec' | 'issue'
+  title: string
+  description?: string
+  status?: string
+  priority?: number
+  url?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface ImportPreviewResponse {
+  provider: string
+  entity: ExternalEntity
+  commentsCount?: number
+  alreadyLinked?: {
+    entityId: string
+    entityType: 'spec' | 'issue'
+    lastSyncedAt?: string
+  }
+}
+
+export interface ImportOptions {
+  includeComments?: boolean
+  tags?: string[]
+  priority?: number
+  parentId?: string
+}
+
+export interface ImportResponse {
+  entityId: string
+  entityType: 'spec'
+  externalLink: {
+    provider: string
+    external_id: string
+    external_url?: string
+    last_synced_at?: string
+  }
+  feedbackCount?: number
+}
+
+export interface ImportSearchRequest {
+  provider: string
+  query?: string
+  repo?: string
+  page?: number
+  perPage?: number
+}
+
+export interface ImportSearchResponse {
+  provider: string
+  query?: string
+  repo?: string
+  results: ExternalEntity[]
+  pagination?: {
+    page: number
+    perPage: number
+    hasMore: boolean
+    totalCount?: number
+  }
+}
+
+export interface BatchImportRequest {
+  provider: string
+  externalIds: string[]
+  options?: {
+    includeComments?: boolean
+    tags?: string[]
+    priority?: number
+  }
+}
+
+export interface BatchImportItemResult {
+  externalId: string
+  success: boolean
+  entityId?: string
+  action: 'created' | 'updated' | 'failed'
+  error?: string
+}
+
+export interface BatchImportResponse {
+  provider: string
+  created: number
+  updated: number
+  failed: number
+  results: BatchImportItemResult[]
+}
+
+/**
+ * Import API
+ */
+export const importApi = {
+  // List available import providers
+  getProviders: () => get<{ providers: ImportProviderInfo[] }>('/import/providers'),
+
+  // Preview an import before creating entity
+  preview: (url: string) => post<ImportPreviewResponse>('/import/preview', { url }),
+
+  // Import entity and create spec
+  import: (url: string, options?: ImportOptions) =>
+    post<ImportResponse>('/import', { url, options }),
+
+  // Search for entities in external systems
+  search: (params: ImportSearchRequest) =>
+    post<ImportSearchResponse>('/import/search', params),
+
+  // Batch import entities (creates or updates)
+  batchImport: (params: BatchImportRequest) =>
+    post<BatchImportResponse>('/import/batch', params),
+}
+
+/**
+ * Refresh API types
+ */
+export interface FieldChange {
+  field: string
+  localValue: string
+  remoteValue: string
+}
+
+export interface RefreshResponse {
+  updated: boolean
+  hasLocalChanges: boolean
+  changes?: FieldChange[]
+  entity?: any // Spec or Issue
+  stale?: boolean
+  message?: string
+}
+
+/**
+ * Refresh API
+ */
+export const refreshApi = {
+  // Refresh a spec from external source
+  refreshSpec: (specId: string, force?: boolean) =>
+    post<RefreshResponse>(`/specs/${specId}/refresh_from_external${force ? '?force=true' : ''}`),
+
+  // Refresh an issue from external source
+  refreshIssue: (issueId: string, force?: boolean) =>
+    post<RefreshResponse>(`/issues/${issueId}/refresh_from_external${force ? '?force=true' : ''}`),
+}
+
 export default api

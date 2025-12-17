@@ -99,6 +99,7 @@ export function createFeedbackRouter(): Router {
   /**
    * POST /api/feedback - Create a new feedback entry
    * Supports both new fields (from_id, to_id) and legacy fields (issue_id, spec_id)
+   * from_id is optional for anonymous feedback
    */
   router.post("/", (req: Request, res: Response) => {
     try {
@@ -118,12 +119,12 @@ export function createFeedbackRouter(): Router {
       const fromId = from_id || issue_id;
       const toId = to_id || spec_id;
 
-      // Validate required fields
-      if (!fromId || typeof fromId !== "string") {
+      // Validate from_id if provided (must be string if not null/undefined)
+      if (fromId !== undefined && fromId !== null && typeof fromId !== "string") {
         res.status(400).json({
           success: false,
           data: null,
-          message: "from_id (or issue_id) is required and must be a string",
+          message: "from_id (or issue_id) must be a string if provided",
         });
         return;
       }
@@ -193,7 +194,7 @@ export function createFeedbackRouter(): Router {
 
       // Create feedback using CLI operation
       const feedback = createNewFeedback(req.project!.db, {
-        from_id: fromId,
+        from_id: fromId || undefined,  // Can be undefined for anonymous feedback
         to_id: toId,
         feedback_type: feedback_type as FeedbackType,
         content,

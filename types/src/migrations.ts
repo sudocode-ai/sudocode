@@ -478,6 +478,149 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 5,
+    name: "make-feedback-from-id-nullable",
+    up: (db: Database.Database) => {
+      // Check if issue_feedback table exists
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='issue_feedback'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (tables.length === 0) {
+        // Table doesn't exist yet, will be created with new schema
+        return;
+      }
+
+      // Check if from_id is already nullable (already migrated)
+      const tableInfo = db.pragma("table_info(issue_feedback)") as Array<{
+        name: string;
+        notnull: number;
+      }>;
+      const fromIdColumn = tableInfo.find((col) => col.name === "from_id");
+
+      if (fromIdColumn && fromIdColumn.notnull === 0) {
+        // Already migrated (from_id is nullable)
+        return;
+      }
+
+      // SQLite doesn't support ALTER COLUMN or DROP CONSTRAINT
+      // We need to recreate the table to make from_id/from_uuid nullable
+      db.exec(`PRAGMA foreign_keys = OFF;`);
+
+      // Create new table with nullable from_id/from_uuid and no FK constraints
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS issue_feedback_new (
+          id TEXT PRIMARY KEY,
+          from_id TEXT,
+          from_uuid TEXT,
+          to_id TEXT NOT NULL,
+          to_uuid TEXT NOT NULL,
+          feedback_type TEXT NOT NULL CHECK(feedback_type IN ('comment', 'suggestion', 'request')),
+          content TEXT NOT NULL,
+          agent TEXT,
+          anchor TEXT,
+          dismissed INTEGER NOT NULL DEFAULT 0 CHECK(dismissed IN (0, 1)),
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+      // Copy data from old table
+      db.exec(`
+        INSERT INTO issue_feedback_new (
+          id, from_id, from_uuid, to_id, to_uuid, feedback_type,
+          content, agent, anchor, dismissed, created_at, updated_at
+        )
+        SELECT
+          id, from_id, from_uuid, to_id, to_uuid, feedback_type,
+          content, agent, anchor, dismissed, created_at, updated_at
+        FROM issue_feedback;
+      `);
+
+      // Drop old table
+      db.exec(`DROP TABLE issue_feedback;`);
+
+      // Rename new table
+      db.exec(`ALTER TABLE issue_feedback_new RENAME TO issue_feedback;`);
+
+      // Recreate indexes
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_feedback_from_id ON issue_feedback(from_id);
+        CREATE INDEX IF NOT EXISTS idx_feedback_from_uuid ON issue_feedback(from_uuid);
+        CREATE INDEX IF NOT EXISTS idx_feedback_to_id ON issue_feedback(to_id);
+        CREATE INDEX IF NOT EXISTS idx_feedback_to_uuid ON issue_feedback(to_uuid);
+        CREATE INDEX IF NOT EXISTS idx_feedback_dismissed ON issue_feedback(dismissed);
+        CREATE INDEX IF NOT EXISTS idx_feedback_type ON issue_feedback(feedback_type);
+        CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON issue_feedback(created_at);
+      `);
+
+      db.exec(`PRAGMA foreign_keys = ON;`);
+
+      console.log(
+        "  ✓ Made from_id/from_uuid nullable in issue_feedback"
+      );
+    },
+    down: (db: Database.Database) => {
+      // Rollback: restore required from_id/from_uuid
+      // Note: This will fail if there's feedback without from_id
+      db.exec(`PRAGMA foreign_keys = OFF;`);
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS issue_feedback_old (
+          id TEXT PRIMARY KEY,
+          from_id TEXT NOT NULL,
+          from_uuid TEXT NOT NULL,
+          to_id TEXT NOT NULL,
+          to_uuid TEXT NOT NULL,
+          feedback_type TEXT NOT NULL CHECK(feedback_type IN ('comment', 'suggestion', 'request')),
+          content TEXT NOT NULL,
+          agent TEXT,
+          anchor TEXT,
+          dismissed INTEGER NOT NULL DEFAULT 0 CHECK(dismissed IN (0, 1)),
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (from_id) REFERENCES issues(id) ON DELETE CASCADE,
+          FOREIGN KEY (from_uuid) REFERENCES issues(uuid) ON DELETE CASCADE
+        );
+      `);
+
+      // Only copy feedback that has from_id (anonymous feedback would be lost)
+      db.exec(`
+        INSERT INTO issue_feedback_old (
+          id, from_id, from_uuid, to_id, to_uuid, feedback_type,
+          content, agent, anchor, dismissed, created_at, updated_at
+        )
+        SELECT
+          id, from_id, from_uuid, to_id, to_uuid, feedback_type,
+          content, agent, anchor, dismissed, created_at, updated_at
+        FROM issue_feedback
+        WHERE from_id IS NOT NULL;
+      `);
+
+      db.exec(`DROP TABLE issue_feedback;`);
+      db.exec(`ALTER TABLE issue_feedback_old RENAME TO issue_feedback;`);
+
+      // Recreate indexes
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_feedback_from_id ON issue_feedback(from_id);
+        CREATE INDEX IF NOT EXISTS idx_feedback_from_uuid ON issue_feedback(from_uuid);
+        CREATE INDEX IF NOT EXISTS idx_feedback_to_id ON issue_feedback(to_id);
+        CREATE INDEX IF NOT EXISTS idx_feedback_to_uuid ON issue_feedback(to_uuid);
+        CREATE INDEX IF NOT EXISTS idx_feedback_dismissed ON issue_feedback(dismissed);
+        CREATE INDEX IF NOT EXISTS idx_feedback_type ON issue_feedback(feedback_type);
+        CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON issue_feedback(created_at);
+      `);
+
+      db.exec(`PRAGMA foreign_keys = ON;`);
+
+      console.log(
+        "  Note: Anonymous feedback (without from_id) was removed during rollback"
+      );
+    },
+  },
 ];
 
 /**

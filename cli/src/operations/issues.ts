@@ -442,11 +442,14 @@ function hasOpenBlockers(
 /**
  * Delete an issue
  * Cascades to delete:
- * - Any feedback targeting this issue (feedback FROM is handled by FK cascade)
+ * - Any feedback FROM this issue
+ * - Any feedback targeting this issue
  * - All relationships involving this issue (both incoming and outgoing)
  */
 export function deleteIssue(db: Database.Database, id: string): boolean {
-  // First delete any feedback targeting this issue (feedback FROM this issue is handled by FK CASCADE)
+  // Delete any feedback FROM this issue (no longer handled by FK CASCADE since from_id is nullable)
+  db.prepare(`DELETE FROM issue_feedback WHERE from_id = ?`).run(id);
+  // Delete any feedback targeting this issue
   db.prepare(`DELETE FROM issue_feedback WHERE to_id = ?`).run(id);
 
   // Delete all relationships involving this issue (both directions)
