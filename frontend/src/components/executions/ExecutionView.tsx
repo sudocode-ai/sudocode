@@ -15,7 +15,6 @@ import { useAgentActions } from '@/hooks/useAgentActions'
 import { useWorktreeMutations } from '@/hooks/useWorktreeMutations'
 import { useExecutionMutations } from '@/hooks/useExecutionMutations'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Execution, ExecutionConfig, SyncMode } from '@/types/execution'
@@ -23,15 +22,30 @@ import type { ToolCallTracking } from '@/hooks/useAgUiStream'
 import {
   Loader2,
   XCircle,
-  CheckCircle2,
-  AlertCircle,
-  X,
-  Clock,
-  PauseCircle,
   ArrowDown,
   ArrowUp,
-  FolderOpen,
 } from 'lucide-react'
+
+/**
+ * Execution data exposed to parent component for header rendering
+ */
+export interface ExecutionHeaderData {
+  rootExecution: Execution
+  lastExecution: Execution
+  worktreeExists: boolean
+  cancelling: boolean
+  deletingExecution: boolean
+  canCancel: boolean
+}
+
+/**
+ * Action handlers exposed to parent component
+ */
+export interface ExecutionActionHandlers {
+  onCancel: () => void
+  onDelete: () => void
+  onOpenInIDE: () => void
+}
 
 export interface ExecutionViewProps {
   /**
@@ -43,6 +57,16 @@ export interface ExecutionViewProps {
    * Callback when follow-up execution is created (optional - for external navigation if needed)
    */
   onFollowUpCreated?: (newExecutionId: string) => void
+
+  /**
+   * Callback when execution status changes (for parent to display in header)
+   */
+  onStatusChange?: (status: Execution['status']) => void
+
+  /**
+   * Callback when execution data changes (for parent to render header info/actions)
+   */
+  onHeaderDataChange?: (data: ExecutionHeaderData, handlers: ExecutionActionHandlers) => void
 }
 
 /**
@@ -52,7 +76,7 @@ export interface ExecutionViewProps {
  * Each execution in the chain is rendered inline with its own ExecutionMonitor.
  * The follow-up input panel appears after the last execution.
  */
-export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewProps) {
+export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, onHeaderDataChange }: ExecutionViewProps) {
   const { deleteWorktree } = useWorktreeMutations()
   const { deleteExecution } = useExecutionMutations()
   const [chainData, setChainData] = useState<ExecutionChainResponse | null>(null)
@@ -566,6 +590,37 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
     []
   )
 
+  // Notify parent of status changes
+  useEffect(() => {
+    if (!chainData || chainData.executions.length === 0) return
+    const lastExecution = chainData.executions[chainData.executions.length - 1]
+    onStatusChange?.(lastExecution.status)
+  }, [chainData, onStatusChange])
+
+  // Notify parent of header data changes
+  useEffect(() => {
+    if (!chainData || chainData.executions.length === 0) return
+    const rootExec = chainData.executions[0]
+    const lastExec = chainData.executions[chainData.executions.length - 1]
+    const canCancel = ['preparing', 'pending', 'running', 'paused'].includes(lastExec.status)
+
+    onHeaderDataChange?.(
+      {
+        rootExecution: rootExec,
+        lastExecution: lastExec,
+        worktreeExists,
+        cancelling,
+        deletingExecution,
+        canCancel,
+      },
+      {
+        onCancel: () => handleCancel(lastExec.id),
+        onDelete: () => setShowDeleteExecution(true),
+        onOpenInIDE: handleOpenInIDE,
+      }
+    )
+  }, [chainData, worktreeExists, cancelling, deletingExecution, onHeaderDataChange, handleOpenInIDE])
+
   // Auto-scroll effect when chain data changes
   useEffect(() => {
     if (!shouldAutoScroll) return
@@ -579,75 +634,6 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
     container.scrollTop = container.scrollHeight
     lastScrollTopRef.current = container.scrollTop
   }, [loading])
-
-  // Render status badge
-  const renderStatusBadge = (status: Execution['status']) => {
-    switch (status) {
-      case 'preparing':
-        return (
-          <Badge variant="secondary" className="flex items-center gap-1">
-            <Clock className="h-3 w-3" />
-            Preparing
-          </Badge>
-        )
-      case 'pending':
-        return (
-          <Badge variant="secondary" className="flex items-center gap-1">
-            <Clock className="h-3 w-3" />
-            Pending
-          </Badge>
-        )
-      case 'running':
-        return (
-          <Badge variant="default" className="flex items-center gap-1">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Running
-          </Badge>
-        )
-      case 'paused':
-        return (
-          <Badge variant="outline" className="flex items-center gap-1">
-            <PauseCircle className="h-3 w-3" />
-            Paused
-          </Badge>
-        )
-      case 'completed':
-        return (
-          <Badge variant="default" className="flex items-center gap-1 bg-green-600">
-            <CheckCircle2 className="h-3 w-3" />
-            Completed
-          </Badge>
-        )
-      case 'failed':
-        return (
-          <Badge variant="destructive" className="flex items-center gap-1">
-            <XCircle className="h-3 w-3" />
-            Failed
-          </Badge>
-        )
-      case 'cancelled':
-        return (
-          <Badge variant="secondary" className="flex items-center gap-1">
-            <X className="h-3 w-3" />
-            Cancelled
-          </Badge>
-        )
-      case 'stopped':
-        return (
-          <Badge variant="secondary" className="flex items-center gap-1">
-            <X className="h-3 w-3" />
-            Stopped
-          </Badge>
-        )
-      default:
-        return (
-          <Badge variant="secondary" className="flex items-center gap-1">
-            <AlertCircle className="h-3 w-3" />
-            {String(status).charAt(0).toUpperCase() + String(status).slice(1)}
-          </Badge>
-        )
-    }
-  }
 
   // Loading state
   if (loading) {
@@ -689,206 +675,13 @@ export function ExecutionView({ executionId, onFollowUpCreated }: ExecutionViewP
     lastExecution.status === 'cancelled'
   const canEnableFollowUp = lastExecutionTerminal
 
-  // Can we cancel the last execution?
-  const canCancelLast = lastExecution.status === 'running'
-
-  const truncateId = (id: string, length = 8) => id.substring(0, length)
-
   return (
     <TooltipProvider>
       <div className="flex h-full flex-col">
         {/* Scrollable content area with padding for sticky panel */}
         <div ref={scrollContainerRef} className="flex-1 overflow-auto py-6" onScroll={handleScroll}>
           <div className="relative mx-auto w-full max-w-7xl space-y-4 px-6">
-            {/* Execution Chain Header */}
-            <Card className="px-6 pt-6">
-              <div className="flex items-start justify-between">
-                <div className="flex-1 space-y-3">
-                  {/* Title and Status */}
-                  <div className="flex items-center gap-3">
-                    <h2 className="text-xl font-semibold">
-                      Execution {truncateId(rootExecution.id)}
-                    </h2>
-                    {renderStatusBadge(lastExecution.status)}
-                  </div>
-
-                  {/* Compact Metadata - single or few lines */}
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-                    {/* Issue */}
-                    {rootExecution.issue_id && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground">Issue:</span>
-                        <span className="font-mono">{rootExecution.issue_id}</span>
-                      </div>
-                    )}
-                    {/* Mode */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">Mode:</span>
-                      <span className="capitalize">{rootExecution.mode}</span>
-                    </div>
-                    {/* Model */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">Model:</span>
-                      <span>{rootExecution.model}</span>
-                    </div>
-                    {/* Base Branch */}
-                    {rootExecution.target_branch && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground">Base:</span>
-                        <span className="font-mono">{rootExecution.target_branch}</span>
-                      </div>
-                    )}
-                    {/* New Branch */}
-                    {rootExecution.branch_name && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground">Branch:</span>
-                        <span className="font-mono">{rootExecution.branch_name}</span>
-                      </div>
-                    )}
-                    {/* Worktree with status */}
-                    {rootExecution.worktree_path && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground">Worktree:</span>
-                        <span className="font-mono text-xs">{rootExecution.worktree_path}</span>
-                        {worktreeExists ? (
-                          <Badge variant="secondary" className="text-xs">
-                            exists
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-xs text-muted-foreground">
-                            deleted
-                          </Badge>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Session info - separate line if exists */}
-                  {lastExecution.session_id && (
-                    <div className="text-sm">
-                      <span className="text-muted-foreground">Session:</span>
-                      <code className="ml-2 rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                        {lastExecution.session_id}
-                      </code>
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        (use with{' '}
-                        <code className="rounded bg-muted px-1 py-0.5">
-                          claude --resume {lastExecution.session_id}
-                        </code>
-                        )
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Timestamps - from root */}
-                  <div className="flex gap-4 text-xs text-muted-foreground">
-                    {rootExecution.created_at && (
-                      <div>
-                        Started:{' '}
-                        {new Date(rootExecution.created_at).toLocaleString('en-US', {
-                          dateStyle: 'short',
-                          timeStyle: 'short',
-                        })}
-                      </div>
-                    )}
-                    {lastExecution.completed_at && (
-                      <div>
-                        Last completed:{' '}
-                        {new Date(lastExecution.completed_at).toLocaleString('en-US', {
-                          dateStyle: 'short',
-                          timeStyle: 'short',
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="ml-4 flex gap-2">
-                  {canCancelLast && (
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => handleCancel(lastExecution.id)}
-                      disabled={cancelling}
-                    >
-                      {cancelling ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Cancelling...
-                        </>
-                      ) : (
-                        <>
-                          <X className="mr-2 h-4 w-4" />
-                          Cancel
-                        </>
-                      )}
-                    </Button>
-                  )}
-                  {rootExecution.worktree_path && worktreeExists && (
-                    <>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button variant="outline" size="sm" onClick={handleOpenInIDE}>
-                            <FolderOpen className="mr-2 h-4 w-4" />
-                            Open in IDE
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Open worktree directory in configured IDE</p>
-                        </TooltipContent>
-                      </Tooltip>
-                      {/* <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleSyncToLocal}
-                            disabled={isPreviewing || syncStatus === 'syncing'}
-                          >
-                            {isPreviewing ? (
-                              <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Loading...
-                              </>
-                            ) : (
-                              <>
-                                <GitMerge className="mr-2 h-4 w-4" />
-                                Sync Worktree to Local
-                              </>
-                            )}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Sync worktree changes to local branch</p>
-                        </TooltipContent>
-                      </Tooltip> */}
-                    </>
-                  )}
-                  {/* {canDeleteWorktree && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowDeleteWorktree(true)}
-                      disabled={deletingWorktree}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Delete Worktree
-                    </Button>
-                  )} */}
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => setShowDeleteExecution(true)}
-                    disabled={deletingExecution}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </Card>
-
-            {/* Execution chain contents with boundary */}
+            {/* Execution chain contents */}
             <Card className="p-6">
               {executions.map((execution, index) => {
                 const isLast = index === executions.length - 1

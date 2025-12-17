@@ -122,6 +122,8 @@ vi.mock('sonner', () => ({
 
 describe('ExecutionView', () => {
   const mockOnFollowUpCreated = vi.fn()
+  const mockOnStatusChange = vi.fn()
+  const mockOnHeaderDataChange = vi.fn()
 
   const mockExecution: Execution = {
     id: 'exec-123',
@@ -192,22 +194,28 @@ describe('ExecutionView', () => {
     expect(screen.getByText('Loading execution...')).toBeInTheDocument()
   })
 
-  it('should load and display execution metadata', async () => {
+  it('should load and call onHeaderDataChange with execution metadata', async () => {
     vi.mocked(executionsApi.getChain).mockResolvedValue(mockChainResponse(mockExecution))
 
     renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      <ExecutionView
+        executionId="exec-123"
+        onFollowUpCreated={mockOnFollowUpCreated}
+        onHeaderDataChange={mockOnHeaderDataChange}
+      />
     )
 
     await waitFor(() => {
-      // The header now shows "Execution {truncatedId}" as a single text
-      expect(screen.getByText(/Execution exec-123/)).toBeInTheDocument()
+      expect(mockOnHeaderDataChange).toHaveBeenCalled()
     })
 
-    expect(screen.getByText('ISSUE-001')).toBeInTheDocument()
-    expect(screen.getByText('worktree')).toBeInTheDocument()
-    expect(screen.getByText('claude-sonnet-4')).toBeInTheDocument()
-    expect(screen.getByText('main')).toBeInTheDocument()
+    // Verify the header data passed to callback contains expected metadata
+    const [headerData] = mockOnHeaderDataChange.mock.calls[0]
+    expect(headerData.rootExecution.id).toBe('exec-123')
+    expect(headerData.rootExecution.issue_id).toBe('ISSUE-001')
+    expect(headerData.rootExecution.mode).toBe('worktree')
+    expect(headerData.rootExecution.model).toBe('claude-sonnet-4')
+    expect(headerData.rootExecution.target_branch).toBe('main')
   })
 
   it('should display error when loading fails', async () => {
@@ -223,19 +231,23 @@ describe('ExecutionView', () => {
     })
   })
 
-  it('should show running status badge', async () => {
+  it('should call onStatusChange with running status', async () => {
     vi.mocked(executionsApi.getChain).mockResolvedValue(mockChainResponse(mockExecution))
 
     renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      <ExecutionView
+        executionId="exec-123"
+        onFollowUpCreated={mockOnFollowUpCreated}
+        onStatusChange={mockOnStatusChange}
+      />
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Running')).toBeInTheDocument()
+      expect(mockOnStatusChange).toHaveBeenCalledWith('running')
     })
   })
 
-  it('should show completed status badge', async () => {
+  it('should call onStatusChange with completed status', async () => {
     vi.mocked(executionsApi.getChain).mockResolvedValue(
       mockChainResponse({
         ...mockExecution,
@@ -245,15 +257,19 @@ describe('ExecutionView', () => {
     )
 
     renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      <ExecutionView
+        executionId="exec-123"
+        onFollowUpCreated={mockOnFollowUpCreated}
+        onStatusChange={mockOnStatusChange}
+      />
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Completed')).toBeInTheDocument()
+      expect(mockOnStatusChange).toHaveBeenCalledWith('completed')
     })
   })
 
-  it('should show failed status badge', async () => {
+  it('should call onStatusChange with failed status and display error message', async () => {
     vi.mocked(executionsApi.getChain).mockResolvedValue(
       mockChainResponse({
         ...mockExecution,
@@ -264,28 +280,39 @@ describe('ExecutionView', () => {
     )
 
     renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      <ExecutionView
+        executionId="exec-123"
+        onFollowUpCreated={mockOnFollowUpCreated}
+        onStatusChange={mockOnStatusChange}
+      />
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Failed')).toBeInTheDocument()
+      expect(mockOnStatusChange).toHaveBeenCalledWith('failed')
       expect(screen.getByText('Test error message')).toBeInTheDocument()
     })
   })
 
-  it('should show Cancel button when execution is running', async () => {
+  it('should expose canCancel=true via onHeaderDataChange when execution is running', async () => {
     vi.mocked(executionsApi.getChain).mockResolvedValue(mockChainResponse(mockExecution))
 
     renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      <ExecutionView
+        executionId="exec-123"
+        onFollowUpCreated={mockOnFollowUpCreated}
+        onHeaderDataChange={mockOnHeaderDataChange}
+      />
     )
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Cancel/ })).toBeInTheDocument()
+      expect(mockOnHeaderDataChange).toHaveBeenCalled()
     })
+
+    const [headerData] = mockOnHeaderDataChange.mock.calls[0]
+    expect(headerData.canCancel).toBe(true)
   })
 
-  it('should not show Cancel button when execution is completed', async () => {
+  it('should expose canCancel=false via onHeaderDataChange when execution is completed', async () => {
     vi.mocked(executionsApi.getChain).mockResolvedValue(
       mockChainResponse({
         ...mockExecution,
@@ -294,14 +321,19 @@ describe('ExecutionView', () => {
     )
 
     renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      <ExecutionView
+        executionId="exec-123"
+        onFollowUpCreated={mockOnFollowUpCreated}
+        onHeaderDataChange={mockOnHeaderDataChange}
+      />
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Completed')).toBeInTheDocument()
+      expect(mockOnHeaderDataChange).toHaveBeenCalled()
     })
 
-    expect(screen.queryByRole('button', { name: /Cancel/ })).not.toBeInTheDocument()
+    const [headerData] = mockOnHeaderDataChange.mock.calls[0]
+    expect(headerData.canCancel).toBe(false)
   })
 
   it('should show follow-up panel when execution is completed', async () => {
@@ -339,21 +371,25 @@ describe('ExecutionView', () => {
     })
   })
 
-  it('should cancel execution when Cancel button clicked', async () => {
-    const user = userEvent.setup()
+  it('should cancel execution when onCancel handler is called', async () => {
     vi.mocked(executionsApi.getChain).mockResolvedValue(mockChainResponse(mockExecution))
     vi.mocked(executionsApi.cancel).mockResolvedValue(undefined as any)
 
     renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      <ExecutionView
+        executionId="exec-123"
+        onFollowUpCreated={mockOnFollowUpCreated}
+        onHeaderDataChange={mockOnHeaderDataChange}
+      />
     )
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Cancel/ })).toBeInTheDocument()
+      expect(mockOnHeaderDataChange).toHaveBeenCalled()
     })
 
-    const cancelButton = screen.getByRole('button', { name: /Cancel/ })
-    await user.click(cancelButton)
+    // Get the onCancel handler from the callback and invoke it
+    const [, handlers] = mockOnHeaderDataChange.mock.calls[0]
+    handlers.onCancel()
 
     await waitFor(() => {
       expect(executionsApi.cancel).toHaveBeenCalledWith('exec-123')
@@ -404,11 +440,15 @@ describe('ExecutionView', () => {
     )
 
     renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      <ExecutionView
+        executionId="exec-123"
+        onFollowUpCreated={mockOnFollowUpCreated}
+        onStatusChange={mockOnStatusChange}
+      />
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Completed')).toBeInTheDocument()
+      expect(mockOnStatusChange).toHaveBeenCalledWith('completed')
     })
 
     // Follow-up panel should be shown for both worktree and local executions
@@ -464,11 +504,15 @@ describe('ExecutionView', () => {
       .mockResolvedValueOnce(mockChainResponse(completedExecution))
 
     renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      <ExecutionView
+        executionId="exec-123"
+        onFollowUpCreated={mockOnFollowUpCreated}
+        onStatusChange={mockOnStatusChange}
+      />
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Running')).toBeInTheDocument()
+      expect(mockOnStatusChange).toHaveBeenCalledWith('running')
     })
 
     // Trigger completion from monitor
@@ -477,25 +521,6 @@ describe('ExecutionView', () => {
 
     await waitFor(() => {
       expect(executionsApi.getChain).toHaveBeenCalledTimes(2)
-    })
-  })
-
-  it('should display timestamps when available', async () => {
-    vi.mocked(executionsApi.getChain).mockResolvedValue(
-      mockChainResponse({
-        ...mockExecution,
-        status: 'completed',
-        completed_at: '2025-01-15T10:05:00Z',
-      })
-    )
-
-    renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
-    )
-
-    await waitFor(() => {
-      expect(screen.getByText(/Started:/)).toBeInTheDocument()
-      expect(screen.getByText(/Last completed:/)).toBeInTheDocument()
     })
   })
 
@@ -508,36 +533,19 @@ describe('ExecutionView', () => {
     )
 
     renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      <ExecutionView
+        executionId="exec-123"
+        onFollowUpCreated={mockOnFollowUpCreated}
+        onStatusChange={mockOnStatusChange}
+      />
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Preparing')).toBeInTheDocument()
+      expect(mockOnStatusChange).toHaveBeenCalledWith('preparing')
     })
 
     // ExecutionMonitor should be displayed for 'preparing' status (active execution)
     expect(screen.getByTestId('execution-monitor')).toBeInTheDocument()
-  })
-
-  it('should handle cancel error gracefully', async () => {
-    const user = userEvent.setup()
-    vi.mocked(executionsApi.getChain).mockResolvedValue(mockChainResponse(mockExecution))
-    vi.mocked(executionsApi.cancel).mockRejectedValue(new Error('Cancel failed'))
-
-    renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
-    )
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Cancel/ })).toBeInTheDocument()
-    })
-
-    const cancelButton = screen.getByRole('button', { name: /Cancel/ })
-    await user.click(cancelButton)
-
-    await waitFor(() => {
-      expect(screen.getByText('Cancel failed')).toBeInTheDocument()
-    })
   })
 
   it('should show Cleanup Worktree button when worktree exists', async () => {
@@ -568,11 +576,15 @@ describe('ExecutionView', () => {
     vi.mocked(executionsApi.worktreeExists).mockResolvedValue({ exists: false })
 
     renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      <ExecutionView
+        executionId="exec-123"
+        onFollowUpCreated={mockOnFollowUpCreated}
+        onStatusChange={mockOnStatusChange}
+      />
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Completed')).toBeInTheDocument()
+      expect(mockOnStatusChange).toHaveBeenCalledWith('completed')
     })
 
     expect(screen.queryByRole('button', { name: /Cleanup Worktree/ })).not.toBeInTheDocument()
@@ -633,38 +645,6 @@ describe('ExecutionView', () => {
     })
   })
 
-  it('should handle cleanup worktree error gracefully', async () => {
-    const user = userEvent.setup()
-    vi.mocked(executionsApi.getChain).mockResolvedValue(
-      mockChainResponse({
-        ...mockExecution,
-        status: 'completed',
-      })
-    )
-    vi.mocked(executionsApi.worktreeExists).mockResolvedValue({ exists: true })
-    vi.mocked(executionsApi.deleteWorktree).mockRejectedValue(new Error('Delete failed'))
-
-    renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
-    )
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Cleanup Worktree/ })).toBeInTheDocument()
-    })
-
-    const deleteButton = screen.getByRole('button', { name: /Cleanup Worktree/ })
-    await user.click(deleteButton)
-
-    // Find the confirm button inside the dialog
-    const dialog = screen.getByTestId('cleanup-worktree-dialog')
-    const confirmButton = dialog.querySelector('button:first-child') as HTMLButtonElement
-    await user.click(confirmButton)
-
-    await waitFor(() => {
-      expect(screen.getByText('Delete failed')).toBeInTheDocument()
-    })
-  })
-
   it('should display user prompts for both root and follow-up executions', async () => {
     const rootPrompt = 'Implement the login feature'
     const followUpPrompt = 'Add error handling to the login'
@@ -704,11 +684,15 @@ describe('ExecutionView', () => {
     vi.mocked(executionsApi.getChain).mockResolvedValue(mockChainResponse(mockExecution))
 
     const { container } = renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      <ExecutionView
+        executionId="exec-123"
+        onFollowUpCreated={mockOnFollowUpCreated}
+        onStatusChange={mockOnStatusChange}
+      />
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Running')).toBeInTheDocument()
+      expect(mockOnStatusChange).toHaveBeenCalledWith('running')
     })
 
     // Get the scrollable container
@@ -743,11 +727,15 @@ describe('ExecutionView', () => {
     vi.mocked(executionsApi.getChain).mockResolvedValue(mockChainResponse(mockExecution))
 
     const { container } = renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      <ExecutionView
+        executionId="exec-123"
+        onFollowUpCreated={mockOnFollowUpCreated}
+        onStatusChange={mockOnStatusChange}
+      />
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Running')).toBeInTheDocument()
+      expect(mockOnStatusChange).toHaveBeenCalledWith('running')
     })
 
     // Get the scrollable container
@@ -782,11 +770,15 @@ describe('ExecutionView', () => {
     vi.mocked(executionsApi.getChain).mockResolvedValue(mockChainResponse(mockExecution))
 
     const { container } = renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      <ExecutionView
+        executionId="exec-123"
+        onFollowUpCreated={mockOnFollowUpCreated}
+        onStatusChange={mockOnStatusChange}
+      />
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Running')).toBeInTheDocument()
+      expect(mockOnStatusChange).toHaveBeenCalledWith('running')
     })
 
     // Get the scrollable container
@@ -822,11 +814,15 @@ describe('ExecutionView', () => {
     vi.mocked(executionsApi.getChain).mockResolvedValue(mockChainResponse(mockExecution))
 
     const { container } = renderWithProviders(
-      <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      <ExecutionView
+        executionId="exec-123"
+        onFollowUpCreated={mockOnFollowUpCreated}
+        onStatusChange={mockOnStatusChange}
+      />
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Running')).toBeInTheDocument()
+      expect(mockOnStatusChange).toHaveBeenCalledWith('running')
     })
 
     // Get the scrollable container
@@ -1030,11 +1026,15 @@ describe('ExecutionView', () => {
       })
 
       renderWithProviders(
-        <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+        <ExecutionView
+          executionId="exec-123"
+          onFollowUpCreated={mockOnFollowUpCreated}
+          onStatusChange={mockOnStatusChange}
+        />
       )
 
       await waitFor(() => {
-        expect(screen.getByText('Completed')).toBeInTheDocument()
+        expect(mockOnStatusChange).toHaveBeenCalledWith('completed')
       })
 
       // Should not render TodoTracker when no tool calls
@@ -1143,11 +1143,15 @@ describe('ExecutionView', () => {
       )
 
       renderWithProviders(
-        <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+        <ExecutionView
+          executionId="exec-123"
+          onFollowUpCreated={mockOnFollowUpCreated}
+          onStatusChange={mockOnStatusChange}
+        />
       )
 
       await waitFor(() => {
-        expect(screen.getByText('Completed')).toBeInTheDocument()
+        expect(mockOnStatusChange).toHaveBeenCalledWith('completed')
       })
 
       expect(screen.queryByRole('button', { name: /Open in IDE/ })).not.toBeInTheDocument()

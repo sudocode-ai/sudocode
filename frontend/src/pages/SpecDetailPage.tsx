@@ -11,6 +11,7 @@ import { AlignedFeedbackPanel } from '@/components/specs/AlignedFeedbackPanel'
 import { AddFeedbackDialog } from '@/components/specs/AddFeedbackDialog'
 import { TableOfContentsPanel } from '@/components/specs/TableOfContentsPanel'
 import { CreateWorkflowDialog } from '@/components/workflows'
+import { AdhocExecutionDialog } from '@/components/executions/AdhocExecutionDialog'
 import { useFeedbackPositions } from '@/hooks/useFeedbackPositions'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -43,6 +44,7 @@ import {
   ArrowLeft,
   Link,
   Play,
+  Lightbulb,
 } from 'lucide-react'
 import type { IssueFeedback, Relationship, EntityType, RelationshipType } from '@/types/api'
 import type { WorkflowSource } from '@/types/workflow'
@@ -96,6 +98,7 @@ export default function SpecDetailPage() {
   const [isCopied, setIsCopied] = useState(false)
   const [workflowDialogOpen, setWorkflowDialogOpen] = useState(false)
   const [workflowDefaultSource, setWorkflowDefaultSource] = useState<WorkflowSource | undefined>()
+  const [planDialogOpen, setPlanDialogOpen] = useState(false)
 
   // Local state for editable fields
   const [title, setTitle] = useState('')
@@ -137,6 +140,16 @@ export default function SpecDetailPage() {
       (issue) => implementingIssueIds.includes(issue.id) && issue.status !== 'closed'
     ).length
   }, [id, relationships, issues])
+
+  // Default prompt for planning implementation
+  const planImplementationPrompt = useMemo(() => {
+    if (!spec) return ''
+    return `Plan the implementation of spec [[${spec.id}]]
+
+First review the spec content and the existing codebase. Ask clarifying questions if there are any ambiguities.
+
+Create actionable issues that implement its requirements. Each issue should be specific, well-scoped, and include clear acceptance criteria. Make sure to link each issue back to the spec and capture anly blocking dependencies.`
+  }, [spec])
 
   // Compute all descendant IDs to prevent circular parent references
   const descendantIds = useMemo(() => {
@@ -592,6 +605,48 @@ export default function SpecDetailPage() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
+                    variant={openImplementingIssuesCount === 0 ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setPlanDialogOpen(true)}
+                  >
+                    <Lightbulb className="h-4 w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">
+                      {openImplementingIssuesCount === 0 ? 'Plan Implementation' : 'Plan'}
+                    </span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Plan out implementing issues for this spec</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            {openImplementingIssuesCount > 0 && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleRunAsWorkflow}
+                      disabled={isCreatingWorkflow}
+                    >
+                      <Play className="h-4 w-4 sm:mr-2" />
+                      <span className="hidden sm:inline">Run as Workflow</span>
+                      <Badge variant="secondary" className="ml-2 h-5 min-w-5 px-1.5">
+                        {openImplementingIssuesCount}
+                      </Badge>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {`Run ${openImplementingIssuesCount} implementing issue${openImplementingIssuesCount > 1 ? 's' : ''} as workflow`}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
                     variant="outline"
                     size="sm"
                     onClick={() => setShowFeedbackPanel(!showFeedbackPanel)}
@@ -610,32 +665,6 @@ export default function SpecDetailPage() {
                 </TooltipTrigger>
                 <TooltipContent>
                   <p>{showFeedbackPanel ? 'Hide' : 'Show'} feedback</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRunAsWorkflow}
-                    disabled={openImplementingIssuesCount === 0 || isCreatingWorkflow}
-                  >
-                    <Play className="h-4 w-4 sm:mr-2" />
-                    <span className="hidden sm:inline">Run as Workflow</span>
-                    {openImplementingIssuesCount > 0 && (
-                      <Badge variant="secondary" className="ml-2 h-5 min-w-5 px-1.5">
-                        {openImplementingIssuesCount}
-                      </Badge>
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {openImplementingIssuesCount > 0
-                    ? `Run ${openImplementingIssuesCount} implementing issue${openImplementingIssuesCount > 1 ? 's' : ''} as workflow`
-                    : 'No open implementing issues'}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -1053,6 +1082,14 @@ export default function SpecDetailPage() {
         onCreate={handleCreateWorkflow}
         defaultSource={workflowDefaultSource}
         isCreating={isCreatingWorkflow}
+      />
+
+      <AdhocExecutionDialog
+        open={planDialogOpen}
+        onClose={() => setPlanDialogOpen(false)}
+        defaultPrompt={planImplementationPrompt}
+        title="Plan Implementation"
+        description="Create implementing issues for this spec using an AI agent."
       />
     </div>
   )

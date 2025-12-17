@@ -124,6 +124,10 @@ interface AgentConfigPanelProps {
    * Whether the worktree still exists on disk
    */
   worktreeExists?: boolean
+  /**
+   * Default prompt to pre-populate the textarea
+   */
+  defaultPrompt?: string
 }
 
 // TODO: Move this somewhere more central.
@@ -273,9 +277,10 @@ export function AgentConfigPanel({
   hasUncommittedChanges,
   commitsAhead,
   worktreeExists = true,
+  defaultPrompt,
 }: AgentConfigPanelProps) {
   const [loading, setLoading] = useState(false)
-  const [prompt, setPrompt] = useState('')
+  const [prompt, setPrompt] = useState(defaultPrompt || '')
   const [internalForceNewExecution, setInternalForceNewExecution] = useState(false)
   const [availableBranches, setAvailableBranches] = useState<string[]>([])
   const [currentBranch, setCurrentBranch] = useState<string>('')
@@ -416,6 +421,13 @@ export function AgentConfigPanel({
       setForceNewExecution(true)
     }
   }, [isWorktreeCleaned, forceNewExecution, setForceNewExecution])
+
+  // Update prompt when defaultPrompt changes
+  useEffect(() => {
+    if (defaultPrompt !== undefined) {
+      setPrompt(defaultPrompt)
+    }
+  }, [defaultPrompt])
 
   // Reset config when issue or lastExecution changes (issue switching)
   useEffect(() => {
@@ -620,7 +632,12 @@ export function AgentConfigPanel({
     // For adhoc executions (no issueId), prompt is always required
     const finalPrompt = prompt.trim() || (!isFollowUp && issueId ? `Implement issue [[${issueId}]]` : '')
 
-    onStart(config, finalPrompt, selectedAgentType, forceNewExecution)
+    // For local mode, don't send baseBranch - let the server use the current branch
+    const finalConfig = config.mode === 'local'
+      ? { ...config, baseBranch: undefined }
+      : config
+
+    onStart(finalConfig, finalPrompt, selectedAgentType, forceNewExecution)
     setPrompt('') // Clear the prompt after submission
     setForceNewExecution(false) // Reset the flag after submission
   }
