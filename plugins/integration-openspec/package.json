@@ -34,6 +34,7 @@
     "@sudocode-ai/types": "^0.1.0"
   },
   "devDependencies": {
+    "@fission-ai/openspec": "^0.16.0",
     "@sudocode-ai/types": "*",
     "@types/node": "^22.10.2",
     "typescript": "^5.8.3",
