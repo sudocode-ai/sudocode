@@ -5,9 +5,6 @@
  * configures sudocode-mcp MCP server for agent executions. Tests cover all execution
  * types (adhoc, issue-based, workflow) and error scenarios.
  *
- * These tests follow TDD red phase - they should fail until the implementation
- * in ExecutionService is complete.
- *
  * Test Strategy:
  * - Uses real ExecutionService (not just mocked methods)
  * - Mocks file system and process execution to control detection results
@@ -17,7 +14,6 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
-import type { Execution } from '@sudocode-ai/types';
 import { ExecutionService } from '../../src/services/execution-service.js';
 import { ExecutionLifecycleService } from '../../src/services/execution-lifecycle.js';
 import { ExecutionLogsStore } from '../../src/services/execution-logs-store.js';
@@ -33,8 +29,6 @@ import {
 } from '@sudocode-ai/types/schema';
 import { runMigrations } from '@sudocode-ai/types/migrations';
 import * as fs from 'fs/promises';
-import * as os from 'os';
-import * as path from 'path';
 import { createIssue } from '@sudocode-ai/cli/dist/operations/index.js';
 
 /**

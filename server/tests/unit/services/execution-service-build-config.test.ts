@@ -2,7 +2,6 @@
  * Unit tests for ExecutionService.buildExecutionConfig method
  *
  * Tests the MCP auto-injection logic for sudocode-mcp plugin.
- * Following TDD red phase - these tests should fail until implementation is complete.
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";

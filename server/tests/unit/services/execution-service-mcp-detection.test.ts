@@ -2,12 +2,10 @@
  * Unit tests for ExecutionService MCP Detection Methods
  *
  * Tests the MCP detection methods that determine if sudocode-mcp is installed
- * and configured for agent executions. These tests follow TDD red-green-refactor
- * methodology and should initially fail (red state) before implementation.
+ * and configured for agent executions.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { AgentType } from "@sudocode-ai/types";
 import * as fs from "fs/promises";
 import * as os from "os";
 import * as path from "path";

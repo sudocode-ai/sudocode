@@ -1457,6 +1457,7 @@ ${feedback}`;
    */
   private async detectAgentMcp(agentType: AgentType): Promise<boolean> {
     // For claude-code, check ~/.claude/settings.json
+    // This is not foolproof, but covers the default case
     if (agentType === "claude-code") {
       try {
         const claudeSettingsPath = path.join(
