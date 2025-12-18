@@ -1534,10 +1534,12 @@ Synced changes from worktree execution.`;
         execution.target_branch
       );
 
-      // 8. Check if there are unresolved conflicts
+      // 8. Auto-resolve JSONL conflicts if any (from git merge --squash)
+      let filesWithConflicts: string[] = [];
       if (mergeResult.hasConflicts) {
-        // Get list of files with conflicts
-        let filesWithConflicts: string[] = [];
+        await this._resolveJSONLConflicts();
+
+        // Re-check for remaining conflicts after JSONL resolution
         try {
           const conflictCheck = execSync(
             "git diff --name-only --diff-filter=U",
@@ -1552,19 +1554,21 @@ Synced changes from worktree execution.`;
             .split("\n")
             .filter((f) => f.length > 0);
         } catch {
-          // If command fails, leave empty
+          // If command fails, assume no remaining conflicts
         }
 
-        // Return with conflicts info - user must resolve manually
-        return {
-          success: false,
-          filesChanged: mergeResult.filesChanged,
-          hasConflicts: true,
-          filesWithConflicts,
-          error:
-            "Merge conflicts detected. Please resolve them manually and commit.",
-          cleanupOffered: false,
-        };
+        // If there are still unresolved conflicts, return error
+        if (filesWithConflicts.length > 0) {
+          return {
+            success: false,
+            filesChanged: mergeResult.filesChanged,
+            hasConflicts: true,
+            filesWithConflicts,
+            error:
+              "Merge conflicts detected. Please resolve them manually and commit.",
+            cleanupOffered: false,
+          };
+        }
       }
 
       // 9. Generate commit message

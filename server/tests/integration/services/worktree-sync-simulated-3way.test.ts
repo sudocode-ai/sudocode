@@ -169,6 +169,9 @@ describe('Worktree sync with simulated 3-way merge', () => {
 
     // Perform squash sync
     const result = await service.squashSync(testEnv.execution.id);
+    if (!result.success) {
+      console.error('Squash sync failed:', result.error);
+    }
     expect(result.success).toBe(true);
 
     // Verify merged result

@@ -51,7 +51,7 @@ export interface MergeInput {
  * Git merge-file exit codes:
  * - 0: Clean merge, no conflicts
  * - 1: Conflicts detected (but merge still produces output with conflict markers)
- * - >1: Fatal error
+ * - >1: Fatal error (except with empty base - simulated 3-way merge)
  *
  * @param input - The three versions to merge (base, ours, theirs)
  * @returns Promise<MergeResult> - The merge result with success status and content
@@ -81,6 +81,9 @@ export async function mergeYamlContent(input: MergeInput): Promise<MergeResult> 
   const oursPath = path.join(tmpDir, 'ours.yaml');
   const theirsPath = path.join(tmpDir, 'theirs.yaml');
 
+  // Track whether base is empty (simulated 3-way merge)
+  const baseIsEmpty = input.base.length === 0;
+
   try {
     // Write content to temp files
     await Promise.all([
@@ -108,14 +111,19 @@ export async function mergeYamlContent(input: MergeInput): Promise<MergeResult> 
     } catch (error: any) {
       // Exit code 1 means conflicts were detected
       // The file still contains the merge result with conflict markers
-      if (error.code === 1) {
+      // Exit code 2+ with empty base is also valid (simulated 3-way merge)
+      // Git merge-file returns exit code 2 for empty base, but still produces valid output
+      if (error.code === 1 || (baseIsEmpty && error.code > 1)) {
         const mergedContent = await fs.promises.readFile(oursPath, 'utf8');
 
-        return {
-          success: false,
-          content: mergedContent,
-          hasConflicts: true,
-        };
+        // Validate that git produced output (not a real error)
+        if (mergedContent.length > 0) {
+          return {
+            success: false,
+            content: mergedContent,
+            hasConflicts: true,
+          };
+        }
       }
 
       // Exit code > 1 means a fatal error occurred
@@ -160,7 +168,10 @@ export function mergeYamlContentSync(input: MergeInput): MergeResult {
   const oursPath = path.join(tmpDir, 'ours.yaml');
   const theirsPath = path.join(tmpDir, 'theirs.yaml');
 
-  try {
+  // Track whether base is empty (simulated 3-way merge)
+    const baseIsEmpty = input.base.length === 0;
+
+    try {
     // Write content to temp files
     fs.writeFileSync(basePath, input.base, 'utf8');
     fs.writeFileSync(oursPath, input.ours, 'utf8');
@@ -182,14 +193,22 @@ export function mergeYamlContentSync(input: MergeInput): MergeResult {
       };
     } catch (error: any) {
       // Exit code 1 means conflicts were detected
-      if (error.status === 1) {
+      // Exit code 2+ with empty base is also valid (simulated 3-way merge)
+      // Git merge-file returns exit code 2 for empty base, but still produces valid output
+      const exitCode = error.status || error.code || 'unknown';
+
+      if (error.status === 1 || (baseIsEmpty && error.status > 1)) {
         const mergedContent = fs.readFileSync(oursPath, 'utf8');
 
-        return {
-          success: false,
-          content: mergedContent,
-          hasConflicts: true,
-        };
+        // Validate that git produced output (not a real error)
+        if (mergedContent.length > 0) {
+          return {
+            success: false,
+            content: mergedContent,
+            hasConflicts: true,
+          };
+        }
+        // If no output, this is likely a real error - fall through to throw
       }
 
       // Exit code > 1 means a fatal error occurred
@@ -199,7 +218,7 @@ export function mergeYamlContentSync(input: MergeInput): MergeResult {
       const errorDetails = stderr || stdout || error.message || 'Unknown error';
 
       throw new Error(
-        `Git merge-file command failed: ${errorDetails}`
+        `Git merge-file command failed (exit code ${exitCode}, baseIsEmpty=${baseIsEmpty}, mergedLength=${fs.existsSync(oursPath) ? fs.readFileSync(oursPath, 'utf8').length : 'file-not-found'}): ${errorDetails}`
       );
     }
   } finally {
