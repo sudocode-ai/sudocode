@@ -18,7 +18,9 @@ export interface YamlConverterOptions {
   indent?: number;
 
   /**
-   * Line width for wrapping (default: 80, set to -1 for no wrapping)
+   * Line width for wrapping (default: -1 for no wrapping)
+   * Setting to -1 ensures js-yaml uses literal style (|-) for multi-line strings
+   * instead of folded style (>-), which is critical for preserving newlines in git merging.
    */
   lineWidth?: number;
 
@@ -62,7 +64,7 @@ function getStringStyle(value: string, literalMinLength: number = 60): YamlStyle
 export function toYaml(obj: any, options: YamlConverterOptions = {}): string {
   const {
     indent = 2,
-    lineWidth = 80,
+    lineWidth = -1,
     literalMinLength = 60,
   } = options;
 
