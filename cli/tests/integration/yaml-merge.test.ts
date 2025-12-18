@@ -409,6 +409,104 @@ User logout endpoint with session cleanup`,
       // Should be sorted by created_at
       expect(merged.map((e) => e.id)).toEqual(['A', 'B', 'C', 'D']);
     });
+
+    /**
+     * BUG REPRODUCTION TEST: Newline preservation with long lines
+     *
+     * This test reproduces the bug described in Test 1.1 of the QA test plan (s-guo4):
+     * When merging multi-line descriptions that contain lines longer than 80 characters,
+     * newlines are lost because js-yaml switches from literal style (|-) to folded style (>-),
+     * causing single newlines to collapse into spaces.
+     *
+     * Expected: Both changes merged, all newlines preserved
+     * Current bug: Lines 3 and 4 in Security Considerations collapse onto one line
+     */
+    it('should preserve newlines when merging descriptions with long lines', () => {
+      // Base spec: Multi-paragraph description with "Security Considerations" section
+      const base: JSONLEntity[] = [
+        {
+          id: 's-test',
+          uuid: 'uuid-test',
+          description: `# Authentication System
+
+## Overview
+The authentication system provides secure user login and session management.
+
+## Security Considerations
+All endpoints must use HTTPS in production.
+Rate limiting should be applied to prevent brute force attacks.`,
+          created_at: '2025-01-01T00:00:00Z',
+          updated_at: '2025-01-01T00:00:00Z',
+        },
+      ];
+
+      // Branch 1: Modifies Overview section (adds "using OAuth2 and JWT tokens" - creates a line > 80 chars)
+      const branch1: JSONLEntity[] = [
+        {
+          id: 's-test',
+          uuid: 'uuid-test',
+          description: `# Authentication System
+
+## Overview
+The authentication system provides secure user login and session management using OAuth2 and JWT tokens.
+
+## Security Considerations
+All endpoints must use HTTPS in production.
+Rate limiting should be applied to prevent brute force attacks.`,
+          created_at: '2025-01-01T00:00:00Z',
+          updated_at: '2025-01-02T00:00:00Z',
+        },
+      ];
+
+      // Branch 2: Adds two new lines to Security Considerations section
+      const branch2: JSONLEntity[] = [
+        {
+          id: 's-test',
+          uuid: 'uuid-test',
+          description: `# Authentication System
+
+## Overview
+The authentication system provides secure user login and session management.
+
+## Security Considerations
+All endpoints must use HTTPS in production.
+Rate limiting should be applied to prevent brute force attacks.
+**NEW:** Token expiration should be set to 1 hour.
+**NEW:** Refresh tokens should be stored securely.`,
+          created_at: '2025-01-01T00:00:00Z',
+          updated_at: '2025-01-03T00:00:00Z',
+        },
+      ];
+
+      const { entities: merged } = mergeThreeWay(base, branch1, branch2);
+      const result = merged[0];
+
+      // Should have OAuth2 from branch1
+      expect(result.description).toContain('OAuth2');
+
+      // Should have both NEW lines from branch2
+      expect(result.description).toContain('Token expiration');
+      expect(result.description).toContain('Refresh tokens');
+
+      // CRITICAL: Verify newlines are preserved
+      // This is the key assertion that will FAIL with the current bug
+      const securitySection = result.description.split('## Security Considerations')[1];
+      const lines = securitySection.split('\n').filter((l) => l.trim());
+
+      // Should have 4 lines:
+      // 1. "All endpoints..."
+      // 2. "Rate limiting..."
+      // 3. "**NEW:** Token expiration..."
+      // 4. "**NEW:** Refresh tokens..."
+      expect(lines.length).toBe(4);
+      expect(lines[2]).toContain('Token expiration');
+      expect(lines[3]).toContain('Refresh tokens');
+
+      // Additional verification: the two NEW lines should be on separate lines, not collapsed
+      // BUG: Currently they collapse into: "Rate limiting... **NEW:** Token expiration... **NEW:** Refresh tokens..."
+      const collapsedPattern = /Rate limiting.*Token expiration.*Refresh tokens/;
+      expect(result.description).not.toMatch(collapsedPattern);
+    });
   });
 
   describe('Error handling and edge cases', () => {
