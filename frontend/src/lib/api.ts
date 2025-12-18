@@ -666,4 +666,40 @@ export const refreshApi = {
     post<RefreshResponse>(`/issues/${issueId}/refresh_from_external${force ? '?force=true' : ''}`),
 }
 
+/**
+ * Update API types
+ */
+export interface UpdateCheckResponse {
+  current: string
+  latest: string
+  updateAvailable: boolean
+}
+
+export interface UpdateInstallResponse {
+  success: boolean
+  message: string
+  requiresRestart?: boolean
+}
+
+export interface UpdateRestartResponse {
+  message: string
+}
+
+/**
+ * Update API
+ */
+export const updateApi = {
+  // Check for available updates
+  check: () => get<UpdateCheckResponse>('/update/check'),
+
+  // Install the latest version
+  install: () => post<UpdateInstallResponse>('/update/install'),
+
+  // Dismiss update notification for 30 days
+  dismiss: (version: string) => post<{ message: string }>('/update/dismiss', { version }),
+
+  // Restart the server
+  restart: () => post<UpdateRestartResponse>('/update/restart'),
+}
+
 export default api

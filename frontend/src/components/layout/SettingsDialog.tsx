@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useTheme } from '@/contexts/ThemeContext'
+import { useUpdateCheck, useUpdateMutations } from '@/hooks/useUpdateCheck'
 import {
   Sun,
   Moon,
@@ -16,6 +17,8 @@ import {
   Copy,
   Terminal,
   Settings2,
+  RotateCcw,
+  ArrowRight,
 } from 'lucide-react'
 import type { ColorTheme } from '@/themes'
 import { cn } from '@/lib/utils'
@@ -144,6 +147,11 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null)
   const [selectedPreset, setSelectedPreset] = useState<string>('')
   const [installing, setInstalling] = useState(false)
+
+  // Update check hooks
+  const { updateInfo } = useUpdateCheck()
+  const { installUpdate, restartServer } = useUpdateMutations()
+  const [updateSuccess, setUpdateSuccess] = useState(false)
 
   // Preset plugins available for installation
   const presetPlugins = [
@@ -386,49 +394,50 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
     return (
       <div className="mt-3 space-y-4 border-t border-border pt-3">
         {/* Plugin-specific options - only show if there are actual properties */}
-        {plugin.configSchema?.properties && Object.keys(plugin.configSchema.properties).length > 0 && (
-          <div className="space-y-3">
-            <h4 className="text-xs font-medium text-muted-foreground">Plugin Settings</h4>
-            {Object.entries(plugin.configSchema.properties).map(([key, prop]) => {
-              const isRequired = plugin.configSchema?.required?.includes(key) || prop.required
-              const value = options[key] ?? prop.default ?? ''
+        {plugin.configSchema?.properties &&
+          Object.keys(plugin.configSchema.properties).length > 0 && (
+            <div className="space-y-3">
+              <h4 className="text-xs font-medium text-muted-foreground">Plugin Settings</h4>
+              {Object.entries(plugin.configSchema.properties).map(([key, prop]) => {
+                const isRequired = plugin.configSchema?.required?.includes(key) || prop.required
+                const value = options[key] ?? prop.default ?? ''
 
-              return prop.type === 'boolean' ? (
-                <div key={key} className="flex items-center justify-between">
-                  <div className="space-y-0.5">
+                return prop.type === 'boolean' ? (
+                  <div key={key} className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-xs">
+                        {prop.title || key}
+                        {isRequired && <span className="ml-1 text-destructive">*</span>}
+                      </Label>
+                      {prop.description && (
+                        <p className="text-[10px] text-muted-foreground">{prop.description}</p>
+                      )}
+                    </div>
+                    <Switch
+                      checked={Boolean(value)}
+                      onCheckedChange={(checked) => updatePluginOption(plugin.name, key, checked)}
+                    />
+                  </div>
+                ) : (
+                  <div key={key} className="space-y-1">
                     <Label className="text-xs">
                       {prop.title || key}
                       {isRequired && <span className="ml-1 text-destructive">*</span>}
                     </Label>
+                    <Input
+                      value={String(value)}
+                      onChange={(e) => updatePluginOption(plugin.name, key, e.target.value)}
+                      placeholder={prop.description}
+                      className="h-8 text-sm"
+                    />
                     {prop.description && (
                       <p className="text-[10px] text-muted-foreground">{prop.description}</p>
                     )}
                   </div>
-                  <Switch
-                    checked={Boolean(value)}
-                    onCheckedChange={(checked) => updatePluginOption(plugin.name, key, checked)}
-                  />
-                </div>
-              ) : (
-                <div key={key} className="space-y-1">
-                  <Label className="text-xs">
-                    {prop.title || key}
-                    {isRequired && <span className="ml-1 text-destructive">*</span>}
-                  </Label>
-                  <Input
-                    value={String(value)}
-                    onChange={(e) => updatePluginOption(plugin.name, key, e.target.value)}
-                    placeholder={prop.description}
-                    className="h-8 text-sm"
-                  />
-                  {prop.description && (
-                    <p className="text-[10px] text-muted-foreground">{prop.description}</p>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
+                )
+              })}
+            </div>
+          )}
 
         {/* Integration-level settings - only show for plugins that support real-time sync */}
         {(plugin.capabilities?.supportsWatch || plugin.capabilities?.supportsPolling) && (
@@ -467,75 +476,75 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
               />
             </div>
 
-          {/* Delete Behavior */}
-          <div className="space-y-1">
-            <Label className="text-xs">Delete Behavior</Label>
-            <Select
-              value={config.delete_behavior ?? 'close'}
-              onValueChange={(value) =>
-                updateIntegrationConfig(plugin.name, 'delete_behavior', value)
-              }
-            >
-              <SelectTrigger className="h-8 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="close">Close issue</SelectItem>
-                <SelectItem value="delete">Delete issue</SelectItem>
-                <SelectItem value="ignore">Do nothing</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-[10px] text-muted-foreground">
-              What to do when a linked issue is deleted on either side
-            </p>
-          </div>
+            {/* Delete Behavior */}
+            <div className="space-y-1">
+              <Label className="text-xs">Delete Behavior</Label>
+              <Select
+                value={config.delete_behavior ?? 'close'}
+                onValueChange={(value) =>
+                  updateIntegrationConfig(plugin.name, 'delete_behavior', value)
+                }
+              >
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="close">Close issue</SelectItem>
+                  <SelectItem value="delete">Delete issue</SelectItem>
+                  <SelectItem value="ignore">Do nothing</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                What to do when a linked issue is deleted on either side
+              </p>
+            </div>
 
-          {/* Conflict Resolution */}
-          <div className="space-y-1">
-            <Label className="text-xs">Conflict Resolution</Label>
-            <Select
-              value={config.conflict_resolution ?? 'newest-wins'}
-              onValueChange={(value) =>
-                updateIntegrationConfig(plugin.name, 'conflict_resolution', value)
-              }
-            >
-              <SelectTrigger className="h-8 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="newest-wins">Newest wins</SelectItem>
-                <SelectItem value="sudocode-wins">Sudocode wins</SelectItem>
-                <SelectItem value="external-wins">External wins</SelectItem>
-                <SelectItem value="manual">Manual resolution</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-[10px] text-muted-foreground">
-              How to resolve conflicts when both sides are modified
-            </p>
-          </div>
+            {/* Conflict Resolution */}
+            <div className="space-y-1">
+              <Label className="text-xs">Conflict Resolution</Label>
+              <Select
+                value={config.conflict_resolution ?? 'newest-wins'}
+                onValueChange={(value) =>
+                  updateIntegrationConfig(plugin.name, 'conflict_resolution', value)
+                }
+              >
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="newest-wins">Newest wins</SelectItem>
+                  <SelectItem value="sudocode-wins">Sudocode wins</SelectItem>
+                  <SelectItem value="external-wins">External wins</SelectItem>
+                  <SelectItem value="manual">Manual resolution</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                How to resolve conflicts when both sides are modified
+              </p>
+            </div>
 
-          {/* Sync Direction */}
-          <div className="space-y-1">
-            <Label className="text-xs">Default Sync Direction</Label>
-            <Select
-              value={config.default_sync_direction ?? 'bidirectional'}
-              onValueChange={(value) =>
-                updateIntegrationConfig(plugin.name, 'default_sync_direction', value)
-              }
-            >
-              <SelectTrigger className="h-8 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="bidirectional">Bidirectional</SelectItem>
-                <SelectItem value="inbound">Inbound only (external → sudocode)</SelectItem>
-                <SelectItem value="outbound">Outbound only (sudocode → external)</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-[10px] text-muted-foreground">
-              Default sync direction for newly linked issues
-            </p>
-          </div>
+            {/* Sync Direction */}
+            <div className="space-y-1">
+              <Label className="text-xs">Default Sync Direction</Label>
+              <Select
+                value={config.default_sync_direction ?? 'bidirectional'}
+                onValueChange={(value) =>
+                  updateIntegrationConfig(plugin.name, 'default_sync_direction', value)
+                }
+              >
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bidirectional">Bidirectional</SelectItem>
+                  <SelectItem value="inbound">Inbound only (external → sudocode)</SelectItem>
+                  <SelectItem value="outbound">Outbound only (sudocode → external)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                Default sync direction for newly linked issues
+              </p>
+            </div>
           </div>
         )}
 
@@ -768,6 +777,72 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                         {versions?.frontend ?? 'Loading...'}
                       </span>
                     </div>
+
+                    {/* Update Available - inline */}
+                    {updateInfo?.updateAvailable && (
+                      <div className="flex items-center justify-between rounded-md border border-orange-500/20 bg-orange-500/5 px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-sm font-medium">Update available:</span>
+                          <span className="font-mono text-sm font-medium">
+                            {updateInfo.current}
+                          </span>
+                          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-mono text-sm text-orange-500">
+                            {updateInfo.latest}
+                          </span>
+                        </div>
+                        {restartServer.restartState !== 'idle' ? (
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <RefreshCw className="h-3 w-3 animate-spin" />
+                            <span>Restarting...</span>
+                          </div>
+                        ) : updateSuccess ? (
+                          <Button
+                            size="xs"
+                            variant="default"
+                            onClick={() => restartServer.handleRestart()}
+                          >
+                            <RotateCcw className="mr-1 h-3 w-3" />
+                            Restart
+                          </Button>
+                        ) : (
+                          <Button
+                            size="xs"
+                            variant="default"
+                            onClick={async () => {
+                              try {
+                                await installUpdate.mutateAsync()
+                                setUpdateSuccess(true)
+                                toast.success('Update installed successfully')
+                              } catch (error) {
+                                toast.error(
+                                  error instanceof Error
+                                    ? error.message
+                                    : 'Failed to install update'
+                                )
+                              }
+                            }}
+                            disabled={installUpdate.isPending}
+                          >
+                            {installUpdate.isPending ? (
+                              <>
+                                <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                                Updating...
+                              </>
+                            ) : (
+                              'Update'
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Error message */}
+                    {installUpdate.isError && (
+                      <div className="pt-1 text-xs text-destructive">
+                        Update failed. Run: npm install -g sudocode@latest
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

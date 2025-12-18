@@ -23,6 +23,7 @@ import { createFilesRouter } from "./routes/files.js";
 import { createRepoInfoRouter } from "./routes/repo-info.js";
 import { createAgentsRouter } from "./routes/agents.js";
 import { createVersionRouter } from "./routes/version.js";
+import { createUpdateRouter, setServerInstance } from "./routes/update.js";
 import { createWorkflowsRouter } from "./routes/workflows.js";
 import { TransportManager } from "./execution/transport/transport-manager.js";
 import { ProjectRegistry } from "./services/project-registry.js";
@@ -204,6 +205,9 @@ app.get("/health", (_req: Request, res: Response) => {
 // Version endpoint - returns versions of all packages
 app.use("/api/version", createVersionRouter());
 
+// Update endpoint - check for updates and manage updates (global, no project context)
+app.use("/api/update", createUpdateRouter());
+
 // WebSocket stats endpoint
 app.get("/ws/stats", (_req: Request, res: Response) => {
   const stats = getWebSocketStats();
@@ -246,6 +250,9 @@ app.get("*", (req: Request, res: Response) => {
 
 // Create HTTP server
 const server = http.createServer(app);
+
+// Set server instance for update/restart functionality
+setServerInstance(server);
 
 /**
  * Attempts to start the server (HTTP + WebSocket) on the given port, incrementing if unavailable.
