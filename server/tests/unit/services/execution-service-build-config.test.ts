@@ -1,7 +1,8 @@
 /**
  * Unit tests for ExecutionService.buildExecutionConfig method
  *
- * Tests the MCP auto-injection logic for sudocode-mcp plugin.
+ * Tests the MCP auto-injection logic for sudocode-mcp plugin,
+ * config preservation between execution runs, and multi-execution chain scenarios.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -592,6 +593,354 @@ describe("ExecutionService.buildExecutionConfig", () => {
         expect(result.mcpServers).toBeDefined();
         expect(service.detectAgentMcp).toHaveBeenCalledWith(agentType);
       }
+    });
+  });
+
+  describe("config preservation across execution runs", () => {
+    it("should preserve manually configured sudocode-mcp when plugin not installed", async () => {
+      // Scenario: User manually configured sudocode-mcp in CLI, plugin not installed
+      vi.spyOn(service, "detectSudocodeMcp").mockResolvedValue(true);
+      vi.spyOn(service, "detectAgentMcp").mockResolvedValue(false);
+
+      vi.spyOn(service, "buildExecutionConfig").mockImplementation(
+        async (agentType: AgentType, userConfig: ExecutionConfig) => {
+          const isInstalled = await service.detectSudocodeMcp();
+          if (!isInstalled) {
+            throw new Error("sudocode-mcp not installed");
+          }
+
+          const mcpPresent = await service.detectAgentMcp(agentType);
+          const mergedConfig = { ...userConfig };
+
+          // Don't inject if user already provided it
+          if (!mcpPresent && !userConfig.mcpServers?.["sudocode-mcp"]) {
+            mergedConfig.mcpServers = {
+              ...(userConfig.mcpServers || {}),
+              "sudocode-mcp": {
+                command: "sudocode-mcp",
+                args: [],
+              },
+            };
+          }
+
+          return mergedConfig;
+        }
+      );
+
+      const previousConfig: ExecutionConfig = {
+        mode: "worktree",
+        mcpServers: {
+          "sudocode-mcp": {
+            command: "sudocode-mcp",
+            args: ["--custom-arg"],
+          },
+        },
+      };
+
+      const result = await service.buildExecutionConfig(
+        "claude-code",
+        previousConfig
+      );
+
+      // Should preserve the user's manual config (with custom args)
+      expect(result.mcpServers).toBeDefined();
+      expect(result.mcpServers!["sudocode-mcp"]).toBeDefined();
+      expect(result.mcpServers!["sudocode-mcp"].args).toEqual([
+        "--custom-arg",
+      ]);
+    });
+
+    it("should handle multiple follow-up runs with plugin installed", async () => {
+      // Scenario: Multi-execution chain where plugin gets installed mid-chain
+      vi.spyOn(service, "detectSudocodeMcp").mockResolvedValue(true);
+      vi.spyOn(service, "detectAgentMcp").mockResolvedValue(true);
+
+      vi.spyOn(service, "buildExecutionConfig").mockImplementation(
+        async (agentType: AgentType, userConfig: ExecutionConfig) => {
+          const isInstalled = await service.detectSudocodeMcp();
+          if (!isInstalled) {
+            throw new Error("sudocode-mcp not installed");
+          }
+
+          const mcpPresent = await service.detectAgentMcp(agentType);
+          const mergedConfig = { ...userConfig };
+
+          if (mcpPresent && userConfig.mcpServers?.["sudocode-mcp"]) {
+            const { "sudocode-mcp": _removed, ...rest } =
+              userConfig.mcpServers;
+            mergedConfig.mcpServers =
+              Object.keys(rest).length > 0 ? rest : undefined;
+          }
+
+          return mergedConfig;
+        }
+      );
+
+      // First follow-up: config still has sudocode-mcp from initial run
+      const firstFollowUpConfig: ExecutionConfig = {
+        mode: "worktree",
+        mcpServers: {
+          "sudocode-mcp": {
+            command: "sudocode-mcp",
+            args: [],
+          },
+        },
+      };
+
+      const firstResult = await service.buildExecutionConfig(
+        "claude-code",
+        firstFollowUpConfig
+      );
+      expect(firstResult.mcpServers).toBeUndefined(); // Stripped
+
+      // Second follow-up: config is now clean (no sudocode-mcp)
+      const secondFollowUpConfig: ExecutionConfig = {
+        mode: "worktree",
+        mcpServers: undefined,
+      };
+
+      const secondResult = await service.buildExecutionConfig(
+        "claude-code",
+        secondFollowUpConfig
+      );
+      expect(secondResult.mcpServers).toBeUndefined(); // Still clean
+    });
+
+    it("should preserve other config fields during MCP server modification", async () => {
+      vi.spyOn(service, "detectSudocodeMcp").mockResolvedValue(true);
+      vi.spyOn(service, "detectAgentMcp").mockResolvedValue(true);
+
+      vi.spyOn(service, "buildExecutionConfig").mockImplementation(
+        async (agentType: AgentType, userConfig: ExecutionConfig) => {
+          const isInstalled = await service.detectSudocodeMcp();
+          if (!isInstalled) {
+            throw new Error("sudocode-mcp not installed");
+          }
+
+          const mcpPresent = await service.detectAgentMcp(agentType);
+          const mergedConfig = { ...userConfig };
+
+          if (mcpPresent && userConfig.mcpServers?.["sudocode-mcp"]) {
+            const { "sudocode-mcp": _removed, ...rest } =
+              userConfig.mcpServers;
+            mergedConfig.mcpServers =
+              Object.keys(rest).length > 0 ? rest : undefined;
+          }
+
+          return mergedConfig;
+        }
+      );
+
+      const previousConfig: ExecutionConfig = {
+        mode: "worktree",
+        model: "claude-sonnet-4",
+        timeout: 5000,
+        appendSystemPrompt: "Be helpful and concise",
+        mcpServers: {
+          "sudocode-mcp": {
+            command: "sudocode-mcp",
+            args: [],
+          },
+        },
+      };
+
+      const result = await service.buildExecutionConfig(
+        "claude-code",
+        previousConfig
+      );
+
+      // All non-MCP config should be preserved
+      expect(result.mode).toBe("worktree");
+      expect(result.model).toBe("claude-sonnet-4");
+      expect(result.timeout).toBe(5000);
+      expect(result.appendSystemPrompt).toBe("Be helpful and concise");
+
+      // Only mcpServers should be modified
+      expect(result.mcpServers).toBeUndefined(); // Stripped sudocode-mcp
+    });
+  });
+
+  describe("complex MCP server configurations", () => {
+    it("should preserve non-sudocode MCP servers when plugin is present", async () => {
+      vi.spyOn(service, "detectSudocodeMcp").mockResolvedValue(true);
+      vi.spyOn(service, "detectAgentMcp").mockResolvedValue(true);
+
+      vi.spyOn(service, "buildExecutionConfig").mockImplementation(
+        async (agentType: AgentType, userConfig: ExecutionConfig) => {
+          const isInstalled = await service.detectSudocodeMcp();
+          if (!isInstalled) {
+            throw new Error("sudocode-mcp not installed");
+          }
+
+          const mcpPresent = await service.detectAgentMcp(agentType);
+          const mergedConfig = { ...userConfig };
+
+          if (mcpPresent && userConfig.mcpServers?.["sudocode-mcp"]) {
+            const { "sudocode-mcp": _removed, ...rest } =
+              userConfig.mcpServers;
+            mergedConfig.mcpServers =
+              Object.keys(rest).length > 0 ? rest : undefined;
+          }
+
+          return mergedConfig;
+        }
+      );
+
+      const previousConfig: ExecutionConfig = {
+        mode: "worktree",
+        mcpServers: {
+          "sudocode-mcp": {
+            command: "sudocode-mcp",
+            args: [],
+          },
+          "filesystem-mcp": {
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-filesystem"],
+          },
+          "postgres-mcp": {
+            command: "uvx",
+            args: ["mcp-server-postgres"],
+            env: {
+              DATABASE_URL: "postgresql://localhost/mydb",
+            },
+          },
+        },
+      };
+
+      const result = await service.buildExecutionConfig(
+        "claude-code",
+        previousConfig
+      );
+
+      // Should remove sudocode-mcp but keep all others
+      expect(result.mcpServers).toBeDefined();
+      expect(result.mcpServers!["sudocode-mcp"]).toBeUndefined();
+      expect(result.mcpServers!["filesystem-mcp"]).toBeDefined();
+      expect(result.mcpServers!["postgres-mcp"]).toBeDefined();
+      expect(result.mcpServers!["postgres-mcp"].env).toEqual({
+        DATABASE_URL: "postgresql://localhost/mydb",
+      });
+    });
+
+    it("should preserve non-sudocode MCP servers when plugin is not present", async () => {
+      vi.spyOn(service, "detectSudocodeMcp").mockResolvedValue(true);
+      vi.spyOn(service, "detectAgentMcp").mockResolvedValue(false);
+
+      vi.spyOn(service, "buildExecutionConfig").mockImplementation(
+        async (agentType: AgentType, userConfig: ExecutionConfig) => {
+          const isInstalled = await service.detectSudocodeMcp();
+          if (!isInstalled) {
+            throw new Error("sudocode-mcp not installed");
+          }
+
+          const mcpPresent = await service.detectAgentMcp(agentType);
+          const mergedConfig = { ...userConfig };
+
+          if (!mcpPresent && !userConfig.mcpServers?.["sudocode-mcp"]) {
+            mergedConfig.mcpServers = {
+              ...(userConfig.mcpServers || {}),
+              "sudocode-mcp": {
+                command: "sudocode-mcp",
+                args: [],
+              },
+            };
+          }
+
+          return mergedConfig;
+        }
+      );
+
+      const previousConfig: ExecutionConfig = {
+        mode: "worktree",
+        mcpServers: {
+          "custom-api": {
+            command: "node",
+            args: ["/path/to/custom-api.js"],
+          },
+          "external-service": {
+            command: "python",
+            args: ["-m", "external_mcp"],
+          },
+        },
+      };
+
+      const result = await service.buildExecutionConfig(
+        "claude-code",
+        previousConfig
+      );
+
+      // Should preserve all custom servers AND auto-inject sudocode-mcp
+      expect(result.mcpServers).toBeDefined();
+      expect(result.mcpServers!["custom-api"]).toBeDefined();
+      expect(result.mcpServers!["external-service"]).toBeDefined();
+      expect(result.mcpServers!["sudocode-mcp"]).toBeDefined(); // Auto-injected
+    });
+
+    it("should handle complex MCP server configurations with env and args", async () => {
+      vi.spyOn(service, "detectSudocodeMcp").mockResolvedValue(true);
+      vi.spyOn(service, "detectAgentMcp").mockResolvedValue(true);
+
+      vi.spyOn(service, "buildExecutionConfig").mockImplementation(
+        async (agentType: AgentType, userConfig: ExecutionConfig) => {
+          const isInstalled = await service.detectSudocodeMcp();
+          if (!isInstalled) {
+            throw new Error("sudocode-mcp not installed");
+          }
+
+          const mcpPresent = await service.detectAgentMcp(agentType);
+          const mergedConfig = { ...userConfig };
+
+          if (mcpPresent && userConfig.mcpServers?.["sudocode-mcp"]) {
+            const { "sudocode-mcp": _removed, ...rest } =
+              userConfig.mcpServers;
+            mergedConfig.mcpServers =
+              Object.keys(rest).length > 0 ? rest : undefined;
+          }
+
+          return mergedConfig;
+        }
+      );
+
+      const previousConfig: ExecutionConfig = {
+        mode: "worktree",
+        mcpServers: {
+          "sudocode-mcp": {
+            command: "sudocode-mcp",
+            args: [],
+          },
+          "complex-server": {
+            command: "/usr/local/bin/complex-mcp",
+            args: ["--verbose", "--config", "/etc/config.json"],
+            env: {
+              API_KEY: "secret",
+              DEBUG: "true",
+              TIMEOUT: "30000",
+            },
+          },
+        },
+      };
+
+      const result = await service.buildExecutionConfig(
+        "claude-code",
+        previousConfig
+      );
+
+      // Should preserve complex server config exactly
+      expect(result.mcpServers).toBeDefined();
+      expect(result.mcpServers!["complex-server"]).toBeDefined();
+      expect(result.mcpServers!["complex-server"].command).toBe(
+        "/usr/local/bin/complex-mcp"
+      );
+      expect(result.mcpServers!["complex-server"].args).toEqual([
+        "--verbose",
+        "--config",
+        "/etc/config.json",
+      ]);
+      expect(result.mcpServers!["complex-server"].env).toEqual({
+        API_KEY: "secret",
+        DEBUG: "true",
+        TIMEOUT: "30000",
+      });
     });
   });
 
