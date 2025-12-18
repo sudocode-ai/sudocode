@@ -147,3 +147,10 @@ jobs:
           echo "- @sudocode-ai/mcp@$(node -p "require('./mcp/package.json').version")" >> $GITHUB_STEP_SUMMARY
           echo "- @sudocode-ai/local-server@$(node -p "require('./server/package.json').version")" >> $GITHUB_STEP_SUMMARY
           echo "- sudocode@$(node -p "require('./sudocode/package.json').version")" >> $GITHUB_STEP_SUMMARY
+
+  # Update Homebrew formula after successful publish
+  homebrew:
+    needs: publish
+    if: ${{ inputs.tag == 'latest' }}
+    uses: ./.github/workflows/homebrew-bump.yml
+    secrets: inherit
