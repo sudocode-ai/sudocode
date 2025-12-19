@@ -19,6 +19,7 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronRight,
+  GitBranch,
   GitCommit,
   GitMerge,
   Loader2,
@@ -27,6 +28,7 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import type { SyncPreviewResult, SyncMode } from '@/types/execution'
+import { repositoryApi } from '@/lib/api'
 
 export interface SyncPreviewDialogProps {
   preview: SyncPreviewResult | null
@@ -38,12 +40,13 @@ export interface SyncPreviewDialogProps {
       commitMessage?: string
       includeUncommitted?: boolean
       overrideLocalChanges?: boolean
+      targetBranch?: string
     }
   ) => void
   onOpenIDE: () => void
   isPreviewing?: boolean
   /**
-   * Target branch name to display in merge descriptions
+   * Target branch name to display in merge descriptions (default target)
    */
   targetBranch?: string
   /**
@@ -66,6 +69,26 @@ export function SyncPreviewDialog({
   const [commitMessage, setCommitMessage] = useState('')
   const [commitsExpanded, setCommitsExpanded] = useState(false)
   const [includeUncommitted, setIncludeUncommitted] = useState(true)
+  const [selectedTargetBranch, setSelectedTargetBranch] = useState<string | undefined>(undefined)
+  const [workingBranch, setWorkingBranch] = useState<string | null>(null)
+
+  // Effective target branch (user selection or default)
+  const effectiveTargetBranch = selectedTargetBranch ?? targetBranch
+
+  // Check if we should show alternate merge target (working branch differs from target branch)
+  const showBranchSelector = workingBranch && targetBranch && workingBranch !== targetBranch
+
+  // Fetch working branch and reset state when dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedTargetBranch(undefined)
+      // Fetch current working branch
+      repositoryApi
+        .getInfo()
+        .then((info) => setWorkingBranch(info.branch))
+        .catch(() => setWorkingBranch(null))
+    }
+  }, [isOpen])
   const [overrideLocalChanges, setOverrideLocalChanges] = useState(false)
 
   // Check if there are commits to merge (required for squash and preserve modes)
@@ -102,6 +125,7 @@ export function SyncPreviewDialog({
       includeUncommitted: selectedMode === 'stage' ? includeUncommitted : undefined,
       overrideLocalChanges:
         selectedMode === 'stage' && includeUncommitted ? overrideLocalChanges : undefined,
+      targetBranch: effectiveTargetBranch,
     })
   }
 
@@ -115,7 +139,14 @@ export function SyncPreviewDialog({
                 <GitMerge className="h-5 w-5" />
                 Merge Changes
               </DialogTitle>
-              <DialogDescription>Review changes before syncing worktree</DialogDescription>
+              {!showBranchSelector && targetBranch && (
+                <DialogDescription>
+                  Merge changes to{' '}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                    {targetBranch}
+                  </code>
+                </DialogDescription>
+              )}
             </div>
             {!isPreviewing && preview && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -161,6 +192,45 @@ export function SyncPreviewDialog({
 
             {!isPreviewing && preview && (
               <>
+                {/* Target Branch Selector - show when working branch differs from target */}
+                {showBranchSelector && (
+                  <div className="rounded-lg border bg-muted/30 p-3">
+                    <Label className="mb-2 block text-sm font-medium">Merge Target</Label>
+                    <RadioGroup
+                      value={effectiveTargetBranch}
+                      onValueChange={setSelectedTargetBranch}
+                      className="flex flex-col gap-2"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value={targetBranch} id="target-base" />
+                        <Label
+                          htmlFor="target-base"
+                          className="flex cursor-pointer items-center gap-2 text-sm font-normal"
+                        >
+                          <GitBranch className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-mono">{targetBranch}</span>
+                          <Badge variant="outline" className="text-xs">
+                            base
+                          </Badge>
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value={workingBranch} id="target-working" />
+                        <Label
+                          htmlFor="target-working"
+                          className="flex cursor-pointer items-center gap-2 text-sm font-normal"
+                        >
+                          <GitBranch className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-mono">{workingBranch}</span>
+                          <Badge variant="secondary" className="text-xs">
+                            working
+                          </Badge>
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+                )}
+
                 {/* General Warnings (excluding dirty working tree - shown in mode options) */}
                 {(() => {
                   const filteredWarnings = preview.warnings.filter(

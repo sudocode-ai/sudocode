@@ -19,9 +19,11 @@ import {
   PanelRightClose,
   PanelRight,
   GitMerge,
+  ExternalLink,
 } from 'lucide-react'
 import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   WorkflowDAG,
   WorkflowControls,
@@ -45,6 +47,7 @@ import { useExecutionSync } from '@/hooks/useExecutionSync'
 import { executionsApi } from '@/lib/api'
 import { WORKFLOW_STATUS_COLORS, WORKFLOW_STATUS_LABELS } from '@/types/workflow'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 
 type DetailTab = 'steps' | 'orchestrator'
 
@@ -190,6 +193,21 @@ export default function WorkflowDetailPage() {
     fetchSyncPreview(executionIdForChanges)
   }, [executionIdForChanges, fetchSyncPreview])
 
+  // Handle open in IDE
+  const handleOpenInIDE = useCallback(async () => {
+    if (!workflow?.worktreePath) {
+      toast.error('No worktree path available')
+      return
+    }
+    try {
+      await executionsApi.openInIde(workflow.worktreePath)
+      toast.success('Opening worktree in IDE...')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to open IDE'
+      toast.error(message)
+    }
+  }, [workflow?.worktreePath])
+
   // Handle sync complete - refresh data
   const handleSyncComplete = useCallback(async () => {
     refreshChanges()
@@ -232,9 +250,7 @@ export default function WorkflowDetailPage() {
   }, [workflow?.id, workflow?.status, cancel])
 
   // Get selected step and its issue
-  const selectedStep = selectedStepId
-    ? workflow?.steps.find((s) => s.id === selectedStepId)
-    : null
+  const selectedStep = selectedStepId ? workflow?.steps.find((s) => s.id === selectedStepId) : null
   const selectedIssue = selectedStep && issues ? issues[selectedStep.issueId] : null
 
   // Issue mutations for IssuePanel
@@ -283,7 +299,7 @@ export default function WorkflowDetailPage() {
           The workflow you're looking for doesn't exist or has been deleted.
         </p>
         <Button variant="outline" onClick={() => navigate(paths.workflows())}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
+          <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Workflows
         </Button>
       </div>
@@ -320,21 +336,19 @@ export default function WorkflowDetailPage() {
                 )}
               >
                 <StatusIcon
-                  className={cn(
-                    'h-3 w-3',
-                    workflow.status === 'running' && 'animate-spin'
-                  )}
+                  className={cn('h-3 w-3', workflow.status === 'running' && 'animate-spin')}
                 />
                 {WORKFLOW_STATUS_LABELS[workflow.status]}
               </span>
               <span>
                 {progress.completed}/{progress.total} steps
               </span>
-              {progress.percentage > 0 && (
-                <span>({progress.percentage}% complete)</span>
-              )}
+              {progress.percentage > 0 && <span>({progress.percentage}% complete)</span>}
               {workflow.branchName && (
-                <span className="inline-flex items-center gap-1.5" title={workflow.worktreePath || undefined}>
+                <span
+                  className="inline-flex items-center gap-1.5"
+                  title={workflow.worktreePath || undefined}
+                >
                   <GitBranch className="h-3.5 w-3.5" />
                   <span className="font-mono text-xs">{workflow.branchName}</span>
                 </span>
@@ -345,27 +359,50 @@ export default function WorkflowDetailPage() {
 
         {/* Worktree State & Merge Controls */}
         <div className="flex items-center gap-3">
-          {/* Change Stats - clickable to open merge dialog */}
-          {changeStats && showMergeButton && (
-            <button
-              onClick={handleMergeClick}
-              className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-1.5 transition-colors hover:bg-muted/50 hover:border-primary/50"
-            >
-              <GitMerge className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">{changeStats.totalFiles} files</span>
-              <span className="text-xs text-green-600 dark:text-green-400">
-                +{changeStats.totalAdditions}
-              </span>
-              <span className="text-xs text-red-600 dark:text-red-400">
-                -{changeStats.totalDeletions}
-              </span>
-              {changeStats.hasUncommittedChanges && (
-                <span className="rounded bg-yellow-100 px-1.5 py-0.5 text-xs font-medium text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
-                  uncommitted
-                </span>
-              )}
-            </button>
-          )}
+          <TooltipProvider>
+            {/* Change Stats - clickable to open merge dialog */}
+            {changeStats && showMergeButton && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={handleMergeClick}
+                    className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-1.5 transition-colors hover:border-primary/50 hover:bg-muted/50"
+                  >
+                    <GitMerge className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">{changeStats.totalFiles} files</span>
+                    <span className="text-xs text-green-600 dark:text-green-400">
+                      +{changeStats.totalAdditions}
+                    </span>
+                    <span className="text-xs text-red-600 dark:text-red-400">
+                      -{changeStats.totalDeletions}
+                    </span>
+                    {changeStats.hasUncommittedChanges && (
+                      <span className="rounded bg-yellow-100 px-1.5 py-0.5 text-xs font-medium text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+                        uncommitted
+                      </span>
+                    )}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Merge changes</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+
+            {/* Open in IDE Button */}
+            {workflow.worktreePath && worktreeExists && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" onClick={handleOpenInIDE} className="gap-1.5">
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Open worktree in IDE</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </TooltipProvider>
 
           {/* Controls */}
           <WorkflowControls
@@ -424,7 +461,7 @@ export default function WorkflowDetailPage() {
             })()}
             minSize={30}
           >
-            <div className="h-full relative">
+            <div className="relative h-full">
               <WorkflowDAG
                 steps={workflow.steps}
                 issues={issues}
@@ -437,7 +474,7 @@ export default function WorkflowDetailPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="absolute top-4 right-4 gap-2"
+                  className="absolute right-4 top-4 gap-2"
                   onClick={handleTogglePanel}
                 >
                   <PanelRight className="h-4 w-4" />
@@ -487,10 +524,10 @@ export default function WorkflowDetailPage() {
                         <button
                           onClick={() => setActiveTab('steps')}
                           className={cn(
-                            'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors',
+                            'flex flex-1 items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors',
                             activeTab === 'steps'
-                              ? 'bg-background border-b-2 border-primary text-foreground'
-                              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                              ? 'border-b-2 border-primary bg-background text-foreground'
+                              : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                           )}
                         >
                           <ListTree className="h-4 w-4" />
@@ -499,22 +536,22 @@ export default function WorkflowDetailPage() {
                         <button
                           onClick={() => setActiveTab('orchestrator')}
                           className={cn(
-                            'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors relative',
+                            'relative flex flex-1 items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors',
                             activeTab === 'orchestrator'
-                              ? 'bg-background border-b-2 border-primary text-foreground'
-                              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                              ? 'border-b-2 border-primary bg-background text-foreground'
+                              : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                           )}
                         >
                           <Bot className="h-4 w-4" />
                           Orchestrator
                           {/* Escalation indicator */}
                           {hasPendingEscalation && activeTab !== 'orchestrator' && (
-                            <span className="absolute top-1.5 right-2 h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
+                            <span className="absolute right-2 top-1.5 h-2 w-2 animate-pulse rounded-full bg-yellow-500" />
                           )}
                         </button>
                       </>
                     ) : (
-                      <div className="flex-1 flex items-center gap-2 px-4 py-2.5 text-sm font-medium">
+                      <div className="flex flex-1 items-center gap-2 px-4 py-2.5 text-sm font-medium">
                         <ListTree className="h-4 w-4" />
                         Step Details
                       </div>
@@ -522,7 +559,7 @@ export default function WorkflowDetailPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 mr-2"
+                      className="mr-2 h-8 w-8"
                       onClick={handleTogglePanel}
                       title="Collapse panel"
                     >
@@ -531,7 +568,7 @@ export default function WorkflowDetailPage() {
                   </div>
 
                   {/* Tab Content */}
-                  <div className="flex-1 overflow-hidden flex flex-col">
+                  <div className="flex flex-1 flex-col overflow-hidden">
                     {activeTab === 'steps' ? (
                       // Steps View - Show Issue Panel directly
                       selectedIssue ? (
@@ -543,7 +580,7 @@ export default function WorkflowDetailPage() {
                           showOpenDetail={true}
                         />
                       ) : (
-                        <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+                        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
                           Select a step to view issue details
                         </div>
                       )
@@ -553,7 +590,7 @@ export default function WorkflowDetailPage() {
                         <div className="flex-1 overflow-auto">
                           {/* Escalation Panel at top when pending */}
                           {hasPendingEscalation && escalation && (
-                            <div className="p-4 border-b">
+                            <div className="border-b p-4">
                               <EscalationPanel
                                 escalation={escalation}
                                 onRespond={respondToEscalation}
