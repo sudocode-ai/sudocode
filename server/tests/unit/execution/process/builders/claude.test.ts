@@ -82,6 +82,19 @@ describe('Claude Code Configuration Builder', () => {
       expect(args).toContain('Write');
     });
 
+    it('should disallow AskUserQuestion by default', () => {
+      const defaults = getDefaultClaudeConfig();
+      const config: ClaudeCodeConfig = {
+        workDir: '/test',
+        ...defaults,
+      };
+
+      const args = buildClaudeArgs(config);
+
+      expect(args).toContain('--disallowed-tools');
+      expect(args).toContain('AskUserQuestion');
+    });
+
     it('should add tools list', () => {
       const config: ClaudeCodeConfig = {
         workDir: '/test',
@@ -435,6 +448,7 @@ describe('Claude Code Configuration Builder', () => {
       expect(defaults.outputFormat).toBe('stream-json');
       expect(defaults.verbose).toBe(true);
       expect(defaults.dangerouslySkipPermissions).toBe(false);
+      expect(defaults.disallowedTools).toEqual(['AskUserQuestion']);
     });
   });
 });

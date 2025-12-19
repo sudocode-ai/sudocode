@@ -283,5 +283,6 @@ export function getDefaultClaudeConfig(): Partial<ClaudeCodeConfig> {
     outputFormat: 'stream-json',
     verbose: true, // Required for stream-json with print
     dangerouslySkipPermissions: false,
+    disallowedTools: ['AskUserQuestion'], // Block interactive prompts in executions
   };
 }

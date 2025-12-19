@@ -944,6 +944,83 @@ describe("ExecutionService.buildExecutionConfig", () => {
     });
   });
 
+  describe("agent defaults merging", () => {
+    it("should merge agent default config with user config", async () => {
+      // Mock: sudocode-mcp package installed, agent plugin configured
+      await mockSudocodeMcpDetection(true);
+      mockAgentMcpDetection(true);
+
+      const userConfig: ExecutionConfig = {
+        mode: "worktree",
+        model: "opus", // User-provided value
+      };
+
+      const result = await service.buildExecutionConfig(
+        "claude-code",
+        userConfig
+      );
+
+      // Should include agent defaults (like disallowedTools)
+      expect(result.disallowedTools).toBeDefined();
+      expect(result.disallowedTools).toContain("AskUserQuestion");
+
+      // Should preserve user-provided values
+      expect(result.model).toBe("opus");
+
+      // Should include other defaults from ClaudeCodeAdapter.getDefaultConfig()
+      expect(result.print).toBe(true);
+      expect(result.outputFormat).toBe("stream-json");
+      expect(result.verbose).toBe(true);
+      expect(result.dangerouslySkipPermissions).toBe(true);
+    });
+
+    it("should allow user config to override defaults", async () => {
+      // Mock: sudocode-mcp package installed, agent plugin configured
+      await mockSudocodeMcpDetection(true);
+      mockAgentMcpDetection(true);
+
+      const userConfig: ExecutionConfig = {
+        mode: "worktree",
+        disallowedTools: ["Bash"], // User wants to override default
+        dangerouslySkipPermissions: false, // Override default
+      };
+
+      const result = await service.buildExecutionConfig(
+        "claude-code",
+        userConfig
+      );
+
+      // User config should take precedence over defaults
+      expect(result.disallowedTools).toEqual(["Bash"]);
+      expect(result.dangerouslySkipPermissions).toBe(false);
+
+      // Other defaults should still be present
+      expect(result.print).toBe(true);
+      expect(result.outputFormat).toBe("stream-json");
+    });
+
+    it("should filter undefined values from user config so they don't override defaults", async () => {
+      // Mock: sudocode-mcp package installed, agent plugin configured
+      await mockSudocodeMcpDetection(true);
+      mockAgentMcpDetection(true);
+
+      const userConfig: ExecutionConfig = {
+        mode: "worktree",
+        model: undefined, // Undefined should not override defaults
+      };
+
+      const result = await service.buildExecutionConfig(
+        "claude-code",
+        userConfig
+      );
+
+      // Defaults should be present even though userConfig had undefined values
+      expect(result.disallowedTools).toContain("AskUserQuestion");
+      expect(result.print).toBe(true);
+      expect(result.outputFormat).toBe("stream-json");
+    });
+  });
+
   describe("error scenarios", () => {
     it("should provide clear error message when sudocode-mcp package is missing", async () => {
       vi.spyOn(service, "detectSudocodeMcp").mockResolvedValue(false);

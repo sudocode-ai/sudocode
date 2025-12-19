@@ -188,6 +188,7 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
           directoryGuardHookPath: (agentConfig as any).directoryGuardHookPath,
           mcpServers: (agentConfig as any).mcpServers,
           appendSystemPrompt: (agentConfig as any).appendSystemPrompt,
+          disallowedTools: (agentConfig as any).disallowedTools,
         }) as IAgentExecutor;
 
       case "codex":
