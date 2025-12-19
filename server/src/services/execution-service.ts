@@ -1403,6 +1403,14 @@ ${feedback}`;
       );
     }
 
+    // For Cursor with sudocode-mcp, auto-approve MCP servers in headless mode
+    if (agentType === "cursor" && mcpPresent) {
+      console.info(
+        "[ExecutionService] Enabling approveMcps for Cursor (sudocode-mcp detected)"
+      );
+      (mergedConfig as any).approveMcps = true;
+    }
+
     // 4. Auto-inject sudocode-mcp if not configured and not already in userConfig
     if (!mcpPresent && !userConfig.mcpServers?.["sudocode-mcp"]) {
       console.info(

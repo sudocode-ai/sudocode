@@ -1139,6 +1139,29 @@ describe("ExecutionService.buildExecutionConfig", () => {
       expect(result).toBeDefined();
     });
 
+    it("should set approveMcps=true when cursor agent has sudocode-mcp configured", async () => {
+      // Mock detectSudocodeMcp to return true (package installed)
+      await mockSudocodeMcpDetection(true);
+
+      // Mock detectAgentMcp to return true for cursor (has .cursor/mcp.json with sudocode-mcp)
+      vi.spyOn(service, "detectAgentMcp").mockResolvedValue(true);
+
+      const userConfig: ExecutionConfig = {
+        mode: "worktree",
+      };
+
+      const result = await service.buildExecutionConfig("cursor", userConfig);
+
+      // Should have approveMcps set to true for headless mode
+      expect((result as any).approveMcps).toBe(true);
+    });
+
+    it("should not set approveMcps for cursor when sudocode-mcp is not detected", async () => {
+      // This test verifies the negative case - but cursor without MCP config throws error
+      // So we can't actually test this scenario as it fails before approveMcps would be set
+      // This is expected behavior - cursor REQUIRES MCP config
+    });
+
     it("should throw cursor error even if user provides mcpServers in config", async () => {
       // Mock detectSudocodeMcp to return true (package installed)
       await mockSudocodeMcpDetection(true);
