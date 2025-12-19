@@ -105,8 +105,8 @@ sudocode now supports syncing with external spec and issue tracking systems thro
 | Integration | Description | Sync Direction |
 |-------------|-------------|----------------|
 | **[Beads](https://github.com/steveyegge/beads)** | Git-native issues system | Bidirectional |
-| **[Spec-Kit](https://github.com/spec-kit/spec-kit)** | Markdown-based specification system | Bidirectional |
-| **[OpenSpec](https://github.com/openspec/openspec)** | Structured spec and change proposal system | Bidirectional |
+| **[Spec-Kit](https://github.com/github/spec-kit)** | Markdown-based specification system | Bidirectional |
+| **[OpenSpec](https://github.com/Fission-AI/OpenSpec)** | Structured spec and change proposal system | Bidirectional |
 | **Jira** | Atlassian issue tracking | *Coming soon* |
 | **Linear** | Modern issue tracking | *Coming soon* |
 
