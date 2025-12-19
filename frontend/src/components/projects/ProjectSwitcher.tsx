@@ -5,6 +5,7 @@ import { ChevronDown, Check, FolderOpen, Settings as SettingsIcon } from 'lucide
 import { useProject } from '@/hooks/useProject'
 import { useRecentProjects, useProjectById } from '@/hooks/useProjects'
 import { projectsApi } from '@/lib/api'
+import { buildProjectPath } from '@/hooks/useProjectRoutes'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,7 +51,7 @@ export function ProjectSwitcher({ className, collapsed = false }: ProjectSwitche
     // If clicking on already-selected project, just navigate to issues
     if (projectId === currentProjectId) {
       setOpen(false)
-      navigate('/issues')
+      navigate(buildProjectPath(projectId, '/issues'))
       return
     }
 
@@ -78,7 +79,7 @@ export function ProjectSwitcher({ className, collapsed = false }: ProjectSwitche
       await queryClient.invalidateQueries()
 
       // Navigate to issues page for the new project
-      navigate('/issues')
+      navigate(buildProjectPath(projectId, '/issues'))
 
       // Small delay to show loading state
       await new Promise((resolve) => setTimeout(resolve, 300))

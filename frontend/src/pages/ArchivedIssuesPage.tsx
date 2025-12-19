@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useIssues, useIssueFeedback } from '@/hooks/useIssues'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import type { Issue, IssueStatus } from '@/types/api'
 import IssueKanbanBoard from '@/components/issues/IssueKanbanBoard'
 import IssuePanel from '@/components/issues/IssuePanel'
@@ -11,6 +12,7 @@ import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels'
 
 export default function ArchivedIssuesPage() {
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const {
     issues,
     isLoading,
@@ -139,7 +141,7 @@ export default function ArchivedIssuesPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => navigate('/issues')}
+            onClick={() => navigate(paths.issues())}
             className="h-8 w-8 p-0"
           >
             <ArrowLeft className="h-4 w-4" />

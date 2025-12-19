@@ -12,6 +12,7 @@ import {
   useUpdateProject,
 } from '@/hooks/useProjects'
 import { useProject } from '@/hooks/useProject'
+import { buildProjectPath } from '@/hooks/useProjectRoutes'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -69,7 +70,7 @@ export default function ProjectsPage() {
     try {
       await openProject.mutateAsync({ path: project.path })
       setCurrentProjectId(project.id)
-      navigate('/issues')
+      navigate(buildProjectPath(project.id, '/issues'))
     } catch (error) {
       console.error('Failed to open project:', error)
     }
@@ -107,7 +108,7 @@ export default function ProjectsPage() {
       setOpenDialogOpen(false)
       setProjectPath('')
       setValidationError(null)
-      navigate('/issues')
+      navigate(buildProjectPath(project.id, '/issues'))
     } catch (error) {
       console.error('Failed to open project:', error)
       setValidationError(error instanceof Error ? error.message : 'Failed to open project')
@@ -149,7 +150,7 @@ export default function ProjectsPage() {
       setProjectPath('')
       setProjectName('')
       setValidationError(null)
-      navigate('/issues')
+      navigate(buildProjectPath(project.id, '/issues'))
     } catch (error) {
       console.error('Failed to initialize project:', error)
       setValidationError(error instanceof Error ? error.message : 'Failed to initialize project')
@@ -473,7 +474,7 @@ function ProjectCard({ project, isOpen, isCurrent, onOpen, onClose, onDelete }: 
 
     // If it's the current project, navigate to issues
     if (isCurrent) {
-      navigate('/issues')
+      navigate(buildProjectPath(project.id, '/issues'))
       return
     }
 

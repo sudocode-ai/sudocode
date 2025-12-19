@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, Pause, Copy, Check } from 'lucide-react'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -40,6 +41,7 @@ export function SpecCard({
   activeWorkflow,
 }: SpecCardProps) {
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const [isCopied, setIsCopied] = useState(false)
 
   const handleClick = useCallback(() => {
@@ -68,10 +70,10 @@ export function SpecCard({
     (e: React.MouseEvent) => {
       e.stopPropagation() // Prevent card click
       if (activeWorkflow) {
-        navigate(`/workflows/${activeWorkflow.id}`)
+        navigate(paths.workflow(activeWorkflow.id))
       }
     },
-    [activeWorkflow, navigate]
+    [activeWorkflow, navigate, paths]
   )
 
   // Extract preview text from content (first 200 chars)

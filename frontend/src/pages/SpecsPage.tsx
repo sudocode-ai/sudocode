@@ -6,6 +6,7 @@ import { useProject } from '@/hooks/useProject'
 import { useProjectById } from '@/hooks/useProjects'
 import { useWorkflows } from '@/hooks/useWorkflows'
 import { useImportProviders } from '@/hooks/useImport'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { SpecList } from '@/components/specs/SpecList'
 import { SpecEditor } from '@/components/specs/SpecEditor'
 import { ImportDialog } from '@/components/import'
@@ -34,6 +35,7 @@ export default function SpecsPage() {
   const { data: currentProject } = useProjectById(currentProjectId)
   const { data: workflows = [] } = useWorkflows()
   const { data: importProviders = [] } = useImportProviders()
+  const { paths } = useProjectRoutes()
 
   // Check if any import providers are configured and support on-demand import
   const hasConfiguredImportProviders = importProviders.some(
@@ -73,7 +75,7 @@ export default function SpecsPage() {
 
   const handleSave = (spec: Spec) => {
     setShowEditor(false)
-    navigate(`/specs/${spec.id}`)
+    navigate(paths.spec(spec.id))
   }
 
   // Save sort preference to localStorage when it changes
@@ -171,7 +173,7 @@ export default function SpecsPage() {
             />
           </div>
           <Button
-            onClick={() => navigate('/specs/archived')}
+            onClick={() => navigate(paths.archivedSpecs())}
             variant="ghost"
             size="sm"
             className="gap-1 text-muted-foreground hover:text-foreground"

@@ -14,6 +14,18 @@ vi.mock('react-router-dom', async () => {
   }
 })
 
+// Mock useProjectRoutes hook
+vi.mock('@/hooks/useProjectRoutes', () => ({
+  useProjectRoutes: () => ({
+    paths: {
+      workflow: (id: string) => `/p/test-project/workflows/${id}`,
+      issue: (id: string) => `/p/test-project/issues/${id}`,
+      spec: (id: string) => `/p/test-project/specs/${id}`,
+    },
+    effectiveProjectId: 'test-project',
+  }),
+}))
+
 describe('SpecList', () => {
   beforeEach(() => {
     mockNavigate.mockClear()

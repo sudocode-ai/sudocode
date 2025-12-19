@@ -7,6 +7,7 @@ import { useIssues } from '@/hooks/useIssues'
 import { useFeedback } from '@/hooks/useFeedback'
 import { useWorkflowMutations, useWorkflows } from '@/hooks/useWorkflows'
 import { useRefreshEntity } from '@/hooks/useRefreshEntity'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { SpecViewerTiptap } from '@/components/specs/SpecViewerTiptap'
 import { AlignedFeedbackPanel } from '@/components/specs/AlignedFeedbackPanel'
 import { AddFeedbackDialog } from '@/components/specs/AddFeedbackDialog'
@@ -73,6 +74,7 @@ const SHOW_TOC_STORAGE_KEY = 'sudocode:specs:showTocPanel'
 export default function SpecDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const { spec, isLoading, isError } = useSpec(id || '')
   const { feedback } = useSpecFeedback(id || '')
   const { issues } = useIssues()
@@ -410,9 +412,9 @@ Create actionable issues that implement its requirements. Each issue should be s
       await startWorkflow(workflow.id)
       setWorkflowDialogOpen(false)
       // Navigate to the created workflow's detail page
-      navigate(`/workflows/${workflow.id}`)
+      navigate(paths.workflow(workflow.id))
     },
-    [createWorkflow, startWorkflow, navigate]
+    [createWorkflow, startWorkflow, navigate, paths]
   )
 
   if (isLoading) {
@@ -434,7 +436,7 @@ Create actionable issues that implement its requirements. Each issue should be s
           <p className="mb-4 text-muted-foreground">
             The spec you're looking for doesn't exist or has been deleted.
           </p>
-          <Button onClick={() => navigate('/specs')}>Back to Specs</Button>
+          <Button onClick={() => navigate(paths.specs())}>Back to Specs</Button>
         </div>
       </div>
     )
@@ -566,7 +568,7 @@ Create actionable issues that implement its requirements. Each issue should be s
     try {
       await deleteSpec(id)
       setShowDeleteDialog(false)
-      navigate('/specs')
+      navigate(paths.specs())
     } catch (error) {
       console.error('Failed to delete spec:', error)
     } finally {
@@ -679,7 +681,7 @@ Create actionable issues that implement its requirements. Each issue should be s
                     <Button
                       variant="default"
                       size="sm"
-                      onClick={() => navigate(`/workflows/${runningWorkflowForSpec.id}`)}
+                      onClick={() => navigate(paths.workflow(runningWorkflowForSpec.id))}
                     >
                       <Loader2 className="h-4 w-4 animate-spin sm:mr-2" />
                       <span className="hidden sm:inline">Running Workflow</span>

@@ -44,10 +44,13 @@ vi.mock('@/lib/api', () => ({
     getAll: vi.fn(),
   },
   repositoryApi: {
-    getInfo: vi.fn(),
-    getBranches: vi.fn(),
-    listWorktrees: vi.fn(),
-    previewWorktreeSync: vi.fn(),
+    getInfo: vi.fn(() => Promise.resolve({
+      name: 'test-repo',
+      branch: 'main',
+      path: '/test/path',
+      ownerRepo: 'owner/repo',
+      gitProvider: 'github',
+    })),
   },
 }))
 
@@ -57,7 +60,22 @@ vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),
+    warning: vi.fn(),
   },
+}))
+
+// Mock useProjectRoutes hook
+vi.mock('@/hooks/useProjectRoutes', () => ({
+  useProjectRoutes: () => ({
+    paths: {
+      workflows: () => `/p/test-project/workflows`,
+      workflow: (id: string) => `/p/test-project/workflows/${id}`,
+      issue: (id: string) => `/p/test-project/issues/${id}`,
+      spec: (id: string) => `/p/test-project/specs/${id}`,
+      execution: (id: string) => `/p/test-project/executions/${id}`,
+    },
+    effectiveProjectId: 'test-project',
+  }),
 }))
 
 // Import mocked API after vi.mock

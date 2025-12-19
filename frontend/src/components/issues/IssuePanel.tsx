@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { formatDistanceToNow } from 'date-fns'
 import {
   Plus,
@@ -105,6 +106,7 @@ export function IssuePanel({
   issues = [],
 }: IssuePanelProps) {
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const [title, setTitle] = useState(issue.title)
   const [content, setContent] = useState(issue.content || '')
   const [status, setStatus] = useState<IssueStatus>(issue.status)
@@ -941,7 +943,7 @@ export function IssuePanel({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
-                      onClick={() => navigate(`/issues/${issue.id}`)}
+                      onClick={() => navigate(paths.issue(issue.id))}
                       className="flex-shrink-0 text-muted-foreground hover:text-foreground"
                       aria-label="Open in full page"
                     >

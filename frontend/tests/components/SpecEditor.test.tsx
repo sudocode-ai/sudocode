@@ -18,6 +18,17 @@ vi.mock('@/hooks/useSpecs', () => ({
   }),
 }))
 
+// Mock useProjectRoutes hook
+vi.mock('@/hooks/useProjectRoutes', () => ({
+  useProjectRoutes: () => ({
+    paths: {
+      execution: (id: string) => `/p/test-project/executions/${id}`,
+      spec: (id: string) => `/p/test-project/specs/${id}`,
+    },
+    effectiveProjectId: 'test-project',
+  }),
+}))
+
 describe('SpecEditor', () => {
   let queryClient: QueryClient
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import {
   Dialog,
   DialogContent,
@@ -67,6 +68,7 @@ function isUrl(input: string): boolean {
  */
 export function ImportDialog({ open, onClose, onImported }: ImportDialogProps) {
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
 
   // State
   const [state, setState] = useState<DialogState>('initial')
@@ -291,9 +293,9 @@ export function ImportDialog({ open, onClose, onImported }: ImportDialogProps) {
 
         // Navigate to specs page if multiple, or to single spec if one
         if (entityIds.length === 1) {
-          navigate(`/specs/${entityIds[0]}`)
+          navigate(paths.spec(entityIds[0]))
         } else if (entityIds.length > 1) {
-          navigate('/specs')
+          navigate(paths.specs())
         }
       }
 

@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { SpecCard } from './SpecCard'
 import type { Spec } from '@/types/api'
 import type { Workflow } from '@/types/workflow'
@@ -18,9 +19,10 @@ export function SpecList({
   activeWorkflows,
 }: SpecListProps) {
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
 
   const handleSpecClick = (spec: Spec) => {
-    navigate(`/specs/${spec.id}`)
+    navigate(paths.spec(spec.id))
   }
 
   if (loading) {

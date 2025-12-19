@@ -31,6 +31,17 @@ vi.mock('react-router-dom', async () => {
   }
 })
 
+// Mock useProjectRoutes hook
+vi.mock('@/hooks/useProjectRoutes', () => ({
+  useProjectRoutes: () => ({
+    paths: {
+      spec: (id: string) => `/p/test-project/specs/${id}`,
+      specs: () => `/p/test-project/specs`,
+    },
+    effectiveProjectId: 'test-project',
+  }),
+}))
+
 // Mock useRepositoryInfo
 vi.mock('@/hooks/useRepositoryInfo', () => ({
   useRepositoryInfo: () => ({
@@ -354,7 +365,7 @@ describe('ImportDialog', () => {
     await waitFor(() => {
       expect(onClose).toHaveBeenCalled()
       expect(onImported).toHaveBeenCalledWith(['s-abc123'])
-      expect(mockNavigate).toHaveBeenCalledWith('/specs/s-abc123')
+      expect(mockNavigate).toHaveBeenCalledWith('/p/test-project/specs/s-abc123')
     })
   })
 

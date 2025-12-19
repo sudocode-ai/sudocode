@@ -7,6 +7,7 @@ import { useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Search, Filter, Trash2, Network, GitBranch } from 'lucide-react'
 import { toast } from 'sonner'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -48,6 +49,7 @@ const STATUS_FILTER_OPTIONS: Array<{ value: WorkflowStatus | 'all'; label: strin
 
 export default function WorkflowsPage() {
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const queryClient = useQueryClient()
   const { data: workflows = [], isLoading } = useWorkflows()
   const { create, start, delete: deleteWorkflow, isDeleting } = useWorkflowMutations()
@@ -108,7 +110,7 @@ export default function WorkflowsPage() {
     await start(workflow.id)
     setCreateDialogOpen(false)
     // Navigate to the workflow detail page
-    navigate(`/workflows/${workflow.id}`)
+    navigate(paths.workflow(workflow.id))
   }
 
   const handleDeleteClick = (workflow: Workflow) => {
@@ -283,7 +285,7 @@ export default function WorkflowsPage() {
               <WorkflowCard
                 key={workflow.id}
                 workflow={workflow}
-                onSelect={() => navigate(`/workflows/${workflow.id}`)}
+                onSelect={() => navigate(paths.workflow(workflow.id))}
                 onDelete={() => handleDeleteClick(workflow)}
               />
             ))}

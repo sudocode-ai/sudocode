@@ -4,6 +4,18 @@ import { MemoryRouter } from 'react-router-dom'
 import { SpecCard } from '@/components/specs/SpecCard'
 import type { Spec } from '@/types/api'
 
+// Mock useProjectRoutes hook
+vi.mock('@/hooks/useProjectRoutes', () => ({
+  useProjectRoutes: () => ({
+    paths: {
+      workflow: (id: string) => `/p/test-project/workflows/${id}`,
+      issue: (id: string) => `/p/test-project/issues/${id}`,
+      spec: (id: string) => `/p/test-project/specs/${id}`,
+    },
+    effectiveProjectId: 'test-project',
+  }),
+}))
+
 // Helper to render with Router context
 const renderWithRouter = (ui: React.ReactElement) => {
   return render(<MemoryRouter>{ui}</MemoryRouter>)

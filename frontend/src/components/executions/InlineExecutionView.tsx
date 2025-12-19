@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { formatDistanceToNow } from 'date-fns'
 import { executionsApi, type ExecutionChainResponse } from '@/lib/api'
 import { ExecutionMonitor, RunIndicator } from './ExecutionMonitor'
@@ -72,6 +73,7 @@ export function InlineExecutionView({
   defaultExpanded = true,
 }: InlineExecutionViewProps) {
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const { deleteWorktree } = useWorktreeMutations()
   const { deleteExecution } = useExecutionMutations()
   const { subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
@@ -586,7 +588,7 @@ export function InlineExecutionView({
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    navigate(`/executions/${rootExecution.id}`)
+                    navigate(paths.execution(rootExecution.id))
                   }}
                   className="font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"
                 >
@@ -618,7 +620,7 @@ export function InlineExecutionView({
                 className="h-8 w-8 p-0"
                 onClick={(e) => {
                   e.stopPropagation()
-                  navigate(`/executions/${rootExecution.id}`)
+                  navigate(paths.execution(rootExecution.id))
                 }}
                 title="Open in full page"
               >

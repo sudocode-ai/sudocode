@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   FileText,
@@ -16,6 +16,7 @@ import { ProjectSwitcher } from '@/components/projects/ProjectSwitcher'
 import { SettingsDialog } from './SettingsDialog'
 import { HelpDialog } from './HelpDialog'
 import { useUpdateCheck } from '@/hooks/useUpdateCheck'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 
 interface SidebarProps {
   open: boolean
@@ -29,38 +30,48 @@ export default function Sidebar({ open, collapsed, onClose }: SidebarProps) {
   const [helpOpen, setHelpOpen] = useState(false)
   const { updateInfo } = useUpdateCheck()
   const hasUpdate = updateInfo?.updateAvailable ?? false
+  const { paths } = useProjectRoutes()
 
-  const isActive = (path: string) => {
-    return location.pathname.startsWith(path)
+  // Check if current path matches the nav item (handles both old and new URL patterns)
+  const isActive = (basePath: string) => {
+    const pathname = location.pathname
+    // Match /p/:projectId/issues or /issues patterns
+    return pathname.includes(basePath)
   }
 
-  const navItems = [
+  // Build nav items with project-scoped paths
+  const navItems = useMemo(() => [
     {
-      path: '/issues',
+      path: paths.issues(),
+      basePath: '/issues',
       label: 'Issues',
       icon: ListTodo,
     },
     {
-      path: '/specs',
+      path: paths.specs(),
+      basePath: '/specs',
       label: 'Specs',
       icon: FileText,
     },
     {
-      path: '/workflows',
+      path: paths.workflows(),
+      basePath: '/workflows',
       label: 'Workflows',
       icon: Network,
     },
     {
-      path: '/executions',
+      path: paths.executions(),
+      basePath: '/executions',
       label: 'Agent Executions',
       icon: PlayCircle,
     },
     {
-      path: '/worktrees',
+      path: paths.worktrees(),
+      basePath: '/worktrees',
       label: 'Worktrees',
       icon: GitBranch,
     },
-  ]
+  ], [paths])
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -111,7 +122,7 @@ export default function Sidebar({ open, collapsed, onClose }: SidebarProps) {
         <nav className={cn('flex-1 space-y-1 p-2', collapsed ? 'px-2' : 'px-3')}>
           {navItems.map((item) => {
             const Icon = item.icon
-            const active = isActive(item.path)
+            const active = isActive(item.basePath)
 
             const linkContent = (
               <Link

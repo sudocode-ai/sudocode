@@ -33,6 +33,17 @@ vi.mock('react-router-dom', async () => {
   }
 })
 
+// Mock useProjectRoutes hook
+vi.mock('@/hooks/useProjectRoutes', () => ({
+  useProjectRoutes: () => ({
+    paths: {
+      issues: () => `/p/test-project/issues`,
+    },
+    effectiveProjectId: 'test-project',
+  }),
+  buildProjectPath: (projectId: string, path: string) => `/p/${projectId}${path}`,
+}))
+
 describe('ProjectSwitcher', () => {
   let queryClient: QueryClient
 
@@ -436,9 +447,9 @@ describe('ProjectSwitcher', () => {
     const projectTwo = await screen.findByText('Project Two')
     await user.click(projectTwo)
 
-    // Verify navigation to issues page
+    // Verify navigation to issues page with project ID
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/issues')
+      expect(mockNavigate).toHaveBeenCalledWith('/p/project-2/issues')
     })
   })
 })

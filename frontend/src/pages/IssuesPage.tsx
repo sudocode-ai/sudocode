@@ -7,6 +7,7 @@ import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
 import { useProject } from '@/hooks/useProject'
 import { useProjectById } from '@/hooks/useProjects'
 import { useWorkflows } from '@/hooks/useWorkflows'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { executionsApi } from '@/lib/api'
 import type { Issue, IssueStatus } from '@/types/api'
 import type { Execution } from '@/types/execution'
@@ -45,6 +46,7 @@ const SORT_STORAGE_KEY = 'sudocode:issues:sortOption'
 export default function IssuesPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { paths } = useProjectRoutes()
   const {
     issues,
     isLoading,
@@ -501,7 +503,7 @@ export default function IssuesPage() {
             </SelectContent>
           </Select>
           <Button
-            onClick={() => navigate('/issues/archived')}
+            onClick={() => navigate(paths.archivedIssues())}
             variant="ghost"
             size="sm"
             className="gap-1 text-muted-foreground hover:text-foreground"

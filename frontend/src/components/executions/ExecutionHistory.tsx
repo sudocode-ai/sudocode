@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { CheckCircle2, XCircle, Loader2, Clock, PauseCircle, StopCircle } from 'lucide-react'
 import { executionsApi } from '@/lib/api'
 import type { Execution, ExecutionStatus } from '@/types/execution'
@@ -83,6 +84,7 @@ function truncateId(id: string, length = 8): string {
 
 export function ExecutionHistory({ issueId }: ExecutionHistoryProps) {
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const [executions, setExecutions] = useState<Execution[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -110,7 +112,7 @@ export function ExecutionHistory({ issueId }: ExecutionHistoryProps) {
   }, [issueId])
 
   const handleExecutionClick = (executionId: string) => {
-    navigate(`/executions/${executionId}`)
+    navigate(paths.execution(executionId))
   }
 
   if (loading) {
