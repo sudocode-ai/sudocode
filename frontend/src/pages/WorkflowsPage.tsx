@@ -5,7 +5,7 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, Filter, Trash2, Network } from 'lucide-react'
+import { Plus, Search, Filter, Trash2, Network, GitBranch } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,6 +24,9 @@ import {
 } from '@/components/workflows'
 import type { DeleteWorkflowOptions, DeleteAllWorkflowsOptions } from '@/components/workflows'
 import { useWorkflows, useWorkflowMutations, workflowKeys } from '@/hooks/useWorkflows'
+import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
+import { useProject } from '@/hooks/useProject'
+import { useProjectById } from '@/hooks/useProjects'
 import { workflowsApi } from '@/lib/api'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Workflow, WorkflowStatus } from '@/types/workflow'
@@ -48,6 +51,9 @@ export default function WorkflowsPage() {
   const queryClient = useQueryClient()
   const { data: workflows = [], isLoading } = useWorkflows()
   const { create, start, delete: deleteWorkflow, isDeleting } = useWorkflowMutations()
+  const { data: repoInfo } = useRepositoryInfo()
+  const { currentProjectId } = useProject()
+  const { data: currentProject } = useProjectById(currentProjectId)
 
   // State
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -178,8 +184,24 @@ export default function WorkflowsPage() {
       {/* Header with filters */}
       <div className="flex items-center justify-between gap-4 border-b p-4">
         <div className="flex shrink-0 items-center gap-3">
-          <h1 className="text-2xl font-semibold">Workflows</h1>
-          <Badge variant="secondary">{workflows.length}</Badge>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold">Workflows</h1>
+            <Badge variant="secondary">{workflows.length}</Badge>
+          </div>
+          {(currentProject || repoInfo) && (
+            <div className="flex flex-col gap-0.5 pl-3 text-sm">
+              {currentProject && (
+                <div className="font-medium text-foreground">{currentProject.name}</div>
+              )}
+              {repoInfo && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="font-medium">{repoInfo.name}</span>
+                  <GitBranch className="h-3.5 w-3.5" />
+                  <span>{repoInfo.branch}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Create button - right side */}
