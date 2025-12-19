@@ -427,15 +427,6 @@ export class ExecutionService {
       ...agentConfig
     } = mergedConfig;
 
-    console.log("[ExecutionService] After destructuring mergedConfig:", {
-      mergedConfigKeys: Object.keys(mergedConfig),
-      mergedConfigHasDisallowedTools: 'disallowedTools' in mergedConfig,
-      mergedConfigDisallowedTools: (mergedConfig as any).disallowedTools,
-      agentConfigKeys: Object.keys(agentConfig),
-      agentConfigHasDisallowedTools: 'disallowedTools' in agentConfig,
-      agentConfigDisallowedTools: (agentConfig as any).disallowedTools,
-    });
-
     const wrapper = createExecutorForAgent(
       agentType,
       {

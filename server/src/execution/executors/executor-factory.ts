@@ -95,30 +95,13 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
   // Merge adapter defaults with provided config
   // Filter undefined values so they don't override defaults
   const defaults = adapter.getDefaultConfig?.() || {};
-  console.log('[ExecutorFactory] Merging config:', {
-    defaultsKeys: Object.keys(defaults),
-    defaultsDisallowedTools: (defaults as any).disallowedTools,
-    agentConfigKeys: Object.keys(agentConfig),
-    agentConfigDisallowedTools: (agentConfig as any).disallowedTools,
-  });
-
   const filteredConfig = Object.fromEntries(
     Object.entries(agentConfig).filter(([_, v]) => v !== undefined)
   );
-  console.log('[ExecutorFactory] After filtering:', {
-    filteredConfigKeys: Object.keys(filteredConfig),
-    filteredConfigDisallowedTools: (filteredConfig as any).disallowedTools,
-  });
-
   const mergedConfig = {
     ...defaults,
     ...filteredConfig,
   } as TConfig;
-
-  console.log('[ExecutorFactory] Final merged config:', {
-    mergedConfigKeys: Object.keys(mergedConfig),
-    mergedConfigDisallowedTools: (mergedConfig as any).disallowedTools,
-  });
 
   // Validate merged configuration
   if (adapter.validateConfig) {
