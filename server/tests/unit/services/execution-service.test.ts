@@ -176,6 +176,11 @@ describe("ExecutionService", () => {
   beforeEach(() => {
     // Clear mock call history before each test
     vi.clearAllMocks();
+
+    // Mock MCP detection methods to always return true
+    // This allows tests to run without requiring actual MCP configuration
+    vi.spyOn(service as any, 'detectSudocodeMcp').mockResolvedValue(true);
+    vi.spyOn(service as any, 'detectAgentMcp').mockResolvedValue(true);
   });
 
   afterEach(() => {

@@ -36,7 +36,9 @@ import { execFileNoThrow } from "../utils/execFileNoThrow.js";
  * MCP server configuration
  */
 export interface McpServerConfig {
+  type?: string;
   command: string;
+  tools?: string[];
   args?: string[];
   env?: Record<string, string>;
 }
@@ -1409,7 +1411,9 @@ ${feedback}`;
       mergedConfig.mcpServers = {
         ...(userConfig.mcpServers || {}),
         "sudocode-mcp": {
+          type: "local",
           command: "sudocode-mcp",
+          tools: ["*"],
           args: [],
         },
       };

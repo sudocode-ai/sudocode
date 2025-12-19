@@ -210,7 +210,9 @@ describe('MCP Auto-Injection Integration Tests', () => {
 
       // Verify the MCP server config would enable sudocode tools
       expect(capturedConfig.mcpServers['sudocode-mcp']).toEqual({
+        type: 'local',
         command: 'sudocode-mcp',
+        tools: ['*'],
         args: [],
       });
 
@@ -258,7 +260,9 @@ describe('MCP Auto-Injection Integration Tests', () => {
         args: ['--verbose'],
       });
       expect(capturedConfig.mcpServers['sudocode-mcp']).toEqual({
+        type: 'local',
         command: 'sudocode-mcp',
+        tools: ['*'],
         args: [],
       });
     });

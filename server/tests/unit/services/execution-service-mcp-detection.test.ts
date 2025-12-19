@@ -451,7 +451,9 @@ command = "sudocode-mcp"
       const result = await service.buildExecutionConfig('claude-code', {});
       expect(result.mcpServers).toBeDefined();
       expect(result.mcpServers['sudocode-mcp']).toEqual({
+        type: 'local',
         command: 'sudocode-mcp',
+        tools: ['*'],
         args: [],
       });
     });
