@@ -381,9 +381,10 @@ Returns list of users.`,
     // Title from worktree (newer)
     expect(merged.title).toBe('API Documentation');
 
-    // Content should merge both changes (YAML line-level merge)
-    expect(merged.content).toContain('JWT tokens');
+    // Content: worktree wins (newer timestamp) - conflicting changes to same field
     expect(merged.content).toContain('GET /api/users');
+    expect(merged.content).not.toContain('JWT tokens'); // Older version lost in conflict
+    expect(merged.content).toContain('Coming soon...'); // Worktree version
   });
 
   it('should handle one-sided additions correctly', async () => {

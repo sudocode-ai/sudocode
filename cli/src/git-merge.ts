@@ -197,18 +197,39 @@ export function mergeYamlContentSync(input: MergeInput): MergeResult {
       // Git merge-file returns exit code 2 for empty base, but still produces valid output
       const exitCode = error.status || error.code || 'unknown';
 
-      if (error.status === 1 || (baseIsEmpty && error.status > 1)) {
-        const mergedContent = fs.readFileSync(oursPath, 'utf8');
+      // Debug: log what we got
+      if (process.env.DEBUG_GIT_MERGE) {
+        console.log('Git merge-file error:', {
+          status: error.status,
+          code: error.code,
+          baseIsEmpty,
+          stderr: error.stderr?.toString(),
+          stdout: error.stdout?.toString(),
+        });
+      }
 
-        // Validate that git produced output (not a real error)
-        if (mergedContent.length > 0) {
-          return {
-            success: false,
-            content: mergedContent,
-            hasConflicts: true,
-          };
+      if (error.status === 1 || (baseIsEmpty && error.status > 1)) {
+        try {
+          const mergedContent = fs.readFileSync(oursPath, 'utf8');
+
+          // Validate that git produced output (not a real error)
+          if (mergedContent.length > 0) {
+            return {
+              success: false,
+              content: mergedContent,
+              hasConflicts: true,
+            };
+          }
+          // If no output, this is likely a real error - fall through to throw
+        } catch (readError) {
+          // File read failed - fall through to throw with details
+          const stderr = error.stderr?.toString().trim();
+          const stdout = error.stdout?.toString().trim();
+          const errorDetails = stderr || stdout || error.message || 'Unknown error';
+          throw new Error(
+            `Git merge-file command failed (exit code ${exitCode}, baseIsEmpty=${baseIsEmpty}, fileExists=${fs.existsSync(oursPath)}, readError=${readError}): ${errorDetails}`
+          );
         }
-        // If no output, this is likely a real error - fall through to throw
       }
 
       // Exit code > 1 means a fatal error occurred
@@ -218,7 +239,7 @@ export function mergeYamlContentSync(input: MergeInput): MergeResult {
       const errorDetails = stderr || stdout || error.message || 'Unknown error';
 
       throw new Error(
-        `Git merge-file command failed (exit code ${exitCode}, baseIsEmpty=${baseIsEmpty}, mergedLength=${fs.existsSync(oursPath) ? fs.readFileSync(oursPath, 'utf8').length : 'file-not-found'}): ${errorDetails}`
+        `Git merge-file command failed (status=${error.status}, code=${error.code}, exitCode=${exitCode}, baseIsEmpty=${baseIsEmpty}, baseLength=${input.base.length}, oursLength=${input.ours.length}, theirsLength=${input.theirs.length}): ${errorDetails}`
       );
     }
   } finally {

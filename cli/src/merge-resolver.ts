@@ -440,7 +440,12 @@ export function mergeThreeWay<T extends JSONLEntity>(
 
     // Step 6: Apply conflict resolver if conflicts remain
     if (gitMergeResult.hasConflicts) {
-      const resolveResult = resolveConflicts(finalYaml);
+      // Pass entity timestamps as fallback for conflict blocks without timestamps
+      const resolveResult = resolveConflicts(
+        finalYaml,
+        oursEntity!.updated_at,
+        theirsEntity!.updated_at
+      );
       finalYaml = resolveResult.content;
 
       if (resolveResult.conflictsResolved > 0) {

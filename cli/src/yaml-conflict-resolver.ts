@@ -144,11 +144,18 @@ export function parseConflicts(content: string): ConflictSection[] {
  * If timestamps are identical, prefers "ours" for stability.
  *
  * @param conflict - The conflict section to resolve
+ * @param globalOursTimestamp - Optional global timestamp for "ours" (from original entity)
+ * @param globalTheirsTimestamp - Optional global timestamp for "theirs" (from original entity)
  * @returns The winning YAML content
  */
-export function resolveConflict(conflict: ConflictSection): string {
-  const oursTimestamp = extractTimestamp(conflict.ours);
-  const theirsTimestamp = extractTimestamp(conflict.theirs);
+export function resolveConflict(
+  conflict: ConflictSection,
+  globalOursTimestamp?: Date | null,
+  globalTheirsTimestamp?: Date | null
+): string {
+  // Try to extract timestamp from conflict section first, fallback to global timestamp
+  const oursTimestamp = extractTimestamp(conflict.ours) ?? globalOursTimestamp;
+  const theirsTimestamp = extractTimestamp(conflict.theirs) ?? globalTheirsTimestamp;
 
   // If neither has a valid timestamp, prefer ours for stability
   if (!oursTimestamp && !theirsTimestamp) {
@@ -203,7 +210,11 @@ export function resolveConflict(conflict: ConflictSection): string {
  * // result.conflictsResolved === 1
  * ```
  */
-export function resolveConflicts(content: string): ResolveResult {
+export function resolveConflicts(
+  content: string,
+  oursUpdatedAt?: string,
+  theirsUpdatedAt?: string
+): ResolveResult {
   const conflicts = parseConflicts(content);
 
   if (conflicts.length === 0) {
@@ -214,13 +225,17 @@ export function resolveConflicts(content: string): ResolveResult {
     };
   }
 
+  // Parse global timestamps if provided (used as fallback when block doesn't have timestamp)
+  const globalOursTimestamp = oursUpdatedAt ? new Date(oursUpdatedAt) : null;
+  const globalTheirsTimestamp = theirsUpdatedAt ? new Date(theirsUpdatedAt) : null;
+
   // Process conflicts in reverse order to maintain line numbers
   const lines = content.split('\n');
   let resolvedCount = 0;
 
   for (let i = conflicts.length - 1; i >= 0; i--) {
     const conflict = conflicts[i];
-    const resolvedContent = resolveConflict(conflict);
+    const resolvedContent = resolveConflict(conflict, globalOursTimestamp, globalTheirsTimestamp);
 
     // Replace conflict section with resolved content
     // Split resolved content into lines for splicing
