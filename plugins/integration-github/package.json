@@ -1,6 +1,6 @@
 {
   "name": "@sudocode-ai/integration-github",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "GitHub integration plugin for sudocode using gh CLI",
   "type": "module",
   "main": "dist/index.js",
@@ -30,10 +30,10 @@
   "author": "sudocode-ai",
   "license": "Apache-2.0",
   "peerDependencies": {
-    "@sudocode-ai/types": "^0.1.16"
+    "@sudocode-ai/types": "^0.1.17"
   },
   "devDependencies": {
-    "@sudocode-ai/types": "^0.1.16",
+    "@sudocode-ai/types": "^0.1.17",
     "@types/node": "^22.10.2",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"

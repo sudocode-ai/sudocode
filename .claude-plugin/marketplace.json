@@ -9,7 +9,7 @@
       "name": "sudocode",
       "source": "./",
       "description": "Git-native spec and issue management for AI-assisted development",
-      "version": "0.1.16"
+      "version": "0.1.17"
     }
   ]
 }
