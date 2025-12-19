@@ -141,7 +141,6 @@ describe('MCP Auto-Injection Integration Tests', () => {
       expect(capturedConfig.mcpServers).toBeDefined();
       expect(capturedConfig.mcpServers['sudocode-mcp']).toBeDefined();
       expect(capturedConfig.mcpServers['sudocode-mcp'].command).toBe('sudocode-mcp');
-      expect(capturedConfig.mcpServers['sudocode-mcp'].args).toEqual([]);
     });
 
     it('should skip injection when plugin already configured', async () => {
@@ -210,10 +209,7 @@ describe('MCP Auto-Injection Integration Tests', () => {
 
       // Verify the MCP server config would enable sudocode tools
       expect(capturedConfig.mcpServers['sudocode-mcp']).toEqual({
-        type: 'local',
         command: 'sudocode-mcp',
-        tools: ['*'],
-        args: [],
       });
 
       // This config structure is what claude-code needs to connect to sudocode MCP tools
@@ -260,10 +256,7 @@ describe('MCP Auto-Injection Integration Tests', () => {
         args: ['--verbose'],
       });
       expect(capturedConfig.mcpServers['sudocode-mcp']).toEqual({
-        type: 'local',
         command: 'sudocode-mcp',
-        tools: ['*'],
-        args: [],
       });
     });
   });

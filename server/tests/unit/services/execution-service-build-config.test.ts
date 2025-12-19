@@ -109,7 +109,6 @@ describe("ExecutionService.buildExecutionConfig", () => {
       expect(result.mcpServers).toBeDefined();
       expect(result.mcpServers!["sudocode-mcp"]).toBeDefined();
       expect(result.mcpServers!["sudocode-mcp"].command).toBe("sudocode-mcp");
-      expect(result.mcpServers!["sudocode-mcp"].args).toEqual([]);
     });
 
     it("should skip injection when detectAgentMcp() returns true (plugin already configured)", async () => {

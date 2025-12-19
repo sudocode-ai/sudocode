@@ -1419,10 +1419,7 @@ ${feedback}`;
       mergedConfig.mcpServers = {
         ...(userConfig.mcpServers || {}),
         "sudocode-mcp": {
-          type: "local",
           command: "sudocode-mcp",
-          tools: ["*"],
-          args: [],
         },
       };
     } else if (mcpPresent) {
