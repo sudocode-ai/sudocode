@@ -252,6 +252,11 @@ export interface CursorConfig extends BaseAgentConfig {
   model?: string;
   /** Additional text to append to user prompts */
   appendPrompt?: string;
+  /**
+   * Automatically approve all MCP servers.
+   * Only works with --print/headless mode.
+   */
+  approveMcps?: boolean;
   /** Maximum idle time before cleanup */
   idleTimeout?: number;
   /** Retry configuration for failed spawns */

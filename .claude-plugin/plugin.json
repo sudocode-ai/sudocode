@@ -1,7 +1,7 @@
 {
   "name": "sudocode",
   "description": "Git-native spec and issue management for AI-assisted development. Track issues, specs, and feedback with smart anchoring.",
-  "version": "0.1.15",
+  "version": "0.1.17",
   "author": {
     "name": "sudocode AI",
     "url": "https://github.com/sudocode-ai"
