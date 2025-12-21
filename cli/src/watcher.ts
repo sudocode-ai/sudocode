@@ -64,6 +64,21 @@ class AsyncMutex {
 const processingMutex = new AsyncMutex();
 
 /**
+ * Parse a timestamp string to milliseconds, handling both ISO and SQLite formats
+ * SQLite's CURRENT_TIMESTAMP returns 'YYYY-MM-DD HH:MM:SS' (no timezone)
+ * which JavaScript incorrectly parses as local time. We need to treat it as UTC.
+ */
+export function parseTimestampAsUTC(timestamp: string): number {
+  // If it's already ISO format with Z, parse directly
+  if (timestamp.includes('T') && timestamp.endsWith('Z')) {
+    return new Date(timestamp).getTime();
+  }
+  // SQLite format: "YYYY-MM-DD HH:MM:SS" - convert to ISO and append Z for UTC
+  const isoFormat = timestamp.replace(' ', 'T') + 'Z';
+  return new Date(isoFormat).getTime();
+}
+
+/**
  * Compute SHA256 hash of file content for change detection
  */
 function computeContentHash(filePath: string): string {
@@ -486,7 +501,7 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
             else {
               const fileStat = fs.statSync(filePath);
               const fileTime = fileStat.mtimeMs;
-              const dbTime = new Date(dbEntity.updated_at).getTime();
+              const dbTime = parseTimestampAsUTC(dbEntity.updated_at);
 
               if (dbTime > fileTime) {
                 // DB is newer than file - sync DB → markdown
