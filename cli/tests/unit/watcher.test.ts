@@ -4,11 +4,68 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { initDatabase } from "../../src/db.js";
-import { startWatcher } from "../../src/watcher.js";
+import { startWatcher, parseTimestampAsUTC } from "../../src/watcher.js";
 import type Database from "better-sqlite3";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+
+describe("parseTimestampAsUTC", () => {
+  it("should parse ISO format with Z suffix correctly", () => {
+    const isoTimestamp = "2025-12-21T21:52:25.123Z";
+    const result = parseTimestampAsUTC(isoTimestamp);
+    expect(result).toBe(new Date(isoTimestamp).getTime());
+  });
+
+  it("should parse SQLite CURRENT_TIMESTAMP format as UTC", () => {
+    // SQLite returns 'YYYY-MM-DD HH:MM:SS' without timezone
+    const sqliteTimestamp = "2025-12-21 21:52:25";
+    const result = parseTimestampAsUTC(sqliteTimestamp);
+
+    // Should be parsed as UTC, not local time
+    const expectedUTC = new Date("2025-12-21T21:52:25Z").getTime();
+    expect(result).toBe(expectedUTC);
+  });
+
+  it("should NOT add timezone offset to SQLite format (the original bug)", () => {
+    const sqliteTimestamp = "2025-12-21 21:52:25";
+    const result = parseTimestampAsUTC(sqliteTimestamp);
+
+    // The bug was that JavaScript parsed "2025-12-21 21:52:25" as local time,
+    // adding 8 hours (or whatever the local offset is) to the result.
+    // After the fix, it should be exactly 21:52:25 UTC.
+    const correctUTC = new Date("2025-12-21T21:52:25Z");
+    expect(result).toBe(correctUTC.getTime());
+
+    // Verify the hour is 21 in UTC
+    expect(new Date(result).getUTCHours()).toBe(21);
+  });
+
+  it("should handle both formats consistently for the same time", () => {
+    const sqliteFormat = "2025-12-21 10:30:45";
+    const isoFormat = "2025-12-21T10:30:45Z";
+
+    const sqliteResult = parseTimestampAsUTC(sqliteFormat);
+    const isoResult = parseTimestampAsUTC(isoFormat);
+
+    // Both should give the same timestamp
+    expect(sqliteResult).toBe(isoResult);
+  });
+
+  it("should correctly compare file mtime against DB timestamp", () => {
+    // Simulate the comparison that happens in the watcher
+    // File was just modified at 10:30:50 UTC
+    const fileTime = new Date("2025-12-21T10:30:50Z").getTime();
+
+    // DB was last updated at 10:30:45 UTC (stored as SQLite format)
+    const dbTimestamp = "2025-12-21 10:30:45";
+    const dbTime = parseTimestampAsUTC(dbTimestamp);
+
+    // File should be newer (5 seconds later)
+    expect(fileTime).toBeGreaterThan(dbTime);
+    expect(fileTime - dbTime).toBe(5000); // 5 seconds
+  });
+});
 
 describe("File Watcher", () => {
   let db: Database.Database;
