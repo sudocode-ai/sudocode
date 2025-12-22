@@ -11,7 +11,7 @@ import { useExecutions } from '@/hooks/useExecutions'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import type { Execution, ExecutionConfig } from '@/types/execution'
-import type { ChatWidgetMode } from '@/contexts/ChatWidgetContext'
+import { type ChatWidgetMode, PROJECT_ASSISTANT_TAG } from '@/contexts/ChatWidgetContext'
 
 interface ChatWidgetContentProps {
   executionId: string | null
@@ -38,7 +38,8 @@ export function ChatWidgetContent({
 }: ChatWidgetContentProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
-  const { data: executionsData } = useExecutions()
+  // Fetch ONLY project-assistant tagged executions for the selector
+  const { data: executionsData } = useExecutions({ tags: [PROJECT_ASSISTANT_TAG] })
   const executions = executionsData?.executions || []
 
   // Execution chain state - fetches full chain including follow-ups
@@ -112,8 +113,12 @@ export function ChatWidgetContent({
           handleContentChange()
         } else {
           // Adhoc execution mode - create new execution without an issue
+          // Tag it as project-assistant so it shows in this widget
           const newExecution = await executionsApi.createAdhoc({
-            config,
+            config: {
+              ...config,
+              tags: [PROJECT_ASSISTANT_TAG],
+            },
             prompt: prompt.trim(),
             agentType,
           })

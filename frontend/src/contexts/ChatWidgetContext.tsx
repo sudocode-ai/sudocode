@@ -13,11 +13,15 @@ import type { Execution } from '@/types/execution'
 // Storage key for persisted preferences
 const STORAGE_KEY = 'sudocode:chatWidget'
 
+// Tag for project assistant executions
+export const PROJECT_ASSISTANT_TAG = 'project-assistant'
+
 export type ChatWidgetMode = 'floating' | 'panel'
 
 interface ChatWidgetPersistedState {
   mode: ChatWidgetMode
   autoConnectLatest: boolean
+  lastExecutionId?: string | null
 }
 
 export interface ChatWidgetContextValue {
@@ -58,6 +62,7 @@ function loadPersistedState(): ChatWidgetPersistedState {
       return {
         mode: parsed.mode || DEFAULT_STATE.mode,
         autoConnectLatest: parsed.autoConnectLatest ?? DEFAULT_STATE.autoConnectLatest,
+        lastExecutionId: parsed.lastExecutionId ?? null,
       }
     }
   } catch (error) {
@@ -86,11 +91,13 @@ export function ChatWidgetProvider({ children }: ChatWidgetProviderProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [mode, setModeState] = useState<ChatWidgetMode>(persistedState.mode)
   const [autoConnectLatest, setAutoConnectLatestState] = useState(persistedState.autoConnectLatest)
-  const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null)
+  const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(
+    persistedState.lastExecutionId ?? null
+  )
   const [seenExecutionIds, setSeenExecutionIds] = useState<Set<string>>(new Set())
 
-  // Fetch executions for auto-connect
-  const { data: executionsData } = useExecutions()
+  // Fetch ONLY project-assistant tagged executions
+  const { data: executionsData } = useExecutions({ tags: [PROJECT_ASSISTANT_TAG] })
   const executions = executionsData?.executions || []
 
   // Find the latest active execution (running, pending, or preparing)
@@ -178,10 +185,12 @@ export function ChatWidgetProvider({ children }: ChatWidgetProviderProps) {
     }
   }, [])
 
-  // Persist preferences when they change
+  // Persist preferences and last execution ID when they change
   useEffect(() => {
-    savePersistedState({ mode, autoConnectLatest })
-  }, [mode, autoConnectLatest])
+    // Only persist selectedExecutionId if not using auto-connect (to restore on reload)
+    const lastExecutionId = autoConnectLatest ? null : selectedExecutionId
+    savePersistedState({ mode, autoConnectLatest, lastExecutionId })
+  }, [mode, autoConnectLatest, selectedExecutionId])
 
   // Keyboard shortcut: Cmd/Ctrl + J to toggle
   useEffect(() => {

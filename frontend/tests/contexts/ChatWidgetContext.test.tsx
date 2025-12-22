@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
-import { ChatWidgetProvider, useChatWidget } from '@/contexts/ChatWidgetContext'
+import { ChatWidgetProvider, useChatWidget, PROJECT_ASSISTANT_TAG } from '@/contexts/ChatWidgetContext'
 import type { Execution } from '@/types/execution'
 
 // Mock localStorage
@@ -25,14 +25,16 @@ Object.defineProperty(window, 'localStorage', {
   value: localStorageMock,
 })
 
-// Mock useExecutions hook
+// Mock useExecutions hook with parameter tracking
 const mockExecutions: Execution[] = []
+const mockUseExecutions = vi.fn((_params?: { tags?: string[] }) => ({
+  data: { executions: mockExecutions },
+  isLoading: false,
+  error: null,
+}))
+
 vi.mock('@/hooks/useExecutions', () => ({
-  useExecutions: () => ({
-    data: { executions: mockExecutions },
-    isLoading: false,
-    error: null,
-  }),
+  useExecutions: (params?: { tags?: string[] }) => mockUseExecutions(params),
 }))
 
 describe('ChatWidgetContext', () => {
@@ -330,6 +332,99 @@ describe('ChatWidgetContext', () => {
       const { result } = renderHook(() => useChatWidget(), { wrapper })
 
       expect(result.current.isExecutionRunning).toBe(false)
+    })
+  })
+
+  describe('project-assistant tag filtering', () => {
+    it('should fetch executions with project-assistant tag', () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      renderHook(() => useChatWidget(), { wrapper })
+
+      // Verify useExecutions was called with the project-assistant tag filter
+      expect(mockUseExecutions).toHaveBeenCalledWith({ tags: [PROJECT_ASSISTANT_TAG] })
+    })
+
+    it('should export PROJECT_ASSISTANT_TAG constant', () => {
+      expect(PROJECT_ASSISTANT_TAG).toBe('project-assistant')
+    })
+  })
+
+  describe('lastExecutionId persistence', () => {
+    it('should load lastExecutionId from localStorage', () => {
+      localStorageMock.setItem(
+        'sudocode:chatWidget',
+        JSON.stringify({ mode: 'floating', autoConnectLatest: false, lastExecutionId: 'exec-saved' })
+      )
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      // When autoConnectLatest is false, the lastExecutionId should be used
+      expect(result.current.selectedExecutionId).toBe('exec-saved')
+    })
+
+    it('should persist lastExecutionId when manually selecting an execution', async () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      act(() => {
+        result.current.selectExecution('exec-manual')
+      })
+
+      await waitFor(() => {
+        const stored = JSON.parse(localStorageMock.getItem('sudocode:chatWidget') || '{}')
+        expect(stored.lastExecutionId).toBe('exec-manual')
+      })
+    })
+
+    it('should not persist lastExecutionId when autoConnectLatest is true', async () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      // autoConnectLatest is true by default
+      expect(result.current.autoConnectLatest).toBe(true)
+
+      await waitFor(() => {
+        const stored = JSON.parse(localStorageMock.getItem('sudocode:chatWidget') || '{}')
+        expect(stored.lastExecutionId).toBeNull()
+      })
+    })
+
+    it('should clear lastExecutionId when enabling autoConnectLatest', async () => {
+      // Start with a saved execution
+      localStorageMock.setItem(
+        'sudocode:chatWidget',
+        JSON.stringify({ mode: 'floating', autoConnectLatest: false, lastExecutionId: 'exec-saved' })
+      )
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      // Enable auto-connect
+      act(() => {
+        result.current.setAutoConnectLatest(true)
+      })
+
+      await waitFor(() => {
+        const stored = JSON.parse(localStorageMock.getItem('sudocode:chatWidget') || '{}')
+        expect(stored.lastExecutionId).toBeNull()
+        expect(stored.autoConnectLatest).toBe(true)
+      })
     })
   })
 })

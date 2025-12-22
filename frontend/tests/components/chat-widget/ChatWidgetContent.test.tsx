@@ -382,7 +382,7 @@ describe('ChatWidgetContent', () => {
 
       await waitFor(() => {
         expect(mockCreateAdhoc).toHaveBeenCalledWith({
-          config: {},
+          config: { tags: ['project-assistant'] },
           prompt: 'New execution prompt',
           agentType: 'claude-code',
         })

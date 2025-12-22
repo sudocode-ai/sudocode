@@ -117,6 +117,15 @@ export function createExecutionsRouter(): Router {
       const since = req.query.since as string | undefined;
       const includeRunning = req.query.includeRunning === "true";
 
+      // Parse tags (can be single value or comma-separated array)
+      let tags: string[] | undefined = undefined;
+      if (req.query.tags) {
+        const tagsParam = req.query.tags as string;
+        tags = tagsParam.includes(",")
+          ? tagsParam.split(",").map((t) => t.trim())
+          : [tagsParam];
+      }
+
       // Validate limit and offset
       if (limit !== undefined && (isNaN(limit) || limit < 0)) {
         res.status(400).json({
@@ -180,6 +189,7 @@ export function createExecutionsRouter(): Router {
         order,
         since,
         includeRunning,
+        tags,
       });
 
       res.json({
