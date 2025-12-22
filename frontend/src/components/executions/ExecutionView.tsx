@@ -9,11 +9,13 @@ import { CommitChangesDialog } from './CommitChangesDialog'
 import { CleanupWorktreeDialog } from './CleanupWorktreeDialog'
 import { CodeChangesPanel } from './CodeChangesPanel'
 import { TodoTracker } from './TodoTracker'
+import { ExecutionEntityBadges } from './ExecutionEntityBadges'
 import { buildTodoHistory } from '@/utils/todoExtractor'
 import { useExecutionSync } from '@/hooks/useExecutionSync'
 import { useAgentActions } from '@/hooks/useAgentActions'
 import { useWorktreeMutations } from '@/hooks/useWorktreeMutations'
 import { useExecutionMutations } from '@/hooks/useExecutionMutations'
+import { useExecutionEntityOperations } from '@/hooks/useExecutionEntityOperations'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -108,6 +110,9 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
 
   // Extract todos from accumulated tool calls
   const allTodos = useMemo(() => buildTodoHistory(allToolCalls), [allToolCalls])
+
+  // Extract entity operations from accumulated tool calls
+  const entityOperations = useExecutionEntityOperations(allToolCalls)
 
   // Get last execution for contextual actions
   const lastExecutionForActions = chainData?.executions[chainData.executions.length - 1] ?? null
@@ -733,6 +738,17 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
                 <>
                   <div className="my-3" />
                   <TodoTracker todos={allTodos} />
+                </>
+              )}
+
+              {/* Entity Operations Badge Display - shows entity operations from all executions in chain */}
+              {(entityOperations.updated.length > 0 ||
+                entityOperations.linked.length > 0 ||
+                entityOperations.read.length > 0 ||
+                entityOperations.listOperations.length > 0) && (
+                <>
+                  <div className="my-3" />
+                  <ExecutionEntityBadges operations={entityOperations} />
                 </>
               )}
 

@@ -248,3 +248,27 @@ export interface PerformSyncRequest {
   mode: SyncMode
   commitMessage?: string
 }
+
+/**
+ * Entity operation extracted from tool calls
+ */
+export interface EntityOperation {
+  operationType: 'upsert' | 'read' | 'link' | 'feedback' | 'list'
+  entityId: string
+  entityType: 'issue' | 'spec'
+  timestamp: number
+  toolCallId: string
+
+  // For links
+  linkTarget?: {
+    entityId: string
+    entityType: 'issue' | 'spec'
+    relationshipType: 'blocks' | 'related' | 'discovered-from' | 'implements' | 'references' | 'depends-on'
+  }
+
+  // For feedback
+  feedbackTarget?: {
+    entityId: string
+    entityType: 'issue' | 'spec'
+  }
+}
