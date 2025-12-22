@@ -37,7 +37,7 @@
 import * as fs from "fs";
 import type { IssueJSONL, SpecJSONL } from "./types.js";
 import { toYaml, fromYaml } from "./yaml-converter.js";
-import { mergeYamlContentSync } from "./git-merge.js";
+import { mergeYamlContent } from "./git-merge.js";
 import { resolveConflicts } from "./yaml-conflict-resolver.js";
 
 export type JSONLEntity = IssueJSONL | SpecJSONL | Record<string, any>;
@@ -430,7 +430,7 @@ export function mergeThreeWay<T extends JSONLEntity>(
     const theirsYaml = toYaml(theirsWithMetadata);
 
     // Step 5: Use git merge-file for line-level text merging
-    const gitMergeResult = mergeYamlContentSync({
+    const gitMergeResult = mergeYamlContent({
       base: baseYaml,
       ours: oursYaml,
       theirs: theirsYaml,

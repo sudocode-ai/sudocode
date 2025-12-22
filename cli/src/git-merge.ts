@@ -7,13 +7,10 @@
  * Security: Uses execFile (not exec) to prevent shell injection vulnerabilities.
  */
 
-import { execFile, execFileSync } from 'child_process';
-import { promisify } from 'util';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-
-const execFileAsync = promisify(execFile);
 
 /**
  * Result of a merge operation
@@ -46,20 +43,23 @@ export interface MergeInput {
  * of YAML content. It creates temporary files for the merge operation and cleans
  * them up afterwards.
  *
- * Security: Uses execFile with array arguments to prevent shell injection.
+ * Security: Uses execFileSync with array arguments to prevent shell injection.
  *
  * Git merge-file exit codes:
  * - 0: Clean merge, no conflicts
- * - 1: Conflicts detected (but merge still produces output with conflict markers)
- * - >1: Fatal error (except with empty base - simulated 3-way merge)
+ * - 1: Conflicts detected (most common, merge produces output with conflict markers)
+ * - 2+: Can indicate conflicts OR fatal errors
+ *
+ * Strategy: If git produced output (file exists and has content), treat as conflict
+ * scenario regardless of exit code. Only throw if no output was produced.
  *
  * @param input - The three versions to merge (base, ours, theirs)
- * @returns Promise<MergeResult> - The merge result with success status and content
- * @throws Error if git command fails fatally (exit code > 1)
+ * @returns MergeResult - The merge result with success status and content
+ * @throws Error if git command fails fatally (no output produced)
  *
  * @example
  * ```typescript
- * const result = await mergeYamlContent({
+ * const result = mergeYamlContent({
  *   base: 'title: Original\nstatus: open',
  *   ours: 'title: Updated\nstatus: open',
  *   theirs: 'title: Original\nstatus: closed'
@@ -72,94 +72,7 @@ export interface MergeInput {
  * }
  * ```
  */
-export async function mergeYamlContent(input: MergeInput): Promise<MergeResult> {
-  // Create temporary directory for merge files
-  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'git-merge-'));
-
-  // Temp file paths
-  const basePath = path.join(tmpDir, 'base.yaml');
-  const oursPath = path.join(tmpDir, 'ours.yaml');
-  const theirsPath = path.join(tmpDir, 'theirs.yaml');
-
-  // Track whether base is empty (simulated 3-way merge)
-  const baseIsEmpty = input.base.length === 0;
-
-  try {
-    // Write content to temp files
-    await Promise.all([
-      fs.promises.writeFile(basePath, input.base, 'utf8'),
-      fs.promises.writeFile(oursPath, input.ours, 'utf8'),
-      fs.promises.writeFile(theirsPath, input.theirs, 'utf8'),
-    ]);
-
-    // Execute git merge-file using execFile (safe from shell injection)
-    // Format: git merge-file <current-file> <base-file> <other-file>
-    // The merge result is written to <current-file> (oursPath in this case)
-    try {
-      await execFileAsync('git', ['merge-file', oursPath, basePath, theirsPath], {
-        encoding: 'utf8',
-      });
-
-      // Exit code 0 means clean merge
-      const mergedContent = await fs.promises.readFile(oursPath, 'utf8');
-
-      return {
-        success: true,
-        content: mergedContent,
-        hasConflicts: false,
-      };
-    } catch (error: any) {
-      // Exit code 1 means conflicts were detected
-      // The file still contains the merge result with conflict markers
-      // Exit code 2+ with empty base is also valid (simulated 3-way merge)
-      // Git merge-file returns exit code 2 for empty base, but still produces valid output
-      if (error.code === 1 || (baseIsEmpty && error.code > 1)) {
-        const mergedContent = await fs.promises.readFile(oursPath, 'utf8');
-
-        // Validate that git produced output (not a real error)
-        if (mergedContent.length > 0) {
-          return {
-            success: false,
-            content: mergedContent,
-            hasConflicts: true,
-          };
-        }
-      }
-
-      // Exit code > 1 means a fatal error occurred
-      // Include stderr output which contains the actual git error message
-      const stderr = error.stderr?.toString().trim();
-      const stdout = error.stdout?.toString().trim();
-      const errorDetails = stderr || stdout || error.message || 'Unknown error';
-
-      throw new Error(
-        `Git merge-file command failed: ${errorDetails}`
-      );
-    }
-  } finally {
-    // Clean up temp files and directory
-    try {
-      await fs.promises.rm(tmpDir, { recursive: true, force: true });
-    } catch (cleanupError) {
-      // Log cleanup errors but don't throw - the merge operation itself succeeded/failed already
-      console.error('Warning: Failed to clean up temp files:', cleanupError);
-    }
-  }
-}
-
-/**
- * Synchronous version of mergeYamlContent
- *
- * Uses synchronous file operations and child_process.execFileSync.
- * Useful in contexts where async is not available or desired.
- *
- * Security: Uses execFileSync with array arguments to prevent shell injection.
- *
- * @param input - The three versions to merge (base, ours, theirs)
- * @returns MergeResult - The merge result with success status and content
- * @throws Error if git command fails fatally (exit code > 1)
- */
-export function mergeYamlContentSync(input: MergeInput): MergeResult {
+export function mergeYamlContent(input: MergeInput): MergeResult {
   // Create temporary directory for merge files
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-merge-'));
 
@@ -192,9 +105,14 @@ export function mergeYamlContentSync(input: MergeInput): MergeResult {
         hasConflicts: false,
       };
     } catch (error: any) {
-      // Exit code 1 means conflicts were detected
-      // Exit code 2+ with empty base is also valid (simulated 3-way merge)
-      // Git merge-file returns exit code 2 for empty base, but still produces valid output
+      // Git merge-file exit codes:
+      // - 0: Clean merge (handled above, no error thrown)
+      // - 1: Conflicts detected (most common)
+      // - 2+: Can indicate conflicts OR fatal errors
+      //
+      // Strategy: If git produced output (file exists and has content),
+      // treat as conflict scenario regardless of exit code.
+      // Only throw if no output was produced (indicates real error).
       const exitCode = error.status || error.code || 'unknown';
 
       // Debug: log what we got
@@ -208,7 +126,8 @@ export function mergeYamlContentSync(input: MergeInput): MergeResult {
         });
       }
 
-      if (error.status === 1 || (baseIsEmpty && error.status > 1)) {
+      // Try to read the output file - if it has content, this is a conflict scenario
+      if (error.status > 0) {
         try {
           const mergedContent = fs.readFileSync(oursPath, 'utf8');
 
@@ -232,7 +151,7 @@ export function mergeYamlContentSync(input: MergeInput): MergeResult {
         }
       }
 
-      // Exit code > 1 means a fatal error occurred
+      // No exit code or negative exit code means a fatal error occurred
       // Include stderr output which contains the actual git error message
       const stderr = error.stderr?.toString().trim();
       const stdout = error.stdout?.toString().trim();
