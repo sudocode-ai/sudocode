@@ -494,8 +494,10 @@ describe.skipIf(SKIP_E2E)("Sequential Workflow E2E", () => {
         );
 
         expect(paused.status).toBe("paused");
-        expect(paused.steps[0].status).toBe("failed");
-        expect(paused.steps[0].error).toContain("Simulated failure");
+        // Step should be "pending" (resumable) not "failed" when onFailure=pause
+        // The executionId is preserved so the session can be resumed
+        expect(paused.steps[0].status).toBe("pending");
+        expect(paused.steps[0].executionId).toBe(step1ExecId);
         // Step 2 should not have run - could be "pending" or "ready" depending on timing
         expect(["pending", "ready"]).toContain(paused.steps[1].status);
       }
@@ -610,123 +612,279 @@ describe.skipIf(SKIP_E2E)("Sequential Workflow E2E", () => {
       }
     );
 
-    it("should retry a failed step", { timeout: 30000 }, async () => {
-      // Create issues
-      createTestIssues(testServer.db, [
-        { id: "i-1", title: "Will fail then succeed" },
-      ]);
+    it(
+      "should resume workflow after failure when onFailure=pause",
+      { timeout: 30000 },
+      async () => {
+        // Create issues
+        createTestIssues(testServer.db, [
+          { id: "i-1", title: "Will fail then succeed on resume" },
+          { id: "i-2", title: "Should run after resume completes" },
+        ]);
 
-      // Create workflow with pause on failure
-      const workflow = await testServer.api.createWorkflow(
-        { type: "issues", issueIds: ["i-1"] },
-        { onFailure: "pause" }
-      );
-      await testServer.api.startWorkflow(workflow.id);
+        // Create workflow with pause on failure
+        const workflow = await testServer.api.createWorkflow(
+          { type: "issues", issueIds: ["i-1", "i-2"] },
+          { onFailure: "pause" }
+        );
+        await testServer.api.startWorkflow(workflow.id);
 
-      // Wait for step to start
-      await waitFor(() => {
-        const w = getWorkflow(testServer.db, workflow.id);
-        return w?.steps[0].status === "running";
-      }, 5000);
+        // Wait for step to start
+        await waitFor(() => {
+          const w = getWorkflow(testServer.db, workflow.id);
+          return w?.steps[0].status === "running";
+        }, 5000);
 
-      // Fail the step
-      const mockExecutor = testServer.executionService as MockExecutionService;
-      const step1ExecId = getWorkflow(testServer.db, workflow.id)!.steps[0]
-        .executionId!;
-      mockExecutor.getExecutionControl(step1ExecId)!.fail("First attempt failed");
+        // Fail the step
+        const mockExecutor = testServer.executionService as MockExecutionService;
+        const step1ExecId = getWorkflow(testServer.db, workflow.id)!.steps[0]
+          .executionId!;
+        mockExecutor.getExecutionControl(step1ExecId)!.fail("First attempt failed");
 
-      // Wait for workflow to pause
-      await waitForWorkflowStatus(testServer.db, workflow.id, "paused", 5000);
+        // Wait for workflow to pause
+        await waitForWorkflowStatus(testServer.db, workflow.id, "paused", 5000);
 
-      // Get step ID
-      const pausedWorkflow = getWorkflow(testServer.db, workflow.id)!;
-      const stepId = pausedWorkflow.steps[0].id;
+        // Verify step is pending (resumable) with executionId preserved
+        const pausedWorkflow = getWorkflow(testServer.db, workflow.id)!;
+        expect(pausedWorkflow.steps[0].status).toBe("pending");
+        expect(pausedWorkflow.steps[0].executionId).toBe(step1ExecId);
 
-      // Retry the step via API
-      const response = await fetch(
-        `${testServer.baseUrl}/api/workflows/${workflow.id}/steps/${stepId}/retry`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-      expect(response.ok).toBe(true);
+        // Resume the workflow - this should retry the pending step (resuming session)
+        await testServer.api.resumeWorkflow(workflow.id);
 
-      // Wait for step to start running again
-      await waitFor(() => {
-        const w = getWorkflow(testServer.db, workflow.id);
-        return w?.steps[0].status === "running";
-      }, 5000);
+        // Wait for step to start running again
+        await waitFor(() => {
+          const w = getWorkflow(testServer.db, workflow.id);
+          return w?.steps[0].status === "running";
+        }, 5000);
 
-      // Complete the step this time
-      const retryWorkflow = getWorkflow(testServer.db, workflow.id)!;
-      const retryExecId = retryWorkflow.steps[0].executionId!;
-      mockExecutor.getExecutionControl(retryExecId)!.complete("Success!");
+        // Complete the step this time
+        const resumedWorkflow = getWorkflow(testServer.db, workflow.id)!;
+        const resumeExecId = resumedWorkflow.steps[0].executionId!;
+        mockExecutor.getExecutionControl(resumeExecId)!.complete("Success!");
 
-      // Workflow should complete
-      await waitForWorkflowStatus(testServer.db, workflow.id, "completed", 10000);
-    });
+        // Wait for step 2 to start
+        await waitFor(() => {
+          const w = getWorkflow(testServer.db, workflow.id);
+          return w?.steps[1].status === "running";
+        }, 5000);
 
-    it("should skip a failed step", { timeout: 30000 }, async () => {
-      // Create issues
-      createTestIssues(testServer.db, [
-        { id: "i-1", title: "Will fail" },
-        { id: "i-2", title: "Should run after skip" },
-      ]);
+        // Complete step 2
+        const w = getWorkflow(testServer.db, workflow.id)!;
+        mockExecutor.getExecutionControl(w.steps[1].executionId!)!.complete("Done");
 
-      // Create workflow with pause on failure
-      const workflow = await testServer.api.createWorkflow(
-        { type: "issues", issueIds: ["i-1", "i-2"] },
-        { onFailure: "pause" }
-      );
-      await testServer.api.startWorkflow(workflow.id);
+        // Workflow should complete
+        const completed = await waitForWorkflowStatus(
+          testServer.db,
+          workflow.id,
+          "completed",
+          10000
+        );
+        expect(completed.steps[0].status).toBe("completed");
+        expect(completed.steps[1].status).toBe("completed");
+      }
+    );
 
-      // Wait for step to start
-      await waitFor(() => {
-        const w = getWorkflow(testServer.db, workflow.id);
-        return w?.steps[0].status === "running";
-      }, 5000);
+    it(
+      "should retry a failed step with session resume (onFailure=stop)",
+      { timeout: 30000 },
+      async () => {
+        // Create issues
+        createTestIssues(testServer.db, [
+          { id: "i-1", title: "Will fail then succeed on retry" },
+        ]);
 
-      // Fail the step
-      const mockExecutor = testServer.executionService as MockExecutionService;
-      const step1ExecId = getWorkflow(testServer.db, workflow.id)!.steps[0]
-        .executionId!;
-      mockExecutor.getExecutionControl(step1ExecId)!.fail("Unrecoverable");
+        // Create workflow with stop on failure (step will be marked "failed")
+        const workflow = await testServer.api.createWorkflow(
+          { type: "issues", issueIds: ["i-1"] },
+          { onFailure: "stop" }
+        );
+        await testServer.api.startWorkflow(workflow.id);
 
-      // Wait for workflow to pause
-      await waitForWorkflowStatus(testServer.db, workflow.id, "paused", 5000);
+        // Wait for step to start
+        await waitFor(() => {
+          const w = getWorkflow(testServer.db, workflow.id);
+          return w?.steps[0].status === "running";
+        }, 5000);
 
-      // Get step ID
-      const pausedWorkflow = getWorkflow(testServer.db, workflow.id)!;
-      const stepId = pausedWorkflow.steps[0].id;
+        // Fail the step
+        const mockExecutor = testServer.executionService as MockExecutionService;
+        const step1ExecId = getWorkflow(testServer.db, workflow.id)!.steps[0]
+          .executionId!;
+        mockExecutor.getExecutionControl(step1ExecId)!.fail("First attempt failed");
 
-      // Skip the step via API
-      const response = await fetch(
-        `${testServer.baseUrl}/api/workflows/${workflow.id}/steps/${stepId}/skip`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reason: "Not critical" }),
-        }
-      );
-      expect(response.ok).toBe(true);
+        // Wait for workflow to fail
+        await waitForWorkflowStatus(testServer.db, workflow.id, "failed", 5000);
 
-      // Wait for step 2 to start
-      await waitFor(() => {
-        const w = getWorkflow(testServer.db, workflow.id);
-        return w?.steps[1].status === "running";
-      }, 5000);
+        // Verify step is marked as failed with executionId preserved
+        const failedWorkflow = getWorkflow(testServer.db, workflow.id)!;
+        expect(failedWorkflow.steps[0].status).toBe("failed");
+        expect(failedWorkflow.steps[0].executionId).toBe(step1ExecId);
 
-      // Verify step 1 is skipped
-      const afterSkip = getWorkflow(testServer.db, workflow.id)!;
-      expect(afterSkip.steps[0].status).toBe("skipped");
+        // Get step ID and retry the step (should resume session by default)
+        const stepId = failedWorkflow.steps[0].id;
+        const response = await fetch(
+          `${testServer.baseUrl}/api/workflows/${workflow.id}/steps/${stepId}/retry`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+        expect(response.ok).toBe(true);
 
-      // Complete step 2
-      mockExecutor.completeAll("Done");
+        // Wait for step to start running again
+        await waitFor(() => {
+          const w = getWorkflow(testServer.db, workflow.id);
+          return w?.steps[0].status === "running";
+        }, 5000);
 
-      // Wait for completion
-      await waitForWorkflowStatus(testServer.db, workflow.id, "completed", 10000);
-    });
+        // Verify workflow recovered from failed state
+        const recoveredWorkflow = getWorkflow(testServer.db, workflow.id)!;
+        expect(recoveredWorkflow.status).toBe("running");
+
+        // Complete the step this time
+        const retryExecId = recoveredWorkflow.steps[0].executionId!;
+        mockExecutor.getExecutionControl(retryExecId)!.complete("Success!");
+
+        // Workflow should complete
+        await waitForWorkflowStatus(testServer.db, workflow.id, "completed", 10000);
+      }
+    );
+
+    it(
+      "should retry a failed step with fresh start when requested",
+      { timeout: 30000 },
+      async () => {
+        // Create issues
+        createTestIssues(testServer.db, [
+          { id: "i-1", title: "Will fail then succeed with fresh start" },
+        ]);
+
+        // Create workflow with stop on failure
+        const workflow = await testServer.api.createWorkflow(
+          { type: "issues", issueIds: ["i-1"] },
+          { onFailure: "stop" }
+        );
+        await testServer.api.startWorkflow(workflow.id);
+
+        // Wait for step to start
+        await waitFor(() => {
+          const w = getWorkflow(testServer.db, workflow.id);
+          return w?.steps[0].status === "running";
+        }, 5000);
+
+        // Fail the step
+        const mockExecutor = testServer.executionService as MockExecutionService;
+        const step1ExecId = getWorkflow(testServer.db, workflow.id)!.steps[0]
+          .executionId!;
+        mockExecutor.getExecutionControl(step1ExecId)!.fail("First attempt failed");
+
+        // Wait for workflow to fail
+        await waitForWorkflowStatus(testServer.db, workflow.id, "failed", 5000);
+
+        // Get step ID and retry with freshStart=true
+        const failedWorkflow = getWorkflow(testServer.db, workflow.id)!;
+        const stepId = failedWorkflow.steps[0].id;
+        const response = await fetch(
+          `${testServer.baseUrl}/api/workflows/${workflow.id}/steps/${stepId}/retry`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ freshStart: true }),
+          }
+        );
+        expect(response.ok).toBe(true);
+
+        // Wait for step to start running again
+        await waitFor(() => {
+          const w = getWorkflow(testServer.db, workflow.id);
+          return w?.steps[0].status === "running";
+        }, 5000);
+
+        // Verify a new execution was created (executionId should be different)
+        const recoveredWorkflow = getWorkflow(testServer.db, workflow.id)!;
+        expect(recoveredWorkflow.status).toBe("running");
+        expect(recoveredWorkflow.steps[0].executionId).not.toBe(step1ExecId);
+
+        // Complete the step
+        const newExecId = recoveredWorkflow.steps[0].executionId!;
+        mockExecutor.getExecutionControl(newExecId)!.complete("Success!");
+
+        // Workflow should complete
+        await waitForWorkflowStatus(testServer.db, workflow.id, "completed", 10000);
+      }
+    );
+
+    it(
+      "should skip a paused step and continue workflow",
+      { timeout: 30000 },
+      async () => {
+        // Create issues
+        createTestIssues(testServer.db, [
+          { id: "i-1", title: "Will fail" },
+          { id: "i-2", title: "Should run after skip" },
+        ]);
+
+        // Create workflow with pause on failure
+        const workflow = await testServer.api.createWorkflow(
+          { type: "issues", issueIds: ["i-1", "i-2"] },
+          { onFailure: "pause" }
+        );
+        await testServer.api.startWorkflow(workflow.id);
+
+        // Wait for step to start
+        await waitFor(() => {
+          const w = getWorkflow(testServer.db, workflow.id);
+          return w?.steps[0].status === "running";
+        }, 5000);
+
+        // Fail the step
+        const mockExecutor = testServer.executionService as MockExecutionService;
+        const step1ExecId = getWorkflow(testServer.db, workflow.id)!.steps[0]
+          .executionId!;
+        mockExecutor.getExecutionControl(step1ExecId)!.fail("Unrecoverable");
+
+        // Wait for workflow to pause
+        await waitForWorkflowStatus(testServer.db, workflow.id, "paused", 5000);
+
+        // Get step ID - step is "pending" (resumable) when onFailure=pause
+        const pausedWorkflow = getWorkflow(testServer.db, workflow.id)!;
+        const stepId = pausedWorkflow.steps[0].id;
+        expect(pausedWorkflow.steps[0].status).toBe("pending");
+
+        // Skip the step via API (works on any non-terminal status)
+        const response = await fetch(
+          `${testServer.baseUrl}/api/workflows/${workflow.id}/steps/${stepId}/skip`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: "Not critical" }),
+          }
+        );
+        expect(response.ok).toBe(true);
+
+        // Wait for step 2 to start
+        await waitFor(() => {
+          const w = getWorkflow(testServer.db, workflow.id);
+          return w?.steps[1].status === "running";
+        }, 5000);
+
+        // Verify step 1 is skipped
+        const afterSkip = getWorkflow(testServer.db, workflow.id)!;
+        expect(afterSkip.steps[0].status).toBe("skipped");
+
+        // Complete step 2
+        mockExecutor.completeAll("Done");
+
+        // Wait for completion
+        await waitForWorkflowStatus(
+          testServer.db,
+          workflow.id,
+          "completed",
+          10000
+        );
+      }
+    );
   });
 
   // ===========================================================================
