@@ -14,6 +14,7 @@ import type { ExecutionLogsStore } from '../../services/execution-logs-store.js'
 import type { TransportManager } from '../transport/transport-manager.js';
 import { agentRegistryService, AgentNotImplementedError } from '../../services/agent-registry.js';
 import { AgentExecutorWrapper, type AgentExecutorWrapperConfig } from './agent-executor-wrapper.js';
+import type { NarrationConfig } from '../../services/narration-service.js';
 
 /**
  * Error thrown when agent configuration validation fails
@@ -40,6 +41,8 @@ export interface ExecutorFactoryConfig {
   projectId: string;
   db: Database.Database;
   transportManager?: TransportManager;
+  /** Voice narration configuration for this execution */
+  narrationConfig?: Partial<NarrationConfig>;
 }
 
 /**
@@ -130,6 +133,7 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
     projectId: factoryConfig.projectId,
     db: factoryConfig.db,
     transportManager: factoryConfig.transportManager,
+    narrationConfig: factoryConfig.narrationConfig,
   };
 
   return new AgentExecutorWrapper(wrapperConfig);

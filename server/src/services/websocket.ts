@@ -45,6 +45,7 @@ export interface ServerMessage {
     | "execution_updated"
     | "execution_status_changed"
     | "execution_deleted"
+    | "voice_narration"
     | "workflow_created"
     | "workflow_updated"
     | "workflow_deleted"
@@ -674,6 +675,48 @@ export function broadcastExecutionUpdate(
     websocketManager.broadcast(projectId, "issue", issueId, {
       type: `execution_${action}` as any,
       data,
+    });
+  }
+}
+
+/**
+ * Broadcast voice narration event to subscribed clients for a specific execution
+ *
+ * This is used to emit voice narration events during execution streaming.
+ * Clients can subscribe to execution events to receive narration updates.
+ *
+ * @param projectId - ID of the project
+ * @param executionId - ID of the execution emitting the narration
+ * @param narrationData - Voice narration event data
+ * @param issueId - Optional issue ID to also broadcast to issue subscribers
+ */
+export function broadcastVoiceNarration(
+  projectId: string,
+  executionId: string,
+  narrationData: {
+    text: string;
+    category: "status" | "progress" | "result" | "error";
+    priority: "low" | "normal" | "high";
+  },
+  issueId?: string
+): void {
+  // Primary broadcast to execution subscribers
+  websocketManager.broadcast(projectId, "execution", executionId, {
+    type: "voice_narration",
+    data: {
+      executionId,
+      ...narrationData,
+    },
+  });
+
+  // Secondary broadcast to issue subscribers if issueId provided
+  if (issueId) {
+    websocketManager.broadcast(projectId, "issue", issueId, {
+      type: "voice_narration",
+      data: {
+        executionId,
+        ...narrationData,
+      },
     });
   }
 }

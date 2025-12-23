@@ -31,6 +31,7 @@ import { createExecutorForAgent } from "../execution/executors/executor-factory.
 import type { AgentType } from "@sudocode-ai/types/agents";
 import { PromptResolver } from "./prompt-resolver.js";
 import { execFileNoThrow } from "../utils/execFileNoThrow.js";
+import type { NarrationConfig } from "./narration-service.js";
 
 /**
  * MCP server configuration
@@ -68,6 +69,12 @@ export interface ExecutionConfig {
   resume?: string;
   /** Parent execution ID to link resumed/follow-up executions */
   parentExecutionId?: string;
+  /**
+   * Voice narration configuration for this execution.
+   * Controls what gets narrated (e.g., only assistant_message and speak tool).
+   * Set narrateToolUse: false to disable narrating Read, Write, Bash, etc.
+   */
+  narrationConfig?: Partial<NarrationConfig>;
 }
 
 /**
@@ -427,6 +434,7 @@ export class ExecutionService {
       continueOnStepFailure: _continueOnStepFailure,
       captureFileChanges: _captureFileChanges,
       captureToolCalls: _captureToolCalls,
+      narrationConfig,
       ...agentConfig
     } = mergedConfig;
 
@@ -443,6 +451,7 @@ export class ExecutionService {
         projectId: this.projectId,
         db: this.db,
         transportManager: this.transportManager,
+        narrationConfig,
       }
     );
 
@@ -685,6 +694,7 @@ ${feedback}`;
       continueOnStepFailure: _continueOnStepFailure,
       captureFileChanges: _captureFileChanges,
       captureToolCalls: _captureToolCalls,
+      narrationConfig: parentNarrationConfig,
       ...parentAgentConfig
     } = parsedConfig;
 
@@ -701,6 +711,7 @@ ${feedback}`;
         projectId: this.projectId,
         db: this.db,
         transportManager: this.transportManager,
+        narrationConfig: parentNarrationConfig,
       }
     );
 

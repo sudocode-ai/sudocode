@@ -28,10 +28,18 @@ import type { TransportManager } from "../transport/transport-manager.js";
 import { NormalizedEntryToAgUiAdapter } from "../output/normalized-to-ag-ui-adapter.js";
 import { AgUiEventAdapter } from "../output/ag-ui-adapter.js";
 import { updateExecution, getExecution } from "../../services/executions.js";
-import { broadcastExecutionUpdate } from "../../services/websocket.js";
+import {
+  broadcastExecutionUpdate,
+  broadcastVoiceNarration,
+} from "../../services/websocket.js";
 import { execSync } from "child_process";
 import { ExecutionChangesService } from "../../services/execution-changes-service.js";
 import { notifyExecutionEvent } from "../../services/execution-event-callbacks.js";
+import {
+  NarrationService,
+  NarrationRateLimiter,
+  type NarrationConfig,
+} from "../../services/narration-service.js";
 
 /**
  * Merge agent config with overrides, filtering undefined values.
@@ -90,6 +98,8 @@ export interface AgentExecutorWrapperConfig<TConfig extends BaseAgentConfig> {
   projectId: string;
   db: Database.Database;
   transportManager?: TransportManager;
+  /** Voice narration configuration for this execution */
+  narrationConfig?: Partial<NarrationConfig>;
 }
 
 /**
@@ -136,6 +146,8 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
     string,
     { completed: boolean; exitCode: number }
   >;
+  /** Voice narration configuration for this execution */
+  private narrationConfig?: Partial<NarrationConfig>;
 
   constructor(config: AgentExecutorWrapperConfig<TConfig>) {
     this.adapter = config.adapter;
@@ -147,6 +159,7 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
     this.db = config.db;
     this.activeExecutions = new Map();
     this.completionState = new Map();
+    this.narrationConfig = config.narrationConfig;
 
     // Build process configuration from agent-specific config
     this.processConfig = this.adapter.buildProcessConfig(this._agentConfig);
@@ -696,6 +709,7 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
    * Process normalized output from agent
    *
    * For Claude Code: Also captures session ID from metadata for session resumption
+   * Also generates voice narration events for execution progress.
    *
    * @private
    */
@@ -710,6 +724,15 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
 
     let entryCount = 0;
     let sessionIdCaptured = false;
+
+    // Get the execution to obtain issueId for voice narration broadcasts
+    const execution = getExecution(this.db, executionId);
+    const issueId = execution?.issue_id || undefined;
+
+    // Initialize narration service and rate limiter for voice narration
+    // Uses execution-level config if provided, otherwise defaults
+    const narrationService = new NarrationService(this.narrationConfig);
+    const rateLimiter = new NarrationRateLimiter();
 
     for await (const entry of normalized) {
       entryCount++;
@@ -748,6 +771,24 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
 
         // 2. Convert to AG-UI and broadcast for real-time streaming
         await normalizedAdapter.processEntry(entry);
+
+        // 3. Generate voice narration event if applicable
+        const narration = narrationService.summarizeForVoice(entry);
+        if (narration) {
+          const toEmit = rateLimiter.submit(narration);
+          if (toEmit) {
+            broadcastVoiceNarration(
+              this.projectId,
+              executionId,
+              {
+                text: toEmit.text,
+                category: toEmit.category,
+                priority: toEmit.priority,
+              },
+              issueId
+            );
+          }
+        }
       } catch (error) {
         console.error(
           `[AgentExecutorWrapper] Error processing entry for ${executionId}:`,
@@ -758,6 +799,23 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
           }
         );
         // Continue processing (don't fail entire execution for one entry)
+      }
+    }
+
+    // Flush any pending narrations at the end of execution
+    while (rateLimiter.hasPending()) {
+      const pending = rateLimiter.flush();
+      if (pending) {
+        broadcastVoiceNarration(
+          this.projectId,
+          executionId,
+          {
+            text: pending.text,
+            category: pending.category,
+            priority: pending.priority,
+          },
+          issueId
+        );
       }
     }
 

@@ -25,6 +25,7 @@ import {
 // Mock WebSocket broadcasts
 vi.mock('../../../src/services/websocket.js', () => ({
   broadcastExecutionUpdate: vi.fn(),
+  broadcastVoiceNarration: vi.fn(),
 }));
 
 describe('Phase 1 Integration Tests - Direct Execution Pattern', () => {

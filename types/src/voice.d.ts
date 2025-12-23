@@ -221,11 +221,80 @@ export interface VoicePreferences {
   /** Whether voice narration is enabled */
   narrationEnabled: boolean;
   /** Preferred TTS provider */
-  ttsProvider: TTSProvider;
+  ttsProvider: TTSProviderType;
   /** Preferred voice for TTS */
   ttsVoice: string;
   /** Narration playback speed (0.5 to 2.0) */
   narrationSpeed: number;
   /** Narration volume (0 to 1) */
   narrationVolume: number;
+}
+
+// =============================================================================
+// TTS Provider Interface (Service-side)
+// =============================================================================
+
+/**
+ * TTS provider type identifier
+ * Used to distinguish between different provider implementations
+ */
+export type TTSProviderType = TTSProvider;
+
+/**
+ * Options passed to TTS providers for synthesis
+ */
+export interface TTSProviderOptions {
+  /** Voice identifier (provider-specific) */
+  voice?: string;
+  /** Speech speed multiplier (0.5 to 2.0, default: 1.0) */
+  speed?: number;
+  /** Speech pitch multiplier (0.5 to 2.0, default: 1.0) */
+  pitch?: number;
+}
+
+/**
+ * Result from TTS synthesis
+ *
+ * Different providers return results in different forms:
+ * - Server-side TTS (Kokoro, OpenAI): Returns audio buffer
+ * - Browser TTS: Returns text for client-side Web Speech API synthesis
+ */
+export interface TTSProviderResult {
+  /**
+   * Audio buffer for server-side TTS providers.
+   * Present when audio is synthesized server-side.
+   */
+  audio?: Buffer;
+
+  /**
+   * MIME type of the audio (e.g., "audio/mpeg", "audio/wav")
+   * Present when audio is returned
+   */
+  mimeType?: string;
+
+  /**
+   * Text to synthesize client-side.
+   * Present when using browser TTS (client does actual synthesis).
+   */
+  text?: string;
+
+  /**
+   * SSML markup for enhanced synthesis.
+   * Optional, used for providers that support SSML.
+   */
+  ssml?: string;
+}
+
+/**
+ * Information about a TTS voice
+ */
+export interface TTSVoice {
+  /** Unique voice identifier (provider-specific) */
+  id: string;
+  /** Human-readable voice name */
+  name: string;
+  /** Language code (e.g., "en-US", "en-GB", "es-ES") */
+  language: string;
+  /** Provider that offers this voice */
+  provider: TTSProviderType;
 }
