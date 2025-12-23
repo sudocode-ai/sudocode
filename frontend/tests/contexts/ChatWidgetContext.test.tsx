@@ -79,13 +79,14 @@ describe('ChatWidgetContext', () => {
     expect(result.current.mode).toBe('floating')
     expect(result.current.selectedExecutionId).toBeNull()
     expect(result.current.selectedExecution).toBeNull()
-    expect(result.current.autoConnectLatest).toBe(true)
+    expect(result.current.agentType).toBe('claude-code')
+    expect(result.current.executionConfig).toEqual({ mode: 'local' })
   })
 
   it('should load persisted mode from localStorage', () => {
     localStorageMock.setItem(
       'sudocode:chatWidget',
-      JSON.stringify({ mode: 'panel', autoConnectLatest: false })
+      JSON.stringify({ mode: 'panel', agentType: 'codex', executionConfig: { mode: 'worktree' } })
     )
 
     const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -95,7 +96,8 @@ describe('ChatWidgetContext', () => {
     const { result } = renderHook(() => useChatWidget(), { wrapper })
 
     expect(result.current.mode).toBe('panel')
-    expect(result.current.autoConnectLatest).toBe(false)
+    expect(result.current.agentType).toBe('codex')
+    expect(result.current.executionConfig).toEqual({ mode: 'worktree' })
   })
 
   describe('toggle', () => {
@@ -178,24 +180,21 @@ describe('ChatWidgetContext', () => {
   })
 
   describe('selectExecution', () => {
-    it('should select an execution and disable auto-connect', () => {
+    it('should select an execution', () => {
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <ChatWidgetProvider>{children}</ChatWidgetProvider>
       )
 
       const { result } = renderHook(() => useChatWidget(), { wrapper })
 
-      expect(result.current.autoConnectLatest).toBe(true)
-
       act(() => {
         result.current.selectExecution('exec-123')
       })
 
       expect(result.current.selectedExecutionId).toBe('exec-123')
-      expect(result.current.autoConnectLatest).toBe(false)
     })
 
-    it('should clear selection when null is passed', () => {
+    it('should clear selection when null is passed (for new execution)', () => {
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <ChatWidgetProvider>{children}</ChatWidgetProvider>
       )
@@ -210,35 +209,48 @@ describe('ChatWidgetContext', () => {
         result.current.selectExecution(null)
       })
 
-      // Selection is cleared but auto-connect is not re-enabled
-      expect(result.current.autoConnectLatest).toBe(false)
+      // Selection is cleared - shows config panel for new execution
+      expect(result.current.selectedExecutionId).toBeNull()
     })
   })
 
-  describe('setAutoConnectLatest', () => {
-    it('should enable auto-connect and clear manual selection', () => {
+  describe('setCreatedExecution', () => {
+    it('should set created execution and select it', () => {
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <ChatWidgetProvider>{children}</ChatWidgetProvider>
       )
 
       const { result } = renderHook(() => useChatWidget(), { wrapper })
 
-      // First manually select an execution
+      const mockExecution = {
+        id: 'exec-new',
+        status: 'running',
+      } as Execution
+
       act(() => {
-        result.current.selectExecution('exec-123')
+        result.current.setCreatedExecution(mockExecution)
       })
 
-      expect(result.current.autoConnectLatest).toBe(false)
+      expect(result.current.selectedExecutionId).toBe('exec-new')
+    })
+  })
 
-      // Enable auto-connect
+  describe('agent settings', () => {
+    it('should update agent type', () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
       act(() => {
-        result.current.setAutoConnectLatest(true)
+        result.current.setAgentType('codex')
       })
 
-      expect(result.current.autoConnectLatest).toBe(true)
+      expect(result.current.agentType).toBe('codex')
     })
 
-    it('should disable auto-connect', () => {
+    it('should update execution config', () => {
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <ChatWidgetProvider>{children}</ChatWidgetProvider>
       )
@@ -246,10 +258,28 @@ describe('ChatWidgetContext', () => {
       const { result } = renderHook(() => useChatWidget(), { wrapper })
 
       act(() => {
-        result.current.setAutoConnectLatest(false)
+        result.current.updateExecutionConfig({ mode: 'worktree', baseBranch: 'main' })
       })
 
-      expect(result.current.autoConnectLatest).toBe(false)
+      expect(result.current.executionConfig).toEqual({ mode: 'worktree', baseBranch: 'main' })
+    })
+
+    it('should merge execution config updates', () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      act(() => {
+        result.current.updateExecutionConfig({ mode: 'worktree' })
+      })
+
+      act(() => {
+        result.current.updateExecutionConfig({ baseBranch: 'develop' })
+      })
+
+      expect(result.current.executionConfig).toEqual({ mode: 'worktree', baseBranch: 'develop' })
     })
   })
 
@@ -366,7 +396,7 @@ describe('ChatWidgetContext', () => {
     it('should load lastExecutionId from localStorage', () => {
       localStorageMock.setItem(
         'sudocode:chatWidget',
-        JSON.stringify({ mode: 'floating', autoConnectLatest: false, lastExecutionId: 'exec-saved' })
+        JSON.stringify({ mode: 'floating', lastExecutionId: 'exec-saved' })
       )
 
       const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -375,7 +405,7 @@ describe('ChatWidgetContext', () => {
 
       const { result } = renderHook(() => useChatWidget(), { wrapper })
 
-      // When autoConnectLatest is false, the lastExecutionId should be used
+      // The lastExecutionId should be restored from localStorage
       expect(result.current.selectedExecutionId).toBe('exec-saved')
     })
 
@@ -396,15 +426,22 @@ describe('ChatWidgetContext', () => {
       })
     })
 
-    it('should not persist lastExecutionId when autoConnectLatest is true', async () => {
+    it('should persist null lastExecutionId when selecting new execution', async () => {
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <ChatWidgetProvider>{children}</ChatWidgetProvider>
       )
 
       const { result } = renderHook(() => useChatWidget(), { wrapper })
 
-      // autoConnectLatest is true by default
-      expect(result.current.autoConnectLatest).toBe(true)
+      // First select an execution
+      act(() => {
+        result.current.selectExecution('exec-123')
+      })
+
+      // Then select "New" (null)
+      act(() => {
+        result.current.selectExecution(null)
+      })
 
       await waitFor(() => {
         const stored = JSON.parse(localStorageMock.getItem('sudocode:chatWidget') || '{}')
@@ -412,28 +449,22 @@ describe('ChatWidgetContext', () => {
       })
     })
 
-    it('should clear lastExecutionId when enabling autoConnectLatest', async () => {
-      // Start with a saved execution
-      localStorageMock.setItem(
-        'sudocode:chatWidget',
-        JSON.stringify({ mode: 'floating', autoConnectLatest: false, lastExecutionId: 'exec-saved' })
-      )
-
+    it('should persist agent settings', async () => {
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <ChatWidgetProvider>{children}</ChatWidgetProvider>
       )
 
       const { result } = renderHook(() => useChatWidget(), { wrapper })
 
-      // Enable auto-connect
       act(() => {
-        result.current.setAutoConnectLatest(true)
+        result.current.setAgentType('codex')
+        result.current.updateExecutionConfig({ mode: 'worktree', baseBranch: 'main' })
       })
 
       await waitFor(() => {
         const stored = JSON.parse(localStorageMock.getItem('sudocode:chatWidget') || '{}')
-        expect(stored.lastExecutionId).toBeNull()
-        expect(stored.autoConnectLatest).toBe(true)
+        expect(stored.agentType).toBe('codex')
+        expect(stored.executionConfig).toEqual({ mode: 'worktree', baseBranch: 'main' })
       })
     })
   })

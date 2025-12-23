@@ -10,7 +10,7 @@ import {
 } from 'react'
 import { useExecutions } from '@/hooks/useExecutions'
 import { useWebSocketContext } from '@/contexts/WebSocketContext'
-import type { Execution } from '@/types/execution'
+import type { Execution, ExecutionConfig } from '@/types/execution'
 import type { WebSocketMessage } from '@/types/api'
 
 // Storage key for persisted preferences
@@ -23,8 +23,9 @@ export type ChatWidgetMode = 'floating' | 'panel'
 
 interface ChatWidgetPersistedState {
   mode: ChatWidgetMode
-  autoConnectLatest: boolean
   lastExecutionId?: string | null
+  agentType?: string
+  executionConfig?: Partial<ExecutionConfig>
 }
 
 export interface ChatWidgetContextValue {
@@ -33,7 +34,8 @@ export interface ChatWidgetContextValue {
   mode: ChatWidgetMode
   selectedExecutionId: string | null
   selectedExecution: Execution | null
-  autoConnectLatest: boolean
+  agentType: string
+  executionConfig: Partial<ExecutionConfig>
 
   // Actions
   toggle: () => void
@@ -41,8 +43,10 @@ export interface ChatWidgetContextValue {
   close: () => void
   setMode: (mode: ChatWidgetMode) => void
   selectExecution: (executionId: string | null) => void
-  setAutoConnectLatest: (value: boolean) => void
   setCreatedExecution: (execution: Execution) => void
+  setAgentType: (agentType: string) => void
+  setExecutionConfig: (config: Partial<ExecutionConfig>) => void
+  updateExecutionConfig: (updates: Partial<ExecutionConfig>) => void
 
   // Derived state
   hasActiveExecution: boolean
@@ -55,7 +59,10 @@ const ChatWidgetContext = createContext<ChatWidgetContextValue | null>(null)
 
 const DEFAULT_STATE: ChatWidgetPersistedState = {
   mode: 'floating',
-  autoConnectLatest: true,
+  agentType: 'claude-code',
+  executionConfig: {
+    mode: 'local',
+  },
 }
 
 function loadPersistedState(): ChatWidgetPersistedState {
@@ -65,8 +72,9 @@ function loadPersistedState(): ChatWidgetPersistedState {
       const parsed = JSON.parse(stored)
       return {
         mode: parsed.mode || DEFAULT_STATE.mode,
-        autoConnectLatest: parsed.autoConnectLatest ?? DEFAULT_STATE.autoConnectLatest,
         lastExecutionId: parsed.lastExecutionId ?? null,
+        agentType: parsed.agentType || DEFAULT_STATE.agentType,
+        executionConfig: parsed.executionConfig ?? DEFAULT_STATE.executionConfig,
       }
     }
   } catch (error) {
@@ -94,12 +102,19 @@ export function ChatWidgetProvider({ children }: ChatWidgetProviderProps) {
   // Widget state
   const [isOpen, setIsOpen] = useState(false)
   const [mode, setModeState] = useState<ChatWidgetMode>(persistedState.mode)
-  const [autoConnectLatest, setAutoConnectLatestState] = useState(persistedState.autoConnectLatest)
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(
     persistedState.lastExecutionId ?? null
   )
   // Store newly created execution until it appears in the query results
   const [pendingExecution, setPendingExecution] = useState<Execution | null>(null)
+  // Track if user has made an explicit selection (to prevent auto-select overriding)
+  const [hasUserSelection, setHasUserSelection] = useState(persistedState.lastExecutionId !== null)
+
+  // Agent settings (persisted)
+  const [agentType, setAgentTypeState] = useState<string>(persistedState.agentType || 'claude-code')
+  const [executionConfig, setExecutionConfigState] = useState<Partial<ExecutionConfig>>(
+    persistedState.executionConfig || { mode: 'local' }
+  )
 
   // Fetch ONLY project-assistant tagged executions
   const { data: executionsData } = useExecutions({ tags: [PROJECT_ASSISTANT_TAG] })
@@ -116,13 +131,26 @@ export function ChatWidgetProvider({ children }: ChatWidgetProviderProps) {
     )[0]
   }, [executions])
 
-  // Determine the effective selected execution
-  const effectiveExecutionId = useMemo(() => {
-    if (autoConnectLatest && latestActiveExecution) {
-      return latestActiveExecution.id
+  // Find the most recent execution (for default selection when no active)
+  const mostRecentExecution = useMemo(() => {
+    if (executions.length === 0) return null
+    return [...executions].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
+  }, [executions])
+
+  // Auto-select latest active or most recent execution on first load (if no user selection)
+  useEffect(() => {
+    if (!hasUserSelection && !selectedExecutionId && executions.length > 0) {
+      const autoSelectId = latestActiveExecution?.id || mostRecentExecution?.id
+      if (autoSelectId) {
+        setSelectedExecutionId(autoSelectId)
+      }
     }
-    return selectedExecutionId
-  }, [autoConnectLatest, latestActiveExecution, selectedExecutionId])
+  }, [hasUserSelection, selectedExecutionId, executions.length, latestActiveExecution, mostRecentExecution])
+
+  // The effective execution ID is simply the selected one
+  const effectiveExecutionId = selectedExecutionId
 
   // Find the selected execution object (prefer list for updated status, fall back to pending)
   const selectedExecution = useMemo(() => {
@@ -240,34 +268,34 @@ export function ChatWidgetProvider({ children }: ChatWidgetProviderProps) {
 
   const selectExecution = useCallback((executionId: string | null) => {
     setSelectedExecutionId(executionId)
-    // When manually selecting, disable auto-connect
-    if (executionId !== null) {
-      setAutoConnectLatestState(false)
-    }
-  }, [])
-
-  const setAutoConnectLatest = useCallback((value: boolean) => {
-    setAutoConnectLatestState(value)
-    if (value) {
-      // Clear manual selection when enabling auto-connect
-      setSelectedExecutionId(null)
-    }
+    // Mark that user has made an explicit selection
+    setHasUserSelection(true)
   }, [])
 
   // Store a newly created execution (makes it available before query refetch)
   const setCreatedExecution = useCallback((execution: Execution) => {
     setPendingExecution(execution)
     setSelectedExecutionId(execution.id)
-    // Disable auto-connect since we're explicitly selecting this execution
-    setAutoConnectLatestState(false)
+    setHasUserSelection(true)
+  }, [])
+
+  // Agent settings actions
+  const setAgentType = useCallback((newAgentType: string) => {
+    setAgentTypeState(newAgentType)
+  }, [])
+
+  const setExecutionConfig = useCallback((config: Partial<ExecutionConfig>) => {
+    setExecutionConfigState(config)
+  }, [])
+
+  const updateExecutionConfig = useCallback((updates: Partial<ExecutionConfig>) => {
+    setExecutionConfigState((prev) => ({ ...prev, ...updates }))
   }, [])
 
   // Persist preferences and last execution ID when they change
   useEffect(() => {
-    // Only persist selectedExecutionId if not using auto-connect (to restore on reload)
-    const lastExecutionId = autoConnectLatest ? null : selectedExecutionId
-    savePersistedState({ mode, autoConnectLatest, lastExecutionId })
-  }, [mode, autoConnectLatest, selectedExecutionId])
+    savePersistedState({ mode, lastExecutionId: selectedExecutionId, agentType, executionConfig })
+  }, [mode, selectedExecutionId, agentType, executionConfig])
 
   // Keyboard shortcut: Cmd/Ctrl + J to toggle
   useEffect(() => {
@@ -294,14 +322,17 @@ export function ChatWidgetProvider({ children }: ChatWidgetProviderProps) {
       mode,
       selectedExecutionId: effectiveExecutionId,
       selectedExecution,
-      autoConnectLatest,
+      agentType,
+      executionConfig,
       toggle,
       open,
       close,
       setMode,
       selectExecution,
-      setAutoConnectLatest,
       setCreatedExecution,
+      setAgentType,
+      setExecutionConfig,
+      updateExecutionConfig,
       hasActiveExecution,
       latestActiveExecution,
       isExecutionRunning,
@@ -312,14 +343,17 @@ export function ChatWidgetProvider({ children }: ChatWidgetProviderProps) {
       mode,
       effectiveExecutionId,
       selectedExecution,
-      autoConnectLatest,
+      agentType,
+      executionConfig,
       toggle,
       open,
       close,
       setMode,
       selectExecution,
-      setAutoConnectLatest,
       setCreatedExecution,
+      setAgentType,
+      setExecutionConfig,
+      updateExecutionConfig,
       hasActiveExecution,
       latestActiveExecution,
       isExecutionRunning,

@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { PlayCircle, CheckCircle2, XCircle, Clock, PauseCircle, Zap } from 'lucide-react'
+import { PlayCircle, CheckCircle2, XCircle, Clock, PauseCircle, Plus } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -16,12 +16,10 @@ interface ExecutionSelectorProps {
   executions: Execution[]
   value: string | null
   onChange: (executionId: string | null) => void
-  autoConnectLatest: boolean
-  onAutoConnectChange: (value: boolean) => void
   className?: string
 }
 
-const AUTO_CONNECT_VALUE = '__auto__'
+const NEW_EXECUTION_VALUE = '__new__'
 
 const statusConfig: Record<
   ExecutionStatus,
@@ -66,8 +64,6 @@ export function ExecutionSelector({
   executions,
   value,
   onChange,
-  autoConnectLatest,
-  onAutoConnectChange,
   className,
 }: ExecutionSelectorProps) {
   // Group executions by status
@@ -82,39 +78,36 @@ export function ExecutionSelector({
   }, [executions])
 
   const handleChange = (newValue: string) => {
-    if (newValue === AUTO_CONNECT_VALUE) {
-      onAutoConnectChange(true)
+    if (newValue === NEW_EXECUTION_VALUE) {
       onChange(null)
     } else {
-      onAutoConnectChange(false)
       onChange(newValue)
     }
   }
 
-  const selectValue = autoConnectLatest ? AUTO_CONNECT_VALUE : value || ''
+  // Use NEW_EXECUTION_VALUE when no value is selected (shows config panel)
+  const selectValue = value || NEW_EXECUTION_VALUE
 
   return (
     <Select value={selectValue} onValueChange={handleChange}>
       <SelectTrigger className={cn('h-8 text-xs', className)}>
-        <SelectValue placeholder="Select execution">
-          {autoConnectLatest ? (
-            <span className="flex items-center gap-1.5">
-              <Zap className="h-3 w-3 text-yellow-500" />
-              <span>Auto (latest active)</span>
-            </span>
-          ) : value ? (
+        <SelectValue placeholder="New execution">
+          {value ? (
             <ExecutionOption execution={executions.find((e) => e.id === value)} compact />
           ) : (
-            'Select execution'
+            <span className="flex items-center gap-1.5">
+              <Plus className="h-3 w-3" />
+              <span>New</span>
+            </span>
           )}
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
-        {/* Auto-connect option */}
-        <SelectItem value={AUTO_CONNECT_VALUE}>
+        {/* New execution option */}
+        <SelectItem value={NEW_EXECUTION_VALUE}>
           <span className="flex items-center gap-1.5">
-            <Zap className="h-3 w-3 text-yellow-500" />
-            <span>Auto (latest active)</span>
+            <Plus className="h-3 w-3" />
+            <span>New execution</span>
           </span>
         </SelectItem>
 
@@ -140,11 +133,6 @@ export function ExecutionSelector({
               </SelectItem>
             ))}
           </SelectGroup>
-        )}
-
-        {/* Empty state */}
-        {executions.length === 0 && (
-          <div className="py-4 text-center text-sm text-muted-foreground">No executions yet</div>
         )}
       </SelectContent>
     </Select>

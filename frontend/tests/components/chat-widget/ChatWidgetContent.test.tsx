@@ -9,12 +9,16 @@ import type { Execution } from '@/types/execution'
 const mockGetChain = vi.fn()
 const mockCreateFollowUp = vi.fn()
 const mockCreateAdhoc = vi.fn()
+const mockGetBranches = vi.fn().mockResolvedValue({ current: 'main', branches: ['main', 'develop'] })
 
 vi.mock('@/lib/api', () => ({
   executionsApi: {
     getChain: (...args: unknown[]) => mockGetChain(...args),
     createFollowUp: (...args: unknown[]) => mockCreateFollowUp(...args),
     createAdhoc: (...args: unknown[]) => mockCreateAdhoc(...args),
+  },
+  repositoryApi: {
+    getBranches: () => mockGetBranches(),
   },
 }))
 
@@ -26,6 +30,31 @@ vi.mock('@/hooks/useExecutions', () => ({
     isLoading: false,
     error: null,
   }),
+}))
+
+// Mock useAgents hook
+vi.mock('@/hooks/useAgents', () => ({
+  useAgents: () => ({
+    agents: [
+      { type: 'claude-code', displayName: 'Claude Code', implemented: true },
+      { type: 'codex', displayName: 'Codex', implemented: true },
+    ],
+    loading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}))
+
+// Mock AgentSettingsDialog
+vi.mock('@/components/executions/AgentSettingsDialog', () => ({
+  AgentSettingsDialog: ({ open, onClose }: { open: boolean; onClose: () => void }) =>
+    open ? (
+      <div data-testid="agent-settings-dialog">
+        <button data-testid="settings-close" onClick={onClose}>
+          Close Settings
+        </button>
+      </div>
+    ) : null,
 }))
 
 // Mock ExecutionMonitor component
@@ -135,11 +164,15 @@ describe('ChatWidgetContent', () => {
     execution: null,
     autoConnectLatest: true,
     mode: 'floating' as const,
+    agentType: 'claude-code',
+    executionConfig: { mode: 'local' as const },
     onClose: vi.fn(),
     onModeToggle: vi.fn(),
     onExecutionSelect: vi.fn(),
     onAutoConnectChange: vi.fn(),
     onCreatedExecution: vi.fn(),
+    onAgentTypeChange: vi.fn(),
+    onExecutionConfigChange: vi.fn(),
   }
 
   beforeEach(() => {
@@ -148,18 +181,22 @@ describe('ChatWidgetContent', () => {
   })
 
   describe('Empty State', () => {
-    it('should show empty state when no executions exist', () => {
+    it('should show config panel when no executions exist', () => {
       renderWithProviders(<ChatWidgetContent {...defaultProps} />)
 
-      expect(screen.getByText('No executions yet. Start one below.')).toBeInTheDocument()
+      // Should show the Project Assistant config panel
+      expect(screen.getByText('Project Assistant')).toBeInTheDocument()
+      expect(screen.getByText('Environment')).toBeInTheDocument()
     })
 
-    it('should show "Select an execution" when executions exist but none selected', () => {
+    it('should show config panel when executions exist but none selected', () => {
       mockExecutions.push(createMockExecution({ id: 'exec-1' }))
 
       renderWithProviders(<ChatWidgetContent {...defaultProps} />)
 
-      expect(screen.getByText('Select an execution to view')).toBeInTheDocument()
+      // Should show the config panel
+      expect(screen.getByText('Project Assistant')).toBeInTheDocument()
+      expect(screen.getByText('Environment')).toBeInTheDocument()
     })
   })
 
@@ -175,31 +212,84 @@ describe('ChatWidgetContent', () => {
 
       // Find the button by its tooltip content indirectly via button count
       const buttons = screen.getAllByRole('button')
-      expect(buttons.length).toBeGreaterThanOrEqual(2) // mode toggle + close
+      expect(buttons.length).toBeGreaterThanOrEqual(3) // settings + mode toggle + close
     })
 
-    it('should call onModeToggle when mode toggle is clicked', () => {
-      const onModeToggle = vi.fn()
+    it('should open settings dialog when settings button is clicked', () => {
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
 
-      renderWithProviders(<ChatWidgetContent {...defaultProps} onModeToggle={onModeToggle} />)
-
-      // The mode toggle is the first button (before close)
+      // Settings button is the first button
       const buttons = screen.getAllByRole('button')
       fireEvent.click(buttons[0])
 
-      expect(onModeToggle).toHaveBeenCalledTimes(1)
+      expect(screen.getByTestId('agent-settings-dialog')).toBeInTheDocument()
     })
 
-    it('should call onClose when close button is clicked', () => {
-      const onClose = vi.fn()
+    it('should close settings dialog when close button is clicked', () => {
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
 
-      renderWithProviders(<ChatWidgetContent {...defaultProps} onClose={onClose} />)
-
-      // The close button is the last button
+      // Open settings dialog
       const buttons = screen.getAllByRole('button')
-      fireEvent.click(buttons[buttons.length - 1])
+      fireEvent.click(buttons[0])
 
-      expect(onClose).toHaveBeenCalledTimes(1)
+      expect(screen.getByTestId('agent-settings-dialog')).toBeInTheDocument()
+
+      // Close settings dialog
+      fireEvent.click(screen.getByTestId('settings-close'))
+
+      expect(screen.queryByTestId('agent-settings-dialog')).not.toBeInTheDocument()
+    })
+
+  })
+
+  describe('Welcome/Config Panel', () => {
+    it('should show project assistant info when no chain exists', () => {
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
+
+      expect(screen.getByText('Project Assistant')).toBeInTheDocument()
+      expect(screen.getByText(/Ask questions, run tasks/)).toBeInTheDocument()
+    })
+
+    it('should render execution mode selector in config panel', () => {
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
+
+      // Mode selector should be visible - look for Local text which is the default
+      expect(screen.getByText('Local')).toBeInTheDocument()
+      expect(screen.getByText('Environment')).toBeInTheDocument()
+    })
+
+    it('should call onExecutionConfigChange when mode is changed', () => {
+      const onExecutionConfigChange = vi.fn()
+
+      renderWithProviders(
+        <ChatWidgetContent {...defaultProps} onExecutionConfigChange={onExecutionConfigChange} />
+      )
+
+      // Find comboboxes - the second one is the mode selector (first is execution selector)
+      const comboboxes = screen.getAllByRole('combobox')
+      const modeSelect = comboboxes[1] // Mode selector is after execution selector
+      fireEvent.click(modeSelect)
+
+      // Select worktree option
+      const worktreeOption = screen.getByText('Worktree')
+      fireEvent.click(worktreeOption)
+
+      expect(onExecutionConfigChange).toHaveBeenCalledWith({ mode: 'worktree' })
+    })
+
+    it('should show agent info with configure button', () => {
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
+
+      expect(screen.getByText('Agent')).toBeInTheDocument()
+      expect(screen.getByText('Configure')).toBeInTheDocument()
+    })
+
+    it('should open settings dialog when Configure button is clicked', () => {
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
+
+      fireEvent.click(screen.getByText('Configure'))
+
+      expect(screen.getByTestId('agent-settings-dialog')).toBeInTheDocument()
     })
   })
 

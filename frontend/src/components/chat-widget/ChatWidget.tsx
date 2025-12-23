@@ -17,15 +17,17 @@ export function ChatWidget() {
     mode,
     selectedExecutionId,
     selectedExecution,
-    autoConnectLatest,
+    agentType,
+    executionConfig,
     isExecutionRunning,
     hasUnseenExecution,
     toggle,
     close,
     setMode,
     selectExecution,
-    setAutoConnectLatest,
     setCreatedExecution,
+    setAgentType,
+    updateExecutionConfig,
   } = useChatWidget()
 
   const handleModeToggle = () => {
@@ -35,13 +37,15 @@ export function ChatWidget() {
   const contentProps = {
     executionId: selectedExecutionId,
     execution: selectedExecution,
-    autoConnectLatest,
     mode,
+    agentType,
+    executionConfig,
     onClose: close,
     onModeToggle: handleModeToggle,
     onExecutionSelect: selectExecution,
-    onAutoConnectChange: setAutoConnectLatest,
     onCreatedExecution: setCreatedExecution,
+    onAgentTypeChange: setAgentType,
+    onExecutionConfigChange: updateExecutionConfig,
   }
 
   // Hide FAB when floating overlay is open (overlay replaces FAB position)
