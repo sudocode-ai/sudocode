@@ -188,13 +188,22 @@ export interface IWorkflowEngine {
   /**
    * Retry a failed step.
    *
+   * By default, preserves the executionId so the previous session can be resumed.
+   * Use freshStart=true to clear the executionId and start a new execution.
+   *
    * @param workflowId - The workflow containing the step
    * @param stepId - The step to retry
+   * @param options - Optional retry options
+   * @param options.freshStart - If true, clears executionId to start fresh instead of resuming
    * @throws WorkflowNotFoundError if workflow doesn't exist
    * @throws WorkflowStepNotFoundError if step doesn't exist
    * @throws WorkflowStateError if step is not in failed state
    */
-  retryStep(workflowId: string, stepId: string): Promise<void>;
+  retryStep(
+    workflowId: string,
+    stepId: string,
+    options?: { freshStart?: boolean }
+  ): Promise<void>;
 
   /**
    * Skip a step and mark its dependents as blocked or ready.

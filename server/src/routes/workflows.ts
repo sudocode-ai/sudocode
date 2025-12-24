@@ -652,6 +652,7 @@ export function createWorkflowsRouter(): Router {
     async (req: Request, res: Response) => {
       try {
         const { id, stepId } = req.params;
+        const { freshStart } = req.body || {};
         const engine = getEngineForWorkflow(req, id);
         if (!engine) {
           res.status(503).json({
@@ -662,7 +663,7 @@ export function createWorkflowsRouter(): Router {
           return;
         }
 
-        await engine.retryStep(id, stepId);
+        await engine.retryStep(id, stepId, { freshStart: freshStart === true });
 
         const workflow = await engine.getWorkflow(id);
         const step = workflow?.steps.find((s: WorkflowStep) => s.id === stepId);

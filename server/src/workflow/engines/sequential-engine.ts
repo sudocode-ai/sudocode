@@ -722,15 +722,24 @@ export class SequentialWorkflowEngine extends BaseWorkflowEngine {
    * Retry a failed step.
    *
    * Resets the step status to pending and unblocks dependent steps.
-   * If the workflow was paused due to the failure, it will be resumed.
+   * By default, preserves the executionId so the previous session can be resumed.
+   * Use freshStart=true to clear the executionId and start a new execution.
+   *
+   * If the workflow was paused or failed due to the failure, it will be resumed.
    *
    * @param workflowId - The workflow containing the step
    * @param stepId - The step to retry
+   * @param options - Optional retry options
+   * @param options.freshStart - If true, clears executionId to start fresh instead of resuming
    * @throws WorkflowNotFoundError if workflow doesn't exist
    * @throws WorkflowStepNotFoundError if step doesn't exist
    * @throws WorkflowStateError if step is not in failed state
    */
-  async retryStep(workflowId: string, stepId: string): Promise<void> {
+  async retryStep(
+    workflowId: string,
+    stepId: string,
+    options?: { freshStart?: boolean }
+  ): Promise<void> {
     const workflow = await this.getWorkflowOrThrow(workflowId);
     const step = workflow.steps.find((s) => s.id === stepId);
 
@@ -747,18 +756,66 @@ export class SequentialWorkflowEngine extends BaseWorkflowEngine {
     }
 
     // Reset step status
-    this.updateStep(workflowId, stepId, {
+    // Preserve executionId by default so we can resume the session
+    // Only clear it if freshStart is explicitly requested
+    const stepUpdate: Partial<WorkflowStep> = {
       status: "pending",
       error: undefined,
-      executionId: undefined,
-    });
+    };
+
+    if (options?.freshStart) {
+      stepUpdate.executionId = undefined;
+      console.log(
+        `[SequentialWorkflowEngine] Retrying step ${stepId} with fresh start (clearing executionId)`
+      );
+    } else {
+      console.log(
+        `[SequentialWorkflowEngine] Retrying step ${stepId} with session resume (preserving executionId: ${step.executionId})`
+      );
+    }
+
+    this.updateStep(workflowId, stepId, stepUpdate);
 
     // Unblock dependent steps
     await this.unblockDependentSteps(workflow, step);
 
-    // Resume workflow if paused
+    // Resume workflow if paused or failed
     if (workflow.status === "paused") {
       await this.resumeWorkflow(workflowId);
+    } else if (workflow.status === "failed") {
+      // Recover a failed workflow by changing status to running and restarting execution loop
+      console.log(
+        `[SequentialWorkflowEngine] Recovering failed workflow ${workflowId}`
+      );
+
+      // Initialize workflow state
+      let state = this.activeWorkflows.get(workflowId);
+      if (!state) {
+        state = {
+          workflowId,
+          isPaused: false,
+          isCancelled: false,
+        };
+        this.activeWorkflows.set(workflowId, state);
+      }
+      state.isPaused = false;
+      state.isCancelled = false;
+
+      // Update status to running
+      this.updateWorkflow(workflowId, { status: "running" });
+
+      // Emit event
+      this.eventEmitter.emit({
+        type: "workflow_resumed",
+        workflowId,
+        timestamp: Date.now(),
+      });
+
+      // Restart execution loop
+      this.runExecutionLoop(workflowId).catch((error) => {
+        console.error(`Workflow ${workflowId} execution loop failed:`, error);
+        this.failWorkflow(workflowId, error.message).catch(console.error);
+      });
     }
   }
 
@@ -1341,35 +1398,65 @@ Step: ${stepNum} of ${totalSteps}`;
   ): Promise<void> {
     const errorMessage = execution.error_message || "Unknown error";
 
-    // Update step status
-    this.updateStep(workflow.id, step.id, {
-      status: "failed",
-      error: errorMessage,
-    });
-
-    // Emit event
-    this.eventEmitter.emit({
-      type: "step_failed",
-      workflowId: workflow.id,
-      step: { ...step, status: "failed", error: errorMessage },
-      error: errorMessage,
-      timestamp: Date.now(),
-    });
-
     // Handle based on failure strategy
+    // For "pause" strategy, we keep the step in "pending" state so it can be resumed
+    // For other strategies, we mark it as "failed"
     switch (workflow.config.onFailure) {
+      case "pause":
+        // Reset step to pending so it can be resumed when workflow resumes
+        // Keep executionId so we can resume the Claude session
+        this.updateStep(workflow.id, step.id, {
+          status: "pending",
+          // Keep executionId for session resume
+          error: undefined,
+        });
+
+        console.log(
+          `[SequentialWorkflowEngine] Step ${step.id} failed but keeping pending for resume (executionId: ${step.executionId})`
+        );
+
+        // Emit a workflow_paused event (not step_failed since it's resumable)
+        await this.pauseWorkflow(workflow.id);
+        break;
+
       case "stop":
+        // Mark step as failed
+        this.updateStep(workflow.id, step.id, {
+          status: "failed",
+          error: errorMessage,
+        });
+
+        // Emit event
+        this.eventEmitter.emit({
+          type: "step_failed",
+          workflowId: workflow.id,
+          step: { ...step, status: "failed", error: errorMessage },
+          error: errorMessage,
+          timestamp: Date.now(),
+        });
+
         await this.failWorkflow(
           workflow.id,
           `Step ${step.id} failed: ${errorMessage}`
         );
         break;
 
-      case "pause":
-        await this.pauseWorkflow(workflow.id);
-        break;
-
       case "skip_dependents":
+        // Mark step as failed
+        this.updateStep(workflow.id, step.id, {
+          status: "failed",
+          error: errorMessage,
+        });
+
+        // Emit event
+        this.eventEmitter.emit({
+          type: "step_failed",
+          workflowId: workflow.id,
+          step: { ...step, status: "failed", error: errorMessage },
+          error: errorMessage,
+          timestamp: Date.now(),
+        });
+
         await this.skipDependentSteps(
           workflow,
           step,
@@ -1378,6 +1465,21 @@ Step: ${stepNum} of ${totalSteps}`;
         break;
 
       case "continue":
+        // Mark step as failed
+        this.updateStep(workflow.id, step.id, {
+          status: "failed",
+          error: errorMessage,
+        });
+
+        // Emit event
+        this.eventEmitter.emit({
+          type: "step_failed",
+          workflowId: workflow.id,
+          step: { ...step, status: "failed", error: errorMessage },
+          error: errorMessage,
+          timestamp: Date.now(),
+        });
+
         // Mark dependents as blocked, continue with other steps
         await this.blockDependentSteps(workflow, step);
         break;

@@ -88,13 +88,7 @@ sudocode init
 sudocode server
 ```
 
-For Claude Code, you can install the plugin:
-```bash
-claude plugin marketplace add sudocode-ai/sudocode
-claude plugin install sudocode
-```
-
-Check out our [Quick Start Guide](https://docs.sudocode.ai/quickstart#step-4%3A-set-up-your-agent) for instructions on setting up other agents.
+Check out our [Quick Start Guide](https://docs.sudocode.ai/quickstart#step-4%3A-set-up-your-agent) for tutorials and walkthroughs.
 
 ## External Integrations
 
