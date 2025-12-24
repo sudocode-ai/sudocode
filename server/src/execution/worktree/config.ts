@@ -35,7 +35,7 @@ export const DEFAULT_WORKTREE_CONFIG: WorktreeConfig = {
   autoDeleteBranches: false,
   enableSparseCheckout: false,
   sparseCheckoutPatterns: undefined,
-  branchPrefix: 'sudocode',
+  branchPrefix: 'wt-sudocode',
   cleanupOrphanedWorktreesOnStartup: false,
 };
 
