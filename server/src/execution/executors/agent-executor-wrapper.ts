@@ -128,6 +128,7 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
   private transportManager?: TransportManager;
   private projectId: string;
   private db: Database.Database;
+  /** MOSTLY DEPRECATED. just used for the workdir today */
   private processConfig: ProcessConfig;
   private activeExecutions: Map<string, { cancel: () => void }>;
   /** Track completion state for Claude Code executions (from protocol peer) */
@@ -188,6 +189,7 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
           directoryGuardHookPath: (agentConfig as any).directoryGuardHookPath,
           mcpServers: (agentConfig as any).mcpServers,
           appendSystemPrompt: (agentConfig as any).appendSystemPrompt,
+          disallowedTools: (agentConfig as any).disallowedTools,
         }) as IAgentExecutor;
 
       case "codex":

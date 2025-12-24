@@ -8,7 +8,10 @@
  */
 
 import fs from "fs";
+import fsPromises from "fs/promises";
 import path from "path";
+import os from "os";
+import * as TOML from "@iarna/toml";
 import type Database from "better-sqlite3";
 import type { Execution, ExecutionStatus } from "@sudocode-ai/types";
 import { ExecutionLifecycleService } from "./execution-lifecycle.js";
@@ -27,12 +30,15 @@ import { broadcastExecutionUpdate } from "./websocket.js";
 import { createExecutorForAgent } from "../execution/executors/executor-factory.js";
 import type { AgentType } from "@sudocode-ai/types/agents";
 import { PromptResolver } from "./prompt-resolver.js";
+import { execFileNoThrow } from "../utils/execFileNoThrow.js";
 
 /**
  * MCP server configuration
  */
 export interface McpServerConfig {
+  type?: string;
   command: string;
+  tools?: string[];
   args?: string[];
   env?: Record<string, string>;
 }
@@ -184,6 +190,9 @@ export class ExecutionService {
       throw new Error("Prompt cannot be empty");
     }
 
+    // 2. Build execution config with auto-injected MCP servers
+    const mergedConfig = await this.buildExecutionConfig(agentType, config);
+
     // Get issue if issueId is provided (orchestrator executions don't have an issue)
     let issue: { id: string; title: string } | undefined;
     if (issueId) {
@@ -207,34 +216,34 @@ export class ExecutionService {
       // Fall back to "main" if we can't determine current branch
     }
 
-    // 2. Determine execution mode and create execution with worktree
+    // 3. Determine execution mode and create execution with worktree
     // Store the original (unexpanded) prompt in the database
-    const mode = config.mode || "worktree";
+    const mode = mergedConfig.mode || "worktree";
     let execution: Execution;
     let workDir: string;
 
     // Worktree mode requires either an issue or a reuseWorktreePath
-    if (mode === "worktree" && !issueId && !config.reuseWorktreePath) {
+    if (mode === "worktree" && !issueId && !mergedConfig.reuseWorktreePath) {
       throw new Error(
         "Worktree mode requires either an issueId or reuseWorktreePath"
       );
     }
 
-    if (mode === "worktree" && (issueId || config.reuseWorktreePath)) {
+    if (mode === "worktree" && (issueId || mergedConfig.reuseWorktreePath)) {
       // Check if we're reusing an existing worktree
-      if (config.reuseWorktreePath) {
+      if (mergedConfig.reuseWorktreePath) {
         // Validate worktree exists
-        if (!fs.existsSync(config.reuseWorktreePath)) {
+        if (!fs.existsSync(mergedConfig.reuseWorktreePath)) {
           throw new Error(
-            `Cannot reuse worktree: path does not exist: ${config.reuseWorktreePath}`
+            `Cannot reuse worktree: path does not exist: ${mergedConfig.reuseWorktreePath}`
           );
         }
 
         // Validate it's a git worktree by checking for .git
-        const gitPath = path.join(config.reuseWorktreePath, ".git");
+        const gitPath = path.join(mergedConfig.reuseWorktreePath, ".git");
         if (!fs.existsSync(gitPath)) {
           throw new Error(
-            `Cannot reuse worktree: not a valid git worktree: ${config.reuseWorktreePath}`
+            `Cannot reuse worktree: not a valid git worktree: ${mergedConfig.reuseWorktreePath}`
           );
         }
 
@@ -242,12 +251,12 @@ export class ExecutionService {
         let branchName: string;
         try {
           branchName = execSync("git rev-parse --abbrev-ref HEAD", {
-            cwd: config.reuseWorktreePath,
+            cwd: mergedConfig.reuseWorktreePath,
             encoding: "utf-8",
           }).trim();
         } catch {
           throw new Error(
-            `Cannot reuse worktree: failed to get branch name from: ${config.reuseWorktreePath}`
+            `Cannot reuse worktree: failed to get branch name from: ${mergedConfig.reuseWorktreePath}`
           );
         }
 
@@ -255,7 +264,7 @@ export class ExecutionService {
         let beforeCommit: string | undefined;
         try {
           beforeCommit = execSync("git rev-parse HEAD", {
-            cwd: config.reuseWorktreePath,
+            cwd: mergedConfig.reuseWorktreePath,
             encoding: "utf-8",
           }).trim();
           console.log(
@@ -277,15 +286,15 @@ export class ExecutionService {
           agent_type: agentType,
           mode: mode,
           prompt: prompt,
-          config: JSON.stringify(config),
-          target_branch: config.baseBranch || branchName,
+          config: JSON.stringify(mergedConfig),
+          target_branch: mergedConfig.baseBranch || branchName,
           branch_name: branchName,
-          worktree_path: config.reuseWorktreePath,
-          parent_execution_id: config.parentExecutionId,
+          worktree_path: mergedConfig.reuseWorktreePath,
+          parent_execution_id: mergedConfig.parentExecutionId,
           before_commit: beforeCommit,
         });
 
-        workDir = config.reuseWorktreePath;
+        workDir = mergedConfig.reuseWorktreePath;
       } else {
         // Create execution with isolated worktree
         // This path requires issueId and issue (reuseWorktreePath not provided)
@@ -298,13 +307,13 @@ export class ExecutionService {
           issueId,
           issueTitle: issue.title,
           agentType: agentType,
-          targetBranch: config.baseBranch || defaultBranch,
+          targetBranch: mergedConfig.baseBranch || defaultBranch,
           repoPath: this.repoPath,
           mode: mode,
           prompt: prompt, // Store original (unexpanded) prompt
-          config: JSON.stringify(config),
-          createTargetBranch: config.createBaseBranch || false,
-          parentExecutionId: config.parentExecutionId,
+          config: JSON.stringify(mergedConfig),
+          createTargetBranch: mergedConfig.createBaseBranch || false,
+          parentExecutionId: mergedConfig.parentExecutionId,
         });
 
         execution = result.execution;
@@ -319,10 +328,10 @@ export class ExecutionService {
         agent_type: agentType,
         mode: mode,
         prompt: prompt, // Store original (unexpanded) prompt
-        config: JSON.stringify(config),
-        target_branch: config.baseBranch || defaultBranch,
-        branch_name: config.baseBranch || defaultBranch,
-        parent_execution_id: config.parentExecutionId,
+        config: JSON.stringify(mergedConfig),
+        target_branch: mergedConfig.baseBranch || defaultBranch,
+        branch_name: mergedConfig.baseBranch || defaultBranch,
+        parent_execution_id: mergedConfig.parentExecutionId,
       });
       workDir = this.repoPath;
 
@@ -419,7 +428,7 @@ export class ExecutionService {
       captureFileChanges: _captureFileChanges,
       captureToolCalls: _captureToolCalls,
       ...agentConfig
-    } = config;
+    } = mergedConfig;
 
     const wrapper = createExecutorForAgent(
       agentType,
@@ -438,13 +447,13 @@ export class ExecutionService {
     );
 
     // Log incoming config for debugging
-    console.log("[ExecutionService] createExecution config:", {
-      hasMcpServers: !!config.mcpServers,
-      mcpServerNames: config.mcpServers
-        ? Object.keys(config.mcpServers)
+    console.log("[ExecutionService] createExecution mergedConfig:", {
+      hasMcpServers: !!mergedConfig.mcpServers,
+      mcpServerNames: mergedConfig.mcpServers
+        ? Object.keys(mergedConfig.mcpServers)
         : "none",
-      hasAppendSystemPrompt: !!config.appendSystemPrompt,
-      dangerouslySkipPermissions: config.dangerouslySkipPermissions,
+      hasAppendSystemPrompt: !!mergedConfig.appendSystemPrompt,
+      dangerouslySkipPermissions: mergedConfig.dangerouslySkipPermissions,
     });
 
     // Log agentConfig being passed to executor
@@ -469,7 +478,7 @@ export class ExecutionService {
     // Merge worktree context with any existing appendSystemPrompt
     const combinedAppendSystemPrompt = [
       worktreeContext,
-      config.appendSystemPrompt || "",
+      mergedConfig.appendSystemPrompt || "",
     ]
       .filter(Boolean)
       .join("\n");
@@ -482,18 +491,18 @@ export class ExecutionService {
       prompt: resolvedPrompt,
       workDir: workDir,
       config: {
-        timeout: config.timeout,
+        timeout: mergedConfig.timeout,
       },
       metadata: {
-        model: config.model || "claude-sonnet-4",
-        captureFileChanges: config.captureFileChanges ?? true,
-        captureToolCalls: config.captureToolCalls ?? true,
+        model: mergedConfig.model || "claude-sonnet-4",
+        captureFileChanges: mergedConfig.captureFileChanges ?? true,
+        captureToolCalls: mergedConfig.captureToolCalls ?? true,
         issueId: issueId ?? undefined,
         executionId: execution.id,
-        mcpServers: config.mcpServers,
+        mcpServers: mergedConfig.mcpServers,
         appendSystemPrompt: combinedAppendSystemPrompt || undefined,
-        dangerouslySkipPermissions: config.dangerouslySkipPermissions,
-        resume: config.resume,
+        dangerouslySkipPermissions: mergedConfig.dangerouslySkipPermissions,
+        resume: mergedConfig.resume,
       },
       priority: 0,
       dependencies: [],
@@ -1339,5 +1348,383 @@ ${feedback}`;
     }
 
     return expandedIds;
+  }
+
+  /**
+   * Build execution config with auto-injected MCP servers
+   *
+   * This method handles the auto-injection of sudocode-mcp into the execution config
+   * when it's not already configured. It:
+   * 1. Checks if sudocode-mcp package is installed (throws error if not)
+   * 2. Checks if the agent already has sudocode-mcp configured
+   * 3. Auto-injects sudocode-mcp to mcpServers if needed
+   * 4. Preserves all user-provided MCP servers
+   *
+   * @param agentType - The type of agent to execute
+   * @param userConfig - User-provided execution configuration
+   * @returns Merged execution configuration with auto-injected MCP servers
+   * @throws Error if sudocode-mcp package is not installed
+   */
+  private async buildExecutionConfig(
+    agentType: AgentType,
+    userConfig: ExecutionConfig
+  ): Promise<ExecutionConfig> {
+    // Start with user config
+    const mergedConfig = { ...userConfig };
+
+    // 1. Detect if sudocode-mcp package is installed
+    const isInstalled = await this.detectSudocodeMcp();
+    if (!isInstalled) {
+      throw new Error(
+        "sudocode-mcp package not found. Please install sudocode to enable MCP tools.\nVisit: https://github.com/sudocode-ai/sudocode"
+      );
+    }
+
+    // 2. Check if agent already has sudocode-mcp configured
+    const mcpPresent = await this.detectAgentMcp(agentType);
+
+    // 3. For Cursor, MCP MUST be configured (no CLI injection available)
+    if (agentType === "cursor" && !mcpPresent) {
+      throw new Error(
+        "Cursor agent requires sudocode-mcp to be configured in .cursor/mcp.json.\n" +
+        "Please create .cursor/mcp.json in your project root with:\n\n" +
+        JSON.stringify(
+          {
+            mcpServers: {
+              "sudocode-mcp": {
+                command: "sudocode-mcp",
+              },
+            },
+          },
+          null,
+          2
+        ) +
+        "\n\nVisit: https://github.com/sudocode-ai/sudocode"
+      );
+    }
+
+    // For Cursor with sudocode-mcp, auto-approve MCP servers in headless mode
+    if (agentType === "cursor" && mcpPresent) {
+      console.info(
+        "[ExecutionService] Enabling approveMcps for Cursor (sudocode-mcp detected)"
+      );
+      (mergedConfig as any).approveMcps = true;
+    }
+
+    // 4. Auto-inject sudocode-mcp if not configured and not already in userConfig
+    if (!mcpPresent && !userConfig.mcpServers?.["sudocode-mcp"]) {
+      console.info(
+        "[ExecutionService] Adding sudocode-mcp to mcpServers (auto-injection)"
+      );
+      mergedConfig.mcpServers = {
+        ...(userConfig.mcpServers || {}),
+        "sudocode-mcp": {
+          command: "sudocode-mcp",
+        },
+      };
+    } else if (mcpPresent) {
+      console.info(
+        "[ExecutionService] Removing sudocode-mcp from CLI config (using plugin instead)"
+      );
+      // Remove sudocode-mcp from mcpServers to avoid duplication with plugin
+      if (userConfig.mcpServers) {
+        const { "sudocode-mcp": _removed, ...rest } = userConfig.mcpServers;
+        mergedConfig.mcpServers = Object.keys(rest).length > 0 ? rest : undefined;
+      }
+    } else if (userConfig.mcpServers?.["sudocode-mcp"]) {
+      console.info(
+        "[ExecutionService] Skipping sudocode-mcp injection (user provided in config)"
+      );
+    }
+
+    return mergedConfig;
+  }
+
+  /**
+   * Detect if sudocode-mcp command is available in PATH
+   *
+   * This checks if the sudocode-mcp package is installed on the system by
+   * attempting to locate the command using `which` (Unix) or `where` (Windows).
+   *
+   * @returns true if sudocode-mcp is available, false otherwise
+   * @internal Used by buildExecutionConfig
+   */
+  private async detectSudocodeMcp(): Promise<boolean> {
+    try {
+      // Use 'which' on Unix systems, 'where' on Windows
+      const command = process.platform === "win32" ? "where" : "which";
+
+      const result = await execFileNoThrow(command, ["sudocode-mcp"]);
+
+      if (result.status === 0) {
+        return true;
+      } else {
+        // Command failed - sudocode-mcp not found in PATH
+        console.warn(
+          "[ExecutionService] sudocode-mcp command not found in PATH"
+        );
+        return false;
+      }
+    } catch (error) {
+      // Unexpected error during detection
+      console.warn(
+        "[ExecutionService] Failed to detect sudocode-mcp:",
+        error instanceof Error ? error.message : String(error)
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Detect if sudocode-mcp is configured for the given agent
+   *
+   * For claude-code: Checks if the sudocode plugin is enabled in ~/.claude/settings.json
+   * For cursor: Checks .cursor/mcp.json in project root for sudocode-mcp command
+   * For codex: Checks ~/.codex/config.toml for sudocode-mcp in mcp_servers
+   * For copilot: Checks ~/.copilot/mcp-config.json for sudocode-mcp command
+   *
+   * @param agentType - The type of agent to check
+   * @returns true if configured, false otherwise
+   * @internal Used by buildExecutionConfig
+   */
+  private async detectAgentMcp(agentType: AgentType): Promise<boolean> {
+    // For claude-code, check ~/.claude/settings.json
+    // This is not foolproof, but covers the default case
+    if (agentType === "claude-code") {
+      try {
+        const claudeSettingsPath = path.join(
+          os.homedir(),
+          ".claude",
+          "settings.json"
+        );
+
+        const settingsContent = await fsPromises.readFile(
+          claudeSettingsPath,
+          "utf-8"
+        );
+
+        const settings = JSON.parse(settingsContent);
+
+        // Check if sudocode@sudocode-marketplace is enabled
+        const isEnabled =
+          settings.enabledPlugins?.["sudocode@sudocode-marketplace"] === true;
+
+        if (isEnabled) {
+          console.info(
+            "[ExecutionService] sudocode-mcp detected for claude-code (plugin enabled)"
+          );
+        } else {
+          console.info(
+            "[ExecutionService] sudocode-mcp not detected for claude-code (plugin not enabled)"
+          );
+        }
+
+        return isEnabled;
+      } catch (error) {
+        // Handle file read errors gracefully
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "ENOENT"
+        ) {
+          // File not found - plugin definitely not configured
+          console.warn(
+            "[ExecutionService] ~/.claude/settings.json not found - plugin not configured"
+          );
+          return false;
+        } else if (error instanceof SyntaxError) {
+          // Malformed JSON - can't determine, assume configured (conservative)
+          console.error(
+            "[ExecutionService] Failed to parse ~/.claude/settings.json - malformed JSON:",
+            error.message
+          );
+          return true;
+        } else {
+          // Other errors (permission denied, etc.) - can't determine, assume configured (conservative)
+          console.warn(
+            "[ExecutionService] Failed to read ~/.claude/settings.json:",
+            error instanceof Error ? error.message : String(error)
+          );
+          return true;
+        }
+      }
+    }
+
+    // For cursor, check .cursor/mcp.json in project root
+    if (agentType === "cursor") {
+      try {
+        // NOTE: .cursor/mcp.json is in project root, not home directory
+        const cursorConfigPath = path.join(this.repoPath, ".cursor", "mcp.json");
+
+        const configContent = await fsPromises.readFile(cursorConfigPath, "utf-8");
+        const config = JSON.parse(configContent);
+
+        // Check if any mcpServer has command "sudocode-mcp"
+        const hasSudocodeMcp = Object.values(config.mcpServers || {}).some(
+          (server: any) => server.command === "sudocode-mcp"
+        );
+
+        if (hasSudocodeMcp) {
+          console.info("[ExecutionService] sudocode-mcp detected for cursor");
+        } else {
+          console.info("[ExecutionService] sudocode-mcp not detected for cursor");
+        }
+
+        return hasSudocodeMcp;
+      } catch (error) {
+        // Handle ENOENT, JSON parse errors, etc.
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "ENOENT"
+        ) {
+          // File not found - MCP definitely not configured
+          console.warn(
+            "[ExecutionService] .cursor/mcp.json not found in project root - MCP not configured"
+          );
+          return false;
+        } else if (error instanceof SyntaxError) {
+          // Malformed JSON - can't determine configuration
+          console.error(
+            "[ExecutionService] Failed to parse .cursor/mcp.json - malformed JSON:",
+            error.message
+          );
+          return false;
+        } else {
+          // Other errors (permission denied, etc.)
+          console.warn(
+            "[ExecutionService] Failed to read .cursor/mcp.json:",
+            error instanceof Error ? error.message : String(error)
+          );
+          return false;
+        }
+      }
+    }
+
+    // For codex, check ~/.codex/config.toml
+    if (agentType === "codex") {
+      try {
+        const codexConfigPath = path.join(
+          os.homedir(),
+          ".codex",
+          "config.toml"
+        );
+
+        const configContent = await fsPromises.readFile(
+          codexConfigPath,
+          "utf-8"
+        );
+
+        const config = TOML.parse(configContent);
+
+        // Check if any mcp_servers section has command "sudocode-mcp"
+        const mcpServers = config.mcp_servers as Record<string, any> | undefined;
+        const hasSudocodeMcp =
+          mcpServers &&
+          Object.values(mcpServers).some(
+            (server: any) => server.command === "sudocode-mcp"
+          );
+
+        if (hasSudocodeMcp) {
+          console.info("[ExecutionService] sudocode-mcp detected for codex");
+        } else {
+          console.info(
+            "[ExecutionService] sudocode-mcp not detected for codex"
+          );
+        }
+
+        return !!hasSudocodeMcp;
+      } catch (error) {
+        // Handle ENOENT, TOML parse errors, etc.
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "ENOENT"
+        ) {
+          // File not found - MCP definitely not configured
+          console.warn(
+            "[ExecutionService] ~/.codex/config.toml not found - MCP not configured"
+          );
+          return false;
+        } else if (error instanceof Error && error.message.includes("parse")) {
+          // Malformed TOML - can't determine configuration
+          console.error(
+            "[ExecutionService] Failed to parse ~/.codex/config.toml - malformed TOML:",
+            error.message
+          );
+          return false;
+        } else {
+          // Other errors (permission denied, etc.)
+          console.warn(
+            "[ExecutionService] Failed to detect codex MCP config:",
+            error instanceof Error ? error.message : String(error)
+          );
+          return false;
+        }
+      }
+    }
+
+    // For copilot, check ~/.copilot/mcp-config.json
+    if (agentType === "copilot") {
+      try {
+        const copilotConfigPath = path.join(
+          os.homedir(),
+          ".copilot",
+          "mcp-config.json"
+        );
+
+        const configContent = await fsPromises.readFile(
+          copilotConfigPath,
+          "utf-8"
+        );
+
+        const config = JSON.parse(configContent);
+
+        // Check if any mcpServer has command "sudocode-mcp"
+        const hasSudocodeMcp = Object.values(config.mcpServers || {}).some(
+          (server: any) => server.command === "sudocode-mcp"
+        );
+
+        if (hasSudocodeMcp) {
+          console.info("[ExecutionService] sudocode-mcp detected for copilot");
+        } else {
+          console.info(
+            "[ExecutionService] sudocode-mcp not detected for copilot"
+          );
+        }
+
+        return hasSudocodeMcp;
+      } catch (error) {
+        // Handle ENOENT, JSON parse errors, etc.
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "ENOENT"
+        ) {
+          // File not found - MCP definitely not configured
+          console.warn(
+            "[ExecutionService] ~/.copilot/mcp-config.json not found - MCP not configured"
+          );
+          return false;
+        } else if (error instanceof SyntaxError) {
+          // Malformed JSON - can't determine configuration
+          console.error(
+            "[ExecutionService] Failed to parse ~/.copilot/mcp-config.json - malformed JSON:",
+            error.message
+          );
+          return false;
+        } else {
+          // Other errors (permission denied, etc.)
+          console.warn(
+            "[ExecutionService] Failed to detect copilot MCP config:",
+            error instanceof Error ? error.message : String(error)
+          );
+          return false;
+        }
+      }
+    }
+
+    // For other agents, return true (safe default)
+    return true;
   }
 }

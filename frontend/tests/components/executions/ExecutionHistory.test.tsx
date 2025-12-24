@@ -25,6 +25,16 @@ vi.mock('react-router-dom', async () => {
   }
 })
 
+// Mock useProjectRoutes hook
+vi.mock('@/hooks/useProjectRoutes', () => ({
+  useProjectRoutes: () => ({
+    paths: {
+      execution: (id: string) => `/p/test-project/executions/${id}`,
+    },
+    effectiveProjectId: 'test-project',
+  }),
+}))
+
 describe('ExecutionHistory', () => {
   const issueId = 'ISSUE-001'
 
@@ -252,7 +262,7 @@ describe('ExecutionHistory', () => {
 
     await user.click(executionCard!)
 
-    expect(mockNavigate).toHaveBeenCalledWith('/executions/exec-123')
+    expect(mockNavigate).toHaveBeenCalledWith('/p/test-project/executions/exec-123')
   })
 
   it('should display different status badges correctly', async () => {

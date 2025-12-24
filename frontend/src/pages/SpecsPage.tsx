@@ -5,8 +5,11 @@ import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
 import { useProject } from '@/hooks/useProject'
 import { useProjectById } from '@/hooks/useProjects'
 import { useWorkflows } from '@/hooks/useWorkflows'
+import { useImportProviders } from '@/hooks/useImport'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { SpecList } from '@/components/specs/SpecList'
 import { SpecEditor } from '@/components/specs/SpecEditor'
+import { ImportDialog } from '@/components/import'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -17,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Archive, Plus, Search, GitBranch } from 'lucide-react'
+import { Archive, Plus, Search, GitBranch, Download } from 'lucide-react'
 import type { Spec } from '@/types/api'
 import type { Workflow } from '@/types/workflow'
 
@@ -31,8 +34,16 @@ export default function SpecsPage() {
   const { currentProjectId } = useProject()
   const { data: currentProject } = useProjectById(currentProjectId)
   const { data: workflows = [] } = useWorkflows()
+  const { data: importProviders = [] } = useImportProviders()
+  const { paths } = useProjectRoutes()
+
+  // Check if any import providers are configured and support on-demand import
+  const hasConfiguredImportProviders = importProviders.some(
+    (p) => p.configured && p.supportsOnDemandImport
+  )
 
   const [showEditor, setShowEditor] = useState(false)
+  const [showImportDialog, setShowImportDialog] = useState(false)
   const [filterText, setFilterText] = useState('')
   const [sortOption, setSortOption] = useState<SortOption>(() => {
     // Initialize from localStorage if available
@@ -64,7 +75,7 @@ export default function SpecsPage() {
 
   const handleSave = (spec: Spec) => {
     setShowEditor(false)
-    navigate(`/specs/${spec.id}`)
+    navigate(paths.spec(spec.id))
   }
 
   // Save sort preference to localStorage when it changes
@@ -162,7 +173,7 @@ export default function SpecsPage() {
             />
           </div>
           <Button
-            onClick={() => navigate('/specs/archived')}
+            onClick={() => navigate(paths.archivedSpecs())}
             variant="ghost"
             size="sm"
             className="gap-1 text-muted-foreground hover:text-foreground"
@@ -170,6 +181,16 @@ export default function SpecsPage() {
             <Archive className="h-4 w-4" />
             Archived
           </Button>
+          {hasConfiguredImportProviders && (
+            <Button
+              onClick={() => setShowImportDialog(true)}
+              variant="outline"
+              size="sm"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Import
+            </Button>
+          )}
           <Button
             onClick={() => setShowEditor(true)}
             variant="default"
@@ -181,6 +202,12 @@ export default function SpecsPage() {
           </Button>
         </div>
       </div>
+
+      {/* Import Dialog */}
+      <ImportDialog
+        open={showImportDialog}
+        onClose={() => setShowImportDialog(false)}
+      />
 
       {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden px-8 py-4">

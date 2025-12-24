@@ -182,6 +182,9 @@ class OpenSpecProvider implements IntegrationProvider {
   readonly name = "openspec";
   readonly supportsWatch = true;
   readonly supportsPolling = true;
+  readonly supportsOnDemandImport = false;
+  readonly supportsSearch = false;
+  readonly supportsPush = false;
 
   private options: OpenSpecOptions;
   private projectPath: string;

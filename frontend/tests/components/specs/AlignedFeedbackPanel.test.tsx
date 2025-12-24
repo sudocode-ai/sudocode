@@ -9,6 +9,17 @@ import { userEvent } from '@testing-library/user-event'
 import { AlignedFeedbackPanel } from '@/components/specs/AlignedFeedbackPanel'
 import type { IssueFeedback } from '@/types/api'
 
+// Mock useProjectRoutes hook
+vi.mock('@/hooks/useProjectRoutes', () => ({
+  useProjectRoutes: () => ({
+    paths: {
+      issue: (id: string) => `/p/test-project/issues/${id}`,
+      spec: (id: string) => `/p/test-project/specs/${id}`,
+    },
+    effectiveProjectId: 'test-project',
+  }),
+}))
+
 // Wrapper component to provide router context
 const Wrapper = ({ children }: { children: React.ReactNode }) => (
   <BrowserRouter>{children}</BrowserRouter>

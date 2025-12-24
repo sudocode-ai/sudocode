@@ -177,20 +177,20 @@ describe("Feedback API", () => {
       testFeedbackId = response.body.data.id;
     });
 
-    it("should reject feedback without issue_id", async () => {
+    it("should create anonymous feedback without issue_id", async () => {
       const response = await request(app)
         .post("/api/feedback").set("X-Project-ID", projectId)
         .send({
           to_id: testSpecId,
           feedback_type: "comment",
-          content: "Test",
+          content: "Anonymous feedback",
           agent: "test",
           anchor: { anchor_status: "valid" },
         })
-        .expect(400);
+        .expect(201);
 
-      expect(response.body.success).toBe(false);
-      expect(response.body.message.includes("issue_id")).toBeTruthy();
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.from_id).toBeNull();
     });
 
     it("should reject feedback without spec_id", async () => {

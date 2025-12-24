@@ -830,6 +830,233 @@ describe("Database Migrations", () => {
     });
   });
 
+  describe("Migration 5: make-feedback-from-id-nullable", () => {
+    beforeEach(() => {
+      // Create schema with required from_id/from_uuid (pre-migration state)
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS issues (
+          id TEXT PRIMARY KEY,
+          uuid TEXT NOT NULL UNIQUE,
+          title TEXT NOT NULL
+        )
+      `);
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS specs (
+          id TEXT PRIMARY KEY,
+          uuid TEXT NOT NULL UNIQUE,
+          title TEXT NOT NULL
+        )
+      `);
+
+      db.exec(`
+        PRAGMA foreign_keys = OFF;
+        CREATE TABLE IF NOT EXISTS issue_feedback (
+          id TEXT PRIMARY KEY,
+          from_id TEXT NOT NULL,
+          from_uuid TEXT NOT NULL,
+          to_id TEXT NOT NULL,
+          to_uuid TEXT NOT NULL,
+          feedback_type TEXT NOT NULL CHECK(feedback_type IN ('comment', 'suggestion', 'request')),
+          content TEXT NOT NULL,
+          agent TEXT,
+          anchor TEXT,
+          dismissed INTEGER NOT NULL DEFAULT 0 CHECK(dismissed IN (0, 1)),
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (from_id) REFERENCES issues(id) ON DELETE CASCADE,
+          FOREIGN KEY (from_uuid) REFERENCES issues(uuid) ON DELETE CASCADE
+        )
+      `);
+
+      // Insert test data
+      db.prepare("INSERT INTO issues (id, uuid, title) VALUES (?, ?, ?)").run(
+        "i-test",
+        "uuid-issue",
+        "Test Issue"
+      );
+
+      db.prepare("INSERT INTO specs (id, uuid, title) VALUES (?, ?, ?)").run(
+        "s-test",
+        "uuid-spec",
+        "Test Spec"
+      );
+
+      db.prepare(
+        `
+        INSERT INTO issue_feedback (id, from_id, from_uuid, to_id, to_uuid, feedback_type, content)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `
+      ).run(
+        "fb-1",
+        "i-test",
+        "uuid-issue",
+        "s-test",
+        "uuid-spec",
+        "comment",
+        "Test feedback"
+      );
+    });
+
+    it("should make from_id nullable", () => {
+      runMigrations(db);
+
+      const tableInfo = db.pragma("table_info(issue_feedback)") as Array<{
+        name: string;
+        notnull: number;
+      }>;
+
+      const fromIdColumn = tableInfo.find((col) => col.name === "from_id");
+      expect(fromIdColumn).toBeDefined();
+      expect(fromIdColumn!.notnull).toBe(0); // 0 means nullable
+    });
+
+    it("should make from_uuid nullable", () => {
+      runMigrations(db);
+
+      const tableInfo = db.pragma("table_info(issue_feedback)") as Array<{
+        name: string;
+        notnull: number;
+      }>;
+
+      const fromUuidColumn = tableInfo.find((col) => col.name === "from_uuid");
+      expect(fromUuidColumn).toBeDefined();
+      expect(fromUuidColumn!.notnull).toBe(0); // 0 means nullable
+    });
+
+    it("should preserve existing feedback data", () => {
+      runMigrations(db);
+
+      const feedback = db
+        .prepare("SELECT * FROM issue_feedback WHERE id = ?")
+        .get("fb-1") as {
+        id: string;
+        from_id: string;
+        from_uuid: string;
+        to_id: string;
+        to_uuid: string;
+        content: string;
+      };
+
+      expect(feedback).toBeDefined();
+      expect(feedback.from_id).toBe("i-test");
+      expect(feedback.from_uuid).toBe("uuid-issue");
+      expect(feedback.to_id).toBe("s-test");
+      expect(feedback.to_uuid).toBe("uuid-spec");
+      expect(feedback.content).toBe("Test feedback");
+    });
+
+    it("should allow inserting feedback without from_id", () => {
+      runMigrations(db);
+
+      // Should allow insert with NULL from_id (anonymous feedback)
+      expect(() => {
+        db.prepare(
+          `
+          INSERT INTO issue_feedback (id, from_id, from_uuid, to_id, to_uuid, feedback_type, content)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `
+        ).run(
+          "fb-anonymous",
+          null,
+          null,
+          "s-test",
+          "uuid-spec",
+          "comment",
+          "Anonymous feedback"
+        );
+      }).not.toThrow();
+
+      // Verify the anonymous feedback was stored
+      const feedback = db
+        .prepare("SELECT * FROM issue_feedback WHERE id = ?")
+        .get("fb-anonymous") as {
+        id: string;
+        from_id: string | null;
+        content: string;
+      };
+
+      expect(feedback.from_id).toBeNull();
+      expect(feedback.content).toBe("Anonymous feedback");
+    });
+
+    it("should remove FK constraint on from_id", () => {
+      runMigrations(db);
+
+      // Enable foreign keys to test
+      db.exec("PRAGMA foreign_keys = ON");
+
+      // Should allow inserting feedback with from_id that doesn't reference issues table
+      // (because FK constraint was removed)
+      expect(() => {
+        db.prepare(
+          `
+          INSERT INTO issue_feedback (id, from_id, from_uuid, to_id, to_uuid, feedback_type, content)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `
+        ).run(
+          "fb-no-fk",
+          "i-nonexistent",
+          "uuid-nonexistent",
+          "s-test",
+          "uuid-spec",
+          "comment",
+          "Feedback without FK constraint"
+        );
+      }).not.toThrow();
+    });
+
+    it("should be idempotent (safe to run multiple times)", () => {
+      runMigrations(db);
+      runMigrations(db); // Run again
+
+      // Should not throw and data should still be intact
+      const feedback = db
+        .prepare("SELECT * FROM issue_feedback WHERE id = ?")
+        .get("fb-1") as { id: string };
+
+      expect(feedback).toBeDefined();
+      expect(feedback.id).toBe("fb-1");
+    });
+
+    it("should handle new databases without issue_feedback table", () => {
+      // Create a new database without issue_feedback table
+      const newDb = new Database(":memory:");
+
+      // Should not throw when running migration on database without table
+      expect(() => runMigrations(newDb)).not.toThrow();
+
+      newDb.close();
+    });
+
+    it("should handle databases that already have nullable from_id", () => {
+      // Create database with new schema already in place
+      const newDb = new Database(":memory:");
+
+      newDb.exec(`
+        CREATE TABLE IF NOT EXISTS issue_feedback (
+          id TEXT PRIMARY KEY,
+          from_id TEXT,
+          from_uuid TEXT,
+          to_id TEXT NOT NULL,
+          to_uuid TEXT NOT NULL,
+          feedback_type TEXT NOT NULL CHECK(feedback_type IN ('comment', 'suggestion', 'request')),
+          content TEXT NOT NULL,
+          agent TEXT,
+          anchor TEXT,
+          dismissed INTEGER NOT NULL DEFAULT 0 CHECK(dismissed IN (0, 1)),
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // Should not throw when running migration on already-migrated database
+      expect(() => runMigrations(newDb)).not.toThrow();
+
+      newDb.close();
+    });
+  });
+
   describe("runMigrations", () => {
     it("should run all pending migrations in order", () => {
       // Create old schema for both migrations
@@ -891,15 +1118,15 @@ describe("Database Migrations", () => {
 
       runMigrations(db);
 
-      // Should have run all four migrations
-      expect(getCurrentMigrationVersion(db)).toBe(4);
+      // Should have run all five migrations
+      expect(getCurrentMigrationVersion(db)).toBe(5);
 
       // Verify all migrations were applied
       const migrations = db
         .prepare("SELECT * FROM migrations ORDER BY version")
         .all() as Array<{ version: number; name: string }>;
 
-      expect(migrations).toHaveLength(4);
+      expect(migrations).toHaveLength(5);
       expect(migrations[0].version).toBe(1);
       expect(migrations[0].name).toBe("generalize-feedback-table");
       expect(migrations[1].version).toBe(2);
@@ -908,6 +1135,8 @@ describe("Database Migrations", () => {
       expect(migrations[2].name).toBe("remove-agent-type-constraints");
       expect(migrations[3].version).toBe(4);
       expect(migrations[3].name).toBe("add-external-links-column");
+      expect(migrations[4].version).toBe(5);
+      expect(migrations[4].name).toBe("make-feedback-from-id-nullable");
     });
 
     it("should skip already-applied migrations", () => {
@@ -964,19 +1193,38 @@ describe("Database Migrations", () => {
         )
       `);
 
+      // Create issue_feedback table for migration 5 (with NOT NULL from_id/from_uuid)
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS issue_feedback (
+          id TEXT PRIMARY KEY,
+          from_id TEXT NOT NULL,
+          from_uuid TEXT NOT NULL,
+          to_id TEXT NOT NULL,
+          to_uuid TEXT NOT NULL,
+          feedback_type TEXT NOT NULL,
+          content TEXT NOT NULL,
+          agent TEXT,
+          anchor TEXT,
+          dismissed INTEGER NOT NULL DEFAULT 0,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
       runMigrations(db);
 
-      // Should run migrations 2, 3, and 4
-      expect(getCurrentMigrationVersion(db)).toBe(4);
+      // Should run migrations 2, 3, 4, and 5
+      expect(getCurrentMigrationVersion(db)).toBe(5);
 
       const migrations = db
         .prepare("SELECT * FROM migrations ORDER BY version")
         .all() as Array<{ version: number; name: string }>;
 
-      expect(migrations).toHaveLength(4);
+      expect(migrations).toHaveLength(5);
       expect(migrations[1].version).toBe(2);
       expect(migrations[2].version).toBe(3);
       expect(migrations[3].version).toBe(4);
+      expect(migrations[4].version).toBe(5);
     });
 
     it("should not run if no pending migrations", () => {
@@ -1005,13 +1253,17 @@ describe("Database Migrations", () => {
         4,
         "add-external-links-column"
       );
+      db.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        5,
+        "make-feedback-from-id-nullable"
+      );
 
-      expect(getCurrentMigrationVersion(db)).toBe(4);
+      expect(getCurrentMigrationVersion(db)).toBe(5);
 
       // Should not throw, just skip
       expect(() => runMigrations(db)).not.toThrow();
 
-      expect(getCurrentMigrationVersion(db)).toBe(4);
+      expect(getCurrentMigrationVersion(db)).toBe(5);
     });
   });
 });

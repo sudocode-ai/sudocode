@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
@@ -29,6 +30,7 @@ export function CreateIssueDialog({
   defaultStatus,
 }: CreateIssueDialogProps) {
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const [hasChanges, setHasChanges] = useState(false)
   const [activeTab, setActiveTab] = useState<'manual' | 'cowrite'>(() => {
     const stored = localStorage.getItem(CREATE_MODE_STORAGE_KEY)
@@ -100,7 +102,7 @@ After creating the issue, summarize what you created.`
       toast.success('Started co-writing issue')
       resetState()
       onClose()
-      navigate(`/executions/${execution.id}`)
+      navigate(paths.execution(execution.id))
     } catch (err) {
       console.error('Failed to start co-write:', err)
       setCowriteError(err instanceof Error ? err.message : 'Failed to start co-write session')

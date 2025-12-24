@@ -9,7 +9,8 @@ import { getEntityTypeFromId } from "../id-generator.js";
 
 export interface CreateFeedbackInput {
   id?: string;
-  from_id: string;
+  /** Issue ID that provided the feedback (optional for anonymous/external feedback) */
+  from_id?: string;
   to_id: string;
   feedback_type: FeedbackType;
   content: string;
@@ -65,10 +66,14 @@ export function createFeedback(
   const anchorJson = input.anchor ? JSON.stringify(input.anchor) : null;
   const agent = input.agent || "user";
 
-  // Get from_uuid (must be an issue)
-  const fromIssue = db.prepare(`SELECT uuid FROM issues WHERE id = ?`).get(input.from_id) as { uuid: string } | undefined;
-  if (!fromIssue) {
-    throw new Error(`Issue not found: ${input.from_id}`);
+  // Get from_uuid if from_id is provided (optional - for issue-originated feedback)
+  let fromUuid: string | null = null;
+  if (input.from_id) {
+    const fromIssue = db.prepare(`SELECT uuid FROM issues WHERE id = ?`).get(input.from_id) as { uuid: string } | undefined;
+    if (!fromIssue) {
+      throw new Error(`Issue not found: ${input.from_id}`);
+    }
+    fromUuid = fromIssue.uuid;
   }
 
   // Get to_uuid based on inferred entity type
@@ -106,8 +111,8 @@ export function createFeedback(
   try {
     const params: any = {
       id,
-      from_id: input.from_id,
-      from_uuid: fromIssue.uuid,
+      from_id: input.from_id || null,
+      from_uuid: fromUuid,
       to_id: input.to_id,
       to_uuid: toUuid,
       feedback_type: input.feedback_type,

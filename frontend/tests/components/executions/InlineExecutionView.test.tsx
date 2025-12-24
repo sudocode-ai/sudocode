@@ -15,6 +15,16 @@ vi.mock('react-router-dom', async () => {
   }
 })
 
+// Mock useProjectRoutes hook
+vi.mock('@/hooks/useProjectRoutes', () => ({
+  useProjectRoutes: () => ({
+    paths: {
+      execution: (id: string) => `/p/test-project/executions/${id}`,
+    },
+    effectiveProjectId: 'test-project',
+  }),
+}))
+
 // Mock the executionsApi
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -332,7 +342,7 @@ describe('InlineExecutionView', () => {
       await user.click(agentButton!)
 
       await waitFor(() => {
-        expect(mockNavigate).toHaveBeenCalledWith('/executions/exec-001')
+        expect(mockNavigate).toHaveBeenCalledWith('/p/test-project/executions/exec-001')
       })
     })
 

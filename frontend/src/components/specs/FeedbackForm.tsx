@@ -225,7 +225,7 @@ export function FeedbackForm({
 
       {/* Actions */}
       <div className="flex gap-2">
-        <Button type="submit" disabled={!content.trim() || !selectedIssueId || isSubmitting}>
+        <Button type="submit" disabled={!content.trim() || isSubmitting}>
           {isSubmitting ? 'Adding...' : 'Add Feedback'}
         </Button>
         <Button type="button" variant="outline" onClick={onCancel}>

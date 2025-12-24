@@ -88,13 +88,7 @@ sudocode init
 sudocode server
 ```
 
-For Claude Code, you can install the plugin:
-```bash
-claude plugin marketplace add sudocode-ai/sudocode
-claude plugin install sudocode
-```
-
-Check out our [Quick Start Guide](https://docs.sudocode.ai/quickstart#step-4%3A-set-up-your-agent) for instructions on setting up other agents.
+Check out our [Quick Start Guide](https://docs.sudocode.ai/quickstart#step-4%3A-set-up-your-agent) for tutorials and walkthroughs.
 
 ## External Integrations
 
@@ -105,8 +99,8 @@ sudocode now supports syncing with external spec and issue tracking systems thro
 | Integration | Description | Sync Direction |
 |-------------|-------------|----------------|
 | **[Beads](https://github.com/steveyegge/beads)** | Git-native issues system | Bidirectional |
-| **[Spec-Kit](https://github.com/spec-kit/spec-kit)** | Markdown-based specification system | Bidirectional |
-| **[OpenSpec](https://github.com/openspec/openspec)** | Structured spec and change proposal system | Bidirectional |
+| **[Spec-Kit](https://github.com/github/spec-kit)** | Markdown-based specification system | Bidirectional |
+| **[OpenSpec](https://github.com/Fission-AI/OpenSpec)** | Structured spec and change proposal system | Bidirectional |
 | **Jira** | Atlassian issue tracking | *Coming soon* |
 | **Linear** | Modern issue tracking | *Coming soon* |
 

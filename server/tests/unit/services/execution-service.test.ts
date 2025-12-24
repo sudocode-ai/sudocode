@@ -176,6 +176,11 @@ describe("ExecutionService", () => {
   beforeEach(() => {
     // Clear mock call history before each test
     vi.clearAllMocks();
+
+    // Mock MCP detection methods to always return true
+    // This allows tests to run without requiring actual MCP configuration
+    vi.spyOn(service as any, 'detectSudocodeMcp').mockResolvedValue(true);
+    vi.spyOn(service as any, 'detectAgentMcp').mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -911,9 +916,11 @@ describe("ExecutionService", () => {
 
     it("should inherit all config from parent execution including dangerouslySkipPermissions and mcpServers", async () => {
       // Create initial execution with full config including permissions and MCP servers
+      // Note: Using custom-workflow-mcp instead of sudocode-mcp to avoid MCP auto-injection/removal logic
+      // (sudocode-mcp has special handling that would interfere with testing pure config inheritance)
       const issueContent = "Add OAuth2 authentication with JWT tokens";
       const mcpServerConfig = {
-        "sudocode-mcp": {
+        "custom-workflow-mcp": {
           command: "node",
           args: ["/path/to/mcp.js"],
         },
@@ -934,7 +941,7 @@ describe("ExecutionService", () => {
       expect(initialExecution.config).toBeTruthy();
       const initialConfig = JSON.parse(initialExecution.config!);
       expect(initialConfig.dangerouslySkipPermissions).toBe(true);
-      expect(initialConfig.mcpServers).toEqual(mcpServerConfig);
+      expect(initialConfig.mcpServers).toMatchObject(mcpServerConfig);
       expect(initialConfig.appendSystemPrompt).toBe("Always be helpful");
       expect(initialConfig.model).toBe("claude-sonnet-4");
 
@@ -948,7 +955,7 @@ describe("ExecutionService", () => {
       expect(followUpExecution.config).toBeTruthy();
       const followUpConfig = JSON.parse(followUpExecution.config!);
       expect(followUpConfig.dangerouslySkipPermissions).toBe(true);
-      expect(followUpConfig.mcpServers).toEqual(mcpServerConfig);
+      expect(followUpConfig.mcpServers).toMatchObject(mcpServerConfig);
       expect(followUpConfig.appendSystemPrompt).toBe("Always be helpful");
       expect(followUpConfig.model).toBe("claude-sonnet-4");
     });

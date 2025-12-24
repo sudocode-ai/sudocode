@@ -311,20 +311,27 @@ export function AgentConfigPanel({
       console.warn('Last execution config is invalid, trying localStorage')
     }
 
-    // Otherwise, try localStorage
+    // Base defaults
+    const defaults: ExecutionConfig = {
+      mode: 'worktree',
+      cleanupMode: 'manual',
+    }
+
+    // Try to load from localStorage
+    let savedConfig: ExecutionConfig | null = null
     try {
-      const savedConfig = localStorage.getItem(LAST_EXECUTION_CONFIG_KEY)
-      if (savedConfig) {
-        const parsed = JSON.parse(savedConfig)
+      const savedConfigStr = localStorage.getItem(LAST_EXECUTION_CONFIG_KEY)
+      if (savedConfigStr) {
+        const parsed = JSON.parse(savedConfigStr)
         if (isValidExecutionConfig(parsed)) {
-          return parsed
+          savedConfig = parsed
+        } else {
+          console.warn('Saved config is invalid, clearing localStorage')
+          localStorage.removeItem(LAST_EXECUTION_CONFIG_KEY)
         }
-        console.warn('Saved config is invalid, clearing localStorage and using defaults')
-        localStorage.removeItem(LAST_EXECUTION_CONFIG_KEY)
       }
     } catch (error) {
       console.warn('Failed to load saved execution config:', error)
-      // Clear corrupted data
       try {
         localStorage.removeItem(LAST_EXECUTION_CONFIG_KEY)
       } catch (e) {
@@ -332,10 +339,19 @@ export function AgentConfigPanel({
       }
     }
 
-    // Final fallback: base defaults
+    // Merge: defaults <- localStorage <- lastExecution overrides
+    // This preserves localStorage settings while respecting explicit overrides
+    // Only apply mode override if it's a valid execution mode
+    const validModes: ExecutionMode[] = ['worktree', 'local']
+    const modeOverride =
+      lastExecution?.mode && validModes.includes(lastExecution.mode as ExecutionMode)
+        ? { mode: lastExecution.mode as ExecutionMode }
+        : {}
+
     return {
-      mode: 'worktree',
-      cleanupMode: 'manual',
+      ...defaults,
+      ...(savedConfig || {}),
+      ...modeOverride,
     }
   })
   const [showSettingsDialog, setShowSettingsDialog] = useState(false)
@@ -449,16 +465,24 @@ export function AgentConfigPanel({
         console.warn('Last execution config is invalid, trying localStorage')
       }
 
-      // Otherwise, try localStorage
+      // Base defaults
+      const defaults: ExecutionConfig = {
+        mode: 'worktree',
+        cleanupMode: 'manual',
+      }
+
+      // Try to load from localStorage
+      let savedConfig: ExecutionConfig | null = null
       try {
-        const savedConfig = localStorage.getItem(LAST_EXECUTION_CONFIG_KEY)
-        if (savedConfig) {
-          const parsed = JSON.parse(savedConfig)
+        const savedConfigStr = localStorage.getItem(LAST_EXECUTION_CONFIG_KEY)
+        if (savedConfigStr) {
+          const parsed = JSON.parse(savedConfigStr)
           if (isValidExecutionConfig(parsed)) {
-            return parsed
+            savedConfig = parsed
+          } else {
+            console.warn('Saved config is invalid, clearing localStorage')
+            localStorage.removeItem(LAST_EXECUTION_CONFIG_KEY)
           }
-          console.warn('Saved config is invalid, clearing localStorage and using defaults')
-          localStorage.removeItem(LAST_EXECUTION_CONFIG_KEY)
         }
       } catch (error) {
         console.warn('Failed to load saved execution config:', error)
@@ -469,15 +493,23 @@ export function AgentConfigPanel({
         }
       }
 
-      // Final fallback: base defaults
+      // Merge: defaults <- localStorage <- lastExecution overrides
+      // Only apply mode override if it's a valid execution mode
+      const validModes: ExecutionMode[] = ['worktree', 'local']
+      const modeOverride =
+        lastExecution?.mode && validModes.includes(lastExecution.mode as ExecutionMode)
+          ? { mode: lastExecution.mode as ExecutionMode }
+          : {}
+
       return {
-        mode: 'worktree',
-        cleanupMode: 'manual',
+        ...defaults,
+        ...(savedConfig || {}),
+        ...modeOverride,
       }
     }
 
     setConfig(loadConfigForIssue())
-  }, [issueId, lastExecution?.id, isFollowUp])
+  }, [issueId, lastExecution?.id, lastExecution?.mode, isFollowUp])
 
   // Reset agent type when issue or lastExecution changes
   useEffect(() => {
@@ -630,12 +662,11 @@ export function AgentConfigPanel({
 
     // Use default prompt for first messages when no prompt is provided
     // For adhoc executions (no issueId), prompt is always required
-    const finalPrompt = prompt.trim() || (!isFollowUp && issueId ? `Implement issue [[${issueId}]]` : '')
+    const finalPrompt =
+      prompt.trim() || (!isFollowUp && issueId ? `Implement issue [[${issueId}]]` : '')
 
     // For local mode, don't send baseBranch - let the server use the current branch
-    const finalConfig = config.mode === 'local'
-      ? { ...config, baseBranch: undefined }
-      : config
+    const finalConfig = config.mode === 'local' ? { ...config, baseBranch: undefined } : config
 
     onStart(finalConfig, finalPrompt, selectedAgentType, forceNewExecution)
     setPrompt('') // Clear the prompt after submission
@@ -807,125 +838,125 @@ export function AgentConfigPanel({
                     disabled={loading || agentsLoading || (isFollowUp && !forceNewExecution)}
                   >
                     <SelectTrigger className="h-8 w-[140px] min-w-0 shrink text-xs">
-                    <SelectValue placeholder={agentsLoading ? 'Loading...' : 'Agent'}>
-                      {(() => {
-                        const selectedAgent = agents?.find((a) => a.type === selectedAgentType)
-                        if (!selectedAgent) return 'Select agent'
+                      <SelectValue placeholder={agentsLoading ? 'Loading...' : 'Agent'}>
+                        {(() => {
+                          const selectedAgent = agents?.find((a) => a.type === selectedAgentType)
+                          if (!selectedAgent) return 'Select agent'
 
-                        const status = getAgentVerificationStatus(selectedAgent)
-                        const StatusIcon = status.icon
-                        // Only show icon for unavailable agents to keep UI clean
-                        const showIcon =
-                          !selectedAgent.available && selectedAgent.available !== undefined
+                          const status = getAgentVerificationStatus(selectedAgent)
+                          const StatusIcon = status.icon
+                          // Only show icon for unavailable agents to keep UI clean
+                          const showIcon =
+                            !selectedAgent.available && selectedAgent.available !== undefined
 
-                        return (
-                          <div className="flex items-center gap-1.5">
-                            {showIcon && (
-                              <StatusIcon
-                                className={`h-3 w-3 ${status.color} ${status.spin ? 'animate-spin' : ''}`}
-                              />
-                            )}
-                            <span>{selectedAgent.displayName}</span>
-                          </div>
-                        )
-                      })()}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {agents
-                      ?.filter((agent) => agent.implemented)
-                      .map((agent) => {
-                        const status = getAgentVerificationStatus(agent)
-                        const StatusIcon = status.icon
-                        // Only show icon for unavailable agents to keep UI clean
-                        const showIcon = !agent.available && agent.available !== undefined
-                        return (
-                          <SelectItem key={agent.type} value={agent.type} className="text-xs">
-                            <div className="flex items-center gap-2">
+                          return (
+                            <div className="flex items-center gap-1.5">
                               {showIcon && (
                                 <StatusIcon
-                                  className={`h-3.5 w-3.5 ${status.color} ${status.spin ? 'animate-spin' : ''}`}
+                                  className={`h-3 w-3 ${status.color} ${status.spin ? 'animate-spin' : ''}`}
                                 />
                               )}
-                              <span>{agent.displayName}</span>
-                              {showIcon && (
-                                <span className="text-[10px] text-muted-foreground">
-                                  (not installed)
-                                </span>
-                              )}
+                              <span>{selectedAgent.displayName}</span>
                             </div>
-                          </SelectItem>
-                        )
-                      })}
-                  </SelectContent>
-                </Select>
-              </span>
-            </TooltipTrigger>
-            {isFollowUp && !forceNewExecution && (
-              <TooltipContent>Agent type is inherited from parent execution</TooltipContent>
-            )}
-          </Tooltip>
-
-          {/* Execution Mode - disabled in follow-up mode (unless forcing new execution) */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Select
-                  value={config.mode}
-                  onValueChange={(value) => updateConfig({ mode: value as ExecutionMode })}
-                  onOpenChange={onSelectOpenChange}
-                  disabled={loading || (isFollowUp && !forceNewExecution)}
-                >
-                  <SelectTrigger className="h-8 w-[140px] min-w-0 shrink text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="worktree" className="text-xs">
-                      Run in worktree
-                    </SelectItem>
-                    <SelectItem value="local" className="text-xs">
-                      Run local
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </span>
-            </TooltipTrigger>
-            {isFollowUp && !forceNewExecution && (
-              <TooltipContent>Execution mode is inherited from parent execution</TooltipContent>
-            )}
-          </Tooltip>
-
-          {/* Branch Selector - enabled for worktree mode, disabled for local mode and follow-ups */}
-          {config.baseBranch && config.mode === 'worktree' && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <BranchSelector
-                    branches={
-                      availableBranches.length > 0 ? availableBranches : [config.baseBranch]
-                    }
-                    value={config.baseBranch}
-                    onChange={(branch, isNew, worktreePath) => {
-                      updateConfig({
-                        baseBranch: branch,
-                        createBaseBranch: isNew || false,
-                        reuseWorktreePath: worktreePath, // If worktreePath is set, reuse that worktree
-                      })
-                    }}
-                    disabled={loading || (isFollowUp && !forceNewExecution)}
-                    allowCreate={!isFollowUp || forceNewExecution}
-                    className="w-[180px] min-w-0 shrink"
-                    currentBranch={currentBranch}
-                    worktrees={worktrees}
-                    onOpen={refreshBranches}
-                  />
+                          )
+                        })()}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {agents
+                        ?.filter((agent) => agent.implemented)
+                        .map((agent) => {
+                          const status = getAgentVerificationStatus(agent)
+                          const StatusIcon = status.icon
+                          // Only show icon for unavailable agents to keep UI clean
+                          const showIcon = !agent.available && agent.available !== undefined
+                          return (
+                            <SelectItem key={agent.type} value={agent.type} className="text-xs">
+                              <div className="flex items-center gap-2">
+                                {showIcon && (
+                                  <StatusIcon
+                                    className={`h-3.5 w-3.5 ${status.color} ${status.spin ? 'animate-spin' : ''}`}
+                                  />
+                                )}
+                                <span>{agent.displayName}</span>
+                                {showIcon && (
+                                  <span className="text-[10px] text-muted-foreground">
+                                    (not installed)
+                                  </span>
+                                )}
+                              </div>
+                            </SelectItem>
+                          )
+                        })}
+                    </SelectContent>
+                  </Select>
                 </span>
               </TooltipTrigger>
               {isFollowUp && !forceNewExecution && (
-                <TooltipContent>Base branch is inherited from parent execution</TooltipContent>
+                <TooltipContent>Agent type is inherited from parent execution</TooltipContent>
               )}
             </Tooltip>
-          )}
+
+            {/* Execution Mode - disabled in follow-up mode (unless forcing new execution) */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Select
+                    value={config.mode}
+                    onValueChange={(value) => updateConfig({ mode: value as ExecutionMode })}
+                    onOpenChange={onSelectOpenChange}
+                    disabled={loading || (isFollowUp && !forceNewExecution)}
+                  >
+                    <SelectTrigger className="h-8 w-[140px] min-w-0 shrink text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="worktree" className="text-xs">
+                        Run in worktree
+                      </SelectItem>
+                      <SelectItem value="local" className="text-xs">
+                        Run local
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </span>
+              </TooltipTrigger>
+              {isFollowUp && !forceNewExecution && (
+                <TooltipContent>Execution mode is inherited from parent execution</TooltipContent>
+              )}
+            </Tooltip>
+
+            {/* Branch Selector - enabled for worktree mode, disabled for local mode and follow-ups */}
+            {config.baseBranch && config.mode === 'worktree' && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <BranchSelector
+                      branches={
+                        availableBranches.length > 0 ? availableBranches : [config.baseBranch]
+                      }
+                      value={config.baseBranch}
+                      onChange={(branch, isNew, worktreePath) => {
+                        updateConfig({
+                          baseBranch: branch,
+                          createBaseBranch: isNew || false,
+                          reuseWorktreePath: worktreePath, // If worktreePath is set, reuse that worktree
+                        })
+                      }}
+                      disabled={loading || (isFollowUp && !forceNewExecution)}
+                      allowCreate={!isFollowUp || forceNewExecution}
+                      className="w-[180px] min-w-0 shrink"
+                      currentBranch={currentBranch}
+                      worktrees={worktrees}
+                      onOpen={refreshBranches}
+                    />
+                  </span>
+                </TooltipTrigger>
+                {isFollowUp && !forceNewExecution && (
+                  <TooltipContent>Base branch is inherited from parent execution</TooltipContent>
+                )}
+              </Tooltip>
+            )}
           </div>
 
           {/* Buttons row - right-aligned, on same row on sm+ screens */}

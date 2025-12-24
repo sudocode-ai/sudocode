@@ -3,7 +3,7 @@
  * Shows DAG visualization, step details panel, and orchestrator view
  */
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels'
 import {
@@ -18,7 +18,9 @@ import {
   GitBranch,
   PanelRightClose,
   PanelRight,
+  GitMerge,
 } from 'lucide-react'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { Button } from '@/components/ui/button'
 import {
   WorkflowDAG,
@@ -29,6 +31,7 @@ import {
   ResumeWorkflowDialog,
 } from '@/components/workflows'
 import { InlineExecutionView } from '@/components/executions/InlineExecutionView'
+import { SyncPreviewDialog } from '@/components/executions/SyncPreviewDialog'
 import { IssuePanel } from '@/components/issues/IssuePanel'
 import { useIssues } from '@/hooks/useIssues'
 import {
@@ -37,6 +40,9 @@ import {
   useWorkflowProgress,
   useWorkflowEscalation,
 } from '@/hooks/useWorkflows'
+import { useExecutionChanges } from '@/hooks/useExecutionChanges'
+import { useExecutionSync } from '@/hooks/useExecutionSync'
+import { executionsApi } from '@/lib/api'
 import { WORKFLOW_STATUS_COLORS, WORKFLOW_STATUS_LABELS } from '@/types/workflow'
 import { cn } from '@/lib/utils'
 
@@ -45,6 +51,7 @@ type DetailTab = 'steps' | 'orchestrator'
 export default function WorkflowDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const { workflow, issues, isLoading, error } = useWorkflow(id)
   const { start, pause, resume, cancel, isStarting, isResuming } = useWorkflowMutations()
   const [showResumeDialog, setShowResumeDialog] = useState(false)
@@ -68,6 +75,141 @@ export default function WorkflowDetailPage() {
     respond: respondToEscalation,
     isResponding,
   } = useWorkflowEscalation(id)
+
+  // Find an execution ID to use for fetching changes
+  // Use the first step's execution, or the orchestrator execution as fallback
+  const executionIdForChanges = useMemo(() => {
+    if (!workflow) return null
+    // Find first step with an execution ID
+    const stepWithExecution = workflow.steps.find((s) => s.executionId)
+    if (stepWithExecution?.executionId) return stepWithExecution.executionId
+    // Fall back to orchestrator execution
+    return workflow.orchestratorExecutionId ?? null
+  }, [workflow])
+
+  // Worktree state tracking
+  const [worktreeExists, setWorktreeExists] = useState(false)
+  const [hasUncommittedChanges, setHasUncommittedChanges] = useState<boolean | undefined>(undefined)
+  const [commitsAhead, setCommitsAhead] = useState<number | undefined>(undefined)
+
+  // Fetch execution changes using the first available execution
+  const { data: changesData, refresh: refreshChanges } = useExecutionChanges(executionIdForChanges)
+
+  // Execution sync for merge operations
+  const {
+    fetchSyncPreview,
+    syncPreview,
+    isSyncPreviewOpen,
+    setIsSyncPreviewOpen,
+    performSync,
+    isPreviewing,
+  } = useExecutionSync()
+
+  // Check worktree status when workflow loads
+  useEffect(() => {
+    if (!executionIdForChanges || !workflow?.worktreePath) {
+      setWorktreeExists(false)
+      setHasUncommittedChanges(false)
+      setCommitsAhead(undefined)
+      return
+    }
+
+    const checkWorktreeStatus = async () => {
+      try {
+        const status = await executionsApi.worktreeExists(executionIdForChanges)
+        setWorktreeExists(status.exists)
+
+        if (status.exists) {
+          const changes = await executionsApi.getChanges(executionIdForChanges)
+          const uncommittedFiles =
+            (changes.uncommittedSnapshot?.files?.length ?? 0) +
+            (changes.captured?.uncommitted ? (changes.captured?.files?.length ?? 0) : 0)
+          setHasUncommittedChanges(changes.available && uncommittedFiles > 0)
+          setCommitsAhead(changes.commitsAhead)
+        } else {
+          setHasUncommittedChanges(false)
+          setCommitsAhead(undefined)
+        }
+      } catch (err) {
+        console.error('Failed to check worktree status:', err)
+        setWorktreeExists(false)
+        setHasUncommittedChanges(false)
+        setCommitsAhead(undefined)
+      }
+    }
+
+    checkWorktreeStatus()
+  }, [executionIdForChanges, workflow?.worktreePath])
+
+  // Compute change statistics from execution changes
+  const changeStats = useMemo(() => {
+    if (!changesData?.available) return null
+
+    // Check multiple possible data sources (captured, current, changes/legacy)
+    const captured = changesData.captured
+    const current = changesData.current
+    const legacy = changesData.changes
+    const uncommitted = changesData.uncommittedSnapshot
+
+    // Use current if available, otherwise captured, otherwise legacy
+    const committedSource = current ?? captured ?? legacy
+
+    // Combine committed and uncommitted files
+    const committedFiles = committedSource?.files ?? []
+    const uncommittedFiles = uncommitted?.files ?? []
+
+    // Calculate totals
+    const totalFiles = committedFiles.length + uncommittedFiles.length
+    const totalAdditions =
+      (committedSource?.summary?.totalAdditions ?? 0) + (uncommitted?.summary?.totalAdditions ?? 0)
+    const totalDeletions =
+      (committedSource?.summary?.totalDeletions ?? 0) + (uncommitted?.summary?.totalDeletions ?? 0)
+
+    if (totalFiles === 0) return null
+
+    return {
+      totalFiles,
+      totalAdditions,
+      totalDeletions,
+      hasCommittedChanges: committedFiles.length > 0,
+      hasUncommittedChanges: uncommittedFiles.length > 0,
+      commitsAhead: changesData.commitsAhead,
+    }
+  }, [changesData])
+
+  // Determine if merge button should be shown
+  const showMergeButton = useMemo(() => {
+    if (!workflow?.worktreePath || !worktreeExists) return false
+    // Show if there are commits ahead or uncommitted changes
+    return (commitsAhead !== undefined && commitsAhead > 0) || hasUncommittedChanges === true
+  }, [workflow?.worktreePath, worktreeExists, commitsAhead, hasUncommittedChanges])
+
+  // Handle merge button click
+  const handleMergeClick = useCallback(() => {
+    if (!executionIdForChanges) return
+    fetchSyncPreview(executionIdForChanges)
+  }, [executionIdForChanges, fetchSyncPreview])
+
+  // Handle sync complete - refresh data
+  const handleSyncComplete = useCallback(async () => {
+    refreshChanges()
+    if (executionIdForChanges) {
+      try {
+        const status = await executionsApi.worktreeExists(executionIdForChanges)
+        setWorktreeExists(status.exists)
+        if (status.exists) {
+          const changes = await executionsApi.getChanges(executionIdForChanges)
+          const uncommittedFiles =
+            (changes.uncommittedSnapshot?.files?.length ?? 0) +
+            (changes.captured?.uncommitted ? (changes.captured?.files?.length ?? 0) : 0)
+          setHasUncommittedChanges(changes.available && uncommittedFiles > 0)
+          setCommitsAhead(changes.commitsAhead)
+        }
+      } catch (err) {
+        console.error('Failed to refresh worktree status:', err)
+      }
+    }
+  }, [refreshChanges, executionIdForChanges])
 
   // Auto-switch to orchestrator tab when escalation is pending
   useEffect(() => {
@@ -140,7 +282,7 @@ export default function WorkflowDetailPage() {
         <p className="text-muted-foreground">
           The workflow you're looking for doesn't exist or has been deleted.
         </p>
-        <Button variant="outline" onClick={() => navigate('/workflows')}>
+        <Button variant="outline" onClick={() => navigate(paths.workflows())}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Workflows
         </Button>
@@ -164,7 +306,7 @@ export default function WorkflowDetailPage() {
       <div className="flex items-center justify-between border-b px-6 py-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" asChild>
-            <Link to="/workflows">
+            <Link to={paths.workflows()}>
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
@@ -201,16 +343,41 @@ export default function WorkflowDetailPage() {
           </div>
         </div>
 
-        {/* Controls */}
-        <WorkflowControls
-          workflow={workflow}
-          onStart={() => start(workflow.id)}
-          onPause={() => pause(workflow.id)}
-          onResume={() => setShowResumeDialog(true)}
-          onCancel={() => cancel(workflow.id)}
-          isStarting={isStarting}
-          isResuming={isResuming}
-        />
+        {/* Worktree State & Merge Controls */}
+        <div className="flex items-center gap-3">
+          {/* Change Stats - clickable to open merge dialog */}
+          {changeStats && showMergeButton && (
+            <button
+              onClick={handleMergeClick}
+              className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-1.5 transition-colors hover:bg-muted/50 hover:border-primary/50"
+            >
+              <GitMerge className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">{changeStats.totalFiles} files</span>
+              <span className="text-xs text-green-600 dark:text-green-400">
+                +{changeStats.totalAdditions}
+              </span>
+              <span className="text-xs text-red-600 dark:text-red-400">
+                -{changeStats.totalDeletions}
+              </span>
+              {changeStats.hasUncommittedChanges && (
+                <span className="rounded bg-yellow-100 px-1.5 py-0.5 text-xs font-medium text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+                  uncommitted
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* Controls */}
+          <WorkflowControls
+            workflow={workflow}
+            onStart={() => start(workflow.id)}
+            onPause={() => pause(workflow.id)}
+            onResume={() => setShowResumeDialog(true)}
+            onCancel={() => cancel(workflow.id)}
+            isStarting={isStarting}
+            isResuming={isResuming}
+          />
+        </div>
       </div>
 
       {/* Escalation Banner */}
@@ -427,6 +594,25 @@ export default function WorkflowDetailPage() {
         }}
         isResuming={isResuming}
       />
+
+      {/* Sync Preview Dialog */}
+      {syncPreview && executionIdForChanges && (
+        <SyncPreviewDialog
+          preview={syncPreview}
+          isOpen={isSyncPreviewOpen}
+          onClose={() => setIsSyncPreviewOpen(false)}
+          onConfirmSync={async (mode, options) => {
+            await performSync(executionIdForChanges, mode, options)
+            handleSyncComplete()
+          }}
+          onOpenIDE={() => {
+            // IDE integration placeholder
+          }}
+          isPreviewing={isPreviewing}
+          targetBranch={workflow.baseBranch ?? undefined}
+          onRefresh={() => fetchSyncPreview(executionIdForChanges)}
+        />
+      )}
     </div>
   )
 }

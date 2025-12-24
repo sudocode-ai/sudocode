@@ -368,6 +368,14 @@ export class WorktreeManager implements IWorktreeManager {
       console.debug(`[WorktreeManager] No config.json to copy from main repo`);
     }
 
+    // STEP 2.5: Copy .cursor/mcp.json
+    // =================================
+    // Propagate Cursor MCP configuration to worktree (if present in main repo).
+    // This ensures Cursor agent executions in worktrees have access to MCP tools.
+    // Note: .cursor/mcp.json is often gitignored, so it won't be in the worktree
+    // by default. We explicitly copy it regardless of git tracking status.
+    await this.propagateCursorConfig(repoPath, worktreePath);
+
     // STEP 3: Initialize local database in worktree
     // ==============================================
     // Create a brand new SQLite database in the worktree and import the JSONL
@@ -409,6 +417,62 @@ export class WorktreeManager implements IWorktreeManager {
       db.close();
     }
     console.debug("[WorktreeManager] Worktree environment setup complete");
+  }
+
+  /**
+   * Propagate .cursor/mcp.json from main repo to worktree
+   *
+   * Cursor agent requires MCP configuration to be present in .cursor/mcp.json
+   * in the project root. When executions run in isolated worktrees, this file
+   * must be present for the Cursor agent to access MCP tools like sudocode-mcp.
+   *
+   * Since .cursor/mcp.json is often gitignored, it won't be automatically
+   * copied to worktrees. We explicitly propagate this file on worktree creation.
+   *
+   * This propagation happens for ALL agent types (not just Cursor) because:
+   * - .cursor/mcp.json is a project-level configuration
+   * - User might switch agent types mid-execution chain
+   * - Propagating for all agents is simpler and more robust
+   *
+   * @param repoPath - Path to the main git repository
+   * @param worktreePath - Path to the worktree directory
+   */
+  private async propagateCursorConfig(
+    repoPath: string,
+    worktreePath: string
+  ): Promise<void> {
+    try {
+      const sourcePath = path.join(repoPath, ".cursor", "mcp.json");
+      const destPath = path.join(worktreePath, ".cursor", "mcp.json");
+
+      // Check if source file exists
+      try {
+        await fs.promises.access(sourcePath, fs.constants.R_OK);
+      } catch {
+        // Source doesn't exist, skip silently
+        console.debug(
+          "[WorktreeManager] .cursor/mcp.json not found in main repo, skipping propagation"
+        );
+        return;
+      }
+
+      // Ensure .cursor directory exists in worktree
+      const destDir = path.dirname(destPath);
+      await fs.promises.mkdir(destDir, { recursive: true });
+
+      // Copy file
+      await fs.promises.copyFile(sourcePath, destPath);
+
+      console.info(
+        `[WorktreeManager] Propagated .cursor/mcp.json to worktree: ${worktreePath}`
+      );
+    } catch (error) {
+      // Log warning but don't fail worktree creation
+      console.warn(
+        "[WorktreeManager] Failed to propagate .cursor/mcp.json to worktree:",
+        error instanceof Error ? error.message : String(error)
+      );
+    }
   }
 
   async ensureWorktreeExists(

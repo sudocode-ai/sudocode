@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSpecs } from '@/hooks/useSpecs'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { SpecList } from '@/components/specs/SpecList'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,6 +10,7 @@ import { ArrowLeft, Search } from 'lucide-react'
 export default function ArchivedSpecsPage() {
   const { specs, isLoading } = useSpecs(true)
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const [filterText, setFilterText] = useState('')
 
   // Filter specs based on search text
@@ -31,7 +33,7 @@ export default function ArchivedSpecsPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate('/specs')}
+              onClick={() => navigate(paths.specs())}
               className="h-8 w-8 p-0"
             >
               <ArrowLeft className="h-4 w-4" />

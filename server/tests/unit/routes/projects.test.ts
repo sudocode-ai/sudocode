@@ -482,6 +482,150 @@ describe("Projects API Routes", () => {
     });
   });
 
+  describe("GET /api/projects/browse", () => {
+    it("should return home directory contents when no path provided", async () => {
+      const response = await request(app).get("/api/projects/browse");
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toHaveProperty("currentPath", os.homedir());
+      expect(response.body.data).toHaveProperty("entries");
+      expect(Array.isArray(response.body.data.entries)).toBe(true);
+    });
+
+    it("should return directory contents for valid path", async () => {
+      const response = await request(app)
+        .get("/api/projects/browse")
+        .query({ path: tempDir });
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toHaveProperty("currentPath", tempDir);
+      expect(response.body.data).toHaveProperty("entries");
+      // Should find test-project-1 and test-project-2 directories
+      const entryNames = response.body.data.entries.map(
+        (e: { name: string }) => e.name
+      );
+      expect(entryNames).toContain("test-project-1");
+      expect(entryNames).toContain("test-project-2");
+    });
+
+    it("should include entry metadata", async () => {
+      const response = await request(app)
+        .get("/api/projects/browse")
+        .query({ path: tempDir });
+
+      expect(response.status).toBe(200);
+      const entries = response.body.data.entries;
+      expect(entries.length).toBeGreaterThan(0);
+
+      const entry = entries[0];
+      expect(entry).toHaveProperty("name");
+      expect(entry).toHaveProperty("path");
+      expect(entry).toHaveProperty("isDirectory", true);
+      expect(entry).toHaveProperty("hasSudocode");
+    });
+
+    it("should detect directories with .sudocode folder", async () => {
+      const response = await request(app)
+        .get("/api/projects/browse")
+        .query({ path: tempDir });
+
+      expect(response.status).toBe(200);
+
+      // test-project-1 and test-project-2 have .sudocode folders
+      const project1 = response.body.data.entries.find(
+        (e: { name: string }) => e.name === "test-project-1"
+      );
+      const project2 = response.body.data.entries.find(
+        (e: { name: string }) => e.name === "test-project-2"
+      );
+
+      expect(project1?.hasSudocode).toBe(true);
+      expect(project2?.hasSudocode).toBe(true);
+    });
+
+    it("should return parentPath for non-root directories", async () => {
+      const response = await request(app)
+        .get("/api/projects/browse")
+        .query({ path: tempDir });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toHaveProperty("parentPath");
+      expect(response.body.data.parentPath).toBe(path.dirname(tempDir));
+    });
+
+    it("should return null parentPath for root directory", async () => {
+      const response = await request(app)
+        .get("/api/projects/browse")
+        .query({ path: "/" });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.parentPath).toBeNull();
+    });
+
+    it("should exclude hidden directories", async () => {
+      // Create a hidden directory
+      const hiddenDir = path.join(tempDir, ".hidden-dir");
+      fs.mkdirSync(hiddenDir, { recursive: true });
+
+      const response = await request(app)
+        .get("/api/projects/browse")
+        .query({ path: tempDir });
+
+      expect(response.status).toBe(200);
+      const entryNames = response.body.data.entries.map(
+        (e: { name: string }) => e.name
+      );
+      expect(entryNames).not.toContain(".hidden-dir");
+    });
+
+    it("should return 404 for non-existent path", async () => {
+      const response = await request(app)
+        .get("/api/projects/browse")
+        .query({ path: "/non/existent/path" });
+
+      expect(response.status).toBe(404);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe("Path not found");
+    });
+
+    it("should return 400 for path that is not a directory", async () => {
+      const filePath = path.join(tempDir, "test-file.txt");
+      fs.writeFileSync(filePath, "test content");
+
+      const response = await request(app)
+        .get("/api/projects/browse")
+        .query({ path: filePath });
+
+      expect(response.status).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe("Path is not a directory");
+    });
+
+    it("should return entries sorted alphabetically", async () => {
+      // Create directories with specific names
+      fs.mkdirSync(path.join(tempDir, "zebra"), { recursive: true });
+      fs.mkdirSync(path.join(tempDir, "alpha"), { recursive: true });
+      fs.mkdirSync(path.join(tempDir, "beta"), { recursive: true });
+
+      const response = await request(app)
+        .get("/api/projects/browse")
+        .query({ path: tempDir });
+
+      expect(response.status).toBe(200);
+      const entryNames = response.body.data.entries.map(
+        (e: { name: string }) => e.name
+      );
+
+      // Check alphabetical order
+      const sortedNames = [...entryNames].sort((a: string, b: string) =>
+        a.localeCompare(b)
+      );
+      expect(entryNames).toEqual(sortedNames);
+    });
+  });
+
   describe("error handling", () => {
     it("should handle internal errors gracefully", async () => {
       // This test would require mocking to trigger internal errors

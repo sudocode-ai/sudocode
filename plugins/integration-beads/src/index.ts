@@ -171,6 +171,9 @@ class BeadsProvider implements IntegrationProvider {
   readonly name = "beads";
   readonly supportsWatch = true;
   readonly supportsPolling = true;
+  readonly supportsOnDemandImport = false;
+  readonly supportsSearch = false;
+  readonly supportsPush = false;
 
   private options: BeadsOptions;
   private projectPath: string;

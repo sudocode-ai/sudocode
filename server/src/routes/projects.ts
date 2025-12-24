@@ -1,4 +1,7 @@
 import express, { Request, Response } from "express";
+import fs from "fs/promises";
+import path from "path";
+import os from "os";
 import type { ProjectManager } from "../services/project-manager.js";
 import type { ProjectRegistry } from "../services/project-registry.js";
 
@@ -85,6 +88,97 @@ export function createProjectsRouter(
         data: null,
         error_data: error.message,
         message: "Failed to fetch recent projects",
+      });
+    }
+  });
+
+  /**
+   * GET /api/projects/browse
+   * Browse directories on the filesystem
+   *
+   * Query: { path?: string }
+   * - If path not provided, returns home directory contents
+   * - Returns list of directories at the given path
+   *
+   * Response: {
+   *   currentPath: string,
+   *   parentPath: string | null,
+   *   entries: Array<{ name: string, path: string, isDirectory: boolean, hasSudocode: boolean }>
+   * }
+   */
+  router.get("/browse", async (req: Request, res: Response) => {
+    try {
+      const requestedPath = req.query.path as string | undefined;
+      const currentPath = requestedPath
+        ? path.resolve(requestedPath)
+        : os.homedir();
+
+      // Check if path exists and is a directory
+      try {
+        const stat = await fs.stat(currentPath);
+        if (!stat.isDirectory()) {
+          return res.status(400).json({
+            success: false,
+            data: null,
+            error_data: "Path is not a directory",
+            message: "Path is not a directory",
+          });
+        }
+      } catch {
+        return res.status(404).json({
+          success: false,
+          data: null,
+          error_data: "Path not found",
+          message: "Path not found",
+        });
+      }
+
+      // Read directory contents
+      const dirents = await fs.readdir(currentPath, { withFileTypes: true });
+
+      // Filter to directories only, exclude hidden by default
+      const entries = await Promise.all(
+        dirents
+          .filter((d) => d.isDirectory() && !d.name.startsWith("."))
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map(async (d) => {
+            const entryPath = path.join(currentPath, d.name);
+            // Check if this directory has a .sudocode folder
+            let hasSudocode = false;
+            try {
+              await fs.access(path.join(entryPath, ".sudocode"));
+              hasSudocode = true;
+            } catch {
+              // No .sudocode directory
+            }
+            return {
+              name: d.name,
+              path: entryPath,
+              isDirectory: true,
+              hasSudocode,
+            };
+          })
+      );
+
+      // Calculate parent path
+      const parentPath = path.dirname(currentPath);
+      const hasParent = parentPath !== currentPath;
+
+      return res.json({
+        success: true,
+        data: {
+          currentPath,
+          parentPath: hasParent ? parentPath : null,
+          entries,
+        },
+      });
+    } catch (error: any) {
+      console.error("Error browsing directory:", error);
+      return res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error.message,
+        message: "Failed to browse directory",
       });
     }
   });

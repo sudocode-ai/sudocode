@@ -138,7 +138,7 @@ export async function checkForUpdates(): Promise<UpdateInfo | null> {
  * Compare semver versions
  * Returns true if v1 < v2
  */
-function isOlderVersion(v1: string, v2: string): boolean {
+export function isOlderVersion(v1: string, v2: string): boolean {
   const parts1 = v1.split(".").map(Number);
   const parts2 = v2.split(".").map(Number);
 

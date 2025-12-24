@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSpecs } from '@/hooks/useSpecs'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -23,6 +24,7 @@ interface SpecEditorProps {
 
 export function SpecEditor({ spec, onSave, onCancel }: SpecEditorProps) {
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const { createSpecAsync, updateSpecAsync, isCreating } = useSpecs()
 
   // Mode: 'manual' for editing, 'cowrite' for agent-assisted
@@ -133,7 +135,7 @@ After creating the spec, summarize what you created.`
       toast.success('Started co-writing spec')
       setCowriteDescription('')
       setCowriteError(null)
-      navigate(`/executions/${execution.id}`)
+      navigate(paths.execution(execution.id))
     } catch (err) {
       console.error('Failed to start co-write:', err)
       setCowriteError(err instanceof Error ? err.message : 'Failed to start co-write session')

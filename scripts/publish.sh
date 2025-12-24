@@ -82,6 +82,7 @@ echo "Building plugins..."
 npm run build --workspace=plugins/integration-beads
 npm run build --workspace=plugins/integration-openspec
 npm run build --workspace=plugins/integration-speckit
+npm run build --workspace=plugins/integration-github
 
 echo ""
 echo "✓ All packages built successfully"
@@ -96,6 +97,7 @@ PACKAGES=(
   "plugins/integration-beads:@sudocode-ai/integration-beads"
   "plugins/integration-openspec:@sudocode-ai/integration-openspec"
   "plugins/integration-speckit:@sudocode-ai/integration-speckit"
+  "plugins/integration-github:@sudocode-ai/integration-github"
   "sudocode:sudocode"
 )
 

@@ -379,7 +379,9 @@ describe("Workflow Routes", () => {
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
-      expect(mockEngine.retryStep).toHaveBeenCalledWith("wf-123", "step-1");
+      expect(mockEngine.retryStep).toHaveBeenCalledWith("wf-123", "step-1", {
+        freshStart: false,
+      });
     });
 
     it("should return 404 for non-existent step", async () => {

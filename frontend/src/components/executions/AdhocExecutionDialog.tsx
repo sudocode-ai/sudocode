@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import {
   Dialog,
   DialogContent,
@@ -35,6 +36,7 @@ export function AdhocExecutionDialog({
   description = 'Start a standalone execution without linking to a specific issue.',
 }: AdhocExecutionDialogProps) {
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -63,7 +65,7 @@ export function AdhocExecutionDialog({
       onClose()
 
       // Navigate to the new execution
-      navigate(`/executions/${execution.id}`)
+      navigate(paths.execution(execution.id))
     } catch (err) {
       console.error('Failed to create adhoc execution:', err)
       setError(err instanceof Error ? err.message : 'Failed to start execution')

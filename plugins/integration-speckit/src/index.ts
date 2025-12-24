@@ -334,6 +334,9 @@ class SpecKitProvider implements IntegrationProvider {
   readonly name = "spec-kit";
   readonly supportsWatch = true;
   readonly supportsPolling = true;
+  readonly supportsOnDemandImport = false;
+  readonly supportsSearch = false;
+  readonly supportsPush = false;
 
   private options: SpecKitOptions;
   private projectPath: string;

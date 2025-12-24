@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { KanbanCard } from '@/components/ui/kanban'
 import type { Issue, IssueStatus } from '@sudocode-ai/types'
 import type { Execution } from '@/types/execution'
@@ -62,6 +63,7 @@ export function IssueCard({
   workflowInfo,
 }: IssueCardProps) {
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const [isCopied, setIsCopied] = useState(false)
 
   const handleClick = useCallback(() => {
@@ -70,7 +72,7 @@ export function IssueCard({
     if (onViewDetails) {
       onViewDetails(issue)
     } else {
-      navigate(`/issues/${issue.id}`)
+      navigate(paths.issue(issue.id))
     }
   }, [issue, onViewDetails, navigate])
 

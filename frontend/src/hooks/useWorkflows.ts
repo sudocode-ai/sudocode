@@ -5,6 +5,7 @@
 import { useMemo, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { toast } from 'sonner'
 import type { Workflow, CreateWorkflowOptions, EscalationResponseRequest, EscalationData } from '@/types/workflow'
 import type { Issue, WebSocketMessage } from '@/types/api'
@@ -33,6 +34,7 @@ export const workflowKeys = {
 export function useWorkflows(params?: ListWorkflowsParams) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const { currentProjectId } = useProject()
   const { connected, subscribe, addMessageHandler, removeMessageHandler } =
     useWebSocketContext()
@@ -96,7 +98,7 @@ export function useWorkflows(params?: ListWorkflowsParams) {
             duration: 10000, // 10 seconds
             action: {
               label: 'Respond',
-              onClick: () => navigate(`/workflows/${workflowId}`),
+              onClick: () => navigate(paths.workflow(workflowId)),
             },
           })
         }
@@ -120,7 +122,7 @@ export function useWorkflows(params?: ListWorkflowsParams) {
         queryClient.invalidateQueries({ queryKey: workflowKeys.all })
       }
     },
-    [queryClient, navigate]
+    [queryClient, navigate, paths]
   )
 
   // Register message handler and subscribe to workflow updates

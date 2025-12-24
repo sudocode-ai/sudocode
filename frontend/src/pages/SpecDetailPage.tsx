@@ -6,12 +6,15 @@ import { useSpecRelationships } from '@/hooks/useSpecRelationships'
 import { useIssues } from '@/hooks/useIssues'
 import { useFeedback } from '@/hooks/useFeedback'
 import { useWorkflowMutations, useWorkflows } from '@/hooks/useWorkflows'
+import { useRefreshEntity } from '@/hooks/useRefreshEntity'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { SpecViewerTiptap } from '@/components/specs/SpecViewerTiptap'
 import { AlignedFeedbackPanel } from '@/components/specs/AlignedFeedbackPanel'
 import { AddFeedbackDialog } from '@/components/specs/AddFeedbackDialog'
 import { TableOfContentsPanel } from '@/components/specs/TableOfContentsPanel'
 import { CreateWorkflowDialog } from '@/components/workflows'
 import { AdhocExecutionDialog } from '@/components/executions/AdhocExecutionDialog'
+import { ExternalLinkBadge, RefreshConflictDialog, StaleLinkWarning } from '@/components/import'
 import { useFeedbackPositions } from '@/hooks/useFeedbackPositions'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -42,13 +45,12 @@ import {
   X,
   ChevronsUpDown,
   ArrowLeft,
-  Link,
-  Play,
   Lightbulb,
   Loader2,
 } from 'lucide-react'
 import type { IssueFeedback, Relationship, EntityType, RelationshipType } from '@/types/api'
 import type { WorkflowSource } from '@/types/workflow'
+import type { FieldChange } from '@/lib/api'
 import { relationshipsApi } from '@/lib/api'
 import { DeleteSpecDialog } from '@/components/specs/DeleteSpecDialog'
 import { EntityBadge } from '@/components/entities/EntityBadge'
@@ -72,23 +74,30 @@ const SHOW_TOC_STORAGE_KEY = 'sudocode:specs:showTocPanel'
 export default function SpecDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const { spec, isLoading, isError } = useSpec(id || '')
   const { feedback } = useSpecFeedback(id || '')
   const { issues } = useIssues()
   const { specs, updateSpec, isUpdating, archiveSpec, unarchiveSpec, deleteSpec } = useSpecs()
   const { createFeedback, updateFeedback, deleteFeedback } = useFeedback(id || '')
-  const { create: createWorkflow, start: startWorkflow, isCreating: isCreatingWorkflow } = useWorkflowMutations()
+  const {
+    create: createWorkflow,
+    start: startWorkflow,
+    isCreating: isCreatingWorkflow,
+  } = useWorkflowMutations()
   const { data: workflows } = useWorkflows()
 
   // Find a running workflow for this spec
   const runningWorkflowForSpec = useMemo(() => {
     if (!id || !workflows) return null
-    return workflows.find(
-      (w) =>
-        w.source.type === 'spec' &&
-        w.source.specId === id &&
-        (w.status === 'running' || w.status === 'paused')
-    ) || null
+    return (
+      workflows.find(
+        (w) =>
+          w.source.type === 'spec' &&
+          w.source.specId === id &&
+          (w.status === 'running' || w.status === 'paused')
+      ) || null
+    )
   }, [id, workflows])
 
   const [selectedLine, setSelectedLine] = useState<number | null>(null)
@@ -113,6 +122,11 @@ export default function SpecDetailPage() {
   const [workflowDefaultSource, setWorkflowDefaultSource] = useState<WorkflowSource | undefined>()
   const [planDialogOpen, setPlanDialogOpen] = useState(false)
 
+  // Refresh state
+  const [showRefreshConflictDialog, setShowRefreshConflictDialog] = useState(false)
+  const [refreshConflictChanges, setRefreshConflictChanges] = useState<FieldChange[]>([])
+  const [staleLinkDismissed, setStaleLinkDismissed] = useState(false)
+
   // Local state for editable fields
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
@@ -121,6 +135,32 @@ export default function SpecDetailPage() {
 
   // Relationships via hook with WebSocket real-time updates
   const { relationships } = useSpecRelationships(id)
+
+  // Refresh hook for external links
+  const {
+    refresh: refreshSpec,
+    forceRefresh: forceRefreshSpec,
+    isRefreshing,
+    isForceRefreshing,
+  } = useRefreshEntity({
+    entityId: id || '',
+    entityType: 'spec',
+    onConflict: (result) => {
+      if (result.changes) {
+        setRefreshConflictChanges(result.changes)
+        setShowRefreshConflictDialog(true)
+      }
+    },
+    onStale: () => {
+      // Stale links will be detected from the spec.external_links data
+      // which is refreshed via WebSocket/query invalidation
+      setStaleLinkDismissed(false)
+    },
+    onSuccess: () => {
+      setShowRefreshConflictDialog(false)
+      setRefreshConflictChanges([])
+    },
+  })
 
   // Parent editing state
   const [isEditingParent, setIsEditingParent] = useState(false)
@@ -372,9 +412,9 @@ Create actionable issues that implement its requirements. Each issue should be s
       await startWorkflow(workflow.id)
       setWorkflowDialogOpen(false)
       // Navigate to the created workflow's detail page
-      navigate(`/workflows/${workflow.id}`)
+      navigate(paths.workflow(workflow.id))
     },
-    [createWorkflow, startWorkflow, navigate]
+    [createWorkflow, startWorkflow, navigate, paths]
   )
 
   if (isLoading) {
@@ -396,7 +436,7 @@ Create actionable issues that implement its requirements. Each issue should be s
           <p className="mb-4 text-muted-foreground">
             The spec you're looking for doesn't exist or has been deleted.
           </p>
-          <Button onClick={() => navigate('/specs')}>Back to Specs</Button>
+          <Button onClick={() => navigate(paths.specs())}>Back to Specs</Button>
         </div>
       </div>
     )
@@ -466,7 +506,7 @@ Create actionable issues that implement its requirements. Each issue should be s
   }
 
   const handleCreateFeedback = async (data: {
-    issueId: string
+    issueId?: string // Optional for anonymous feedback
     type: any
     content: string
     anchor?: any
@@ -478,7 +518,7 @@ Create actionable issues that implement its requirements. Each issue should be s
 
     await createFeedback({
       to_id: id,
-      issue_id: data.issueId,
+      issue_id: data.issueId, // Can be undefined for anonymous feedback
       feedback_type: data.type,
       content: data.content,
       anchor: data.anchor,
@@ -528,7 +568,7 @@ Create actionable issues that implement its requirements. Each issue should be s
     try {
       await deleteSpec(id)
       setShowDeleteDialog(false)
-      navigate('/specs')
+      navigate(paths.specs())
     } catch (error) {
       console.error('Failed to delete spec:', error)
     } finally {
@@ -627,9 +667,7 @@ Create actionable issues that implement its requirements. Each issue should be s
                     onClick={() => setPlanDialogOpen(true)}
                   >
                     <Lightbulb className="h-4 w-4 sm:mr-2" />
-                    <span className="hidden sm:inline">
-                      {openImplementingIssuesCount === 0 ? 'Plan Implementation' : 'Plan'}
-                    </span>
+                    <span className="hidden sm:inline">Plan</span>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Plan out implementing issues for this spec</TooltipContent>
@@ -643,7 +681,7 @@ Create actionable issues that implement its requirements. Each issue should be s
                     <Button
                       variant="default"
                       size="sm"
-                      onClick={() => navigate(`/workflows/${runningWorkflowForSpec.id}`)}
+                      onClick={() => navigate(paths.workflow(runningWorkflowForSpec.id))}
                     >
                       <Loader2 className="h-4 w-4 animate-spin sm:mr-2" />
                       <span className="hidden sm:inline">Running Workflow</span>
@@ -652,29 +690,30 @@ Create actionable issues that implement its requirements. Each issue should be s
                   <TooltipContent>View running workflow</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-            ) : openImplementingIssuesCount > 0 ? (
+            ) : (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      variant="default"
+                      variant={openImplementingIssuesCount === 0 ? 'outline' : 'default'}
                       size="sm"
                       onClick={handleRunAsWorkflow}
-                      disabled={isCreatingWorkflow}
+                      disabled={isCreatingWorkflow || openImplementingIssuesCount === 0}
                     >
-                      <Play className="h-4 w-4 sm:mr-2" />
-                      <span className="hidden sm:inline">Run as Workflow</span>
+                      <span className="hidden sm:inline">Run Workflow</span>
                       <Badge variant="secondary" className="ml-2 h-5 min-w-5 px-1.5">
                         {openImplementingIssuesCount}
                       </Badge>
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {`Run ${openImplementingIssuesCount} implementing issue${openImplementingIssuesCount > 1 ? 's' : ''} as workflow`}
+                    {openImplementingIssuesCount === 0
+                      ? 'No implementing issues to run'
+                      : `Run ${openImplementingIssuesCount} implementing issue${openImplementingIssuesCount > 1 ? 's' : ''} as workflow`}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-            ) : null}
+            )}
 
             <TooltipProvider>
               <Tooltip>
@@ -702,27 +741,32 @@ Create actionable issues that implement its requirements. Each issue should be s
               </Tooltip>
             </TooltipProvider>
 
-            {spec.archived ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => unarchiveSpec(spec.id)}
-                disabled={isUpdating}
-              >
-                <ArchiveRestore className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Unarchive</span>
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => archiveSpec(spec.id)}
-                disabled={isUpdating}
-              >
-                <Archive className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Archive</span>
-              </Button>
-            )}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  {spec.archived ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => unarchiveSpec(spec.id)}
+                      disabled={isUpdating}
+                    >
+                      <ArchiveRestore className="h-4 w-4" />
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => archiveSpec(spec.id)}
+                      disabled={isUpdating}
+                    >
+                      <Archive className="h-4 w-4" />
+                    </Button>
+                  )}
+                </TooltipTrigger>
+                <TooltipContent>{spec.archived ? 'Unarchive spec' : 'Archive spec'}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
 
             <TooltipProvider>
               <Tooltip>
@@ -814,15 +858,6 @@ Create actionable issues that implement its requirements. Each issue should be s
                       </Tooltip>
                     </TooltipProvider>
                   </div>
-                  {/* External Link Badges */}
-                  {spec.external_links &&
-                    spec.external_links.length > 0 &&
-                    spec.external_links.map((link) => (
-                      <Badge key={`${link.provider}-${link.external_id}`} variant="spec">
-                        <Link className="mr-1 h-3 w-3" />
-                        {link.provider}: {link.external_id}
-                      </Badge>
-                    ))}
                   {/* Parent spec selector */}
                   <div className="flex items-center gap-1">
                     <span className="text-sm text-muted-foreground">Parent:</span>
@@ -980,6 +1015,20 @@ Create actionable issues that implement its requirements. Each issue should be s
                   </div>
                 </div>
 
+                {/* External Link Badges */}
+                {spec.external_links && spec.external_links.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {spec.external_links.map((link) => (
+                      <ExternalLinkBadge
+                        key={`${link.provider}-${link.external_id}`}
+                        link={link}
+                        onRefresh={() => refreshSpec()}
+                        isRefreshing={isRefreshing || isForceRefreshing}
+                      />
+                    ))}
+                  </div>
+                )}
+
                 {/* Metadata Row */}
                 <div className="flex items-center justify-between">
                   <div className="flex flex-wrap items-center gap-4">
@@ -1041,6 +1090,20 @@ Create actionable issues that implement its requirements. Each issue should be s
                         : 'All changes saved'}
                   </div>
                 </div>
+
+                {/* Stale Link Warning */}
+                {spec.external_links &&
+                  spec.external_links.some((link) => link.metadata?.stale === true) &&
+                  !staleLinkDismissed && (
+                    <StaleLinkWarning
+                      link={spec.external_links.find((link) => link.metadata?.stale === true)!}
+                      onUnlink={() => {
+                        // TODO: Implement unlink functionality via API
+                        toast.info('Unlink functionality coming soon')
+                      }}
+                      onDismiss={() => setStaleLinkDismissed(true)}
+                    />
+                  )}
 
                 {/* Content */}
                 {content !== undefined ? (
@@ -1123,6 +1186,22 @@ Create actionable issues that implement its requirements. Each issue should be s
         defaultPrompt={planImplementationPrompt}
         title="Plan Implementation"
         description="Create implementing issues for this spec using an AI agent."
+      />
+
+      {/* Refresh Conflict Dialog */}
+      <RefreshConflictDialog
+        open={showRefreshConflictDialog}
+        changes={refreshConflictChanges}
+        onKeepLocal={() => {
+          setShowRefreshConflictDialog(false)
+          setRefreshConflictChanges([])
+        }}
+        onOverwrite={() => forceRefreshSpec()}
+        onCancel={() => {
+          setShowRefreshConflictDialog(false)
+          setRefreshConflictChanges([])
+        }}
+        isOverwriting={isForceRefreshing}
       />
     </div>
   )

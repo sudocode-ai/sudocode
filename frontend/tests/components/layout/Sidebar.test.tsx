@@ -27,14 +27,15 @@ describe('Sidebar', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('should have correct links', () => {
+  it('should have correct project-scoped links', () => {
     renderSidebar({ open: true })
 
     const issuesLink = screen.getByRole('link', { name: /issues/i })
     const specsLink = screen.getByRole('link', { name: /specs/i })
 
-    expect(issuesLink).toHaveAttribute('href', '/issues')
-    expect(specsLink).toHaveAttribute('href', '/specs')
+    // Links should be project-scoped (test-project-123 is the default from renderWithProviders)
+    expect(issuesLink).toHaveAttribute('href', '/p/test-project-123/issues')
+    expect(specsLink).toHaveAttribute('href', '/p/test-project-123/specs')
   })
 
   it('should show settings button', () => {

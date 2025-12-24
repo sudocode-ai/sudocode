@@ -47,6 +47,95 @@ import type {
 import { DEFAULT_WORKFLOW_CONFIG } from '@/types/workflow'
 
 // =============================================================================
+// LocalStorage Keys and Persistence
+// =============================================================================
+
+const WORKFLOW_SETTINGS_KEY = 'sudocode:workflowSettings'
+
+/**
+ * Settings that persist between workflow creation sessions.
+ * Does NOT include workflow source (spec, issues, goal, etc.)
+ */
+interface PersistedWorkflowSettings {
+  onFailure: WorkflowFailureStrategy
+  agentType: string
+  autoCommit: boolean
+  advancedOpen: boolean
+  baseBranch?: string
+  reuseWorktreePath?: string
+}
+
+const DEFAULT_PERSISTED_SETTINGS: PersistedWorkflowSettings = {
+  onFailure: DEFAULT_WORKFLOW_CONFIG.onFailure,
+  agentType: DEFAULT_WORKFLOW_CONFIG.defaultAgentType,
+  autoCommit: DEFAULT_WORKFLOW_CONFIG.autoCommitAfterStep,
+  advancedOpen: false,
+  baseBranch: undefined,
+  reuseWorktreePath: undefined,
+}
+
+/**
+ * Validates persisted settings from localStorage
+ */
+function isValidPersistedSettings(value: unknown): value is PersistedWorkflowSettings {
+  if (!value || typeof value !== 'object') return false
+  const settings = value as Record<string, unknown>
+
+  // Validate onFailure
+  const validFailureStrategies = ['pause', 'stop', 'skip_dependents', 'continue']
+  if (typeof settings.onFailure !== 'string' || !validFailureStrategies.includes(settings.onFailure)) {
+    return false
+  }
+
+  // Validate agentType
+  const validAgentTypes = ['claude-code', 'codex', 'copilot', 'cursor']
+  if (typeof settings.agentType !== 'string' || !validAgentTypes.includes(settings.agentType)) {
+    return false
+  }
+
+  // Validate booleans
+  if (typeof settings.autoCommit !== 'boolean') return false
+  if (typeof settings.advancedOpen !== 'boolean') return false
+
+  // Validate optional strings (baseBranch, reuseWorktreePath)
+  if (settings.baseBranch !== undefined && typeof settings.baseBranch !== 'string') return false
+  if (settings.reuseWorktreePath !== undefined && typeof settings.reuseWorktreePath !== 'string') return false
+
+  return true
+}
+
+/**
+ * Load persisted settings from localStorage
+ */
+function loadPersistedSettings(): PersistedWorkflowSettings {
+  try {
+    const saved = localStorage.getItem(WORKFLOW_SETTINGS_KEY)
+    if (!saved) return DEFAULT_PERSISTED_SETTINGS
+
+    const parsed = JSON.parse(saved)
+    if (isValidPersistedSettings(parsed)) {
+      return parsed
+    }
+  } catch (error) {
+    console.warn('Failed to load workflow settings from localStorage:', error)
+  }
+  return DEFAULT_PERSISTED_SETTINGS
+}
+
+/**
+ * Save persisted settings to localStorage
+ */
+function savePersistedSettings(settings: PersistedWorkflowSettings): void {
+  try {
+    if (isValidPersistedSettings(settings)) {
+      localStorage.setItem(WORKFLOW_SETTINGS_KEY, JSON.stringify(settings))
+    }
+  } catch (error) {
+    console.warn('Failed to save workflow settings to localStorage:', error)
+  }
+}
+
+// =============================================================================
 // Types
 // =============================================================================
 
@@ -137,7 +226,10 @@ export function CreateWorkflowDialog({
   defaultSource,
   isCreating = false,
 }: CreateWorkflowDialogProps) {
-  // Form state
+  // Load persisted settings from localStorage
+  const [persistedSettings] = useState<PersistedWorkflowSettings>(() => loadPersistedSettings())
+
+  // Form state - loads persisted settings for non-source fields
   const [form, setForm] = useState<FormState>(() => ({
     title: '',
     // Orchestrator disabled for now - always use sequential
@@ -147,20 +239,20 @@ export function CreateWorkflowDialog({
     issueIds: defaultSource?.type === 'issues' ? defaultSource.issueIds : [],
     rootIssueId: defaultSource?.type === 'root_issue' ? defaultSource.issueId : '',
     goal: defaultSource?.type === 'goal' ? defaultSource.goal : '',
-    baseBranch: '',
+    baseBranch: persistedSettings.baseBranch || '',
     createBaseBranch: false,
-    reuseWorktreePath: undefined,
+    reuseWorktreePath: persistedSettings.reuseWorktreePath,
     parallelism: 'sequential', // Parallel disabled for now
     maxConcurrency: 2,
-    onFailure: DEFAULT_WORKFLOW_CONFIG.onFailure,
-    autoCommit: DEFAULT_WORKFLOW_CONFIG.autoCommitAfterStep,
-    agentType: DEFAULT_WORKFLOW_CONFIG.defaultAgentType,
+    onFailure: persistedSettings.onFailure,
+    autoCommit: persistedSettings.autoCommit,
+    agentType: persistedSettings.agentType,
     // Orchestrator-specific options
     autonomyLevel: DEFAULT_WORKFLOW_CONFIG.autonomyLevel,
     orchestratorModel: '',
   }))
 
-  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(() => persistedSettings.advancedOpen)
   const [availableBranches, setAvailableBranches] = useState<string[]>([])
   const [currentBranch, setCurrentBranch] = useState<string>('')
   const [loadingBranches, setLoadingBranches] = useState(false)
@@ -189,7 +281,7 @@ export function CreateWorkflowDialog({
     }
   }, [open, defaultSource])
 
-  // Fetch branches when dialog opens
+  // Fetch branches when dialog opens and validate persisted worktree
   useEffect(() => {
     if (!open) return
 
@@ -203,10 +295,26 @@ export function CreateWorkflowDialog({
           setAvailableBranches(branchInfo.branches)
           setCurrentBranch(branchInfo.current)
 
-          // Set default baseBranch to current branch if not already set
-          if (!form.baseBranch) {
-            setForm((prev) => ({ ...prev, baseBranch: branchInfo.current }))
-          }
+          // Validate persisted settings against available branches/worktrees
+          setForm((prev) => {
+            // Check if persisted worktree still exists
+            const worktreeStillExists =
+              prev.reuseWorktreePath && worktrees?.some((wt) => wt.worktree_path === prev.reuseWorktreePath)
+
+            // Check if persisted branch still exists
+            const branchStillExists =
+              prev.baseBranch && branchInfo.branches.includes(prev.baseBranch)
+
+            // If worktree exists, keep it; if branch exists, use it; otherwise fall back to current
+            if (worktreeStillExists) {
+              return prev // Keep the persisted worktree
+            } else if (branchStillExists) {
+              return { ...prev, reuseWorktreePath: undefined } // Keep branch, clear invalid worktree
+            } else {
+              // Fall back to current branch
+              return { ...prev, baseBranch: branchInfo.current, reuseWorktreePath: undefined }
+            }
+          })
         }
       } catch (error) {
         console.error('Failed to fetch branches:', error)
@@ -222,7 +330,7 @@ export function CreateWorkflowDialog({
     return () => {
       isMounted = false
     }
-  }, [open])
+  }, [open, worktrees])
 
   // Update form field
   const updateForm = useCallback(<K extends keyof FormState>(key: K, value: FormState[K]) => {
@@ -285,9 +393,19 @@ export function CreateWorkflowDialog({
       config: buildConfig(),
     }
 
+    // Save settings to localStorage (excluding workflow source)
+    savePersistedSettings({
+      onFailure: form.onFailure,
+      agentType: form.agentType,
+      autoCommit: form.autoCommit,
+      advancedOpen,
+      baseBranch: form.baseBranch || undefined,
+      reuseWorktreePath: form.reuseWorktreePath,
+    })
+
     await onCreate?.(options)
     onOpenChange(false)
-  }, [buildSource, buildConfig, form.title, form.sourceType, onCreate, onOpenChange])
+  }, [buildSource, buildConfig, form.title, form.sourceType, form.onFailure, form.agentType, form.autoCommit, form.baseBranch, form.reuseWorktreePath, advancedOpen, onCreate, onOpenChange])
 
   // Check if form is valid
   const isValid = buildSource() !== null

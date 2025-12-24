@@ -47,7 +47,8 @@ export function ActivityTimeline({
   const isOutboundFeedback = (feedback: IssueFeedback) => feedback.from_id === currentEntityId
 
   // Helper to get the "other" entity ID for navigation
-  const getOtherEntityId = (feedback: IssueFeedback) =>
+  // Returns undefined for anonymous inbound feedback (no from_id)
+  const getOtherEntityId = (feedback: IssueFeedback): string | undefined =>
     isOutboundFeedback(feedback) ? feedback.to_id : feedback.from_id
 
   // Sort items chronologically (oldest first)
@@ -138,7 +139,7 @@ export function ActivityTimeline({
   const renderFeedback = (feedback: IssueFeedback, isLastFeedback: boolean) => {
     const isOutbound = isOutboundFeedback(feedback)
     const otherEntityId = getOtherEntityId(feedback)
-    const isSpec = otherEntityId.startsWith('s-')
+    const isSpec = otherEntityId?.startsWith('s-') ?? false
     const isExpanded = !collapsedFeedback.has(feedback.id)
 
     // Determine icon color based on direction
@@ -183,13 +184,13 @@ export function ActivityTimeline({
                       <ArrowRight className="h-3 w-3 text-muted-foreground" />
                       <span onClick={(e) => e.stopPropagation()}>
                         <EntityBadge
-                          entityId={otherEntityId}
+                          entityId={otherEntityId!}
                           entityType={isSpec ? 'spec' : 'issue'}
                           showTitle={otherEntityId !== currentEntityId}
                         />
                       </span>
                     </>
-                  ) : (
+                  ) : otherEntityId ? (
                     <>
                       <span className="text-xs text-muted-foreground">from</span>
                       <span onClick={(e) => e.stopPropagation()}>
@@ -200,6 +201,8 @@ export function ActivityTimeline({
                         />
                       </span>
                     </>
+                  ) : (
+                    <span className="text-xs italic text-muted-foreground">(anonymous)</span>
                   )}
                   {/* Timestamp */}
                   <span className="text-xs text-muted-foreground">

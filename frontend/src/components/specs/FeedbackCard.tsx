@@ -4,6 +4,7 @@ import { MessageSquare, AlertCircle, Lightbulb, Trash2, Check, X } from 'lucide-
 import { formatDistanceToNow } from 'date-fns'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -34,6 +35,7 @@ export function FeedbackCard({
   const [isHovered, setIsHovered] = useState(false)
   const [isExpanded, setIsExpanded] = useState(!isCompact)
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
 
   // Parse anchor from JSON string
   let anchor: FeedbackAnchor | null = null
@@ -109,7 +111,9 @@ export function FeedbackCard({
                 className="text-xs font-medium text-foreground hover:text-primary hover:underline"
                 onClick={(e) => {
                   e.stopPropagation()
-                  navigate(`/issues/${feedback.from_id}`)
+                  if (feedback.from_id) {
+                    navigate(paths.issue(feedback.from_id))
+                  }
                 }}
               >
                 {feedback.from_id}

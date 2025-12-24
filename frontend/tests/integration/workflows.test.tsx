@@ -43,6 +43,15 @@ vi.mock('@/lib/api', () => ({
   specsApi: {
     getAll: vi.fn(),
   },
+  repositoryApi: {
+    getInfo: vi.fn(() => Promise.resolve({
+      name: 'test-repo',
+      branch: 'main',
+      path: '/test/path',
+      ownerRepo: 'owner/repo',
+      gitProvider: 'github',
+    })),
+  },
 }))
 
 
@@ -51,11 +60,26 @@ vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),
     error: vi.fn(),
+    warning: vi.fn(),
   },
 }))
 
+// Mock useProjectRoutes hook
+vi.mock('@/hooks/useProjectRoutes', () => ({
+  useProjectRoutes: () => ({
+    paths: {
+      workflows: () => `/p/test-project/workflows`,
+      workflow: (id: string) => `/p/test-project/workflows/${id}`,
+      issue: (id: string) => `/p/test-project/issues/${id}`,
+      spec: (id: string) => `/p/test-project/specs/${id}`,
+      execution: (id: string) => `/p/test-project/executions/${id}`,
+    },
+    effectiveProjectId: 'test-project',
+  }),
+}))
+
 // Import mocked API after vi.mock
-import { workflowsApi, issuesApi, specsApi } from '@/lib/api'
+import { workflowsApi, issuesApi, specsApi, repositoryApi } from '@/lib/api'
 
 // =============================================================================
 // Test Data
@@ -256,6 +280,13 @@ describe('Workflow Integration Tests', () => {
     vi.mocked(workflowsApi.getEvents).mockResolvedValue([])
     vi.mocked(issuesApi.getAll).mockResolvedValue(mockIssues as any)
     vi.mocked(specsApi.getAll).mockResolvedValue(mockSpecs as any)
+    vi.mocked(repositoryApi.getInfo).mockResolvedValue({
+      name: 'test-repo',
+      branch: 'main',
+      path: '/test/path',
+      ownerRepo: 'test-owner/test-repo',
+      gitProvider: 'github',
+    })
   })
 
   afterEach(() => {

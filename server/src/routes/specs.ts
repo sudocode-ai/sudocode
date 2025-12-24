@@ -20,6 +20,7 @@ import {
   executeExportNow,
   syncEntityToMarkdown,
 } from "../services/export.js";
+import { refreshSpec } from "../services/external-refresh-service.js";
 import * as path from "path";
 import * as fs from "fs";
 
@@ -369,6 +370,128 @@ export function createSpecsRouter(): Router {
         data: null,
         error_data: error instanceof Error ? error.message : String(error),
         message: "Failed to delete spec",
+      });
+    }
+  });
+
+  /**
+   * POST /api/specs/:id/refresh_from_external - Refresh a spec from its external source
+   *
+   * Query params:
+   * - force=true: Skip conflict check, overwrite local changes
+   *
+   * Response:
+   * - updated: boolean - Whether the entity was updated
+   * - hasLocalChanges: boolean - Whether local changes were detected
+   * - changes?: Array<{field, localValue, remoteValue}> - Field-level changes (when hasLocalChanges=true)
+   * - entity?: Spec - The updated entity (when updated=true)
+   */
+  router.post("/:id/refresh_from_external", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const force = req.query.force === "true";
+
+      // Check if spec exists
+      const existingSpec = getSpecById(req.project!.db, id);
+      if (!existingSpec) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Spec not found: ${id}`,
+        });
+        return;
+      }
+
+      // Refresh from external source
+      const result = await refreshSpec(
+        req.project!.db,
+        req.project!.sudocodeDir,
+        req.project!.path,
+        id,
+        force
+      );
+
+      // Handle stale links (external entity deleted)
+      if (result.stale) {
+        res.status(200).json({
+          success: true,
+          data: {
+            updated: false,
+            hasLocalChanges: false,
+            stale: true,
+            message: result.error || "External entity no longer exists",
+          },
+        });
+        return;
+      }
+
+      // Handle errors
+      if (result.error && !result.hasLocalChanges) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: result.error,
+        });
+        return;
+      }
+
+      // Handle local changes preview (not forced)
+      if (result.hasLocalChanges && !result.updated) {
+        res.status(200).json({
+          success: true,
+          data: {
+            updated: false,
+            hasLocalChanges: true,
+            changes: result.changes,
+          },
+        });
+        return;
+      }
+
+      // Handle successful update
+      if (result.updated && result.entity) {
+        // Trigger export to JSONL files
+        triggerExport(req.project!.db, req.project!.sudocodeDir);
+
+        // Sync to markdown file
+        syncEntityToMarkdown(
+          req.project!.db,
+          id,
+          "spec",
+          req.project!.sudocodeDir
+        ).catch((error) => {
+          console.error(`Failed to sync spec ${id} to markdown:`, error);
+        });
+
+        // Broadcast spec update to WebSocket clients
+        broadcastSpecUpdate(req.project!.id, id, "updated", result.entity);
+
+        res.status(200).json({
+          success: true,
+          data: {
+            updated: true,
+            hasLocalChanges: false,
+            entity: result.entity,
+          },
+        });
+        return;
+      }
+
+      // No changes needed
+      res.status(200).json({
+        success: true,
+        data: {
+          updated: false,
+          hasLocalChanges: false,
+        },
+      });
+    } catch (error) {
+      console.error("Error refreshing spec:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to refresh spec",
       });
     }
   });

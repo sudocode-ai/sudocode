@@ -5,6 +5,7 @@
 
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { Loader2, Clock, CheckCircle2, XCircle, SkipForward, Lock } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -89,6 +90,7 @@ export function WorkflowIndicator({
   className,
 }: WorkflowIndicatorProps) {
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const config = STATUS_CONFIG[stepStatus]
   const Icon = config.icon
 
@@ -107,7 +109,7 @@ export function WorkflowIndicator({
     if (onClick) {
       onClick()
     } else {
-      navigate(`/workflows/${workflowId}`)
+      navigate(paths.workflow(workflowId))
     }
   }
 

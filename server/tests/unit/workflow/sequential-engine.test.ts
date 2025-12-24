@@ -1362,7 +1362,12 @@ describe("SequentialWorkflowEngine", () => {
       const updated = await engine.getWorkflow("wf-test123");
       expect(updated?.status).toBe("paused");
       expect(events).toContain("workflow_paused");
-      expect(events).toContain("step_failed");
+      // With pause strategy, step is kept as "pending" (resumable) not "failed"
+      // so step_failed event is not emitted
+      expect(events).not.toContain("step_failed");
+      // Verify step is pending with executionId preserved for resume
+      expect(updated?.steps[0].status).toBe("pending");
+      expect(updated?.steps[0].executionId).toBeDefined();
     });
 
     it("skip_dependents strategy should skip dependent steps on failure", async () => {

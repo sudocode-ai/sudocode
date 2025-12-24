@@ -6,6 +6,7 @@ import {
   type ExecutionActionHandlers,
 } from '@/components/executions/ExecutionView'
 import { ExecutionStatusBadge } from '@/components/executions/ExecutionStatusBadge'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
@@ -23,6 +24,7 @@ const truncateId = (id: string, length = 8) => id.substring(0, length)
 export default function ExecutionDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const [status, setStatus] = useState<Execution['status'] | null>(null)
   const [headerData, setHeaderData] = useState<ExecutionHeaderData | null>(null)
   const [actionHandlers, setActionHandlers] = useState<ExecutionActionHandlers | null>(null)
@@ -41,7 +43,7 @@ export default function ExecutionDetailPage() {
         <div className="text-center">
           <h2 className="mb-2 text-2xl font-bold">Invalid Execution</h2>
           <p className="mb-4 text-muted-foreground">No execution ID provided.</p>
-          <Button onClick={() => navigate('/issues')}>Back to Issues</Button>
+          <Button onClick={() => navigate(paths.issues())}>Back to Issues</Button>
         </div>
       </div>
     )

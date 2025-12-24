@@ -114,8 +114,8 @@ CREATE TABLE IF NOT EXISTS events (
 export const ISSUE_FEEDBACK_TABLE = `
 CREATE TABLE IF NOT EXISTS issue_feedback (
     id TEXT PRIMARY KEY,
-    from_id TEXT NOT NULL,
-    from_uuid TEXT NOT NULL,
+    from_id TEXT,
+    from_uuid TEXT,
     to_id TEXT NOT NULL,
     to_uuid TEXT NOT NULL,
     feedback_type TEXT NOT NULL CHECK(feedback_type IN ('comment', 'suggestion', 'request')),
@@ -124,9 +124,7 @@ CREATE TABLE IF NOT EXISTS issue_feedback (
     anchor TEXT,
     dismissed INTEGER NOT NULL DEFAULT 0 CHECK(dismissed IN (0, 1)),
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (from_id) REFERENCES issues(id) ON DELETE CASCADE,
-    FOREIGN KEY (from_uuid) REFERENCES issues(uuid) ON DELETE CASCADE
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 `;
 

@@ -473,4 +473,185 @@ describe("WorktreeManager", () => {
       expect(returnedConfig).not.toBe(config);
     });
   });
+
+  describe("propagateCursorConfig", () => {
+    it("should copy .cursor/mcp.json from main repo to worktree", async () => {
+      // Mock fs.promises methods
+      const accessSpy = vi
+        .spyOn(fs.promises, "access")
+        .mockResolvedValue(undefined);
+      const mkdirSpy = vi
+        .spyOn(fs.promises, "mkdir")
+        .mockResolvedValue(undefined as any);
+      const copyFileSpy = vi
+        .spyOn(fs.promises, "copyFile")
+        .mockResolvedValue(undefined);
+
+      const params: WorktreeCreateParams = {
+        repoPath: "/repo",
+        branchName: "feature-branch",
+        worktreePath: "/worktree/feature",
+        baseBranch: "main",
+        createBranch: false,
+      };
+
+      await manager.createWorktree(params);
+
+      // Verify file was checked for existence
+      expect(accessSpy).toHaveBeenCalledWith(
+        "/repo/.cursor/mcp.json",
+        fs.constants.R_OK
+      );
+
+      // Verify .cursor directory was created in worktree
+      expect(mkdirSpy).toHaveBeenCalledWith("/worktree/feature/.cursor", {
+        recursive: true,
+      });
+
+      // Verify file was copied
+      expect(copyFileSpy).toHaveBeenCalledWith(
+        "/repo/.cursor/mcp.json",
+        "/worktree/feature/.cursor/mcp.json"
+      );
+    });
+
+    it("should skip silently when .cursor/mcp.json does not exist in main repo", async () => {
+      // Mock fs.promises.access to reject (file doesn't exist)
+      const accessSpy = vi
+        .spyOn(fs.promises, "access")
+        .mockRejectedValue(new Error("ENOENT"));
+      const mkdirSpy = vi
+        .spyOn(fs.promises, "mkdir")
+        .mockResolvedValue(undefined as any);
+      const copyFileSpy = vi
+        .spyOn(fs.promises, "copyFile")
+        .mockResolvedValue(undefined);
+
+      const params: WorktreeCreateParams = {
+        repoPath: "/repo",
+        branchName: "feature-branch",
+        worktreePath: "/worktree/feature",
+        baseBranch: "main",
+        createBranch: false,
+      };
+
+      await manager.createWorktree(params);
+
+      // Verify file check was attempted
+      expect(accessSpy).toHaveBeenCalledWith(
+        "/repo/.cursor/mcp.json",
+        fs.constants.R_OK
+      );
+
+      // Verify no directory creation or copy happened
+      expect(mkdirSpy).not.toHaveBeenCalled();
+      expect(copyFileSpy).not.toHaveBeenCalled();
+    });
+
+    it("should log warning but not fail when copy fails", async () => {
+      // Mock console.warn to verify warning is logged
+      const consoleWarnSpy = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => {});
+
+      // Mock fs.promises methods - access succeeds, copyFile fails
+      vi.spyOn(fs.promises, "access").mockResolvedValue(undefined);
+      vi.spyOn(fs.promises, "mkdir").mockResolvedValue(undefined as any);
+      vi.spyOn(fs.promises, "copyFile").mockRejectedValue(
+        new Error("Permission denied")
+      );
+
+      const params: WorktreeCreateParams = {
+        repoPath: "/repo",
+        branchName: "feature-branch",
+        worktreePath: "/worktree/feature",
+        baseBranch: "main",
+        createBranch: false,
+      };
+
+      // Should not throw
+      await expect(manager.createWorktree(params)).resolves.not.toThrow();
+
+      // Verify warning was logged
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        "[WorktreeManager] Failed to propagate .cursor/mcp.json to worktree:",
+        "Permission denied"
+      );
+    });
+
+    it("should propagate for all agent types", async () => {
+      // This test verifies that propagation happens unconditionally,
+      // not just for Cursor agent executions
+      const copyFileSpy = vi
+        .spyOn(fs.promises, "copyFile")
+        .mockResolvedValue(undefined);
+      vi.spyOn(fs.promises, "access").mockResolvedValue(undefined);
+      vi.spyOn(fs.promises, "mkdir").mockResolvedValue(undefined as any);
+
+      const params: WorktreeCreateParams = {
+        repoPath: "/repo",
+        branchName: "feature-branch",
+        worktreePath: "/worktree/feature",
+        baseBranch: "main",
+        createBranch: false,
+      };
+
+      await manager.createWorktree(params);
+
+      // Verify copy was attempted (propagation happens for all agents)
+      expect(copyFileSpy).toHaveBeenCalledWith(
+        "/repo/.cursor/mcp.json",
+        "/worktree/feature/.cursor/mcp.json"
+      );
+    });
+
+    it("should create .cursor directory if it does not exist in worktree", async () => {
+      const mkdirSpy = vi
+        .spyOn(fs.promises, "mkdir")
+        .mockResolvedValue(undefined as any);
+      vi.spyOn(fs.promises, "access").mockResolvedValue(undefined);
+      vi.spyOn(fs.promises, "copyFile").mockResolvedValue(undefined);
+
+      const params: WorktreeCreateParams = {
+        repoPath: "/repo",
+        branchName: "feature-branch",
+        worktreePath: "/worktree/feature",
+        baseBranch: "main",
+        createBranch: false,
+      };
+
+      await manager.createWorktree(params);
+
+      // Verify directory was created with recursive option
+      expect(mkdirSpy).toHaveBeenCalledWith("/worktree/feature/.cursor", {
+        recursive: true,
+      });
+    });
+
+    it("should overwrite existing .cursor/mcp.json in worktree", async () => {
+      // Mock that the destination file already exists
+      // copyFile will overwrite it by default
+      const copyFileSpy = vi
+        .spyOn(fs.promises, "copyFile")
+        .mockResolvedValue(undefined);
+      vi.spyOn(fs.promises, "access").mockResolvedValue(undefined);
+      vi.spyOn(fs.promises, "mkdir").mockResolvedValue(undefined as any);
+
+      const params: WorktreeCreateParams = {
+        repoPath: "/repo",
+        branchName: "feature-branch",
+        worktreePath: "/worktree/feature",
+        baseBranch: "main",
+        createBranch: false,
+      };
+
+      await manager.createWorktree(params);
+
+      // Verify copy was called (which will overwrite)
+      expect(copyFileSpy).toHaveBeenCalledWith(
+        "/repo/.cursor/mcp.json",
+        "/worktree/feature/.cursor/mcp.json"
+      );
+    });
+  });
 });

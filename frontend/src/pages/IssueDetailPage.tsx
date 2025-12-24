@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useIssue, useIssues, useIssueFeedback } from '@/hooks/useIssues'
+import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import IssuePanel from '@/components/issues/IssuePanel'
 import { Button } from '@/components/ui/button'
 import { DeleteIssueDialog } from '@/components/issues/DeleteIssueDialog'
@@ -12,6 +13,7 @@ const VIEW_MODE_STORAGE_KEY = 'sudocode:details:viewMode'
 export default function IssueDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { paths } = useProjectRoutes()
   const { data: issue, isLoading, isError } = useIssue(id || '')
   const { feedback } = useIssueFeedback(id || '')
   const { issues, updateIssue, deleteIssue, archiveIssue, unarchiveIssue, isUpdating, isDeleting } =
@@ -47,17 +49,17 @@ export default function IssueDetailPage() {
   const handleDelete = () => {
     if (!id) return
     deleteIssue(id)
-    navigate('/issues')
+    navigate(paths.issues())
   }
 
   const handleArchive = (issueId: string) => {
     archiveIssue(issueId)
-    navigate('/issues')
+    navigate(paths.issues())
   }
 
   const handleUnarchive = (issueId: string) => {
     unarchiveIssue(issueId)
-    navigate('/issues')
+    navigate(paths.issues())
   }
 
   // Save view mode preference to localStorage
@@ -84,7 +86,7 @@ export default function IssueDetailPage() {
           <p className="mb-4 text-muted-foreground">
             The issue you're looking for doesn't exist or has been deleted.
           </p>
-          <Button onClick={() => navigate('/issues')}>Back to Issues</Button>
+          <Button onClick={() => navigate(paths.issues())}>Back to Issues</Button>
         </div>
       </div>
     )
