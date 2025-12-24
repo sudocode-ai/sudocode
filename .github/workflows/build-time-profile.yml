@@ -1,0 +1,188 @@
+name: Build Time Profiling
+
+on:
+  workflow_dispatch: # Manual trigger only
+  pull_request:
+    paths:
+      - '.github/workflows/build-time-profile.yml' # Only run when this workflow changes
+
+jobs:
+  profile-build-time:
+    name: Profile Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: [18, 20, 22]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Record start time
+        id: start
+        run: echo "START_TIME=$(date +%s)" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Clean install (measure npm install time)
+        run: |
+          echo "=== Starting npm install at $(date) ==="
+          npm install --timing --loglevel=verbose > npm-install.log 2>&1
+          echo "=== Finished npm install at $(date) ==="
+        shell: bash
+
+      - name: Record install complete time
+        id: install_done
+        run: echo "INSTALL_DONE=$(date +%s)" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Build types package (timed)
+        run: |
+          echo "=== Starting types build at $(date) ==="
+          START=$(date +%s)
+          npm run build --workspace=types --verbose
+          END=$(date +%s)
+          echo "TYPES_BUILD_TIME=$((END - START))" >> $GITHUB_ENV
+          echo "=== Finished types build in $((END - START))s ==="
+        shell: bash
+
+      - name: Build cli package (timed)
+        run: |
+          echo "=== Starting cli build at $(date) ==="
+          START=$(date +%s)
+          npm run build --workspace=cli --verbose
+          END=$(date +%s)
+          echo "CLI_BUILD_TIME=$((END - START))" >> $GITHUB_ENV
+          echo "=== Finished cli build in $((END - START))s ==="
+        shell: bash
+
+      - name: Build mcp package (timed)
+        run: |
+          echo "=== Starting mcp build at $(date) ==="
+          START=$(date +%s)
+          npm run build --workspace=mcp --verbose
+          END=$(date +%s)
+          echo "MCP_BUILD_TIME=$((END - START))" >> $GITHUB_ENV
+          echo "=== Finished mcp build in $((END - START))s ==="
+        shell: bash
+
+      - name: Build frontend package (timed)
+        run: |
+          echo "=== Starting frontend build at $(date) ==="
+          START=$(date +%s)
+          npm run build --workspace=frontend --verbose
+          END=$(date +%s)
+          echo "FRONTEND_BUILD_TIME=$((END - START))" >> $GITHUB_ENV
+          echo "=== Finished frontend build in $((END - START))s ==="
+        shell: bash
+
+      - name: Build server package (timed)
+        run: |
+          echo "=== Starting server build at $(date) ==="
+          START=$(date +%s)
+          npm run build --workspace=server --verbose
+          END=$(date +%s)
+          echo "SERVER_BUILD_TIME=$((END - START))" >> $GITHUB_ENV
+          echo "=== Finished server build in $((END - START))s ==="
+        shell: bash
+
+      - name: Record build complete time
+        id: build_done
+        run: echo "BUILD_DONE=$(date +%s)" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Test npm install -g sudocode (from tarball)
+        run: |
+          echo "=== Starting npm pack at $(date) ==="
+          cd sudocode
+          npm pack
+
+          echo "=== Starting npm install -g at $(date) ==="
+          START=$(date +%s)
+          npm install -g sudocode-*.tgz --timing --loglevel=verbose > ../npm-install-global.log 2>&1
+          END=$(date +%s)
+          echo "GLOBAL_INSTALL_TIME=$((END - START))" >> $GITHUB_ENV
+          echo "=== Finished npm install -g in $((END - START))s ==="
+
+          # Verify installation
+          which sudocode
+          sudocode --version
+        shell: bash
+
+      - name: Calculate and report timing summary
+        run: |
+          INSTALL_TIME=${{ steps.install_done.outputs.INSTALL_DONE }}
+          BUILD_DONE=${{ steps.build_done.outputs.BUILD_DONE }}
+          START_TIME=${{ steps.start.outputs.START_TIME }}
+
+          TOTAL_INSTALL_TIME=$((INSTALL_TIME - START_TIME))
+          TOTAL_BUILD_TIME=$((BUILD_DONE - INSTALL_TIME))
+          TOTAL_TIME=$((BUILD_DONE - START_TIME))
+
+          echo "## Build Time Profile Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**OS:** ${{ matrix.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Node:** ${{ matrix.node-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Phase | Duration (seconds) |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| npm install | ${TOTAL_INSTALL_TIME}s |" >> $GITHUB_STEP_SUMMARY
+          echo "| types build | ${TYPES_BUILD_TIME}s |" >> $GITHUB_STEP_SUMMARY
+          echo "| cli build | ${CLI_BUILD_TIME}s |" >> $GITHUB_STEP_SUMMARY
+          echo "| mcp build | ${MCP_BUILD_TIME}s |" >> $GITHUB_STEP_SUMMARY
+          echo "| frontend build | ${FRONTEND_BUILD_TIME}s |" >> $GITHUB_STEP_SUMMARY
+          echo "| server build | ${SERVER_BUILD_TIME}s |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Total build time** | **${TOTAL_BUILD_TIME}s** |" >> $GITHUB_STEP_SUMMARY
+          echo "| npm install -g sudocode | ${GLOBAL_INSTALL_TIME}s |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Grand total** | **${TOTAL_TIME}s** |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check for better-sqlite3 compilation
+          if grep -q "node-gyp" npm-install.log; then
+            echo "⚠️ **better-sqlite3 compiled from source**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ **better-sqlite3 used prebuilt binary**" >> $GITHUB_STEP_SUMMARY
+          fi
+        shell: bash
+
+      - name: Upload npm install logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: npm-logs-${{ matrix.os }}-node${{ matrix.node-version }}
+          path: |
+            npm-install.log
+            npm-install-global.log
+            npm-debug.log*
+          retention-days: 30
+
+      - name: Analyze node_modules size
+        run: |
+          echo "## node_modules Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Total size
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            SIZE=$(du -sh node_modules | cut -f1 || echo "N/A")
+          else
+            SIZE=$(du -sh node_modules | cut -f1)
+          fi
+          echo "**Total size:** $SIZE" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Top 10 largest packages
+          echo "**Top 10 largest packages:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            du -sh node_modules/* 2>/dev/null | sort -hr | head -10 || echo "Could not analyze"
+          else
+            du -sh node_modules/* | sort -hr | head -10
+          fi >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        shell: bash
