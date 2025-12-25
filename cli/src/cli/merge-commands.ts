@@ -7,10 +7,8 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import type Database from "better-sqlite3";
+import { execFileSync } from "child_process";
 import {
-  hasGitConflictMarkers,
-  parseMergeConflictFile,
-  resolveEntities,
   mergeThreeWay,
 } from "../merge-resolver.js";
 import { readJSONL, writeJSONL, type JSONLEntity } from "../jsonl.js";
@@ -67,11 +65,12 @@ export async function handleResolveConflicts(
   const issuesPath = path.join(ctx.outputDir, "issues.jsonl");
   const specsPath = path.join(ctx.outputDir, "specs.jsonl");
 
-  // Check for conflicts
+  // Check for actual git merge conflicts using git ls-files -u
+  // This is the most reliable way to detect unmerged entries
   const issuesHasConflict =
-    fs.existsSync(issuesPath) && hasGitConflictMarkers(issuesPath);
+    fs.existsSync(issuesPath) && isFileInConflict(issuesPath);
   const specsHasConflict =
-    fs.existsSync(specsPath) && hasGitConflictMarkers(specsPath);
+    fs.existsSync(specsPath) && isFileInConflict(specsPath);
 
   if (!issuesHasConflict && !specsHasConflict) {
     if (!ctx.jsonOutput) {
@@ -120,6 +119,137 @@ export async function handleResolveConflicts(
 }
 
 /**
+ * Read a specific git stage for a file
+ *
+ * @param stage - Git stage number (1=base, 2=ours, 3=theirs)
+ * @param relativePath - Path relative to repository root
+ * @param cwd - Working directory for git command (repository root)
+ * @returns Array of parsed JSONL entities, or empty array if stage doesn't exist
+ */
+function readGitStage(stage: 1 | 2 | 3, relativePath: string, cwd: string): JSONLEntity[] {
+  try {
+    // Use git show to read the stage content
+    // Security: execFileSync with array arguments prevents shell injection
+    const content = execFileSync(
+      'git',
+      ['show', `:${stage}:${relativePath}`],
+      { encoding: 'utf8', cwd, maxBuffer: 50 * 1024 * 1024 } // 50MB buffer for large JSONL files
+    );
+
+    // Parse JSONL: split by newline, filter empty lines, parse each as JSON
+    return content
+      .split('\n')
+      .filter(line => line.trim())
+      .map(line => {
+        try {
+          return JSON.parse(line);
+        } catch (e) {
+          console.warn(chalk.yellow(`Warning: Skipping malformed line in stage ${stage}: ${line.slice(0, 50)}...`));
+          return null;
+        }
+      })
+      .filter((entity): entity is JSONLEntity => entity !== null);
+  } catch (error: any) {
+    // If stage doesn't exist (e.g., file added in one branch), return empty array
+    if (error.status === 128 || error.stderr?.includes('does not exist') || error.stderr?.includes('not at stage')) {
+      return [];
+    }
+    // Provide helpful error for buffer overflow
+    if (error.code === 'ENOBUFS' || error.message?.includes('ENOBUFS')) {
+      throw new Error(
+        `File too large to read from git stage. The file exceeds the buffer limit. ` +
+        `This is likely a bug - please report it with the file size.`
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * Check if a file is actually in git conflict state
+ *
+ * @param filePath - Absolute path to the file
+ * @returns true if file has unmerged entries (is in conflict state)
+ */
+function isFileInConflict(filePath: string): boolean {
+  try {
+    // Get repository root
+    const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      encoding: 'utf8',
+      cwd: path.dirname(filePath),
+    }).trim();
+
+    // Resolve symlinks to get canonical paths (e.g., /var -> /private/var on macOS)
+    const realRepoRoot = fs.realpathSync(repoRoot);
+    const realFilePath = fs.realpathSync(filePath);
+
+    // Calculate relative path from repo root
+    const relativePath = path.relative(realRepoRoot, realFilePath);
+
+    // Check if file has unmerged entries using git ls-files -u
+    // This is the most reliable way to check for conflict state
+    const output = execFileSync('git', ['ls-files', '-u', relativePath], {
+      encoding: 'utf8',
+      cwd: realRepoRoot,
+    });
+
+    // If output is non-empty, file has unmerged entries (is in conflict)
+    return output.trim().length > 0;
+  } catch {
+    // If any git command fails, file is not in conflict
+    return false;
+  }
+}
+
+/**
+ * Try to get git stages (base/ours/theirs) for a file in merge state
+ *
+ * @param filePath - Absolute path to the file
+ * @returns Object with base, ours, theirs arrays, or null if not in merge state
+ */
+function tryGetGitStages(filePath: string): { base: JSONLEntity[], ours: JSONLEntity[], theirs: JSONLEntity[] } | null {
+  try {
+    // Get repository root
+    const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      encoding: 'utf8',
+      cwd: path.dirname(filePath),
+    }).trim();
+
+    // Resolve symlinks to get canonical paths (e.g., /var -> /private/var on macOS)
+    const realRepoRoot = fs.realpathSync(repoRoot);
+    const realFilePath = fs.realpathSync(filePath);
+
+    // Calculate relative path from repo root
+    const relativePath = path.relative(realRepoRoot, realFilePath);
+
+    // Try to read all three stages
+    // If any stage read fails with "not in merge state" error, return null
+    try {
+      const base = readGitStage(1, relativePath, realRepoRoot);
+      const ours = readGitStage(2, relativePath, realRepoRoot);
+      const theirs = readGitStage(3, relativePath, realRepoRoot);
+
+      // CRITICAL DEFENSE: Check if we have actual content
+      // If both ours and theirs are empty, we're not in a real conflict state
+      // This prevents data loss when tryGetGitStages is called on non-conflicted files
+      if (ours.length === 0 && theirs.length === 0) {
+        return null;
+      }
+
+      // If we successfully read at least ours and theirs, we're in a merge state
+      // (base might not exist for files added in both branches)
+      return { base, ours, theirs };
+    } catch (error: any) {
+      // If we can't read the stages, we're not in a merge state
+      return null;
+    }
+  } catch (error) {
+    // If git rev-parse fails, we're not in a git repo
+    return null;
+  }
+}
+
+/**
  * Resolve conflicts in a single JSONL file
  */
 async function resolveFile(
@@ -127,52 +257,21 @@ async function resolveFile(
   entityType: "issue" | "spec",
   options: ResolveConflictsOptions
 ): Promise<ResolveFileResult> {
-  // Read file with conflict markers
-  const content = fs.readFileSync(filePath, "utf8");
+  // Try to get base/ours/theirs from git index stages
+  const gitStages = tryGetGitStages(filePath);
 
-  // Parse conflicts
-  const sections = parseMergeConflictFile(content);
-
-  // Extract all entities (from both clean and conflict sections)
-  const allEntities: JSONLEntity[] = [];
-
-  for (const section of sections) {
-    if (section.type === "clean") {
-      for (const line of section.lines) {
-        if (line.trim()) {
-          try {
-            allEntities.push(JSON.parse(line));
-          } catch (e) {
-            console.warn(
-              chalk.yellow(
-                `Warning: Skipping malformed line: ${line.slice(0, 50)}...`
-              )
-            );
-          }
-        }
-      }
-    } else {
-      // Conflict section - include both ours and theirs
-      for (const line of [...(section.ours || []), ...(section.theirs || [])]) {
-        if (line.trim()) {
-          try {
-            allEntities.push(JSON.parse(line));
-          } catch (e) {
-            console.warn(
-              chalk.yellow(
-                `Warning: Skipping malformed line: ${line.slice(0, 50)}...`
-              )
-            );
-          }
-        }
-      }
-    }
+  if (!gitStages) {
+    throw new Error(
+      "Not in a git merge state. Run 'git merge' first, or the file is not in conflict."
+    );
   }
 
-  // Resolve conflicts
-  const { entities: resolved, stats } = resolveEntities(allEntities, {
-    verbose: options.verbose,
-  });
+  // Call mergeThreeWay with actual base from git stages
+  const { entities: resolved, stats } = mergeThreeWay(
+    gitStages.base,
+    gitStages.ours,
+    gitStages.theirs
+  );
 
   // Write back if not dry-run
   if (!options.dryRun) {

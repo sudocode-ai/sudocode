@@ -1675,6 +1675,143 @@ describe("WorktreeSyncService Foundation", () => {
     });
   });
 
+  describe("_resolveJSONLFile", () => {
+    it("should parse conflict markers into separate ours and theirs arrays", async () => {
+      const createIssue = (id: string, title: string) => ({
+        id,
+        uuid: `uuid-${id}`,
+        title,
+        status: "open",
+        content: "",
+        priority: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+      const conflictFile = path.join(testRepo, ".sudocode/conflict-test.jsonl");
+      fs.mkdirSync(path.dirname(conflictFile), { recursive: true });
+
+      const conflictContent = [
+        JSON.stringify(createIssue("i-clean-1", "Clean issue 1")),
+        "<<<<<<< HEAD",
+        JSON.stringify(createIssue("i-ours", "Our issue")),
+        "=======",
+        JSON.stringify(createIssue("i-theirs", "Their issue")),
+        ">>>>>>> branch",
+        JSON.stringify(createIssue("i-clean-2", "Clean issue 2")),
+      ].join("\n");
+
+      fs.writeFileSync(conflictFile, conflictContent);
+
+      await (service as any)._resolveJSONLFile(conflictFile);
+
+      const resolved = fs.readFileSync(conflictFile, "utf8");
+      const lines = resolved.split("\n").filter((l) => l.trim());
+
+      expect(lines.length).toBe(4);
+      expect(resolved).toContain("i-clean-1");
+      expect(resolved).toContain("i-clean-2");
+      expect(resolved).toContain("i-ours");
+      expect(resolved).toContain("i-theirs");
+    });
+
+    it("should add clean sections to BOTH ours and theirs arrays", async () => {
+      const createIssue = (id: string, title: string) => ({
+        id,
+        uuid: `uuid-${id}`,
+        title,
+        status: "open",
+        content: "",
+        priority: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+      const conflictFile = path.join(testRepo, ".sudocode/clean-sections.jsonl");
+      fs.mkdirSync(path.dirname(conflictFile), { recursive: true });
+
+      const conflictContent = [
+        JSON.stringify(createIssue("i-before", "Before conflict")),
+        "<<<<<<< HEAD",
+        JSON.stringify(createIssue("i-ours", "Our issue")),
+        "=======",
+        JSON.stringify(createIssue("i-theirs", "Their issue")),
+        ">>>>>>> branch",
+        JSON.stringify(createIssue("i-after", "After conflict")),
+      ].join("\n");
+
+      fs.writeFileSync(conflictFile, conflictContent);
+
+      await (service as any)._resolveJSONLFile(conflictFile);
+
+      const resolved = fs.readFileSync(conflictFile, "utf8");
+
+      expect(resolved).toContain("i-before");
+      expect(resolved).toContain("i-after");
+      expect(resolved).toContain("i-ours");
+      expect(resolved).toContain("i-theirs");
+    });
+
+    it("should use mergeThreeWay with empty base for latest-wins", async () => {
+      const createIssue = (id: string, uuid: string, title: string, updatedAt: string) => ({
+        id,
+        uuid,
+        title,
+        status: "open",
+        content: "",
+        priority: 0,
+        created_at: "2024-01-01T00:00:00Z",
+        updated_at: updatedAt,
+      });
+
+      const conflictFile = path.join(testRepo, ".sudocode/uuid-conflict.jsonl");
+      fs.mkdirSync(path.dirname(conflictFile), { recursive: true });
+
+      const conflictContent = [
+        "<<<<<<< HEAD",
+        JSON.stringify(createIssue("i-1", "same-uuid", "Older version", "2024-01-01T00:00:00Z")),
+        "=======",
+        JSON.stringify(createIssue("i-1", "same-uuid", "Newer version", "2024-06-01T00:00:00Z")),
+        ">>>>>>> branch",
+      ].join("\n");
+
+      fs.writeFileSync(conflictFile, conflictContent);
+
+      await (service as any)._resolveJSONLFile(conflictFile);
+
+      const resolved = fs.readFileSync(conflictFile, "utf8");
+      const lines = resolved.split("\n").filter((l) => l.trim());
+
+      expect(lines.length).toBe(1);
+      expect(resolved).toContain("Newer version");
+      expect(resolved).not.toContain("Older version");
+    });
+
+    it("should handle malformed JSON lines gracefully", async () => {
+      const conflictFile = path.join(testRepo, ".sudocode/malformed.jsonl");
+      fs.mkdirSync(path.dirname(conflictFile), { recursive: true });
+
+      const conflictContent = [
+        '{"id":"i-1","uuid":"uuid-1","title":"Valid"}',
+        "<<<<<<< HEAD",
+        '{"id":"i-2",malformed}',
+        "=======",
+        '{"id":"i-3","uuid":"uuid-3","title":"Also valid"}',
+        ">>>>>>> branch",
+      ].join("\n");
+
+      fs.writeFileSync(conflictFile, conflictContent);
+
+      await (service as any)._resolveJSONLFile(conflictFile);
+
+      const resolved = fs.readFileSync(conflictFile, "utf8");
+
+      expect(resolved).toContain("uuid-1");
+      expect(resolved).toContain("uuid-3");
+      expect(resolved).not.toContain("malformed");
+    });
+  });
+
   describe("_mergeJSONLFiles", () => {
     it("should merge JSONL files using UUID-based deduplication", async () => {
       const createIssue = (

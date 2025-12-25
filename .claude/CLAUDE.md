@@ -267,6 +267,24 @@ Features:
 - Follow-up shares worktree with root (continues from same state)
 - Change calculation traverses chain to find root `before_commit`
 
+### Pattern 8: Universal Three-Way Merge
+All JSONL merge conflict resolution uses the universal `mergeThreeWay()` algorithm:
+- **Three-way merge**: Uses base (common ancestor), ours, theirs
+- **YAML expansion**: Converts JSON entities to YAML for line-level merging
+- **Line-level resolution**: Uses `git merge-file` for text-based merging
+- **Automatic conflict resolver**: Applies latest-wins strategy for remaining conflicts
+- **Metadata merging**: Unions tags, relationships, feedback across all versions
+- **Deletion handling**: Modification wins over deletion
+- **Simulated 3-way**: Supports empty base (treats all as additions)
+
+**Key Files:**
+- `cli/src/merge-resolver.ts` - `mergeThreeWay()` function
+- `cli/src/yaml-converter.ts` - JSON ↔ YAML conversion
+- `cli/src/git-merge.ts` - Git merge-file wrapper
+- `cli/src/yaml-conflict-resolver.ts` - Latest-wins conflict resolution
+
+**Migration:** The legacy `resolveEntities()` function is deprecated in favor of `mergeThreeWay()` for all merge operations.
+
 ---
 
 ## Agent Configuration

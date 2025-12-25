@@ -58,8 +58,8 @@ function setupFullTestEnvironment() {
     status: "completed",
   });
 
-  // Create worktree
-  const worktreePath = path.join(repo, "..", "worktree");
+  // Create worktree with unique name to avoid collisions between tests
+  const worktreePath = path.join(repo, "..", `worktree-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
   execSync(`git worktree add ${worktreePath} -b worktree-branch`, {
     cwd: repo,
     stdio: "pipe",

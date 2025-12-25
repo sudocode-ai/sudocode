@@ -43,6 +43,7 @@
   "author": "sudocode AI",
   "license": "Apache-2.0",
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "typescript": "^5.3.3"
   }
 }

@@ -57,6 +57,9 @@ vi.mock("@sudocode-ai/cli/dist/integrations/index.js", () => ({
     { name: "beads", package: "@sudocode-ai/integration-beads" },
     { name: "github", package: "@sudocode-ai/integration-github" },
   ]),
+  isPluginInstalledGlobally: vi.fn((name: string) => {
+    return installedPlugins.has(name);
+  }),
   loadPlugin: vi.fn(async (name: string) => {
     if (installedPlugins.has(name)) {
       const capabilities = pluginCapabilities[name] || {
