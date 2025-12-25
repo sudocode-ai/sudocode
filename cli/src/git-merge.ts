@@ -82,9 +82,9 @@ export function mergeYamlContent(input: MergeInput): MergeResult {
   const theirsPath = path.join(tmpDir, 'theirs.yaml');
 
   // Track whether base is empty (simulated 3-way merge)
-    const baseIsEmpty = input.base.length === 0;
+  const baseIsEmpty = input.base.length === 0;
 
-    try {
+  try {
     // Write content to temp files
     fs.writeFileSync(basePath, input.base, 'utf8');
     fs.writeFileSync(oursPath, input.ours, 'utf8');
