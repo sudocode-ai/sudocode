@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 import Sidebar from './Sidebar'
-import { ChatWidget } from '@/components/chat-widget'
+// import { ChatWidget } from '@/components/chat-widget'
 
 export default function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -21,11 +21,7 @@ export default function MainLayout() {
       )}
 
       {/* Sidebar */}
-      <Sidebar
-        open={sidebarOpen}
-        collapsed={true}
-        onClose={() => setSidebarOpen(false)}
-      />
+      <Sidebar open={sidebarOpen} collapsed={true} onClose={() => setSidebarOpen(false)} />
 
       {/* Main content */}
       <main className="flex-1 overflow-y-auto">
@@ -33,7 +29,7 @@ export default function MainLayout() {
       </main>
 
       {/* Chat Widget - FAB and overlay/panel */}
-      <ChatWidget />
+      {/* <ChatWidget /> */}
     </div>
   )
 }
