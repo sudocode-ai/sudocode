@@ -21,7 +21,7 @@
 </div>
 <br/>
 <p align="center">
-  <code>npm install -g sudocode</code>
+  <code>curl -fsSL https://raw.githubusercontent.com/sudocode-ai/sudocode/main/scripts/install.sh | sh</code>
 </p>
 
 <p align="center">
@@ -77,11 +77,28 @@ If you're up for it, you can even monitor all running agent trajectories at the 
 
 ## Quick Start
 
-```bash
-# Install globally (recommended: use npx instead to avoid Node version conflicts)
-npm install -g sudocode
+### Installation
 
-# Initialize a sudocode project in your project directory.
+**One-line install (recommended):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/sudocode-ai/sudocode/main/scripts/install.sh | sh
+```
+
+**Or install via npm:**
+```bash
+npm install -g sudocode
+```
+
+**Or use npx (no installation):**
+```bash
+npx sudocode@latest init
+npx sudocode@latest server
+```
+
+### Getting Started
+
+```bash
+# Initialize a sudocode project in your project directory
 sudocode init
 
 # Run the local sudocode server from anywhere

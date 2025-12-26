@@ -1,0 +1,520 @@
+name: E2E Installation Tests
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to test (e.g., v0.1.17)'
+        required: true
+        type: string
+
+jobs:
+  test-install-sh:
+    name: Test install.sh - ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x64
+          - name: "Linux x64 / Node 20"
+            os: ubuntu-22.04
+            node: 20
+          - name: "Linux x64 / Node 22"
+            os: ubuntu-22.04
+            node: 22
+          # macOS arm64 (M1/M2)
+          - name: "macOS arm64 / Node 20"
+            os: macos-14
+            node: 20
+          - name: "macOS arm64 / Node 22"
+            os: macos-14
+            node: 22
+          # macOS x64 (Intel)
+          - name: "macOS x64 / Node 20"
+            os: macos-13
+            node: 20
+          - name: "macOS x64 / Node 22"
+            os: macos-13
+            node: 22
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Get version to test
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${INPUT_VERSION:-$RELEASE_TAG}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Testing version: $VERSION"
+
+      - name: Clean existing installation
+        shell: bash
+        run: |
+          # Remove any existing global sudocode installation
+          npm uninstall -g sudocode 2>/dev/null || true
+          npm uninstall -g @sudocode-ai/cli 2>/dev/null || true
+
+      - name: Run install.sh
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -e
+          echo "Installing sudocode via install.sh..."
+          curl -fsSL "https://raw.githubusercontent.com/sudocode-ai/sudocode/$VERSION/scripts/install.sh" | sh -s -- "$VERSION"
+
+      - name: Verify installation
+        shell: bash
+        run: |
+          set -e
+
+          # Verify sudocode command exists
+          if ! command -v sudocode &> /dev/null; then
+            echo "Error: sudocode command not found"
+            exit 1
+          fi
+
+          # Verify version
+          VERSION=$(sudocode --version)
+          echo "Installed version: $VERSION"
+
+      - name: Download smoke tests
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/sudocode-ai/sudocode/$VERSION/scripts/smoke-tests.sh" -o smoke-tests.sh
+          chmod +x smoke-tests.sh
+
+      - name: Run smoke tests
+        shell: bash
+        run: |
+          ./smoke-tests.sh
+
+      - name: Generate test report
+        if: always()
+        shell: bash
+        env:
+          OS: ${{ matrix.os }}
+          NODE: ${{ matrix.node }}
+          VERSION: ${{ steps.version.outputs.version }}
+          JOB_STATUS: ${{ job.status }}
+          INSTALL_OUTCOME: ${{ steps.run-install-sh.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify-installation.outcome }}
+          SMOKE_OUTCOME: ${{ steps.run-smoke-tests.outcome }}
+        run: |
+          cat > "test-report-$OS-node$NODE.md" << EOF
+          # Test Report: $OS - Node $NODE
+
+          **Platform:** $OS
+          **Node Version:** $NODE
+          **Test Version:** $VERSION
+          **Install Method:** install.sh
+          **Status:** $JOB_STATUS
+
+          ## Test Results
+
+          - Installation: $([ "$INSTALL_OUTCOME" = "success" ] && echo "✓" || echo "✗")
+          - Verification: $([ "$VERIFY_OUTCOME" = "success" ] && echo "✓" || echo "✗")
+          - Smoke Tests: $([ "$SMOKE_OUTCOME" = "success" ] && echo "✓" || echo "✗")
+          EOF
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-install-sh-${{ matrix.os }}-node${{ matrix.node }}
+          path: test-report-*.md
+
+  test-npm-tarball:
+    name: Test npm tarball - ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x64
+          - name: "Linux x64 / Node 20"
+            os: ubuntu-22.04
+            node: 20
+          - name: "Linux x64 / Node 22"
+            os: ubuntu-22.04
+            node: 22
+          # macOS arm64 (M1/M2)
+          - name: "macOS arm64 / Node 20"
+            os: macos-14
+            node: 20
+          - name: "macOS arm64 / Node 22"
+            os: macos-14
+            node: 22
+          # macOS x64 (Intel)
+          - name: "macOS x64 / Node 20"
+            os: macos-13
+            node: 20
+          - name: "macOS x64 / Node 22"
+            os: macos-13
+            node: 22
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Get version to test
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${INPUT_VERSION:-$RELEASE_TAG}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Testing version: $VERSION"
+
+      - name: Clean existing installation
+        shell: bash
+        run: |
+          npm uninstall -g sudocode 2>/dev/null || true
+          npm uninstall -g @sudocode-ai/cli 2>/dev/null || true
+
+      - name: Detect platform and download tarball
+        id: download
+        shell: bash
+        env:
+          NODE_VERSION: ${{ matrix.node }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -e
+
+          # Detect platform
+          OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+          case "$OS" in
+            linux) OS="linux" ;;
+            darwin) OS="darwin" ;;
+            mingw*|msys*|cygwin*) OS="win32" ;;
+          esac
+
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64) ARCH="x64" ;;
+            aarch64|arm64) ARCH="arm64" ;;
+          esac
+
+          TARBALL="sudocode-${VERSION}-${OS}-${ARCH}-node${NODE_VERSION}.tar.gz"
+          TARBALL_URL="https://github.com/sudocode-ai/sudocode/releases/download/${VERSION}/${TARBALL}"
+
+          echo "Downloading: $TARBALL_URL"
+          curl -fsSL -o "$TARBALL" "$TARBALL_URL"
+
+          # Download checksum
+          curl -fsSL -o "${TARBALL}.sha256" "${TARBALL_URL}.sha256"
+
+          echo "tarball=$TARBALL" >> $GITHUB_OUTPUT
+
+      - name: Verify checksum
+        shell: bash
+        env:
+          TARBALL: ${{ steps.download.outputs.tarball }}
+          RUNNER_OS: ${{ runner.os }}
+        run: |
+          set -e
+
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            # Windows: use certutil
+            certutil -hashfile "$TARBALL" SHA256 | grep -v ":" > actual.sha256
+            cat "${TARBALL}.sha256" | awk '{print $1}' > expected.sha256
+          else
+            # Linux/macOS: use sha256sum/shasum
+            if command -v sha256sum &> /dev/null; then
+              sha256sum "$TARBALL" | awk '{print $1}' > actual.sha256
+            else
+              shasum -a 256 "$TARBALL" | awk '{print $1}' > actual.sha256
+            fi
+            cat "${TARBALL}.sha256" | awk '{print $1}' > expected.sha256
+          fi
+
+          if ! diff -q actual.sha256 expected.sha256; then
+            echo "Checksum verification failed!"
+            echo "Expected: $(cat expected.sha256)"
+            echo "Actual: $(cat actual.sha256)"
+            exit 1
+          fi
+
+          echo "Checksum verified successfully"
+
+      - name: Install from tarball
+        shell: bash
+        env:
+          TARBALL: ${{ steps.download.outputs.tarball }}
+        run: |
+          set -e
+          npm install -g "$TARBALL"
+
+      - name: Verify installation
+        shell: bash
+        run: |
+          set -e
+
+          if ! command -v sudocode &> /dev/null; then
+            echo "Error: sudocode command not found"
+            exit 1
+          fi
+
+          VERSION=$(sudocode --version)
+          echo "Installed version: $VERSION"
+
+      - name: Download smoke tests
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/sudocode-ai/sudocode/$VERSION/scripts/smoke-tests.sh" -o smoke-tests.sh
+          chmod +x smoke-tests.sh
+
+      - name: Run smoke tests
+        shell: bash
+        run: |
+          ./smoke-tests.sh
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-tarball-${{ matrix.os }}-node${{ matrix.node }}
+          path: test-report-*.md
+
+  test-upgrade:
+    name: Test upgrade - ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x64
+          - name: "Linux x64 / Node 20"
+            os: ubuntu-22.04
+            node: 20
+          - name: "Linux x64 / Node 22"
+            os: ubuntu-22.04
+            node: 22
+          # macOS arm64 (M1/M2)
+          - name: "macOS arm64 / Node 20"
+            os: macos-14
+            node: 20
+          - name: "macOS arm64 / Node 22"
+            os: macos-14
+            node: 22
+          # macOS x64 (Intel)
+          - name: "macOS x64 / Node 20"
+            os: macos-13
+            node: 20
+          - name: "macOS x64 / Node 22"
+            os: macos-13
+            node: 22
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Get version to test
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${INPUT_VERSION:-$RELEASE_TAG}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Testing upgrade to: $VERSION"
+
+      - name: Install previous version
+        shell: bash
+        run: |
+          set -e
+
+          # Install previous stable version (e.g., v0.1.16)
+          npm install -g sudocode@0.1.16
+
+          OLD_VERSION=$(sudocode --version)
+          echo "Installed previous version: $OLD_VERSION"
+
+      - name: Create test project
+        shell: bash
+        run: |
+          set -e
+          mkdir -p /tmp/test-project
+          cd /tmp/test-project
+
+          # Initialize sudocode project
+          sudocode init
+
+          # Create test spec
+          sudocode spec create --title "Test Spec Before Upgrade"
+
+          # Create test issue
+          sudocode issue create --title "Test Issue Before Upgrade"
+
+          # Verify data
+          sudocode spec list
+          sudocode issue list
+
+      - name: Upgrade via install.sh
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -e
+          curl -fsSL "https://raw.githubusercontent.com/sudocode-ai/sudocode/$VERSION/scripts/install.sh" | sh -s -- "$VERSION"
+
+      - name: Verify upgrade
+        shell: bash
+        run: |
+          set -e
+
+          NEW_VERSION=$(sudocode --version)
+          echo "Upgraded to version: $NEW_VERSION"
+
+          # Verify new version is different
+          if [[ "$NEW_VERSION" == *"0.1.16"* ]]; then
+            echo "Error: Version did not upgrade"
+            exit 1
+          fi
+
+      - name: Verify existing project
+        shell: bash
+        run: |
+          set -e
+          cd /tmp/test-project
+
+          # Verify data still exists
+          if ! sudocode spec list | grep -q "Test Spec Before Upgrade"; then
+            echo "Error: Spec data lost after upgrade"
+            exit 1
+          fi
+
+          if ! sudocode issue list | grep -q "Test Issue Before Upgrade"; then
+            echo "Error: Issue data lost after upgrade"
+            exit 1
+          fi
+
+          echo "Data preserved successfully after upgrade"
+
+      - name: Download smoke tests
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/sudocode-ai/sudocode/$VERSION/scripts/smoke-tests.sh" -o smoke-tests.sh
+          chmod +x smoke-tests.sh
+
+      - name: Run smoke tests
+        shell: bash
+        run: |
+          cd /tmp/test-project
+          ../smoke-tests.sh
+
+  aggregate-results:
+    name: Aggregate Test Results
+    needs: [test-install-sh, test-npm-tarball, test-upgrade]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Download all test reports
+        uses: actions/download-artifact@v4
+        with:
+          path: test-reports
+
+      - name: Generate summary report
+        env:
+          VERSION: ${{ inputs.version || github.event.release.tag_name }}
+          INSTALL_SH_RESULT: ${{ needs.test-install-sh.result }}
+          TARBALL_RESULT: ${{ needs.test-npm-tarball.result }}
+          UPGRADE_RESULT: ${{ needs.test-upgrade.result }}
+        run: |
+          cat > summary.md << EOF
+          # E2E Installation Test Results
+
+          **Version:** $VERSION
+          **Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+          ## Test Job Results
+
+          - install.sh tests: $INSTALL_SH_RESULT
+          - npm tarball tests: $TARBALL_RESULT
+          - Upgrade tests: $UPGRADE_RESULT
+
+          ## Detailed Results
+
+          EOF
+
+          # Aggregate results from all reports
+          find test-reports -name "*.md" -type f | while read report; do
+            cat "$report" >> summary.md
+            echo "" >> summary.md
+          done
+
+          echo "## Overall Status" >> summary.md
+
+          if [[ "$INSTALL_SH_RESULT" == "success" ]] && \
+             [[ "$TARBALL_RESULT" == "success" ]] && \
+             [[ "$UPGRADE_RESULT" == "success" ]]; then
+            echo "✅ All tests passed" >> summary.md
+          else
+            echo "❌ Some tests failed" >> summary.md
+          fi
+
+          cat summary.md
+
+      - name: Upload summary report
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-summary
+          path: summary.md
+
+      - name: Post results to release
+        if: github.event_name == 'release'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('summary.md', 'utf8');
+
+            await github.rest.repos.createReleaseComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: context.payload.release.id,
+              body: summary
+            });
+
+      - name: Create issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        env:
+          VERSION: ${{ inputs.version || github.event.release.tag_name }}
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('summary.md', 'utf8');
+            const version = process.env.VERSION;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `E2E Installation Tests Failed - ${version}`,
+              body: `E2E installation tests failed for version ${version}.\n\n${summary}`,
+              labels: ['bug', 'ci', 'installation']
+            });

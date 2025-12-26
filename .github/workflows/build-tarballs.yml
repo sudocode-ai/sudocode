@@ -1,0 +1,289 @@
+name: Build Release Tarballs
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g., v0.1.17-beta.1)'
+        required: true
+        type: string
+
+jobs:
+  build-tarballs:
+    name: Build ${{ matrix.os }}-${{ matrix.arch }} (Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu builds
+          - os: ubuntu-22.04
+            arch: x64
+            node: 20
+            platform: linux
+          - os: ubuntu-22.04
+            arch: x64
+            node: 22
+            platform: linux
+
+          # macOS builds (both architectures)
+          - os: macos-14
+            arch: arm64
+            node: 20
+            platform: darwin
+          - os: macos-14
+            arch: arm64
+            node: 22
+            platform: darwin
+          - os: macos-13
+            arch: x64
+            node: 20
+            platform: darwin
+          - os: macos-13
+            arch: x64
+            node: 22
+            platform: darwin
+
+          # Windows builds
+          - os: windows-2022
+            arch: x64
+            node: 20
+            platform: win32
+          - os: windows-2022
+            arch: x64
+            node: 22
+            platform: win32
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          architecture: ${{ matrix.arch }}
+          cache: 'npm'
+
+      - name: Get version from tag
+        id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref }}
+          EVENT_NAME: ${{ github.event_name }}
+        shell: bash
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="${REF_NAME#refs/tags/}"
+          fi
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all packages
+        run: npm run build
+
+      - name: Pack sudocode meta-package
+        working-directory: ./sudocode
+        run: npm pack
+
+      - name: Rename tarball with platform info
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+          NODE_VERSION: ${{ matrix.node }}
+        shell: bash
+        run: |
+          cd sudocode
+          ORIGINAL=$(ls sudocode-*.tgz)
+
+          NEW_NAME="sudocode-${VERSION}-${PLATFORM}-${ARCH}-node${NODE_VERSION}.tgz"
+
+          mv "$ORIGINAL" "$NEW_NAME"
+          echo "TARBALL_NAME=$NEW_NAME" >> $GITHUB_ENV
+
+      - name: Generate SHA256 checksum
+        env:
+          RUNNER_OS: ${{ runner.os }}
+        shell: bash
+        run: |
+          cd sudocode
+
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            certutil -hashfile "$TARBALL_NAME" SHA256 | findstr /v ":" | findstr /v "CertUtil" > "${TARBALL_NAME}.sha256"
+          else
+            shasum -a 256 "$TARBALL_NAME" > "${TARBALL_NAME}.sha256"
+          fi
+
+          echo "Checksum for $TARBALL_NAME:"
+          cat "${TARBALL_NAME}.sha256"
+
+      - name: Upload tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.TARBALL_NAME }}
+          path: sudocode/${{ env.TARBALL_NAME }}
+          retention-days: 90
+
+      - name: Upload checksum artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.TARBALL_NAME }}.sha256
+          path: sudocode/${{ env.TARBALL_NAME }}.sha256
+          retention-days: 90
+
+  create-release:
+    name: Create GitHub Release
+    needs: build-tarballs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="${REF_NAME#refs/tags/}"
+          fi
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display artifact structure
+        run: |
+          echo "Artifact structure:"
+          ls -R artifacts/
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+
+          # Copy all tarballs and checksums to release-assets
+          find artifacts -name "*.tgz" -exec cp {} release-assets/ \;
+          find artifacts -name "*.sha256" -exec cp {} release-assets/ \;
+
+          echo "Release assets:"
+          ls -lh release-assets/
+
+      - name: Generate release notes
+        env:
+          REPO: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          cat > release-notes.md << 'EOF'
+          ## Pre-built Tarballs
+
+          Download platform-specific pre-built tarballs to skip local build time:
+
+          ### Installation
+
+          ```bash
+          # Linux (Node 20)
+          npm install -g https://github.com/${REPO}/releases/download/${TAG}/sudocode-${VERSION}-linux-x64-node20.tgz
+
+          # macOS ARM64 (Node 20)
+          npm install -g https://github.com/${REPO}/releases/download/${TAG}/sudocode-${VERSION}-darwin-arm64-node20.tgz
+
+          # macOS Intel (Node 20)
+          npm install -g https://github.com/${REPO}/releases/download/${TAG}/sudocode-${VERSION}-darwin-x64-node20.tgz
+
+          # Windows (Node 20)
+          npm install -g https://github.com/${REPO}/releases/download/${TAG}/sudocode-${VERSION}-win32-x64-node20.tgz
+          ```
+
+          ### Available Platforms
+
+          - **Linux**: `linux-x64` (Node 20, 22)
+          - **macOS**: `darwin-arm64`, `darwin-x64` (Node 20, 22)
+          - **Windows**: `win32-x64` (Node 20, 22)
+
+          ### Verification
+
+          Each tarball includes a SHA256 checksum file for verification:
+
+          ```bash
+          # Download tarball and checksum
+          curl -LO https://github.com/${REPO}/releases/download/${TAG}/sudocode-${VERSION}-linux-x64-node20.tgz
+          curl -LO https://github.com/${REPO}/releases/download/${TAG}/sudocode-${VERSION}-linux-x64-node20.tgz.sha256
+
+          # Verify checksum (Linux/macOS)
+          shasum -a 256 -c sudocode-${VERSION}-linux-x64-node20.tgz.sha256
+
+          # Verify checksum (Windows PowerShell)
+          $hash = Get-FileHash -Algorithm SHA256 sudocode-${VERSION}-win32-x64-node20.tgz
+          $expected = Get-Content sudocode-${VERSION}-win32-x64-node20.tgz.sha256
+          if ($hash.Hash -eq $expected.Split()[0]) { "OK" } else { "FAILED" }
+          ```
+
+          ### NPM Registry
+
+          You can also install from npm (requires local build):
+
+          ```bash
+          npm install -g sudocode@${VERSION}
+          ```
+          EOF
+
+          # Substitute environment variables
+          sed -i "s|\${REPO}|$REPO|g" release-notes.md
+          sed -i "s|\${VERSION}|$VERSION|g" release-notes.md
+          sed -i "s|\${TAG}|$TAG|g" release-notes.md
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.tag }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'alpha') || contains(steps.version.outputs.version, 'rc') }}
+          files: |
+            release-assets/*.tgz
+            release-assets/*.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create release summary
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "## 📦 Release Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** $TAG" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Tarballs" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          ls -lh release-assets/*.tgz | awk '{print "- " $9 " (" $5 ")"}' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "[View Release](https://github.com/$REPO/releases/tag/$TAG)" >> $GITHUB_STEP_SUMMARY
