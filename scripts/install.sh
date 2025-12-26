@@ -93,6 +93,19 @@ detect_node_version() {
 # Get latest release version from GitHub
 get_latest_version() {
   local version=""
+  local include_prerelease="${1:-false}"
+
+  if [ "$include_prerelease" = "true" ]; then
+    # For dev/beta, we can't automatically determine "latest" - user must specify version
+    echo -e "${RED}Error: Cannot auto-detect latest dev/beta version${NC}" >&2
+    echo "Please specify a dev or beta version explicitly:" >&2
+    echo "  curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install.sh | sh -s -- v0.1.17-dev.1" >&2
+    echo "  curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install.sh | sh -s -- v0.1.17-beta.1" >&2
+    echo "" >&2
+    echo "Available pre-releases:" >&2
+    echo "  https://github.com/${GITHUB_REPO}/releases" >&2
+    exit 1
+  fi
 
   # Try using curl with GitHub API
   if command -v curl &> /dev/null; then
@@ -109,6 +122,15 @@ get_latest_version() {
   fi
 
   echo "$version"
+}
+
+# Check if version is a pre-release (dev or beta)
+is_prerelease() {
+  local version="$1"
+  if [[ "$version" =~ -dev\. ]] || [[ "$version" =~ -beta\. ]]; then
+    return 0
+  fi
+  return 1
 }
 
 # Download file with retries
@@ -240,6 +262,21 @@ print_success() {
 # Main installation flow
 main() {
   local version="${1:-}"
+  local is_dev_beta=false
+
+  # Parse arguments - support both flags and version strings
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dev|--beta)
+        is_dev_beta=true
+        shift
+        ;;
+      *)
+        version="$1"
+        shift
+        ;;
+    esac
+  done
 
   echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo -e "${BLUE}  sudocode installer${NC}"
@@ -259,11 +296,25 @@ main() {
 
   # Get version
   if [ -z "$version" ]; then
-    echo "Fetching latest release..."
-    version=$(get_latest_version)
+    if [ "$is_dev_beta" = "true" ]; then
+      echo "Fetching latest pre-release..."
+      get_latest_version "true"  # This will error and show help
+    else
+      echo "Fetching latest release..."
+      version=$(get_latest_version)
+    fi
+  fi
+
+  # Check if version is a pre-release
+  if is_prerelease "$version"; then
+    is_dev_beta=true
+    echo -e "  ${YELLOW}Pre-release version detected${NC}"
   fi
 
   echo -e "  Version: ${GREEN}$version${NC}"
+  if [ "$is_dev_beta" = "true" ]; then
+    echo -e "  ${YELLOW}⚠ Installing pre-release (dev/beta) build${NC}"
+  fi
   echo ""
 
   # Construct tarball name and URL
@@ -277,12 +328,23 @@ main() {
   if ! download_file "$tarball_url" "$tarball_name"; then
     echo -e "${RED}Error: Failed to download tarball${NC}" >&2
     echo "" >&2
-    echo "Please check:" >&2
-    echo "  - Is the version correct? ($version)" >&2
-    echo "  - Does the release exist for your platform? ($os-$arch-$node_version)" >&2
-    echo "  - Do you have internet connectivity?" >&2
-    echo "" >&2
-    echo "Available releases: https://github.com/${GITHUB_REPO}/releases" >&2
+
+    if [ "$is_dev_beta" = "true" ]; then
+      echo -e "${RED}Dev/beta build not found for $version${NC}" >&2
+      echo "" >&2
+      echo "Available pre-releases:" >&2
+      echo "  https://github.com/${GITHUB_REPO}/releases" >&2
+      echo "" >&2
+      echo "To install latest stable version:" >&2
+      echo "  curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/scripts/install.sh | sh" >&2
+    else
+      echo "Please check:" >&2
+      echo "  - Is the version correct? ($version)" >&2
+      echo "  - Does the release exist for your platform? ($os-$arch-$node_version)" >&2
+      echo "  - Do you have internet connectivity?" >&2
+      echo "" >&2
+      echo "Available releases: https://github.com/${GITHUB_REPO}/releases" >&2
+    fi
     exit 1
   fi
   echo ""

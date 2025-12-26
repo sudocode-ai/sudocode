@@ -84,6 +84,22 @@ If you're up for it, you can even monitor all running agent trajectories at the 
 curl -fsSL https://raw.githubusercontent.com/sudocode-ai/sudocode/main/scripts/install.sh | sh
 ```
 
+**Install a specific version:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/sudocode-ai/sudocode/main/scripts/install.sh | sh -s -- v0.1.17
+```
+
+**Install dev/beta builds (for testing):**
+```bash
+# Install a specific dev build
+curl -fsSL https://raw.githubusercontent.com/sudocode-ai/sudocode/main/scripts/install.sh | sh -s -- v0.1.17-dev.1
+
+# Install a specific beta build
+curl -fsSL https://raw.githubusercontent.com/sudocode-ai/sudocode/main/scripts/install.sh | sh -s -- v0.1.17-beta.1
+```
+
+> **For Maintainers:** See the [Dev/Beta Build Testing Guide](docs/DEV_BUILD_TESTING.md) for comprehensive instructions on creating, testing, and validating development builds.
+
 **Or install via npm:**
 ```bash
 npm install -g sudocode

@@ -232,6 +232,8 @@ npm install -g <tarball-url> --loglevel verbose
 
 ## Related Documents
 
+- **Dev/Beta Build Testing Guide:** [docs/DEV_BUILD_TESTING.md](DEV_BUILD_TESTING.md) - Comprehensive guide for testing development builds
+- **Install Script Documentation:** [scripts/INSTALL_README.md](../scripts/INSTALL_README.md)
 - **Build Optimization Spec:** `.sudocode/specs/s-8sb7_build_time_optimization_and_validation.md`
 - **Build Time Profiling:** `.github/workflows/build-time-profile.yml`
 - **Publishing Workflow:** `.github/workflows/publish.yml`

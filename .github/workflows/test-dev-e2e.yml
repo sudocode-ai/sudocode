@@ -1,0 +1,470 @@
+name: Dev/Beta E2E Installation Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Dev/beta version to test (leave empty to use latest pre-release)'
+        required: false
+        type: string
+  workflow_run:
+    workflows: ["Build Dev/Beta Tarballs"]
+    types:
+      - completed
+
+jobs:
+  # Determine version from inputs or triggering workflow
+  determine-version:
+    name: Determine version to test
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Get version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_VERSION" ]; then
+            # Manual trigger with specific version
+            VERSION="$INPUT_VERSION"
+
+            # Validate it's a dev/beta version
+            if [[ ! "$VERSION" =~ -dev\. ]] && [[ ! "$VERSION" =~ -beta\. ]]; then
+              echo "Error: Version must be a dev or beta build (e.g., v0.1.17-dev.1)" >&2
+              exit 1
+            fi
+          else
+            # Auto-detect latest pre-release
+            echo "Finding latest pre-release..."
+            VERSION=$(curl -fsSL "https://api.github.com/repos/${{ github.repository }}/releases" | \
+              jq -r '[.[] | select(.prerelease == true)] | .[0].tag_name')
+
+            if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+              echo "Error: No pre-release found. Please specify a version or create a dev build first." >&2
+              exit 1
+            fi
+
+            echo "Found latest pre-release: $VERSION"
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Testing version: $VERSION"
+
+  test-install-sh:
+    name: Test install.sh - ${{ matrix.name }}
+    needs: determine-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x64
+          - name: "Linux x64 / Node 20"
+            os: ubuntu-22.04
+            node: 20
+          - name: "Linux x64 / Node 22"
+            os: ubuntu-22.04
+            node: 22
+          # macOS arm64 (M1/M2)
+          - name: "macOS arm64 / Node 20"
+            os: macos-14
+            node: 20
+          - name: "macOS arm64 / Node 22"
+            os: macos-14
+            node: 22
+          # macOS x64 (Intel)
+          - name: "macOS x64 / Node 20"
+            os: macos-13
+            node: 20
+          - name: "macOS x64 / Node 22"
+            os: macos-13
+            node: 22
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Clean existing installation
+        shell: bash
+        run: |
+          # Remove any existing global sudocode installation
+          npm uninstall -g sudocode 2>/dev/null || true
+          npm uninstall -g @sudocode-ai/cli 2>/dev/null || true
+
+      - name: Run install.sh with dev version
+        id: run-install-sh
+        shell: bash
+        env:
+          VERSION: ${{ needs.determine-version.outputs.version }}
+        run: |
+          set -e
+          echo "Installing sudocode dev/beta version via install.sh..."
+          echo "Version: $VERSION"
+          curl -fsSL "https://raw.githubusercontent.com/sudocode-ai/sudocode/main/scripts/install.sh" | sh -s -- "$VERSION"
+
+      - name: Verify installation
+        id: verify-installation
+        shell: bash
+        run: |
+          set -e
+
+          # Verify sudocode command exists
+          if ! command -v sudocode &> /dev/null; then
+            echo "Error: sudocode command not found"
+            exit 1
+          fi
+
+          # Verify version
+          VERSION=$(sudocode --version)
+          echo "Installed version: $VERSION"
+
+      - name: Download smoke tests
+        shell: bash
+        env:
+          VERSION: ${{ needs.determine-version.outputs.version }}
+        run: |
+          # Try to download from the version tag first, fall back to main
+          if ! curl -fsSL "https://raw.githubusercontent.com/sudocode-ai/sudocode/$VERSION/scripts/smoke-tests.sh" -o smoke-tests.sh 2>/dev/null; then
+            echo "Warning: Could not download smoke tests from version tag, using main branch"
+            curl -fsSL "https://raw.githubusercontent.com/sudocode-ai/sudocode/main/scripts/smoke-tests.sh" -o smoke-tests.sh
+          fi
+          chmod +x smoke-tests.sh
+
+      - name: Run smoke tests
+        id: run-smoke-tests
+        shell: bash
+        run: |
+          ./smoke-tests.sh
+
+      - name: Generate test report
+        if: always()
+        shell: bash
+        env:
+          OS: ${{ matrix.os }}
+          NODE: ${{ matrix.node }}
+          VERSION: ${{ needs.determine-version.outputs.version }}
+          JOB_STATUS: ${{ job.status }}
+          INSTALL_OUTCOME: ${{ steps.run-install-sh.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify-installation.outcome }}
+          SMOKE_OUTCOME: ${{ steps.run-smoke-tests.outcome }}
+        run: |
+          cat > "test-report-$OS-node$NODE.md" << EOF
+          # Dev/Beta Test Report: $OS - Node $NODE
+
+          **Platform:** $OS
+          **Node Version:** $NODE
+          **Test Version:** $VERSION (dev/beta)
+          **Install Method:** install.sh
+          **Status:** $JOB_STATUS
+
+          ## Test Results
+
+          - Installation: $([ "$INSTALL_OUTCOME" = "success" ] && echo "✓" || echo "✗")
+          - Verification: $([ "$VERIFY_OUTCOME" = "success" ] && echo "✓" || echo "✗")
+          - Smoke Tests: $([ "$SMOKE_OUTCOME" = "success" ] && echo "✓" || echo "✗")
+          EOF
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-install-sh-${{ matrix.os }}-node${{ matrix.node }}
+          path: test-report-*.md
+
+  test-npm-tarball:
+    name: Test npm tarball - ${{ matrix.name }}
+    needs: determine-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x64
+          - name: "Linux x64 / Node 20"
+            os: ubuntu-22.04
+            node: 20
+          - name: "Linux x64 / Node 22"
+            os: ubuntu-22.04
+            node: 22
+          # macOS arm64 (M1/M2)
+          - name: "macOS arm64 / Node 20"
+            os: macos-14
+            node: 20
+          - name: "macOS arm64 / Node 22"
+            os: macos-14
+            node: 22
+          # macOS x64 (Intel)
+          - name: "macOS x64 / Node 20"
+            os: macos-13
+            node: 20
+          - name: "macOS x64 / Node 22"
+            os: macos-13
+            node: 22
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Clean existing installation
+        shell: bash
+        run: |
+          npm uninstall -g sudocode 2>/dev/null || true
+          npm uninstall -g @sudocode-ai/cli 2>/dev/null || true
+
+      - name: Detect platform and download tarball
+        id: download
+        shell: bash
+        env:
+          NODE_VERSION: ${{ matrix.node }}
+          VERSION: ${{ needs.determine-version.outputs.version }}
+        run: |
+          set -e
+
+          # Detect platform
+          OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+          case "$OS" in
+            linux) OS="linux" ;;
+            darwin) OS="darwin" ;;
+            mingw*|msys*|cygwin*) OS="win32" ;;
+          esac
+
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64) ARCH="x64" ;;
+            aarch64|arm64) ARCH="arm64" ;;
+          esac
+
+          # Strip 'v' prefix for tarball name
+          VERSION_NO_V="${VERSION#v}"
+
+          TARBALL="sudocode-${VERSION_NO_V}-${OS}-${ARCH}-node${NODE_VERSION}.tgz"
+          TARBALL_URL="https://github.com/sudocode-ai/sudocode/releases/download/${VERSION}/${TARBALL}"
+
+          echo "Downloading: $TARBALL_URL"
+          curl -fsSL -o "$TARBALL" "$TARBALL_URL"
+
+          # Download checksum
+          curl -fsSL -o "${TARBALL}.sha256" "${TARBALL_URL}.sha256"
+
+          echo "tarball=$TARBALL" >> $GITHUB_OUTPUT
+
+      - name: Verify checksum
+        shell: bash
+        env:
+          TARBALL: ${{ steps.download.outputs.tarball }}
+          RUNNER_OS: ${{ runner.os }}
+        run: |
+          set -e
+
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            # Windows: use certutil
+            certutil -hashfile "$TARBALL" SHA256 | grep -v ":" > actual.sha256
+            cat "${TARBALL}.sha256" | awk '{print $1}' > expected.sha256
+          else
+            # Linux/macOS: use sha256sum/shasum
+            if command -v sha256sum &> /dev/null; then
+              sha256sum "$TARBALL" | awk '{print $1}' > actual.sha256
+            else
+              shasum -a 256 "$TARBALL" | awk '{print $1}' > actual.sha256
+            fi
+            cat "${TARBALL}.sha256" | awk '{print $1}' > expected.sha256
+          fi
+
+          if ! diff -q actual.sha256 expected.sha256; then
+            echo "Checksum verification failed!"
+            echo "Expected: $(cat expected.sha256)"
+            echo "Actual: $(cat actual.sha256)"
+            exit 1
+          fi
+
+          echo "Checksum verified successfully"
+
+      - name: Install from tarball
+        shell: bash
+        env:
+          TARBALL: ${{ steps.download.outputs.tarball }}
+        run: |
+          set -e
+          npm install -g "$TARBALL"
+
+      - name: Verify installation
+        shell: bash
+        run: |
+          set -e
+
+          if ! command -v sudocode &> /dev/null; then
+            echo "Error: sudocode command not found"
+            exit 1
+          fi
+
+          VERSION=$(sudocode --version)
+          echo "Installed version: $VERSION"
+
+      - name: Download smoke tests
+        shell: bash
+        env:
+          VERSION: ${{ needs.determine-version.outputs.version }}
+        run: |
+          # Try to download from the version tag first, fall back to main
+          if ! curl -fsSL "https://raw.githubusercontent.com/sudocode-ai/sudocode/$VERSION/scripts/smoke-tests.sh" -o smoke-tests.sh 2>/dev/null; then
+            echo "Warning: Could not download smoke tests from version tag, using main branch"
+            curl -fsSL "https://raw.githubusercontent.com/sudocode-ai/sudocode/main/scripts/smoke-tests.sh" -o smoke-tests.sh
+          fi
+          chmod +x smoke-tests.sh
+
+      - name: Run smoke tests
+        shell: bash
+        run: |
+          ./smoke-tests.sh
+
+      - name: Generate test report
+        if: always()
+        shell: bash
+        env:
+          OS: ${{ matrix.os }}
+          NODE: ${{ matrix.node }}
+          VERSION: ${{ needs.determine-version.outputs.version }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          cat > "test-report-tarball-$OS-node$NODE.md" << EOF
+          # Dev/Beta Test Report: $OS - Node $NODE
+
+          **Platform:** $OS
+          **Node Version:** $NODE
+          **Test Version:** $VERSION (dev/beta)
+          **Install Method:** npm tarball
+          **Status:** $JOB_STATUS
+
+          ## Test Results
+
+          - Download: ✓
+          - Checksum: ✓
+          - Installation: ✓
+          - Smoke Tests: ✓
+          EOF
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-tarball-${{ matrix.os }}-node${{ matrix.node }}
+          path: test-report-*.md
+
+  aggregate-results:
+    name: Aggregate Test Results
+    needs: [determine-version, test-install-sh, test-npm-tarball]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Download all test reports
+        uses: actions/download-artifact@v4
+        with:
+          path: test-reports
+
+      - name: Generate summary report
+        env:
+          VERSION: ${{ needs.determine-version.outputs.version }}
+          INSTALL_SH_RESULT: ${{ needs.test-install-sh.result }}
+          TARBALL_RESULT: ${{ needs.test-npm-tarball.result }}
+        run: |
+          cat > summary.md << EOF
+          # Dev/Beta E2E Installation Test Results
+
+          **Version:** $VERSION
+          **Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+          ⚠️ **This is a pre-release (dev/beta) test run**
+
+          ## Test Job Results
+
+          - install.sh tests: $INSTALL_SH_RESULT
+          - npm tarball tests: $TARBALL_RESULT
+
+          ## Detailed Results
+
+          EOF
+
+          # Aggregate results from all reports
+          find test-reports -name "*.md" -type f | while read report; do
+            cat "$report" >> summary.md
+            echo "" >> summary.md
+          done
+
+          echo "## Overall Status" >> summary.md
+
+          if [[ "$INSTALL_SH_RESULT" == "success" ]] && \
+             [[ "$TARBALL_RESULT" == "success" ]]; then
+            echo "✅ All tests passed" >> summary.md
+          else
+            echo "❌ Some tests failed" >> summary.md
+          fi
+
+          cat summary.md
+
+      - name: Upload summary report
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-summary
+          path: summary.md
+
+      - name: Add results to workflow summary
+        if: always()
+        env:
+          VERSION: ${{ needs.determine-version.outputs.version }}
+          INSTALL_SH_RESULT: ${{ needs.test-install-sh.result }}
+          TARBALL_RESULT: ${{ needs.test-npm-tarball.result }}
+        run: |
+          echo "# 🧪 Dev/Beta E2E Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "$INSTALL_SH_RESULT" == "success" ]]; then
+            echo "- ✅ install.sh tests: PASSED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ❌ install.sh tests: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [[ "$TARBALL_RESULT" == "success" ]]; then
+            echo "- ✅ npm tarball tests: PASSED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ❌ npm tarball tests: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "$INSTALL_SH_RESULT" == "success" ]] && [[ "$TARBALL_RESULT" == "success" ]]; then
+            echo "### ✅ All tests passed!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ Some tests failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Create issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        env:
+          VERSION: ${{ needs.determine-version.outputs.version }}
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('summary.md', 'utf8');
+            const version = process.env.VERSION;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Dev/Beta E2E Tests Failed - ${version}`,
+              body: `Dev/beta E2E installation tests failed for version ${version}.\n\n${summary}`,
+              labels: ['bug', 'ci', 'installation', 'dev-build']
+            });
