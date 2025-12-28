@@ -12,6 +12,7 @@ import {
   parseMergeConflictFile,
   resolveEntities,
   mergeThreeWay,
+  type ResolutionStats,
 } from "../merge-resolver.js";
 import { readJSONL, writeJSONL, type JSONLEntity } from "../jsonl.js";
 import { importFromJSONL } from "../import.js";
@@ -211,11 +212,11 @@ async function resolveFile(
     return { stats, entityType };
   }
 
-  // FALLBACK: No base available → use two-way merge (latest-wins)
+  // FALLBACK: No base available → use entity-level conflict detection
   if (options.verbose) {
     console.log(
       chalk.yellow(
-        '  Warning: Base version unavailable, falling back to two-way merge'
+        '  Warning: Base version unavailable, using entity-level conflict detection'
       )
     );
   }
@@ -226,15 +227,19 @@ async function resolveFile(
   // Parse conflicts
   const sections = parseMergeConflictFile(content);
 
-  // Extract all entities (from both clean and conflict sections)
-  const allEntities: JSONLEntity[] = [];
+  // Extract clean entities (no conflicts)
+  const cleanEntities: JSONLEntity[] = [];
+
+  // Extract entities from conflict sections, grouped by UUID
+  const oursEntitiesByUuid = new Map<string, JSONLEntity>();
+  const theirsEntitiesByUuid = new Map<string, JSONLEntity>();
 
   for (const section of sections) {
     if (section.type === "clean") {
       for (const line of section.lines) {
         if (line.trim()) {
           try {
-            allEntities.push(JSON.parse(line));
+            cleanEntities.push(JSON.parse(line));
           } catch (e) {
             console.warn(
               chalk.yellow(
@@ -245,15 +250,31 @@ async function resolveFile(
         }
       }
     } else {
-      // Conflict section - include both ours and theirs
-      for (const line of [...(section.ours || []), ...(section.theirs || [])]) {
+      // Conflict section - parse entities by UUID
+      for (const line of section.ours || []) {
         if (line.trim()) {
           try {
-            allEntities.push(JSON.parse(line));
+            const entity = JSON.parse(line);
+            oursEntitiesByUuid.set(entity.uuid, entity);
           } catch (e) {
             console.warn(
               chalk.yellow(
-                `Warning: Skipping malformed line: ${line.slice(0, 50)}...`
+                `Warning: Skipping malformed line in ours: ${line.slice(0, 50)}...`
+              )
+            );
+          }
+        }
+      }
+
+      for (const line of section.theirs || []) {
+        if (line.trim()) {
+          try {
+            const entity = JSON.parse(line);
+            theirsEntitiesByUuid.set(entity.uuid, entity);
+          } catch (e) {
+            console.warn(
+              chalk.yellow(
+                `Warning: Skipping malformed line in theirs: ${line.slice(0, 50)}...`
               )
             );
           }
@@ -262,17 +283,102 @@ async function resolveFile(
     }
   }
 
-  // Resolve conflicts using two-way merge (UUID-based deduplication)
-  const { entities: resolved, stats } = resolveEntities(allEntities, {
-    verbose: options.verbose,
+  // Separate clean additions from true conflicts
+  const allUuids = new Set([
+    ...Array.from(oursEntitiesByUuid.keys()),
+    ...Array.from(theirsEntitiesByUuid.keys())
+  ]);
+
+  const conflictingEntities: JSONLEntity[] = [];
+
+  for (const uuid of Array.from(allUuids)) {
+    const oursEntity = oursEntitiesByUuid.get(uuid);
+    const theirsEntity = theirsEntitiesByUuid.get(uuid);
+
+    if (oursEntity && theirsEntity) {
+      // Both sides have this UUID → true conflict, resolve it
+      conflictingEntities.push(oursEntity, theirsEntity);
+    } else if (oursEntity) {
+      // Only in ours → clean addition
+      cleanEntities.push(oursEntity);
+    } else if (theirsEntity) {
+      // Only in theirs → clean addition
+      cleanEntities.push(theirsEntity);
+    }
+  }
+
+  // Resolve only the true conflicts (entities with matching UUIDs)
+  let resolvedConflicts: JSONLEntity[] = [];
+  let conflictStats: ResolutionStats = {
+    totalInput: 0,
+    totalOutput: 0,
+    conflicts: []
+  };
+
+  if (conflictingEntities.length > 0) {
+    const resolved = resolveEntities(conflictingEntities, {
+      verbose: options.verbose,
+    });
+    resolvedConflicts = resolved.entities;
+    conflictStats = resolved.stats;
+  }
+
+  // Combine clean entities and resolved conflicts
+  const combined = [...cleanEntities, ...resolvedConflicts];
+
+  // Handle ID collisions across all entities (different UUIDs, same ID)
+  // This is a hash collision scenario that needs to be detected
+  const idCounts = new Map<string, number>();
+  const allResolved: JSONLEntity[] = [];
+
+  for (const entity of combined) {
+    const currentId = entity.id;
+
+    if (!idCounts.has(currentId)) {
+      // First entity with this ID
+      idCounts.set(currentId, 1);
+      allResolved.push(entity);
+    } else {
+      // ID collision - rename with suffix
+      const count = idCounts.get(currentId)!;
+      const newEntity = { ...entity } as JSONLEntity;
+      const newId = `${currentId}.${count}`;
+      newEntity.id = newId;
+
+      idCounts.set(currentId, count + 1);
+      allResolved.push(newEntity);
+
+      conflictStats.conflicts.push({
+        type: 'different-uuids',
+        uuid: entity.uuid,
+        originalIds: [currentId],
+        resolvedIds: [newId],
+        action: `Renamed ID to resolve hash collision (different UUIDs)`,
+      });
+    }
+  }
+
+  // Sort by created_at (git-friendly)
+  allResolved.sort((a, b) => {
+    const aDate = a.created_at || "";
+    const bDate = b.created_at || "";
+    if (aDate < bDate) return -1;
+    if (aDate > bDate) return 1;
+    return (a.id || "").localeCompare(b.id || "");
   });
+
+  const finalStats: ResolutionStats = {
+    totalInput: cleanEntities.length + conflictingEntities.length,
+    totalOutput: allResolved.length,
+    conflicts: conflictStats.conflicts
+  };
 
   // Write back if not dry-run
   if (!options.dryRun) {
-    await writeJSONL(filePath, resolved);
+    await writeJSONL(filePath, allResolved);
   }
 
-  return { stats, entityType };
+  return { stats: finalStats, entityType };
 }
 
 /**
