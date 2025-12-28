@@ -194,31 +194,60 @@ export function mergeYamlContent(input: MergeInput): MergeResult {
 export function readGitStage(filePath: string, stage: 1 | 2 | 3): string | null {
   try {
     // Convert absolute path to relative path from repo root
-    // git show :stage:path requires a path relative to repo root
     let relativePath = filePath;
     if (path.isAbsolute(filePath)) {
-      // Get repo root
       const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe'],
       }).trim();
-
-      // Convert to relative path
       relativePath = path.relative(repoRoot, filePath);
     }
 
-    // Use git show to read from index stage
-    // Format: ":stage:path"
-    const result = execFileSync('git', ['show', `:${stage}:${relativePath}`], {
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'], // stdin, stdout, stderr
-    });
+    // Use git checkout-index to extract stage to temp file
+    // This avoids buffer size limits by having git write directly to disk
+    // Format: "tempfile\tpath" (tempfile is relative to repo root)
+    const output = execFileSync(
+      'git',
+      ['checkout-index', `--stage=${stage}`, '--temp', relativePath],
+      {
+        encoding: 'utf8',
+        cwd: path.isAbsolute(filePath) 
+          ? execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
+          : undefined,
+      }
+    ).trim();
 
-    return result;
+    // Parse output: "tempfile\toriginalpath"
+    const [tempFile] = output.split('\t');
+    if (!tempFile) {
+      return null;
+    }
+
+    // Get repo root to resolve temp file path (git outputs relative to repo root)
+    const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      encoding: 'utf8',
+    }).trim();
+    const tempFilePath = path.join(repoRoot, tempFile);
+
+    try {
+      // Read content from git's temp file
+      const content = fs.readFileSync(tempFilePath, 'utf8');
+      return content;
+    } finally {
+      // Always clean up the temp file git created
+      try {
+        fs.unlinkSync(tempFilePath);
+      } catch (unlinkError) {
+        // Best effort cleanup - don't fail if file already gone
+        if (process.env.DEBUG_GIT_MERGE) {
+          console.warn('Warning: Failed to clean up temp file:', unlinkError);
+        }
+      }
+    }
   } catch (error: any) {
     // Stage doesn't exist (e.g., file added in one branch, deleted in another)
     // This is expected and not an error
-    if (error.status === 128) {
+    if (error.status === 128 || error.status === 1) {
       return null;
     }
 
