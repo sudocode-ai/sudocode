@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { useVoiceInput } from '@/hooks/useVoiceInput'
+import type { VoiceInputError } from '@sudocode-ai/types'
 
 // Mock the voice lib utilities
 vi.mock('@/lib/voice', () => ({
@@ -8,10 +9,34 @@ vi.mock('@/lib/voice', () => ({
   requestMicrophonePermission: vi.fn(),
   getSupportedMimeType: vi.fn(() => 'audio/webm;codecs=opus'),
   isMediaRecorderSupported: vi.fn(() => true),
+  isSpeechRecognitionSupported: vi.fn(() => false), // Default to false for existing tests
 }))
 
-// Import the mocked module to control its behavior
+// Mock useVoiceConfig - default to browser (no Web Speech in test env)
+vi.mock('@/hooks/useVoiceConfig', () => ({
+  useVoiceConfig: vi.fn(() => ({
+    config: null,
+    whisperAvailable: true,
+    webSpeechSupported: false,
+    sttAvailable: true,
+    preferredSTTProvider: 'whisper', // Falls back to whisper since webSpeechSupported=false
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  })),
+}))
+
+// Mock webSpeechSTT
+vi.mock('@/lib/webSpeechSTT', () => ({
+  createWebSpeechSession: vi.fn(),
+}))
+
+// Import the mocked modules to control their behavior
 import * as voiceLib from '@/lib/voice'
+import { useVoiceConfig } from '@/hooks/useVoiceConfig'
+import { createWebSpeechSession } from '@/lib/webSpeechSTT'
+
+const mockUseVoiceConfig = vi.mocked(useVoiceConfig)
 
 // Mock fetch for transcription API
 const mockFetch = vi.fn()
@@ -620,6 +645,318 @@ describe('useVoiceInput', () => {
       })
 
       expect(result.current.state).toBe('error')
+    })
+  })
+
+  describe('STT Provider Selection', () => {
+    it('should expose sttProvider from useVoiceConfig', () => {
+      mockUseVoiceConfig.mockReturnValue({
+        config: null,
+        whisperAvailable: false,
+        webSpeechSupported: true,
+        sttAvailable: true,
+        preferredSTTProvider: 'browser',
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+      })
+
+      const { result } = renderHook(() => useVoiceInput())
+
+      expect(result.current.sttProvider).toBe('browser')
+    })
+
+    it('should expose isConfigLoading from useVoiceConfig', () => {
+      mockUseVoiceConfig.mockReturnValue({
+        config: null,
+        whisperAvailable: false,
+        webSpeechSupported: false,
+        sttAvailable: false,
+        preferredSTTProvider: null,
+        isLoading: true,
+        error: null,
+        refetch: vi.fn(),
+      })
+
+      const { result } = renderHook(() => useVoiceInput())
+
+      expect(result.current.isConfigLoading).toBe(true)
+    })
+
+    it('should show browser as sttProvider when Whisper unavailable', () => {
+      mockUseVoiceConfig.mockReturnValue({
+        config: null,
+        whisperAvailable: false,
+        webSpeechSupported: true,
+        sttAvailable: true,
+        preferredSTTProvider: 'browser',
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+      })
+
+      const { result } = renderHook(() => useVoiceInput())
+
+      expect(result.current.sttProvider).toBe('browser')
+    })
+
+    it('should show null sttProvider when no provider available', () => {
+      mockUseVoiceConfig.mockReturnValue({
+        config: null,
+        whisperAvailable: false,
+        webSpeechSupported: false,
+        sttAvailable: false,
+        preferredSTTProvider: null,
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+      })
+
+      const { result } = renderHook(() => useVoiceInput())
+
+      expect(result.current.sttProvider).toBeNull()
+    })
+  })
+
+  describe('Web Speech API Fallback', () => {
+    beforeEach(() => {
+      // Configure for browser fallback mode
+      mockUseVoiceConfig.mockReturnValue({
+        config: null,
+        whisperAvailable: false,
+        webSpeechSupported: true,
+        sttAvailable: true,
+        preferredSTTProvider: 'browser',
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+      })
+      vi.mocked(voiceLib.isSpeechRecognitionSupported).mockReturnValue(true)
+    })
+
+    it('should use Web Speech API when Whisper unavailable', async () => {
+      const mockController = {
+        start: vi.fn(),
+        stop: vi.fn(),
+        abort: vi.fn(),
+      }
+      vi.mocked(createWebSpeechSession).mockReturnValue(mockController)
+
+      const { result } = renderHook(() => useVoiceInput())
+
+      await act(async () => {
+        await result.current.startRecording()
+      })
+
+      expect(createWebSpeechSession).toHaveBeenCalled()
+      expect(mockController.start).toHaveBeenCalled()
+      expect(result.current.state).toBe('recording')
+    })
+
+    it('should use browser language format for Web Speech API', async () => {
+      const mockController = {
+        start: vi.fn(),
+        stop: vi.fn(),
+        abort: vi.fn(),
+      }
+      vi.mocked(createWebSpeechSession).mockReturnValue(mockController)
+
+      const { result } = renderHook(() => useVoiceInput({ language: 'es' }))
+
+      await act(async () => {
+        await result.current.startRecording()
+      })
+
+      // Should convert 'es' to 'es-US' format
+      expect(createWebSpeechSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          language: 'es-US',
+        })
+      )
+    })
+
+    it('should stop Web Speech session on stopRecording', async () => {
+      const mockController = {
+        start: vi.fn(),
+        stop: vi.fn(),
+        abort: vi.fn(),
+      }
+      vi.mocked(createWebSpeechSession).mockReturnValue(mockController)
+
+      const { result } = renderHook(() => useVoiceInput())
+
+      await act(async () => {
+        await result.current.startRecording()
+      })
+
+      // Use real timers for the setTimeout in stopWebSpeechMode
+      vi.useRealTimers()
+
+      await act(async () => {
+        await result.current.stopRecording()
+      })
+
+      expect(mockController.stop).toHaveBeenCalled()
+
+      vi.useFakeTimers()
+    })
+
+    it('should abort Web Speech session on cancelRecording', async () => {
+      const mockController = {
+        start: vi.fn(),
+        stop: vi.fn(),
+        abort: vi.fn(),
+      }
+      vi.mocked(createWebSpeechSession).mockReturnValue(mockController)
+
+      const { result } = renderHook(() => useVoiceInput())
+
+      await act(async () => {
+        await result.current.startRecording()
+      })
+
+      act(() => {
+        result.current.cancelRecording()
+      })
+
+      expect(mockController.abort).toHaveBeenCalled()
+      expect(result.current.state).toBe('idle')
+    })
+
+    it('should set error when Web Speech session creation fails', async () => {
+      vi.mocked(createWebSpeechSession).mockReturnValue(null)
+
+      const onError = vi.fn()
+      const { result } = renderHook(() => useVoiceInput({ onError }))
+
+      await act(async () => {
+        await result.current.startRecording()
+      })
+
+      expect(result.current.state).toBe('error')
+      expect(result.current.error?.code).toBe('transcription_failed')
+      expect(onError).toHaveBeenCalled()
+    })
+
+    it('should accumulate transcriptions from Web Speech results', async () => {
+      let onResultCallback: ((result: { text: string; isFinal: boolean }) => void) | undefined
+
+      const mockController = {
+        start: vi.fn(),
+        stop: vi.fn(),
+        abort: vi.fn(),
+      }
+
+      vi.mocked(createWebSpeechSession).mockImplementation((options) => {
+        onResultCallback = options?.onResult
+        return mockController
+      })
+
+      const onTranscription = vi.fn()
+      const { result } = renderHook(() => useVoiceInput({ onTranscription }))
+
+      await act(async () => {
+        await result.current.startRecording()
+      })
+
+      // Simulate receiving final results
+      act(() => {
+        onResultCallback?.({ text: 'Hello ', isFinal: true })
+        onResultCallback?.({ text: 'world', isFinal: true })
+      })
+
+      // Use real timers for the setTimeout in stopWebSpeechMode
+      vi.useRealTimers()
+
+      await act(async () => {
+        await result.current.stopRecording()
+      })
+
+      expect(onTranscription).toHaveBeenCalledWith('Hello world')
+      expect(result.current.transcription).toBe('Hello world')
+
+      vi.useFakeTimers()
+    })
+
+    it('should call onInterimResult for interim Web Speech results', async () => {
+      let onResultCallback: ((result: { text: string; isFinal: boolean }) => void) | undefined
+
+      const mockController = {
+        start: vi.fn(),
+        stop: vi.fn(),
+        abort: vi.fn(),
+      }
+
+      vi.mocked(createWebSpeechSession).mockImplementation((options) => {
+        onResultCallback = options?.onResult
+        return mockController
+      })
+
+      const onInterimResult = vi.fn()
+      const { result } = renderHook(() => useVoiceInput({ onInterimResult }))
+
+      await act(async () => {
+        await result.current.startRecording()
+      })
+
+      // Simulate receiving interim result
+      act(() => {
+        onResultCallback?.({ text: 'hel...', isFinal: false })
+      })
+
+      expect(onInterimResult).toHaveBeenCalledWith('hel...')
+    })
+
+    it('should handle Web Speech API errors', async () => {
+      let onErrorCallback: ((error: VoiceInputError) => void) | undefined
+
+      const mockController = {
+        start: vi.fn(),
+        stop: vi.fn(),
+        abort: vi.fn(),
+      }
+
+      vi.mocked(createWebSpeechSession).mockImplementation((options) => {
+        onErrorCallback = options?.onError
+        return mockController
+      })
+
+      const onError = vi.fn()
+      const { result } = renderHook(() => useVoiceInput({ onError }))
+
+      await act(async () => {
+        await result.current.startRecording()
+      })
+
+      // Simulate error from Web Speech API
+      act(() => {
+        onErrorCallback?.({ code: 'permission_denied', message: 'Microphone access denied' })
+      })
+
+      expect(result.current.state).toBe('error')
+      expect(result.current.error?.code).toBe('permission_denied')
+      expect(onError).toHaveBeenCalled()
+    })
+  })
+
+  describe('Mixed Browser Support', () => {
+    it('should consider isSupported true if either MediaRecorder or SpeechRecognition supported', () => {
+      // Only SpeechRecognition supported
+      vi.mocked(voiceLib.isMediaRecorderSupported).mockReturnValue(false)
+      vi.mocked(voiceLib.isSpeechRecognitionSupported).mockReturnValue(true)
+
+      const { result } = renderHook(() => useVoiceInput())
+
+      expect(result.current.isSupported).toBe(true)
+    })
+
+    it('should consider isSupported false if neither is supported', () => {
+      vi.mocked(voiceLib.isMediaRecorderSupported).mockReturnValue(false)
+      vi.mocked(voiceLib.isSpeechRecognitionSupported).mockReturnValue(false)
+
+      const { result } = renderHook(() => useVoiceInput())
+
+      expect(result.current.isSupported).toBe(false)
     })
   })
 })

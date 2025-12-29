@@ -5,6 +5,8 @@
  * for the voice input feature.
  */
 
+// Web Speech API types are declared in src/types/web-speech.d.ts
+
 /**
  * Preferred MIME types for audio recording, in order of preference.
  * - audio/webm;codecs=opus offers the best quality/size ratio
@@ -154,4 +156,89 @@ export function isMimeTypeSupported(mimeType: string): boolean {
     return false
   }
   return MediaRecorder.isTypeSupported(mimeType)
+}
+
+// =============================================================================
+// Web Speech API (SpeechRecognition) utilities
+// =============================================================================
+
+/**
+ * Get the SpeechRecognition constructor, handling vendor prefixes.
+ * Returns undefined if not supported.
+ */
+function getSpeechRecognitionConstructor(): typeof SpeechRecognition | undefined {
+  if (typeof window === 'undefined') {
+    return undefined
+  }
+
+  // Standard API
+  if ('SpeechRecognition' in window) {
+    return window.SpeechRecognition
+  }
+
+  // Webkit prefix (Chrome, Safari)
+  if ('webkitSpeechRecognition' in window) {
+    return (window as unknown as { webkitSpeechRecognition: typeof SpeechRecognition }).webkitSpeechRecognition
+  }
+
+  return undefined
+}
+
+/**
+ * Check if the browser supports Web Speech API (SpeechRecognition).
+ *
+ * @example
+ * ```ts
+ * if (isSpeechRecognitionSupported()) {
+ *   const recognition = createSpeechRecognition()
+ *   recognition?.start()
+ * }
+ * ```
+ */
+export function isSpeechRecognitionSupported(): boolean {
+  return getSpeechRecognitionConstructor() !== undefined
+}
+
+/**
+ * Create a SpeechRecognition instance with common defaults.
+ * Returns null if not supported.
+ *
+ * @param options - Configuration options
+ * @param options.language - Language code (default: 'en-US')
+ * @param options.continuous - Whether to continue listening after results (default: true)
+ * @param options.interimResults - Whether to return interim results (default: true)
+ *
+ * @example
+ * ```ts
+ * const recognition = createSpeechRecognition({ language: 'en-US' })
+ * if (recognition) {
+ *   recognition.onresult = (event) => {
+ *     const transcript = event.results[0][0].transcript
+ *     console.log('Heard:', transcript)
+ *   }
+ *   recognition.start()
+ * }
+ * ```
+ */
+export function createSpeechRecognition(options: {
+  language?: string
+  continuous?: boolean
+  interimResults?: boolean
+} = {}): SpeechRecognition | null {
+  const SpeechRecognitionClass = getSpeechRecognitionConstructor()
+  if (!SpeechRecognitionClass) {
+    return null
+  }
+
+  const recognition = new SpeechRecognitionClass()
+
+  // Apply options with defaults
+  recognition.lang = options.language ?? 'en-US'
+  recognition.continuous = options.continuous ?? true
+  recognition.interimResults = options.interimResults ?? true
+
+  // Maximum alternatives to consider
+  recognition.maxAlternatives = 1
+
+  return recognition
 }

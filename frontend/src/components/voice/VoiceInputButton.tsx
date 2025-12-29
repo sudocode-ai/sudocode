@@ -9,6 +9,10 @@ import type { VoiceInputState } from '@sudocode-ai/types'
 export interface VoiceInputButtonProps {
   /** Callback when transcription completes - receives the transcribed text */
   onTranscription: (text: string) => void
+  /** Callback when recording starts */
+  onRecordingStart?: () => void
+  /** Callback for interim results during recording (browser mode only) */
+  onInterimResult?: (text: string) => void
   /** Whether the button is disabled */
   disabled?: boolean
   /** Optional className for the button */
@@ -74,6 +78,8 @@ function getTooltipContent(
  */
 export function VoiceInputButton({
   onTranscription,
+  onRecordingStart,
+  onInterimResult,
   disabled = false,
   className,
   size = 'default',
@@ -83,19 +89,29 @@ export function VoiceInputButton({
   const options: UseVoiceInputOptions = {
     language,
     onTranscription,
+    onInterimResult,
   }
 
-  const { state, error, startRecording, stopRecording, cancelRecording, hasPermission, duration, isSupported } =
-    useVoiceInput(options)
+  const {
+    state,
+    error,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+    hasPermission,
+    duration,
+    isSupported,
+  } = useVoiceInput(options)
 
   const handleClick = useCallback(async () => {
     if (state === 'recording') {
       await stopRecording()
     } else if (state === 'idle' || state === 'error') {
+      onRecordingStart?.()
       await startRecording()
     }
     // Do nothing if transcribing
-  }, [state, startRecording, stopRecording])
+  }, [state, startRecording, stopRecording, onRecordingStart])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -117,6 +133,7 @@ export function VoiceInputButton({
   // Button size classes
   const sizeClasses = size === 'sm' ? 'h-7 w-7 p-0' : 'h-8 w-8 p-0'
   const iconSize = size === 'sm' ? 'h-3.5 w-3.5' : 'h-4 w-4'
+  const iconSizeStop = size === 'sm' ? 'h-3 w-3' : 'h-3 w-3'
 
   return (
     <Tooltip>
@@ -128,7 +145,7 @@ export function VoiceInputButton({
           className={cn(
             sizeClasses,
             'shrink-0 rounded-full transition-all duration-200',
-            isRecording && 'animate-pulse bg-red-500 hover:bg-red-600',
+            isRecording && 'bg-red-500 hover:bg-red-600',
             isError && 'border-destructive text-destructive',
             className
           )}
@@ -140,7 +157,7 @@ export function VoiceInputButton({
           {isTranscribing ? (
             <Loader2 className={cn(iconSize, 'animate-spin')} />
           ) : isRecording ? (
-            <Square className={cn(iconSize, 'fill-current')} />
+            <Square className={cn(iconSizeStop, 'fill-current')} />
           ) : isError ? (
             <AlertCircle className={iconSize} />
           ) : (
@@ -151,7 +168,9 @@ export function VoiceInputButton({
       <TooltipContent side="top" className="flex items-center gap-2">
         <span>{getTooltipContent(state, isSupported, hasPermission, error?.message)}</span>
         {isRecording && showDuration && (
-          <span className="font-mono text-xs text-muted-foreground">{formatDuration(duration)}</span>
+          <span className="font-mono text-xs text-muted-foreground">
+            {formatDuration(duration)}
+          </span>
         )}
       </TooltipContent>
     </Tooltip>

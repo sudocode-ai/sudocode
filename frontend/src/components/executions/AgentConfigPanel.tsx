@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   Settings,
   ArrowDown,
@@ -697,6 +697,41 @@ export function AgentConfigPanel({
     // Shift+Enter creates newline (default behavior, no need to handle)
   }
 
+  // Voice input state for live transcription
+  const voiceBasePromptRef = useRef<string>('')
+  const currentPromptRef = useRef<string>(prompt)
+  const isRecordingRef = useRef<boolean>(false)
+
+  // Keep prompt ref in sync (only when not recording)
+  useEffect(() => {
+    if (!isRecordingRef.current) {
+      currentPromptRef.current = prompt
+    }
+  }, [prompt])
+
+  // Called when recording starts - save the current prompt as base
+  const handleVoiceRecordingStart = useCallback(() => {
+    isRecordingRef.current = true
+    voiceBasePromptRef.current = currentPromptRef.current
+  }, [])
+
+  // Called for interim/cumulative results - update prompt live
+  // Note: useVoiceInput now sends cumulative transcript (all finals + current interim)
+  const handleVoiceInterimResult = useCallback((cumulativeText: string) => {
+    const base = voiceBasePromptRef.current
+    const separator = base && !base.endsWith(' ') && !base.endsWith('\n') ? ' ' : ''
+    const newPrompt = base + separator + cumulativeText
+    setPrompt(newPrompt)
+    // Keep currentPromptRef in sync so it has the latest value when recording stops
+    currentPromptRef.current = newPrompt
+  }, [])
+
+  // Called when recording stops - just mark as done
+  // The prompt is already up-to-date from interim results, so we don't need to update it
+  const handleVoiceTranscription = useCallback((_text: string) => {
+    isRecordingRef.current = false
+  }, [])
+
   // Allow empty prompts for first messages (not follow-ups) when there's an issue
   // For follow-ups or adhoc executions (no issueId), require a prompt
   // Note: We don't block based on agent availability - we just show warnings
@@ -728,7 +763,9 @@ export function AgentConfigPanel({
         <TooltipProvider>
           {/* Voice Input Button */}
           <VoiceInputButton
-            onTranscription={setPrompt}
+            onTranscription={handleVoiceTranscription}
+            onRecordingStart={handleVoiceRecordingStart}
+            onInterimResult={handleVoiceInterimResult}
             disabled={loading || disabled || isRunning}
             size="sm"
           />
@@ -991,7 +1028,9 @@ export function AgentConfigPanel({
 
             {/* Voice Input Button */}
             <VoiceInputButton
-              onTranscription={setPrompt}
+              onTranscription={handleVoiceTranscription}
+              onRecordingStart={handleVoiceRecordingStart}
+              onInterimResult={handleVoiceInterimResult}
               disabled={loading || disabled || isRunning}
               size="default"
             />

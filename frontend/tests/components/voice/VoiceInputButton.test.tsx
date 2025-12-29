@@ -20,6 +20,8 @@ vi.mock('@/hooks/useVoiceInput', () => ({
     hasPermission: true,
     duration: 0,
     isSupported: true,
+    sttProvider: 'browser',
+    isConfigLoading: false,
   })),
 }))
 
@@ -49,6 +51,8 @@ describe('VoiceInputButton', () => {
       requestPermission: vi.fn(),
       isSupported: true,
       duration: 0,
+      sttProvider: 'browser',
+      isConfigLoading: false,
     })
   })
 
@@ -113,6 +117,8 @@ describe('VoiceInputButton', () => {
         requestPermission: vi.fn(),
         isSupported: true,
         duration: 5,
+        sttProvider: 'browser',
+        isConfigLoading: false,
       })
     })
 
@@ -123,11 +129,10 @@ describe('VoiceInputButton', () => {
       expect(button.querySelector('svg')).toBeInTheDocument()
     })
 
-    it('should have pulsing animation when recording', () => {
+    it('should have red background when recording', () => {
       renderWithTooltip(<VoiceInputButton onTranscription={mockOnTranscription} />)
 
       const button = screen.getByRole('button')
-      expect(button.className).toContain('animate-pulse')
       expect(button.className).toContain('bg-red-500')
     })
 
@@ -177,6 +182,8 @@ describe('VoiceInputButton', () => {
         requestPermission: vi.fn(),
         isSupported: true,
         duration: 0,
+        sttProvider: 'browser',
+        isConfigLoading: false,
       })
     })
 
@@ -232,6 +239,8 @@ describe('VoiceInputButton', () => {
         requestPermission: vi.fn(),
         isSupported: true,
         duration: 0,
+        sttProvider: 'browser',
+        isConfigLoading: false,
       })
     })
 
@@ -284,6 +293,8 @@ describe('VoiceInputButton', () => {
         requestPermission: vi.fn(),
         isSupported: true,
         duration: 0,
+        sttProvider: 'browser',
+        isConfigLoading: false,
       })
     })
 
@@ -310,6 +321,8 @@ describe('VoiceInputButton', () => {
         requestPermission: vi.fn(),
         isSupported: false,
         duration: 0,
+        sttProvider: null,
+        isConfigLoading: false,
       })
     })
 
@@ -379,6 +392,8 @@ describe('VoiceInputButton', () => {
         requestPermission: vi.fn(),
         isSupported: true,
         duration: 65,
+        sttProvider: 'browser',
+        isConfigLoading: false,
       })
     })
 

@@ -5,7 +5,10 @@ import {
   requestMicrophonePermission,
   getSupportedMimeType,
   isMediaRecorderSupported,
+  isSpeechRecognitionSupported,
 } from '@/lib/voice'
+import { createWebSpeechSession, type WebSpeechController } from '@/lib/webSpeechSTT'
+import { useVoiceConfig } from './useVoiceConfig'
 
 /**
  * API function to transcribe audio
@@ -41,6 +44,8 @@ export interface UseVoiceInputOptions {
   onError?: (error: VoiceInputError) => void
   /** Audio MIME type (default: 'audio/webm') */
   mimeType?: string
+  /** Callback for interim results (browser mode only) */
+  onInterimResult?: (text: string) => void
 }
 
 /**
@@ -69,6 +74,10 @@ export interface UseVoiceInputReturn {
   requestPermission: () => Promise<boolean>
   /** Whether the browser supports audio recording */
   isSupported: boolean
+  /** Current STT provider being used ('whisper' | 'browser' | null) */
+  sttProvider: 'whisper' | 'browser' | null
+  /** Whether config is still loading */
+  isConfigLoading: boolean
   /**
    * @deprecated Use recordingDuration instead
    */
@@ -76,7 +85,10 @@ export interface UseVoiceInputReturn {
 }
 
 /**
- * Hook for handling voice input with MediaRecorder and transcription
+ * Hook for handling voice input with automatic fallback.
+ *
+ * Uses Whisper server if available, otherwise falls back to
+ * browser Web Speech API for transcription.
  *
  * @example
  * ```tsx
@@ -86,7 +98,8 @@ export interface UseVoiceInputReturn {
  *     startRecording,
  *     stopRecording,
  *     error,
- *     duration
+ *     duration,
+ *     sttProvider
  *   } = useVoiceInput({
  *     onTranscription: (text) => setPrompt(text),
  *     onError: (err) => console.error(err)
@@ -98,13 +111,14 @@ export interface UseVoiceInputReturn {
  *       disabled={state === 'transcribing'}
  *     >
  *       {state === 'recording' ? `Recording... ${duration}s` : 'Record'}
+ *       {sttProvider === 'browser' && ' (Basic)'}
  *     </button>
  *   )
  * }
  * ```
  */
 export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInputReturn {
-  const { language = 'en', onTranscription, onError, mimeType } = options
+  const { language = 'en', onTranscription, onError, mimeType, onInterimResult } = options
 
   const [state, setState] = useState<VoiceInputState>('idle')
   const [error, setError] = useState<VoiceInputError | null>(null)
@@ -112,39 +126,183 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
   const [duration, setDuration] = useState(0)
   const [transcription, setTranscription] = useState<string | null>(null)
 
+  // Get voice configuration to determine which provider to use
+  const { preferredSTTProvider, isLoading: isConfigLoading } = useVoiceConfig()
+
+  // Refs for MediaRecorder mode (Whisper)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const streamRef = useRef<MediaStream | null>(null)
+
+  // Refs for Web Speech mode
+  const webSpeechRef = useRef<WebSpeechController | null>(null)
+  const webSpeechTranscriptRef = useRef<string>('')
+  const isStoppingRef = useRef<boolean>(false)
+
+  // Common refs
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const startTimeRef = useRef<number>(0)
+  const currentModeRef = useRef<'whisper' | 'browser' | null>(null)
 
-  // Check if MediaRecorder is supported
-  const isSupported = isMediaRecorderSupported()
+  // Callback refs to avoid stale closures during async operations
+  const onTranscriptionRef = useRef(onTranscription)
+  const onErrorRef = useRef(onError)
+  const onInterimResultRef = useRef(onInterimResult)
+
+  // Keep refs in sync with latest callbacks
+  useEffect(() => {
+    onTranscriptionRef.current = onTranscription
+    onErrorRef.current = onError
+    onInterimResultRef.current = onInterimResult
+  }, [onTranscription, onError, onInterimResult])
+
+  // Check if any recording method is supported
+  const isSupported = isMediaRecorderSupported() || isSpeechRecognitionSupported()
 
   // Check permission status on mount
   useEffect(() => {
     checkMicrophonePermission().then(setHasPermission)
   }, [])
 
-  // Cleanup function
-  const cleanup = useCallback(() => {
-    if (durationIntervalRef.current) {
-      clearInterval(durationIntervalRef.current)
-      durationIntervalRef.current = null
-    }
+  // Cleanup function for MediaRecorder mode
+  const cleanupMediaRecorder = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop())
       streamRef.current = null
     }
     mediaRecorderRef.current = null
     chunksRef.current = []
-    setDuration(0)
   }, [])
+
+  // Cleanup function for Web Speech mode
+  const cleanupWebSpeech = useCallback(() => {
+    if (webSpeechRef.current) {
+      webSpeechRef.current.abort()
+      webSpeechRef.current = null
+    }
+    webSpeechTranscriptRef.current = ''
+  }, [])
+
+  // Combined cleanup function
+  const cleanup = useCallback(() => {
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current)
+      durationIntervalRef.current = null
+    }
+    cleanupMediaRecorder()
+    cleanupWebSpeech()
+    setDuration(0)
+    currentModeRef.current = null
+  }, [cleanupMediaRecorder, cleanupWebSpeech])
 
   // Cleanup on unmount
   useEffect(() => {
     return cleanup
   }, [cleanup])
+
+  /**
+   * Start recording using MediaRecorder (for Whisper transcription)
+   */
+  const startMediaRecorderMode = useCallback(async () => {
+    if (!isMediaRecorderSupported()) {
+      throw new Error('MediaRecorder is not supported')
+    }
+
+    // Request microphone access
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    streamRef.current = stream
+    setHasPermission(true)
+
+    // Determine best MIME type
+    const actualMimeType = mimeType || getSupportedMimeType()
+
+    // Create MediaRecorder
+    const recorder = new MediaRecorder(stream, actualMimeType ? { mimeType: actualMimeType } : undefined)
+    mediaRecorderRef.current = recorder
+
+    // Collect audio data
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        chunksRef.current.push(event.data)
+      }
+    }
+
+    // Handle errors
+    recorder.onerror = () => {
+      const err: VoiceInputError = {
+        code: 'transcription_failed',
+        message: 'Recording failed',
+      }
+      setError(err)
+      setState('error')
+      onErrorRef.current?.(err)
+      cleanup()
+    }
+
+    // Start recording
+    recorder.start(100) // Collect data every 100ms
+    currentModeRef.current = 'whisper'
+    setState('recording')
+  }, [mimeType, cleanup])
+
+  /**
+   * Start recording using Web Speech API (browser fallback)
+   */
+  const startWebSpeechMode = useCallback(async () => {
+    if (!isSpeechRecognitionSupported()) {
+      throw new Error('Web Speech API is not supported')
+    }
+
+    // Convert language code format (e.g., 'en' -> 'en-US')
+    const speechLang = language.includes('-') ? language : `${language}-US`
+
+    webSpeechTranscriptRef.current = ''
+    isStoppingRef.current = false
+
+    const controller = createWebSpeechSession({
+      language: speechLang,
+      onResult: (result) => {
+        // Ignore results that come in after we've started stopping
+        if (isStoppingRef.current) {
+          return
+        }
+        if (result.isFinal) {
+          // Accumulate final results (add space only if needed)
+          const prev = webSpeechTranscriptRef.current
+          const needsSpace = prev && !prev.endsWith(' ') && !result.text.startsWith(' ')
+          webSpeechTranscriptRef.current = prev + (needsSpace ? ' ' : '') + result.text
+          // Also report finals as interim so UI stays in sync
+          onInterimResultRef.current?.(webSpeechTranscriptRef.current)
+        } else {
+          // Report cumulative transcript: accumulated finals + current interim
+          const prev = webSpeechTranscriptRef.current
+          const needsSpace = prev && !prev.endsWith(' ') && !result.text.startsWith(' ')
+          const cumulative = prev + (needsSpace ? ' ' : '') + result.text
+          onInterimResultRef.current?.(cumulative)
+        }
+      },
+      onError: (err) => {
+        setError(err)
+        setState('error')
+        onErrorRef.current?.(err)
+        cleanup()
+      },
+      onEnd: () => {
+        // This is called when recognition ends naturally
+        // We handle this in stopRecording instead
+      },
+    })
+
+    if (!controller) {
+      throw new Error('Failed to create speech recognition session')
+    }
+
+    webSpeechRef.current = controller
+    controller.start()
+    currentModeRef.current = 'browser'
+    setHasPermission(true) // Web Speech API handles its own permissions
+    setState('recording')
+  }, [language, cleanup])
 
   /**
    * Start recording audio from the microphone
@@ -157,54 +315,32 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
       }
       setError(err)
       setState('error')
-      onError?.(err)
+      onErrorRef.current?.(err)
       return
     }
 
     // Reset state
     setError(null)
     chunksRef.current = []
+    webSpeechTranscriptRef.current = ''
 
     try {
-      // Request microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
-      setHasPermission(true)
-
-      // Determine best MIME type - use provided or auto-detect
-      const actualMimeType = mimeType || getSupportedMimeType()
-
-      // Create MediaRecorder
-      const recorder = new MediaRecorder(stream, actualMimeType ? { mimeType: actualMimeType } : undefined)
-      mediaRecorderRef.current = recorder
-
-      // Collect audio data
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunksRef.current.push(event.data)
+      // Choose mode based on provider availability
+      if (preferredSTTProvider === 'whisper') {
+        await startMediaRecorderMode()
+      } else if (preferredSTTProvider === 'browser') {
+        await startWebSpeechMode()
+      } else {
+        // No provider available - try browser as last resort
+        if (isSpeechRecognitionSupported()) {
+          await startWebSpeechMode()
+        } else if (isMediaRecorderSupported()) {
+          // MediaRecorder available but Whisper not - will fail on transcription
+          await startMediaRecorderMode()
+        } else {
+          throw new Error('No speech recognition method available')
         }
       }
-
-      // Handle recording stop
-      recorder.onstop = () => {
-        // Data collection is handled in stopRecording
-      }
-
-      // Handle errors
-      recorder.onerror = () => {
-        const err: VoiceInputError = {
-          code: 'transcription_failed',
-          message: 'Recording failed',
-        }
-        setError(err)
-        setState('error')
-        onError?.(err)
-        cleanup()
-      }
-
-      // Start recording
-      recorder.start(100) // Collect data every 100ms for smoother handling
-      setState('recording')
 
       // Start duration timer
       startTimeRef.current = Date.now()
@@ -229,25 +365,18 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
 
       setError(voiceError)
       setState('error')
-      onError?.(voiceError)
+      onErrorRef.current?.(voiceError)
       cleanup()
     }
-  }, [isSupported, mimeType, cleanup, onError])
+  }, [isSupported, preferredSTTProvider, startMediaRecorderMode, startWebSpeechMode, cleanup])
 
   /**
-   * Stop recording and transcribe the audio
-   * @returns The transcribed text, or empty string if transcription failed or audio too short
+   * Stop recording and transcribe (MediaRecorder mode)
    */
-  const stopRecording = useCallback(async (): Promise<string> => {
+  const stopMediaRecorderMode = useCallback((): Promise<string> => {
     const recorder = mediaRecorderRef.current
     if (!recorder || recorder.state !== 'recording') {
-      return ''
-    }
-
-    // Stop the timer
-    if (durationIntervalRef.current) {
-      clearInterval(durationIntervalRef.current)
-      durationIntervalRef.current = null
+      return Promise.resolve('')
     }
 
     return new Promise<string>((resolve) => {
@@ -263,7 +392,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
           streamRef.current = null
         }
 
-        // Don't transcribe if audio is too short (less than 0.5 seconds of data)
+        // Don't transcribe if audio is too short
         if (audioBlob.size < 1000) {
           setState('idle')
           cleanup()
@@ -278,7 +407,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
           const result = await transcribeAudio(audioBlob, language)
           setState('idle')
           setTranscription(result.text)
-          onTranscription?.(result.text)
+          onTranscriptionRef.current?.(result.text)
           resolve(result.text)
         } catch (err) {
           const voiceError: VoiceInputError = {
@@ -287,7 +416,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
           }
           setError(voiceError)
           setState('error')
-          onError?.(voiceError)
+          onErrorRef.current?.(voiceError)
           resolve('')
         } finally {
           cleanup()
@@ -296,16 +425,75 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
 
       recorder.stop()
     })
-  }, [language, cleanup, onTranscription, onError])
+  }, [language, cleanup])
+
+  /**
+   * Stop recording and get transcript (Web Speech mode)
+   */
+  const stopWebSpeechMode = useCallback((): Promise<string> => {
+    const controller = webSpeechRef.current
+    if (!controller) {
+      return Promise.resolve('')
+    }
+
+    return new Promise<string>((resolve) => {
+      // Give a small delay for final results to come in
+      setTimeout(() => {
+        // Mark as stopping BEFORE stop/abort to ignore any late results
+        isStoppingRef.current = true
+        controller.stop()
+
+        const text = webSpeechTranscriptRef.current.trim()
+
+        if (text) {
+          setState('idle')
+          setTranscription(text)
+          onTranscriptionRef.current?.(text)
+        } else {
+          setState('idle')
+        }
+
+        cleanup()
+        resolve(text)
+      }, 100)
+    })
+  }, [cleanup])
+
+  /**
+   * Stop recording and transcribe the audio
+   * @returns The transcribed text, or empty string if transcription failed or audio too short
+   */
+  const stopRecording = useCallback(async (): Promise<string> => {
+    // Stop the timer
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current)
+      durationIntervalRef.current = null
+    }
+
+    if (currentModeRef.current === 'whisper') {
+      return stopMediaRecorderMode()
+    } else if (currentModeRef.current === 'browser') {
+      return stopWebSpeechMode()
+    }
+
+    return ''
+  }, [stopMediaRecorderMode, stopWebSpeechMode])
 
   /**
    * Cancel recording without transcribing
    */
   const cancelRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.onstop = null // Prevent transcription
-      mediaRecorderRef.current.stop()
+    if (currentModeRef.current === 'whisper') {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.onstop = null // Prevent transcription
+        mediaRecorderRef.current.stop()
+      }
+    } else if (currentModeRef.current === 'browser') {
+      if (webSpeechRef.current) {
+        webSpeechRef.current.abort()
+      }
     }
+
     cleanup()
     setState('idle')
     setError(null)
@@ -340,6 +528,8 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     hasPermission,
     requestPermission,
     isSupported,
+    sttProvider: preferredSTTProvider,
+    isConfigLoading,
     // Deprecated - kept for backwards compatibility
     duration,
   }
