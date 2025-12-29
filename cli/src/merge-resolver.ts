@@ -341,6 +341,48 @@ export function mergeArrayFields<T extends JSONLEntity>(entities: T[]): Partial<
 }
 
 /**
+ * Resolve git conflict markers in YAML content using latest-wins per block
+ *
+ * When git merge-file produces conflicts in YAML, this function resolves
+ * each conflict block individually while preserving cleanly merged sections.
+ *
+ * @param yamlWithConflicts - YAML content containing git conflict markers
+ * @param useOurs - If true, use "ours" side for conflicts; if false, use "theirs"
+ * @returns Resolved YAML content without conflict markers
+ *
+ * @example
+ * ```typescript
+ * const yaml = `title: test
+ * <<<<<<< ours
+ * content: ours text
+ * =======
+ * content: theirs text
+ * >>>>>>> theirs
+ * priority: 3`;
+ *
+ * const resolved = resolveYamlConflicts(yaml, true);
+ * // Returns: "title: test\ncontent: ours text\npriority: 3"
+ * ```
+ */
+export function resolveYamlConflicts(yamlWithConflicts: string, useOurs: boolean): string {
+  const sections = parseMergeConflictFile(yamlWithConflicts);
+  const resolved: string[] = [];
+
+  for (const section of sections) {
+    if (section.type === 'clean') {
+      // Keep cleanly merged content
+      resolved.push(...section.lines);
+    } else {
+      // Conflict block - apply latest-wins
+      const chosen = useOurs ? section.ours! : section.theirs!;
+      resolved.push(...chosen);
+    }
+  }
+
+  return resolved.join('\n');
+}
+
+/**
  * Resolve all entities using UUID-based deduplication
  * Handles different UUIDs, same UUID conflicts, and metadata merging
  *
@@ -485,7 +527,7 @@ function mergeYamlWithGit<T extends JSONLEntity>(versions: {
   base?: T;
   ours?: T;
   theirs?: T;
-}): { success: boolean; entity: T } {
+}): { success: boolean; entity: T; hadConflicts: boolean } {
   const { base, ours, theirs } = versions;
 
   // Convert to YAML
@@ -503,10 +545,20 @@ function mergeYamlWithGit<T extends JSONLEntity>(versions: {
   if (mergeResult.success && !mergeResult.hasConflicts) {
     // Clean merge - parse YAML back to JSON
     const mergedEntity = fromYaml(mergeResult.content) as T;
-    return { success: true, entity: mergedEntity };
+    return { success: true, entity: mergedEntity, hadConflicts: false };
+  } else if (mergeResult.hasConflicts) {
+    // YAML has conflicts - resolve each conflict block individually
+    // Determine which side is newer for latest-wins decision
+    const oursNewer = compareTimestamps(ours?.updated_at, theirs?.updated_at) > 0;
+
+    // Resolve conflict blocks, preserving cleanly merged sections
+    const resolvedYaml = resolveYamlConflicts(mergeResult.content, oursNewer);
+    const mergedEntity = fromYaml(resolvedYaml) as T;
+
+    return { success: true, entity: mergedEntity, hadConflicts: true };
   } else {
-    // Had conflicts - return failure (caller will use latest-wins)
-    return { success: false, entity: ours! }; // Placeholder, caller will override
+    // Fatal error during merge
+    return { success: false, entity: ours!, hadConflicts: false };
   }
 }
 
@@ -734,7 +786,7 @@ export function mergeThreeWay<T extends JSONLEntity>(
     if (yamlMergeResult.success) {
       mergedEntity = yamlMergeResult.entity;
     } else {
-      // Git merge-file had conflicts, use latest-wins
+      // Fatal error during merge - fallback to latest-wins for entire entity
       const oursNewer = compareTimestamps(oursEntity?.updated_at, theirsEntity?.updated_at) > 0;
       mergedEntity = (oursNewer ? versionsForYaml.ours : versionsForYaml.theirs) as T;
     }
@@ -743,13 +795,13 @@ export function mergeThreeWay<T extends JSONLEntity>(
     mergedEntity.updated_at = latestUpdatedAt;
 
     // Record conflicts if any
-    if (scalarConflicts.length > 0 || !yamlMergeResult.success) {
+    if (scalarConflicts.length > 0 || yamlMergeResult.hadConflicts) {
       const conflictParts = [];
       if (scalarConflicts.length > 0) {
         conflictParts.push(`${scalarConflicts.length} scalar field conflicts (${scalarConflicts.join(', ')})`);
       }
-      if (!yamlMergeResult.success) {
-        conflictParts.push('YAML conflicts (latest-wins)');
+      if (yamlMergeResult.hadConflicts) {
+        conflictParts.push('YAML conflict blocks (latest-wins per block)');
       }
 
       stats.conflicts.push({

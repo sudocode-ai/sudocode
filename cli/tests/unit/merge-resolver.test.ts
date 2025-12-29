@@ -12,6 +12,7 @@ import {
   resolveEntities,
   mergeMetadata,
   mergeThreeWay,
+  resolveYamlConflicts,
   type JSONLEntity,
   type ConflictSection,
 } from '../../src/merge-resolver.js';
@@ -162,6 +163,117 @@ describe('Merge Resolver', () => {
       expect(sections[0].type).toBe('conflict');
       expect(sections[0].ours).toEqual(['{"id":"A"}', '{"id":"B"}']);
       expect(sections[0].theirs).toEqual(['{"id":"C"}', '{"id":"D"}']);
+    });
+  });
+
+  describe('resolveYamlConflicts', () => {
+    it('should resolve single conflict block with ours when useOurs=true', () => {
+      const yaml = `title: test
+<<<<<<< ours
+content: ours text
+=======
+content: theirs text
+>>>>>>> theirs
+priority: 3`;
+
+      const resolved = resolveYamlConflicts(yaml, true);
+
+      expect(resolved).toContain('content: ours text');
+      expect(resolved).not.toContain('<<<<<<');
+      expect(resolved).not.toContain('=======');
+      expect(resolved).not.toContain('>>>>>>>');
+      expect(resolved).toContain('title: test');
+      expect(resolved).toContain('priority: 3');
+    });
+
+    it('should resolve single conflict block with theirs when useOurs=false', () => {
+      const yaml = `title: test
+<<<<<<< ours
+content: ours text
+=======
+content: theirs text
+>>>>>>> theirs
+priority: 3`;
+
+      const resolved = resolveYamlConflicts(yaml, false);
+
+      expect(resolved).toContain('content: theirs text');
+      expect(resolved).not.toContain('content: ours text');
+      expect(resolved).not.toContain('<<<<<<');
+      expect(resolved).toContain('title: test');
+      expect(resolved).toContain('priority: 3');
+    });
+
+    it('should preserve cleanly merged sections between conflicts', () => {
+      const yaml = `title: test
+<<<<<<< ours
+para1: ours
+=======
+para1: theirs
+>>>>>>> theirs
+para2: merged cleanly
+<<<<<<< ours
+para3: ours
+=======
+para3: theirs
+>>>>>>> theirs
+footer: also clean`;
+
+      const resolved = resolveYamlConflicts(yaml, true);
+
+      expect(resolved).toContain('para2: merged cleanly');
+      expect(resolved).toContain('footer: also clean');
+      expect(resolved).toContain('para1: ours');
+      expect(resolved).toContain('para3: ours');
+      expect(resolved).not.toContain('<<<<<<');
+      expect(resolved).not.toContain('>>>>>>>');
+    });
+
+    it('should handle multi-line conflict blocks', () => {
+      const yaml = `content: |
+  shared intro
+<<<<<<< ours
+  ours paragraph
+  multiple lines
+=======
+  theirs paragraph
+  different lines
+>>>>>>> theirs
+  shared outro`;
+
+      const resolved = resolveYamlConflicts(yaml, true);
+
+      expect(resolved).toContain('shared intro');
+      expect(resolved).toContain('ours paragraph');
+      expect(resolved).toContain('multiple lines');
+      expect(resolved).toContain('shared outro');
+      expect(resolved).not.toContain('theirs paragraph');
+      expect(resolved).not.toContain('different lines');
+    });
+
+    it('should handle YAML with no conflicts', () => {
+      const yaml = `title: test
+content: clean text
+priority: 3`;
+
+      const resolved = resolveYamlConflicts(yaml, true);
+
+      expect(resolved).toBe(yaml);
+    });
+
+    it('should handle empty conflict sections', () => {
+      const yaml = `title: test
+<<<<<<< ours
+=======
+content: theirs added this
+>>>>>>> theirs
+priority: 3`;
+
+      const resolved = resolveYamlConflicts(yaml, false);
+
+      expect(resolved).toContain('content: theirs added this');
+      expect(resolved).toContain('title: test');
+      expect(resolved).toContain('priority: 3');
     });
   });
 
@@ -1192,6 +1304,117 @@ describe('Merge Resolver', () => {
 
         expect(merged).toHaveLength(1);
         expect(merged[0].priority).toBe(1);
+      });
+    });
+
+    describe('YAML conflict resolution with partial conflicts', () => {
+      it('should preserve cleanly merged content when YAML has partial conflicts', () => {
+        const base: JSONLEntity[] = [
+          {
+            id: 's-1',
+            uuid: 'uuid-1',
+            title: 'Spec',
+            priority: 1,
+            content:
+              '# Intro\n\nOriginal paragraph 1\n\nOriginal paragraph 2\n\n# Outro\n\nShared content',
+            created_at: '2025-01-01T00:00:00Z',
+            updated_at: '2025-01-01T00:00:00Z',
+          },
+        ];
+
+        const ours: JSONLEntity[] = [
+          {
+            id: 's-1',
+            uuid: 'uuid-1',
+            title: 'Spec',
+            priority: 2, // Changed in ours
+            content:
+              '# Intro\n\nOurs paragraph 1\n\nOriginal paragraph 2\n\n# Outro\n\nShared content', // First paragraph changed
+            created_at: '2025-01-01T00:00:00Z',
+            updated_at: '2025-01-02T00:00:00Z',
+          },
+        ];
+
+        const theirs: JSONLEntity[] = [
+          {
+            id: 's-1',
+            uuid: 'uuid-1',
+            title: 'Updated Spec', // Changed in theirs
+            priority: 1,
+            content:
+              '# Intro\n\nOriginal paragraph 1\n\nTheirs paragraph 2\n\n# Outro\n\nShared content', // Second paragraph changed
+            created_at: '2025-01-01T00:00:00Z',
+            updated_at: '2025-01-03T00:00:00Z', // Newer
+          },
+        ];
+
+        const { entities: merged } = mergeThreeWay(base, ours, theirs);
+
+        expect(merged).toHaveLength(1);
+
+        // Field-level merge results
+        expect(merged[0].priority).toBe(2); // Only ours changed it
+        expect(merged[0].title).toBe('Updated Spec'); // Only theirs changed it
+
+        // Content: cleanly merged parts preserved
+        expect(merged[0].content).toContain('# Intro'); // Clean
+        expect(merged[0].content).toContain('# Outro'); // Clean
+        expect(merged[0].content).toContain('Shared content'); // Clean
+
+        // Content: conflict blocks resolved separately
+        // Paragraph 1: ours changed it, theirs didn't → ours wins
+        expect(merged[0].content).toContain('Ours paragraph 1');
+
+        // Paragraph 2: theirs changed it, ours didn't → theirs wins
+        expect(merged[0].content).toContain('Theirs paragraph 2');
+      });
+
+      it('should handle modifications in different parts of multi-line content', () => {
+        const base: JSONLEntity[] = [
+          {
+            id: 's-2',
+            uuid: 'uuid-2',
+            title: 'Test Spec',
+            content:
+              '# Auth System\n\n## Overview\n\nBase text here\n\n## Endpoints\n\n### POST /auth/login\n\nBase endpoint description',
+            created_at: '2025-01-01T00:00:00Z',
+            updated_at: '2025-01-01T00:00:00Z',
+          },
+        ];
+
+        const ours: JSONLEntity[] = [
+          {
+            id: 's-2',
+            uuid: 'uuid-2',
+            title: 'Test Spec',
+            content:
+              '# Auth System\n\n## Overview\n\nOurs modified overview\n\n## Endpoints\n\n### POST /auth/login\n\nBase endpoint description',
+            created_at: '2025-01-01T00:00:00Z',
+            updated_at: '2025-01-02T00:00:00Z',
+          },
+        ];
+
+        const theirs: JSONLEntity[] = [
+          {
+            id: 's-2',
+            uuid: 'uuid-2',
+            title: 'Test Spec',
+            content:
+              '# Auth System\n\n## Overview\n\nBase text here\n\n## Endpoints\n\n### POST /auth/login\n\nTheirs modified endpoint',
+            created_at: '2025-01-01T00:00:00Z',
+            updated_at: '2025-01-03T00:00:00Z',
+          },
+        ];
+
+        const { entities: merged } = mergeThreeWay(base, ours, theirs);
+
+        expect(merged).toHaveLength(1);
+
+        // Both modifications should be preserved since they're in different sections
+        expect(merged[0].content).toContain('Ours modified overview');
+        expect(merged[0].content).toContain('Theirs modified endpoint');
+        expect(merged[0].content).toContain('# Auth System');
+        expect(merged[0].content).toContain('## Endpoints');
       });
     });
   });
