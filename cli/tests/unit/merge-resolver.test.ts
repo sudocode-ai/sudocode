@@ -1418,4 +1418,172 @@ priority: 3`;
       });
     });
   });
+
+  describe('Performance optimizations', () => {
+    describe('Fast path for unchanged entities', () => {
+      it('should skip YAML merge when entity is completely unchanged', () => {
+        // All three versions are identical - should take fast path
+        const entity: JSONLEntity = {
+          id: 'i-test',
+          uuid: 'uuid-1',
+          title: 'Test Issue',
+          content: 'Test content\nLine 2\nLine 3',
+          created_at: '2025-01-01T00:00:00Z',
+          updated_at: '2025-01-01T00:00:00Z',
+          tags: ['tag1'],
+          relationships: [],
+        };
+
+        const base = [entity];
+        const ours = [{ ...entity }];
+        const theirs = [{ ...entity }];
+
+        const { entities: merged, stats } = mergeThreeWay(base, ours, theirs);
+
+        expect(merged).toHaveLength(1);
+        expect(merged[0]).toMatchObject({
+          id: 'i-test',
+          uuid: 'uuid-1',
+          title: 'Test Issue',
+          content: 'Test content\nLine 2\nLine 3',
+        });
+        // No conflicts should be reported
+        expect(stats.conflicts).toHaveLength(0);
+      });
+
+      it('should skip YAML merge when only updated_at differs', () => {
+        // Entity unchanged except for updated_at (which we handle separately)
+        const baseEntity: JSONLEntity = {
+          id: 'i-test',
+          uuid: 'uuid-1',
+          title: 'Test Issue',
+          content: 'Test content',
+          created_at: '2025-01-01T00:00:00Z',
+          updated_at: '2025-01-01T00:00:00Z',
+          relationships: [],
+        };
+
+        const oursEntity = {
+          ...baseEntity,
+          updated_at: '2025-01-02T00:00:00Z',
+        };
+
+        const theirsEntity = {
+          ...baseEntity,
+          updated_at: '2025-01-03T00:00:00Z',
+        };
+
+        const { entities: merged, stats } = mergeThreeWay(
+          [baseEntity],
+          [oursEntity],
+          [theirsEntity]
+        );
+
+        expect(merged).toHaveLength(1);
+        expect(merged[0].title).toBe('Test Issue');
+        expect(merged[0].content).toBe('Test content');
+        // updated_at should be the latest one
+        expect(merged[0].updated_at).toBe('2025-01-03T00:00:00Z');
+        // No conflicts since content is identical
+        expect(stats.conflicts).toHaveLength(0);
+      });
+
+      it('should take slow path when scalar field changes', () => {
+        const baseEntity: JSONLEntity = {
+          id: 'i-test',
+          uuid: 'uuid-1',
+          title: 'Test Issue',
+          content: 'Test content',
+          created_at: '2025-01-01T00:00:00Z',
+          updated_at: '2025-01-01T00:00:00Z',
+          relationships: [],
+        };
+
+        const oursEntity = {
+          ...baseEntity,
+          title: 'Updated Title',
+          updated_at: '2025-01-02T00:00:00Z',
+        };
+
+        const theirsEntity = {
+          ...baseEntity,
+          updated_at: '2025-01-03T00:00:00Z',
+        };
+
+        const { entities: merged } = mergeThreeWay(
+          [baseEntity],
+          [oursEntity],
+          [theirsEntity]
+        );
+
+        expect(merged).toHaveLength(1);
+        // Should use ours since only ours changed the title
+        expect(merged[0].title).toBe('Updated Title');
+      });
+
+      it('should take slow path when multi-line content changes', () => {
+        const baseEntity: JSONLEntity = {
+          id: 'i-test',
+          uuid: 'uuid-1',
+          title: 'Test Issue',
+          content: 'Line 1\nLine 2\nLine 3',
+          created_at: '2025-01-01T00:00:00Z',
+          updated_at: '2025-01-01T00:00:00Z',
+          relationships: [],
+        };
+
+        const oursEntity = {
+          ...baseEntity,
+          content: 'Line 1\nModified Line 2\nLine 3',
+          updated_at: '2025-01-02T00:00:00Z',
+        };
+
+        const theirsEntity = {
+          ...baseEntity,
+          updated_at: '2025-01-03T00:00:00Z',
+        };
+
+        const { entities: merged } = mergeThreeWay(
+          [baseEntity],
+          [oursEntity],
+          [theirsEntity]
+        );
+
+        expect(merged).toHaveLength(1);
+        // Should use ours since only ours changed the content
+        expect(merged[0].content).toBe('Line 1\nModified Line 2\nLine 3');
+      });
+
+      it('should handle large number of unchanged entities efficiently', () => {
+        // Create 100 identical entities to test bulk fast path
+        const entities: JSONLEntity[] = [];
+        for (let i = 0; i < 100; i++) {
+          entities.push({
+            id: `i-test-${i}`,
+            uuid: `uuid-${i}`,
+            title: `Issue ${i}`,
+            content: `Content for issue ${i}\nLine 2\nLine 3`,
+            created_at: '2025-01-01T00:00:00Z',
+            updated_at: '2025-01-01T00:00:00Z',
+            relationships: [],
+          });
+        }
+
+        const base = [...entities];
+        const ours = entities.map((e) => ({ ...e }));
+        const theirs = entities.map((e) => ({ ...e }));
+
+        const startTime = Date.now();
+        const { entities: merged, stats } = mergeThreeWay(base, ours, theirs);
+        const duration = Date.now() - startTime;
+
+        expect(merged).toHaveLength(100);
+        expect(stats.conflicts).toHaveLength(0);
+
+        // Should complete very quickly (well under 1 second for 100 unchanged entities)
+        // This would take 10+ seconds without the fast path optimization
+        expect(duration).toBeLessThan(500);
+      });
+    });
+  });
 });

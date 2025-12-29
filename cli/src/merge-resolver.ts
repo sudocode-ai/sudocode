@@ -770,37 +770,56 @@ export function mergeThreeWay<T extends JSONLEntity>(
       }
     }
 
-    // Step 2e: For multi-line fields, keep original values for YAML conversion
-    // Git merge-file will handle the line-level merge
-    // Remove updated_at to avoid spurious conflicts in YAML
-    const versionsForYaml = {
-      base: baseEntity ? { ...baseEntity, ...fieldsMerged, updated_at: undefined } : undefined,
-      ours: oursEntity ? { ...oursEntity, ...fieldsMerged, updated_at: undefined } : undefined,
-      theirs: theirsEntity ? { ...theirsEntity, ...fieldsMerged, updated_at: undefined } : undefined,
-    };
-
-    // Step 2f: Convert to YAML and run git merge-file for line-level merging
-    const yamlMergeResult = mergeYamlWithGit(versionsForYaml);
+    // Step 2e: FAST PATH - Skip expensive YAML merge if entity is unchanged
+    // Check if all multi-line text fields are identical across versions
+    const multiLineFieldsIdentical = Array.from(multiLineFields).every(field => {
+      const baseValue = baseEntity?.[field as keyof T];
+      const oursValue = oursEntity?.[field as keyof T];
+      const theirsValue = theirsEntity?.[field as keyof T];
+      return baseValue === oursValue && oursValue === theirsValue;
+    });
 
     let mergedEntity: T;
-    if (yamlMergeResult.success) {
-      mergedEntity = yamlMergeResult.entity;
+    let hadYamlConflicts = false;
+
+    // If no scalar conflicts and multi-line fields are identical, skip YAML merge
+    if (scalarConflicts.length === 0 && multiLineFieldsIdentical) {
+      // Fast path: Entity unchanged, use any version (prefer ours)
+      mergedEntity = { ...oursEntity!, ...fieldsMerged } as T;
     } else {
-      // Fatal error during merge - fallback to latest-wins for entire entity
-      const oursNewer = compareTimestamps(oursEntity?.updated_at, theirsEntity?.updated_at) > 0;
-      mergedEntity = (oursNewer ? versionsForYaml.ours : versionsForYaml.theirs) as T;
+      // Slow path: Need YAML merge for multi-line fields or scalar conflicts exist
+      // For multi-line fields, keep original values for YAML conversion
+      // Git merge-file will handle the line-level merge
+      // Remove updated_at to avoid spurious conflicts in YAML
+      const versionsForYaml = {
+        base: baseEntity ? { ...baseEntity, ...fieldsMerged, updated_at: undefined } : undefined,
+        ours: oursEntity ? { ...oursEntity, ...fieldsMerged, updated_at: undefined } : undefined,
+        theirs: theirsEntity ? { ...theirsEntity, ...fieldsMerged, updated_at: undefined } : undefined,
+      };
+
+      // Step 2f: Convert to YAML and run git merge-file for line-level merging
+      const yamlMergeResult = mergeYamlWithGit(versionsForYaml);
+      hadYamlConflicts = yamlMergeResult.hadConflicts;
+
+      if (yamlMergeResult.success) {
+        mergedEntity = yamlMergeResult.entity;
+      } else {
+        // Fatal error during merge - fallback to latest-wins for entire entity
+        const oursNewer = compareTimestamps(oursEntity?.updated_at, theirsEntity?.updated_at) > 0;
+        mergedEntity = (oursNewer ? versionsForYaml.ours : versionsForYaml.theirs) as T;
+      }
     }
 
     // Add back the latest updated_at timestamp
     mergedEntity.updated_at = latestUpdatedAt;
 
     // Record conflicts if any
-    if (scalarConflicts.length > 0 || yamlMergeResult.hadConflicts) {
+    if (scalarConflicts.length > 0 || hadYamlConflicts) {
       const conflictParts = [];
       if (scalarConflicts.length > 0) {
         conflictParts.push(`${scalarConflicts.length} scalar field conflicts (${scalarConflicts.join(', ')})`);
       }
-      if (yamlMergeResult.hadConflicts) {
+      if (hadYamlConflicts) {
         conflictParts.push('YAML conflict blocks (latest-wins per block)');
       }
 
