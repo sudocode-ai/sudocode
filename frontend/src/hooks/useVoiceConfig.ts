@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { VoiceConfig } from '@sudocode-ai/types/voice'
 import { isSpeechRecognitionSupported } from '@/lib/voice'
+import api from '@/lib/api'
 
 /**
  * Extended voice config with browser capability info
@@ -15,11 +16,13 @@ import { isSpeechRecognitionSupported } from '@/lib/voice'
 export interface VoiceConfigState {
   /** Server voice configuration */
   config: VoiceConfig | null
+  /** Whether voice is enabled for this project (from config.json) */
+  voiceEnabled: boolean
   /** Whether Whisper server is available */
   whisperAvailable: boolean
   /** Whether browser Web Speech API is supported */
   webSpeechSupported: boolean
-  /** Whether any STT provider is available */
+  /** Whether any STT provider is available (considers voiceEnabled) */
   sttAvailable: boolean
   /** Preferred STT provider to use */
   preferredSTTProvider: 'whisper' | 'browser' | null
@@ -35,6 +38,21 @@ export interface VoiceConfigState {
 let cachedConfig: VoiceConfig | null = null
 let cacheTimestamp = 0
 const CACHE_TTL_MS = 60000 // 1 minute cache
+
+// Listeners for cache invalidation (allows notifying all hook instances)
+type CacheInvalidationListener = () => void
+const cacheInvalidationListeners = new Set<CacheInvalidationListener>()
+
+/**
+ * Clear the voice config cache and notify all listeners.
+ * Call this after updating voice settings to ensure fresh data is fetched.
+ */
+export function clearVoiceConfigCache(): void {
+  cachedConfig = null
+  cacheTimestamp = 0
+  // Notify all listeners to refetch
+  cacheInvalidationListeners.forEach((listener) => listener())
+}
 
 /**
  * Hook to get voice configuration and determine available providers.
@@ -75,13 +93,7 @@ export function useVoiceConfig(): VoiceConfigState {
     setError(null)
 
     try {
-      const response = await fetch('/api/voice/config')
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch voice config: ${response.status}`)
-      }
-
-      const data: VoiceConfig = await response.json()
+      const data = await api.get<VoiceConfig, VoiceConfig>('/voice/config')
 
       // Update cache
       cachedConfig = data
@@ -102,21 +114,39 @@ export function useVoiceConfig(): VoiceConfigState {
     fetchConfig()
   }, [fetchConfig])
 
+  // Subscribe to cache invalidation events
+  useEffect(() => {
+    const handleCacheInvalidation = () => {
+      fetchConfig()
+    }
+    cacheInvalidationListeners.add(handleCacheInvalidation)
+    return () => {
+      cacheInvalidationListeners.delete(handleCacheInvalidation)
+    }
+  }, [fetchConfig])
+
   // Compute derived values
+  // Default to true if not configured (for backwards compatibility and when loading)
+  const voiceEnabled = config?.enabled ?? true
   const whisperAvailable = config?.stt?.whisperAvailable ?? false
-  const sttAvailable = whisperAvailable || webSpeechSupported
+
+  // STT is available if voice is enabled AND a provider is available
+  const hasProvider = whisperAvailable || webSpeechSupported
+  const sttAvailable = voiceEnabled && hasProvider
 
   // Prefer browser (works out of the box), fallback to Whisper
   let preferredSTTProvider: 'whisper' | 'browser' | null = null
-  if (webSpeechSupported) {
-    preferredSTTProvider = 'browser'
-  } else if (whisperAvailable) {
-    preferredSTTProvider = 'whisper'
+  if (voiceEnabled) {
+    if (webSpeechSupported) {
+      preferredSTTProvider = 'browser'
+    } else if (whisperAvailable) {
+      preferredSTTProvider = 'whisper'
+    }
   }
-
 
   return {
     config,
+    voiceEnabled,
     whisperAvailable,
     webSpeechSupported,
     sttAvailable,

@@ -3,16 +3,40 @@
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
-import express, { Express } from "express";
+import express, { Express, Request, Response, NextFunction } from "express";
 import request from "supertest";
+
+/**
+ * Mock project context for testing
+ */
+const mockProjectContext = {
+  id: "test-project",
+  path: "/test/project",
+  sudocodeDir: "/test/project/.sudocode",
+  db: {} as any,
+  transportManager: {} as any,
+  executionService: {} as any,
+  logsStore: {} as any,
+  worktreeManager: {} as any,
+  openedAt: new Date(),
+};
+
+/**
+ * Middleware to inject mock project context
+ */
+function injectProject(
+  req: Request,
+  _res: Response,
+  next: NextFunction
+): void {
+  req.project = mockProjectContext as any;
+  next();
+}
 
 // Mock the STT service module before importing the router
 vi.mock("../../../src/services/stt-service.js", () => {
-  const mockProviders = new Map();
   const mockService = {
-    registerProvider: vi.fn((provider) => {
-      mockProviders.set(provider.name, provider);
-    }),
+    registerProvider: vi.fn(),
     getAvailableProviders: vi.fn().mockResolvedValue(["whisper-local"]),
     getConfig: vi.fn().mockReturnValue({
       defaultProvider: "whisper-local",
@@ -27,7 +51,23 @@ vi.mock("../../../src/services/stt-service.js", () => {
     }),
   };
 
+  // Create a mock STTService class
+  class MockSTTService {
+    registerProvider = mockService.registerProvider;
+    getAvailableProviders = mockService.getAvailableProviders;
+    getConfig = mockService.getConfig;
+    isProviderAvailable = mockService.isProviderAvailable;
+    transcribe = mockService.transcribe;
+  }
+
   return {
+    STTService: MockSTTService,
+    getSTTConfig: vi.fn().mockReturnValue({
+      defaultProvider: "whisper-local",
+      whisperUrl: "http://localhost:2022/v1",
+      whisperModel: "base",
+    }),
+    // Keep the old getSTTService for backwards compatibility in tests
     getSTTService: vi.fn(() => mockService),
     NoSTTProviderError: class NoSTTProviderError extends Error {
       constructor() {
@@ -80,7 +120,8 @@ describe("Voice API Routes", () => {
     vi.clearAllMocks();
     app = express();
     app.use(express.json());
-    app.use("/api/voice", createVoiceRouter());
+    // Inject mock project context before voice routes
+    app.use("/api/voice", injectProject, createVoiceRouter());
   });
 
   afterEach(() => {
@@ -266,7 +307,7 @@ describe("Voice API Routes", () => {
   });
 
   describe("GET /api/voice/config", () => {
-    it("should return voice configuration", async () => {
+    it("should return voice configuration wrapped in ApiResponse", async () => {
       const sttService = getSTTService();
       vi.mocked(sttService.getAvailableProviders).mockResolvedValue([
         "whisper-local",
@@ -276,8 +317,10 @@ describe("Voice API Routes", () => {
       const response = await request(app).get("/api/voice/config");
 
       expect(response.status).toBe(200);
-      expect(response.body).toHaveProperty("stt");
-      expect(response.body).toHaveProperty("tts");
+      expect(response.body).toHaveProperty("success", true);
+      expect(response.body).toHaveProperty("data");
+      expect(response.body.data).toHaveProperty("stt");
+      expect(response.body.data).toHaveProperty("tts");
     });
 
     it("should include STT configuration", async () => {
@@ -296,20 +339,22 @@ describe("Voice API Routes", () => {
       const response = await request(app).get("/api/voice/config");
 
       expect(response.status).toBe(200);
-      expect(response.body.stt).toHaveProperty("providers");
-      expect(response.body.stt).toHaveProperty("default", "whisper-local");
-      expect(response.body.stt).toHaveProperty("whisperAvailable", true);
-      expect(response.body.stt.providers).toContain("whisper-local");
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.stt).toHaveProperty("providers");
+      expect(response.body.data.stt).toHaveProperty("default", "whisper-local");
+      expect(response.body.data.stt).toHaveProperty("whisperAvailable", true);
+      expect(response.body.data.stt.providers).toContain("whisper-local");
     });
 
     it("should include TTS configuration", async () => {
       const response = await request(app).get("/api/voice/config");
 
       expect(response.status).toBe(200);
-      expect(response.body.tts).toHaveProperty("providers");
-      expect(response.body.tts).toHaveProperty("default", "browser");
-      expect(response.body.tts).toHaveProperty("kokoroAvailable", false);
-      expect(response.body.tts).toHaveProperty("voices");
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.tts).toHaveProperty("providers");
+      expect(response.body.data.tts).toHaveProperty("default", "browser");
+      expect(response.body.data.tts).toHaveProperty("kokoroAvailable", false);
+      expect(response.body.data.tts).toHaveProperty("voices");
     });
 
     it("should report whisperAvailable as false when not available", async () => {
@@ -319,7 +364,8 @@ describe("Voice API Routes", () => {
       const response = await request(app).get("/api/voice/config");
 
       expect(response.status).toBe(200);
-      expect(response.body.stt.whisperAvailable).toBe(false);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.stt.whisperAvailable).toBe(false);
     });
 
     it("should handle errors gracefully", async () => {

@@ -4,18 +4,28 @@
  * Provides REST endpoints for voice functionality:
  * - POST /api/voice/transcribe - Transcribe audio to text
  * - GET /api/voice/config - Get available voice providers and configuration
+ *
+ * Voice settings are read from project config.json under the "voice" key.
  */
 
 import { Router, Request, Response, NextFunction } from "express";
+import { existsSync, readFileSync } from "fs";
+import * as path from "path";
 import multer from "multer";
 import {
-  getSTTService,
+  STTService,
+  getSTTConfig,
   NoSTTProviderError,
   STTProviderNotFoundError,
   TranscriptionError,
 } from "../services/stt-service.js";
 import { createWhisperLocalProvider } from "../services/stt-providers/whisper-local.js";
-import type { VoiceConfig, STTOptions } from "@sudocode-ai/types/voice";
+import type {
+  VoiceConfig,
+  STTOptions,
+  VoiceSettingsConfig,
+} from "@sudocode-ai/types/voice";
+import type { Config } from "@sudocode-ai/types";
 
 // Configure multer for memory storage (we process the file directly)
 const upload = multer({
@@ -50,18 +60,59 @@ const upload = multer({
   },
 });
 
-// Initialize STT service with providers
-const sttService = getSTTService();
+/**
+ * Read voice configuration from project config.json
+ */
+function readVoiceConfig(sudocodeDir: string): VoiceSettingsConfig | undefined {
+  const configPath = path.join(sudocodeDir, "config.json");
+  if (!existsSync(configPath)) {
+    return undefined;
+  }
+  try {
+    const config = JSON.parse(readFileSync(configPath, "utf-8")) as Config;
+    return config.voice;
+  } catch {
+    return undefined;
+  }
+}
 
-// Register the Whisper local provider
-const whisperProvider = createWhisperLocalProvider();
-sttService.registerProvider(whisperProvider);
+/**
+ * Check if voice is enabled for a project.
+ * Defaults to true if not explicitly set.
+ */
+function isVoiceEnabled(sudocodeDir: string): boolean {
+  const voiceConfig = readVoiceConfig(sudocodeDir);
+  // Default to true if not configured
+  return voiceConfig?.enabled !== false;
+}
 
-// TODO: Register OpenAI Whisper provider when API key is configured
-// if (process.env.OPENAI_API_KEY) {
-//   const openaiProvider = createOpenAIWhisperProvider();
-//   sttService.registerProvider(openaiProvider);
-// }
+/**
+ * Create an STT service configured for a specific project.
+ *
+ * Reads voice settings from project config.json and initializes
+ * providers with the appropriate configuration.
+ */
+function createProjectSTTService(sudocodeDir: string): STTService {
+  const voiceConfig = readVoiceConfig(sudocodeDir);
+  const sttConfig = getSTTConfig(voiceConfig);
+
+  const service = new STTService(sttConfig);
+
+  // Register the Whisper local provider with project-specific config
+  const whisperProvider = createWhisperLocalProvider({
+    baseUrl: sttConfig.whisperUrl,
+    model: sttConfig.whisperModel,
+  });
+  service.registerProvider(whisperProvider);
+
+  // TODO: Register OpenAI Whisper provider when API key is configured
+  // if (process.env.OPENAI_API_KEY) {
+  //   const openaiProvider = createOpenAIWhisperProvider();
+  //   service.registerProvider(openaiProvider);
+  // }
+
+  return service;
+}
 
 /**
  * Request timeout middleware
@@ -155,6 +206,14 @@ export function createVoiceRouter(): Router {
           });
         }
 
+        // Get project context for config
+        if (!req.project) {
+          return res.status(400).json({
+            error: "Missing project context",
+            message: "Voice transcription requires a project context",
+          });
+        }
+
         const { language, provider } = req.body;
         const audioBuffer = req.file.buffer;
         const audioSize = audioBuffer.length;
@@ -163,6 +222,9 @@ export function createVoiceRouter(): Router {
         console.log(
           `[voice] Transcription request: ${audioSize} bytes, format: ${audioMime}, language: ${language || "en"}, provider: ${provider || "default"}`
         );
+
+        // Create project-scoped STT service
+        const sttService = createProjectSTTService(req.project.sudocodeDir);
 
         // Build STT options
         const options: STTOptions = {
@@ -252,8 +314,22 @@ export function createVoiceRouter(): Router {
    *     }
    *   }
    */
-  router.get("/config", async (_req: Request, res: Response) => {
+  router.get("/config", async (req: Request, res: Response) => {
     try {
+      // Get project context for config
+      if (!req.project) {
+        return res.status(400).json({
+          error: "Missing project context",
+          message: "Voice config requires a project context",
+        });
+      }
+
+      // Check if voice is enabled
+      const voiceEnabled = isVoiceEnabled(req.project.sudocodeDir);
+
+      // Create project-scoped STT service
+      const sttService = createProjectSTTService(req.project.sudocodeDir);
+
       // Get available STT providers
       const availableSTTProviders = await sttService.getAvailableProviders();
       const sttConfig = sttService.getConfig();
@@ -264,6 +340,7 @@ export function createVoiceRouter(): Router {
 
       // Build response
       const config: VoiceConfig = {
+        enabled: voiceEnabled,
         stt: {
           providers: availableSTTProviders,
           default: sttConfig.defaultProvider,
@@ -283,7 +360,7 @@ export function createVoiceRouter(): Router {
         },
       };
 
-      return res.status(200).json(config);
+      return res.status(200).json({ success: true, data: config });
     } catch (error) {
       console.error("[voice] Error getting voice config:", error);
       return res.status(500).json({

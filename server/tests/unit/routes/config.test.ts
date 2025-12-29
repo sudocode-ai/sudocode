@@ -418,4 +418,179 @@ describe("Config Router", () => {
       );
     });
   });
+
+  describe("GET /voice", () => {
+    it("should return empty object wrapped in ApiResponse when no voice config", async () => {
+      const { req, res } = createMockReqRes();
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({}));
+
+      const handler = router.stack.find(
+        (layer) => layer.route?.path === "/voice" && layer.route?.methods.get
+      )?.route?.stack[0].handle;
+
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: {},
+      });
+    });
+
+    it("should return voice section from config wrapped in ApiResponse", async () => {
+      const { req, res } = createMockReqRes();
+      const mockConfig = {
+        version: "0.1.0",
+        voice: {
+          enabled: true,
+          stt: {
+            provider: "whisper-local",
+            whisperUrl: "http://localhost:2022/v1",
+            whisperModel: "base",
+          },
+        },
+      };
+
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(mockConfig));
+
+      const handler = router.stack.find(
+        (layer) => layer.route?.path === "/voice" && layer.route?.methods.get
+      )?.route?.stack[0].handle;
+
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: mockConfig.voice,
+      });
+    });
+  });
+
+  describe("PUT /voice", () => {
+    it("should save voice configuration and return ApiResponse", async () => {
+      const voiceSettings = {
+        enabled: true,
+        stt: {
+          provider: "whisper-local",
+          whisperUrl: "http://localhost:2022/v1",
+          whisperModel: "small",
+        },
+      };
+
+      const { req, res } = createMockReqRes({
+        body: voiceSettings,
+      });
+
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        JSON.stringify({ version: "0.1.0" })
+      );
+
+      const handler = router.stack.find(
+        (layer) => layer.route?.path === "/voice" && layer.route?.methods.put
+      )?.route?.stack[0].handle;
+
+      await handler!(req, res, () => {});
+
+      expect(fs.writeFileSync).toHaveBeenCalledWith(
+        "/test/project/.sudocode/config.json",
+        expect.stringContaining('"voice"'),
+        "utf-8"
+      );
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: voiceSettings,
+      });
+    });
+
+    it("should reject invalid enabled value", async () => {
+      const { req, res } = createMockReqRes({
+        body: {
+          enabled: "yes", // Should be boolean
+        },
+      });
+
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({}));
+
+      const handler = router.stack.find(
+        (layer) => layer.route?.path === "/voice" && layer.route?.methods.put
+      )?.route?.stack[0].handle;
+
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: "Invalid voice configuration",
+        })
+      );
+    });
+
+    it("should reject invalid STT provider", async () => {
+      const { req, res } = createMockReqRes({
+        body: {
+          enabled: true,
+          stt: {
+            provider: "invalid-provider",
+          },
+        },
+      });
+
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({}));
+
+      const handler = router.stack.find(
+        (layer) => layer.route?.path === "/voice" && layer.route?.methods.put
+      )?.route?.stack[0].handle;
+
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: "Invalid voice configuration",
+          message: "Invalid STT provider",
+        })
+      );
+    });
+
+    it("should merge with existing config", async () => {
+      const voiceSettings = {
+        enabled: false,
+      };
+
+      const { req, res } = createMockReqRes({
+        body: voiceSettings,
+      });
+
+      const existingConfig = {
+        version: "0.1.0",
+        worktree: { autoCreateBranches: true },
+        integrations: { beads: { enabled: true } },
+      };
+
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(existingConfig));
+
+      const handler = router.stack.find(
+        (layer) => layer.route?.path === "/voice" && layer.route?.methods.put
+      )?.route?.stack[0].handle;
+
+      await handler!(req, res, () => {});
+
+      // Verify writeFileSync was called with merged config
+      const writeCall = vi.mocked(fs.writeFileSync).mock.calls[0];
+      const writtenConfig = JSON.parse(writeCall[1] as string);
+
+      expect(writtenConfig.version).toBe("0.1.0");
+      expect(writtenConfig.worktree).toEqual({ autoCreateBranches: true });
+      expect(writtenConfig.integrations).toEqual({ beads: { enabled: true } });
+      expect(writtenConfig.voice).toEqual(voiceSettings);
+    });
+  });
 });

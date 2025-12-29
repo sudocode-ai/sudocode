@@ -170,8 +170,8 @@ app.use("/api/files", requireProject(projectManager), createFilesRouter());
 // Agents endpoint - global, not project-specific
 app.use("/api/agents", createAgentsRouter());
 
-// Voice endpoint - global, not project-specific
-app.use("/api/voice", createVoiceRouter());
+// Voice endpoint - requires project context for config
+app.use("/api/voice", requireProject(projectManager), createVoiceRouter());
 
 // Mount execution routes (must be before stream routes to avoid conflicts)
 // TODO: Make these all relative to /executions

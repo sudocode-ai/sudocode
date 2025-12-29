@@ -652,6 +652,7 @@ describe('useVoiceInput', () => {
     it('should expose sttProvider from useVoiceConfig', () => {
       mockUseVoiceConfig.mockReturnValue({
         config: null,
+        voiceEnabled: true,
         whisperAvailable: false,
         webSpeechSupported: true,
         sttAvailable: true,
@@ -669,6 +670,7 @@ describe('useVoiceInput', () => {
     it('should expose isConfigLoading from useVoiceConfig', () => {
       mockUseVoiceConfig.mockReturnValue({
         config: null,
+        voiceEnabled: true,
         whisperAvailable: false,
         webSpeechSupported: false,
         sttAvailable: false,
@@ -686,6 +688,7 @@ describe('useVoiceInput', () => {
     it('should show browser as sttProvider when Whisper unavailable', () => {
       mockUseVoiceConfig.mockReturnValue({
         config: null,
+        voiceEnabled: true,
         whisperAvailable: false,
         webSpeechSupported: true,
         sttAvailable: true,
@@ -703,6 +706,7 @@ describe('useVoiceInput', () => {
     it('should show null sttProvider when no provider available', () => {
       mockUseVoiceConfig.mockReturnValue({
         config: null,
+        voiceEnabled: true,
         whisperAvailable: false,
         webSpeechSupported: false,
         sttAvailable: false,
@@ -723,6 +727,7 @@ describe('useVoiceInput', () => {
       // Configure for browser fallback mode
       mockUseVoiceConfig.mockReturnValue({
         config: null,
+        voiceEnabled: true,
         whisperAvailable: false,
         webSpeechSupported: true,
         sttAvailable: true,

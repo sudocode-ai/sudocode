@@ -9,6 +9,7 @@ import type {
   STTProvider as STTProviderType,
   STTOptions,
   TranscriptionResult,
+  VoiceSettingsConfig,
 } from "@sudocode-ai/types/voice";
 
 /**
@@ -49,14 +50,24 @@ export interface STTServiceConfig {
 }
 
 /**
- * Get STT configuration from environment variables
+ * Get STT configuration from project config.
+ *
+ * All settings come from .sudocode/config.json voice.stt.* with defaults:
+ * - provider: "whisper-local"
+ * - whisperUrl: "http://localhost:2022/v1"
+ * - whisperModel: "base"
+ *
+ * @param projectVoiceConfig - Optional project voice settings from config.json
  */
-export function getSTTConfig(): STTServiceConfig {
+export function getSTTConfig(
+  projectVoiceConfig?: VoiceSettingsConfig
+): STTServiceConfig {
+  const sttSettings = projectVoiceConfig?.stt;
+
   return {
-    defaultProvider:
-      (process.env.VOICE_STT_PROVIDER as STTProviderType) || "whisper-local",
-    whisperUrl: process.env.VOICE_WHISPER_URL || "http://localhost:2022/v1",
-    whisperModel: process.env.VOICE_WHISPER_MODEL || "base",
+    defaultProvider: sttSettings?.provider || "whisper-local",
+    whisperUrl: sttSettings?.whisperUrl || "http://localhost:2022/v1",
+    whisperModel: sttSettings?.whisperModel || "base",
   };
 }
 

@@ -3,6 +3,7 @@
  */
 
 import type { IntegrationsConfig } from "./integrations.js";
+import type { VoiceSettingsConfig } from "./voice.js";
 
 // =============================================================================
 // Integration Types (External Links)
@@ -297,6 +298,8 @@ export interface Config {
   integrations?: IntegrationsConfig;
   /** Editor configuration (optional) */
   editor?: EditorConfig;
+  /** Voice configuration (optional) */
+  voice?: VoiceSettingsConfig;
 }
 
 /**

@@ -30,6 +30,7 @@ import { useAgents } from '@/hooks/useAgents'
 import { useProject } from '@/hooks/useProject'
 import { useAgentActions } from '@/hooks/useAgentActions'
 import { useWorktrees } from '@/hooks/useWorktrees'
+import { useVoiceConfig } from '@/hooks/useVoiceConfig'
 import type { CodexConfig } from './CodexConfigForm'
 import type { CopilotConfig } from './CopilotConfigForm'
 
@@ -415,6 +416,9 @@ export function AgentConfigPanel({
   // Fetch available worktrees for worktree-based creation
   const { worktrees } = useWorktrees()
 
+  // Get voice configuration to conditionally show voice input
+  const { voiceEnabled } = useVoiceConfig()
+
   // Check if the current execution's worktree has been cleaned up
   // If the execution was a worktree execution but the worktree no longer exists,
   // we can't follow up and must start a new execution
@@ -761,14 +765,16 @@ export function AgentConfigPanel({
           />
         </div>
         <TooltipProvider>
-          {/* Voice Input Button */}
-          <VoiceInputButton
-            onTranscription={handleVoiceTranscription}
-            onRecordingStart={handleVoiceRecordingStart}
-            onInterimResult={handleVoiceInterimResult}
-            disabled={loading || disabled || isRunning}
-            size="sm"
-          />
+          {/* Voice Input Button - only shown when voice is enabled */}
+          {voiceEnabled && (
+            <VoiceInputButton
+              onTranscription={handleVoiceTranscription}
+              onRecordingStart={handleVoiceRecordingStart}
+              onInterimResult={handleVoiceInterimResult}
+              disabled={loading || disabled || isRunning}
+              size="sm"
+            />
+          )}
           {/* Submit/Cancel Button */}
           <Tooltip>
             <TooltipTrigger asChild>
@@ -1026,14 +1032,16 @@ export function AgentConfigPanel({
               </TooltipContent>
             </Tooltip>
 
-            {/* Voice Input Button */}
-            <VoiceInputButton
-              onTranscription={handleVoiceTranscription}
-              onRecordingStart={handleVoiceRecordingStart}
-              onInterimResult={handleVoiceInterimResult}
-              disabled={loading || disabled || isRunning}
-              size="default"
-            />
+            {/* Voice Input Button - only shown when voice is enabled */}
+            {voiceEnabled && (
+              <VoiceInputButton
+                onTranscription={handleVoiceTranscription}
+                onRecordingStart={handleVoiceRecordingStart}
+                onInterimResult={handleVoiceInterimResult}
+                disabled={loading || disabled || isRunning}
+                size="default"
+              />
+            )}
 
             {/* Submit/Cancel Button - Round button that changes based on state */}
             <Tooltip>

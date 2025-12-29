@@ -18,6 +18,51 @@ export type STTProvider = "whisper-local" | "openai";
 export type TTSProvider = "browser" | "kokoro" | "openai";
 
 // =============================================================================
+// Project Settings (config.json)
+// =============================================================================
+
+/**
+ * Voice settings stored in .sudocode/config.json
+ *
+ * These settings configure how voice features work for a project.
+ *
+ * @example
+ * ```json
+ * {
+ *   "voice": {
+ *     "enabled": true,
+ *     "stt": {
+ *       "provider": "whisper-local",
+ *       "whisperUrl": "http://localhost:2022/v1",
+ *       "whisperModel": "base"
+ *     },
+ *     "tts": {
+ *       "provider": "browser"
+ *     }
+ *   }
+ * }
+ * ```
+ */
+export interface VoiceSettingsConfig {
+  /** Whether voice features are enabled (default: true) */
+  enabled?: boolean;
+  /** Speech-to-text settings */
+  stt?: {
+    /** Preferred STT provider */
+    provider?: STTProvider;
+    /** URL for local Whisper server (default: http://localhost:2022/v1) */
+    whisperUrl?: string;
+    /** Whisper model to use (default: base) */
+    whisperModel?: string;
+  };
+  /** Text-to-speech settings */
+  tts?: {
+    /** Preferred TTS provider */
+    provider?: TTSProvider;
+  };
+}
+
+// =============================================================================
 // STT Types
 // =============================================================================
 
@@ -174,6 +219,8 @@ export interface TTSConfig {
  * Full voice configuration from GET /api/voice/config
  */
 export interface VoiceConfig {
+  /** Whether voice features are enabled for this project */
+  enabled: boolean;
   /** Speech-to-text configuration */
   stt: STTConfig;
   /** Text-to-speech configuration */
