@@ -16,8 +16,6 @@ import {
   Code2,
   ChevronDown,
   ChevronUp,
-  Copy,
-  Check,
   ArrowDown,
   ArrowUp,
   Link,
@@ -953,6 +951,19 @@ export function IssuePanel({
                   <TooltipContent>Open in full page</TooltipContent>
                 </Tooltip>
               )}
+              {/* Issue ID Badge */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button onClick={handleCopyId} className="flex-shrink-0" type="button">
+                    <Badge variant="issue" className="cursor-pointer font-mono hover:opacity-80">
+                      {issue.id}
+                    </Badge>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{isCopied ? 'Copied!' : 'Click to copy ID'}</p>
+                </TooltipContent>
+              </Tooltip>
               {/* Title */}
               <textarea
                 value={title}
@@ -1014,37 +1025,13 @@ export function IssuePanel({
         {/* Content */}
         <div
           ref={scrollContainerRef}
-          className={`w-full flex-1 overflow-y-auto ${hideTopControls ? 'py-4' : 'py-3'}`}
+          className={`w-full flex-1 overflow-y-auto`}
           onScroll={handleScroll}
         >
           <div className="mx-auto w-full max-w-7xl space-y-4 px-6">
-            {/* Entity badge and save status */}
+            {/* Parent/children and save status */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="group relative flex items-center gap-1">
-                  <Badge variant="issue" className="font-mono">
-                    {issue.id}
-                  </Badge>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleCopyId}
-                        className="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-                      >
-                        {isCopied ? (
-                          <Check className="h-3.5 w-3.5" />
-                        ) : (
-                          <Copy className="h-3.5 w-3.5" />
-                        )}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{isCopied ? 'Copied!' : 'Copy ID to Clipboard'}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
                 {issue.external_links &&
                   issue.external_links.length > 0 &&
                   issue.external_links.map((link) => (
@@ -1078,15 +1065,6 @@ export function IssuePanel({
                   </>
                 )}
               </div>
-              {onUpdate && (
-                <div className="text-xs italic text-muted-foreground">
-                  {isUpdating
-                    ? 'Saving...'
-                    : hasChanges
-                      ? 'Unsaved changes...'
-                      : 'All changes saved'}
-                </div>
-              )}
             </div>
 
             {/* Metadata Row */}

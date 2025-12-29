@@ -58,8 +58,14 @@ function setupFullTestEnvironment() {
     status: "completed",
   });
 
-  // Create worktree
-  const worktreePath = path.join(repo, "..", "worktree");
+  // Create worktree with unique path to avoid collisions
+  const worktreePath = path.join(repo, "..", `worktree-${Date.now()}-${Math.random().toString(36).substring(7)}`);
+
+  // Clean up any existing worktree at this path (shouldn't happen with unique path, but safety check)
+  if (fs.existsSync(worktreePath)) {
+    fs.rmSync(worktreePath, { recursive: true, force: true });
+  }
+
   execSync(`git worktree add ${worktreePath} -b worktree-branch`, {
     cwd: repo,
     stdio: "pipe",
@@ -121,10 +127,22 @@ describe("Full squash sync workflow - happy path", () => {
   });
 
   afterEach(() => {
-    if (testEnv.db) {
+    if (testEnv?.db) {
       testEnv.db.close();
     }
-    if (testEnv.repo) {
+    if (testEnv?.worktree && fs.existsSync(testEnv.worktree)) {
+      // Remove the worktree from git's tracking first
+      try {
+        execSync(`git worktree remove ${testEnv.worktree} --force`, {
+          cwd: testEnv.repo,
+          stdio: "pipe",
+        });
+      } catch {
+        // If git worktree remove fails, just delete the directory
+        fs.rmSync(testEnv.worktree, { recursive: true, force: true });
+      }
+    }
+    if (testEnv?.repo) {
       cleanupTestRepo(testEnv.repo);
     }
   });
@@ -169,10 +187,22 @@ describe("JSONL conflict resolution", () => {
   });
 
   afterEach(() => {
-    if (testEnv.db) {
+    if (testEnv?.db) {
       testEnv.db.close();
     }
-    if (testEnv.repo) {
+    if (testEnv?.worktree && fs.existsSync(testEnv.worktree)) {
+      // Remove the worktree from git's tracking first
+      try {
+        execSync(`git worktree remove ${testEnv.worktree} --force`, {
+          cwd: testEnv.repo,
+          stdio: "pipe",
+        });
+      } catch {
+        // If git worktree remove fails, just delete the directory
+        fs.rmSync(testEnv.worktree, { recursive: true, force: true });
+      }
+    }
+    if (testEnv?.repo) {
       cleanupTestRepo(testEnv.repo);
     }
   });
@@ -244,10 +274,22 @@ describe("Uncommitted JSONL handling", () => {
   });
 
   afterEach(() => {
-    if (testEnv.db) {
+    if (testEnv?.db) {
       testEnv.db.close();
     }
-    if (testEnv.repo) {
+    if (testEnv?.worktree && fs.existsSync(testEnv.worktree)) {
+      // Remove the worktree from git's tracking first
+      try {
+        execSync(`git worktree remove ${testEnv.worktree} --force`, {
+          cwd: testEnv.repo,
+          stdio: "pipe",
+        });
+      } catch {
+        // If git worktree remove fails, just delete the directory
+        fs.rmSync(testEnv.worktree, { recursive: true, force: true });
+      }
+    }
+    if (testEnv?.repo) {
       cleanupTestRepo(testEnv.repo);
     }
   });
@@ -309,10 +351,22 @@ describe("Code conflict handling", () => {
   });
 
   afterEach(() => {
-    if (testEnv.db) {
+    if (testEnv?.db) {
       testEnv.db.close();
     }
-    if (testEnv.repo) {
+    if (testEnv?.worktree && fs.existsSync(testEnv.worktree)) {
+      // Remove the worktree from git's tracking first
+      try {
+        execSync(`git worktree remove ${testEnv.worktree} --force`, {
+          cwd: testEnv.repo,
+          stdio: "pipe",
+        });
+      } catch {
+        // If git worktree remove fails, just delete the directory
+        fs.rmSync(testEnv.worktree, { recursive: true, force: true });
+      }
+    }
+    if (testEnv?.repo) {
       cleanupTestRepo(testEnv.repo);
     }
   });
@@ -355,10 +409,22 @@ describe("Safety and rollback", () => {
   });
 
   afterEach(() => {
-    if (testEnv.db) {
+    if (testEnv?.db) {
       testEnv.db.close();
     }
-    if (testEnv.repo) {
+    if (testEnv?.worktree && fs.existsSync(testEnv.worktree)) {
+      // Remove the worktree from git's tracking first
+      try {
+        execSync(`git worktree remove ${testEnv.worktree} --force`, {
+          cwd: testEnv.repo,
+          stdio: "pipe",
+        });
+      } catch {
+        // If git worktree remove fails, just delete the directory
+        fs.rmSync(testEnv.worktree, { recursive: true, force: true });
+      }
+    }
+    if (testEnv?.repo) {
       cleanupTestRepo(testEnv.repo);
     }
   });
@@ -392,10 +458,22 @@ describe("Validation failures", () => {
   });
 
   afterEach(() => {
-    if (testEnv.db) {
+    if (testEnv?.db) {
       testEnv.db.close();
     }
-    if (testEnv.repo) {
+    if (testEnv?.worktree && fs.existsSync(testEnv.worktree)) {
+      // Remove the worktree from git's tracking first
+      try {
+        execSync(`git worktree remove ${testEnv.worktree} --force`, {
+          cwd: testEnv.repo,
+          stdio: "pipe",
+        });
+      } catch {
+        // If git worktree remove fails, just delete the directory
+        fs.rmSync(testEnv.worktree, { recursive: true, force: true });
+      }
+    }
+    if (testEnv?.repo) {
       cleanupTestRepo(testEnv.repo);
     }
   });
@@ -467,10 +545,22 @@ describe("Multiple JSONL files", () => {
   });
 
   afterEach(() => {
-    if (testEnv.db) {
+    if (testEnv?.db) {
       testEnv.db.close();
     }
-    if (testEnv.repo) {
+    if (testEnv?.worktree && fs.existsSync(testEnv.worktree)) {
+      // Remove the worktree from git's tracking first
+      try {
+        execSync(`git worktree remove ${testEnv.worktree} --force`, {
+          cwd: testEnv.repo,
+          stdio: "pipe",
+        });
+      } catch {
+        // If git worktree remove fails, just delete the directory
+        fs.rmSync(testEnv.worktree, { recursive: true, force: true });
+      }
+    }
+    if (testEnv?.repo) {
       cleanupTestRepo(testEnv.repo);
     }
   });
@@ -564,10 +654,22 @@ describe("Large changesets", () => {
   });
 
   afterEach(() => {
-    if (testEnv.db) {
+    if (testEnv?.db) {
       testEnv.db.close();
     }
-    if (testEnv.repo) {
+    if (testEnv?.worktree && fs.existsSync(testEnv.worktree)) {
+      // Remove the worktree from git's tracking first
+      try {
+        execSync(`git worktree remove ${testEnv.worktree} --force`, {
+          cwd: testEnv.repo,
+          stdio: "pipe",
+        });
+      } catch {
+        // If git worktree remove fails, just delete the directory
+        fs.rmSync(testEnv.worktree, { recursive: true, force: true });
+      }
+    }
+    if (testEnv?.repo) {
       cleanupTestRepo(testEnv.repo);
     }
   });

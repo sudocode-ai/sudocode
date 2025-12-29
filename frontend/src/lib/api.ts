@@ -239,6 +239,8 @@ export interface ListExecutionsParams {
   since?: string
   /** When used with 'since', also include running executions regardless of age */
   includeRunning?: boolean
+  /** Filter by tags stored in config.tags (e.g., 'project-assistant') */
+  tags?: string[]
 }
 
 /**
@@ -287,6 +289,7 @@ export const executionsApi = {
     if (params?.order) queryParams.append('order', params.order)
     if (params?.since) queryParams.append('since', params.since)
     if (params?.includeRunning) queryParams.append('includeRunning', 'true')
+    if (params?.tags && params.tags.length > 0) queryParams.append('tags', params.tags.join(','))
 
     const query = queryParams.toString() ? `?${queryParams.toString()}` : ''
     return get<ListExecutionsResponse>(`/executions${query}`)

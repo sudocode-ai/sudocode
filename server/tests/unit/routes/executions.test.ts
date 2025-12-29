@@ -1301,5 +1301,112 @@ describe("Executions API Routes - Agent Type Validation", () => {
       expect(response.body.message).toBe("Failed to list executions");
       expect(response.body.error_data).toBe("Database error");
     });
+
+    it("should filter by single tag", async () => {
+      const mockExecutions = [
+        {
+          id: "exec-1",
+          issue_id: null,
+          config: JSON.stringify({ tags: ["project-assistant"] }),
+          status: "running",
+        },
+      ] as Execution[];
+
+      mockExecutionService.listAll = vi.fn().mockReturnValue({
+        executions: mockExecutions,
+        total: 1,
+        hasMore: false,
+      });
+
+      const response = await request(app).get(
+        "/api/executions?tags=project-assistant"
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.executions).toEqual(mockExecutions);
+      expect(mockExecutionService.listAll).toHaveBeenCalledWith({
+        limit: undefined,
+        offset: undefined,
+        status: undefined,
+        issueId: undefined,
+        sortBy: undefined,
+        order: undefined,
+        since: undefined,
+        includeRunning: false,
+        tags: ["project-assistant"],
+      });
+    });
+
+    it("should filter by multiple tags (comma-separated)", async () => {
+      const mockExecutions = [
+        {
+          id: "exec-1",
+          config: JSON.stringify({ tags: ["project-assistant"] }),
+        },
+        {
+          id: "exec-2",
+          config: JSON.stringify({ tags: ["automation"] }),
+        },
+      ] as Execution[];
+
+      mockExecutionService.listAll = vi.fn().mockReturnValue({
+        executions: mockExecutions,
+        total: 2,
+        hasMore: false,
+      });
+
+      const response = await request(app).get(
+        "/api/executions?tags=project-assistant,automation"
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(mockExecutionService.listAll).toHaveBeenCalledWith({
+        limit: undefined,
+        offset: undefined,
+        status: undefined,
+        issueId: undefined,
+        sortBy: undefined,
+        order: undefined,
+        since: undefined,
+        includeRunning: false,
+        tags: ["project-assistant", "automation"],
+      });
+    });
+
+    it("should combine tags with other filters", async () => {
+      const mockExecutions = [
+        {
+          id: "exec-1",
+          config: JSON.stringify({ tags: ["project-assistant"] }),
+          status: "running",
+        },
+      ] as Execution[];
+
+      mockExecutionService.listAll = vi.fn().mockReturnValue({
+        executions: mockExecutions,
+        total: 1,
+        hasMore: false,
+      });
+
+      const response = await request(app).get(
+        "/api/executions?tags=project-assistant&status=running&limit=10"
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(mockExecutionService.listAll).toHaveBeenCalledWith({
+        limit: 10,
+        offset: undefined,
+        status: "running",
+        issueId: undefined,
+        sortBy: undefined,
+        order: undefined,
+        since: undefined,
+        includeRunning: false,
+        tags: ["project-assistant"],
+      });
+    });
   });
 });

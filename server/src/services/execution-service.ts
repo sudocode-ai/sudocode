@@ -1217,6 +1217,7 @@ ${feedback}`;
       order?: "asc" | "desc";
       since?: string;
       includeRunning?: boolean;
+      tags?: string[];
     } = {}
   ): {
     executions: Execution[];
@@ -1264,6 +1265,16 @@ ${feedback}`;
         whereClauses.push("created_at >= ?");
         params.push(options.since);
       }
+    }
+
+    // Filter by tags (stored in config JSON field)
+    // Uses json_each to check if any of the specified tags exist in config.tags array
+    if (options.tags && options.tags.length > 0) {
+      const tagConditions = options.tags
+        .map(() => "EXISTS (SELECT 1 FROM json_each(json_extract(config, '$.tags')) WHERE value = ?)")
+        .join(" OR ");
+      whereClauses.push(`(${tagConditions})`);
+      params.push(...options.tags);
     }
 
     // Build WHERE clause

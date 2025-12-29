@@ -1,323 +1,488 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { ChatWidgetContent } from '@/components/chat-widget/ChatWidgetContent'
-import { ChatWidgetProvider } from '@/contexts/ChatWidgetContext'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import type { UseVoiceNarrationReturn } from '@/hooks/useVoiceNarration'
+import { ThemeProvider } from '@/contexts/ThemeContext'
+import type { Execution } from '@/types/execution'
 
-// Mock useVoiceNarration hook
-const mockUseVoiceNarration: UseVoiceNarrationReturn = {
-  isSpeaking: false,
-  isPaused: false,
-  currentText: null,
-  queueLength: 0,
-  speak: vi.fn(),
-  pause: vi.fn(),
-  resume: vi.fn(),
-  skip: vi.fn(),
-  stop: vi.fn(),
-  setEnabled: vi.fn(),
-  isSupported: true,
-  availableVoices: [],
-}
+// Mock the API
+const mockGetChain = vi.fn()
+const mockCreateFollowUp = vi.fn()
+const mockCreateAdhoc = vi.fn()
+const mockGetBranches = vi
+  .fn()
+  .mockResolvedValue({ current: 'main', branches: ['main', 'develop'] })
 
-vi.mock('@/hooks/useVoiceNarration', () => ({
-  useVoiceNarration: vi.fn(() => mockUseVoiceNarration),
+vi.mock('@/lib/api', () => ({
+  executionsApi: {
+    getChain: (...args: unknown[]) => mockGetChain(...args),
+    createFollowUp: (...args: unknown[]) => mockCreateFollowUp(...args),
+    createAdhoc: (...args: unknown[]) => mockCreateAdhoc(...args),
+  },
+  repositoryApi: {
+    getBranches: () => mockGetBranches(),
+  },
 }))
 
-// Helper to render with provider
-function renderWithProvider(
-  ui: React.ReactElement,
-  options?: {
-    initialExecutionId?: string | null
-    defaultNarrationEnabled?: boolean
-  }
-) {
+// Mock useExecutions hook
+const mockExecutions: Execution[] = []
+vi.mock('@/hooks/useExecutions', () => ({
+  useExecutions: () => ({
+    data: { executions: mockExecutions },
+    isLoading: false,
+    error: null,
+  }),
+}))
+
+// Mock useAgents hook
+vi.mock('@/hooks/useAgents', () => ({
+  useAgents: () => ({
+    agents: [
+      { type: 'claude-code', displayName: 'Claude Code', implemented: true },
+      { type: 'codex', displayName: 'Codex', implemented: true },
+    ],
+    loading: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}))
+
+// Mock AgentSettingsDialog
+vi.mock('@/components/executions/AgentSettingsDialog', () => ({
+  AgentSettingsDialog: ({ open, onClose }: { open: boolean; onClose: () => void }) =>
+    open ? (
+      <div data-testid="agent-settings-dialog">
+        <button data-testid="settings-close" onClick={onClose}>
+          Close Settings
+        </button>
+      </div>
+    ) : null,
+}))
+
+// Mock ExecutionMonitor component
+vi.mock('@/components/executions/ExecutionMonitor', () => ({
+  ExecutionMonitor: ({ executionId, execution }: { executionId: string; execution: Execution }) => (
+    <div data-testid={`execution-monitor-${executionId}`}>
+      <span>Execution: {execution.id}</span>
+      <span>Status: {execution.status}</span>
+    </div>
+  ),
+}))
+
+// Mock AgentConfigPanel component
+vi.mock('@/components/executions/AgentConfigPanel', () => ({
+  AgentConfigPanel: ({
+    onStart,
+    isFollowUp,
+    promptPlaceholder,
+  }: {
+    onStart: (...args: unknown[]) => void
+    isFollowUp: boolean
+    promptPlaceholder: string
+  }) => (
+    <div data-testid="agent-config-panel">
+      <input
+        data-testid="prompt-input"
+        placeholder={promptPlaceholder}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            onStart({}, (e.target as HTMLInputElement).value, 'claude-code')
+          }
+        }}
+      />
+      <span data-testid="is-follow-up">{isFollowUp ? 'true' : 'false'}</span>
+    </div>
+  ),
+}))
+
+// Mock ExecutionSelector component
+vi.mock('@/components/chat-widget/ExecutionSelector', () => ({
+  ExecutionSelector: ({
+    value,
+    onChange,
+  }: {
+    value: string | null
+    onChange: (id: string | null) => void
+  }) => (
+    <select
+      data-testid="execution-selector"
+      value={value || ''}
+      onChange={(e) => onChange(e.target.value || null)}
+    >
+      <option value="">Select...</option>
+      <option value="exec-1">Execution 1</option>
+      <option value="exec-2">Execution 2</option>
+    </select>
+  ),
+}))
+
+// Helper to create mock execution
+const createMockExecution = (overrides: Partial<Execution> = {}): Execution => ({
+  id: 'exec-123',
+  issue_id: 'i-abc',
+  issue_uuid: 'uuid-abc',
+  mode: 'worktree',
+  prompt: 'Test prompt',
+  config: null,
+  agent_type: 'claude-code',
+  session_id: 'session-123',
+  workflow_execution_id: null,
+  target_branch: 'main',
+  branch_name: 'sudocode/exec-123',
+  before_commit: 'commit-before',
+  after_commit: null,
+  worktree_path: '/path/to/worktree',
+  status: 'completed',
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  started_at: new Date().toISOString(),
+  completed_at: new Date().toISOString(),
+  cancelled_at: null,
+  exit_code: 0,
+  error_message: null,
+  error: null,
+  model: null,
+  summary: null,
+  files_changed: null,
+  parent_execution_id: null,
+  step_type: null,
+  step_index: null,
+  step_config: null,
+  ...overrides,
+})
+
+// Helper to render with providers
+const renderWithProviders = (ui: React.ReactElement) => {
   return render(
-    <TooltipProvider>
-      <ChatWidgetProvider
-        initialExecutionId={options?.initialExecutionId}
-        defaultNarrationEnabled={options?.defaultNarrationEnabled}
-      >
-        {ui}
-      </ChatWidgetProvider>
-    </TooltipProvider>
+    <ThemeProvider>
+      <TooltipProvider>{ui}</TooltipProvider>
+    </ThemeProvider>
   )
 }
 
 describe('ChatWidgetContent', () => {
+  const defaultProps = {
+    executionId: null,
+    execution: null,
+    autoConnectLatest: true,
+    mode: 'floating' as const,
+    agentType: 'claude-code',
+    executionConfig: { mode: 'local' as const },
+    onClose: vi.fn(),
+    onModeToggle: vi.fn(),
+    onExecutionSelect: vi.fn(),
+    onAutoConnectChange: vi.fn(),
+    onCreatedExecution: vi.fn(),
+    onAgentTypeChange: vi.fn(),
+    onExecutionConfigChange: vi.fn(),
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
-    // Reset mock state
-    mockUseVoiceNarration.isSpeaking = false
-    mockUseVoiceNarration.isPaused = false
-    mockUseVoiceNarration.currentText = null
-    mockUseVoiceNarration.isSupported = true
+    mockExecutions.length = 0
   })
 
-  afterEach(() => {
-    vi.clearAllMocks()
-  })
+  describe('Empty State', () => {
+    it('should show config panel when no executions exist', () => {
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
 
-  describe('Rendering', () => {
-    it('should render children content', () => {
-      renderWithProvider(
-        <ChatWidgetContent executionId="exec-123">
-          <div data-testid="child-content">Test Content</div>
-        </ChatWidgetContent>
-      )
-
-      expect(screen.getByTestId('child-content')).toBeInTheDocument()
-      expect(screen.getByText('Test Content')).toBeInTheDocument()
+      // Should show the Project Assistant config panel
+      expect(screen.getByText('Project Assistant')).toBeInTheDocument()
+      expect(screen.getByText('Environment')).toBeInTheDocument()
     })
 
-    it('should render header content when provided', () => {
-      renderWithProvider(
-        <ChatWidgetContent
-          executionId="exec-123"
-          headerContent={<span data-testid="header">Custom Header</span>}
-        >
-          <div>Content</div>
-        </ChatWidgetContent>
-      )
+    it('should show config panel when executions exist but none selected', () => {
+      mockExecutions.push(createMockExecution({ id: 'exec-1' }))
 
-      expect(screen.getByTestId('header')).toBeInTheDocument()
-      expect(screen.getByText('Custom Header')).toBeInTheDocument()
-    })
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
 
-    it('should apply className to container', () => {
-      const { container } = renderWithProvider(
-        <ChatWidgetContent executionId="exec-123" className="custom-class">
-          <div>Content</div>
-        </ChatWidgetContent>
-      )
-
-      expect(container.firstChild).toHaveClass('custom-class')
+      // Should show the config panel
+      expect(screen.getByText('Project Assistant')).toBeInTheDocument()
+      expect(screen.getByText('Environment')).toBeInTheDocument()
     })
   })
 
-  describe('VoiceNarrationToggle', () => {
-    it('should render narration toggle when supported', () => {
-      mockUseVoiceNarration.isSupported = true
+  describe('Header', () => {
+    it('should render execution selector', () => {
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
 
-      renderWithProvider(
-        <ChatWidgetContent executionId="exec-123">
-          <div>Content</div>
-        </ChatWidgetContent>,
-        { defaultNarrationEnabled: false }
-      )
-
-      // Find the toggle button by aria-label
-      const toggle = screen.getByRole('button', { name: /narration/i })
-      expect(toggle).toBeInTheDocument()
+      expect(screen.getByTestId('execution-selector')).toBeInTheDocument()
     })
 
-    it('should not render narration toggle when not supported', () => {
-      mockUseVoiceNarration.isSupported = false
+    it('should render mode toggle button', () => {
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
 
-      renderWithProvider(
-        <ChatWidgetContent executionId="exec-123">
-          <div>Content</div>
-        </ChatWidgetContent>
-      )
-
-      // Toggle should not be present
-      const toggle = screen.queryByRole('button', { name: /narration/i })
-      expect(toggle).not.toBeInTheDocument()
+      // Find the button by its tooltip content indirectly via button count
+      const buttons = screen.getAllByRole('button')
+      expect(buttons.length).toBeGreaterThanOrEqual(3) // settings + mode toggle + close
     })
 
-    it('should enable narration when toggle is clicked', () => {
-      mockUseVoiceNarration.isSupported = true
+    it('should open settings dialog when settings button is clicked', () => {
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
 
-      renderWithProvider(
-        <ChatWidgetContent executionId="exec-123">
-          <div>Content</div>
-        </ChatWidgetContent>,
-        { defaultNarrationEnabled: false }
-      )
+      // Settings button is the first button
+      const buttons = screen.getAllByRole('button')
+      fireEvent.click(buttons[0])
 
-      const toggle = screen.getByRole('button', { name: /narration/i })
-      fireEvent.click(toggle)
+      expect(screen.getByTestId('agent-settings-dialog')).toBeInTheDocument()
+    })
 
-      // The toggle click should trigger setEnabled
-      // (internal state update happens via context)
+    it('should close settings dialog when close button is clicked', () => {
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
+
+      // Open settings dialog
+      const buttons = screen.getAllByRole('button')
+      fireEvent.click(buttons[0])
+
+      expect(screen.getByTestId('agent-settings-dialog')).toBeInTheDocument()
+
+      // Close settings dialog
+      fireEvent.click(screen.getByTestId('settings-close'))
+
+      expect(screen.queryByTestId('agent-settings-dialog')).not.toBeInTheDocument()
     })
   })
 
-  describe('VoiceSpeakingIndicator', () => {
-    it('should not show indicator when not speaking', () => {
-      mockUseVoiceNarration.isSpeaking = false
-      mockUseVoiceNarration.currentText = null
+  describe('Welcome/Config Panel', () => {
+    it('should show project assistant info when no chain exists', () => {
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
 
-      renderWithProvider(
-        <ChatWidgetContent executionId="exec-123">
-          <div>Content</div>
-        </ChatWidgetContent>,
-        { initialExecutionId: 'exec-123' }
-      )
-
-      // Indicator should not be visible
-      const skipButton = screen.queryByRole('button', { name: /skip/i })
-      expect(skipButton).not.toBeInTheDocument()
+      expect(screen.getByText('Project Assistant')).toBeInTheDocument()
+      expect(screen.getByText(/Ask questions, run tasks/)).toBeInTheDocument()
     })
 
-    it('should show indicator when speaking', () => {
-      mockUseVoiceNarration.isSpeaking = true
-      mockUseVoiceNarration.currentText = 'Reading the login component...'
+    it('should render execution mode selector in config panel', () => {
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
 
-      renderWithProvider(
-        <ChatWidgetContent executionId="exec-123">
-          <div>Content</div>
-        </ChatWidgetContent>,
-        { initialExecutionId: 'exec-123' }
-      )
-
-      // Indicator text should be visible
-      expect(screen.getByText(/"Reading the login component..."/)).toBeInTheDocument()
+      // Mode selector should be visible - look for Local text which is the default
+      expect(screen.getByText('Local')).toBeInTheDocument()
+      expect(screen.getByText('Environment')).toBeInTheDocument()
     })
 
-    it('should call skip when skip button is clicked', () => {
-      mockUseVoiceNarration.isSpeaking = true
-      mockUseVoiceNarration.currentText = 'Some narration text'
+    it('should call onExecutionConfigChange when mode is changed', () => {
+      const onExecutionConfigChange = vi.fn()
 
-      renderWithProvider(
-        <ChatWidgetContent executionId="exec-123">
-          <div>Content</div>
-        </ChatWidgetContent>,
-        { initialExecutionId: 'exec-123' }
+      renderWithProviders(
+        <ChatWidgetContent {...defaultProps} onExecutionConfigChange={onExecutionConfigChange} />
       )
 
-      const skipButton = screen.getByRole('button', { name: /skip/i })
-      fireEvent.click(skipButton)
+      // Find comboboxes - the second one is the mode selector (first is execution selector)
+      const comboboxes = screen.getAllByRole('combobox')
+      const modeSelect = comboboxes[1] // Mode selector is after execution selector
+      fireEvent.click(modeSelect)
 
-      expect(mockUseVoiceNarration.skip).toHaveBeenCalled()
-    })
-  })
+      // Select worktree option
+      const worktreeOption = screen.getByText('Worktree')
+      fireEvent.click(worktreeOption)
 
-  describe('Execution Focus', () => {
-    it('should show speaking indicator only when this execution is focused', () => {
-      mockUseVoiceNarration.isSpeaking = true
-      mockUseVoiceNarration.currentText = 'Test narration'
-
-      // Execution is focused (matches initialExecutionId)
-      renderWithProvider(
-        <ChatWidgetContent executionId="exec-123">
-          <div>Content</div>
-        </ChatWidgetContent>,
-        { initialExecutionId: 'exec-123' }
-      )
-
-      expect(screen.getByText(/"Test narration"/)).toBeInTheDocument()
+      expect(onExecutionConfigChange).toHaveBeenCalledWith({ mode: 'worktree' })
     })
 
-    it('should not show speaking indicator when different execution is focused', () => {
-      mockUseVoiceNarration.isSpeaking = true
-      mockUseVoiceNarration.currentText = 'Test narration'
+    it('should show agent info with configure button', () => {
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
 
-      // Different execution is focused
-      renderWithProvider(
-        <ChatWidgetContent executionId="exec-123">
-          <div>Content</div>
-        </ChatWidgetContent>,
-        { initialExecutionId: 'exec-456' }
-      )
+      expect(screen.getByText('Agent')).toBeInTheDocument()
+      expect(screen.getByText('Configure')).toBeInTheDocument()
+    })
 
-      // Indicator should not show because this execution is not focused
-      const skipButton = screen.queryByRole('button', { name: /skip/i })
-      expect(skipButton).not.toBeInTheDocument()
+    it('should open settings dialog when Configure button is clicked', () => {
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
+
+      fireEvent.click(screen.getByText('Configure'))
+
+      expect(screen.getByTestId('agent-settings-dialog')).toBeInTheDocument()
     })
   })
 
-  describe('Callbacks', () => {
-    it('should call onNarrationStateChange when speaking starts', async () => {
-      const onNarrationStateChange = vi.fn()
+  describe('Execution Chain Display', () => {
+    it('should fetch and display execution chain when executionId is provided', async () => {
+      const execution = createMockExecution({ id: 'exec-1' })
+      mockGetChain.mockResolvedValue({
+        rootId: 'exec-1',
+        executions: [execution],
+      })
 
-      // Get the useVoiceNarration mock to access the options
-      const { useVoiceNarration: mockHook } = await import('@/hooks/useVoiceNarration')
-
-      // Render component
-      renderWithProvider(
-        <ChatWidgetContent
-          executionId="exec-123"
-          onNarrationStateChange={onNarrationStateChange}
-        >
-          <div>Content</div>
-        </ChatWidgetContent>,
-        { initialExecutionId: 'exec-123' }
+      renderWithProviders(
+        <ChatWidgetContent {...defaultProps} executionId="exec-1" execution={execution} />
       )
 
-      // The hook was called with callbacks
-      expect(mockHook).toHaveBeenCalled()
+      await waitFor(() => {
+        expect(mockGetChain).toHaveBeenCalledWith('exec-1')
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('execution-monitor-exec-1')).toBeInTheDocument()
+      })
     })
-  })
 
-  describe('Recording Coordination', () => {
-    it('should pause narration when recording starts', () => {
-      // This behavior is tested via the context - the component reacts to isRecording
-      // changes from the context and calls pause/resume accordingly
-      mockUseVoiceNarration.isSpeaking = true
-      mockUseVoiceNarration.isPaused = false
+    it('should display multiple executions in chain', async () => {
+      const exec1 = createMockExecution({ id: 'exec-1', status: 'completed' })
+      const exec2 = createMockExecution({
+        id: 'exec-2',
+        parent_execution_id: 'exec-1',
+        status: 'running',
+      })
 
-      renderWithProvider(
-        <ChatWidgetContent executionId="exec-123">
-          <div>Content</div>
-        </ChatWidgetContent>,
-        { initialExecutionId: 'exec-123' }
+      mockGetChain.mockResolvedValue({
+        rootId: 'exec-1',
+        executions: [exec1, exec2],
+      })
+
+      renderWithProviders(
+        <ChatWidgetContent {...defaultProps} executionId="exec-1" execution={exec1} />
       )
 
-      // The pause effect is triggered by context state change
-      // This is an integration behavior tested via useEffect
+      await waitFor(() => {
+        expect(screen.getByTestId('execution-monitor-exec-1')).toBeInTheDocument()
+        expect(screen.getByTestId('execution-monitor-exec-2')).toBeInTheDocument()
+      })
     })
-  })
 
-  describe('Stop on Execution Switch', () => {
-    it('should call stop when execution is no longer focused', () => {
-      mockUseVoiceNarration.isSpeaking = true
+    it('should clear chain data when executionId becomes null', async () => {
+      const execution = createMockExecution({ id: 'exec-1' })
+      mockGetChain.mockResolvedValue({
+        rootId: 'exec-1',
+        executions: [execution],
+      })
 
-      const { rerender } = renderWithProvider(
-        <ChatWidgetContent executionId="exec-123">
-          <div>Content</div>
-        </ChatWidgetContent>,
-        { initialExecutionId: 'exec-123' }
+      const { rerender } = renderWithProviders(
+        <ChatWidgetContent {...defaultProps} executionId="exec-1" execution={execution} />
       )
 
-      // Initially focused - stop should not have been called
-      expect(mockUseVoiceNarration.stop).not.toHaveBeenCalled()
+      await waitFor(() => {
+        expect(screen.getByTestId('execution-monitor-exec-1')).toBeInTheDocument()
+      })
 
-      // Rerender with different focused execution (simulated by wrapping in new provider)
+      // Rerender with null executionId
       rerender(
-        <TooltipProvider>
-          <ChatWidgetProvider initialExecutionId="exec-456">
-            <ChatWidgetContent executionId="exec-123">
-              <div>Content</div>
-            </ChatWidgetContent>
-          </ChatWidgetProvider>
-        </TooltipProvider>
+        <ThemeProvider>
+          <TooltipProvider>
+            <ChatWidgetContent {...defaultProps} executionId={null} execution={null} />
+          </TooltipProvider>
+        </ThemeProvider>
       )
 
-      // Stop should have been called because focused execution changed
-      expect(mockUseVoiceNarration.stop).toHaveBeenCalled()
+      // Should show empty state
+      await waitFor(() => {
+        expect(screen.queryByTestId('execution-monitor-exec-1')).not.toBeInTheDocument()
+      })
     })
   })
 
-  describe('Toggle Behavior', () => {
-    it('should stop narration when toggle is disabled', () => {
-      mockUseVoiceNarration.isSpeaking = true
-      mockUseVoiceNarration.isSupported = true
+  describe('AgentConfigPanel', () => {
+    it('should show "Start a new execution" placeholder when no chain', () => {
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
 
-      renderWithProvider(
-        <ChatWidgetContent executionId="exec-123">
-          <div>Content</div>
-        </ChatWidgetContent>,
-        { defaultNarrationEnabled: true, initialExecutionId: 'exec-123' }
+      const input = screen.getByTestId('prompt-input')
+      expect(input).toHaveAttribute('placeholder', 'Start a new execution...')
+    })
+
+    it('should show "Send a follow-up" placeholder when chain exists', async () => {
+      const execution = createMockExecution({ id: 'exec-1' })
+      mockGetChain.mockResolvedValue({
+        rootId: 'exec-1',
+        executions: [execution],
+      })
+
+      renderWithProviders(
+        <ChatWidgetContent {...defaultProps} executionId="exec-1" execution={execution} />
       )
 
-      // Click toggle to disable
-      const toggle = screen.getByRole('button', { name: /narration/i })
-      fireEvent.click(toggle)
+      await waitFor(() => {
+        const input = screen.getByTestId('prompt-input')
+        expect(input).toHaveAttribute('placeholder', 'Send a follow-up message...')
+      })
+    })
 
-      // Stop should be called when disabling narration
-      expect(mockUseVoiceNarration.stop).toHaveBeenCalled()
+    it('should set isFollowUp to true when chain exists', async () => {
+      const execution = createMockExecution({ id: 'exec-1' })
+      mockGetChain.mockResolvedValue({
+        rootId: 'exec-1',
+        executions: [execution],
+      })
+
+      renderWithProviders(
+        <ChatWidgetContent {...defaultProps} executionId="exec-1" execution={execution} />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('is-follow-up')).toHaveTextContent('true')
+      })
+    })
+
+    it('should set isFollowUp to false when no chain', () => {
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
+
+      expect(screen.getByTestId('is-follow-up')).toHaveTextContent('false')
+    })
+  })
+
+  describe('Follow-up Creation', () => {
+    it('should create follow-up and add to chain when chain exists', async () => {
+      const execution = createMockExecution({ id: 'exec-1', status: 'completed' })
+      const newExecution = createMockExecution({ id: 'exec-2', parent_execution_id: 'exec-1' })
+
+      mockGetChain.mockResolvedValue({
+        rootId: 'exec-1',
+        executions: [execution],
+      })
+
+      mockCreateFollowUp.mockResolvedValue(newExecution)
+
+      renderWithProviders(
+        <ChatWidgetContent {...defaultProps} executionId="exec-1" execution={execution} />
+      )
+
+      // Wait for chain to load
+      await waitFor(() => {
+        expect(screen.getByTestId('execution-monitor-exec-1')).toBeInTheDocument()
+      })
+
+      // Simulate typing and submitting
+      const input = screen.getByTestId('prompt-input')
+      fireEvent.change(input, { target: { value: 'Follow-up message' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+
+      await waitFor(() => {
+        expect(mockCreateFollowUp).toHaveBeenCalledWith('exec-1', {
+          feedback: 'Follow-up message',
+        })
+      })
+
+      // New execution should be added to the chain
+      await waitFor(() => {
+        expect(screen.getByTestId('execution-monitor-exec-2')).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('Adhoc Execution Creation', () => {
+    it('should create adhoc execution when no chain exists', async () => {
+      const newExecution = createMockExecution({ id: 'exec-new' })
+      const onCreatedExecution = vi.fn()
+
+      mockCreateAdhoc.mockResolvedValue(newExecution)
+
+      renderWithProviders(
+        <ChatWidgetContent {...defaultProps} onCreatedExecution={onCreatedExecution} />
+      )
+
+      // Simulate typing and submitting
+      const input = screen.getByTestId('prompt-input')
+      fireEvent.change(input, { target: { value: 'New execution prompt' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+
+      await waitFor(() => {
+        expect(mockCreateAdhoc).toHaveBeenCalledWith({
+          config: { tags: ['project-assistant'] },
+          prompt: 'New execution prompt',
+          agentType: 'claude-code',
+        })
+      })
+
+      await waitFor(() => {
+        expect(onCreatedExecution).toHaveBeenCalledWith(newExecution)
+      })
     })
   })
 })

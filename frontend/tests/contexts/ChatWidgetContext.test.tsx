@@ -1,10 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
-import {
-  ChatWidgetProvider,
-  useChatWidgetContext,
-  STORAGE_KEY_NARRATION,
-} from '@/contexts/ChatWidgetContext'
+import { renderHook, act, waitFor } from '@testing-library/react'
+import { ChatWidgetProvider, useChatWidget, PROJECT_ASSISTANT_TAG } from '@/contexts/ChatWidgetContext'
+import type { Execution } from '@/types/execution'
 
 // Mock localStorage
 const localStorageMock = (() => {
@@ -28,290 +25,447 @@ Object.defineProperty(window, 'localStorage', {
   value: localStorageMock,
 })
 
+// Mock useExecutions hook with parameter tracking
+const mockExecutions: Execution[] = []
+const mockUseExecutions = vi.fn((_params?: { tags?: string[] }) => ({
+  data: { executions: mockExecutions },
+  isLoading: false,
+  error: null,
+}))
+
+vi.mock('@/hooks/useExecutions', () => ({
+  useExecutions: (params?: { tags?: string[] }) => mockUseExecutions(params),
+}))
+
+// Mock WebSocket context
+vi.mock('@/contexts/WebSocketContext', () => ({
+  useWebSocketContext: () => ({
+    connected: false,
+    subscribe: vi.fn(),
+    addMessageHandler: vi.fn(),
+    removeMessageHandler: vi.fn(),
+  }),
+}))
+
 describe('ChatWidgetContext', () => {
   beforeEach(() => {
     localStorageMock.clear()
+    vi.clearAllMocks()
+    mockExecutions.length = 0
   })
 
   afterEach(() => {
     vi.clearAllMocks()
   })
 
-  describe('useChatWidgetContext', () => {
-    it('should throw error when used outside ChatWidgetProvider', () => {
-      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+  it('should throw error when useChatWidget is used outside ChatWidgetProvider', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-      expect(() => {
-        renderHook(() => useChatWidgetContext())
-      }).toThrow('useChatWidgetContext must be used within a ChatWidgetProvider')
+    expect(() => {
+      renderHook(() => useChatWidget())
+    }).toThrow('useChatWidget must be used within ChatWidgetProvider')
 
-      consoleError.mockRestore()
-    })
+    consoleError.mockRestore()
   })
 
-  describe('narrationEnabled', () => {
-    it('should default to false when localStorage is empty', () => {
-      const { result } = renderHook(() => useChatWidgetContext(), {
-        wrapper: ChatWidgetProvider,
-      })
+  it('should provide default state values', () => {
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <ChatWidgetProvider>{children}</ChatWidgetProvider>
+    )
 
-      expect(result.current.narrationEnabled).toBe(false)
-    })
+    const { result } = renderHook(() => useChatWidget(), { wrapper })
 
-    it('should load narration preference from localStorage', () => {
-      localStorageMock.setItem(STORAGE_KEY_NARRATION, 'true')
+    expect(result.current.isOpen).toBe(false)
+    expect(result.current.mode).toBe('floating')
+    expect(result.current.selectedExecutionId).toBeNull()
+    expect(result.current.selectedExecution).toBeNull()
+    expect(result.current.agentType).toBe('claude-code')
+    expect(result.current.executionConfig).toEqual({ mode: 'local' })
+  })
 
-      const { result } = renderHook(() => useChatWidgetContext(), {
-        wrapper: ChatWidgetProvider,
-      })
+  it('should load persisted mode from localStorage', () => {
+    localStorageMock.setItem(
+      'sudocode:chatWidget',
+      JSON.stringify({ mode: 'panel', agentType: 'codex', executionConfig: { mode: 'worktree' } })
+    )
 
-      expect(result.current.narrationEnabled).toBe(true)
-    })
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <ChatWidgetProvider>{children}</ChatWidgetProvider>
+    )
 
-    it('should respect defaultNarrationEnabled prop over localStorage', () => {
-      localStorageMock.setItem(STORAGE_KEY_NARRATION, 'false')
+    const { result } = renderHook(() => useChatWidget(), { wrapper })
 
+    expect(result.current.mode).toBe('panel')
+    expect(result.current.agentType).toBe('codex')
+    expect(result.current.executionConfig).toEqual({ mode: 'worktree' })
+  })
+
+  describe('toggle', () => {
+    it('should toggle isOpen state', () => {
       const wrapper = ({ children }: { children: React.ReactNode }) => (
-        <ChatWidgetProvider defaultNarrationEnabled={true}>{children}</ChatWidgetProvider>
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
       )
 
-      const { result } = renderHook(() => useChatWidgetContext(), { wrapper })
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
 
-      expect(result.current.narrationEnabled).toBe(true)
-    })
-
-    it('should enable narration and persist to localStorage', () => {
-      const { result } = renderHook(() => useChatWidgetContext(), {
-        wrapper: ChatWidgetProvider,
-      })
+      expect(result.current.isOpen).toBe(false)
 
       act(() => {
-        result.current.setNarrationEnabled(true)
+        result.current.toggle()
       })
 
-      expect(result.current.narrationEnabled).toBe(true)
-      expect(localStorageMock.getItem(STORAGE_KEY_NARRATION)).toBe('true')
-    })
-
-    it('should disable narration and persist to localStorage', () => {
-      localStorageMock.setItem(STORAGE_KEY_NARRATION, 'true')
-
-      const { result } = renderHook(() => useChatWidgetContext(), {
-        wrapper: ChatWidgetProvider,
-      })
+      expect(result.current.isOpen).toBe(true)
 
       act(() => {
-        result.current.setNarrationEnabled(false)
+        result.current.toggle()
       })
 
-      expect(result.current.narrationEnabled).toBe(false)
-      expect(localStorageMock.getItem(STORAGE_KEY_NARRATION)).toBe('false')
+      expect(result.current.isOpen).toBe(false)
     })
   })
 
-  describe('focusedExecutionId', () => {
-    it('should default to null when no initialExecutionId provided', () => {
-      const { result } = renderHook(() => useChatWidgetContext(), {
-        wrapper: ChatWidgetProvider,
-      })
-
-      expect(result.current.focusedExecutionId).toBe(null)
-    })
-
-    it('should use initialExecutionId when provided', () => {
+  describe('open and close', () => {
+    it('should open the widget', () => {
       const wrapper = ({ children }: { children: React.ReactNode }) => (
-        <ChatWidgetProvider initialExecutionId="exec-123">{children}</ChatWidgetProvider>
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
       )
 
-      const { result } = renderHook(() => useChatWidgetContext(), { wrapper })
-
-      expect(result.current.focusedExecutionId).toBe('exec-123')
-    })
-
-    it('should update focused execution ID', () => {
-      const { result } = renderHook(() => useChatWidgetContext(), {
-        wrapper: ChatWidgetProvider,
-      })
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
 
       act(() => {
-        result.current.setFocusedExecutionId('exec-456')
+        result.current.open()
       })
 
-      expect(result.current.focusedExecutionId).toBe('exec-456')
+      expect(result.current.isOpen).toBe(true)
     })
 
-    it('should clear focused execution ID when set to null', () => {
+    it('should close the widget', () => {
       const wrapper = ({ children }: { children: React.ReactNode }) => (
-        <ChatWidgetProvider initialExecutionId="exec-123">{children}</ChatWidgetProvider>
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
       )
 
-      const { result } = renderHook(() => useChatWidgetContext(), { wrapper })
-
-      expect(result.current.focusedExecutionId).toBe('exec-123')
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
 
       act(() => {
-        result.current.setFocusedExecutionId(null)
+        result.current.open()
       })
 
-      expect(result.current.focusedExecutionId).toBe(null)
+      act(() => {
+        result.current.close()
+      })
+
+      expect(result.current.isOpen).toBe(false)
     })
+  })
 
-    it('should update when initialExecutionId prop changes', () => {
-      let executionId = 'exec-123'
-
+  describe('setMode', () => {
+    it('should change mode and persist to localStorage', async () => {
       const wrapper = ({ children }: { children: React.ReactNode }) => (
-        <ChatWidgetProvider initialExecutionId={executionId}>{children}</ChatWidgetProvider>
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
       )
 
-      const { result, rerender } = renderHook(() => useChatWidgetContext(), { wrapper })
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
 
-      expect(result.current.focusedExecutionId).toBe('exec-123')
+      act(() => {
+        result.current.setMode('panel')
+      })
 
-      // Update the executionId and rerender
-      executionId = 'exec-456'
-      rerender()
+      expect(result.current.mode).toBe('panel')
 
-      // Note: This test verifies the useEffect updates on prop change
-      // The actual update happens inside ChatWidgetProvider
+      await waitFor(() => {
+        const stored = JSON.parse(localStorageMock.getItem('sudocode:chatWidget') || '{}')
+        expect(stored.mode).toBe('panel')
+      })
     })
   })
 
-  describe('isRecording', () => {
-    it('should default to false', () => {
-      const { result } = renderHook(() => useChatWidgetContext(), {
-        wrapper: ChatWidgetProvider,
+  describe('selectExecution', () => {
+    it('should select an execution', () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      act(() => {
+        result.current.selectExecution('exec-123')
       })
 
-      expect(result.current.isRecording).toBe(false)
+      expect(result.current.selectedExecutionId).toBe('exec-123')
     })
 
-    it('should update recording state to true', () => {
-      const { result } = renderHook(() => useChatWidgetContext(), {
-        wrapper: ChatWidgetProvider,
+    it('should clear selection when null is passed (for new execution)', () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      act(() => {
+        result.current.selectExecution('exec-123')
       })
 
       act(() => {
-        result.current.setIsRecording(true)
+        result.current.selectExecution(null)
       })
 
-      expect(result.current.isRecording).toBe(true)
-    })
-
-    it('should update recording state to false', () => {
-      const { result } = renderHook(() => useChatWidgetContext(), {
-        wrapper: ChatWidgetProvider,
-      })
-
-      act(() => {
-        result.current.setIsRecording(true)
-      })
-
-      expect(result.current.isRecording).toBe(true)
-
-      act(() => {
-        result.current.setIsRecording(false)
-      })
-
-      expect(result.current.isRecording).toBe(false)
+      // Selection is cleared - shows config panel for new execution
+      expect(result.current.selectedExecutionId).toBeNull()
     })
   })
 
-  describe('state persistence', () => {
-    it('should persist narration preference across multiple toggles', () => {
-      const { result } = renderHook(() => useChatWidgetContext(), {
-        wrapper: ChatWidgetProvider,
-      })
+  describe('setCreatedExecution', () => {
+    it('should set created execution and select it', () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      const mockExecution = {
+        id: 'exec-new',
+        status: 'running',
+      } as Execution
 
       act(() => {
-        result.current.setNarrationEnabled(true)
-      })
-      expect(localStorageMock.getItem(STORAGE_KEY_NARRATION)).toBe('true')
-
-      act(() => {
-        result.current.setNarrationEnabled(false)
-      })
-      expect(localStorageMock.getItem(STORAGE_KEY_NARRATION)).toBe('false')
-
-      act(() => {
-        result.current.setNarrationEnabled(true)
-      })
-      expect(localStorageMock.getItem(STORAGE_KEY_NARRATION)).toBe('true')
-    })
-
-    it('should handle localStorage errors gracefully on load', () => {
-      const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-      // Temporarily mock localStorage.getItem to throw
-      const originalGetItem = localStorageMock.getItem
-      localStorageMock.getItem = () => {
-        throw new Error('localStorage error')
-      }
-
-      // This should not throw and should use default value
-      const { result } = renderHook(() => useChatWidgetContext(), {
-        wrapper: ChatWidgetProvider,
+        result.current.setCreatedExecution(mockExecution)
       })
 
-      expect(result.current.narrationEnabled).toBe(false)
-
-      // Restore
-      localStorageMock.getItem = originalGetItem
-      consoleWarn.mockRestore()
-    })
-
-    it('should handle localStorage errors gracefully on save', () => {
-      const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-      // Temporarily mock localStorage.setItem to throw
-      const originalSetItem = localStorageMock.setItem
-      localStorageMock.setItem = () => {
-        throw new Error('localStorage error')
-      }
-
-      const { result } = renderHook(() => useChatWidgetContext(), {
-        wrapper: ChatWidgetProvider,
-      })
-
-      // This should not throw
-      act(() => {
-        result.current.setNarrationEnabled(true)
-      })
-
-      // State should still update even if localStorage fails
-      expect(result.current.narrationEnabled).toBe(true)
-
-      // Restore
-      localStorageMock.setItem = originalSetItem
-      consoleWarn.mockRestore()
+      expect(result.current.selectedExecutionId).toBe('exec-new')
     })
   })
 
-  describe('combined usage', () => {
-    it('should maintain independent state for all values', () => {
-      const { result } = renderHook(() => useChatWidgetContext(), {
-        wrapper: ChatWidgetProvider,
-      })
+  describe('agent settings', () => {
+    it('should update agent type', () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
 
-      // Update all state values
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
       act(() => {
-        result.current.setNarrationEnabled(true)
-        result.current.setFocusedExecutionId('exec-789')
-        result.current.setIsRecording(true)
+        result.current.setAgentType('codex')
       })
 
-      // Verify all values
-      expect(result.current.narrationEnabled).toBe(true)
-      expect(result.current.focusedExecutionId).toBe('exec-789')
-      expect(result.current.isRecording).toBe(true)
+      expect(result.current.agentType).toBe('codex')
+    })
 
-      // Update one value should not affect others
+    it('should update execution config', () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
       act(() => {
-        result.current.setNarrationEnabled(false)
+        result.current.updateExecutionConfig({ mode: 'worktree', baseBranch: 'main' })
       })
 
-      expect(result.current.narrationEnabled).toBe(false)
-      expect(result.current.focusedExecutionId).toBe('exec-789')
-      expect(result.current.isRecording).toBe(true)
+      expect(result.current.executionConfig).toEqual({ mode: 'worktree', baseBranch: 'main' })
+    })
+
+    it('should merge execution config updates', () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      act(() => {
+        result.current.updateExecutionConfig({ mode: 'worktree' })
+      })
+
+      act(() => {
+        result.current.updateExecutionConfig({ baseBranch: 'develop' })
+      })
+
+      expect(result.current.executionConfig).toEqual({ mode: 'worktree', baseBranch: 'develop' })
+    })
+  })
+
+  describe('keyboard shortcuts', () => {
+    it('should toggle widget on Cmd+J', () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      expect(result.current.isOpen).toBe(false)
+
+      act(() => {
+        const event = new KeyboardEvent('keydown', {
+          key: 'j',
+          metaKey: true,
+          bubbles: true,
+        })
+        window.dispatchEvent(event)
+      })
+
+      expect(result.current.isOpen).toBe(true)
+    })
+
+    it('should toggle widget on Ctrl+J', () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      expect(result.current.isOpen).toBe(false)
+
+      act(() => {
+        const event = new KeyboardEvent('keydown', {
+          key: 'j',
+          ctrlKey: true,
+          bubbles: true,
+        })
+        window.dispatchEvent(event)
+      })
+
+      expect(result.current.isOpen).toBe(true)
+    })
+
+    it('should close widget on Escape when open', () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      // Open the widget first
+      act(() => {
+        result.current.open()
+      })
+
+      expect(result.current.isOpen).toBe(true)
+
+      act(() => {
+        const event = new KeyboardEvent('keydown', {
+          key: 'Escape',
+          bubbles: true,
+        })
+        window.dispatchEvent(event)
+      })
+
+      expect(result.current.isOpen).toBe(false)
+    })
+  })
+
+  describe('derived state', () => {
+    it('should report hasActiveExecution as false when no executions', () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      expect(result.current.hasActiveExecution).toBe(false)
+      expect(result.current.latestActiveExecution).toBeNull()
+    })
+
+    it('should report isExecutionRunning as false when no execution selected', () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      expect(result.current.isExecutionRunning).toBe(false)
+    })
+  })
+
+  describe('project-assistant tag filtering', () => {
+    it('should fetch executions with project-assistant tag', () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      renderHook(() => useChatWidget(), { wrapper })
+
+      // Verify useExecutions was called with the project-assistant tag filter
+      expect(mockUseExecutions).toHaveBeenCalledWith({ tags: [PROJECT_ASSISTANT_TAG] })
+    })
+
+    it('should export PROJECT_ASSISTANT_TAG constant', () => {
+      expect(PROJECT_ASSISTANT_TAG).toBe('project-assistant')
+    })
+  })
+
+  describe('lastExecutionId persistence', () => {
+    it('should load lastExecutionId from localStorage', () => {
+      localStorageMock.setItem(
+        'sudocode:chatWidget',
+        JSON.stringify({ mode: 'floating', lastExecutionId: 'exec-saved' })
+      )
+
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      // The lastExecutionId should be restored from localStorage
+      expect(result.current.selectedExecutionId).toBe('exec-saved')
+    })
+
+    it('should persist lastExecutionId when manually selecting an execution', async () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      act(() => {
+        result.current.selectExecution('exec-manual')
+      })
+
+      await waitFor(() => {
+        const stored = JSON.parse(localStorageMock.getItem('sudocode:chatWidget') || '{}')
+        expect(stored.lastExecutionId).toBe('exec-manual')
+      })
+    })
+
+    it('should persist null lastExecutionId when selecting new execution', async () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      // First select an execution
+      act(() => {
+        result.current.selectExecution('exec-123')
+      })
+
+      // Then select "New" (null)
+      act(() => {
+        result.current.selectExecution(null)
+      })
+
+      await waitFor(() => {
+        const stored = JSON.parse(localStorageMock.getItem('sudocode:chatWidget') || '{}')
+        expect(stored.lastExecutionId).toBeNull()
+      })
+    })
+
+    it('should persist agent settings', async () => {
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <ChatWidgetProvider>{children}</ChatWidgetProvider>
+      )
+
+      const { result } = renderHook(() => useChatWidget(), { wrapper })
+
+      act(() => {
+        result.current.setAgentType('codex')
+        result.current.updateExecutionConfig({ mode: 'worktree', baseBranch: 'main' })
+      })
+
+      await waitFor(() => {
+        const stored = JSON.parse(localStorageMock.getItem('sudocode:chatWidget') || '{}')
+        expect(stored.agentType).toBe('codex')
+        expect(stored.executionConfig).toEqual({ mode: 'worktree', baseBranch: 'main' })
+      })
     })
   })
 })

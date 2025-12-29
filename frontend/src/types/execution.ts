@@ -63,6 +63,9 @@ export interface ExecutionConfig {
 
   // Agent-specific configuration (e.g., Codex flags, Copilot settings)
   agentConfig?: Record<string, any>
+
+  // Tags for categorization (e.g., 'project-assistant')
+  tags?: string[]
 }
 
 /**

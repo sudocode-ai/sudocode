@@ -38,7 +38,6 @@ import {
   FileText,
   Code2,
   Trash2,
-  Copy,
   Check,
   List,
   Pencil,
@@ -641,6 +640,25 @@ Create actionable issues that implement its requirements. Each issue should be s
                 <TooltipContent>Go back</TooltipContent>
               </Tooltip>
             </TooltipProvider>
+            {/* Spec ID Badge */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={handleCopyId}
+                    className="flex-shrink-0"
+                    type="button"
+                  >
+                    <Badge variant="spec" className="cursor-pointer font-mono hover:opacity-80">
+                      {spec.id}
+                    </Badge>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{isCopied ? 'Copied!' : 'Click to copy ID'}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             {/* Title */}
             <textarea
               value={title}
@@ -842,33 +860,6 @@ Create actionable issues that implement its requirements. Each issue should be s
               <div className="mx-auto max-w-full space-y-3">
                 {/* Parent/Children info */}
                 <div className="flex flex-wrap items-center gap-2 pb-2">
-                  {/* Entity Badge */}
-                  <div className="group relative flex flex-shrink-0 items-center gap-1">
-                    <Badge variant="spec" className="font-mono">
-                      {spec.id}
-                    </Badge>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={handleCopyId}
-                            className="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-                          >
-                            {isCopied ? (
-                              <Check className="h-3.5 w-3.5" />
-                            ) : (
-                              <Copy className="h-3.5 w-3.5" />
-                            )}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>{isCopied ? 'Copied!' : 'Copy ID to Clipboard'}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
                   {/* Parent spec selector */}
                   <div className="flex items-center gap-1">
                     <span className="text-sm text-muted-foreground">Parent:</span>
@@ -1091,14 +1082,6 @@ Create actionable issues that implement its requirements. Each issue should be s
                         </Tooltip>
                       </div>
                     </TooltipProvider>
-                  </div>
-                  {/* Save status */}
-                  <div className="flex-shrink-0 text-xs italic text-muted-foreground">
-                    {isUpdating
-                      ? 'Saving...'
-                      : hasChanges
-                        ? 'Unsaved changes...'
-                        : 'All changes saved'}
                   </div>
                 </div>
 

@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { DeleteIssueDialog } from '@/components/issues/DeleteIssueDialog'
 import { Archive, ArchiveRestore, Trash2, ArrowLeft } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Badge } from '@/components/ui/badge'
+import { toast } from 'sonner'
 
 const VIEW_MODE_STORAGE_KEY = 'sudocode:details:viewMode'
 
@@ -20,6 +22,7 @@ export default function IssueDetailPage() {
     useIssues()
 
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [isCopied, setIsCopied] = useState(false)
   const [viewMode, setViewMode] = useState<'formatted' | 'markdown'>(() => {
     const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY)
     return stored !== null ? JSON.parse(stored) : 'formatted'
@@ -60,6 +63,21 @@ export default function IssueDetailPage() {
   const handleUnarchive = (issueId: string) => {
     unarchiveIssue(issueId)
     navigate(paths.issues())
+  }
+
+  const handleCopyId = async () => {
+    if (!id) return
+    try {
+      await navigator.clipboard.writeText(id)
+      setIsCopied(true)
+      setTimeout(() => setIsCopied(false), 2000)
+      toast.success('ID copied to clipboard', {
+        duration: 2000,
+      })
+    } catch (error) {
+      console.error('Failed to copy ID:', error)
+      toast.error('Failed to copy ID')
+    }
   }
 
   // Save view mode preference to localStorage
@@ -110,6 +128,23 @@ export default function IssueDetailPage() {
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Go back</TooltipContent>
+            </Tooltip>
+            {/* Issue ID Badge */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={handleCopyId}
+                  className="flex-shrink-0"
+                  type="button"
+                >
+                  <Badge variant="issue" className="cursor-pointer font-mono hover:opacity-80">
+                    {issue.id}
+                  </Badge>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{isCopied ? 'Copied!' : 'Click to copy ID'}</p>
+              </TooltipContent>
             </Tooltip>
             {/* Title */}
             <textarea

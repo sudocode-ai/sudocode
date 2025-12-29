@@ -126,14 +126,6 @@ describe('IssuePanel', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('should render save status when onUpdate is provided', () => {
-    const onUpdate = vi.fn()
-
-    renderWithProviders(<IssuePanel issue={mockIssue} onUpdate={onUpdate} />)
-
-    expect(screen.getByText('All changes saved')).toBeInTheDocument()
-  })
-
   it('should render Delete button when onDelete is provided', () => {
     const onDelete = vi.fn()
 
@@ -142,22 +134,19 @@ describe('IssuePanel', () => {
     expect(screen.getByLabelText('Delete')).toBeInTheDocument()
   })
 
-  it('should show unsaved changes status when fields are modified', async () => {
+  it('should allow modifying the title', async () => {
     const user = userEvent.setup()
     const onUpdate = vi.fn()
 
     renderWithProviders(<IssuePanel issue={mockIssue} onUpdate={onUpdate} />)
-
-    // Initially should show all saved
-    expect(screen.getByText('All changes saved')).toBeInTheDocument()
 
     // Modify the title
     const titleInput = screen.getByPlaceholderText('Issue title...')
     await user.clear(titleInput)
     await user.type(titleInput, 'Updated Title')
 
-    // Should show unsaved changes
-    expect(screen.getByText('Unsaved changes...')).toBeInTheDocument()
+    // The input should have the new value
+    expect(screen.getByDisplayValue('Updated Title')).toBeInTheDocument()
   })
 
   it('should auto-save changes after debounce', async () => {
@@ -235,7 +224,7 @@ describe('IssuePanel', () => {
     expect(onDelete).not.toHaveBeenCalled()
   })
 
-  it('should show Saving status and disable Delete button when isUpdating is true', () => {
+  it('should disable Delete button when isUpdating is true', () => {
     const onUpdate = vi.fn()
     const onDelete = vi.fn()
 
@@ -243,8 +232,6 @@ describe('IssuePanel', () => {
       <IssuePanel issue={mockIssue} onUpdate={onUpdate} onDelete={onDelete} isUpdating={true} />
     )
 
-    // When isUpdating is true, should show "Saving..." status
-    expect(screen.getByText('Saving...')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Delete/ })).toBeDisabled()
   })
 

@@ -125,14 +125,6 @@ describe('SpecDetailPage', () => {
     })
   })
 
-  it('should show save status indicator', async () => {
-    renderSpecDetailPage()
-
-    await waitFor(() => {
-      expect(screen.getByText('All changes saved')).toBeInTheDocument()
-    })
-  })
-
   it('should update title and trigger auto-save', async () => {
     const user = userEvent.setup()
     renderSpecDetailPage()
@@ -146,9 +138,6 @@ describe('SpecDetailPage', () => {
     const titleInput = screen.getByDisplayValue('Test Spec')
     await user.clear(titleInput)
     await user.type(titleInput, 'Updated Spec Title')
-
-    // Should show unsaved changes
-    expect(screen.getByText('Unsaved changes...')).toBeInTheDocument()
 
     // Wait for auto-save (1 second debounce)
     await waitFor(
@@ -306,7 +295,7 @@ describe('SpecDetailPage', () => {
     })
   })
 
-  it('should show updating status when saving', async () => {
+  it('should disable title input when updating', async () => {
     vi.mocked(useSpecsHook.useSpecs).mockReturnValue({
       specs: [],
       updateSpec: mockUpdateSpec,
@@ -316,7 +305,8 @@ describe('SpecDetailPage', () => {
     renderSpecDetailPage()
 
     await waitFor(() => {
-      expect(screen.getByText('Saving...')).toBeInTheDocument()
+      const titleInput = screen.getByDisplayValue('Test Spec')
+      expect(titleInput).toBeDisabled()
     })
   })
 
@@ -369,9 +359,6 @@ describe('SpecDetailPage', () => {
     const titleInput = screen.getByDisplayValue('Spec One')
     await user.clear(titleInput)
     await user.type(titleInput, 'Modified Spec One')
-
-    // Should show unsaved changes
-    expect(screen.getByText('Unsaved changes...')).toBeInTheDocument()
 
     // Clear the mock before navigation
     mockUpdateSpec.mockClear()
@@ -540,11 +527,6 @@ describe('SpecDetailPage', () => {
       const titleInput = screen.getByDisplayValue('Test Spec')
       await user.clear(titleInput)
       await user.type(titleInput, 'Changed Title')
-
-      // Should show unsaved changes
-      await waitFor(() => {
-        expect(screen.getByText('Unsaved changes...')).toBeInTheDocument()
-      })
 
       // Unmount before auto-save triggers
       unmount()

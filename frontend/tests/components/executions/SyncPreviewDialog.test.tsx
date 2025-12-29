@@ -1,8 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SyncPreviewDialog } from '@/components/executions/SyncPreviewDialog'
 import type { Execution, SyncPreviewResult } from '@/types/execution'
+import { repositoryApi } from '@/lib/api'
+
+// Mock the repositoryApi
+vi.mock('@/lib/api', () => ({
+  repositoryApi: {
+    getInfo: vi.fn(),
+  },
+}))
 
 describe('SyncPreviewDialog', () => {
   const mockExecution: Partial<Execution> = {
@@ -58,17 +66,31 @@ describe('SyncPreviewDialog', () => {
     onConfirmSync: vi.fn(),
     onOpenIDE: vi.fn(),
     isPreviewing: false,
+    targetBranch: 'main',
   }
+
+  // Helper to create mock repository info
+  const mockRepoInfo = (branch: string) => ({
+    branch,
+    name: 'test-repo',
+    path: '/path/to/repo',
+  })
 
   beforeEach(() => {
     vi.clearAllMocks()
+    // Default mock: working branch matches target branch (no branch selector shown)
+    vi.mocked(repositoryApi.getInfo).mockResolvedValue(mockRepoInfo('main'))
   })
 
   describe('Rendering', () => {
     it('should render dialog when open', () => {
       render(<SyncPreviewDialog {...defaultProps} />)
       expect(screen.getByText('Merge Changes')).toBeInTheDocument()
-      expect(screen.getByText('Review changes before syncing worktree')).toBeInTheDocument()
+      // Subtitle shows target branch when no branch selector
+      const subtitle = screen.getByText(/Merge changes to/)
+      expect(subtitle).toBeInTheDocument()
+      // Verify the branch name is in the subtitle
+      expect(subtitle.textContent).toContain('main')
     })
 
     it('should not render when closed', () => {
@@ -369,6 +391,8 @@ describe('SyncPreviewDialog', () => {
       expect(defaultProps.onConfirmSync).toHaveBeenCalledWith('stage', {
         commitMessage: undefined,
         includeUncommitted: false,
+        overrideLocalChanges: undefined,
+        targetBranch: 'main',
       })
     })
   })
@@ -395,6 +419,8 @@ describe('SyncPreviewDialog', () => {
       expect(defaultProps.onConfirmSync).toHaveBeenCalledWith('squash', {
         commitMessage: '',
         includeUncommitted: undefined,
+        overrideLocalChanges: undefined,
+        targetBranch: 'main',
       })
     })
 
@@ -424,6 +450,7 @@ describe('SyncPreviewDialog', () => {
         commitMessage: undefined,
         includeUncommitted: true,
         overrideLocalChanges: false,
+        targetBranch: 'main',
       })
     })
 
@@ -468,6 +495,159 @@ describe('SyncPreviewDialog', () => {
       // Commits are in the preview data
       expect(defaultProps.preview?.commits.length).toBe(2)
       expect(defaultProps.preview?.commits[0].message).toBe('Add feature implementation')
+    })
+  })
+
+  describe('Branch Selector', () => {
+    it('should not show branch selector when working branch matches target branch', async () => {
+      vi.mocked(repositoryApi.getInfo).mockResolvedValue(mockRepoInfo('main'))
+      render(<SyncPreviewDialog {...defaultProps} targetBranch="main" />)
+
+      // Wait for the async effect to complete
+      await waitFor(() => {
+        expect(repositoryApi.getInfo).toHaveBeenCalled()
+      })
+
+      // Branch selector should not be shown
+      expect(screen.queryByText('Merge Target')).not.toBeInTheDocument()
+    })
+
+    it('should show branch selector when working branch differs from target branch', async () => {
+      vi.mocked(repositoryApi.getInfo).mockResolvedValue(mockRepoInfo('develop'))
+      render(<SyncPreviewDialog {...defaultProps} targetBranch="main" />)
+
+      // Wait for the async effect to complete and selector to appear
+      await waitFor(() => {
+        expect(screen.getByText('Merge Target')).toBeInTheDocument()
+      })
+
+      // Should show the branch selector with both options
+      // Use getAllByText since 'main' appears in multiple places (mode descriptions too)
+      const branchSelector = screen.getByText('Merge Target').closest('div')
+      expect(branchSelector).toBeInTheDocument()
+
+      // Check the radio options exist
+      expect(screen.getByRole('radio', { name: /main.*base/ })).toBeInTheDocument()
+      expect(screen.getByRole('radio', { name: /develop.*working/ })).toBeInTheDocument()
+
+      // Subtitle should NOT be shown when branch selector is visible
+      expect(screen.queryByText(/Merge changes to/)).not.toBeInTheDocument()
+    })
+
+    it('should default to target branch (base) when branch selector is shown', async () => {
+      vi.mocked(repositoryApi.getInfo).mockResolvedValue(mockRepoInfo('develop'))
+      render(<SyncPreviewDialog {...defaultProps} targetBranch="main" />)
+
+      // Wait for the selector to appear
+      await waitFor(() => {
+        expect(screen.getByText('Merge Target')).toBeInTheDocument()
+      })
+
+      // The base branch radio should be selected by default
+      const baseRadio = screen.getByRole('radio', { name: /main.*base/ })
+      expect(baseRadio).toBeChecked()
+    })
+
+    it('should allow selecting alternate working branch as merge target', async () => {
+      const user = userEvent.setup()
+      vi.mocked(repositoryApi.getInfo).mockResolvedValue(mockRepoInfo('develop'))
+      render(<SyncPreviewDialog {...defaultProps} targetBranch="main" />)
+
+      // Wait for the selector to appear
+      await waitFor(() => {
+        expect(screen.getByText('Merge Target')).toBeInTheDocument()
+      })
+
+      // Select the working branch
+      const workingRadio = screen.getByRole('radio', { name: /develop.*working/ })
+      await user.click(workingRadio)
+
+      expect(workingRadio).toBeChecked()
+
+      // Confirm sync and verify the working branch is used
+      await user.click(screen.getByText('Squash and Merge'))
+
+      expect(defaultProps.onConfirmSync).toHaveBeenCalledWith('squash', {
+        commitMessage: '',
+        includeUncommitted: undefined,
+        overrideLocalChanges: undefined,
+        targetBranch: 'develop',
+      })
+    })
+
+    it('should use target branch in sync when base is selected', async () => {
+      const user = userEvent.setup()
+      vi.mocked(repositoryApi.getInfo).mockResolvedValue(mockRepoInfo('develop'))
+      render(<SyncPreviewDialog {...defaultProps} targetBranch="main" />)
+
+      // Wait for the selector to appear
+      await waitFor(() => {
+        expect(screen.getByText('Merge Target')).toBeInTheDocument()
+      })
+
+      // Keep base selected (default) and confirm
+      await user.click(screen.getByText('Squash and Merge'))
+
+      expect(defaultProps.onConfirmSync).toHaveBeenCalledWith('squash', {
+        commitMessage: '',
+        includeUncommitted: undefined,
+        overrideLocalChanges: undefined,
+        targetBranch: 'main',
+      })
+    })
+
+    it('should reset branch selection when dialog reopens', async () => {
+      vi.mocked(repositoryApi.getInfo).mockResolvedValue(mockRepoInfo('develop'))
+      const { rerender } = render(<SyncPreviewDialog {...defaultProps} targetBranch="main" />)
+
+      // Wait for the selector to appear
+      await waitFor(() => {
+        expect(screen.getByText('Merge Target')).toBeInTheDocument()
+      })
+
+      // Close the dialog
+      rerender(<SyncPreviewDialog {...defaultProps} targetBranch="main" isOpen={false} />)
+
+      // Reopen the dialog
+      rerender(<SyncPreviewDialog {...defaultProps} targetBranch="main" isOpen={true} />)
+
+      // Wait for the selector to appear again
+      await waitFor(() => {
+        expect(screen.getByText('Merge Target')).toBeInTheDocument()
+      })
+
+      // The base branch radio should be selected (reset to default)
+      const baseRadio = screen.getByRole('radio', { name: /main.*base/ })
+      expect(baseRadio).toBeChecked()
+    })
+
+    it('should handle repositoryApi.getInfo failure gracefully', async () => {
+      vi.mocked(repositoryApi.getInfo).mockRejectedValue(new Error('Network error'))
+      render(<SyncPreviewDialog {...defaultProps} targetBranch="main" />)
+
+      // Wait for the async effect to complete
+      await waitFor(() => {
+        expect(repositoryApi.getInfo).toHaveBeenCalled()
+      })
+
+      // Branch selector should not be shown when we can't fetch working branch
+      expect(screen.queryByText('Merge Target')).not.toBeInTheDocument()
+
+      // Dialog should still work normally
+      expect(screen.getByText('Merge Changes')).toBeInTheDocument()
+    })
+
+    it('should not show branch selector when targetBranch prop is undefined', async () => {
+      vi.mocked(repositoryApi.getInfo).mockResolvedValue(mockRepoInfo('develop'))
+      render(<SyncPreviewDialog {...defaultProps} targetBranch={undefined} />)
+
+      // Wait for the async effect to complete
+      await waitFor(() => {
+        expect(repositoryApi.getInfo).toHaveBeenCalled()
+      })
+
+      // Branch selector should not be shown when targetBranch is undefined
+      expect(screen.queryByText('Merge Target')).not.toBeInTheDocument()
     })
   })
 })

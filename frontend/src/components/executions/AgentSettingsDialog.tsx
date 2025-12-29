@@ -16,11 +16,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { ExecutionConfig } from '@/types/execution'
+import type { ExecutionConfig, ExecutionMode } from '@/types/execution'
+import type { AgentInfo } from '@/types/api'
 import { ClaudeCodeConfigForm, type ClaudeCodeConfig } from './ClaudeCodeConfigForm'
 import { CodexConfigForm, type CodexConfig } from './CodexConfigForm'
 import { CursorConfigForm, type CursorConfig } from './CursorConfigForm'
 import { CopilotConfigForm, type CopilotConfig } from './CopilotConfigForm'
+import { AgentSelector } from './AgentSelector'
+import { BranchSelector } from './BranchSelector'
 import { Separator } from '@/components/ui/separator'
 import { Bot, Sliders, Wrench } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -44,6 +47,14 @@ interface AgentSettingsDialogProps {
   onConfigChange: (updates: Partial<ExecutionConfig>) => void
   onClose: () => void
   agentType?: string
+  /** Optional: Enable agent type selection within the dialog */
+  onAgentTypeChange?: (agentType: string) => void
+  /** Optional: List of available agents for selection */
+  availableAgents?: AgentInfo[]
+  /** Optional: Available branches for worktree mode */
+  availableBranches?: string[]
+  /** Optional: Show execution mode selector (worktree/local) */
+  showModeSelector?: boolean
 }
 
 export function AgentSettingsDialog({
@@ -52,6 +63,10 @@ export function AgentSettingsDialog({
   onConfigChange,
   onClose,
   agentType,
+  onAgentTypeChange,
+  availableAgents,
+  availableBranches = [],
+  showModeSelector = false,
 }: AgentSettingsDialogProps) {
   const [activeSection, setActiveSection] = useState<string>('agent')
   const contentRef = useRef<HTMLDivElement>(null)
@@ -257,7 +272,19 @@ export function AgentSettingsDialog({
                   <Bot className="h-5 w-5 text-muted-foreground" />
                   <h3 className="text-base font-semibold">Model & Agent</h3>
                 </div>
-                <div className="space-y-4">{renderAgentSpecificConfig()}</div>
+                <div className="space-y-4">
+                  {/* Agent Type Selector (optional) */}
+                  {availableAgents && availableAgents.length > 0 && onAgentTypeChange && (
+                    <AgentSelector
+                      agents={availableAgents}
+                      selectedAgent={agentType || 'claude-code'}
+                      onChange={onAgentTypeChange}
+                      label="AI Agent"
+                      description="Select the AI coding agent to use"
+                    />
+                  )}
+                  {renderAgentSpecificConfig()}
+                </div>
               </section>
 
               <Separator />
@@ -275,6 +302,56 @@ export function AgentSettingsDialog({
                   <h3 className="text-base font-semibold">Execution</h3>
                 </div>
                 <div className="space-y-4">
+                  {/* Execution Mode Selector (optional) */}
+                  {showModeSelector && (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="execution-mode">Execution Mode</Label>
+                        <Select
+                          value={config.mode || 'worktree'}
+                          onValueChange={(value: ExecutionMode) =>
+                            onConfigChange({ mode: value })
+                          }
+                        >
+                          <SelectTrigger id="execution-mode">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="worktree">
+                              <div className="flex flex-col items-start">
+                                <span>Worktree (Isolated)</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="local">
+                              <div className="flex flex-col items-start">
+                                <span>Local (In-place)</span>
+                              </div>
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Worktree mode runs in an isolated git worktree. Local mode runs directly in your working directory.
+                        </p>
+                      </div>
+
+                      {/* Branch Selector (only in worktree mode) */}
+                      {config.mode === 'worktree' && availableBranches.length > 0 && (
+                        <div className="space-y-2">
+                          <Label>Target Branch</Label>
+                          <BranchSelector
+                            branches={availableBranches}
+                            value={config.baseBranch || availableBranches[0]}
+                            onChange={(branch) => onConfigChange({ baseBranch: branch })}
+                            placeholder="Select branch..."
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            The branch to base the worktree on.
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
+
                   <div className="space-y-2">
                     <Label htmlFor="timeout">Timeout (ms)</Label>
                     <input

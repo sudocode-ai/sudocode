@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { ProjectProvider } from '@/contexts/ProjectContext'
 import { WebSocketProvider } from '@/contexts/WebSocketContext'
+import { ChatWidgetProvider } from '@/contexts/ChatWidgetContext'
 import { Toaster } from '@/components/ui/sonner'
 import MainLayout from '@/components/layout/MainLayout'
 import { ProtectedRoute } from '@/components/routing/ProtectedRoute'
@@ -39,118 +40,120 @@ function App() {
       <ProjectProvider>
         <WebSocketProvider>
           <ThemeProvider>
-            <BrowserRouter>
-              <Routes>
-                <Route path="/" element={<MainLayout />}>
-                  <Route index element={<DefaultRoute />} />
-                  <Route path="projects" element={<ProjectsPage />} />
+            <ChatWidgetProvider>
+              <BrowserRouter>
+                <Routes>
+                  <Route path="/" element={<MainLayout />}>
+                    <Route index element={<DefaultRoute />} />
+                    <Route path="projects" element={<ProjectsPage />} />
 
-                  {/* Project-scoped routes under /p/:projectId */}
-                  <Route path="p/:projectId">
-                    <Route
-                      path="issues"
-                      element={
-                        <ProtectedRoute>
-                          <IssuesPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="issues/archived"
-                      element={
-                        <ProtectedRoute>
-                          <ArchivedIssuesPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="issues/:id"
-                      element={
-                        <ProtectedRoute>
-                          <IssueDetailPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="specs"
-                      element={
-                        <ProtectedRoute>
-                          <SpecsPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="specs/archived"
-                      element={
-                        <ProtectedRoute>
-                          <ArchivedSpecsPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="specs/:id"
-                      element={
-                        <ProtectedRoute>
-                          <SpecDetailPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="worktrees"
-                      element={
-                        <ProtectedRoute>
-                          <WorktreesPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="executions"
-                      element={
-                        <ProtectedRoute>
-                          <ExecutionsPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="executions/:id"
-                      element={
-                        <ProtectedRoute>
-                          <ExecutionDetailPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="workflows"
-                      element={
-                        <ProtectedRoute>
-                          <WorkflowsPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="workflows/:id"
-                      element={
-                        <ProtectedRoute>
-                          <WorkflowDetailPage />
-                        </ProtectedRoute>
-                      }
-                    />
+                    {/* Project-scoped routes under /p/:projectId */}
+                    <Route path="p/:projectId">
+                      <Route
+                        path="issues"
+                        element={
+                          <ProtectedRoute>
+                            <IssuesPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="issues/archived"
+                        element={
+                          <ProtectedRoute>
+                            <ArchivedIssuesPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="issues/:id"
+                        element={
+                          <ProtectedRoute>
+                            <IssueDetailPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="specs"
+                        element={
+                          <ProtectedRoute>
+                            <SpecsPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="specs/archived"
+                        element={
+                          <ProtectedRoute>
+                            <ArchivedSpecsPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="specs/:id"
+                        element={
+                          <ProtectedRoute>
+                            <SpecDetailPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="worktrees"
+                        element={
+                          <ProtectedRoute>
+                            <WorktreesPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="executions"
+                        element={
+                          <ProtectedRoute>
+                            <ExecutionsPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="executions/:id"
+                        element={
+                          <ProtectedRoute>
+                            <ExecutionDetailPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="workflows"
+                        element={
+                          <ProtectedRoute>
+                            <WorkflowsPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="workflows/:id"
+                        element={
+                          <ProtectedRoute>
+                            <WorkflowDetailPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                    </Route>
+
+                    {/* Legacy redirects - redirect old URLs to new project-scoped URLs */}
+                    <Route path="issues/*" element={<LegacyRedirect />} />
+                    <Route path="issues" element={<LegacyRedirect />} />
+                    <Route path="specs/*" element={<LegacyRedirect />} />
+                    <Route path="specs" element={<LegacyRedirect />} />
+                    <Route path="executions/*" element={<LegacyRedirect />} />
+                    <Route path="executions" element={<LegacyRedirect />} />
+                    <Route path="workflows/*" element={<LegacyRedirect />} />
+                    <Route path="workflows" element={<LegacyRedirect />} />
+                    <Route path="worktrees" element={<LegacyRedirect />} />
                   </Route>
-
-                  {/* Legacy redirects - redirect old URLs to new project-scoped URLs */}
-                  <Route path="issues/*" element={<LegacyRedirect />} />
-                  <Route path="issues" element={<LegacyRedirect />} />
-                  <Route path="specs/*" element={<LegacyRedirect />} />
-                  <Route path="specs" element={<LegacyRedirect />} />
-                  <Route path="executions/*" element={<LegacyRedirect />} />
-                  <Route path="executions" element={<LegacyRedirect />} />
-                  <Route path="workflows/*" element={<LegacyRedirect />} />
-                  <Route path="workflows" element={<LegacyRedirect />} />
-                  <Route path="worktrees" element={<LegacyRedirect />} />
-                </Route>
-              </Routes>
-            </BrowserRouter>
-            <Toaster />
+                </Routes>
+              </BrowserRouter>
+              <Toaster />
+            </ChatWidgetProvider>
           </ThemeProvider>
         </WebSocketProvider>
       </ProjectProvider>
