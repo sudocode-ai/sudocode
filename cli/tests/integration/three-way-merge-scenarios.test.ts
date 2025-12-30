@@ -125,6 +125,106 @@ describe('Three-Way Merge User Scenarios', () => {
       expect(merged.content).toContain('Line 3 MODIFIED');
     });
 
+    it('should preserve line changes from both branches AND scalar field changes', () => {
+      // Test case for multi-line field merge with scalar field changes
+      const base = createIssue({
+        uuid: 'uuid-test',
+        title: 'Test Issue',
+        content: 'Line 1\nLine 2\nLine 3',
+        status: 'open',
+        priority: 1,
+        updated_at: '2025-01-01T00:00:00Z',
+      });
+
+      // Branch 1: Modified line 1 of content AND changed status
+      const ours = createIssue({
+        uuid: 'uuid-test',
+        title: 'Test Issue',
+        content: 'Line 1 MODIFIED\nLine 2\nLine 3',
+        status: 'in_progress',
+        priority: 1,
+        updated_at: '2025-01-02T00:00:00Z',
+      });
+
+      // Branch 2: Modified line 3 of content only (newer timestamp)
+      const theirs = createIssue({
+        uuid: 'uuid-test',
+        title: 'Test Issue',
+        content: 'Line 1\nLine 2\nLine 3 MODIFIED',
+        status: 'open',
+        priority: 1,
+        updated_at: '2025-01-03T00:00:00Z',
+      });
+
+      const { entities } = mergeThreeWay([base], [ours], [theirs]);
+
+      expect(entities).toHaveLength(1);
+      const merged = entities[0];
+
+      // CRITICAL: Both line changes should be preserved (git merge-file line-level merge)
+      expect(merged.content).toBe('Line 1 MODIFIED\nLine 2\nLine 3 MODIFIED');
+
+      // CRITICAL: Scalar field change should be preserved (only ours changed it)
+      expect(merged.status).toBe('in_progress');
+
+      // Priority should be unchanged (neither branch changed it)
+      expect(merged.priority).toBe(1);
+    });
+
+    it('should handle real-world scenario with multi-paragraph changes', () => {
+      const base = createIssue({
+        uuid: 'uuid-test',
+        content: '## Problem\n\nExisting problem description.\n\n## Solution\n\nExisting solution.',
+        status: 'open',
+        priority: 1,
+        assignee: undefined,
+        tags: ['bug'],
+        updated_at: '2025-01-01T00:00:00Z',
+      });
+
+      // branch-1: Added new section to content AND changed status
+      const branch1 = createIssue({
+        uuid: 'uuid-test',
+        content:
+          '## Problem\n\nExisting problem description.\n\n## Solution\n\nExisting solution.\n\n## Implementation\n\nNew section added in branch-1.',
+        status: 'in_progress',
+        priority: 1,
+        assignee: undefined,
+        tags: ['bug'],
+        updated_at: '2025-01-02T10:00:00Z',
+      });
+
+      // branch-2: Modified problem section (newer timestamp)
+      const branch2 = createIssue({
+        uuid: 'uuid-test',
+        content:
+          '## Problem\n\nExisting problem description.\n\nAdditional context added in branch-2.\n\n## Solution\n\nExisting solution.',
+        status: 'open',
+        priority: 1,
+        assignee: undefined,
+        tags: ['bug'],
+        updated_at: '2025-01-02T15:00:00Z',
+      });
+
+      const { entities, stats } = mergeThreeWay([base], [branch1], [branch2]);
+
+      expect(entities).toHaveLength(1);
+      const merged = entities[0];
+
+      // Both content changes should be merged
+      expect(merged.content).toContain('Additional context added in branch-2');
+      expect(merged.content).toContain('New section added in branch-1');
+
+      // Status change from branch-1 should be preserved (only branch-1 changed it)
+      expect(merged.status).toBe('in_progress');
+
+      // No scalar conflicts (status only changed in one branch)
+      const scalarConflicts = stats.conflicts.filter((c) =>
+        c.action.includes('scalar field')
+      );
+      expect(scalarConflicts).toHaveLength(0);
+    });
+
     it('should create conflict for changes to same line', () => {
       const base = createSpec({
         uuid: 'uuid-test',
@@ -154,6 +254,51 @@ describe('Three-Way Merge User Scenarios', () => {
       const merged = entities[0];
       expect(merged.content).toContain('THEIRS Line 2');
       expect(merged.content).not.toContain('OURS Line 2');
+    });
+
+    it('should apply latest-wins only when git merge-file has conflicts', () => {
+      const base = createIssue({
+        uuid: 'uuid-test',
+        title: 'Test',
+        content: 'Line 1\nLine 2\nLine 3',
+        status: 'open',
+        priority: 1,
+        updated_at: '2025-01-01T00:00:00Z',
+      });
+
+      // Both branches modify the SAME line
+      const ours = createIssue({
+        uuid: 'uuid-test',
+        title: 'Test',
+        content: 'Line 1 MODIFIED BY OURS\nLine 2\nLine 3',
+        status: 'open',
+        priority: 1,
+        updated_at: '2025-01-02T00:00:00Z',
+      });
+
+      const theirs = createIssue({
+        uuid: 'uuid-test',
+        title: 'Test',
+        content: 'Line 1 MODIFIED BY THEIRS\nLine 2\nLine 3',
+        status: 'open',
+        priority: 1,
+        updated_at: '2025-01-03T00:00:00Z',
+      });
+
+      const { entities, stats } = mergeThreeWay([base], [ours], [theirs]);
+
+      expect(entities).toHaveLength(1);
+      const merged = entities[0];
+
+      // Git merge-file will have a conflict, so latest-wins should apply
+      // Theirs has newer timestamp, so theirs should win
+      expect(merged.content).toBe('Line 1 MODIFIED BY THEIRS\nLine 2\nLine 3');
+
+      // Should report YAML conflict
+      const yamlConflicts = stats.conflicts.filter((c) =>
+        c.action.includes('YAML conflict')
+      );
+      expect(yamlConflicts.length).toBeGreaterThan(0);
     });
 
     it('should handle additions at different positions', () => {
