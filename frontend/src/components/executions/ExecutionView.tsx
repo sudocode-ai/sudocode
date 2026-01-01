@@ -14,6 +14,8 @@ import { useExecutionSync } from '@/hooks/useExecutionSync'
 import { useAgentActions } from '@/hooks/useAgentActions'
 import { useWorktreeMutations } from '@/hooks/useWorktreeMutations'
 import { useExecutionMutations } from '@/hooks/useExecutionMutations'
+import { useVoiceNarration } from '@/hooks/useVoiceNarration'
+import { useVoiceConfig } from '@/hooks/useVoiceConfig'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -102,6 +104,23 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
     isPreviewing,
     fetchSyncPreview,
   } = useExecutionSync()
+
+  // Get voice configuration from config.json
+  const { voiceEnabled, narration, isLoading: voiceConfigLoading } = useVoiceConfig()
+
+  // Voice narration for the current execution
+  // Only enable if:
+  // 1. Config is loaded (not loading)
+  // 2. Voice is enabled in project config (voice.enabled)
+  // 3. Narration is enabled in user settings (voice.narration.enabled)
+  const narrationEnabled = !voiceConfigLoading && voiceEnabled && narration.enabled
+  useVoiceNarration({
+    executionId,
+    enabled: narrationEnabled,
+    voice: narration.voice,
+    rate: narration.speed,
+    volume: narration.volume,
+  })
 
   // Accumulated tool calls from all executions in the chain
   const [allToolCalls, setAllToolCalls] = useState<Map<string, ToolCallTracking>>(new Map())

@@ -9,7 +9,9 @@ import type { Execution } from '@/types/execution'
 const mockGetChain = vi.fn()
 const mockCreateFollowUp = vi.fn()
 const mockCreateAdhoc = vi.fn()
-const mockGetBranches = vi.fn().mockResolvedValue({ current: 'main', branches: ['main', 'develop'] })
+const mockGetBranches = vi
+  .fn()
+  .mockResolvedValue({ current: 'main', branches: ['main', 'develop'] })
 
 vi.mock('@/lib/api', () => ({
   executionsApi: {
@@ -239,7 +241,6 @@ describe('ChatWidgetContent', () => {
 
       expect(screen.queryByTestId('agent-settings-dialog')).not.toBeInTheDocument()
     })
-
   })
 
   describe('Welcome/Config Panel', () => {

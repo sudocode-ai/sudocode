@@ -147,7 +147,13 @@ export function ChatWidgetProvider({ children }: ChatWidgetProviderProps) {
         setSelectedExecutionId(autoSelectId)
       }
     }
-  }, [hasUserSelection, selectedExecutionId, executions.length, latestActiveExecution, mostRecentExecution])
+  }, [
+    hasUserSelection,
+    selectedExecutionId,
+    executions.length,
+    latestActiveExecution,
+    mostRecentExecution,
+  ])
 
   // The effective execution ID is simply the selected one
   const effectiveExecutionId = selectedExecutionId
@@ -242,7 +248,10 @@ export function ChatWidgetProvider({ children }: ChatWidgetProviderProps) {
     // Detect close transition (was open, now closed)
     if (prevIsOpen.current && !isOpen) {
       // If execution is running when closing, watch for its completion
-      if (selectedExecution && ['running', 'pending', 'preparing'].includes(selectedExecution.status)) {
+      if (
+        selectedExecution &&
+        ['running', 'pending', 'preparing'].includes(selectedExecution.status)
+      ) {
         setWatchingExecutionId(selectedExecution.id)
       }
     }
