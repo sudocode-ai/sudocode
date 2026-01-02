@@ -38,7 +38,7 @@ jobs:
       - name: Run profiling script
         env:
           SCENARIO: ${{ matrix.scenario }}
-        run: node scripts/profiling/benchmark.js
+        run: node scripts/profiling/benchmark.cjs
 
       - name: Upload results artifact
         uses: actions/upload-artifact@v4
@@ -58,7 +58,7 @@ jobs:
           NODE_VERSION=$(node --version)
           NPM_VERSION=$(npm --version)
           MACOS_VERSION=$(sw_vers -productVersion)
-          TOTAL_TIME=$(node -p "JSON.parse(require('fs').readFileSync('$RESULTS_FILE', 'utf8')).summary.totalDuration")
+          TOTAL_TIME=$(node -p "JSON.parse(require('fs').readFileSync('$RESULTS_FILE', 'utf8')).timing.total")
 
           # Write to GitHub Step Summary
           cat >> $GITHUB_STEP_SUMMARY << EOF
@@ -70,7 +70,7 @@ jobs:
           - macOS: ${MACOS_VERSION}
 
           **Timing Results:**
-          - Total: ${TOTAL_TIME}s
+          - Total: ${TOTAL_TIME}ms
 
           **Phase Breakdown:**
           EOF
@@ -78,10 +78,10 @@ jobs:
           # Extract phase breakdown from JSON
           node -p "
           const data = JSON.parse(require('fs').readFileSync('$RESULTS_FILE', 'utf8'));
-          const phases = data.phases || {};
+          const phases = data.timing.phases || {};
           Object.entries(phases)
             .sort((a, b) => b[1] - a[1])
-            .map(([phase, duration]) => \`  - \${phase}: \${duration}s\`)
+            .map(([phase, duration]) => \`  - \${phase}: \${duration}ms\`)
             .join('\n')
           " >> $GITHUB_STEP_SUMMARY
 
