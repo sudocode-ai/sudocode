@@ -1,5 +1,41 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
+
+// Use vi.hoisted for kokoroTTS mocks
+const {
+  mockLoadKokoroModel,
+  mockGenerateSpeech,
+  mockIsKokoroReady,
+  mockGetKokoroState,
+  mockSubscribeToState,
+} = vi.hoisted(() => ({
+  mockLoadKokoroModel: vi.fn(),
+  mockGenerateSpeech: vi.fn(),
+  mockIsKokoroReady: vi.fn(),
+  mockGetKokoroState: vi.fn(),
+  mockSubscribeToState: vi.fn(),
+}))
+
+vi.mock('@/lib/kokoroTTS', () => ({
+  loadKokoroModel: mockLoadKokoroModel,
+  generateSpeech: mockGenerateSpeech,
+  isKokoroReady: mockIsKokoroReady,
+  getKokoroState: mockGetKokoroState,
+  subscribeToState: mockSubscribeToState,
+}))
+
+// Mock sonner toast
+const mockToast = vi.hoisted(() => ({
+  loading: vi.fn(() => 'toast-id'),
+  success: vi.fn(),
+  error: vi.fn(),
+  warning: vi.fn(),
+}))
+
+vi.mock('sonner', () => ({
+  toast: mockToast,
+}))
+
 import { useVoiceNarration } from '@/hooks/useVoiceNarration'
 
 // Mock WebSocket context
@@ -53,6 +89,33 @@ const mockSpeechSynthesis = {
   removeEventListener: vi.fn(),
 }
 
+// Mock AudioContext for Kokoro
+const mockAudioStop = vi.fn()
+const mockAudioStart = vi.fn()
+const mockAudioConnect = vi.fn()
+const mockAudioContextResume = vi.fn()
+const mockAudioContextClose = vi.fn()
+const mockGainNode = {
+  gain: { value: 1 },
+  connect: vi.fn(),
+}
+
+class MockAudioBufferSourceNode {
+  buffer: AudioBuffer | null = null
+  onended: (() => void) | null = null
+  stop = mockAudioStop
+  start = mockAudioStart
+  connect = mockAudioConnect
+}
+
+class MockAudioContext {
+  state = 'running'
+  resume = mockAudioContextResume.mockResolvedValue(undefined)
+  close = mockAudioContextClose
+  createBufferSource = vi.fn(() => new MockAudioBufferSourceNode())
+  createGain = vi.fn(() => mockGainNode)
+}
+
 describe('useVoiceNarration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -65,12 +128,28 @@ describe('useVoiceNarration', () => {
       writable: true,
       configurable: true,
     })
+    // @ts-expect-error - Mocking global
+    globalThis.AudioContext = MockAudioContext
 
     // Default mock implementations
     mockSpeak.mockImplementation((utterance: MockSpeechSynthesisUtterance) => {
       // Simulate immediate start
       utterance.onstart?.()
     })
+
+    // Default Kokoro mock implementations
+    mockGetKokoroState.mockReturnValue({
+      status: 'idle',
+      progress: 0,
+      error: null,
+    })
+    mockSubscribeToState.mockImplementation((callback) => {
+      callback(mockGetKokoroState())
+      return () => {}
+    })
+    mockIsKokoroReady.mockReturnValue(false)
+    mockLoadKokoroModel.mockResolvedValue(undefined)
+    mockGenerateSpeech.mockResolvedValue({} as AudioBuffer)
   })
 
   afterEach(() => {
@@ -336,13 +415,10 @@ describe('useVoiceNarration', () => {
       expect(result.current.currentText).toBe('First')
 
       // Simulate end of first utterance
-      act(() => {
-        currentUtterance?.onend?.()
-      })
-
-      // Advance timers for the small delay
       await act(async () => {
-        vi.advanceTimersByTime(100)
+        currentUtterance?.onend?.()
+        // Use async timer to properly flush microtasks and promises
+        await vi.advanceTimersByTimeAsync(100)
       })
 
       expect(result.current.currentText).toBe('Second')
@@ -401,9 +477,9 @@ describe('useVoiceNarration', () => {
 
       expect(mockCancel).toHaveBeenCalled()
 
-      // Advance timers for queue processing
+      // Advance timers for queue processing - use async version to flush microtasks
       await act(async () => {
-        vi.advanceTimersByTime(100)
+        await vi.advanceTimersByTimeAsync(100)
       })
 
       // Should move to next item
@@ -492,7 +568,7 @@ describe('useVoiceNarration', () => {
       expect(onStart).toHaveBeenCalled()
     })
 
-    it('should call onEnd when all speech completes', () => {
+    it('should call onEnd when all speech completes', async () => {
       let currentUtterance: MockSpeechSynthesisUtterance | null = null
       mockSpeak.mockImplementation((utterance: MockSpeechSynthesisUtterance) => {
         currentUtterance = utterance
@@ -510,14 +586,15 @@ describe('useVoiceNarration', () => {
       })
 
       // Simulate speech end
-      act(() => {
+      await act(async () => {
         currentUtterance?.onend?.()
+        await vi.advanceTimersByTimeAsync(50)
       })
 
       expect(onEnd).toHaveBeenCalled()
     })
 
-    it('should call onError on speech synthesis error', () => {
+    it('should call onError on speech synthesis error', async () => {
       let currentUtterance: MockSpeechSynthesisUtterance | null = null
       mockSpeak.mockImplementation((utterance: MockSpeechSynthesisUtterance) => {
         currentUtterance = utterance
@@ -535,8 +612,9 @@ describe('useVoiceNarration', () => {
       })
 
       // Simulate error
-      act(() => {
+      await act(async () => {
         currentUtterance?.onerror?.({ error: 'synthesis-failed' })
+        await vi.advanceTimersByTimeAsync(50)
       })
 
       expect(onError).toHaveBeenCalledWith(
@@ -785,6 +863,277 @@ describe('useVoiceNarration', () => {
         result.current.speak('Another test')
       })
       expect(mockSpeak).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('Kokoro TTS Provider', () => {
+    it('should return kokoroState from singleton', () => {
+      mockGetKokoroState.mockReturnValue({
+        status: 'ready',
+        progress: 100,
+        error: null,
+      })
+
+      const { result } = renderHook(() =>
+        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+      )
+
+      expect(result.current.kokoroState).toEqual({
+        status: 'ready',
+        progress: 100,
+        error: null,
+      })
+    })
+
+    it('should load Kokoro model when speaking with kokoro provider', async () => {
+      mockIsKokoroReady.mockReturnValue(false)
+
+      const { result } = renderHook(() =>
+        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+      )
+
+      await act(async () => {
+        result.current.speak('Hello Kokoro!')
+        await vi.advanceTimersByTimeAsync(50)
+      })
+
+      expect(mockLoadKokoroModel).toHaveBeenCalled()
+    })
+
+    it('should skip model loading when already ready', async () => {
+      mockIsKokoroReady.mockReturnValue(true)
+
+      const { result } = renderHook(() =>
+        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+      )
+
+      await act(async () => {
+        result.current.speak('Hello Kokoro!')
+        await vi.advanceTimersByTimeAsync(50)
+      })
+
+      expect(mockLoadKokoroModel).not.toHaveBeenCalled()
+      expect(mockGenerateSpeech).toHaveBeenCalledWith('Hello Kokoro!', {
+        voice: 'af_heart',
+        speed: 1.0,
+      })
+    })
+
+    it('should use custom voice and rate for Kokoro', async () => {
+      mockIsKokoroReady.mockReturnValue(true)
+
+      const { result } = renderHook(() =>
+        useVoiceNarration({
+          executionId: 'exec-123',
+          ttsProvider: 'kokoro',
+          voice: 'am_adam',
+          rate: 1.5,
+        })
+      )
+
+      await act(async () => {
+        result.current.speak('Custom voice test')
+        await vi.advanceTimersByTimeAsync(50)
+      })
+
+      expect(mockGenerateSpeech).toHaveBeenCalledWith('Custom voice test', {
+        voice: 'am_adam',
+        speed: 1.5,
+      })
+    })
+
+    it('should show loading toast when model is not ready', async () => {
+      mockIsKokoroReady.mockReturnValue(false)
+
+      const { result } = renderHook(() =>
+        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+      )
+
+      await act(async () => {
+        result.current.speak('Loading test')
+        await vi.advanceTimersByTimeAsync(50)
+      })
+
+      expect(mockToast.loading).toHaveBeenCalledWith(
+        'Loading Kokoro TTS model...',
+        expect.objectContaining({
+          description: 'This may take a moment on first use.',
+        })
+      )
+    })
+
+    it('should show success toast after model loads', async () => {
+      mockIsKokoroReady.mockReturnValue(false)
+      mockLoadKokoroModel.mockResolvedValue(undefined)
+
+      const { result } = renderHook(() =>
+        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+      )
+
+      await act(async () => {
+        result.current.speak('Success test')
+        await vi.advanceTimersByTimeAsync(50)
+      })
+
+      expect(mockToast.success).toHaveBeenCalledWith(
+        'Kokoro TTS model loaded!',
+        expect.objectContaining({ id: 'toast-id' })
+      )
+    })
+
+    it('should fall back to browser TTS when Kokoro fails', async () => {
+      mockIsKokoroReady.mockReturnValue(true)
+      mockGenerateSpeech.mockRejectedValue(new Error('Kokoro generation failed'))
+
+      const { result } = renderHook(() =>
+        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+      )
+
+      await act(async () => {
+        result.current.speak('Fallback test')
+        await vi.advanceTimersByTimeAsync(100)
+      })
+
+      // Should show warning toast
+      expect(mockToast.warning).toHaveBeenCalledWith(
+        'Kokoro TTS failed, using browser voice',
+        expect.objectContaining({
+          description: 'The browser speech synthesis will be used instead.',
+        })
+      )
+
+      // Should fall back to browser speech
+      expect(mockSpeak).toHaveBeenCalled()
+    })
+
+    it('should play audio using AudioContext when Kokoro succeeds', async () => {
+      mockIsKokoroReady.mockReturnValue(true)
+      const mockBuffer = {} as AudioBuffer
+      mockGenerateSpeech.mockResolvedValue(mockBuffer)
+
+      const { result } = renderHook(() =>
+        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+      )
+
+      await act(async () => {
+        result.current.speak('Audio test')
+        await vi.advanceTimersByTimeAsync(50)
+      })
+
+      expect(mockAudioStart).toHaveBeenCalledWith(0)
+    })
+
+    it('should stop Kokoro audio on high priority interrupt', async () => {
+      mockIsKokoroReady.mockReturnValue(true)
+
+      const { result } = renderHook(() =>
+        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+      )
+
+      // Start speaking
+      await act(async () => {
+        result.current.speak('Normal message')
+        await vi.advanceTimersByTimeAsync(5) // Before audio ends
+      })
+
+      // Interrupt with high priority
+      await act(async () => {
+        result.current.speak('High priority!', 'high')
+        await vi.advanceTimersByTimeAsync(50)
+      })
+
+      // Should have stopped the audio
+      expect(mockAudioStop).toHaveBeenCalled()
+    })
+
+    it('should stop Kokoro audio on skip', async () => {
+      mockIsKokoroReady.mockReturnValue(true)
+      // Don't auto-end audio
+      mockAudioStart.mockImplementation(() => {})
+
+      const { result } = renderHook(() =>
+        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+      )
+
+      await act(async () => {
+        result.current.speak('Test message')
+        await vi.advanceTimersByTimeAsync(5)
+      })
+
+      act(() => {
+        result.current.skip()
+      })
+
+      expect(mockAudioStop).toHaveBeenCalled()
+    })
+
+    it('should stop Kokoro audio on stop', async () => {
+      mockIsKokoroReady.mockReturnValue(true)
+      // Don't auto-end audio
+      mockAudioStart.mockImplementation(() => {})
+
+      const { result } = renderHook(() =>
+        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+      )
+
+      await act(async () => {
+        result.current.speak('Test message')
+        await vi.advanceTimersByTimeAsync(5)
+      })
+
+      act(() => {
+        result.current.stop()
+      })
+
+      expect(mockAudioStop).toHaveBeenCalled()
+      expect(result.current.isSpeaking).toBe(false)
+    })
+
+    it('should cleanup AudioContext on unmount', async () => {
+      mockIsKokoroReady.mockReturnValue(true)
+
+      const { result, unmount } = renderHook(() =>
+        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+      )
+
+      await act(async () => {
+        result.current.speak('Cleanup test')
+        await vi.advanceTimersByTimeAsync(50)
+      })
+
+      unmount()
+
+      expect(mockAudioContextClose).toHaveBeenCalled()
+    })
+
+    it('should show error toast when model loading fails', async () => {
+      mockIsKokoroReady.mockReturnValue(false)
+      mockLoadKokoroModel.mockRejectedValue(new Error('Network error'))
+
+      const onError = vi.fn()
+
+      const { result } = renderHook(() =>
+        useVoiceNarration({
+          executionId: 'exec-123',
+          ttsProvider: 'kokoro',
+          onError,
+        })
+      )
+
+      await act(async () => {
+        result.current.speak('Error test')
+        await vi.advanceTimersByTimeAsync(50)
+      })
+
+      expect(mockToast.error).toHaveBeenCalledWith(
+        'Failed to load Kokoro TTS',
+        expect.objectContaining({
+          description: 'Network error',
+        })
+      )
+
+      // Should fall back to browser
+      expect(mockSpeak).toHaveBeenCalled()
     })
   })
 })

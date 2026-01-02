@@ -4,6 +4,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useTheme } from '@/contexts/ThemeContext'
 import { useUpdateCheck, useUpdateMutations } from '@/hooks/useUpdateCheck'
 import { clearVoiceConfigCache } from '@/hooks/useVoiceConfig'
+import { useKokoroTTS } from '@/hooks/useKokoroTTS'
+import { getAvailableVoices as getKokoroVoices } from '@/lib/kokoroTTS'
 import {
   Sun,
   Moon,
@@ -22,6 +24,9 @@ import {
   ArrowRight,
   Mic,
   Volume2,
+  Download,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react'
 import type { ColorTheme } from '@/themes'
 import { cn } from '@/lib/utils'
@@ -123,7 +128,6 @@ interface VoiceSettings {
   }
   tts?: {
     provider?: 'browser' | 'kokoro' | 'openai'
-    kokoroUrl?: string
     defaultVoice?: string
   }
   narration?: {
@@ -185,6 +189,9 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
 
   // Available voices from Web Speech API
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([])
+
+  // Kokoro TTS hook for model management
+  const kokoroTTS = useKokoroTTS()
 
   // Update check hooks
   const { updateInfo } = useUpdateCheck()
@@ -1166,33 +1173,166 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                     <div className="space-y-4 border-t border-border pt-4">
                       <h4 className="text-sm font-medium">Text-to-Speech Settings</h4>
 
-                      {/* Voice Selection */}
+                      {/* TTS Provider Selection */}
                       <div className="space-y-1">
-                        <Label className="text-xs">Voice</Label>
+                        <Label className="text-xs">TTS Provider</Label>
                         <Select
-                          value={voiceSettings.narration?.voice || 'default'}
+                          value={voiceSettings.tts?.provider || 'browser'}
                           onValueChange={(value) =>
-                            updateVoiceNarrationSettings({ voice: value === 'default' ? '' : value })
+                            updateVoiceTTSSettings({ provider: value as 'browser' | 'kokoro' | 'openai' })
                           }
                         >
                           <SelectTrigger className="h-8 text-sm">
-                            <SelectValue placeholder="System default" />
+                            <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="default">System default</SelectItem>
-                            {availableVoices
-                              .filter((v) => v.lang.startsWith('en'))
-                              .slice(0, 20) // Limit to prevent huge list
-                              .map((voice) => (
-                                <SelectItem key={voice.voiceURI} value={voice.name}>
-                                  {voice.name} ({voice.lang})
-                                </SelectItem>
-                              ))}
+                            <SelectItem value="browser">Browser (Web Speech API)</SelectItem>
+                            <SelectItem value="kokoro">Kokoro (High Quality, Local)</SelectItem>
+                            <SelectItem value="openai" disabled>OpenAI (Coming soon)</SelectItem>
                           </SelectContent>
                         </Select>
                         <p className="text-[10px] text-muted-foreground">
-                          Voice used for narration (using browser Web Speech API)
+                          {voiceSettings.tts?.provider === 'kokoro'
+                            ? 'High-quality 82M parameter model running in your browser'
+                            : 'Uses your browser\'s built-in speech synthesis'}
                         </p>
+                      </div>
+
+                      {/* Kokoro Model Status - only show when Kokoro is selected */}
+                      {voiceSettings.tts?.provider === 'kokoro' && (
+                        <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs">Kokoro Model</Label>
+                            {kokoroTTS.status === 'ready' ? (
+                              <span className="flex items-center gap-1 text-xs text-green-500">
+                                <CheckCircle2 className="h-3 w-3" />
+                                Ready
+                              </span>
+                            ) : kokoroTTS.status === 'error' ? (
+                              <span className="flex items-center gap-1 text-xs text-destructive">
+                                <AlertCircle className="h-3 w-3" />
+                                Error
+                              </span>
+                            ) : kokoroTTS.status === 'loading' ? (
+                              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <RefreshCw className="h-3 w-3 animate-spin" />
+                                Loading...
+                              </span>
+                            ) : null}
+                          </div>
+
+                          {kokoroTTS.status === 'idle' && (
+                            <div className="space-y-2">
+                              <p className="text-[10px] text-muted-foreground">
+                                The Kokoro model (~86 MB) will be downloaded and cached in your browser.
+                              </p>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => kokoroTTS.load()}
+                                className="w-full"
+                              >
+                                <Download className="mr-2 h-3 w-3" />
+                                Load Model (~86 MB)
+                              </Button>
+                            </div>
+                          )}
+
+                          {kokoroTTS.status === 'loading' && (
+                            <div className="space-y-2">
+                              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                                <div
+                                  className="h-full bg-primary transition-all duration-300"
+                                  style={{ width: `${kokoroTTS.progress}%` }}
+                                />
+                              </div>
+                              <p className="text-center text-[10px] text-muted-foreground">
+                                Downloading... {kokoroTTS.progress}%
+                              </p>
+                            </div>
+                          )}
+
+                          {kokoroTTS.status === 'error' && (
+                            <div className="space-y-2">
+                              <p className="text-[10px] text-destructive">
+                                {kokoroTTS.error || 'Failed to load model'}
+                              </p>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => kokoroTTS.load()}
+                                className="w-full"
+                              >
+                                <RefreshCw className="mr-2 h-3 w-3" />
+                                Retry
+                              </Button>
+                            </div>
+                          )}
+
+                          {kokoroTTS.status === 'ready' && (
+                            <p className="text-[10px] text-muted-foreground">
+                              Model loaded and ready. Cached for faster loading next time.
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Voice Selection - different options based on provider */}
+                      <div className="space-y-1">
+                        <Label className="text-xs">Voice</Label>
+                        {voiceSettings.tts?.provider === 'kokoro' ? (
+                          <>
+                            <Select
+                              value={voiceSettings.tts?.defaultVoice || 'af_heart'}
+                              onValueChange={(value) =>
+                                updateVoiceTTSSettings({ defaultVoice: value })
+                              }
+                            >
+                              <SelectTrigger className="h-8 text-sm">
+                                <SelectValue placeholder="Select a voice" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {getKokoroVoices().map((voice) => (
+                                  <SelectItem key={voice.id} value={voice.id}>
+                                    {voice.name} ({voice.gender}, {voice.language})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-[10px] text-muted-foreground">
+                              High-quality Kokoro voice
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <Select
+                              value={voiceSettings.narration?.voice || 'default'}
+                              onValueChange={(value) =>
+                                updateVoiceNarrationSettings({ voice: value === 'default' ? '' : value })
+                              }
+                            >
+                              <SelectTrigger className="h-8 text-sm">
+                                <SelectValue placeholder="System default" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="default">System default</SelectItem>
+                                {availableVoices
+                                  .filter((v) => v.lang.startsWith('en'))
+                                  .slice(0, 20)
+                                  .map((voice) => (
+                                    <SelectItem key={voice.voiceURI} value={voice.name}>
+                                      {voice.name} ({voice.lang})
+                                    </SelectItem>
+                                  ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-[10px] text-muted-foreground">
+                              Browser Web Speech API voice
+                            </p>
+                          </>
+                        )}
                       </div>
 
                       {/* Speech Rate */}
@@ -1250,11 +1390,25 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => {
-                          if ('speechSynthesis' in window) {
-                            const utterance = new SpeechSynthesisUtterance(
-                              'Voice narration is working correctly.'
-                            )
+                        disabled={voiceSettings.tts?.provider === 'kokoro' && kokoroTTS.isPlaying}
+                        onClick={async () => {
+                          const testText = 'Voice narration is working correctly.'
+
+                          if (voiceSettings.tts?.provider === 'kokoro') {
+                            // Use Kokoro TTS
+                            try {
+                              await kokoroTTS.speak(testText, {
+                                voice: voiceSettings.tts?.defaultVoice || 'af_heart',
+                                speed: voiceSettings.narration?.speed ?? 1.0,
+                              })
+                            } catch (err) {
+                              toast.error('Failed to test Kokoro narration', {
+                                description: err instanceof Error ? err.message : 'Unknown error',
+                              })
+                            }
+                          } else if ('speechSynthesis' in window) {
+                            // Use browser Web Speech API
+                            const utterance = new SpeechSynthesisUtterance(testText)
                             utterance.rate = voiceSettings.narration?.speed ?? 1.0
                             utterance.volume = voiceSettings.narration?.volume ?? 1.0
                             if (voiceSettings.narration?.voice) {
@@ -1267,7 +1421,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                           }
                         }}
                       >
-                        Test Narration
+                        {kokoroTTS.isPlaying ? 'Playing...' : 'Test Narration'}
                       </Button>
 
                       {/* Narration Content Settings */}
@@ -1326,26 +1480,6 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                         </div>
                       </div>
 
-                      {/* Kokoro Server Settings - only show when kokoro is available */}
-                      {voiceSettings.tts?.provider === 'kokoro' && (
-                        <div className="mt-4 space-y-3 border-t border-border pt-4">
-                          <h4 className="text-sm font-medium">Kokoro Server</h4>
-                          <div className="space-y-1">
-                            <Label className="text-xs">Server URL</Label>
-                            <Input
-                              value={voiceSettings.tts?.kokoroUrl || ''}
-                              onChange={(e) =>
-                                updateVoiceTTSSettings({ kokoroUrl: e.target.value })
-                              }
-                              placeholder="http://localhost:8880/v1"
-                              className="h-8 text-sm"
-                            />
-                            <p className="text-[10px] text-muted-foreground">
-                              URL of your local Kokoro TTS server
-                            </p>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>

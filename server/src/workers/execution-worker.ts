@@ -17,10 +17,7 @@
 
 import Database from "better-sqlite3";
 import type { Execution } from "@sudocode-ai/types";
-import type {
-  WorkerToMainMessage,
-  ExecutionResult,
-} from "./worker-ipc.js";
+import type { WorkerToMainMessage, ExecutionResult } from "./worker-ipc.js";
 import { isMainMessage } from "./worker-ipc.js";
 import type { ExecutionTask } from "agent-execution-engine/engine";
 import { createExecutorForAgent } from "../execution/executors/executor-factory.js";
@@ -28,7 +25,11 @@ import { ExecutionLifecycleService } from "../services/execution-lifecycle.js";
 import { ExecutionLogsStore } from "../services/execution-logs-store.js";
 import { IpcTransportManager } from "../execution/transport/ipc-transport-manager.js";
 import { getExecution, updateExecution } from "../services/executions.js";
-import { readVoiceConfig, isVoiceBroadcastEnabled } from "../utils/voice-config.js";
+import {
+  readVoiceConfig,
+  isVoiceBroadcastEnabled,
+} from "../utils/voice-config.js";
+import { getNarrationConfig } from "../services/narration-service.js";
 
 // Validate required environment variables
 const EXECUTION_ID = process.env.EXECUTION_ID;
@@ -216,7 +217,10 @@ async function runExecution(): Promise<void> {
         // Attempt to recreate worktree
         console.log(`[Worker:${WORKER_ID}] Attempting to recreate worktree...`);
         try {
-          const lifecycleService = new ExecutionLifecycleService(db, REPO_PATH!);
+          const lifecycleService = new ExecutionLifecycleService(
+            db,
+            REPO_PATH!
+          );
           const worktreeManager = (lifecycleService as any).worktreeManager;
 
           await worktreeManager.createWorktree({
@@ -257,6 +261,7 @@ async function runExecution(): Promise<void> {
     // 9. Read voice config to determine if voice narration broadcasts are enabled
     const voiceConfig = readVoiceConfig(REPO_PATH!);
     const voiceEnabled = isVoiceBroadcastEnabled(voiceConfig);
+    const voiceNarrationSettings = getNarrationConfig(voiceConfig);
 
     // 10. Create executor using factory
     const wrapper = createExecutorForAgent(
@@ -269,7 +274,8 @@ async function runExecution(): Promise<void> {
         projectId: PROJECT_ID!,
         db,
         transportManager: ipcTransport as any, // IpcTransportManager matches interface
-        narrationConfig: { enabled: voiceEnabled },
+        // Merge narration config: voiceSettings from config.json, then enabled flag
+        narrationConfig: { ...voiceNarrationSettings, enabled: voiceEnabled },
       }
     );
 
@@ -296,7 +302,9 @@ async function runExecution(): Promise<void> {
     };
 
     // 12. Update status to running
-    console.log(`[Worker:${WORKER_ID}] Starting execution with AgentExecutorWrapper (${agentType})`);
+    console.log(
+      `[Worker:${WORKER_ID}] Starting execution with AgentExecutorWrapper (${agentType})`
+    );
     sendStatus("running");
 
     // 13. Execute with lifecycle management (blocking)

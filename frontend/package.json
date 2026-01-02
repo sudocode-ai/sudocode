@@ -39,6 +39,8 @@
     "test:verbose": "vitest --reporter=verbose --run",
     "test:quiet": "vitest --reporter=dot --run --silent",
     "test:summary": "vitest --reporter=basic --run --silent",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
@@ -101,6 +103,7 @@
     "clsx": "^2.1.0",
     "dagre": "^0.8.5",
     "date-fns": "^3.6.0",
+    "kokoro-js": "^1.2.1",
     "lexical": "^0.36.0",
     "lowlight": "^3.3.0",
     "lucide-react": "^0.344.0",
@@ -124,6 +127,7 @@
     "zustand": "^4.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^14.2.0",
