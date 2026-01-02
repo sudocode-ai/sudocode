@@ -111,9 +111,30 @@ function parseTimingLog(logPath) {
  */
 function runBenchmark() {
   const scenario = process.env.SCENARIO || 'fresh-install';
+  const tarballPath = process.env.TARBALL_PATH;
   const timestamp = new Date().toISOString();
 
   console.log(`Running benchmark for scenario: ${scenario}`);
+
+  // Determine what to install
+  let installTarget;
+  if (tarballPath) {
+    // Resolve tarball path relative to repo root (2 levels up from scripts/profiling)
+    const repoRoot = path.join(__dirname, '..', '..');
+    const resolvedPath = path.resolve(repoRoot, tarballPath);
+
+    if (!fs.existsSync(resolvedPath)) {
+      console.error(`Tarball not found: ${resolvedPath}`);
+      process.exit(1);
+    }
+
+    installTarget = resolvedPath;
+    console.log(`Installing from local tarball: ${installTarget}`);
+  } else {
+    installTarget = 'sudocode';
+    console.log('Installing from npm registry (no TARBALL_PATH provided)');
+  }
+
   console.log('Starting npm install...');
 
   // Measure total installation time
@@ -121,7 +142,9 @@ function runBenchmark() {
 
   try {
     // Run npm install with timing enabled
-    execSync('npm install -g sudocode --timing', {
+    // Note: installTarget is either a validated file path or the literal string 'sudocode'
+    const command = `npm install -g "${installTarget}" --timing`;
+    execSync(command, {
       stdio: 'inherit',
       encoding: 'utf8'
     });

@@ -35,9 +35,22 @@ jobs:
           npm cache clean --force
           npm install -g typescript eslint prettier
 
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build project
+        run: npm run build
+
+      - name: Create tarball
+        id: pack
+        run: |
+          TARBALL=$(npm pack)
+          echo "tarball=$TARBALL" >> $GITHUB_OUTPUT
+
       - name: Run profiling script
         env:
           SCENARIO: ${{ matrix.scenario }}
+          TARBALL_PATH: ${{ steps.pack.outputs.tarball }}
         run: node scripts/profiling/benchmark.cjs
 
       - name: Upload results artifact
