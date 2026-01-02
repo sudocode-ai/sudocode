@@ -1,7 +1,16 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import type { VoiceNarrationEvent, NarrationPriority } from '@sudocode-ai/types'
+import type { VoiceNarrationEvent, NarrationPriority, TTSProvider } from '@sudocode-ai/types/voice'
 import { useWebSocketContext } from '@/contexts/WebSocketContext'
 import type { WebSocketMessage } from '@/types/api'
+import {
+  loadKokoroModel,
+  generateSpeech,
+  isKokoroReady,
+  getKokoroState,
+  subscribeToState,
+  type KokoroState,
+} from '@/lib/kokoroTTS'
+import { toast } from 'sonner'
 
 /**
  * Queued narration item with priority
@@ -20,7 +29,9 @@ export interface UseVoiceNarrationOptions {
   executionId: string
   /** Whether narration is enabled (default: true) */
   enabled?: boolean
-  /** Voice name for Web Speech API (default: system default) */
+  /** TTS provider to use (default: 'browser') */
+  ttsProvider?: TTSProvider
+  /** Voice name for Web Speech API or Kokoro voice ID (default: system default) */
   voice?: string
   /** Speech rate from 0.5 to 2.0 (default: 1.0) */
   rate?: number
@@ -62,6 +73,8 @@ export interface UseVoiceNarrationReturn {
   isSupported: boolean
   /** Available voices for the browser */
   availableVoices: SpeechSynthesisVoice[]
+  /** Kokoro model state (for UI display) */
+  kokoroState: KokoroState
 }
 
 /**
@@ -111,6 +124,7 @@ export function useVoiceNarration(options: UseVoiceNarrationOptions): UseVoiceNa
   const {
     executionId,
     enabled: initialEnabled = true,
+    ttsProvider = 'browser',
     voice,
     rate = 1.0,
     volume = 1.0,
@@ -125,17 +139,33 @@ export function useVoiceNarration(options: UseVoiceNarrationOptions): UseVoiceNa
   const [isPaused, setIsPaused] = useState(false)
   const [currentText, setCurrentText] = useState<string | null>(null)
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([])
+  const [kokoroState, setKokoroState] = useState<KokoroState>(getKokoroState)
 
   // Refs for mutable state
   const queueRef = useRef<QueuedNarration[]>([])
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
   const isProcessingRef = useRef(false)
   const enabledRef = useRef(enabled)
+  const ttsProviderRef = useRef(ttsProvider)
 
-  // Keep enabledRef in sync
+  // Kokoro-specific refs
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null)
+  const kokoroLoadingToastRef = useRef<string | number | undefined>(undefined)
+
+  // Keep refs in sync
   useEffect(() => {
     enabledRef.current = enabled
   }, [enabled])
+
+  useEffect(() => {
+    ttsProviderRef.current = ttsProvider
+  }, [ttsProvider])
+
+  // Subscribe to Kokoro state changes
+  useEffect(() => {
+    return subscribeToState(setKokoroState)
+  }, [])
 
   // WebSocket context
   const { addMessageHandler, removeMessageHandler, subscribe, unsubscribe } = useWebSocketContext()
@@ -176,10 +206,137 @@ export function useVoiceNarration(options: UseVoiceNarrationOptions): UseVoiceNa
   }, [voice, availableVoices])
 
   /**
+   * Get or create AudioContext for Kokoro playback
+   */
+  const getAudioContext = useCallback(() => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContext()
+    }
+    return audioContextRef.current
+  }, [])
+
+  /**
+   * Speak text using Kokoro TTS
+   */
+  const speakWithKokoro = useCallback(
+    async (text: string): Promise<void> => {
+      // Ensure model is loaded
+      if (!isKokoroReady()) {
+        // Show loading toast
+        kokoroLoadingToastRef.current = toast.loading('Loading Kokoro TTS model...', {
+          description: 'This may take a moment on first use.',
+        })
+
+        try {
+          await loadKokoroModel((progress) => {
+            if (kokoroLoadingToastRef.current !== null) {
+              toast.loading(`Loading Kokoro TTS model... ${progress}%`, {
+                id: kokoroLoadingToastRef.current,
+                description: 'This may take a moment on first use.',
+              })
+            }
+          })
+          toast.success('Kokoro TTS model loaded!', {
+            id: kokoroLoadingToastRef.current,
+          })
+          kokoroLoadingToastRef.current = undefined
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : 'Failed to load model'
+          toast.error('Failed to load Kokoro TTS', {
+            id: kokoroLoadingToastRef.current,
+            description: errorMessage,
+          })
+          kokoroLoadingToastRef.current = undefined
+          throw err
+        }
+      }
+
+      // Generate audio
+      const audioBuffer = await generateSpeech(text, {
+        voice: voice || 'af_heart',
+        speed: rate,
+      })
+
+      // Get audio context and resume if needed
+      const ctx = getAudioContext()
+      if (ctx.state === 'suspended') {
+        await ctx.resume()
+      }
+
+      // Create and play source
+      const source = ctx.createBufferSource()
+      source.buffer = audioBuffer
+
+      // Apply volume via gain node
+      const gainNode = ctx.createGain()
+      gainNode.gain.value = Math.max(0, Math.min(1, volume))
+      source.connect(gainNode)
+      gainNode.connect(ctx.destination)
+
+      currentSourceRef.current = source
+      source.start(0)
+
+      // Return a promise that resolves when audio ends
+      return new Promise((resolve) => {
+        source.onended = () => {
+          currentSourceRef.current = null
+          resolve()
+        }
+      })
+    },
+    [voice, rate, volume, getAudioContext]
+  )
+
+  /**
+   * Speak text using browser Web Speech API
+   */
+  const speakWithBrowser = useCallback(
+    (text: string): Promise<void> => {
+      return new Promise((resolve, reject) => {
+        if (!synth) {
+          reject(new Error('Speech synthesis not supported'))
+          return
+        }
+
+        const utterance = new SpeechSynthesisUtterance(text)
+        utterance.rate = Math.max(0.5, Math.min(2.0, rate))
+        utterance.volume = Math.max(0, Math.min(1, volume))
+
+        if (selectedVoice) {
+          utterance.voice = selectedVoice
+        }
+
+        utterance.onend = () => {
+          currentUtteranceRef.current = null
+          resolve()
+        }
+
+        utterance.onerror = (event) => {
+          currentUtteranceRef.current = null
+          if (event.error !== 'interrupted' && event.error !== 'canceled') {
+            reject(new Error(`Speech synthesis error: ${event.error}`))
+          } else {
+            resolve() // Interrupted/canceled is not an error
+          }
+        }
+
+        currentUtteranceRef.current = utterance
+        synth.speak(utterance)
+      })
+    },
+    [synth, rate, volume, selectedVoice]
+  )
+
+  /**
    * Process the next item in the queue
    */
   const processQueue = useCallback(() => {
-    if (!synth || !enabledRef.current || isProcessingRef.current || queueRef.current.length === 0) {
+    if (!enabledRef.current || isProcessingRef.current || queueRef.current.length === 0) {
+      return
+    }
+
+    // For browser TTS, check synth is available
+    if (ttsProviderRef.current === 'browser' && !synth) {
       return
     }
 
@@ -191,65 +348,77 @@ export function useVoiceNarration(options: UseVoiceNarrationOptions): UseVoiceNa
     setCurrentText(nextItem.text)
     setIsSpeaking(true)
     setIsPaused(false)
+    onStart?.()
 
-    // Create utterance
-    const utterance = new SpeechSynthesisUtterance(nextItem.text)
-    utterance.rate = Math.max(0.5, Math.min(2.0, rate))
-    utterance.volume = Math.max(0, Math.min(1, volume))
+    // Route to appropriate TTS provider
+    const speakPromise =
+      ttsProviderRef.current === 'kokoro'
+        ? speakWithKokoro(nextItem.text)
+        : speakWithBrowser(nextItem.text)
 
-    if (selectedVoice) {
-      utterance.voice = selectedVoice
-    }
+    speakPromise
+      .then(() => {
+        isProcessingRef.current = false
+        setCurrentText(null)
 
-    // Handle speech start
-    utterance.onstart = () => {
-      onStart?.()
-    }
+        // Process next item in queue
+        if (queueRef.current.length > 0) {
+          setTimeout(() => processQueue(), 50)
+        } else {
+          setIsSpeaking(false)
+          onEnd?.()
+        }
+      })
+      .catch((err) => {
+        // If Kokoro fails, fall back to browser TTS
+        if (ttsProviderRef.current === 'kokoro' && synth) {
+          console.warn('[useVoiceNarration] Kokoro failed, falling back to browser TTS:', err)
+          toast.warning('Kokoro TTS failed, using browser voice', {
+            description: 'The browser speech synthesis will be used instead.',
+          })
 
-    // Handle speech end
-    utterance.onend = () => {
-      isProcessingRef.current = false
-      currentUtteranceRef.current = null
-      setCurrentText(null)
-
-      // Process next item in queue
-      if (queueRef.current.length > 0) {
-        // Small delay to prevent overwhelming the speech synthesis
-        setTimeout(() => processQueue(), 50)
-      } else {
-        setIsSpeaking(false)
-        onEnd?.()
-      }
-    }
-
-    // Handle errors
-    utterance.onerror = (event) => {
-      // 'interrupted' and 'canceled' are expected when skipping/stopping
-      if (event.error !== 'interrupted' && event.error !== 'canceled') {
-        onError?.(new Error(`Speech synthesis error: ${event.error}`))
-      }
-      isProcessingRef.current = false
-      currentUtteranceRef.current = null
-      setCurrentText(null)
-
-      // Continue with queue even after error
-      if (queueRef.current.length > 0) {
-        setTimeout(() => processQueue(), 50)
-      } else {
-        setIsSpeaking(false)
-      }
-    }
-
-    currentUtteranceRef.current = utterance
-    synth.speak(utterance)
-  }, [synth, rate, volume, selectedVoice, onStart, onEnd, onError])
+          speakWithBrowser(nextItem.text)
+            .then(() => {
+              isProcessingRef.current = false
+              setCurrentText(null)
+              if (queueRef.current.length > 0) {
+                setTimeout(() => processQueue(), 50)
+              } else {
+                setIsSpeaking(false)
+                onEnd?.()
+              }
+            })
+            .catch((fallbackErr) => {
+              onError?.(fallbackErr instanceof Error ? fallbackErr : new Error(String(fallbackErr)))
+              isProcessingRef.current = false
+              setCurrentText(null)
+              if (queueRef.current.length > 0) {
+                setTimeout(() => processQueue(), 50)
+              } else {
+                setIsSpeaking(false)
+              }
+            })
+        } else {
+          onError?.(err instanceof Error ? err : new Error(String(err)))
+          isProcessingRef.current = false
+          setCurrentText(null)
+          if (queueRef.current.length > 0) {
+            setTimeout(() => processQueue(), 50)
+          } else {
+            setIsSpeaking(false)
+          }
+        }
+      })
+  }, [synth, speakWithKokoro, speakWithBrowser, onStart, onEnd, onError])
 
   /**
    * Add text to the narration queue with priority handling
    */
   const speak = useCallback(
     (text: string, priority: NarrationPriority = 'normal') => {
-      if (!synth || !enabledRef.current || !text.trim()) return
+      // For browser TTS, need synth. For Kokoro, it will be loaded on demand.
+      if (ttsProviderRef.current === 'browser' && !synth) return
+      if (!enabledRef.current || !text.trim()) return
 
       const queueItem: QueuedNarration = {
         text: text.trim(),
@@ -260,7 +429,18 @@ export function useVoiceNarration(options: UseVoiceNarrationOptions): UseVoiceNa
       // Priority handling
       if (priority === 'high') {
         // High priority: interrupt current and play immediately
-        synth.cancel()
+        if (synth) {
+          synth.cancel()
+        }
+        // Also stop Kokoro if playing
+        if (currentSourceRef.current) {
+          try {
+            currentSourceRef.current.stop()
+          } catch {
+            // Already stopped
+          }
+          currentSourceRef.current = null
+        }
         isProcessingRef.current = false
         currentUtteranceRef.current = null
         queueRef.current.unshift(queueItem)
@@ -315,8 +495,20 @@ export function useVoiceNarration(options: UseVoiceNarrationOptions): UseVoiceNa
    * Skip current utterance and move to next
    */
   const skip = useCallback(() => {
-    if (!synth) return
-    synth.cancel()
+    // Stop browser TTS
+    if (synth) {
+      synth.cancel()
+    }
+    // Stop Kokoro audio
+    if (currentSourceRef.current) {
+      try {
+        currentSourceRef.current.stop()
+      } catch {
+        // Already stopped
+      }
+      currentSourceRef.current = null
+    }
+
     isProcessingRef.current = false
     currentUtteranceRef.current = null
     setCurrentText(null)
@@ -335,8 +527,20 @@ export function useVoiceNarration(options: UseVoiceNarrationOptions): UseVoiceNa
    * Stop all speech and clear the queue
    */
   const stop = useCallback(() => {
-    if (!synth) return
-    synth.cancel()
+    // Stop browser TTS
+    if (synth) {
+      synth.cancel()
+    }
+    // Stop Kokoro audio
+    if (currentSourceRef.current) {
+      try {
+        currentSourceRef.current.stop()
+      } catch {
+        // Already stopped
+      }
+      currentSourceRef.current = null
+    }
+
     queueRef.current = []
     isProcessingRef.current = false
     currentUtteranceRef.current = null
@@ -366,13 +570,9 @@ export function useVoiceNarration(options: UseVoiceNarrationOptions): UseVoiceNa
   useEffect(() => {
     const handlerId = `voice-narration-${executionId}`
 
-    console.log(`[useVoiceNarration] Setting up handler for ${executionId}, enabled: ${enabledRef.current}, synth: ${!!synth}`)
-
     const handleMessage = (message: WebSocketMessage) => {
-      console.log(`[useVoiceNarration] Received message:`, message.type)
       if (message.type !== 'voice_narration') return
       if (!enabledRef.current) {
-        console.log(`[useVoiceNarration] Narration disabled, skipping`)
         return
       }
 
@@ -388,17 +588,14 @@ export function useVoiceNarration(options: UseVoiceNarrationOptions): UseVoiceNa
         !('text' in data) ||
         !('priority' in data)
       ) {
-        console.log(`[useVoiceNarration] Invalid data structure:`, data)
         return
       }
 
       // Filter by executionId
       if (data.executionId !== executionId) {
-        console.log(`[useVoiceNarration] Execution ID mismatch: ${data.executionId} !== ${executionId}`)
         return
       }
 
-      console.log(`[useVoiceNarration] Queueing narration: "${data.text.substring(0, 50)}..."`)
       // Queue the narration
       speak(data.text, data.priority as NarrationPriority)
     }
@@ -419,6 +616,16 @@ export function useVoiceNarration(options: UseVoiceNarrationOptions): UseVoiceNa
     return () => {
       if (synth) {
         synth.cancel()
+      }
+      if (currentSourceRef.current) {
+        try {
+          currentSourceRef.current.stop()
+        } catch {
+          // Already stopped
+        }
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close()
       }
       queueRef.current = []
     }
@@ -442,5 +649,6 @@ export function useVoiceNarration(options: UseVoiceNarrationOptions): UseVoiceNa
     setEnabled,
     isSupported,
     availableVoices,
+    kokoroState,
   }
 }

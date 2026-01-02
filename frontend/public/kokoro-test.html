@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kokoro TTS Test Page</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 600px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #1a1a1a;
+      color: #fff;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      cursor: pointer;
+      background: #4a90d9;
+      border: none;
+      border-radius: 4px;
+      color: white;
+      font-size: 14px;
+    }
+    button:disabled {
+      background: #666;
+      cursor: not-allowed;
+    }
+    #status {
+      padding: 15px;
+      margin: 15px 0;
+      border-radius: 4px;
+      background: #2a2a2a;
+    }
+    #progress {
+      height: 20px;
+      background: #333;
+      border-radius: 10px;
+      overflow: hidden;
+      margin: 10px 0;
+    }
+    #progress-bar {
+      height: 100%;
+      background: #4a90d9;
+      width: 0%;
+      transition: width 0.3s;
+    }
+    .success { color: #4ade80; }
+    .error { color: #f87171; }
+    .loading { color: #fbbf24; }
+  </style>
+</head>
+<body>
+  <h1>Kokoro TTS Test</h1>
+  <p>This page tests Kokoro TTS model loading and speech synthesis.</p>
+
+  <div id="status">Status: Not loaded</div>
+  <div id="progress"><div id="progress-bar"></div></div>
+
+  <div>
+    <button id="load-btn">Load Model</button>
+    <button id="speak-btn" disabled>Speak Test</button>
+    <button id="stop-btn" disabled>Stop</button>
+  </div>
+
+  <div style="margin-top: 20px;">
+    <label>
+      Voice:
+      <select id="voice-select">
+        <option value="af_heart">Heart (Female)</option>
+        <option value="am_adam">Adam (Male)</option>
+      </select>
+    </label>
+  </div>
+
+  <div style="margin-top: 20px;">
+    <label>
+      Test text:
+      <textarea id="text-input" rows="3" style="width: 100%; margin-top: 5px;">Hello! This is a test of the Kokoro text to speech system running in your browser.</textarea>
+    </label>
+  </div>
+
+  <script type="module">
+    // Import kokoro-js from CDN for standalone testing
+    import { KokoroTTS } from 'https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm';
+
+    let tts = null;
+    let audioContext = null;
+    let currentSource = null;
+
+    const statusEl = document.getElementById('status');
+    const progressBar = document.getElementById('progress-bar');
+    const loadBtn = document.getElementById('load-btn');
+    const speakBtn = document.getElementById('speak-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const voiceSelect = document.getElementById('voice-select');
+    const textInput = document.getElementById('text-input');
+
+    function updateStatus(message, type = '') {
+      statusEl.textContent = message;
+      statusEl.className = type;
+    }
+
+    function updateProgress(percent) {
+      progressBar.style.width = `${percent}%`;
+    }
+
+    loadBtn.addEventListener('click', async () => {
+      loadBtn.disabled = true;
+      updateStatus('Loading Kokoro model...', 'loading');
+      updateProgress(10);
+
+      try {
+        tts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
+          dtype: 'q4',
+          device: 'wasm',
+          progress_callback: (progress) => {
+            if (progress.status === 'progress') {
+              const percent = Math.round((progress.loaded / progress.total) * 100);
+              updateProgress(percent);
+              updateStatus(`Downloading: ${percent}%`, 'loading');
+            }
+          }
+        });
+
+        updateProgress(100);
+        updateStatus('Model loaded successfully!', 'success');
+        speakBtn.disabled = false;
+
+      } catch (error) {
+        updateStatus(`Error: ${error.message}`, 'error');
+        loadBtn.disabled = false;
+      }
+    });
+
+    speakBtn.addEventListener('click', async () => {
+      if (!tts) return;
+
+      const text = textInput.value;
+      const voice = voiceSelect.value;
+
+      speakBtn.disabled = true;
+      stopBtn.disabled = false;
+      updateStatus('Generating speech...', 'loading');
+
+      try {
+        // Generate audio
+        const audio = await tts.generate(text, { voice });
+
+        // Play audio
+        if (!audioContext) {
+          audioContext = new AudioContext();
+        }
+
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+
+        // Create audio buffer from Float32Array
+        const audioBuffer = audioContext.createBuffer(1, audio.length, 24000);
+        audioBuffer.getChannelData(0).set(audio);
+
+        // Play
+        currentSource = audioContext.createBufferSource();
+        currentSource.buffer = audioBuffer;
+        currentSource.connect(audioContext.destination);
+
+        currentSource.onended = () => {
+          updateStatus('Playback complete', 'success');
+          speakBtn.disabled = false;
+          stopBtn.disabled = true;
+          currentSource = null;
+        };
+
+        currentSource.start(0);
+        updateStatus('Playing...', 'success');
+
+      } catch (error) {
+        updateStatus(`Error: ${error.message}`, 'error');
+        speakBtn.disabled = false;
+        stopBtn.disabled = true;
+      }
+    });
+
+    stopBtn.addEventListener('click', () => {
+      if (currentSource) {
+        currentSource.stop();
+        currentSource = null;
+        updateStatus('Stopped', '');
+        speakBtn.disabled = false;
+        stopBtn.disabled = true;
+      }
+    });
+  </script>
+</body>
+</html>

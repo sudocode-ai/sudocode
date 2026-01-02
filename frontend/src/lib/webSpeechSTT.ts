@@ -6,7 +6,7 @@
  */
 
 import { createSpeechRecognition, isSpeechRecognitionSupported } from './voice'
-import type { VoiceInputError } from '@sudocode-ai/types'
+import type { VoiceInputError } from '@sudocode-ai/types/voice'
 
 /**
  * Result from Web Speech API transcription

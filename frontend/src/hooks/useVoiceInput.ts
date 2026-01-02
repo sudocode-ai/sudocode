@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import type { VoiceInputState, VoiceInputError, TranscriptionResult } from '@sudocode-ai/types'
+import type { VoiceInputState, VoiceInputError, TranscriptionResult } from '@sudocode-ai/types/voice'
 import {
   checkMicrophonePermission,
   requestMicrophonePermission,

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useVoiceInput, type UseVoiceInputOptions } from '@/hooks/useVoiceInput'
 import { cn } from '@/lib/utils'
-import type { VoiceInputState } from '@sudocode-ai/types'
+import type { VoiceInputState } from '@sudocode-ai/types/voice'
 
 export interface VoiceInputButtonProps {
   /** Callback when transcription completes - receives the transcribed text */

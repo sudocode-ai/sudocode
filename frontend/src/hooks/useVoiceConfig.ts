@@ -40,6 +40,8 @@ export interface VoiceConfigState {
   settings: VoiceSettingsConfig | null
   /** Narration settings with defaults applied */
   narration: NarrationSettings
+  /** TTS provider to use (browser, kokoro, or openai) */
+  ttsProvider: 'browser' | 'kokoro' | 'openai'
   /** Whether voice is enabled for this project (from config.json) */
   voiceEnabled: boolean
   /** Whether Whisper server is available */
@@ -195,10 +197,14 @@ export function useVoiceConfig(): VoiceConfigState {
     narrateAssistantMessages: settings?.narration?.narrateAssistantMessages ?? DEFAULT_NARRATION.narrateAssistantMessages,
   }
 
+  // Get TTS provider from settings (default to browser)
+  const ttsProvider = (settings?.tts?.provider as 'browser' | 'kokoro' | 'openai') ?? 'browser'
+
   return {
     config,
     settings,
     narration,
+    ttsProvider,
     voiceEnabled,
     whisperAvailable,
     webSpeechSupported,

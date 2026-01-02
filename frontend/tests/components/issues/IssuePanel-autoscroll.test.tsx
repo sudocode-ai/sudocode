@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithProviders } from '@/test/test-utils'
 import { IssuePanel } from '@/components/issues/IssuePanel'
@@ -604,6 +604,11 @@ describe('IssuePanel - Auto-scroll', () => {
 
       // Wait for FAB to appear (confirms auto-scroll is disabled)
       await screen.findByTestId('scroll-to-bottom-fab')
+
+      // Wait for React effects to fully settle (cleanup old MutationObserver)
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      })
 
       // Clear previous scrollTo calls
       mockScrollTo.mockClear()

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { useVoiceInput } from '@/hooks/useVoiceInput'
-import type { VoiceInputError } from '@sudocode-ai/types'
+import type { VoiceInputError } from '@sudocode-ai/types/voice'
 
 // Mock the voice lib utilities
 vi.mock('@/lib/voice', () => ({
@@ -37,6 +37,7 @@ vi.mock('@/hooks/useVoiceConfig', () => ({
       narrateToolResults: false,
       narrateAssistantMessages: true,
     },
+    ttsProvider: 'browser',
     voiceEnabled: true,
     whisperAvailable: true,
     webSpeechSupported: false,
@@ -676,6 +677,7 @@ describe('useVoiceInput', () => {
         config: null,
         settings: null,
         narration: defaultNarration,
+        ttsProvider: 'browser',
         voiceEnabled: true,
         whisperAvailable: false,
         webSpeechSupported: true,
@@ -696,6 +698,7 @@ describe('useVoiceInput', () => {
         config: null,
         settings: null,
         narration: defaultNarration,
+        ttsProvider: 'browser',
         voiceEnabled: true,
         whisperAvailable: false,
         webSpeechSupported: false,
@@ -716,6 +719,7 @@ describe('useVoiceInput', () => {
         config: null,
         settings: null,
         narration: defaultNarration,
+        ttsProvider: 'browser',
         voiceEnabled: true,
         whisperAvailable: false,
         webSpeechSupported: true,
@@ -736,6 +740,7 @@ describe('useVoiceInput', () => {
         config: null,
         settings: null,
         narration: defaultNarration,
+        ttsProvider: 'browser',
         voiceEnabled: true,
         whisperAvailable: false,
         webSpeechSupported: false,
@@ -759,6 +764,7 @@ describe('useVoiceInput', () => {
         config: null,
         settings: null,
         narration: defaultNarration,
+        ttsProvider: 'browser',
         voiceEnabled: true,
         whisperAvailable: false,
         webSpeechSupported: true,
