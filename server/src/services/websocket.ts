@@ -19,10 +19,15 @@ interface Client {
  * Message types that clients can send to the server
  */
 interface ClientMessage {
-  type: "subscribe" | "unsubscribe" | "ping";
+  type: "subscribe" | "unsubscribe" | "ping" | "tts_request";
   project_id?: string; // Project ID for project-scoped subscriptions
   entity_type?: "issue" | "spec" | "execution" | "workflow" | "all";
   entity_id?: string;
+  // TTS request fields (when type is "tts_request")
+  request_id?: string;
+  text?: string;
+  voice?: string;
+  speed?: number;
 }
 
 /**
@@ -64,11 +69,25 @@ export interface ServerMessage {
     | "pong"
     | "error"
     | "subscribed"
-    | "unsubscribed";
+    | "unsubscribed"
+    // TTS streaming message types
+    | "tts_audio"
+    | "tts_end"
+    | "tts_error";
   projectId?: string; // Project ID for project-scoped messages
   data?: any;
   message?: string;
   subscription?: string;
+  // TTS-specific fields (populated when type is tts_audio, tts_end, or tts_error)
+  request_id?: string;
+  chunk?: string; // Base64 PCM audio (for tts_audio)
+  index?: number; // Chunk index (for tts_audio)
+  is_final?: boolean; // Final chunk flag (for tts_audio)
+  total_chunks?: number; // Total chunks sent (for tts_end)
+  duration_ms?: number; // Synthesis duration (for tts_end)
+  error?: string; // Error message (for tts_error)
+  recoverable?: boolean; // Can retry (for tts_error)
+  fallback?: boolean; // Should fallback to browser TTS (for tts_error)
 }
 
 /**
