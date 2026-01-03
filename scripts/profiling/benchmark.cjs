@@ -112,6 +112,7 @@ function parseTimingLog(logPath) {
 function runBenchmark() {
   const scenario = process.env.SCENARIO || 'fresh-install';
   const tarballPath = process.env.TARBALL_PATH;
+  const registry = process.env.NPM_REGISTRY;
   const timestamp = new Date().toISOString();
 
   console.log(`Running benchmark for scenario: ${scenario}`);
@@ -132,7 +133,11 @@ function runBenchmark() {
     console.log(`Installing from local tarball: ${installTarget}`);
   } else {
     installTarget = 'sudocode';
-    console.log('Installing from npm registry (no TARBALL_PATH provided)');
+    if (registry) {
+      console.log(`Installing from registry: ${registry}`);
+    } else {
+      console.log('Installing from npm registry (no TARBALL_PATH or NPM_REGISTRY provided)');
+    }
   }
 
   console.log('Starting npm install...');
@@ -141,12 +146,19 @@ function runBenchmark() {
   const startTime = Date.now();
 
   try {
+    // Build npm install command with proper argument array
+    const npmArgs = ['install', '-g', installTarget, '--timing'];
+
+    // Add registry flag if specified
+    if (registry) {
+      npmArgs.push('--registry', registry);
+    }
+
     // Run npm install with timing enabled
-    // Note: installTarget is either a validated file path or the literal string 'sudocode'
-    const command = `npm install -g "${installTarget}" --timing`;
-    execSync(command, {
+    execSync(`npm ${npmArgs.join(' ')}`, {
       stdio: 'inherit',
-      encoding: 'utf8'
+      encoding: 'utf8',
+      shell: true
     });
   } catch (error) {
     console.error('npm install failed:', error.message);
@@ -181,7 +193,8 @@ function runBenchmark() {
       os: os.platform(),
       nodeVersion,
       npmVersion,
-      macosVersion
+      macosVersion,
+      registry: registry || 'default'
     },
     timing: {
       total: totalTime,

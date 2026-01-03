@@ -1,16 +1,124 @@
 # npm Install Profiling Script
 
-This directory contains a profiling script for benchmarking `npm install -g sudocode` and capturing detailed timing metrics.
+This directory contains a profiling system for benchmarking `npm install -g sudocode` and capturing detailed timing metrics. It includes support for testing against a local Verdaccio registry to enable realistic profiling without 2FA or publishing to npm.
 
-## Usage
+## Quick Start
 
-### Basic Usage
+### Option 1: Test with Verdaccio (Recommended for Development)
+
+Run the complete end-to-end test workflow:
+
+```bash
+./scripts/profiling/test-verdaccio-workflow.sh
+```
+
+This automated script will:
+1. Start Verdaccio local registry (if not running)
+2. Verify authentication
+3. Build and publish all packages to Verdaccio
+4. Run the profiling benchmark
+5. Display results
+
+### Option 2: Manual Profiling
+
+#### Profile from npm Registry
 
 ```bash
 node scripts/profiling/benchmark.cjs
 ```
 
+#### Profile from Verdaccio
+
+```bash
+NPM_REGISTRY=http://localhost:4873/ SCENARIO=verdaccio node scripts/profiling/benchmark.cjs
+```
+
+#### Profile from Local Tarball
+
+```bash
+TARBALL_PATH=sudocode-0.1.17.tgz node scripts/profiling/benchmark.cjs
+```
+
+## Verdaccio Setup
+
+Verdaccio is a lightweight private npm registry that allows testing npm package installation without 2FA and without publishing to the public registry.
+
+### Why Use Verdaccio?
+
+- **No 2FA required**: Simplifies automated testing
+- **Realistic profiling**: Tests actual npm install flow (vs. local tarball)
+- **Fast iteration**: Publish and test without waiting for npm registry
+- **Safe testing**: Keep development packages private
+
+### Setup Steps
+
+#### 1. Start Verdaccio
+
+```bash
+./scripts/profiling/start-verdaccio.sh
+```
+
 This will:
+- Install Verdaccio globally if needed
+- Start Verdaccio on port 4873
+- Use config from `verdaccio-config.yaml`
+
+#### 2. Authenticate
+
+**Non-interactive (CI-friendly):**
+```bash
+./scripts/profiling/setup-verdaccio-auth.sh
+```
+
+**Interactive (manual):**
+```bash
+npm adduser --registry http://localhost:4873/
+```
+
+Use any credentials (e.g., `test` / `test` / `test@test.com`). No 2FA required.
+
+#### 3. Publish Packages
+
+```bash
+./scripts/profiling/publish-to-verdaccio.sh
+```
+
+This will:
+- Build all packages
+- Publish to Verdaccio in dependency order
+- Restore your original npm registry setting
+
+#### 4. Profile Installation
+
+```bash
+NPM_REGISTRY=http://localhost:4873/ node scripts/profiling/benchmark.cjs
+```
+
+### Stopping Verdaccio
+
+```bash
+pkill -f verdaccio
+```
+
+## Basic Usage
+
+### Profiling with Different Sources
+
+The benchmark script supports three installation sources:
+
+```bash
+# From npm registry (default)
+node scripts/profiling/benchmark.cjs
+
+# From Verdaccio
+NPM_REGISTRY=http://localhost:4873/ node scripts/profiling/benchmark.cjs
+
+# From local tarball
+TARBALL_PATH=sudocode-0.1.17.tgz node scripts/profiling/benchmark.cjs
+```
+
+### What the Script Does
+
 1. Run `npm install -g sudocode --timing`
 2. Capture total installation time
 3. Parse npm's timing logs to extract phase-level metrics
@@ -69,6 +177,7 @@ The script generates JSON files with the following structure:
 - `environment.nodeVersion` - Node.js version (e.g., "v20.10.0")
 - `environment.npmVersion` - npm version (e.g., "10.2.3")
 - `environment.macosVersion` - macOS version if applicable (e.g., "14.0")
+- `environment.registry` - Registry used for installation (e.g., "http://localhost:4873/" or "default")
 
 **Timing Data (all values in milliseconds):**
 - `timing.total` - Total installation time measured by the script
@@ -159,4 +268,65 @@ const macosVersion = getMacOSVersion();
 
 // Get Node.js and npm versions
 const { nodeVersion, npmVersion } = getVersions();
+```
+
+## File Reference
+
+### Scripts
+
+- **`benchmark.cjs`** - Main profiling script that measures npm install timing
+- **`start-verdaccio.sh`** - Start Verdaccio local registry
+- **`publish-to-verdaccio.sh`** - Build and publish packages to Verdaccio
+- **`test-verdaccio-workflow.sh`** - End-to-end test of complete workflow
+
+### Configuration
+
+- **`verdaccio-config.yaml`** - Verdaccio configuration (disables 2FA)
+- **`.gitignore`** - Ignores Verdaccio storage and results
+
+### Directories
+
+- **`results/`** - Benchmark results (JSON files)
+- **`storage/`** - Verdaccio package storage (gitignored)
+
+## Environment Variables
+
+The benchmark script supports the following environment variables:
+
+- **`SCENARIO`** - Scenario name for the benchmark (e.g., `fresh-install`, `dev-environment`)
+- **`NPM_REGISTRY`** - Custom npm registry URL (e.g., `http://localhost:4873/`)
+- **`TARBALL_PATH`** - Path to local tarball file (relative to repo root)
+
+### Examples
+
+```bash
+# Verdaccio with custom scenario
+NPM_REGISTRY=http://localhost:4873/ SCENARIO=verdaccio-optimized node benchmark.cjs
+
+# Local tarball with scenario
+TARBALL_PATH=sudocode-0.1.17.tgz SCENARIO=local-tarball node benchmark.cjs
+
+# Fresh install from npm
+SCENARIO=fresh-install node benchmark.cjs
+```
+
+## Comparing Results
+
+To compare profiling results between different sources:
+
+```bash
+# 1. Profile from local tarball (baseline)
+TARBALL_PATH=sudocode-0.1.17.tgz SCENARIO=local-baseline node benchmark.cjs
+
+# 2. Profile from Verdaccio (realistic npm flow)
+NPM_REGISTRY=http://localhost:4873/ SCENARIO=verdaccio node benchmark.cjs
+
+# 3. Profile from npm registry (production)
+SCENARIO=npm-registry node benchmark.cjs
+
+# 4. Compare results
+ls -lh results/
+cat results/benchmark-local-baseline-*.json | grep total
+cat results/benchmark-verdaccio-*.json | grep total
+cat results/benchmark-npm-registry-*.json | grep total
 ```
