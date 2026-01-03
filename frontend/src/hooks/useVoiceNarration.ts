@@ -10,6 +10,7 @@ import {
   subscribeToState,
   type KokoroState,
 } from '@/lib/kokoroTTS'
+import { useKokoroTTS } from '@/hooks/useKokoroTTS'
 import { toast } from 'sonner'
 
 /**
@@ -31,6 +32,8 @@ export interface UseVoiceNarrationOptions {
   enabled?: boolean
   /** TTS provider to use (default: 'browser') */
   ttsProvider?: TTSProvider
+  /** Kokoro execution mode: 'browser' for WASM, 'server' for streaming (default: 'browser') */
+  kokoroMode?: 'browser' | 'server'
   /** Voice name for Web Speech API or Kokoro voice ID (default: system default) */
   voice?: string
   /** Speech rate from 0.5 to 2.0 (default: 1.0) */
@@ -125,6 +128,7 @@ export function useVoiceNarration(options: UseVoiceNarrationOptions): UseVoiceNa
     executionId,
     enabled: initialEnabled = true,
     ttsProvider = 'browser',
+    kokoroMode = 'browser',
     voice,
     rate = 1.0,
     volume = 1.0,
@@ -147,6 +151,10 @@ export function useVoiceNarration(options: UseVoiceNarrationOptions): UseVoiceNa
   const isProcessingRef = useRef(false)
   const enabledRef = useRef(enabled)
   const ttsProviderRef = useRef(ttsProvider)
+  const kokoroModeRef = useRef(kokoroMode)
+
+  // Use Kokoro TTS hook for server streaming mode
+  const kokoroTTS = useKokoroTTS({ useServer: kokoroMode === 'server' })
 
   // Kokoro-specific refs
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -161,6 +169,10 @@ export function useVoiceNarration(options: UseVoiceNarrationOptions): UseVoiceNa
   useEffect(() => {
     ttsProviderRef.current = ttsProvider
   }, [ttsProvider])
+
+  useEffect(() => {
+    kokoroModeRef.current = kokoroMode
+  }, [kokoroMode])
 
   // Subscribe to Kokoro state changes
   useEffect(() => {
@@ -216,9 +228,9 @@ export function useVoiceNarration(options: UseVoiceNarrationOptions): UseVoiceNa
   }, [])
 
   /**
-   * Speak text using Kokoro TTS
+   * Speak text using Kokoro TTS (browser WASM mode)
    */
-  const speakWithKokoro = useCallback(
+  const speakWithKokoroBrowser = useCallback(
     async (text: string): Promise<void> => {
       // Ensure model is loaded
       if (!isKokoroReady()) {
@@ -285,6 +297,25 @@ export function useVoiceNarration(options: UseVoiceNarrationOptions): UseVoiceNa
       })
     },
     [voice, rate, volume, getAudioContext]
+  )
+
+  /**
+   * Speak text using Kokoro TTS (routes to browser or server based on kokoroMode)
+   */
+  const speakWithKokoro = useCallback(
+    async (text: string): Promise<void> => {
+      // Use server streaming mode if kokoroMode is 'server'
+      if (kokoroModeRef.current === 'server') {
+        await kokoroTTS.speak(text, {
+          voice: voice || 'af_heart',
+          speed: rate,
+        })
+      } else {
+        // Use browser WASM mode
+        await speakWithKokoroBrowser(text)
+      }
+    },
+    [kokoroTTS, voice, rate, speakWithKokoroBrowser]
   )
 
   /**
