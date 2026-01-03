@@ -330,15 +330,19 @@ export function useKokoroTTS(options: UseKokoroTTSOptions = {}): UseKokoroTTSRet
         }
         currentRequestIdRef.current = null;
 
-        // Note: isPlaying will be set to false when audio actually finishes playing
-        // The StreamingAudioPlayer handles the actual playback timing
-        // We use a small delay to allow the last chunk to finish
-        setTimeout(() => {
+        // Poll until audio actually finishes playing
+        // The StreamingAudioPlayer buffers chunks, so we need to wait for playback to complete
+        const checkPlaybackComplete = () => {
           const player = streamingPlayerRef.current;
-          if (player && !player.isPlaying()) {
+          if (!player || !player.isPlaying()) {
             setIsPlaying(false);
+          } else {
+            // Still playing, check again in 100ms
+            setTimeout(checkPlaybackComplete, 100);
           }
-        }, 500);
+        };
+        // Start checking after a brief delay to let the last chunk start
+        setTimeout(checkPlaybackComplete, 200);
       }
 
       // Handle TTS errors
