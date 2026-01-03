@@ -323,19 +323,22 @@ export function useKokoroTTS(options: UseKokoroTTSOptions = {}): UseKokoroTTSRet
           return;
         }
 
-        // Resolve the pending speak promise
-        if (pendingSpeakRef.current) {
-          pendingSpeakRef.current.resolve();
-          pendingSpeakRef.current = null;
-        }
+        // Clear request ID immediately so we don't process duplicates
         currentRequestIdRef.current = null;
 
         // Poll until audio actually finishes playing
         // The StreamingAudioPlayer buffers chunks, so we need to wait for playback to complete
+        // IMPORTANT: We resolve the promise AFTER playback completes, not when tts_end arrives
+        // This prevents the next speak() from calling stop() and cutting off audio
         const checkPlaybackComplete = () => {
           const player = streamingPlayerRef.current;
           if (!player || !player.isPlaying()) {
             setIsPlaying(false);
+            // Now that audio is done, resolve the pending promise
+            if (pendingSpeakRef.current) {
+              pendingSpeakRef.current.resolve();
+              pendingSpeakRef.current = null;
+            }
           } else {
             // Still playing, check again in 100ms
             setTimeout(checkPlaybackComplete, 100);

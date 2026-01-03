@@ -601,6 +601,98 @@ describe('useKokoroTTS', () => {
       })
     })
 
+    describe('tts_end handling', () => {
+      it('should resolve speak promise only after playback completes, not when tts_end arrives', async () => {
+        let messageHandler: ((message: any) => void) | undefined
+        mockAddMessageHandler.mockImplementation((id: string, handler: any) => {
+          if (id === 'kokoro-tts-handler') {
+            messageHandler = handler
+          }
+        })
+
+        // Start with player still playing
+        mockIsPlayerPlaying.mockReturnValue(true)
+
+        const { result } = renderHook(() => useKokoroTTS({ useServer: true }))
+
+        let speakResolved = false
+        let speakPromise: Promise<void>
+
+        // Start a speak request
+        act(() => {
+          speakPromise = result.current.speak('Test')
+          speakPromise.then(() => {
+            speakResolved = true
+          })
+        })
+
+        const sentMessage = mockSendMessage.mock.calls[0][0]
+        const requestId = sentMessage.request_id
+
+        // Simulate receiving tts_end while audio is still playing
+        await act(async () => {
+          messageHandler?.({
+            type: 'tts_end',
+            request_id: requestId,
+            total_chunks: 5,
+            duration_ms: 1000,
+          })
+          await Promise.resolve()
+        })
+
+        // Promise should NOT be resolved yet because audio is still playing
+        expect(speakResolved).toBe(false)
+        expect(result.current.isPlaying).toBe(true)
+
+        // Now simulate playback completing
+        mockIsPlayerPlaying.mockReturnValue(false)
+
+        // Wait for the polling to detect playback complete (200ms initial + 100ms poll)
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 350))
+        })
+
+        // Now the promise should be resolved and isPlaying should be false
+        expect(speakResolved).toBe(true)
+        expect(result.current.isPlaying).toBe(false)
+      })
+
+      it('should set isPlaying to false when tts_end arrives and playback already complete', async () => {
+        let messageHandler: ((message: any) => void) | undefined
+        mockAddMessageHandler.mockImplementation((id: string, handler: any) => {
+          if (id === 'kokoro-tts-handler') {
+            messageHandler = handler
+          }
+        })
+
+        // Player is not playing (very short audio or already done)
+        mockIsPlayerPlaying.mockReturnValue(false)
+
+        const { result } = renderHook(() => useKokoroTTS({ useServer: true }))
+
+        act(() => {
+          result.current.speak('Short text')
+        })
+
+        const sentMessage = mockSendMessage.mock.calls[0][0]
+        const requestId = sentMessage.request_id
+
+        // Simulate receiving tts_end
+        await act(async () => {
+          messageHandler?.({
+            type: 'tts_end',
+            request_id: requestId,
+            total_chunks: 1,
+            duration_ms: 100,
+          })
+          // Wait for polling to complete
+          await new Promise((resolve) => setTimeout(resolve, 350))
+        })
+
+        expect(result.current.isPlaying).toBe(false)
+      })
+    })
+
     describe('fallback on tts_error', () => {
       it('should fall back to browser TTS when receiving tts_error with fallback=true', async () => {
         let messageHandler: ((message: any) => void) | undefined

@@ -729,6 +729,10 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
     const narrationService = new NarrationService(this.narrationConfig);
     const rateLimiter = new NarrationRateLimiter();
 
+    // Track last narrated text to deduplicate streaming updates
+    // (assistant messages stream incrementally but often produce the same summarized text)
+    let lastNarratedText: string | null = null;
+
     console.log(`[AgentExecutorWrapper] Voice narration config for ${executionId}:`, {
       enabled: this.narrationConfig?.enabled ?? false,
       narrateToolUse: this.narrationConfig?.narrateToolUse,
@@ -777,12 +781,21 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
         if (this.narrationConfig?.enabled) {
           const narration = narrationService.summarizeForVoice(entry);
           if (narration) {
+            // Deduplicate: skip if same text as last narration
+            // (streaming assistant messages often produce identical summarized text)
+            if (narration.text === lastNarratedText) {
+              continue;
+            }
+
             console.log(`[AgentExecutorWrapper] Narration generated for ${executionId}:`, {
               entryType: entry.type.kind,
               text: narration.text.substring(0, 50) + (narration.text.length > 50 ? '...' : ''),
               category: narration.category,
               priority: narration.priority,
             });
+
+            lastNarratedText = narration.text;
+
             const toEmit = rateLimiter.submit(narration);
             if (toEmit) {
               console.log(`[AgentExecutorWrapper] Broadcasting voice narration for ${executionId}:`, toEmit.text.substring(0, 50));
@@ -796,8 +809,24 @@ export class AgentExecutorWrapper<TConfig extends BaseAgentConfig> {
                 },
                 issueId
               );
-            } else {
-              console.log(`[AgentExecutorWrapper] Narration rate-limited for ${executionId}`);
+            }
+            // Also flush any pending narrations to prevent queue buildup
+            // (client handles TTS queuing, so we just need to broadcast)
+            while (rateLimiter.hasPending()) {
+              const pending = rateLimiter.flush();
+              if (pending) {
+                console.log(`[AgentExecutorWrapper] Broadcasting pending narration for ${executionId}:`, pending.text.substring(0, 50));
+                broadcastVoiceNarration(
+                  this.projectId,
+                  executionId,
+                  {
+                    text: pending.text,
+                    category: pending.category,
+                    priority: pending.priority,
+                  },
+                  issueId
+                );
+              }
             }
           }
         }

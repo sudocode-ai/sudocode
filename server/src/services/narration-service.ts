@@ -33,7 +33,7 @@ export interface NarrationConfig {
    * Default: false
    */
   enabled: boolean;
-  /** Maximum length for assistant messages before summarization (default: 100) */
+  /** Maximum length for assistant messages before summarization (default: 1000) */
   maxAssistantMessageLength: number;
   /** Maximum length for command display (default: 50) */
   maxCommandLength: number;
@@ -61,7 +61,9 @@ export interface NarrationConfig {
  */
 const DEFAULT_CONFIG: NarrationConfig = {
   enabled: false,
-  maxAssistantMessageLength: 100,
+  // 1000 chars allows most messages to be read in full
+  // TTS handles longer text fine, and users expect full messages
+  maxAssistantMessageLength: 1000,
   maxCommandLength: 50,
   includeFilePaths: true,
   narrateToolResults: false,
@@ -575,10 +577,11 @@ export interface NarrationRateLimiterConfig {
  * Default rate limiter configuration
  */
 const DEFAULT_RATE_LIMITER_CONFIG: NarrationRateLimiterConfig = {
-  minIntervalMs: 1000,
-  maxQueueSize: 3,
+  // Low interval - client handles TTS queuing, server just prevents rapid-fire bursts
+  minIntervalMs: 100,
+  maxQueueSize: 10,
   coalesceToolCalls: true,
-  coalesceWindowMs: 2000,
+  coalesceWindowMs: 500,
 };
 
 /**
