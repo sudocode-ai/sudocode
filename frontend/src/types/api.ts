@@ -190,12 +190,25 @@ export interface WebSocketMessage {
     | 'workflow_escalation_requested'
     | 'workflow_escalation_resolved'
     | 'voice_narration'
+    | 'tts_audio'
+    | 'tts_end'
+    | 'tts_error'
     | 'error'
   projectId?: string // Project ID for project-scoped messages
   data?: Issue | Spec | Relationship | IssueFeedback | Execution | any
   message?: string // Error message
   timestamp?: string
   subscription?: string // Subscription key for debugging
+  // TTS streaming fields (when type is tts_audio, tts_end, tts_error)
+  request_id?: string
+  chunk?: string // Base64 PCM audio (for tts_audio)
+  index?: number // Chunk index (for tts_audio)
+  is_final?: boolean // Final chunk flag (for tts_audio)
+  total_chunks?: number // Total chunks sent (for tts_end)
+  duration_ms?: number // Synthesis duration (for tts_end)
+  error?: string // Error message (for tts_error)
+  recoverable?: boolean // Can retry (for tts_error)
+  fallback?: boolean // Should fallback to browser TTS (for tts_error)
 }
 
 export interface WebSocketSubscribeMessage {

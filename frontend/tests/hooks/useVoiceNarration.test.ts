@@ -8,12 +8,17 @@ const {
   mockIsKokoroReady,
   mockGetKokoroState,
   mockSubscribeToState,
+  mockGetAvailableVoices,
 } = vi.hoisted(() => ({
   mockLoadKokoroModel: vi.fn(),
   mockGenerateSpeech: vi.fn(),
   mockIsKokoroReady: vi.fn(),
   mockGetKokoroState: vi.fn(),
   mockSubscribeToState: vi.fn(),
+  mockGetAvailableVoices: vi.fn(() => [
+    { id: 'af_heart', name: 'Heart', gender: 'female', language: 'en-US' },
+    { id: 'am_adam', name: 'Adam', gender: 'male', language: 'en-US' },
+  ]),
 }))
 
 vi.mock('@/lib/kokoroTTS', () => ({
@@ -22,6 +27,7 @@ vi.mock('@/lib/kokoroTTS', () => ({
   isKokoroReady: mockIsKokoroReady,
   getKokoroState: mockGetKokoroState,
   subscribeToState: mockSubscribeToState,
+  getAvailableVoices: mockGetAvailableVoices,
 }))
 
 // Mock sonner toast

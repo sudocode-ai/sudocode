@@ -129,6 +129,7 @@ interface VoiceSettings {
   tts?: {
     provider?: 'browser' | 'kokoro' | 'openai'
     defaultVoice?: string
+    kokoroMode?: 'browser' | 'server'
   }
   narration?: {
     enabled?: boolean
@@ -190,8 +191,18 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   // Available voices from Web Speech API
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([])
 
-  // Kokoro TTS hook for model management
-  const kokoroTTS = useKokoroTTS()
+  // Server TTS status
+  const [serverTTSStatus, setServerTTSStatus] = useState<{
+    installed: boolean
+    state: string
+    error: string | null
+  } | null>(null)
+  const [settingUpServerTTS, setSettingUpServerTTS] = useState(false)
+
+  // Kokoro TTS hook for model management (uses server mode based on settings)
+  const kokoroTTS = useKokoroTTS({
+    useServer: voiceSettings.tts?.kokoroMode === 'server',
+  })
 
   // Update check hooks
   const { updateInfo } = useUpdateCheck()
@@ -306,6 +317,50 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
       synth.removeEventListener('voiceschanged', loadVoices)
     }
   }, [isOpen, activeTab])
+
+  // Fetch server TTS status when server mode is selected
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'voice') return
+    if (voiceSettings.tts?.kokoroMode !== 'server') {
+      setServerTTSStatus(null)
+      return
+    }
+
+    const fetchStatus = async () => {
+      try {
+        const response = await api.get<
+          { data: { installed: boolean; state: string; error: string | null } },
+          { data: { installed: boolean; state: string; error: string | null } }
+        >('/voice/tts/status')
+        setServerTTSStatus(response.data)
+      } catch (error) {
+        console.error('Failed to fetch TTS status:', error)
+        setServerTTSStatus({ installed: false, state: 'error', error: 'Failed to check status' })
+      }
+    }
+
+    fetchStatus()
+  }, [isOpen, activeTab, voiceSettings.tts?.kokoroMode])
+
+  // Handle server TTS setup
+  const handleServerTTSSetup = async () => {
+    setSettingUpServerTTS(true)
+    try {
+      await api.post('/voice/tts/setup', {})
+      toast.success('Server TTS setup complete')
+      // Refresh status
+      const response = await api.get<
+        { data: { installed: boolean; state: string; error: string | null } },
+        { data: { installed: boolean; state: string; error: string | null } }
+      >('/voice/tts/status')
+      setServerTTSStatus(response.data)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Setup failed'
+      toast.error(`Server TTS setup failed: ${message}`)
+    } finally {
+      setSettingUpServerTTS(false)
+    }
+  }
 
   // Auto-save voice settings with debounce
   const saveVoiceSettings = useCallback(async (settings: VoiceSettings) => {
@@ -1193,13 +1248,77 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                         </Select>
                         <p className="text-[10px] text-muted-foreground">
                           {voiceSettings.tts?.provider === 'kokoro'
-                            ? 'High-quality 82M parameter model running in your browser'
+                            ? 'High-quality 82M parameter model for natural speech synthesis'
                             : 'Uses your browser\'s built-in speech synthesis'}
                         </p>
                       </div>
 
-                      {/* Kokoro Model Status - only show when Kokoro is selected */}
+                      {/* Kokoro Mode Selection - only show when Kokoro provider is selected */}
                       {voiceSettings.tts?.provider === 'kokoro' && (
+                        <div className="space-y-1">
+                          <Label className="text-xs">Kokoro Mode</Label>
+                          <Select
+                            value={voiceSettings.tts?.kokoroMode || 'browser'}
+                            onValueChange={(value) =>
+                              updateVoiceTTSSettings({ kokoroMode: value as 'browser' | 'server' })
+                            }
+                          >
+                            <SelectTrigger className="h-8 text-sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="browser">Browser (WASM)</SelectItem>
+                              <SelectItem value="server">Server (Streaming)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[10px] text-muted-foreground">
+                            {voiceSettings.tts?.kokoroMode === 'server'
+                              ? 'Uses server-side GPU for faster generation. Requires server to be running.'
+                              : 'Runs in your browser. Works offline but uses more browser resources.'}
+                          </p>
+
+                          {/* Server TTS Status - only show when server mode is selected */}
+                          {voiceSettings.tts?.kokoroMode === 'server' && serverTTSStatus && (
+                            <div className="mt-2 rounded-md border border-border bg-muted/30 p-2">
+                              {serverTTSStatus.installed ? (
+                                <div className="flex items-center gap-2">
+                                  <CheckCircle2 className="h-3 w-3 text-green-500" />
+                                  <span className="text-xs text-green-500">Server TTS ready</span>
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <AlertCircle className="h-3 w-3 text-amber-500" />
+                                    <span className="text-xs text-amber-500">Server TTS not set up</span>
+                                  </div>
+                                  <p className="text-[10px] text-muted-foreground">
+                                    Setup installs Python venv and Kokoro model (~500MB total).
+                                  </p>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs"
+                                    onClick={handleServerTTSSetup}
+                                    disabled={settingUpServerTTS}
+                                  >
+                                    {settingUpServerTTS ? (
+                                      <>
+                                        <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                                        Setting up...
+                                      </>
+                                    ) : (
+                                      'Setup Server TTS'
+                                    )}
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Kokoro Model Status - only show when Kokoro is selected and browser mode */}
+                      {voiceSettings.tts?.provider === 'kokoro' && voiceSettings.tts?.kokoroMode !== 'server' && (
                         <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
                           <div className="flex items-center justify-between">
                             <Label className="text-xs">Kokoro Model</Label>

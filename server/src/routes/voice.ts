@@ -20,6 +20,7 @@ import {
   TranscriptionError,
 } from "../services/stt-service.js";
 import { createWhisperLocalProvider } from "../services/stt-providers/whisper-local.js";
+import { getTTSSidecarManager } from "../services/tts-sidecar-manager.js";
 import type {
   VoiceConfig,
   STTOptions,
@@ -371,6 +372,87 @@ export function createVoiceRouter(): Router {
       return res.status(500).json({
         error: "Internal server error",
         message: "Failed to retrieve voice configuration",
+      });
+    }
+  });
+
+  /**
+   * GET /api/voice/tts/status
+   *
+   * Get the status of the server-side TTS (Kokoro sidecar).
+   *
+   * Response (200):
+   *   {
+   *     "installed": true,
+   *     "state": "ready" | "idle" | "installing" | "starting" | "error",
+   *     "venvPath": "/path/to/venv",
+   *     "error": null
+   *   }
+   */
+  router.get("/tts/status", async (_req: Request, res: Response) => {
+    try {
+      const sidecar = getTTSSidecarManager();
+      const installStatus = await sidecar.isInstalled();
+      const state = sidecar.getState();
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          installed: installStatus.installed,
+          state,
+          venvPath: installStatus.venvPath,
+          error: installStatus.error || null,
+        },
+      });
+    } catch (error) {
+      console.error("[voice] Error getting TTS status:", error);
+      return res.status(500).json({
+        error: "Internal server error",
+        message: "Failed to get TTS status",
+      });
+    }
+  });
+
+  /**
+   * POST /api/voice/tts/setup
+   *
+   * Initialize the server-side TTS environment.
+   * This installs the Python venv, kokoro-onnx, and downloads the model.
+   *
+   * Response (200):
+   *   {
+   *     "success": true,
+   *     "message": "TTS setup complete"
+   *   }
+   */
+  router.post("/tts/setup", async (_req: Request, res: Response) => {
+    try {
+      const sidecar = getTTSSidecarManager();
+
+      // Check if already installed
+      const status = await sidecar.isInstalled();
+      if (status.installed) {
+        return res.status(200).json({
+          success: true,
+          message: "TTS already set up",
+          alreadyInstalled: true,
+        });
+      }
+
+      // Run installation and startup
+      console.log("[voice] Starting TTS setup...");
+      await sidecar.ensureReady();
+      console.log("[voice] TTS setup complete");
+
+      return res.status(200).json({
+        success: true,
+        message: "TTS setup complete",
+      });
+    } catch (error) {
+      console.error("[voice] TTS setup failed:", error);
+      return res.status(500).json({
+        error: "Setup failed",
+        message: error instanceof Error ? error.message : "Unknown error",
       });
     }
   });

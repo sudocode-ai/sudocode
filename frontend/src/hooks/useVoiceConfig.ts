@@ -42,6 +42,8 @@ export interface VoiceConfigState {
   narration: NarrationSettings
   /** TTS provider to use (browser, kokoro, or openai) */
   ttsProvider: 'browser' | 'kokoro' | 'openai'
+  /** Kokoro execution mode: 'browser' for WASM, 'server' for streaming via sidecar */
+  kokoroMode: 'browser' | 'server'
   /** Whether voice is enabled for this project (from config.json) */
   voiceEnabled: boolean
   /** Whether Whisper server is available */
@@ -200,11 +202,15 @@ export function useVoiceConfig(): VoiceConfigState {
   // Get TTS provider from settings (default to browser)
   const ttsProvider = (settings?.tts?.provider as 'browser' | 'kokoro' | 'openai') ?? 'browser'
 
+  // Get Kokoro execution mode from settings (default to browser WASM)
+  const kokoroMode = (settings?.tts?.kokoroMode as 'browser' | 'server') ?? 'browser'
+
   return {
     config,
     settings,
     narration,
     ttsProvider,
+    kokoroMode,
     voiceEnabled,
     whisperAvailable,
     webSpeechSupported,

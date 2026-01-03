@@ -7,3 +7,4 @@ dist/
 .env
 .sudocode/merge-driver.log
 .cursor
+__pycache__/

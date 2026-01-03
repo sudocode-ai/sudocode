@@ -8,6 +8,7 @@ interface WebSocketContextValue {
   unsubscribe: (entityType: WebSocketSubscribeMessage['entity_type'], entityId?: string) => void
   addMessageHandler: (id: string, handler: (message: WebSocketMessage) => void) => void
   removeMessageHandler: (id: string) => void
+  sendMessage: (message: Record<string, unknown>) => boolean
 }
 
 const WebSocketContext = createContext<WebSocketContextValue | null>(null)
@@ -229,6 +230,19 @@ export function WebSocketProvider({
     messageHandlers.current.delete(id)
   }, [])
 
+  const sendMessage = useCallback((message: Record<string, unknown>): boolean => {
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      try {
+        ws.current.send(JSON.stringify(message))
+        return true
+      } catch (error) {
+        console.error('[WebSocket] Failed to send message:', error)
+        return false
+      }
+    }
+    return false
+  }, [])
+
   // Handle project switching: unsubscribe from old project, subscribe to new project
   useEffect(() => {
     const oldProjectId = prevProjectIdRef.current
@@ -279,6 +293,7 @@ export function WebSocketProvider({
     unsubscribe,
     addMessageHandler,
     removeMessageHandler,
+    sendMessage,
   }
 
   return <WebSocketContext.Provider value={value}>{children}</WebSocketContext.Provider>

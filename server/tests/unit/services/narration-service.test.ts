@@ -278,12 +278,29 @@ describe("NarrationService", () => {
       });
 
       it("should summarize long messages to key sentences", () => {
+        // Message must exceed 1000 characters to trigger summarization
         const longMessage = `
           I've analyzed the codebase and identified several areas for improvement.
           The authentication system needs refactoring to use modern patterns.
           Additionally, there are performance issues in the data fetching layer.
           I recommend implementing caching and optimizing database queries.
           Let me start by creating the new authentication module.
+
+          The first thing I'll do is review the existing authentication flow to understand
+          how users currently log in and what security measures are in place. This will
+          help us identify any vulnerabilities or areas where we can improve the user
+          experience. I'll also look at how session management is handled and whether
+          we're following best practices for token storage and validation.
+
+          After that, I'll examine the database queries in the data fetching layer to
+          identify any N+1 problems or inefficient joins that might be causing slow
+          performance. We can then implement proper caching strategies using Redis or
+          a similar in-memory store to reduce the load on the database and improve
+          response times for frequently accessed data.
+
+          Finally, I'll set up comprehensive testing to ensure our changes don't
+          introduce any regressions and that the new authentication module works
+          correctly across all edge cases.
         `.trim();
 
         const entry: NormalizedEntry = {
@@ -328,11 +345,19 @@ describe("NarrationService", () => {
       });
 
       it("should skip markdown headers when summarizing long content", () => {
-        // The content needs to be longer than maxAssistantMessageLength to trigger summarization
+        // The content needs to be longer than maxAssistantMessageLength (1000 chars) to trigger summarization
         const content = `
 # Header
 
 This is the actual content that should be narrated. It contains important information about the analysis that was performed. The system has identified several key areas that need attention and has prepared recommendations for improvement.
+
+The analysis revealed multiple performance bottlenecks in the current implementation. First, there are several N+1 query issues in the data access layer that are causing excessive database load. Second, the caching strategy is not optimized for the current access patterns, leading to cache misses and redundant computations.
+
+Additionally, the authentication flow could be streamlined to reduce the number of round trips between the client and server. The current implementation makes three separate API calls during login, which could be consolidated into a single request with proper backend orchestration.
+
+I also noticed that error handling is inconsistent across the codebase. Some modules use try-catch blocks while others rely on promise rejection handlers. Standardizing this would improve code maintainability and make it easier to implement centralized error reporting.
+
+The frontend components could benefit from better memoization to prevent unnecessary re-renders. Several components are re-rendering on every state change even when their props haven't changed, which impacts perceived performance on slower devices.
 `.trim();
 
         const entry: NormalizedEntry = {

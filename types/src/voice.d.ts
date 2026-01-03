@@ -63,6 +63,8 @@ export interface VoiceSettingsConfig {
     kokoroUrl?: string;
     /** Default voice for TTS (default: nova) */
     defaultVoice?: string;
+    /** Kokoro execution mode: 'browser' for WASM, 'server' for streaming via sidecar */
+    kokoroMode?: "browser" | "server";
   };
   /** Narration settings - controls voice narration playback */
   narration?: {
@@ -371,3 +373,89 @@ export interface TTSVoice {
   /** Provider that offers this voice */
   provider: TTSProviderType;
 }
+
+// =============================================================================
+// Streaming TTS WebSocket Messages
+// =============================================================================
+
+/**
+ * Client request to start TTS streaming
+ *
+ * Sent by the client to request text-to-speech synthesis.
+ * Server will respond with TTSAudioChunk messages followed by TTSStreamEnd.
+ */
+export interface TTSStreamRequest {
+  /** Message type identifier */
+  type: "tts_request";
+  /** Unique request ID for correlating responses */
+  request_id: string;
+  /** Text to synthesize */
+  text: string;
+  /** Voice identifier (optional, uses default if not specified) */
+  voice?: string;
+  /** Speech speed multiplier (0.5 to 2.0, default: 1.0) */
+  speed?: number;
+}
+
+/**
+ * Server response containing an audio chunk
+ *
+ * Streamed from server to client during TTS synthesis.
+ * Audio is base64-encoded PCM (mono, 24kHz, float32).
+ */
+export interface TTSAudioChunk {
+  /** Message type identifier */
+  type: "tts_audio";
+  /** Request ID this chunk belongs to */
+  request_id: string;
+  /** Base64-encoded PCM audio data (mono, 24kHz, float32) */
+  chunk: string;
+  /** Zero-based index of this chunk in the stream */
+  index: number;
+  /** Whether this is the final audio chunk */
+  is_final: boolean;
+}
+
+/**
+ * Server notification that TTS streaming has completed
+ *
+ * Sent after all audio chunks have been transmitted.
+ */
+export interface TTSStreamEnd {
+  /** Message type identifier */
+  type: "tts_end";
+  /** Request ID this end message belongs to */
+  request_id: string;
+  /** Total number of audio chunks sent */
+  total_chunks: number;
+  /** Total duration of synthesis in milliseconds */
+  duration_ms: number;
+}
+
+/**
+ * Server notification of a TTS error
+ *
+ * Sent when TTS synthesis fails or encounters an error.
+ */
+export interface TTSStreamError {
+  /** Message type identifier */
+  type: "tts_error";
+  /** Request ID this error belongs to */
+  request_id: string;
+  /** Human-readable error message */
+  error: string;
+  /** Whether the client can retry the request */
+  recoverable: boolean;
+  /** Whether the client should fall back to browser TTS */
+  fallback: boolean;
+}
+
+/**
+ * Union type for all TTS client messages
+ */
+export type TTSClientMessage = TTSStreamRequest;
+
+/**
+ * Union type for all TTS server messages
+ */
+export type TTSServerMessage = TTSAudioChunk | TTSStreamEnd | TTSStreamError;

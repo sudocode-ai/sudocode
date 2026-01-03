@@ -1,6 +1,12 @@
 import { WebSocketServer, WebSocket, RawData } from "ws";
 import * as http from "http";
 import { randomUUID } from "crypto";
+import {
+  getTTSSidecarManager,
+  SidecarAudioResponse,
+  SidecarDoneResponse,
+  SidecarErrorResponse,
+} from "./tts-sidecar-manager.js";
 
 const LOG_CONNECTIONS = false;
 
@@ -19,10 +25,15 @@ interface Client {
  * Message types that clients can send to the server
  */
 interface ClientMessage {
-  type: "subscribe" | "unsubscribe" | "ping";
+  type: "subscribe" | "unsubscribe" | "ping" | "tts_request";
   project_id?: string; // Project ID for project-scoped subscriptions
   entity_type?: "issue" | "spec" | "execution" | "workflow" | "all";
   entity_id?: string;
+  // TTS request fields (when type is "tts_request")
+  request_id?: string;
+  text?: string;
+  voice?: string;
+  speed?: number;
 }
 
 /**
@@ -64,11 +75,25 @@ export interface ServerMessage {
     | "pong"
     | "error"
     | "subscribed"
-    | "unsubscribed";
+    | "unsubscribed"
+    // TTS streaming message types
+    | "tts_audio"
+    | "tts_end"
+    | "tts_error";
   projectId?: string; // Project ID for project-scoped messages
   data?: any;
   message?: string;
   subscription?: string;
+  // TTS-specific fields (populated when type is tts_audio, tts_end, or tts_error)
+  request_id?: string;
+  chunk?: string; // Base64 PCM audio (for tts_audio)
+  index?: number; // Chunk index (for tts_audio)
+  is_final?: boolean; // Final chunk flag (for tts_audio)
+  total_chunks?: number; // Total chunks sent (for tts_end)
+  duration_ms?: number; // Synthesis duration (for tts_end)
+  error?: string; // Error message (for tts_error)
+  recoverable?: boolean; // Can retry (for tts_error)
+  fallback?: boolean; // Should fallback to browser TTS (for tts_error)
 }
 
 /**
@@ -214,6 +239,10 @@ class WebSocketManager {
           this.sendToClient(clientId, { type: "pong" });
           break;
 
+        case "tts_request":
+          this.handleTTSRequest(clientId, message);
+          break;
+
         default:
           this.sendToClient(clientId, {
             type: "error",
@@ -329,6 +358,127 @@ class WebSocketManager {
       subscription,
       message: `Unsubscribed from ${subscription}`,
     });
+  }
+
+  /**
+   * Handle TTS request from client
+   * Streams audio chunks from the sidecar back to the client
+   */
+  private async handleTTSRequest(
+    clientId: string,
+    message: ClientMessage
+  ): Promise<void> {
+    const client = this.clients.get(clientId);
+    if (!client) {
+      return;
+    }
+
+    // Validate required fields
+    const requestId = message.request_id;
+    const text = message.text;
+
+    if (!requestId) {
+      this.sendToClient(clientId, {
+        type: "tts_error",
+        request_id: requestId,
+        error: "request_id is required",
+        recoverable: false,
+        fallback: true,
+      });
+      return;
+    }
+
+    if (!text) {
+      this.sendToClient(clientId, {
+        type: "tts_error",
+        request_id: requestId,
+        error: "text is required",
+        recoverable: false,
+        fallback: true,
+      });
+      return;
+    }
+
+    // Get sidecar manager
+    const sidecar = getTTSSidecarManager();
+
+    // Set up event listeners for this specific request
+    let chunkCount = 0;
+    const startTime = Date.now();
+
+    const audioHandler = (response: SidecarAudioResponse) => {
+      if (response.id !== requestId) return;
+      chunkCount++;
+      this.sendToClient(clientId, {
+        type: "tts_audio",
+        request_id: requestId,
+        chunk: response.chunk,
+        index: response.index,
+        is_final: false,
+      });
+    };
+
+    const doneHandler = (response: SidecarDoneResponse) => {
+      if (response.id !== requestId) return;
+      const durationMs = Date.now() - startTime;
+      this.sendToClient(clientId, {
+        type: "tts_end",
+        request_id: requestId,
+        total_chunks: response.total_chunks,
+        duration_ms: durationMs,
+      });
+      cleanup();
+    };
+
+    const errorHandler = (response: SidecarErrorResponse) => {
+      if (response.id !== requestId) return;
+      this.sendToClient(clientId, {
+        type: "tts_error",
+        request_id: requestId,
+        error: response.error,
+        recoverable: response.recoverable,
+        fallback: !response.recoverable,
+      });
+      cleanup();
+    };
+
+    const cleanup = () => {
+      sidecar.off("audio", audioHandler);
+      sidecar.off("done", doneHandler);
+      sidecar.off("error", errorHandler);
+    };
+
+    // Subscribe to sidecar events
+    sidecar.on("audio", audioHandler);
+    sidecar.on("done", doneHandler);
+    sidecar.on("error", errorHandler);
+
+    try {
+      // Ensure sidecar is ready (installs if needed, starts if not running)
+      await sidecar.ensureReady();
+
+      // Send generate request to sidecar
+      await sidecar.generate({
+        id: requestId,
+        text: text,
+        voice: message.voice,
+        speed: message.speed,
+      });
+    } catch (error) {
+      // Sidecar unavailable - tell client to fallback to browser TTS
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      console.error(`[websocket] TTS request failed for ${clientId}:`, errorMessage);
+
+      this.sendToClient(clientId, {
+        type: "tts_error",
+        request_id: requestId,
+        error: `TTS sidecar unavailable: ${errorMessage}`,
+        recoverable: false,
+        fallback: true,
+      });
+      cleanup();
+    }
   }
 
   /**

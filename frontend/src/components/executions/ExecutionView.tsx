@@ -106,7 +106,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
   } = useExecutionSync()
 
   // Get voice configuration from config.json
-  const { voiceEnabled, narration, ttsProvider, isLoading: voiceConfigLoading } = useVoiceConfig()
+  const { voiceEnabled, narration, ttsProvider, kokoroMode, isLoading: voiceConfigLoading } = useVoiceConfig()
 
   // Voice narration for the current execution
   // Only enable if:
@@ -118,6 +118,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
     executionId,
     enabled: narrationEnabled,
     ttsProvider,
+    kokoroMode,
     voice: narration.voice,
     rate: narration.speed,
     volume: narration.volume,
