@@ -72,34 +72,20 @@ function parseTimingLog(logPath) {
     finalTree: 0
   };
 
-  // npm timing logs store data in a nested structure
-  // We need to extract timing information from the timers object
+  // npm timing logs store top-level phase times
+  // Use exact key matches to avoid summing nested timers
   if (timingData.timers) {
-    for (const [key, value] of Object.entries(timingData.timers)) {
-      // idealTree phase
-      if (key.startsWith('idealTree')) {
-        phases.idealTree += value;
-      }
-      // reifyNode phase
-      else if (key.startsWith('reifyNode')) {
-        phases.reifyNode += value;
-      }
-      // build phase
-      else if (key.startsWith('build')) {
-        phases.build += value;
-      }
-      // preinstall scripts
-      else if (key.includes('preinstall')) {
-        phases.preinstall += value;
-      }
-      // postinstall scripts
-      else if (key.includes('postinstall')) {
-        phases.postinstall += value;
-      }
-      // finalTree phase
-      else if (key.startsWith('finalTree')) {
-        phases.finalTree += value;
-      }
+    // Only use the top-level timer for each phase (exact match)
+    phases.idealTree = timingData.timers['idealTree'] || 0;
+    phases.reifyNode = timingData.timers['reifyNode'] || 0;
+    phases.build = timingData.timers['build'] || 0;
+    phases.preinstall = timingData.timers['preinstall'] || 0;
+    phases.postinstall = timingData.timers['postinstall'] || 0;
+    phases.finalTree = timingData.timers['finalTree'] || 0;
+
+    // Also check for 'reify' which is the parent of reifyNode
+    if (!phases.reifyNode && timingData.timers['reify']) {
+      phases.reifyNode = timingData.timers['reify'];
     }
   }
 
