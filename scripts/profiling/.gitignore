@@ -1,8 +1,0 @@
-# Verdaccio storage directory
-storage/
-
-# Verdaccio htpasswd file
-htpasswd
-
-# Benchmark results (optional - can be committed for tracking)
-results/*.json
