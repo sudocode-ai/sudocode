@@ -44,14 +44,24 @@ jobs:
       - name: Create tarball
         id: pack
         run: |
+          cd sudocode
           TARBALL=$(npm pack)
+          mv $TARBALL ..
+          cd ..
           echo "tarball=$TARBALL" >> $GITHUB_OUTPUT
 
       - name: Run profiling script
         env:
           SCENARIO: ${{ matrix.scenario }}
-          TARBALL_PATH: ${{ steps.pack.outputs.tarball }}
-        run: node scripts/profiling/benchmark.cjs
+          TARBALL_FILENAME: ${{ steps.pack.outputs.tarball }}
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          # Clear npm cache again to ensure clean install
+          npm cache clean --force
+
+          # Run from /tmp to avoid workspace node_modules contamination
+          cd /tmp
+          TARBALL_PATH="${WORKSPACE}/${TARBALL_FILENAME}" node "${WORKSPACE}/scripts/profiling/benchmark.cjs"
 
       - name: Upload results artifact
         uses: actions/upload-artifact@v4
