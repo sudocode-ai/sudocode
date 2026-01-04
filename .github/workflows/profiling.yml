@@ -9,11 +9,10 @@ on:
       - 'v*.*.*'
 
 jobs:
-  profile:
-    runs-on: macos-14
-    strategy:
-      matrix:
-        scenario: [fresh-install, dev-environment]
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      tarball: ${{ steps.pack.outputs.tarball }}
 
     steps:
       - name: Checkout code
@@ -23,17 +22,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
-
-      - name: Environment Setup - Fresh Install
-        if: matrix.scenario == 'fresh-install'
-        run: npm cache clean --force
-
-      - name: Environment Setup - Dev Environment
-        if: matrix.scenario == 'dev-environment'
-        run: |
-          npm cache clean --force
-          npm install -g typescript eslint prettier
+          # CRITICAL: No cache to avoid contaminating profile job
 
       - name: Install dependencies
         run: npm install
@@ -50,18 +39,55 @@ jobs:
           cd ..
           echo "tarball=$TARBALL" >> $GITHUB_OUTPUT
 
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: sudocode-tarball
+          path: sudocode-*.tgz
+          retention-days: 1
+
+  profile:
+    needs: build
+    runs-on: macos-14
+    strategy:
+      matrix:
+        scenario: [fresh-install, dev-environment]
+
+    steps:
+      - name: Download tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: sudocode-tarball
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # CRITICAL: No cache to ensure clean environment
+
+      - name: Checkout profiling scripts only
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/profiling
+          sparse-checkout-cone-mode: false
+
+      - name: Environment Setup - Fresh Install
+        if: matrix.scenario == 'fresh-install'
+        run: npm cache clean --force
+
+      - name: Environment Setup - Dev Environment
+        if: matrix.scenario == 'dev-environment'
+        run: |
+          npm cache clean --force
+          npm install -g typescript eslint prettier
+
       - name: Run profiling script
         env:
           SCENARIO: ${{ matrix.scenario }}
-          TARBALL_FILENAME: ${{ steps.pack.outputs.tarball }}
-          WORKSPACE: ${{ github.workspace }}
         run: |
-          # Clear npm cache again to ensure clean install
-          npm cache clean --force
-
-          # Run from /tmp to avoid workspace node_modules contamination
-          cd /tmp
-          TARBALL_PATH="${WORKSPACE}/${TARBALL_FILENAME}" node "${WORKSPACE}/scripts/profiling/benchmark.cjs"
+          TARBALL_PATH=$(ls sudocode-*.tgz)
+          node scripts/profiling/benchmark.cjs
 
       - name: Upload results artifact
         uses: actions/upload-artifact@v4
