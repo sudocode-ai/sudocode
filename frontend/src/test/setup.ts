@@ -5,6 +5,23 @@ import * as matchers from '@testing-library/jest-dom/matchers'
 // Extend Vitest's expect with jest-dom matchers
 expect.extend(matchers)
 
+// Global mock for kokoro-js to prevent WASM loading in tests
+// Individual tests can override this mock as needed
+vi.mock('kokoro-js', () => ({
+  KokoroTTS: {
+    from_pretrained: vi.fn().mockResolvedValue({
+      generate: vi.fn().mockResolvedValue({
+        audio: new Float32Array([0]),
+        sampling_rate: 24000,
+      }),
+      voices: {
+        af_heart: { name: 'Heart', language: 'en-US', gender: 'female' },
+        am_adam: { name: 'Adam', language: 'en-US', gender: 'male' },
+      },
+    }),
+  },
+}))
+
 // Suppress noisy console warnings during tests
 const originalError = console.error
 const originalWarn = console.warn

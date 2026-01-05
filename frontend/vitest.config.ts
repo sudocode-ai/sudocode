@@ -12,6 +12,7 @@ export default defineConfig({
     css: true,
     reporters: ['default'],
     hideSkippedTests: true,
+    exclude: ['**/node_modules/**', '**/dist/**', '**/tests/e2e/**'],
   },
   resolve: {
     alias: {

@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import * as path from "path";
 import type { IntegrationsConfig } from "@sudocode-ai/types";
+import type { VoiceSettingsConfig } from "@sudocode-ai/types/voice";
 import {
   validateIntegrationsConfig,
   testProviderConnection as pluginTestConnection,
@@ -134,6 +135,53 @@ export function createConfigRouter(): Router {
     } catch (error) {
       console.error("Failed to test provider:", error);
       res.status(500).json({ error: "Failed to test provider" });
+    }
+  });
+
+  // Note: Voice settings are READ via /api/voice/config (combined endpoint)
+  // but WRITTEN via this endpoint to update config.json
+
+  // PUT /api/config/voice - update voice settings in config.json
+  router.put("/voice", (req: Request, res: Response) => {
+    try {
+      const voice = req.body as VoiceSettingsConfig;
+
+      // Basic validation
+      if (voice.enabled !== undefined && typeof voice.enabled !== "boolean") {
+        res.status(400).json({
+          error: "Invalid voice configuration",
+          message: "'enabled' must be a boolean",
+        });
+        return;
+      }
+
+      if (voice.stt) {
+        if (
+          voice.stt.provider &&
+          !["whisper-local", "openai"].includes(voice.stt.provider)
+        ) {
+          res.status(400).json({
+            error: "Invalid voice configuration",
+            message: "Invalid STT provider",
+          });
+          return;
+        }
+      }
+
+      // Read existing config and update voice section
+      const config = readConfig(req.project!.sudocodeDir);
+      config.voice = voice;
+
+      // Write updated config
+      writeConfig(req.project!.sudocodeDir, config);
+
+      res.status(200).json({
+        success: true,
+        data: voice,
+      });
+    } catch (error) {
+      console.error("Failed to update voice config:", error);
+      res.status(500).json({ success: false, message: "Failed to update voice config" });
     }
   });
 

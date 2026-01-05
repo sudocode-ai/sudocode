@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   Settings,
   ArrowDown,
@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/select'
 import { repositoryApi } from '@/lib/api'
 import type { ExecutionConfig, ExecutionMode, Execution } from '@/types/execution'
+import { VoiceInputButton } from '@/components/voice'
 import { AgentSettingsDialog } from './AgentSettingsDialog'
 import { CommitChangesDialog } from './CommitChangesDialog'
 import { CleanupWorktreeDialog } from './CleanupWorktreeDialog'
@@ -29,6 +30,7 @@ import { useAgents } from '@/hooks/useAgents'
 import { useProject } from '@/hooks/useProject'
 import { useAgentActions } from '@/hooks/useAgentActions'
 import { useWorktrees } from '@/hooks/useWorktrees'
+import { useVoiceConfig } from '@/hooks/useVoiceConfig'
 import type { CodexConfig } from './CodexConfigForm'
 import type { CopilotConfig } from './CopilotConfigForm'
 
@@ -414,6 +416,9 @@ export function AgentConfigPanel({
   // Fetch available worktrees for worktree-based creation
   const { worktrees } = useWorktrees()
 
+  // Get voice configuration to conditionally show voice input
+  const { voiceEnabled } = useVoiceConfig()
+
   // Check if the current execution's worktree has been cleaned up
   // If the execution was a worktree execution but the worktree no longer exists,
   // we can't follow up and must start a new execution
@@ -696,13 +701,48 @@ export function AgentConfigPanel({
     // Shift+Enter creates newline (default behavior, no need to handle)
   }
 
+  // Voice input state for live transcription
+  const voiceBasePromptRef = useRef<string>('')
+  const currentPromptRef = useRef<string>(prompt)
+  const isRecordingRef = useRef<boolean>(false)
+
+  // Keep prompt ref in sync (only when not recording)
+  useEffect(() => {
+    if (!isRecordingRef.current) {
+      currentPromptRef.current = prompt
+    }
+  }, [prompt])
+
+  // Called when recording starts - save the current prompt as base
+  const handleVoiceRecordingStart = useCallback(() => {
+    isRecordingRef.current = true
+    voiceBasePromptRef.current = currentPromptRef.current
+  }, [])
+
+  // Called for interim/cumulative results - update prompt live
+  // Note: useVoiceInput now sends cumulative transcript (all finals + current interim)
+  const handleVoiceInterimResult = useCallback((cumulativeText: string) => {
+    const base = voiceBasePromptRef.current
+    const separator = base && !base.endsWith(' ') && !base.endsWith('\n') ? ' ' : ''
+    const newPrompt = base + separator + cumulativeText
+    setPrompt(newPrompt)
+    // Keep currentPromptRef in sync so it has the latest value when recording stops
+    currentPromptRef.current = newPrompt
+  }, [])
+
+  // Called when recording stops - just mark as done
+  // The prompt is already up-to-date from interim results, so we don't need to update it
+  const handleVoiceTranscription = useCallback((_text: string) => {
+    isRecordingRef.current = false
+  }, [])
+
   // Allow empty prompts for first messages (not follow-ups) when there's an issue
   // For follow-ups or adhoc executions (no issueId), require a prompt
   // Note: We don't block based on agent availability - we just show warnings
   // Users can still attempt to run unavailable agents (will fail at execution time)
   const canStart = !loading && (prompt.trim().length > 0 || (!isFollowUp && !!issueId)) && !disabled
 
-  // Compact mode: inline textarea with submit/cancel button
+  // Compact mode: inline textarea with voice input and submit/cancel button
   if (variant === 'compact') {
     return (
       <div className="flex items-center gap-2">
@@ -725,6 +765,17 @@ export function AgentConfigPanel({
           />
         </div>
         <TooltipProvider>
+          {/* Voice Input Button - only shown when voice is enabled */}
+          {voiceEnabled && (
+            <VoiceInputButton
+              onTranscription={handleVoiceTranscription}
+              onRecordingStart={handleVoiceRecordingStart}
+              onInterimResult={handleVoiceInterimResult}
+              disabled={loading || disabled || isRunning}
+              size="sm"
+            />
+          )}
+          {/* Submit/Cancel Button */}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -758,7 +809,7 @@ export function AgentConfigPanel({
   }
 
   return (
-    <div className="space-y-2 py-2">
+    <div className="space-y-2 px-2 py-2 xl:px-0">
       {/* Contextual Actions */}
       {!disableContextualActions && hasActions && (
         <div className="flex items-center justify-end gap-2">
@@ -980,6 +1031,17 @@ export function AgentConfigPanel({
                   : 'Advanced settings'}
               </TooltipContent>
             </Tooltip>
+
+            {/* Voice Input Button - only shown when voice is enabled */}
+            {voiceEnabled && (
+              <VoiceInputButton
+                onTranscription={handleVoiceTranscription}
+                onRecordingStart={handleVoiceRecordingStart}
+                onInterimResult={handleVoiceInterimResult}
+                disabled={loading || disabled || isRunning}
+                size="default"
+              />
+            )}
 
             {/* Submit/Cancel Button - Round button that changes based on state */}
             <Tooltip>

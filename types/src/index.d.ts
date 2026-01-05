@@ -3,6 +3,7 @@
  */
 
 import type { IntegrationsConfig } from "./integrations.js";
+import type { VoiceSettingsConfig } from "./voice.js";
 
 // =============================================================================
 // Integration Types (External Links)
@@ -297,6 +298,8 @@ export interface Config {
   integrations?: IntegrationsConfig;
   /** Editor configuration (optional) */
   editor?: EditorConfig;
+  /** Voice configuration (optional) */
+  voice?: VoiceSettingsConfig;
 }
 
 /**
@@ -450,3 +453,37 @@ export type {
   SearchOptions,
   SearchResult,
 } from "./integrations.js";
+
+/**
+ * Voice types for STT/TTS functionality
+ * See voice.d.ts for detailed voice types
+ */
+export type {
+  // Provider types
+  STTProvider,
+  TTSProvider,
+  // STT types
+  TranscriptionResult,
+  STTOptions,
+  // TTS types
+  TTSOptions,
+  SynthesizeRequest,
+  SynthesizeResponse,
+  // Voice input state types
+  VoiceInputState,
+  VoiceInputErrorCode,
+  VoiceInputError,
+  // API request/response types
+  TranscribeRequest,
+  TranscribeResponse,
+  // Configuration types
+  STTConfig,
+  TTSConfig,
+  VoiceConfig,
+  // Narration event types
+  NarrationCategory,
+  NarrationPriority,
+  VoiceNarrationEvent,
+  // User preferences
+  VoicePreferences,
+} from "./voice.js";

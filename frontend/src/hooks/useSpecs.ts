@@ -138,11 +138,12 @@ export function useSpec(id: string) {
   })
 
   // Message handler for WebSocket updates to this specific spec
+  // Note: Using primitive values instead of queryKey array to avoid unstable reference
   const handleMessage = useCallback((message: WebSocketMessage) => {
     if (message.type === 'spec_updated' && (message.data as Spec).id === id) {
-      queryClient.invalidateQueries({ queryKey })
+      queryClient.invalidateQueries({ queryKey: ['spec', currentProjectId, id] })
     }
-  }, [queryKey, queryClient])
+  }, [id, currentProjectId, queryClient])
 
   useEffect(() => {
     if (!id) return
@@ -187,15 +188,16 @@ export function useSpecFeedback(specId: string) {
   })
 
   // Message handler for feedback updates
+  // Note: Using primitive values instead of queryKey array to avoid unstable reference
   const handleMessage = useCallback((message: WebSocketMessage) => {
     if (
       message.type === 'feedback_created' ||
       message.type === 'feedback_updated' ||
       message.type === 'feedback_deleted'
     ) {
-      queryClient.invalidateQueries({ queryKey })
+      queryClient.invalidateQueries({ queryKey: ['feedback', currentProjectId, specId] })
     }
-  }, [queryKey, queryClient])
+  }, [specId, currentProjectId, queryClient])
 
   // Subscribe to all updates (including feedback) when connected
   useEffect(() => {

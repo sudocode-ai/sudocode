@@ -12,9 +12,11 @@ import {
   parseMergeConflictFile,
   resolveEntities,
   mergeThreeWay,
+  type ResolutionStats,
 } from "../merge-resolver.js";
 import { readJSONL, writeJSONL, type JSONLEntity } from "../jsonl.js";
 import { importFromJSONL } from "../import.js";
+import { readGitStage } from "../git-merge.js";
 
 export interface CommandContext {
   db: Database.Database;
@@ -121,46 +123,165 @@ export async function handleResolveConflicts(
 
 /**
  * Resolve conflicts in a single JSONL file
+ *
+ * This function attempts TRUE THREE-WAY merge when possible by reading the
+ * base, ours, and theirs versions from git index stages. This enables
+ * line-level merging via the YAML three-way merge pipeline.
+ *
+ * STRATEGY:
+ * 1. Try to read base/ours/theirs from git index (stages 1/2/3)
+ * 2. If all three available → use mergeThreeWay (YAML-based three-way merge)
+ * 3. If base unavailable → fall back to resolveEntities (two-way latest-wins)
+ *
+ * Why prefer three-way merge?
+ * - Line-level merging for multi-line text fields (description, content, feedback)
+ * - Auto-merges changes to different paragraphs/sections
+ * - Reduces conflicts to genuine same-line edits
+ * - Consistent behavior with git merge driver
+ *
+ * When does fallback to two-way happen?
+ * - Git index cleared (rare edge case)
+ * - Manual edits outside of git merge (no index stages)
  */
 async function resolveFile(
   filePath: string,
   entityType: "issue" | "spec",
   options: ResolveConflictsOptions
 ): Promise<ResolveFileResult> {
+  // Try to read from git index stages (base, ours, theirs)
+  const baseContent = readGitStage(filePath, 1); // stage 1 = base
+  const oursContent = readGitStage(filePath, 2); // stage 2 = ours
+  const theirsContent = readGitStage(filePath, 3); // stage 3 = theirs
+
+  // Debug logging
+  if (options.verbose) {
+    console.log(chalk.cyan(`  Attempting to read git stages for: ${filePath}`));
+    console.log(chalk.cyan(`  Base stage: ${baseContent !== null ? 'found' : 'not found'}`));
+    console.log(chalk.cyan(`  Ours stage: ${oursContent !== null ? 'found' : 'not found'}`));
+    console.log(chalk.cyan(`  Theirs stage: ${theirsContent !== null ? 'found' : 'not found'}`));
+  }
+
+  // Parse JSONL content from git stages
+  const parseJSONLContent = (content: string | null): JSONLEntity[] => {
+    if (!content) return [];
+
+    const entities: JSONLEntity[] = [];
+    const lines = content.split('\n');
+
+    for (const line of lines) {
+      if (line.trim()) {
+        try {
+          entities.push(JSON.parse(line));
+        } catch (e) {
+          console.warn(
+            chalk.yellow(
+              `Warning: Skipping malformed line: ${line.slice(0, 50)}...`
+            )
+          );
+        }
+      }
+    }
+
+    return entities;
+  };
+
+  // If we have base, ours, and theirs → use TRUE three-way merge
+  if (baseContent !== null && oursContent !== null && theirsContent !== null) {
+    const baseEntities = parseJSONLContent(baseContent);
+    const oursEntities = parseJSONLContent(oursContent);
+    const theirsEntities = parseJSONLContent(theirsContent);
+
+    if (options.verbose) {
+      console.log(chalk.cyan('  Using three-way merge (YAML-based)'));
+      console.log(chalk.cyan(`    Base: ${baseEntities.length} entities`));
+      console.log(chalk.cyan(`    Ours: ${oursEntities.length} entities`));
+      console.log(chalk.cyan(`    Theirs: ${theirsEntities.length} entities`));
+    }
+
+    const { entities: resolved, stats } = mergeThreeWay(
+      baseEntities,
+      oursEntities,
+      theirsEntities
+    );
+
+    // Write back if not dry-run
+    if (!options.dryRun) {
+      await writeJSONL(filePath, resolved);
+    }
+
+    return { stats, entityType };
+  }
+
+  // FALLBACK: No base available → use entity-level conflict detection
+  if (options.verbose) {
+    console.log(
+      chalk.yellow(
+        '  Warning: Base version unavailable, using entity-level conflict detection'
+      )
+    );
+  }
+
   // Read file with conflict markers
   const content = fs.readFileSync(filePath, "utf8");
 
   // Parse conflicts
   const sections = parseMergeConflictFile(content);
 
-  // Extract all entities (from both clean and conflict sections)
-  const allEntities: JSONLEntity[] = [];
+  // OPTIMIZATION: Avoid parsing clean entities
+  //
+  // Performance improvement: Only parse entities that are actually in conflict.
+  // Clean entities (not in conflict sections) are kept as raw JSON strings and
+  // passed through without expensive JSON.parse() calls.
+  //
+  // Example: File with 1000 entities and 2 conflicts
+  //   Before: Parse 1000 entities (100% overhead)
+  //   After:  Parse 2 entities (0.2% overhead)
+  //
+  // The optimization works by:
+  // 1. Keeping clean lines as raw strings (no parsing)
+  // 2. Extracting created_at via regex for sorting (lightweight)
+  // 3. Merging sorted clean lines with sorted processed entities
+  // 4. Writing output without re-parsing clean entities
+  const cleanLines: string[] = [];
+
+  // Extract entities from conflict sections, grouped by UUID
+  const oursEntitiesByUuid = new Map<string, JSONLEntity>();
+  const theirsEntitiesByUuid = new Map<string, JSONLEntity>();
 
   for (const section of sections) {
     if (section.type === "clean") {
+      // Don't parse - just keep raw lines
       for (const line of section.lines) {
         if (line.trim()) {
+          cleanLines.push(line);
+        }
+      }
+    } else {
+      // Conflict section - parse entities by UUID
+      for (const line of section.ours || []) {
+        if (line.trim()) {
           try {
-            allEntities.push(JSON.parse(line));
+            const entity = JSON.parse(line);
+            oursEntitiesByUuid.set(entity.uuid, entity);
           } catch (e) {
             console.warn(
               chalk.yellow(
-                `Warning: Skipping malformed line: ${line.slice(0, 50)}...`
+                `Warning: Skipping malformed line in ours: ${line.slice(0, 50)}...`
               )
             );
           }
         }
       }
-    } else {
-      // Conflict section - include both ours and theirs
-      for (const line of [...(section.ours || []), ...(section.theirs || [])]) {
+
+      for (const line of section.theirs || []) {
         if (line.trim()) {
           try {
-            allEntities.push(JSON.parse(line));
+            const entity = JSON.parse(line);
+            theirsEntitiesByUuid.set(entity.uuid, entity);
           } catch (e) {
             console.warn(
               chalk.yellow(
-                `Warning: Skipping malformed line: ${line.slice(0, 50)}...`
+                `Warning: Skipping malformed line in theirs: ${line.slice(0, 50)}...`
               )
             );
           }
@@ -169,17 +290,219 @@ async function resolveFile(
     }
   }
 
-  // Resolve conflicts
-  const { entities: resolved, stats } = resolveEntities(allEntities, {
-    verbose: options.verbose,
+  // Separate clean additions from true conflicts
+  const allUuids = new Set([
+    ...Array.from(oursEntitiesByUuid.keys()),
+    ...Array.from(theirsEntitiesByUuid.keys())
+  ]);
+
+  const conflictingEntities: JSONLEntity[] = [];
+  const cleanConflictLines: string[] = []; // Clean additions from conflict sections
+
+  for (const uuid of Array.from(allUuids)) {
+    const oursEntity = oursEntitiesByUuid.get(uuid);
+    const theirsEntity = theirsEntitiesByUuid.get(uuid);
+
+    if (oursEntity && theirsEntity) {
+      // Both sides have this UUID → true conflict, resolve it
+      conflictingEntities.push(oursEntity, theirsEntity);
+    } else if (oursEntity) {
+      // Only in ours → clean addition (keep as raw line)
+      cleanConflictLines.push(JSON.stringify(oursEntity));
+    } else if (theirsEntity) {
+      // Only in theirs → clean addition (keep as raw line)
+      cleanConflictLines.push(JSON.stringify(theirsEntity));
+    }
+  }
+
+  // Resolve only the true conflicts (entities with matching UUIDs)
+  let resolvedConflicts: JSONLEntity[] = [];
+  let conflictStats: ResolutionStats = {
+    totalInput: 0,
+    totalOutput: 0,
+    conflicts: []
+  };
+
+  if (conflictingEntities.length > 0) {
+    const resolved = resolveEntities(conflictingEntities, {
+      verbose: options.verbose,
+    });
+    resolvedConflicts = resolved.entities;
+    conflictStats = resolved.stats;
+  }
+
+  // Handle ID collisions across ALL entities (clean + resolved)
+  // This detects hash collisions where different UUIDs share the same ID
+
+  // First, parse clean conflict lines to check for ID collisions
+  const cleanConflictEntities: JSONLEntity[] = [];
+  for (const line of cleanConflictLines) {
+    try {
+      cleanConflictEntities.push(JSON.parse(line));
+    } catch (e) {
+      console.warn(
+        chalk.yellow(`Warning: Skipping malformed clean conflict line: ${line.slice(0, 50)}...`)
+      );
+    }
+  }
+
+  // Combine all entities that need ID collision checking
+  const allEntitiesToCheck = [...cleanConflictEntities, ...resolvedConflicts];
+
+  // Track IDs to detect collisions
+  const idCounts = new Map<string, number>();
+  const processedEntities: JSONLEntity[] = [];
+
+  for (const entity of allEntitiesToCheck) {
+    const currentId = entity.id;
+
+    if (!idCounts.has(currentId)) {
+      // First entity with this ID
+      idCounts.set(currentId, 1);
+      processedEntities.push(entity);
+    } else {
+      // ID collision - rename with suffix
+      const count = idCounts.get(currentId)!;
+      const newEntity = { ...entity } as JSONLEntity;
+      const newId = `${currentId}.${count}`;
+      newEntity.id = newId;
+
+      idCounts.set(currentId, count + 1);
+      processedEntities.push(newEntity);
+
+      conflictStats.conflicts.push({
+        type: 'different-uuids',
+        uuid: entity.uuid,
+        originalIds: [currentId],
+        resolvedIds: [newId],
+        action: `Renamed ID to resolve hash collision (different UUIDs)`,
+      });
+    }
+  }
+
+  // Sort processed entities by created_at before converting to lines
+  processedEntities.sort((a, b) => {
+    const aDate = a.created_at || "";
+    const bDate = b.created_at || "";
+    if (aDate < bDate) return -1;
+    if (aDate > bDate) return 1;
+    return (a.id || "").localeCompare(b.id || "");
   });
+
+  // Convert processed entities back to lines (for entities that came from cleanConflictLines or resolvedConflicts)
+  const processedLines = processedEntities.map(e => JSON.stringify(e));
+
+  // Combine all clean lines (truly clean + processed conflict additions/resolutions)
+  const allCleanLines = [...cleanLines, ...processedLines];
+
+  // OPTIMIZATION: Merge sorted clean lines with processed entities
+  // Extract created_at from raw lines using regex (lightweight - no full parse)
+  const cleanLinesWithTimestamp = cleanLines.map(line => {
+    const match = line.match(/"created_at":"([^"]+)"/);
+    return {
+      line,
+      timestamp: match ? match[1] : ''
+    };
+  });
+
+  // Extract timestamps from processed lines too
+  const processedLinesWithTimestamp = processedLines.map(line => {
+    const match = line.match(/"created_at":"([^"]+)"/);
+    return {
+      line,
+      timestamp: match ? match[1] : ''
+    };
+  });
+
+  // Verify clean lines are sorted
+  const isSorted = cleanLinesWithTimestamp.every((item, i) =>
+    i === 0 || cleanLinesWithTimestamp[i - 1].timestamp <= item.timestamp
+  );
+
+  let outputLines: string[];
+
+  if (isSorted && processedLinesWithTimestamp.length === 0) {
+    // Fast path: No conflicts to merge, clean lines already sorted
+    outputLines = cleanLines;
+  } else if (isSorted) {
+    // Merge sorted clean lines with processed entities
+    // Merge two sorted arrays
+    outputLines = [];
+    let cleanIdx = 0;
+    let processedIdx = 0;
+
+    while (cleanIdx < cleanLinesWithTimestamp.length || processedIdx < processedLinesWithTimestamp.length) {
+      if (cleanIdx >= cleanLinesWithTimestamp.length) {
+        // Only processed lines left
+        outputLines.push(processedLinesWithTimestamp[processedIdx].line);
+        processedIdx++;
+      } else if (processedIdx >= processedLinesWithTimestamp.length) {
+        // Only clean lines left
+        outputLines.push(cleanLinesWithTimestamp[cleanIdx].line);
+        cleanIdx++;
+      } else {
+        // Compare timestamps
+        const cleanTimestamp = cleanLinesWithTimestamp[cleanIdx].timestamp;
+        const processedTimestamp = processedLinesWithTimestamp[processedIdx].timestamp;
+
+        if (cleanTimestamp <= processedTimestamp) {
+          outputLines.push(cleanLinesWithTimestamp[cleanIdx].line);
+          cleanIdx++;
+        } else {
+          outputLines.push(processedLinesWithTimestamp[processedIdx].line);
+          processedIdx++;
+        }
+      }
+    }
+  } else {
+    // Fallback: Clean lines not sorted - parse everything and sort
+    if (options.verbose) {
+      console.log(chalk.yellow('  Warning: Clean lines not sorted, falling back to full parse'));
+    }
+
+    const allEntities: JSONLEntity[] = [];
+
+    // Parse clean lines
+    for (const line of cleanLines) {
+      try {
+        allEntities.push(JSON.parse(line));
+      } catch (e) {
+        console.warn(
+          chalk.yellow(
+            `Warning: Skipping malformed line: ${line.slice(0, 50)}...`
+          )
+        );
+      }
+    }
+
+    // Add processed entities (already parsed above)
+    allEntities.push(...processedEntities);
+
+    // Sort all entities
+    allEntities.sort((a, b) => {
+      const aDate = a.created_at || "";
+      const bDate = b.created_at || "";
+      if (aDate < bDate) return -1;
+      if (aDate > bDate) return 1;
+      return (a.id || "").localeCompare(b.id || "");
+    });
+
+    outputLines = allEntities.map(e => JSON.stringify(e));
+  }
+
+  const finalStats: ResolutionStats = {
+    totalInput: cleanLines.length + cleanConflictEntities.length + conflictingEntities.length,
+    totalOutput: outputLines.length,
+    conflicts: conflictStats.conflicts
+  };
 
   // Write back if not dry-run
   if (!options.dryRun) {
-    await writeJSONL(filePath, resolved);
+    // Write lines directly (no entity parsing overhead)
+    await fs.promises.writeFile(filePath, outputLines.join('\n') + '\n', 'utf8');
   }
 
-  return { stats, entityType };
+  return { stats: finalStats, entityType };
 }
 
 /**

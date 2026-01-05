@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useProject } from './useProject'
 
@@ -32,20 +32,24 @@ export function useProjectRoutes() {
 
   /**
    * Pre-built path generators for common routes.
+   * Memoized to prevent unnecessary re-renders in dependent hooks.
    */
-  const paths = {
-    issues: () => buildPath('/issues'),
-    issue: (id: string) => buildPath(`/issues/${id}`),
-    archivedIssues: () => buildPath('/issues/archived'),
-    specs: () => buildPath('/specs'),
-    spec: (id: string) => buildPath(`/specs/${id}`),
-    archivedSpecs: () => buildPath('/specs/archived'),
-    executions: () => buildPath('/executions'),
-    execution: (id: string) => buildPath(`/executions/${id}`),
-    workflows: () => buildPath('/workflows'),
-    workflow: (id: string) => buildPath(`/workflows/${id}`),
-    worktrees: () => buildPath('/worktrees'),
-  }
+  const paths = useMemo(
+    () => ({
+      issues: () => buildPath('/issues'),
+      issue: (id: string) => buildPath(`/issues/${id}`),
+      archivedIssues: () => buildPath('/issues/archived'),
+      specs: () => buildPath('/specs'),
+      spec: (id: string) => buildPath(`/specs/${id}`),
+      archivedSpecs: () => buildPath('/specs/archived'),
+      executions: () => buildPath('/executions'),
+      execution: (id: string) => buildPath(`/executions/${id}`),
+      workflows: () => buildPath('/workflows'),
+      workflow: (id: string) => buildPath(`/workflows/${id}`),
+      worktrees: () => buildPath('/worktrees'),
+    }),
+    [buildPath]
+  )
 
   /**
    * Navigate to a project-scoped path.
@@ -61,26 +65,30 @@ export function useProjectRoutes() {
 
   /**
    * Pre-built navigation functions for common routes.
+   * Memoized to prevent unnecessary re-renders.
    */
-  const go = {
-    issues: (options?: { replace?: boolean }) => navigate(paths.issues(), options),
-    issue: (id: string, options?: { replace?: boolean }) =>
-      navigate(paths.issue(id), options),
-    archivedIssues: (options?: { replace?: boolean }) =>
-      navigate(paths.archivedIssues(), options),
-    specs: (options?: { replace?: boolean }) => navigate(paths.specs(), options),
-    spec: (id: string, options?: { replace?: boolean }) =>
-      navigate(paths.spec(id), options),
-    archivedSpecs: (options?: { replace?: boolean }) =>
-      navigate(paths.archivedSpecs(), options),
-    executions: (options?: { replace?: boolean }) => navigate(paths.executions(), options),
-    execution: (id: string, options?: { replace?: boolean }) =>
-      navigate(paths.execution(id), options),
-    workflows: (options?: { replace?: boolean }) => navigate(paths.workflows(), options),
-    workflow: (id: string, options?: { replace?: boolean }) =>
-      navigate(paths.workflow(id), options),
-    worktrees: (options?: { replace?: boolean }) => navigate(paths.worktrees(), options),
-  }
+  const go = useMemo(
+    () => ({
+      issues: (options?: { replace?: boolean }) => navigate(paths.issues(), options),
+      issue: (id: string, options?: { replace?: boolean }) =>
+        navigate(paths.issue(id), options),
+      archivedIssues: (options?: { replace?: boolean }) =>
+        navigate(paths.archivedIssues(), options),
+      specs: (options?: { replace?: boolean }) => navigate(paths.specs(), options),
+      spec: (id: string, options?: { replace?: boolean }) =>
+        navigate(paths.spec(id), options),
+      archivedSpecs: (options?: { replace?: boolean }) =>
+        navigate(paths.archivedSpecs(), options),
+      executions: (options?: { replace?: boolean }) => navigate(paths.executions(), options),
+      execution: (id: string, options?: { replace?: boolean }) =>
+        navigate(paths.execution(id), options),
+      workflows: (options?: { replace?: boolean }) => navigate(paths.workflows(), options),
+      workflow: (id: string, options?: { replace?: boolean }) =>
+        navigate(paths.workflow(id), options),
+      worktrees: (options?: { replace?: boolean }) => navigate(paths.worktrees(), options),
+    }),
+    [navigate, paths]
+  )
 
   return {
     /** The effective project ID (from URL or context) */

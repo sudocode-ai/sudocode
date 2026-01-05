@@ -1,0 +1,8 @@
+# Kokoro TTS Sidecar Dependencies
+#
+# Note: The appropriate ONNX runtime is installed by the sidecar manager
+# based on platform detection (onnxruntime-silicon, onnxruntime-gpu,
+# onnxruntime-directml, or onnxruntime for CPU fallback)
+
+kokoro-onnx>=0.4.0
+numpy>=1.24.0

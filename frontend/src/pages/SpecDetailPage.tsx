@@ -701,11 +701,22 @@ Create actionable issues that implement its requirements. Each issue should be s
                       size="sm"
                       onClick={() => navigate(paths.workflow(runningWorkflowForSpec.id))}
                     >
-                      <Loader2 className="h-4 w-4 animate-spin sm:mr-2" />
-                      <span className="hidden sm:inline">Running Workflow</span>
+                      <Loader2
+                        className={cn(
+                          'h-4 w-4 sm:mr-2',
+                          runningWorkflowForSpec.status === 'running' && 'animate-spin'
+                        )}
+                      />
+                      <span className="hidden sm:inline">
+                        {runningWorkflowForSpec.status === 'paused'
+                          ? 'Paused Workflow'
+                          : 'Running Workflow'}
+                      </span>
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>View running workflow</TooltipContent>
+                  <TooltipContent>
+                    View {runningWorkflowForSpec.status === 'paused' ? 'paused' : 'running'} workflow
+                  </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             ) : (

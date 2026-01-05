@@ -1145,8 +1145,11 @@ export class WorktreeSyncService {
   /**
    * Merge two JSONL files using UUID-based resolution
    *
-   * Reads both local and worktree versions, merges entities by UUID,
-   * and writes the result back to the local file.
+   * This is a TWO-WAY merge (no base version available).
+   * Used for merging uncommitted local + worktree JSONL files during stage sync.
+   *
+   * Uses `resolveEntities` for simple UUID-based deduplication, which is appropriate
+   * for two-way scenarios where we don't have a common base version.
    *
    * @param localFilePath - Absolute path to local JSONL file
    * @param worktreeFilePath - Absolute path to worktree JSONL file
@@ -1161,7 +1164,8 @@ export class WorktreeSyncService {
       skipErrors: true,
     });
 
-    // Combine and resolve using UUID-based deduplication
+    // Two-way merge: Combine and resolve using UUID-based deduplication
+    // This is correct for two-way scenarios (no base version)
     const allEntities = [...localEntities, ...worktreeEntities];
     const { entities: merged } = resolveEntities(allEntities);
 
@@ -1313,6 +1317,9 @@ export class WorktreeSyncService {
   /**
    * Resolve conflicts in a single JSONL file
    *
+   * Uses three-way merge when we have base/ours/theirs versions from git.
+   * This enables proper three-way merge semantics with YAML-based line-level merging.
+   *
    * @param filePath - Path to the JSONL file with conflicts
    */
   private async _resolveJSONLFile(filePath: string): Promise<void> {
@@ -1322,7 +1329,90 @@ export class WorktreeSyncService {
     // Parse conflicts
     const sections = parseMergeConflictFile(content);
 
-    // Extract all entities (from both clean and conflict sections)
+    // Try to use three-way merge by getting base/ours/theirs from git
+    // This is more accurate than parsing conflict markers
+    const relativePath = path.relative(this.repoPath, filePath);
+
+    try {
+      // Get base version from merge-base (git stage 1)
+      let baseEntities: JSONLEntity[] = [];
+      try {
+        // Note: Using execSync with _escapeShellArg for consistency with rest of file
+        const baseContent = execSync(
+          `git show :1:${this._escapeShellArg(relativePath)}`,
+          {
+            cwd: this.repoPath,
+            encoding: "utf8",
+            stdio: "pipe",
+          }
+        );
+        baseEntities = this._parseJSONLContent(baseContent);
+      } catch {
+        // No base version (new file or file didn't exist at merge-base)
+        baseEntities = [];
+      }
+
+      // Get ours version (git stage 2)
+      let oursEntities: JSONLEntity[] = [];
+      try {
+        const oursContent = execSync(
+          `git show :2:${this._escapeShellArg(relativePath)}`,
+          {
+            cwd: this.repoPath,
+            encoding: "utf8",
+            stdio: "pipe",
+          }
+        );
+        oursEntities = this._parseJSONLContent(oursContent);
+      } catch {
+        // No ours version
+        oursEntities = [];
+      }
+
+      // Get theirs version (git stage 3)
+      let theirsEntities: JSONLEntity[] = [];
+      try {
+        const theirsContent = execSync(
+          `git show :3:${this._escapeShellArg(relativePath)}`,
+          {
+            cwd: this.repoPath,
+            encoding: "utf8",
+            stdio: "pipe",
+          }
+        );
+        theirsEntities = this._parseJSONLContent(theirsContent);
+      } catch {
+        // No theirs version
+        theirsEntities = [];
+      }
+
+      // If we have at least ours and theirs (or base), use three-way merge
+      // This provides proper three-way semantics with YAML-based line-level merging
+      if (oursEntities.length > 0 || theirsEntities.length > 0 || baseEntities.length > 0) {
+        const { entities: resolved } = mergeThreeWay(
+          baseEntities,
+          oursEntities,
+          theirsEntities
+        );
+
+        // Write back resolved entities
+        await writeJSONL(filePath, resolved);
+
+        // Stage the resolved file
+        execSync(`git add ${this._escapeShellArg(relativePath)}`, {
+          cwd: this.repoPath,
+          stdio: "pipe",
+        });
+
+        return;
+      }
+    } catch (error) {
+      // If three-way merge fails, fall back to two-way resolution below
+      console.warn(`Three-way merge failed for ${relativePath}, using fallback resolution:`, error);
+    }
+
+    // Fallback: Use two-way resolution from conflict markers
+    // This is used when git stages are not available (manual conflict resolution)
     const allEntities: JSONLEntity[] = [];
 
     for (const section of sections) {
@@ -1353,7 +1443,8 @@ export class WorktreeSyncService {
       }
     }
 
-    // Resolve conflicts
+    // Two-way resolution: Use resolveEntities for UUID-based deduplication
+    // This is appropriate when we don't have a true base version
     const { entities: resolved } = resolveEntities(allEntities, {
       verbose: false,
     });
@@ -1362,11 +1453,34 @@ export class WorktreeSyncService {
     await writeJSONL(filePath, resolved);
 
     // Stage the resolved file
-    const relativePath = path.relative(this.repoPath, filePath);
     execSync(`git add ${this._escapeShellArg(relativePath)}`, {
       cwd: this.repoPath,
       stdio: "pipe",
     });
+  }
+
+  /**
+   * Parse JSONL content into entities
+   *
+   * Helper function for parsing JSONL content from git or files.
+   *
+   * @param content - JSONL content as string
+   * @returns Array of parsed entities
+   */
+  private _parseJSONLContent(content: string): JSONLEntity[] {
+    if (!content.trim()) return [];
+
+    return content
+      .split("\n")
+      .filter((line) => line.trim())
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter((entity): entity is JSONLEntity => entity !== null);
   }
 
   /**

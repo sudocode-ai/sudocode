@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useUpdateCheck, useUpdateMutations } from '@/hooks/useUpdateCheck'
+import { clearVoiceConfigCache } from '@/hooks/useVoiceConfig'
+import { useKokoroTTS } from '@/hooks/useKokoroTTS'
+import { getAvailableVoices as getKokoroVoices } from '@/lib/kokoroTTS'
 import {
   Sun,
   Moon,
@@ -19,6 +22,11 @@ import {
   Settings2,
   RotateCcw,
   ArrowRight,
+  Mic,
+  Volume2,
+  Download,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react'
 import type { ColorTheme } from '@/themes'
 import { cn } from '@/lib/utils'
@@ -95,7 +103,7 @@ interface PluginTestResult {
   details?: Record<string, unknown>
 }
 
-type SettingsTab = 'general' | 'integrations'
+type SettingsTab = 'general' | 'voice' | 'integrations'
 
 // Section configuration for sidebar navigation
 interface Section {
@@ -106,8 +114,33 @@ interface Section {
 
 const SECTIONS: Section[] = [
   { id: 'general', label: 'General', icon: <Settings2 className="h-4 w-4" /> },
+  { id: 'voice', label: 'Voice', icon: <Mic className="h-4 w-4" /> },
   { id: 'integrations', label: 'Integrations', icon: <Plug className="h-4 w-4" /> },
 ]
+
+// Voice settings interface (server-side config)
+interface VoiceSettings {
+  enabled?: boolean
+  stt?: {
+    provider?: 'whisper-local' | 'openai'
+    whisperUrl?: string
+    whisperModel?: string
+  }
+  tts?: {
+    provider?: 'browser' | 'kokoro' | 'openai'
+    defaultVoice?: string
+    kokoroMode?: 'browser' | 'server'
+  }
+  narration?: {
+    enabled?: boolean
+    voice?: string
+    speed?: number
+    volume?: number
+    narrateToolUse?: boolean
+    narrateToolResults?: boolean
+    narrateAssistantMessages?: boolean
+  }
+}
 
 // Theme preview swatch component
 function ThemePreviewSwatch({ theme }: { theme: ColorTheme }) {
@@ -147,6 +180,29 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null)
   const [selectedPreset, setSelectedPreset] = useState<string>('')
   const [installing, setInstalling] = useState(false)
+
+  // Voice settings state (server-side config)
+  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>({})
+  const [loadingVoice, setLoadingVoice] = useState(false)
+  const [savingVoice, setSavingVoice] = useState(false)
+  const voiceSettingsLoadedRef = useRef(false)
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Available voices from Web Speech API
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([])
+
+  // Server TTS status
+  const [serverTTSStatus, setServerTTSStatus] = useState<{
+    installed: boolean
+    state: string
+    error: string | null
+  } | null>(null)
+  const [settingUpServerTTS, setSettingUpServerTTS] = useState(false)
+
+  // Kokoro TTS hook for model management (uses server mode based on settings)
+  const kokoroTTS = useKokoroTTS({
+    useServer: voiceSettings.tts?.kokoroMode === 'server',
+  })
 
   // Update check hooks
   const { updateInfo } = useUpdateCheck()
@@ -202,6 +258,174 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
       fetchPlugins()
     }
   }, [isOpen, activeTab])
+
+  // Fetch voice settings when voice tab is opened
+  useEffect(() => {
+    const fetchVoiceSettings = async () => {
+      setLoadingVoice(true)
+      voiceSettingsLoadedRef.current = false
+      try {
+        // Voice settings are now included in the combined /voice/config endpoint
+        const data = await api.get<{ settings: VoiceSettings }, { settings: VoiceSettings }>(
+          '/voice/config'
+        )
+        setVoiceSettings(data.settings || {})
+        // Mark as loaded after a short delay to prevent immediate save
+        setTimeout(() => {
+          voiceSettingsLoadedRef.current = true
+        }, 100)
+      } catch (error) {
+        console.error('Failed to fetch voice settings:', error)
+      } finally {
+        setLoadingVoice(false)
+      }
+    }
+
+    if (isOpen && activeTab === 'voice') {
+      fetchVoiceSettings()
+    }
+  }, [isOpen, activeTab])
+
+  // Reset loaded state when dialog closes
+  useEffect(() => {
+    if (!isOpen) {
+      voiceSettingsLoadedRef.current = false
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+        saveTimeoutRef.current = null
+      }
+    }
+  }, [isOpen])
+
+  // Load available voices from Web Speech API
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'voice') return
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
+
+    const synth = window.speechSynthesis
+
+    const loadVoices = () => {
+      const voices = synth.getVoices()
+      setAvailableVoices(voices)
+    }
+
+    // Voices may be loaded asynchronously
+    loadVoices()
+    synth.addEventListener('voiceschanged', loadVoices)
+
+    return () => {
+      synth.removeEventListener('voiceschanged', loadVoices)
+    }
+  }, [isOpen, activeTab])
+
+  // Fetch server TTS status when server mode is selected
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'voice') return
+    if (voiceSettings.tts?.kokoroMode !== 'server') {
+      setServerTTSStatus(null)
+      return
+    }
+
+    const fetchStatus = async () => {
+      try {
+        const response = await api.get<
+          { data: { installed: boolean; state: string; error: string | null } },
+          { data: { installed: boolean; state: string; error: string | null } }
+        >('/voice/tts/status')
+        setServerTTSStatus(response.data)
+      } catch (error) {
+        console.error('Failed to fetch TTS status:', error)
+        setServerTTSStatus({ installed: false, state: 'error', error: 'Failed to check status' })
+      }
+    }
+
+    fetchStatus()
+  }, [isOpen, activeTab, voiceSettings.tts?.kokoroMode])
+
+  // Handle server TTS setup
+  const handleServerTTSSetup = async () => {
+    setSettingUpServerTTS(true)
+    try {
+      await api.post('/voice/tts/setup', {})
+      toast.success('Server TTS setup complete')
+      // Refresh status
+      const response = await api.get<
+        { data: { installed: boolean; state: string; error: string | null } },
+        { data: { installed: boolean; state: string; error: string | null } }
+      >('/voice/tts/status')
+      setServerTTSStatus(response.data)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Setup failed'
+      toast.error(`Server TTS setup failed: ${message}`)
+    } finally {
+      setSettingUpServerTTS(false)
+    }
+  }
+
+  // Auto-save voice settings with debounce
+  const saveVoiceSettings = useCallback(async (settings: VoiceSettings) => {
+    setSavingVoice(true)
+    try {
+      await api.put('/config/voice', settings)
+      // Clear the voice config cache so other components get fresh data
+      clearVoiceConfigCache()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save voice settings'
+      toast.error(message)
+    } finally {
+      setSavingVoice(false)
+    }
+  }, [])
+
+  // Debounced auto-save effect
+  useEffect(() => {
+    // Don't save if not loaded yet (prevents saving on initial load)
+    if (!voiceSettingsLoadedRef.current) {
+      return
+    }
+
+    // Clear any pending save
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+    }
+
+    // Debounce the save
+    saveTimeoutRef.current = setTimeout(() => {
+      saveVoiceSettings(voiceSettings)
+    }, 500)
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+      }
+    }
+  }, [voiceSettings, saveVoiceSettings])
+
+  // Update voice settings helper
+  const updateVoiceSettings = (updates: Partial<VoiceSettings>) => {
+    setVoiceSettings((prev) => ({ ...prev, ...updates }))
+  }
+
+  const updateVoiceSTTSettings = (updates: Partial<NonNullable<VoiceSettings['stt']>>) => {
+    setVoiceSettings((prev) => ({
+      ...prev,
+      stt: { ...prev.stt, ...updates },
+    }))
+  }
+
+  const updateVoiceTTSSettings = (updates: Partial<NonNullable<VoiceSettings['tts']>>) => {
+    setVoiceSettings((prev) => ({
+      ...prev,
+      tts: { ...prev.tts, ...updates },
+    }))
+  }
+
+  const updateVoiceNarrationSettings = (updates: Partial<NonNullable<VoiceSettings['narration']>>) => {
+    setVoiceSettings((prev) => ({
+      ...prev,
+      narration: { ...prev.narration, ...updates },
+    }))
+  }
 
   // Get options with defaults from schema applied
   const getOptionsWithDefaults = (plugin: PluginInfo): Record<string, unknown> => {
@@ -844,6 +1068,539 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                       </div>
                     )}
                   </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'voice' && (
+              <div className="space-y-6">
+                {/* Section Header */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Mic className="h-5 w-5 text-muted-foreground" />
+                    <h3 className="text-base font-semibold">Voice Input</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Configure voice input settings for speech-to-text transcription.
+                  </p>
+                </div>
+
+                {loadingVoice ? (
+                  <div className="flex items-center justify-center py-8">
+                    <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Enable Voice */}
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label className="text-sm">Enable Voice Input</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Show the voice input button in the execution panel
+                        </p>
+                      </div>
+                      <Switch
+                        checked={voiceSettings.enabled !== false}
+                        onCheckedChange={(checked) => updateVoiceSettings({ enabled: checked })}
+                      />
+                    </div>
+
+                    {/* STT Settings - only show when voice is enabled */}
+                    {voiceSettings.enabled !== false && (
+                      <div className="space-y-4 border-t border-border pt-4">
+                        <h4 className="text-sm font-medium">Speech-to-Text Settings</h4>
+
+                        {/* STT Provider */}
+                        <div className="space-y-1">
+                          <Label className="text-xs">Provider</Label>
+                          <Select
+                            value={voiceSettings.stt?.provider || 'whisper-local'}
+                            onValueChange={(value) =>
+                              updateVoiceSTTSettings({
+                                provider: value as 'whisper-local' | 'openai',
+                              })
+                            }
+                          >
+                            <SelectTrigger className="h-8 text-sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="whisper-local">
+                                Whisper (Local) - Self-hosted
+                              </SelectItem>
+                              <SelectItem value="openai" disabled>
+                                OpenAI Whisper (Coming soon)
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[10px] text-muted-foreground">
+                            Falls back to browser Web Speech API if provider is unavailable
+                          </p>
+                        </div>
+
+                        {/* Whisper URL - only show for whisper-local */}
+                        {(!voiceSettings.stt?.provider ||
+                          voiceSettings.stt?.provider === 'whisper-local') && (
+                          <>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Whisper Server URL</Label>
+                              <Input
+                                value={voiceSettings.stt?.whisperUrl || ''}
+                                onChange={(e) =>
+                                  updateVoiceSTTSettings({ whisperUrl: e.target.value })
+                                }
+                                placeholder="http://localhost:2022/v1"
+                                className="h-8 text-sm"
+                              />
+                              <p className="text-[10px] text-muted-foreground">
+                                URL of your local Whisper server (default: http://localhost:2022/v1)
+                              </p>
+                            </div>
+
+                            <div className="space-y-1">
+                              <Label className="text-xs">Whisper Model</Label>
+                              <Select
+                                value={voiceSettings.stt?.whisperModel || 'base'}
+                                onValueChange={(value) =>
+                                  updateVoiceSTTSettings({ whisperModel: value })
+                                }
+                              >
+                                <SelectTrigger className="h-8 text-sm">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="tiny">tiny (fastest, least accurate)</SelectItem>
+                                  <SelectItem value="base">base (balanced)</SelectItem>
+                                  <SelectItem value="small">small (better accuracy)</SelectItem>
+                                  <SelectItem value="medium">medium (high accuracy)</SelectItem>
+                                  <SelectItem value="large">large (best accuracy, slowest)</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <p className="text-[10px] text-muted-foreground">
+                                Whisper model to use for transcription
+                              </p>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Auto-save indicator */}
+                    {savingVoice && (
+                      <div className="flex items-center gap-2 pt-2 text-xs text-muted-foreground">
+                        <RefreshCw className="h-3 w-3 animate-spin" />
+                        <span>Saving...</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Voice Narration Section */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-5 w-5 text-muted-foreground" />
+                    <h3 className="text-base font-semibold">Voice Narration</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Configure text-to-speech settings for execution narration.
+                  </p>
+                </div>
+
+                <div className="space-y-6">
+                  {/* Enable Narration */}
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-sm">Enable Voice Narration</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Speak execution progress and status updates aloud
+                      </p>
+                    </div>
+                    <Switch
+                      checked={voiceSettings.narration?.enabled === true}
+                      onCheckedChange={(checked) =>
+                        updateVoiceNarrationSettings({ enabled: checked })
+                      }
+                    />
+                  </div>
+
+                  {/* TTS Settings - only show when narration is enabled */}
+                  {voiceSettings.narration?.enabled && (
+                    <div className="space-y-4 border-t border-border pt-4">
+                      <h4 className="text-sm font-medium">Text-to-Speech Settings</h4>
+
+                      {/* TTS Provider Selection */}
+                      <div className="space-y-1">
+                        <Label className="text-xs">TTS Provider</Label>
+                        <Select
+                          value={voiceSettings.tts?.provider || 'browser'}
+                          onValueChange={(value) =>
+                            updateVoiceTTSSettings({ provider: value as 'browser' | 'kokoro' | 'openai' })
+                          }
+                        >
+                          <SelectTrigger className="h-8 text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="browser">Browser (Web Speech API)</SelectItem>
+                            <SelectItem value="kokoro">Kokoro (High Quality, Local)</SelectItem>
+                            <SelectItem value="openai" disabled>OpenAI (Coming soon)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-[10px] text-muted-foreground">
+                          {voiceSettings.tts?.provider === 'kokoro'
+                            ? 'High-quality 82M parameter model for natural speech synthesis'
+                            : 'Uses your browser\'s built-in speech synthesis'}
+                        </p>
+                      </div>
+
+                      {/* Kokoro Mode Selection - only show when Kokoro provider is selected */}
+                      {voiceSettings.tts?.provider === 'kokoro' && (
+                        <div className="space-y-1">
+                          <Label className="text-xs">Kokoro Mode</Label>
+                          <Select
+                            value={voiceSettings.tts?.kokoroMode || 'browser'}
+                            onValueChange={(value) =>
+                              updateVoiceTTSSettings({ kokoroMode: value as 'browser' | 'server' })
+                            }
+                          >
+                            <SelectTrigger className="h-8 text-sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="browser">Browser (WASM)</SelectItem>
+                              <SelectItem value="server">Server (Streaming)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[10px] text-muted-foreground">
+                            {voiceSettings.tts?.kokoroMode === 'server'
+                              ? 'Uses server-side GPU for faster generation. Requires server to be running.'
+                              : 'Runs in your browser. Works offline but uses more browser resources.'}
+                          </p>
+
+                          {/* Server TTS Status - only show when server mode is selected */}
+                          {voiceSettings.tts?.kokoroMode === 'server' && serverTTSStatus && (
+                            <div className="mt-2 rounded-md border border-border bg-muted/30 p-2">
+                              {serverTTSStatus.installed ? (
+                                <div className="flex items-center gap-2">
+                                  <CheckCircle2 className="h-3 w-3 text-green-500" />
+                                  <span className="text-xs text-green-500">Server TTS ready</span>
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <AlertCircle className="h-3 w-3 text-amber-500" />
+                                    <span className="text-xs text-amber-500">Server TTS not set up</span>
+                                  </div>
+                                  <p className="text-[10px] text-muted-foreground">
+                                    Setup installs Python venv and Kokoro model (~500MB total).
+                                  </p>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs"
+                                    onClick={handleServerTTSSetup}
+                                    disabled={settingUpServerTTS}
+                                  >
+                                    {settingUpServerTTS ? (
+                                      <>
+                                        <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                                        Setting up...
+                                      </>
+                                    ) : (
+                                      'Setup Server TTS'
+                                    )}
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Kokoro Model Status - only show when Kokoro is selected and browser mode */}
+                      {voiceSettings.tts?.provider === 'kokoro' && voiceSettings.tts?.kokoroMode !== 'server' && (
+                        <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs">Kokoro Model</Label>
+                            {kokoroTTS.status === 'ready' ? (
+                              <span className="flex items-center gap-1 text-xs text-green-500">
+                                <CheckCircle2 className="h-3 w-3" />
+                                Ready
+                              </span>
+                            ) : kokoroTTS.status === 'error' ? (
+                              <span className="flex items-center gap-1 text-xs text-destructive">
+                                <AlertCircle className="h-3 w-3" />
+                                Error
+                              </span>
+                            ) : kokoroTTS.status === 'loading' ? (
+                              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <RefreshCw className="h-3 w-3 animate-spin" />
+                                Loading...
+                              </span>
+                            ) : null}
+                          </div>
+
+                          {kokoroTTS.status === 'idle' && (
+                            <div className="space-y-2">
+                              <p className="text-[10px] text-muted-foreground">
+                                The Kokoro model (~86 MB) will be downloaded and cached in your browser.
+                              </p>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => kokoroTTS.load()}
+                                className="w-full"
+                              >
+                                <Download className="mr-2 h-3 w-3" />
+                                Load Model (~86 MB)
+                              </Button>
+                            </div>
+                          )}
+
+                          {kokoroTTS.status === 'loading' && (
+                            <div className="space-y-2">
+                              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                                <div
+                                  className="h-full bg-primary transition-all duration-300"
+                                  style={{ width: `${kokoroTTS.progress}%` }}
+                                />
+                              </div>
+                              <p className="text-center text-[10px] text-muted-foreground">
+                                Downloading... {kokoroTTS.progress}%
+                              </p>
+                            </div>
+                          )}
+
+                          {kokoroTTS.status === 'error' && (
+                            <div className="space-y-2">
+                              <p className="text-[10px] text-destructive">
+                                {kokoroTTS.error || 'Failed to load model'}
+                              </p>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => kokoroTTS.load()}
+                                className="w-full"
+                              >
+                                <RefreshCw className="mr-2 h-3 w-3" />
+                                Retry
+                              </Button>
+                            </div>
+                          )}
+
+                          {kokoroTTS.status === 'ready' && (
+                            <p className="text-[10px] text-muted-foreground">
+                              Model loaded and ready. Cached for faster loading next time.
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Voice Selection - different options based on provider */}
+                      <div className="space-y-1">
+                        <Label className="text-xs">Voice</Label>
+                        {voiceSettings.tts?.provider === 'kokoro' ? (
+                          <>
+                            <Select
+                              value={voiceSettings.tts?.defaultVoice || 'af_heart'}
+                              onValueChange={(value) =>
+                                updateVoiceTTSSettings({ defaultVoice: value })
+                              }
+                            >
+                              <SelectTrigger className="h-8 text-sm">
+                                <SelectValue placeholder="Select a voice" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {getKokoroVoices().map((voice) => (
+                                  <SelectItem key={voice.id} value={voice.id}>
+                                    {voice.name} ({voice.gender}, {voice.language})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-[10px] text-muted-foreground">
+                              High-quality Kokoro voice
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <Select
+                              value={voiceSettings.narration?.voice || 'default'}
+                              onValueChange={(value) =>
+                                updateVoiceNarrationSettings({ voice: value === 'default' ? '' : value })
+                              }
+                            >
+                              <SelectTrigger className="h-8 text-sm">
+                                <SelectValue placeholder="System default" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="default">System default</SelectItem>
+                                {availableVoices
+                                  .filter((v) => v.lang.startsWith('en'))
+                                  .slice(0, 20)
+                                  .map((voice) => (
+                                    <SelectItem key={voice.voiceURI} value={voice.name}>
+                                      {voice.name} ({voice.lang})
+                                    </SelectItem>
+                                  ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-[10px] text-muted-foreground">
+                              Browser Web Speech API voice
+                            </p>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Speech Rate */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Speech Speed</Label>
+                          <span className="text-xs text-muted-foreground">
+                            {(voiceSettings.narration?.speed ?? 1.0).toFixed(1)}x
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.5"
+                          max="2.0"
+                          step="0.1"
+                          value={voiceSettings.narration?.speed ?? 1.0}
+                          onChange={(e) =>
+                            updateVoiceNarrationSettings({ speed: parseFloat(e.target.value) })
+                          }
+                          className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-muted accent-primary"
+                        />
+                        <div className="flex justify-between text-[10px] text-muted-foreground">
+                          <span>0.5x (Slow)</span>
+                          <span>2.0x (Fast)</span>
+                        </div>
+                      </div>
+
+                      {/* Volume */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Volume</Label>
+                          <span className="text-xs text-muted-foreground">
+                            {Math.round((voiceSettings.narration?.volume ?? 1.0) * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.1"
+                          value={voiceSettings.narration?.volume ?? 1.0}
+                          onChange={(e) =>
+                            updateVoiceNarrationSettings({ volume: parseFloat(e.target.value) })
+                          }
+                          className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-muted accent-primary"
+                        />
+                        <div className="flex justify-between text-[10px] text-muted-foreground">
+                          <span>0%</span>
+                          <span>100%</span>
+                        </div>
+                      </div>
+
+                      {/* Test Button */}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={voiceSettings.tts?.provider === 'kokoro' && kokoroTTS.isPlaying}
+                        onClick={async () => {
+                          const testText = 'Voice narration is working correctly.'
+
+                          if (voiceSettings.tts?.provider === 'kokoro') {
+                            // Use Kokoro TTS
+                            try {
+                              await kokoroTTS.speak(testText, {
+                                voice: voiceSettings.tts?.defaultVoice || 'af_heart',
+                                speed: voiceSettings.narration?.speed ?? 1.0,
+                              })
+                            } catch (err) {
+                              toast.error('Failed to test Kokoro narration', {
+                                description: err instanceof Error ? err.message : 'Unknown error',
+                              })
+                            }
+                          } else if ('speechSynthesis' in window) {
+                            // Use browser Web Speech API
+                            const utterance = new SpeechSynthesisUtterance(testText)
+                            utterance.rate = voiceSettings.narration?.speed ?? 1.0
+                            utterance.volume = voiceSettings.narration?.volume ?? 1.0
+                            if (voiceSettings.narration?.voice) {
+                              const voice = availableVoices.find(
+                                (v) => v.name === voiceSettings.narration?.voice
+                              )
+                              if (voice) utterance.voice = voice
+                            }
+                            window.speechSynthesis.speak(utterance)
+                          }
+                        }}
+                      >
+                        {kokoroTTS.isPlaying ? 'Playing...' : 'Test Narration'}
+                      </Button>
+
+                      {/* Narration Content Settings */}
+                      <div className="mt-4 space-y-3 border-t border-border pt-4">
+                        <h4 className="text-sm font-medium">Narration Content</h4>
+                        <p className="text-[10px] text-muted-foreground">
+                          Choose what execution events are spoken aloud
+                        </p>
+
+                        {/* Narrate Tool Use */}
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label className="text-xs">Narrate tool actions</Label>
+                            <p className="text-[10px] text-muted-foreground">
+                              Read, Write, Bash, Grep, etc.
+                            </p>
+                          </div>
+                          <Switch
+                            checked={voiceSettings.narration?.narrateToolUse !== false}
+                            onCheckedChange={(checked) =>
+                              updateVoiceNarrationSettings({ narrateToolUse: checked })
+                            }
+                          />
+                        </div>
+
+                        {/* Narrate Tool Results */}
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label className="text-xs">Narrate tool results</Label>
+                            <p className="text-[10px] text-muted-foreground">
+                              Announce when tools complete
+                            </p>
+                          </div>
+                          <Switch
+                            checked={voiceSettings.narration?.narrateToolResults === true}
+                            onCheckedChange={(checked) =>
+                              updateVoiceNarrationSettings({ narrateToolResults: checked })
+                            }
+                          />
+                        </div>
+
+                        {/* Narrate Assistant Messages */}
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label className="text-xs">Narrate agent responses</Label>
+                            <p className="text-[10px] text-muted-foreground">
+                              Speak the agent&apos;s text messages
+                            </p>
+                          </div>
+                          <Switch
+                            checked={voiceSettings.narration?.narrateAssistantMessages !== false}
+                            onCheckedChange={(checked) =>
+                              updateVoiceNarrationSettings({ narrateAssistantMessages: checked })
+                            }
+                          />
+                        </div>
+                      </div>
+
+                    </div>
+                  )}
                 </div>
               </div>
             )}

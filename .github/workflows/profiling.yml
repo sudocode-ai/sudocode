@@ -1,0 +1,149 @@
+name: NPM Installation Profiling
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'  # Sunday at 00:00 UTC
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      tarball: ${{ steps.pack.outputs.tarball }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # CRITICAL: No cache to avoid contaminating profile job
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build project
+        run: npm run build
+
+      - name: Create tarball
+        id: pack
+        run: |
+          cd sudocode
+          TARBALL=$(npm pack)
+          mv $TARBALL ..
+          cd ..
+          echo "tarball=$TARBALL" >> $GITHUB_OUTPUT
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: sudocode-tarball
+          path: sudocode-*.tgz
+          retention-days: 1
+
+  profile:
+    needs: build
+    runs-on: macos-14
+    strategy:
+      matrix:
+        scenario: [fresh-install, dev-environment]
+
+    steps:
+      - name: Download tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: sudocode-tarball
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # CRITICAL: No cache to ensure clean environment
+
+      - name: Checkout profiling scripts only
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/profiling
+          sparse-checkout-cone-mode: false
+
+      - name: Environment Setup - Fresh Install
+        if: matrix.scenario == 'fresh-install'
+        run: npm cache clean --force
+
+      - name: Environment Setup - Dev Environment
+        if: matrix.scenario == 'dev-environment'
+        run: |
+          npm cache clean --force
+          npm install -g typescript eslint prettier
+
+      - name: Run profiling script
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          TARBALL_PATH=$(ls sudocode-*.tgz)
+          node scripts/profiling/benchmark.cjs
+
+      - name: Upload results artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: profiling-results-${{ matrix.scenario }}
+          path: scripts/profiling/results/*.json
+          retention-days: 90
+
+      - name: Generate summary
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          # Find the most recent results file
+          RESULTS_FILE=$(ls -t scripts/profiling/results/*.json | head -1)
+
+          # Extract data from JSON
+          NODE_VERSION=$(node --version)
+          NPM_VERSION=$(npm --version)
+          MACOS_VERSION=$(sw_vers -productVersion)
+          TOTAL_TIME=$(node -p "JSON.parse(require('fs').readFileSync('$RESULTS_FILE', 'utf8')).timing.total")
+
+          # Write to GitHub Step Summary
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## NPM Installation Profiling - ${SCENARIO}
+
+          **Environment:**
+          - Node: ${NODE_VERSION}
+          - npm: ${NPM_VERSION}
+          - macOS: ${MACOS_VERSION}
+
+          **Timing Results:**
+          - Total: ${TOTAL_TIME}ms
+
+          **Phase Breakdown:**
+          EOF
+
+          # Extract phase breakdown from JSON
+          node -p "
+          const data = JSON.parse(require('fs').readFileSync('$RESULTS_FILE', 'utf8'));
+          const phases = data.timing.phases || {};
+          Object.entries(phases)
+            .sort((a, b) => b[1] - a[1])
+            .map(([phase, duration]) => \`  - \${phase}: \${duration}ms\`)
+            .join('\n')
+          " >> $GITHUB_STEP_SUMMARY
+
+          # Add environment info section
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+
+          **Environment Details:**
+          EOF
+
+          node -p "
+          const data = JSON.parse(require('fs').readFileSync('$RESULTS_FILE', 'utf8'));
+          const env = data.environment || {};
+          Object.entries(env)
+            .map(([key, value]) => \`  - \${key}: \${value}\`)
+            .join('\n')
+          " >> $GITHUB_STEP_SUMMARY

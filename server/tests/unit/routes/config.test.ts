@@ -418,4 +418,70 @@ describe("Config Router", () => {
       );
     });
   });
+
+  // Voice settings are READ via /api/voice/config (combined endpoint)
+  // but WRITTEN via PUT /api/config/voice
+
+  describe("PUT /voice", () => {
+    it("should save voice configuration and return ApiResponse", async () => {
+      const voiceSettings = {
+        enabled: true,
+        stt: {
+          provider: "whisper-local",
+          whisperUrl: "http://localhost:2022/v1",
+          whisperModel: "small",
+        },
+      };
+
+      const { req, res } = createMockReqRes({
+        body: voiceSettings,
+      });
+
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        JSON.stringify({ version: "0.1.0" })
+      );
+
+      const handler = router.stack.find(
+        (layer) => layer.route?.path === "/voice" && layer.route?.methods.put
+      )?.route?.stack[0].handle;
+
+      await handler!(req, res, () => {});
+
+      expect(fs.writeFileSync).toHaveBeenCalledWith(
+        "/test/project/.sudocode/config.json",
+        expect.stringContaining('"voice"'),
+        "utf-8"
+      );
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: voiceSettings,
+      });
+    });
+
+    it("should reject invalid enabled value", async () => {
+      const { req, res } = createMockReqRes({
+        body: {
+          enabled: "yes", // Should be boolean
+        },
+      });
+
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({}));
+
+      const handler = router.stack.find(
+        (layer) => layer.route?.path === "/voice" && layer.route?.methods.put
+      )?.route?.stack[0].handle;
+
+      await handler!(req, res, () => {});
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: "Invalid voice configuration",
+        })
+      );
+    });
+  })
 });

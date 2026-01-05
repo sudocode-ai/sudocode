@@ -25,6 +25,10 @@
       "types": "./src/integrations.d.ts",
       "default": "./src/integrations.d.ts"
     },
+    "./voice": {
+      "types": "./src/voice.d.ts",
+      "default": "./src/voice.d.ts"
+    },
     "./schema": {
       "types": "./dist/schema.d.ts",
       "default": "./dist/schema.js"
@@ -65,6 +69,7 @@
     "src/artifacts.d.ts",
     "src/workflows.d.ts",
     "src/integrations.d.ts",
+    "src/voice.d.ts",
     "dist"
   ],
   "devDependencies": {

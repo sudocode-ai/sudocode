@@ -289,8 +289,8 @@ describe('ImportDialog', () => {
     const checkboxes = screen.getAllByRole('checkbox')
     expect(checkboxes.length).toBeGreaterThanOrEqual(2)
 
-    // Click on a result to select it
-    await user.click(screen.getByText('First Issue'))
+    // Click on the first result's checkbox (index 1, since index 0 is select-all)
+    await user.click(checkboxes[1])
 
     // Selection count should update
     await waitFor(() => {

@@ -25,6 +25,7 @@ import { createAgentsRouter } from "./routes/agents.js";
 import { createVersionRouter } from "./routes/version.js";
 import { createUpdateRouter, setServerInstance } from "./routes/update.js";
 import { createWorkflowsRouter } from "./routes/workflows.js";
+import { createVoiceRouter } from "./routes/voice.js";
 import { TransportManager } from "./execution/transport/transport-manager.js";
 import { ProjectRegistry } from "./services/project-registry.js";
 import { ProjectManager } from "./services/project-manager.js";
@@ -168,6 +169,9 @@ app.use("/api/files", requireProject(projectManager), createFilesRouter());
 
 // Agents endpoint - global, not project-specific
 app.use("/api/agents", createAgentsRouter());
+
+// Voice endpoint - requires project context for config
+app.use("/api/voice", requireProject(projectManager), createVoiceRouter());
 
 // Mount execution routes (must be before stream routes to avoid conflicts)
 // TODO: Make these all relative to /executions
