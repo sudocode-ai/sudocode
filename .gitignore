@@ -7,4 +7,11 @@ dist/
 .env
 .sudocode/merge-driver.log
 .cursor
-__pycache__/
+__pycache__/# Temporary files from better-sqlite3 implementation
+.tmp-better-sqlite3/
+test-bundled-binary.sh
+DOCKER_TEST_RESULTS.md
+Dockerfile.test
+
+# Better-sqlite3 binaries (too large for git, will be downloaded)
+packages/better-sqlite3-*/better_sqlite3.node

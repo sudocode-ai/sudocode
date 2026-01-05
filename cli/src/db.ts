@@ -2,7 +2,8 @@
  * Database initialization and connection management
  */
 
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
+import createDatabase from "./better-sqlite3-loader.js";
 import * as schema from "@sudocode-ai/types/schema";
 import { runMigrations } from "@sudocode-ai/types/migrations";
 
@@ -15,7 +16,7 @@ export interface DatabaseOptions {
  * Initialize and configure the SQLite database
  */
 export function initDatabase(options: DatabaseOptions): Database.Database {
-  const db = new Database(options.path, {
+  const db = createDatabase(options.path, {
     verbose: options.verbose ? console.log : undefined,
   });
 

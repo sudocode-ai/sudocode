@@ -1,0 +1,30 @@
+{
+  "name": "@sudocode-ai/better-sqlite3-linux-arm64",
+  "version": "11.10.0",
+  "description": "Prebuilt better-sqlite3 binary for Linux arm64",
+  "main": "index.js",
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "files": [
+    "better_sqlite3.node",
+    "index.js"
+  ],
+  "keywords": [
+    "better-sqlite3",
+    "sqlite3",
+    "native",
+    "prebuilt",
+    "linux",
+    "arm64"
+  ],
+  "author": "sudocode AI",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sudocode-ai/sudocode.git",
+    "directory": "packages/better-sqlite3-linux-arm64"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

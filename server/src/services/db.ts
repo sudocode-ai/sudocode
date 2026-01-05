@@ -3,7 +3,8 @@
  * Uses shared schema from @sudocode-ai/types
  */
 
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
+import createDatabase from "../better-sqlite3-loader.js";
 import * as path from "path";
 import * as fs from "fs";
 import * as schema from "@sudocode-ai/types/schema";
@@ -31,7 +32,7 @@ export function initDatabase(config: DatabaseConfig): Database.Database {
   }
 
   // Open database
-  const db = new Database(dbPath, {
+  const db = createDatabase(dbPath, {
     readonly: readOnly,
     fileMustExist: false,
   });
