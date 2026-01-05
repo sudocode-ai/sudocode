@@ -23,14 +23,25 @@ vi.mock('@/lib/api', () => ({
   },
 }))
 
-// Mock WebSocket context
+// Track WebSocket mock calls for stability tests
+const wsSubscribeCalls: unknown[][] = []
+const wsUnsubscribeCalls: unknown[][] = []
+let wsConnected = false
+
+// Create stable mock functions (simulating useCallback behavior in the real context)
+const stableSubscribe = (...args: unknown[]) => { wsSubscribeCalls.push(args) }
+const stableUnsubscribe = (...args: unknown[]) => { wsUnsubscribeCalls.push(args) }
+const stableAddMessageHandler = vi.fn()
+const stableRemoveMessageHandler = vi.fn()
+
+// Mock WebSocket context with stable function references
 vi.mock('@/contexts/WebSocketContext', () => ({
   useWebSocketContext: () => ({
-    connected: false,
-    subscribe: vi.fn(),
-    unsubscribe: vi.fn(),
-    addMessageHandler: vi.fn(),
-    removeMessageHandler: vi.fn(),
+    connected: wsConnected,
+    subscribe: stableSubscribe,
+    unsubscribe: stableUnsubscribe,
+    addMessageHandler: stableAddMessageHandler,
+    removeMessageHandler: stableRemoveMessageHandler,
     lastMessage: null,
   }),
 }))
@@ -508,6 +519,98 @@ describe('useSpecs - Project Switching', () => {
     await waitFor(() => {
       expect(specsApi.getAll).toHaveBeenCalledTimes(2)
     })
+  })
+})
+
+describe('useSpec - WebSocket Subscription Stability', () => {
+  let queryClient: QueryClient
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    })
+    vi.clearAllMocks()
+    mockProjectId = 'test-project-id'
+    // Enable WebSocket connection for stability tests
+    wsConnected = true
+    // Clear tracking arrays
+    wsSubscribeCalls.length = 0
+    wsUnsubscribeCalls.length = 0
+  })
+
+  afterEach(() => {
+    // Reset WebSocket connection state
+    wsConnected = false
+  })
+
+  const wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  )
+
+  it('should not resubscribe on every render', async () => {
+    const mockSpec: Spec = {
+      id: 'SPEC-001',
+      uuid: 'uuid-1',
+      title: 'Test Spec',
+      content: 'Test content',
+      file_path: '/path/to/spec.md',
+      priority: 1,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+      parent_id: undefined,
+    }
+
+    vi.mocked(specsApi.getById).mockResolvedValue(mockSpec)
+
+    const { rerender } = renderHook(() => useSpec('SPEC-001'), { wrapper })
+
+    await waitFor(() => {
+      expect(wsSubscribeCalls.length).toBe(1)
+    })
+
+    // Force multiple re-renders
+    rerender()
+    rerender()
+    rerender()
+
+    // Subscribe should still only have been called once (stable handleMessage callback)
+    expect(wsSubscribeCalls.length).toBe(1)
+    // No unsubscribe should have happened during re-renders
+    expect(wsUnsubscribeCalls.length).toBe(0)
+  })
+
+  it('should only unsubscribe on unmount, not on re-render', async () => {
+    const mockSpec: Spec = {
+      id: 'SPEC-001',
+      uuid: 'uuid-1',
+      title: 'Test Spec',
+      content: 'Test content',
+      file_path: '/path/to/spec.md',
+      priority: 1,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+      parent_id: undefined,
+    }
+
+    vi.mocked(specsApi.getById).mockResolvedValue(mockSpec)
+
+    const { rerender, unmount } = renderHook(() => useSpec('SPEC-001'), { wrapper })
+
+    await waitFor(() => {
+      expect(wsSubscribeCalls.length).toBe(1)
+    })
+
+    // Re-render should not cause unsubscribe
+    rerender()
+    expect(wsUnsubscribeCalls.length).toBe(0)
+
+    // Unmount should trigger unsubscribe
+    unmount()
+    expect(wsUnsubscribeCalls.length).toBe(1)
   })
 })
 
