@@ -38,7 +38,9 @@
     "version": "./scripts/version.sh",
     "publish": "./scripts/publish.sh",
     "publish:dry-run": "./scripts/publish.sh --dry-run --skip-tests",
-    "sync-deps": "node scripts/sync-dependencies.js"
+    "sync-deps": "node scripts/sync-dependencies.js",
+    "profile:pack": "./scripts/profile-install/pack-tarballs.sh",
+    "profile:install": "./scripts/profile-install/profile.sh"
   },
   "author": "sudocode AI",
   "license": "Apache-2.0",

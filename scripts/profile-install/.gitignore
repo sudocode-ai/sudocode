@@ -1,0 +1,19 @@
+# Profiling results (generated data)
+results/*.json
+results/*.log
+results/*.txt
+
+# Temporary files
+*.tmp
+*.temp
+
+# Package tarballs (built locally)
+*.tgz
+
+# npm logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docker build cache
+.dockerignore
