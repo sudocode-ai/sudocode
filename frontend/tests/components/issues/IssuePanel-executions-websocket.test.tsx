@@ -48,6 +48,20 @@ vi.mock('@/contexts/WebSocketContext', () => ({
   }),
 }))
 
+// Mock useVoiceConfig to prevent async operations after test teardown
+vi.mock('@/hooks/useVoiceConfig', () => ({
+  useVoiceConfig: () => ({
+    isLoading: false,
+    error: null,
+    config: null,
+    voiceEnabled: false,
+    selectedVoice: null,
+    availableVoices: [],
+    setVoiceEnabled: vi.fn(),
+    setSelectedVoice: vi.fn(),
+  }),
+}))
+
 // Mock the API
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual('@/lib/api')
