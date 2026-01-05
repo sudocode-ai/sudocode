@@ -225,6 +225,72 @@ export class MockExecutionService extends EventEmitter {
   }
 
   /**
+   * List all executions with filtering and pagination
+   */
+  listAll(options: {
+    limit?: number;
+    offset?: number;
+    status?: string | string[];
+    issueId?: string;
+    sortBy?: "created_at" | "updated_at";
+    order?: "asc" | "desc";
+    since?: string;
+    includeRunning?: boolean;
+    tags?: string[];
+  } = {}): {
+    executions: any[];
+    total: number;
+    hasMore: boolean;
+  } {
+    const limit = options.limit ?? 50;
+    const offset = options.offset ?? 0;
+    const sortBy = options.sortBy ?? "created_at";
+    const order = options.order ?? "desc";
+
+    // Build WHERE clause
+    const whereClauses: string[] = [];
+    const params: any[] = [];
+
+    if (options.status) {
+      const statuses = Array.isArray(options.status)
+        ? options.status
+        : [options.status];
+      const placeholders = statuses.map(() => "?").join(",");
+      whereClauses.push(`status IN (${placeholders})`);
+      params.push(...statuses);
+    }
+
+    if (options.issueId) {
+      whereClauses.push("issue_id = ?");
+      params.push(options.issueId);
+    }
+
+    const whereClause =
+      whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+
+    // Get total count
+    const countRow = this.db
+      .prepare(`SELECT COUNT(*) as count FROM executions ${whereClause}`)
+      .get(...params) as { count: number };
+    const total = countRow.count;
+
+    // Get paginated results
+    const executions = this.db
+      .prepare(
+        `SELECT * FROM executions ${whereClause}
+         ORDER BY ${sortBy} ${order}
+         LIMIT ? OFFSET ?`
+      )
+      .all(...params, limit, offset) as any[];
+
+    return {
+      executions,
+      total,
+      hasMore: offset + executions.length < total,
+    };
+  }
+
+  /**
    * Get control handle for an execution
    */
   getExecutionControl(executionId: string): ExecutionControl | undefined {

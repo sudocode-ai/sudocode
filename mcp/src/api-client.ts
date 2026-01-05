@@ -218,7 +218,11 @@ export interface WorkflowStatusParams {
 }
 
 export interface CreateWorkflowParams {
-  source: string;
+  source:
+    | { type: "issues"; issueIds: string[] }
+    | { type: "spec"; specId: string }
+    | { type: "root_issue"; issueId: string }
+    | { type: "goal"; goal: string };
   config?: Record<string, unknown>;
 }
 
@@ -413,7 +417,7 @@ export class SudocodeAPIClient {
   async startExecution(
     params: StartExecutionParams
   ): Promise<StartExecutionResult> {
-    return this.request<StartExecutionResult>(
+    const execution = await this.request<any>(
       "POST",
       `/api/issues/${params.issue_id}/executions`,
       {
@@ -422,6 +426,10 @@ export class SudocodeAPIClient {
         prompt: params.prompt,
       }
     );
+    return {
+      execution_id: execution.id,
+      status: execution.status,
+    };
   }
 
   /**
@@ -430,11 +438,15 @@ export class SudocodeAPIClient {
   async startAdhocExecution(
     params: StartAdhocExecutionParams
   ): Promise<StartExecutionResult> {
-    return this.request<StartExecutionResult>("POST", "/api/executions", {
+    const execution = await this.request<any>("POST", "/api/executions", {
       prompt: params.prompt,
       agent_type: params.agent_type,
       model: params.model,
     });
+    return {
+      execution_id: execution.id,
+      status: execution.status,
+    };
   }
 
   /**
@@ -443,11 +455,16 @@ export class SudocodeAPIClient {
   async createFollowUp(
     params: CreateFollowUpParams
   ): Promise<CreateFollowUpResult> {
-    return this.request<CreateFollowUpResult>(
+    const execution = await this.request<any>(
       "POST",
       `/api/executions/${params.execution_id}/follow-up`,
       { feedback: params.feedback }
     );
+    return {
+      execution_id: execution.id,
+      parent_execution_id: execution.parent_execution_id,
+      status: execution.status,
+    };
   }
 
   /**
@@ -458,7 +475,7 @@ export class SudocodeAPIClient {
   ): Promise<CancelExecutionResult> {
     return this.request<CancelExecutionResult>(
       "POST",
-      `/api/executions/${params.execution_id}/stop`,
+      `/api/executions/${params.execution_id}/cancel`,
       { reason: params.reason }
     );
   }

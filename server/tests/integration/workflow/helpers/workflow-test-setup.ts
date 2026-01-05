@@ -144,8 +144,8 @@ export function createTestSpecs(
   specs: TestSpecData[]
 ): void {
   const stmt = db.prepare(`
-    INSERT INTO specs (id, uuid, title, content, priority, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    INSERT INTO specs (id, uuid, title, content, priority, file_path, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
   `);
 
   for (const spec of specs) {
@@ -154,7 +154,8 @@ export function createTestSpecs(
       uuidv4(),
       spec.title,
       spec.content || `Specification: ${spec.title}`,
-      spec.priority ?? 2
+      spec.priority ?? 2,
+      `.sudocode/specs/${spec.id}.md`
     );
   }
 }
