@@ -209,11 +209,11 @@ export class ProjectContext {
   }
 
   /**
-   * Update the server URL for workflow engines that need it.
+   * Update the server URL for services that need it.
    * Called after dynamic port discovery.
    */
   updateServerUrl(serverUrl: string): void {
-    // Only OrchestratorWorkflowEngine needs the server URL
+    // Update OrchestratorWorkflowEngine
     const engine = this.orchestratorWorkflowEngine;
     if (
       engine &&
@@ -221,6 +221,11 @@ export class ProjectContext {
       typeof engine.setServerUrl === "function"
     ) {
       engine.setServerUrl(serverUrl);
+    }
+
+    // Update ExecutionService (for MCP injection with server API-dependent tools)
+    if (this.executionService && "setServerUrl" in this.executionService) {
+      this.executionService.setServerUrl(serverUrl);
     }
   }
 }

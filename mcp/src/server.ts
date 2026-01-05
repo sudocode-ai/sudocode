@@ -18,18 +18,57 @@ import * as specTools from "./tools/specs.js";
 import * as relationshipTools from "./tools/relationships.js";
 import * as feedbackTools from "./tools/feedback.js";
 import * as referenceTools from "./tools/references.js";
-import { SudocodeClientConfig } from "./types.js";
+import { SudocodeMCPServerConfig } from "./types.js";
 import { existsSync } from "fs";
 import { join } from "path";
+import {
+  type Scope,
+  type ScopeConfig,
+  resolveScopes,
+  getUsableScopes,
+  hasExtendedScopes,
+} from "./scopes.js";
+import { SudocodeAPIClient } from "./api-client.js";
+import {
+  getToolsForScopes as getToolDefsForScopes,
+  getToolByName,
+  getHandlerType,
+} from "./tool-registry.js";
 
 export class SudocodeMCPServer {
   private server: Server;
   private client: SudocodeClient;
-  private config: SudocodeClientConfig;
+  private apiClient: SudocodeAPIClient | null = null;
+  private config: SudocodeMCPServerConfig;
+  private scopeConfig: ScopeConfig;
+  private usableScopes: Set<Scope>;
   private isInitialized: boolean = false;
 
-  constructor(config?: SudocodeClientConfig) {
+  constructor(config?: SudocodeMCPServerConfig) {
     this.config = config || {};
+
+    // Resolve scopes from config
+    const scopeArg = this.config.scope || "default";
+    this.scopeConfig = resolveScopes(
+      scopeArg,
+      this.config.serverUrl,
+      this.config.projectId
+    );
+
+    // Determine which scopes are actually usable (have prerequisites met)
+    this.usableScopes = getUsableScopes(
+      this.scopeConfig.enabledScopes,
+      this.config.serverUrl
+    );
+
+    // Create API client if server URL is configured and extended scopes are enabled
+    if (this.config.serverUrl && hasExtendedScopes(this.usableScopes)) {
+      this.apiClient = new SudocodeAPIClient({
+        serverUrl: this.config.serverUrl,
+        projectId: this.config.projectId,
+      });
+    }
+
     this.server = new Server(
       {
         name: "sudocode",
@@ -48,348 +87,52 @@ export class SudocodeMCPServer {
   }
 
   private setupHandlers() {
-    // List available tools
+    // List available tools - filtered by usable scopes
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
+      const availableTools = getToolDefsForScopes(this.usableScopes);
       return {
-        tools: [
-          {
-            name: "ready",
-            description:
-              "Shows you the current project state: what issues are ready to work on (no blockers), what's in progress, and what's blocked. Essential for understanding context before making any decisions about what to work on next.",
-            inputSchema: {
-              type: "object",
-              properties: {},
-            },
-          },
-          {
-            name: "list_issues",
-            description:
-              "Search and filter issues. Use this when you need to find specific issues by status, priority, keyword, or when exploring what work exists in the project.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                status: {
-                  type: "string",
-                  enum: ["open", "in_progress", "blocked", "closed"],
-                  description:
-                    "Filter by workflow status: 'open' (not started), 'in_progress' (currently working), 'blocked' (waiting on dependencies), 'closed' (completed)",
-                },
-                priority: {
-                  type: "number",
-                  description:
-                    "Filter by priority level where 0=highest priority and 4=lowest priority",
-                },
-                archived: {
-                  type: "boolean",
-                  description:
-                    "Include archived issues. Defaults to false (excludes archived issues from results)",
-                },
-                limit: {
-                  type: "number",
-                  description:
-                    "Maximum number of results to return. Defaults to 50.",
-                  default: 50,
-                },
-                search: {
-                  type: "string",
-                  description:
-                    "Search text - matches against issue titles and descriptions (case-insensitive)",
-                },
-              },
-            },
-          },
-          {
-            name: "show_issue",
-            description:
-              "Get full details about a specific issue. Use this to understand what the issue implements (which specs), what blocks it (dependencies), its current status, and related work. Essential for understanding context before starting implementation.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                issue_id: {
-                  type: "string",
-                  description: 'Issue ID with format "i-xxxx" (e.g., "i-x7k9")',
-                },
-              },
-              required: ["issue_id"],
-            },
-          },
-          {
-            name: "upsert_issue",
-            description:
-              "Create or update an issue (agent's actionable work item). **Issues implement specs** - use 'link' with type='implements' to connect issue to spec. **Before closing:** provide feedback on the spec using 'add_feedback' if this issue implements a spec. If issue_id is provided, updates the issue; otherwise creates a new one. To close an issue, set status='closed'. To archive an issue, set archived=true.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                issue_id: {
-                  type: "string",
-                  description:
-                    'Issue ID in format "i-xxxx". Omit to create new issue (auto-generates ID). Provide to update existing issue.',
-                },
-                title: {
-                  type: "string",
-                  description:
-                    "Concise issue title describing the work (e.g., 'Implement OAuth login flow'). Required when creating, optional when updating.",
-                },
-                description: {
-                  type: "string",
-                  description:
-                    "Detailed description of the work to be done. Supports markdown and inline references using [[id]] syntax (e.g., 'Implement [[s-abc123]] requirements' or 'Blocked by [[i-xyz789]]').",
-                },
-                priority: {
-                  type: "number",
-                  description:
-                    "Priority level: 0 (highest/urgent) to 4 (lowest/nice-to-have). Use 0-1 for critical work, 2 for normal, 3-4 for backlog.",
-                },
-                parent: {
-                  type: "string",
-                  description:
-                    "Parent issue ID for hierarchical organization (e.g., 'i-abc123'). Use to break epics into subtasks or organize related work.",
-                },
-                tags: {
-                  type: "array",
-                  items: { type: "string" },
-                  description:
-                    "Array of tag strings for categorization (e.g., ['backend', 'authentication', 'security']). Useful for filtering and organization.",
-                },
-                status: {
-                  type: "string",
-                  enum: ["open", "in_progress", "blocked", "closed"],
-                  description:
-                    "Workflow status: 'open' (ready but not started), 'in_progress' (actively working), 'blocked' (waiting on dependencies), 'closed' (completed). **Before closing spec-implementing issues, use add_feedback.**",
-                },
-                archived: {
-                  type: "boolean",
-                  description:
-                    "Set to true to archive completed/obsolete issues. Archived issues are hidden from default queries but preserved for history.",
-                },
-              },
-            },
-          },
-          {
-            name: "list_specs",
-            description:
-              "Search and browse all specs in the project. Use this to find existing specifications by keyword, or to see what specs are available before creating new ones.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                limit: {
-                  type: "number",
-                  description:
-                    "Maximum number of results to return. Defaults to 50.",
-                  default: 50,
-                },
-                search: {
-                  type: "string",
-                  description:
-                    "Search text - matches against spec titles and descriptions (case-insensitive). Use keywords to find relevant specs.",
-                },
-              },
-            },
-          },
-          {
-            name: "show_spec",
-            description:
-              "Get full details about a specific spec including its content, relationships, and all anchored feedback. Use this to understand requirements before implementing. Shows what issues implement this spec and feedback from previous implementations.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                spec_id: {
-                  type: "string",
-                  description:
-                    'Spec ID with format "s-xxxx" (e.g., "s-14sh"). Get IDs from list_specs, ready, or show_issue results.',
-                },
-              },
-              required: ["spec_id"],
-            },
-          },
-          {
-            name: "upsert_spec",
-            description:
-              "Create or update a spec (user's requirements/intent/context document). Create spec to document design requirements, architecture, API design, etc with user guidance. If spec_id is provided, updates the spec; otherwise creates a new one with a hash-based ID (e.g., s-14sh). If editing the content of an existing spec, you can also edit the content of the corresponding spec markdown file directly (`spec.file_path` you can get with show_spec).",
-            inputSchema: {
-              type: "object",
-              properties: {
-                spec_id: {
-                  type: "string",
-                  description:
-                    'Spec ID in format "s-xxxx". Omit to create new spec (auto-generates hash-based ID). Provide to update existing spec.',
-                },
-                title: {
-                  type: "string",
-                  description:
-                    "Descriptive spec title (e.g., 'OAuth Authentication System Design'). Required when creating, optional when updating.",
-                },
-                priority: {
-                  type: "number",
-                  description:
-                    "Priority level: 0 (highest/urgent) to 4 (lowest/nice-to-have). Helps prioritize which specs to implement first.",
-                },
-                description: {
-                  type: "string",
-                  description:
-                    "Full specification content in markdown format. Include requirements, architecture, API designs, user flows, technical decisions. Supports Obsidian-style [[entityId]] mention syntax for referencing other specs/issues.",
-                },
-                parent: {
-                  type: "string",
-                  description:
-                    "Parent spec ID for hierarchical organization (e.g., 's-abc123'). Use to break large specs into sub-specs or organize by system/feature area.",
-                },
-                tags: {
-                  type: "array",
-                  items: { type: "string" },
-                  description:
-                    "Array of tag strings for categorization (e.g., ['architecture', 'api', 'security']). Useful for filtering and finding related specs.",
-                },
-              },
-            },
-          },
-          {
-            name: "link",
-            description:
-              "Create a relationship between specs and/or issues. Use this to establish the dependency graph and connect work to requirements. Most common: 'implements' (issue → spec) and 'blocks' (dependency ordering).",
-            inputSchema: {
-              type: "object",
-              properties: {
-                from_id: {
-                  type: "string",
-                  description:
-                    "Source entity ID (format 'i-xxxx' for issue or 's-xxxx' for spec). This is the entity creating the relationship.",
-                },
-                to_id: {
-                  type: "string",
-                  description:
-                    "Target entity ID (format 'i-xxxx' for issue or 's-xxxx' for spec). This is the entity being related to.",
-                },
-                type: {
-                  type: "string",
-                  enum: [
-                    "blocks",
-                    "implements",
-                    "references",
-                    "depends-on",
-                    "discovered-from",
-                    "related",
-                  ],
-                  description:
-                    "Relationship type:\n• 'implements' - issue implements a spec (core workflow, e.g., i-abc implements s-xyz)\n• 'blocks' - from_id must complete before to_id can start (execution ordering, affects 'ready' command)\n• 'depends-on' - dependency relationship where to_id must complete before from_id can start (execution ordering, affects 'ready' command)\n• 'discovered-from' - new issue found during work on another issue (provenance tracking)\n• 'references' - soft reference for context\n• 'related' - general relationship",
-                },
-              },
-              required: ["from_id", "to_id"],
-            },
-          },
-          {
-            name: "add_reference",
-            description:
-              "Insert an Obsidian-style [[ID]] reference into spec or issue markdown content. Alternative to directly editing markdown - programmatically adds cross-references at specific locations.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                entity_id: {
-                  type: "string",
-                  description:
-                    "Entity ID where the reference will be inserted (format 'i-xxxx' or 's-xxxx'). This is the document being edited.",
-                },
-                reference_id: {
-                  type: "string",
-                  description:
-                    "Entity ID being referenced (format 'i-xxxx' or 's-xxxx'). This creates a [[reference_id]] or [[reference_id|display_text]] link in the markdown.",
-                },
-                display_text: {
-                  type: "string",
-                  description:
-                    "Optional display text for the reference. If provided, creates [[reference_id|display_text]] instead of [[reference_id]].",
-                },
-                relationship_type: {
-                  type: "string",
-                  enum: [
-                    "blocks",
-                    "implements",
-                    "references",
-                    "depends-on",
-                    "discovered-from",
-                    "related",
-                  ],
-                  description:
-                    "Optional relationship type to declare using { } syntax. Creates [[reference_id]]{ relationship_type } in markdown. Use 'implements', 'blocks', 'depends-on', etc.",
-                },
-                line: {
-                  type: "number",
-                  description:
-                    "Line number where reference should be inserted. Use either 'line' OR 'text', not both. Line numbers start at 1.",
-                },
-                text: {
-                  type: "string",
-                  description:
-                    "Text substring to search for as insertion point. Use either 'line' OR 'text', not both. Reference will be inserted at/near this text.",
-                },
-                format: {
-                  type: "string",
-                  enum: ["inline", "newline"],
-                  description:
-                    "How to insert: 'inline' adds reference on same line as insertion point, 'newline' adds reference on a new line. Defaults to 'inline'.",
-                  default: "inline",
-                },
-                // TODO: Add position handling later if needed.
-              },
-              required: ["entity_id", "reference_id"],
-            },
-          },
-          {
-            name: "add_feedback",
-            description:
-              "**REQUIRED when closing issues that implement specs.** Document implementation results by providing feedback on a spec or issue. Entity type is automatically inferred from ID prefix (s-xxxx = spec, i-xxxx = issue). Supports:\n• **Issue→Spec**: Document implementation results when completing a spec (most common)\n• **Issue→Issue**: Leave notes for downstream issues, document unforeseen circumstances, or coordinate between related issues\n\nInclude what was accomplished, design decisions made, challenges encountered, and evidence of completion. When possible, anchor feedback to specific locations.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                issue_id: {
-                  type: "string",
-                  description:
-                    "Issue ID that's providing the feedback (format 'i-xxxx'). This is the issue documenting results or leaving notes. Optional for anonymous feedback.",
-                },
-                to_id: {
-                  type: "string",
-                  description:
-                    "Target ID receiving the feedback (format 's-xxxx' for spec or 'i-xxxx' for issue). Entity type is automatically inferred from the ID prefix.",
-                },
-                content: {
-                  type: "string",
-                  description:
-                    "Feedback content in markdown. For specs: (1) Requirements met, (2) Design decisions, (3) Challenges and resolutions, (4) Evidence of completion. For issues: Document discoveries, blockers, coordination notes, or information for downstream work.",
-                },
-                type: {
-                  type: "string",
-                  enum: ["comment", "suggestion", "request"],
-                  description:
-                    "Feedback type:\n• 'comment' - informational feedback about implementation (most common for completed work)\n• 'suggestion' - spec needs updating based on implementation learnings\n• 'request' - need clarification or spec is unclear/incomplete",
-                },
-                line: {
-                  type: "number",
-                  description:
-                    "Optional: Line number in target markdown to anchor feedback. Use either 'line' OR 'text', not both. Anchoring connects feedback to specific sections.",
-                },
-                text: {
-                  type: "string",
-                  description:
-                    "Optional: Exact text substring from target to anchor feedback. Use either 'line' OR 'text', not both. Must match EXACTLY (case-sensitive, whitespace-sensitive). Use show_spec/show_issue first to copy exact text.",
-                },
-                // TODO: Re-enable when the agent data structure is more developed.
-                // agent: {
-                //   type: "string",
-                //   description: "Agent providing feedback",
-                // },
-              },
-              required: ["to_id"],
-            },
-          },
-        ],
+        tools: availableTools.map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+        })),
       };
     });
 
-    // Handle tool calls
+    // Handle tool calls - route to CLI or API based on tool scope
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
 
-      if (!this.isInitialized) {
+      // Get tool definition
+      const tool = getToolByName(name);
+      if (!tool) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Unknown tool: ${name}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      // Check if tool is in enabled scopes
+      if (!this.usableScopes.has(tool.scope)) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Tool '${name}' is not available. Scope '${tool.scope}' is not enabled or missing prerequisites (--server-url).`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      // Check initialization for CLI tools
+      const handlerType = getHandlerType(tool);
+      if (handlerType === "cli" && !this.isInitialized) {
         const workingDir = this.client["workingDir"] || process.cwd();
         return {
           content: [
@@ -403,54 +146,14 @@ export class SudocodeMCPServer {
       }
 
       try {
-        let result: any;
+        let result: unknown;
 
-        switch (name) {
-          case "ready":
-            result = await issueTools.ready(this.client, args as any);
-            break;
-
-          case "list_issues":
-            result = await issueTools.listIssues(this.client, args as any);
-            break;
-
-          case "show_issue":
-            result = await issueTools.showIssue(this.client, args as any);
-            break;
-
-          case "upsert_issue":
-            result = await issueTools.upsertIssue(this.client, args as any);
-            break;
-
-          case "list_specs":
-            result = await specTools.listSpecs(this.client, args as any);
-            break;
-
-          case "show_spec":
-            result = await specTools.showSpec(this.client, args as any);
-            break;
-
-          case "upsert_spec":
-            result = await specTools.upsertSpec(this.client, args as any);
-            break;
-
-          case "link":
-            result = await relationshipTools.link(this.client, args as any);
-            break;
-
-          case "add_reference":
-            result = await referenceTools.addReference(
-              this.client,
-              args as any
-            );
-            break;
-
-          case "add_feedback":
-            result = await feedbackTools.addFeedback(this.client, args as any);
-            break;
-
-          default:
-            throw new Error(`Unknown tool: ${name}`);
+        if (handlerType === "cli") {
+          // Route to CLI handlers (default scope)
+          result = await this.handleCliTool(name, args as Record<string, unknown>);
+        } else {
+          // Route to API handlers (extended scopes)
+          result = await this.handleApiTool(name, args as Record<string, unknown>);
         }
 
         return {
@@ -557,6 +260,102 @@ sudocode is a git-native spec and issue management system designed for AI-assist
         throw new Error(`Unknown resource: ${uri}`);
       }
     );
+  }
+
+  /**
+   * Handle CLI-based tools (default scope).
+   */
+  private async handleCliTool(
+    name: string,
+    args: Record<string, unknown>
+  ): Promise<unknown> {
+    switch (name) {
+      case "ready":
+        return issueTools.ready(this.client, args as any);
+      case "list_issues":
+        return issueTools.listIssues(this.client, args as any);
+      case "show_issue":
+        return issueTools.showIssue(this.client, args as any);
+      case "upsert_issue":
+        return issueTools.upsertIssue(this.client, args as any);
+      case "list_specs":
+        return specTools.listSpecs(this.client, args as any);
+      case "show_spec":
+        return specTools.showSpec(this.client, args as any);
+      case "upsert_spec":
+        return specTools.upsertSpec(this.client, args as any);
+      case "link":
+        return relationshipTools.link(this.client, args as any);
+      case "add_reference":
+        return referenceTools.addReference(this.client, args as any);
+      case "add_feedback":
+        return feedbackTools.addFeedback(this.client, args as any);
+      default:
+        throw new Error(`Unknown CLI tool: ${name}`);
+    }
+  }
+
+  /**
+   * Handle API-based tools (extended scopes).
+   */
+  private async handleApiTool(
+    name: string,
+    args: Record<string, unknown>
+  ): Promise<unknown> {
+    if (!this.apiClient) {
+      throw new Error(
+        `Tool '${name}' requires --server-url to be configured.`
+      );
+    }
+
+    switch (name) {
+      // Overview
+      case "project_status":
+        return this.apiClient.getProjectStatus();
+
+      // Executions
+      case "list_executions":
+        return this.apiClient.listExecutions(args as any);
+      case "show_execution":
+        return this.apiClient.showExecution(args as any);
+      case "start_execution":
+        return this.apiClient.startExecution(args as any);
+      case "start_adhoc_execution":
+        return this.apiClient.startAdhocExecution(args as any);
+      case "create_follow_up":
+        return this.apiClient.createFollowUp(args as any);
+      case "cancel_execution":
+        return this.apiClient.cancelExecution(args as any);
+
+      // Inspection
+      case "execution_trajectory":
+        return this.apiClient.getExecutionTrajectory(args as any);
+      case "execution_changes":
+        return this.apiClient.getExecutionChanges(args as any);
+      case "execution_chain":
+        return this.apiClient.getExecutionChain(args as any);
+
+      // Workflows
+      case "list_workflows":
+        return this.apiClient.listWorkflows(args as any);
+      case "show_workflow":
+        return this.apiClient.showWorkflow(args as any);
+      case "workflow_status":
+        return this.apiClient.getWorkflowStatus(args as any);
+      case "create_workflow":
+        return this.apiClient.createWorkflow(args as any);
+      case "start_workflow":
+        return this.apiClient.startWorkflow(args as any);
+      case "pause_workflow":
+        return this.apiClient.pauseWorkflow(args as any);
+      case "cancel_workflow":
+        return this.apiClient.cancelWorkflow(args as any);
+      case "resume_workflow":
+        return this.apiClient.resumeWorkflow(args as any);
+
+      default:
+        throw new Error(`Unknown API tool: ${name}`);
+    }
   }
 
   /**
@@ -675,6 +474,16 @@ sudocode is a git-native spec and issue management system designed for AI-assist
   async run() {
     // Check if sudocode is initialized (non-blocking warning)
     await this.checkInitialization();
+
+    // Log scope configuration
+    const enabledScopesList = Array.from(this.usableScopes).join(", ");
+    const availableTools = getToolDefsForScopes(this.usableScopes);
+    console.error(`✓ Enabled scopes: ${enabledScopesList}`);
+    console.error(`✓ Available tools: ${availableTools.length}`);
+
+    if (this.config.serverUrl) {
+      console.error(`✓ Server URL: ${this.config.serverUrl}`);
+    }
 
     const transport = new StdioServerTransport();
     await this.server.connect(transport);

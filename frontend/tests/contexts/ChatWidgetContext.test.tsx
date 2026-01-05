@@ -181,6 +181,13 @@ describe('ChatWidgetContext', () => {
 
   describe('selectExecution', () => {
     it('should select an execution', () => {
+      // Add the execution to the mock list so it passes validation
+      mockExecutions.push({
+        id: 'exec-123',
+        status: 'completed',
+        created_at: new Date().toISOString(),
+      } as Execution)
+
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <ChatWidgetProvider>{children}</ChatWidgetProvider>
       )
@@ -195,6 +202,13 @@ describe('ChatWidgetContext', () => {
     })
 
     it('should clear selection when null is passed (for new execution)', () => {
+      // Add the execution to the mock list so first selection passes validation
+      mockExecutions.push({
+        id: 'exec-123',
+        status: 'completed',
+        created_at: new Date().toISOString(),
+      } as Execution)
+
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <ChatWidgetProvider>{children}</ChatWidgetProvider>
       )
@@ -394,6 +408,13 @@ describe('ChatWidgetContext', () => {
 
   describe('lastExecutionId persistence', () => {
     it('should load lastExecutionId from localStorage', () => {
+      // Add the execution to the mock list so it passes validation
+      mockExecutions.push({
+        id: 'exec-saved',
+        status: 'completed',
+        created_at: new Date().toISOString(),
+      } as Execution)
+
       localStorageMock.setItem(
         'sudocode:chatWidget',
         JSON.stringify({ mode: 'floating', lastExecutionId: 'exec-saved' })
@@ -410,6 +431,13 @@ describe('ChatWidgetContext', () => {
     })
 
     it('should persist lastExecutionId when manually selecting an execution', async () => {
+      // Add the execution to the mock list so it passes validation
+      mockExecutions.push({
+        id: 'exec-manual',
+        status: 'completed',
+        created_at: new Date().toISOString(),
+      } as Execution)
+
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <ChatWidgetProvider>{children}</ChatWidgetProvider>
       )
@@ -427,6 +455,13 @@ describe('ChatWidgetContext', () => {
     })
 
     it('should persist null lastExecutionId when selecting new execution', async () => {
+      // Add the execution to the mock list so first selection passes validation
+      mockExecutions.push({
+        id: 'exec-123',
+        status: 'completed',
+        created_at: new Date().toISOString(),
+      } as Execution)
+
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <ChatWidgetProvider>{children}</ChatWidgetProvider>
       )

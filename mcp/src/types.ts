@@ -60,6 +60,18 @@ export interface SudocodeClientConfig {
   syncOnStartup?: boolean;
 }
 
+/**
+ * Configuration for the MCP server including scope settings.
+ */
+export interface SudocodeMCPServerConfig extends SudocodeClientConfig {
+  /** Comma-separated scope string (default: "default") */
+  scope?: string;
+  /** Server URL for extended tools */
+  serverUrl?: string;
+  /** Project ID for API calls (auto-discovered if not provided) */
+  projectId?: string;
+}
+
 // ============================================================================
 // ERROR TYPES
 // ============================================================================
