@@ -1479,23 +1479,30 @@ ${feedback}`;
     // When tagged with 'project-assistant', add extended scopes to the MCP server
     const isProjectAssistant = userConfig.tags?.includes("project-assistant");
 
+    // TODO: Build scope list incrementally instead of per-use case.
     if (!mcpPresent && !userConfig.mcpServers?.["sudocode-mcp"]) {
-      // Build args for sudocode-mcp based on tags and server availability
+      // Build args for sudocode-mcp based on tags, server availability, and narration config
       const mcpArgs: string[] = [];
+
+      // Check if narration is enabled - if so, we'll add the voice scope
+      const narrationEnabled = userConfig.narrationConfig?.enabled ?? false;
 
       if (isProjectAssistant) {
         if (this.serverUrl) {
+          // Build scope list: start with "all" and optionally add "voice"
+          const scopes = narrationEnabled ? "all,voice" : "all";
+
           // Enable project-assistant scope with server URL for extended tools
           mcpArgs.push(
             "--scope",
-            "all", // "all" = default + project-assistant scopes
+            scopes,
             "--server-url",
             this.serverUrl,
             "--project-id",
             this.projectId
           );
           console.info(
-            "[ExecutionService] Adding sudocode-mcp with project-assistant scopes (auto-injection)"
+            `[ExecutionService] Adding sudocode-mcp with scopes: ${scopes} (auto-injection)`
           );
         } else {
           console.warn(
@@ -1506,6 +1513,19 @@ ${feedback}`;
             "[ExecutionService] Adding sudocode-mcp with default scope (auto-injection)"
           );
         }
+      } else if (narrationEnabled && this.serverUrl) {
+        // Not project-assistant but narration is enabled - add voice scope
+        mcpArgs.push(
+          "--scope",
+          "default,voice",
+          "--server-url",
+          this.serverUrl,
+          "--project-id",
+          this.projectId
+        );
+        console.info(
+          "[ExecutionService] Adding sudocode-mcp with default,voice scopes (narration enabled)"
+        );
       } else {
         console.info(
           "[ExecutionService] Adding sudocode-mcp with default scope (auto-injection)"

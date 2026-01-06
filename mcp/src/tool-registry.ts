@@ -731,6 +731,31 @@ const WORKFLOW_WRITE_TOOLS: ToolDefinition[] = [
 ];
 
 // =============================================================================
+// Voice Tools
+// =============================================================================
+
+const VOICE_TOOLS: ToolDefinition[] = [
+  {
+    name: "speak",
+    scope: "voice",
+    description:
+      "Narrate text aloud via text-to-speech. Use this to provide voice feedback to the user during execution. " +
+      "Keep messages concise and targeted, as the user will still have visibility to your other text messages. " +
+      "Avoid unique symbols that may not render well in speech.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: {
+          type: "string",
+          description: "Text to speak aloud",
+        },
+      },
+      required: ["text"],
+    },
+  },
+];
+
+// =============================================================================
 // Tool Registry
 // =============================================================================
 
@@ -745,6 +770,7 @@ export const ALL_TOOLS: ToolDefinition[] = [
   ...INSPECTION_TOOLS,
   ...WORKFLOW_READ_TOOLS,
   ...WORKFLOW_WRITE_TOOLS,
+  ...VOICE_TOOLS,
 ];
 
 /**

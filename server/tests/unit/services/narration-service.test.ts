@@ -836,6 +836,203 @@ The frontend components could benefit from better memoization to prevent unneces
     });
   });
 
+  describe("narrateSpeakOnly config", () => {
+    it("should only narrate speak tool when narrateSpeakOnly is true", () => {
+      const speakOnlyService = new NarrationService({
+        narrateSpeakOnly: true,
+      });
+
+      // Read tool should be skipped
+      const readEntry: NormalizedEntry = {
+        index: 0,
+        type: {
+          kind: "tool_use",
+          tool: {
+            toolName: "Read",
+            action: { kind: "file_read", path: "/src/file.ts" },
+            status: "running",
+          },
+        },
+        content: "",
+        timestamp: new Date(),
+      };
+      expect(speakOnlyService.summarizeForVoice(readEntry)).toBeNull();
+
+      // Write tool should be skipped
+      const writeEntry: NormalizedEntry = {
+        index: 1,
+        type: {
+          kind: "tool_use",
+          tool: {
+            toolName: "Write",
+            action: { kind: "file_write", path: "/src/file.ts" },
+            status: "running",
+          },
+        },
+        content: "",
+        timestamp: new Date(),
+      };
+      expect(speakOnlyService.summarizeForVoice(writeEntry)).toBeNull();
+
+      // Bash tool should be skipped
+      const bashEntry: NormalizedEntry = {
+        index: 2,
+        type: {
+          kind: "tool_use",
+          tool: {
+            toolName: "Bash",
+            action: { kind: "command_run", command: "npm test" },
+            status: "running",
+          },
+        },
+        content: "",
+        timestamp: new Date(),
+      };
+      expect(speakOnlyService.summarizeForVoice(bashEntry)).toBeNull();
+
+      // Speak tool should work
+      const speakEntry: NormalizedEntry = {
+        index: 3,
+        type: {
+          kind: "tool_use",
+          tool: {
+            toolName: "speak",
+            action: {
+              kind: "tool",
+              toolName: "speak",
+              args: { text: "Task complete!" },
+            },
+            status: "running",
+          },
+        },
+        content: "",
+        timestamp: new Date(),
+      };
+      const result = speakOnlyService.summarizeForVoice(speakEntry);
+      expect(result).not.toBeNull();
+      expect(result?.text).toBe("Task complete!");
+    });
+
+    it("should skip assistant messages when narrateSpeakOnly is true", () => {
+      const speakOnlyService = new NarrationService({
+        narrateSpeakOnly: true,
+      });
+
+      const assistantEntry: NormalizedEntry = {
+        index: 0,
+        type: { kind: "assistant_message" },
+        content: "I found the bug and will fix it.",
+        timestamp: new Date(),
+      };
+
+      expect(speakOnlyService.summarizeForVoice(assistantEntry)).toBeNull();
+    });
+
+    it("should skip error events when narrateSpeakOnly is true", () => {
+      const speakOnlyService = new NarrationService({
+        narrateSpeakOnly: true,
+      });
+
+      const errorEntry: NormalizedEntry = {
+        index: 0,
+        type: {
+          kind: "error",
+          error: { message: "Something went wrong" },
+        },
+        content: "",
+        timestamp: new Date(),
+      };
+
+      expect(speakOnlyService.summarizeForVoice(errorEntry)).toBeNull();
+    });
+
+    it("should skip thinking events when narrateSpeakOnly is true", () => {
+      const speakOnlyService = new NarrationService({
+        narrateSpeakOnly: true,
+      });
+
+      const thinkingEntry: NormalizedEntry = {
+        index: 0,
+        type: {
+          kind: "thinking",
+          reasoning: "Let me analyze this...",
+        },
+        content: "",
+        timestamp: new Date(),
+      };
+
+      expect(speakOnlyService.summarizeForVoice(thinkingEntry)).toBeNull();
+    });
+
+    it("should handle speak tool with case-insensitive matching", () => {
+      const speakOnlyService = new NarrationService({
+        narrateSpeakOnly: true,
+      });
+
+      // Uppercase SPEAK
+      const speakEntry: NormalizedEntry = {
+        index: 0,
+        type: {
+          kind: "tool_use",
+          tool: {
+            toolName: "SPEAK",
+            action: {
+              kind: "tool",
+              toolName: "SPEAK",
+              args: { text: "Hello!" },
+            },
+            status: "running",
+          },
+        },
+        content: "",
+        timestamp: new Date(),
+      };
+
+      const result = speakOnlyService.summarizeForVoice(speakEntry);
+      expect(result).not.toBeNull();
+      expect(result?.text).toBe("Hello!");
+    });
+
+    it("should ignore narrateToolUse and narrateAssistantMessages when narrateSpeakOnly is true", () => {
+      // Even with these set to true, narrateSpeakOnly should take precedence
+      const speakOnlyService = new NarrationService({
+        narrateSpeakOnly: true,
+        narrateToolUse: true,
+        narrateAssistantMessages: true,
+      });
+
+      // Tool use should still be skipped
+      const readEntry: NormalizedEntry = {
+        index: 0,
+        type: {
+          kind: "tool_use",
+          tool: {
+            toolName: "Read",
+            action: { kind: "file_read", path: "/src/file.ts" },
+            status: "running",
+          },
+        },
+        content: "",
+        timestamp: new Date(),
+      };
+      expect(speakOnlyService.summarizeForVoice(readEntry)).toBeNull();
+
+      // Assistant message should still be skipped
+      const assistantEntry: NormalizedEntry = {
+        index: 1,
+        type: { kind: "assistant_message" },
+        content: "Hello!",
+        timestamp: new Date(),
+      };
+      expect(speakOnlyService.summarizeForVoice(assistantEntry)).toBeNull();
+    });
+
+    it("should have narrateSpeakOnly default to false", () => {
+      const config = service.getConfig();
+      expect(config.narrateSpeakOnly).toBe(false);
+    });
+  });
+
   describe("path formatting", () => {
     it("should extract filename with parent directory", () => {
       const entry: NormalizedEntry = {
