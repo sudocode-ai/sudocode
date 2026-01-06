@@ -26,7 +26,8 @@ export type Scope =
   | "inspection"
   | "workflows"
   | "workflows:read"
-  | "workflows:write";
+  | "workflows:write"
+  | "voice";
 
 /**
  * Meta-scopes that expand to multiple scopes.
@@ -55,6 +56,7 @@ export const ALL_SCOPES: Scope[] = [
   "workflows",
   "workflows:read",
   "workflows:write",
+  "voice",
 ];
 
 /**
@@ -69,6 +71,7 @@ export const SERVER_REQUIRED_SCOPES: Scope[] = [
   "workflows",
   "workflows:read",
   "workflows:write",
+  "voice",
 ];
 
 /**
@@ -142,6 +145,9 @@ export const SCOPE_TOOLS: Record<Scope, string[]> = {
     "cancel_workflow",
     "resume_workflow",
   ],
+
+  // Voice scope - for explicit agent narration
+  voice: ["speak"],
 };
 
 // =============================================================================

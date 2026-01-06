@@ -355,6 +355,11 @@ sudocode is a git-native spec and issue management system designed for AI-assist
       case "resume_workflow":
         return this.apiClient.resumeWorkflow(args as any);
 
+      // Voice - speak is a no-op on the MCP side; actual narration
+      // happens server-side when parsing the agent's output stream
+      case "speak":
+        return { success: true, message: "Narration queued" };
+
       default:
         throw new Error(`Unknown API tool: ${name}`);
     }

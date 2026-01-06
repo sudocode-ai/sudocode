@@ -1074,6 +1074,166 @@ describe("ExecutionService.buildExecutionConfig", () => {
     });
   });
 
+  describe("voice scope injection based on narration config", () => {
+    it("should add voice scope when narration is enabled", async () => {
+      // Mock: sudocode-mcp package installed, agent plugin not configured
+      await mockSudocodeMcpDetection(true);
+      mockAgentMcpDetection(false);
+
+      // Set server URL - required for voice scope injection
+      service.setServerUrl("http://localhost:3000");
+
+      const userConfig: ExecutionConfig = {
+        mode: "worktree",
+        narrationConfig: {
+          enabled: true,
+        },
+      };
+
+      const result = await service.buildExecutionConfig(
+        "claude-code",
+        userConfig
+      );
+
+      // Should have auto-injected sudocode-mcp with voice scope
+      expect(result.mcpServers).toBeDefined();
+      expect(result.mcpServers!["sudocode-mcp"]).toBeDefined();
+      expect(result.mcpServers!["sudocode-mcp"].args).toBeDefined();
+      const args = result.mcpServers!["sudocode-mcp"].args!;
+      expect(args).toContain("--scope");
+      // Find the scope value
+      const scopeIndex = args.indexOf("--scope");
+      expect(scopeIndex).toBeGreaterThanOrEqual(0);
+      const scopeValue = args[scopeIndex + 1];
+      expect(scopeValue).toContain("voice");
+    });
+
+    it("should not add voice scope when narration is disabled", async () => {
+      // Mock: sudocode-mcp package installed, agent plugin not configured
+      await mockSudocodeMcpDetection(true);
+      mockAgentMcpDetection(false);
+
+      // Set server URL - but voice scope should NOT be added when narration is disabled
+      service.setServerUrl("http://localhost:3000");
+
+      const userConfig: ExecutionConfig = {
+        mode: "worktree",
+        narrationConfig: {
+          enabled: false,
+        },
+      };
+
+      const result = await service.buildExecutionConfig(
+        "claude-code",
+        userConfig
+      );
+
+      // Should have auto-injected sudocode-mcp without voice scope
+      expect(result.mcpServers).toBeDefined();
+      expect(result.mcpServers!["sudocode-mcp"]).toBeDefined();
+
+      const args = result.mcpServers!["sudocode-mcp"].args;
+      if (args && args.includes("--scope")) {
+        const scopeIndex = args.indexOf("--scope");
+        const scopeValue = args[scopeIndex + 1];
+        expect(scopeValue).not.toContain("voice");
+      }
+    });
+
+    it("should not add voice scope when narrationConfig is undefined", async () => {
+      // Mock: sudocode-mcp package installed, agent plugin not configured
+      await mockSudocodeMcpDetection(true);
+      mockAgentMcpDetection(false);
+
+      // Set server URL - but voice scope should NOT be added when narrationConfig is undefined
+      service.setServerUrl("http://localhost:3000");
+
+      const userConfig: ExecutionConfig = {
+        mode: "worktree",
+        // No narrationConfig
+      };
+
+      const result = await service.buildExecutionConfig(
+        "claude-code",
+        userConfig
+      );
+
+      // Should have auto-injected sudocode-mcp without voice scope
+      expect(result.mcpServers).toBeDefined();
+      expect(result.mcpServers!["sudocode-mcp"]).toBeDefined();
+
+      const args = result.mcpServers!["sudocode-mcp"].args;
+      if (args && args.includes("--scope")) {
+        const scopeIndex = args.indexOf("--scope");
+        const scopeValue = args[scopeIndex + 1];
+        expect(scopeValue).not.toContain("voice");
+      }
+    });
+
+    it("should add voice scope with project-assistant tag when narration is enabled", async () => {
+      // Mock: sudocode-mcp package installed, agent plugin not configured
+      await mockSudocodeMcpDetection(true);
+      mockAgentMcpDetection(false);
+
+      // Set server URL - required for voice scope injection
+      service.setServerUrl("http://localhost:3000");
+
+      const userConfig: ExecutionConfig = {
+        mode: "worktree",
+        tags: ["project-assistant"],
+        narrationConfig: {
+          enabled: true,
+        },
+      };
+
+      const result = await service.buildExecutionConfig(
+        "claude-code",
+        userConfig
+      );
+
+      // Should have auto-injected sudocode-mcp with all,voice scopes
+      expect(result.mcpServers).toBeDefined();
+      expect(result.mcpServers!["sudocode-mcp"]).toBeDefined();
+      const args = result.mcpServers!["sudocode-mcp"].args!;
+      expect(args).toContain("--scope");
+      const scopeIndex = args.indexOf("--scope");
+      const scopeValue = args[scopeIndex + 1];
+      expect(scopeValue).toContain("all");
+      expect(scopeValue).toContain("voice");
+    });
+
+    it("should use default,voice scopes when narration enabled without project-assistant tag", async () => {
+      // Mock: sudocode-mcp package installed, agent plugin not configured
+      await mockSudocodeMcpDetection(true);
+      mockAgentMcpDetection(false);
+
+      // Set server URL - required for voice scope injection
+      service.setServerUrl("http://localhost:3000");
+
+      const userConfig: ExecutionConfig = {
+        mode: "worktree",
+        narrationConfig: {
+          enabled: true,
+        },
+      };
+
+      const result = await service.buildExecutionConfig(
+        "claude-code",
+        userConfig
+      );
+
+      // Should have auto-injected sudocode-mcp with default,voice scopes
+      expect(result.mcpServers).toBeDefined();
+      expect(result.mcpServers!["sudocode-mcp"]).toBeDefined();
+      const args = result.mcpServers!["sudocode-mcp"].args!;
+      expect(args).toContain("--scope");
+      const scopeIndex = args.indexOf("--scope");
+      const scopeValue = args[scopeIndex + 1];
+      expect(scopeValue).toContain("default");
+      expect(scopeValue).toContain("voice");
+    });
+  });
+
   describe("cursor error handling", () => {
     it("should throw error when cursor agent has no MCP config", async () => {
       // Mock detectSudocodeMcp to return true (package installed)
