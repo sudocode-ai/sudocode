@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { CodeMapContainer } from '@/components/codeviz/CodeMapContainer'
 
 // Mock useCodeGraph hook
@@ -8,6 +8,25 @@ const mockUseCodeGraph = vi.fn()
 
 vi.mock('@/hooks/useCodeGraph', () => ({
   useCodeGraph: () => mockUseCodeGraph(),
+}))
+
+// Mock useActiveExecutions hook
+const mockUseActiveExecutions = vi.fn()
+vi.mock('@/hooks/useActiveExecutions', () => ({
+  useActiveExecutions: () => mockUseActiveExecutions(),
+}))
+
+// Mock useCodeVizOverlays hook
+const mockOverlayPort = {
+  bind: vi.fn(),
+  update: vi.fn(),
+  remove: vi.fn(),
+  clear: vi.fn(),
+  getOverlays: vi.fn().mockReturnValue([]),
+}
+const mockUseCodeVizOverlays = vi.fn()
+vi.mock('@/hooks/useCodeVizOverlays', () => ({
+  useCodeVizOverlays: (options: any) => mockUseCodeVizOverlays(options),
 }))
 
 // Mock ThemeContext
@@ -20,9 +39,10 @@ vi.mock('@/contexts/ThemeContext', () => ({
 
 // Mock codeviz/browser
 vi.mock('codeviz/browser', () => ({
-  CodeMapComponent: ({ codeMap }: { codeMap: any }) => (
+  CodeMapComponent: ({ codeMap, overlayPort }: { codeMap: any; overlayPort?: any }) => (
     <div data-testid="code-map-component">
       <span data-testid="file-count">{codeMap?.files?.length ?? 0}</span>
+      {overlayPort && <span data-testid="has-overlay-port">true</span>}
     </div>
   ),
   useLayout: (codeGraph: any) => ({
@@ -77,6 +97,20 @@ describe('CodeMapContainer', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockTriggerAnalysis.mockClear()
+    // Default mock for useActiveExecutions
+    mockUseActiveExecutions.mockReturnValue({
+      executions: [],
+      isLoading: false,
+      error: null,
+    })
+    // Default mock for useCodeVizOverlays
+    mockUseCodeVizOverlays.mockReturnValue({
+      overlayPort: mockOverlayPort,
+      overlayCount: 0,
+      clearAgentOverlays: vi.fn(),
+      highlightFile: vi.fn(),
+      removeHighlight: vi.fn(),
+    })
   })
 
   describe('Loading state', () => {
@@ -315,6 +349,100 @@ describe('CodeMapContainer', () => {
       const { container } = render(<CodeMapContainer />)
 
       expect(container.querySelector('[data-testid="code-map-component"]')).toBeInTheDocument()
+    })
+  })
+
+  describe('Agent overlay integration', () => {
+    it('should pass overlay port to CodeMapComponent', () => {
+      mockUseCodeGraph.mockReturnValue({
+        codeGraph: mockCodeGraph,
+        fileTree: mockFileTree,
+        isLoading: false,
+        isAnalyzing: false,
+        analysisProgress: null,
+        error: null,
+        triggerAnalysis: mockTriggerAnalysis,
+      })
+
+      render(<CodeMapContainer />)
+
+      expect(screen.getByTestId('has-overlay-port')).toBeInTheDocument()
+    })
+
+    it('should initialize useCodeVizOverlays with empty executions', () => {
+      mockUseCodeGraph.mockReturnValue({
+        codeGraph: mockCodeGraph,
+        fileTree: mockFileTree,
+        isLoading: false,
+        isAnalyzing: false,
+        analysisProgress: null,
+        error: null,
+        triggerAnalysis: mockTriggerAnalysis,
+      })
+
+      render(<CodeMapContainer />)
+
+      expect(mockUseCodeVizOverlays).toHaveBeenCalledWith(
+        expect.objectContaining({
+          executions: [],
+          selectedAgentId: null,
+          onAgentClick: expect.any(Function),
+        })
+      )
+    })
+
+    it('should pass active executions to useCodeVizOverlays', () => {
+      const mockExecutions = [
+        {
+          id: 'exec-001',
+          issueId: 'i-abc1',
+          agentType: 'claude-code',
+          status: 'running',
+          worktreePath: '/worktree',
+          changedFiles: ['src/index.ts'],
+          startedAt: '2024-01-01T10:00:00Z',
+        },
+      ]
+
+      mockUseActiveExecutions.mockReturnValue({
+        executions: mockExecutions,
+        isLoading: false,
+        error: null,
+      })
+
+      mockUseCodeGraph.mockReturnValue({
+        codeGraph: mockCodeGraph,
+        fileTree: mockFileTree,
+        isLoading: false,
+        isAnalyzing: false,
+        analysisProgress: null,
+        error: null,
+        triggerAnalysis: mockTriggerAnalysis,
+      })
+
+      render(<CodeMapContainer />)
+
+      expect(mockUseCodeVizOverlays).toHaveBeenCalledWith(
+        expect.objectContaining({
+          executions: mockExecutions,
+        })
+      )
+    })
+
+    it('should use useActiveExecutions hook', () => {
+      mockUseCodeGraph.mockReturnValue({
+        codeGraph: mockCodeGraph,
+        fileTree: mockFileTree,
+        isLoading: false,
+        isAnalyzing: false,
+        analysisProgress: null,
+        error: null,
+        triggerAnalysis: mockTriggerAnalysis,
+      })
+
+      render(<CodeMapContainer />)
+
+      expect(mockUseActiveExecutions).toHaveBeenCalled()
     })
   })
 })

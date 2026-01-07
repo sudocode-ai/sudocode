@@ -29,7 +29,7 @@ vi.mock('@/contexts/WebSocketContext', () => ({
     connected: true,
     subscribe: vi.fn(),
     unsubscribe: vi.fn(),
-    addMessageHandler: vi.fn((id: string, handler: (msg: WebSocketMessage) => void) => {
+    addMessageHandler: vi.fn((_id: string, handler: (msg: WebSocketMessage) => void) => {
       mockMessageHandler = handler
     }),
     removeMessageHandler: vi.fn(() => {
@@ -64,17 +64,57 @@ const mockFileTree = {
   },
 }
 
-// Mock code graph response
+// Mock code graph response with complete FileNode structure
 const mockCodeGraph = {
   files: [
-    { id: 'f1', path: 'src/index.ts', name: 'index.ts' },
-    { id: 'f2', path: 'src/utils.ts', name: 'utils.ts' },
+    {
+      id: 'f1',
+      path: 'src/index.ts',
+      name: 'index.ts',
+      extension: 'ts',
+      directoryId: 'd1',
+      metrics: { loc: 100, totalLines: 120, exportCount: 5, importCount: 3 },
+      symbols: ['s1'],
+      language: 'typescript',
+    },
+    {
+      id: 'f2',
+      path: 'src/utils.ts',
+      name: 'utils.ts',
+      extension: 'ts',
+      directoryId: 'd1',
+      metrics: { loc: 50, totalLines: 60, exportCount: 2, importCount: 1 },
+      symbols: [],
+      language: 'typescript',
+    },
   ],
-  directories: [{ id: 'd1', path: 'src', name: 'src' }],
-  symbols: [{ id: 's1', name: 'main', kind: 'function' }],
+  directories: [
+    {
+      id: 'd1',
+      path: 'src',
+      name: 'src',
+      parentId: null,
+      children: [],
+      files: ['f1', 'f2'],
+      metrics: { fileCount: 2, totalLoc: 150 },
+      depth: 0,
+    },
+  ],
+  symbols: [
+    {
+      id: 's1',
+      name: 'main',
+      kind: 'function' as const,
+      fileId: 'f1',
+      location: { startLine: 1, startColumn: 0, endLine: 10, endColumn: 0 },
+      exported: true,
+      metrics: { loc: 10 },
+    },
+  ],
   imports: [],
   calls: [],
   metadata: {
+    rootPath: '/test/project',
     totalFiles: 2,
     totalDirectories: 1,
     totalSymbols: 1,

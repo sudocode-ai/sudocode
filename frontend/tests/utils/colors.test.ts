@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { getColorFromId, getColorFromIdWithMode } from '@/utils/colors'
+import {
+  getColorFromId,
+  getColorFromIdWithMode,
+  getAgentColor,
+  getAgentColorClasses,
+  AGENT_COLOR_PALETTE,
+} from '@/utils/colors'
 
 describe('colors', () => {
   describe('getColorFromId', () => {
@@ -91,6 +97,89 @@ describe('colors', () => {
       const darkMatch = darkColor.match(/hsl\((\d+), \d+%, \d+%\)/)
 
       expect(lightMatch![1]).toBe(darkMatch![1])
+    })
+  })
+
+  describe('getAgentColor', () => {
+    it('should return a color from the palette', () => {
+      const color = getAgentColor('exec-001')
+      expect(AGENT_COLOR_PALETTE).toContain(color)
+    })
+
+    it('should return consistent colors for the same ID', () => {
+      const color1 = getAgentColor('exec-abc123')
+      const color2 = getAgentColor('exec-abc123')
+      expect(color1).toBe(color2)
+    })
+
+    it('should distribute colors across the palette for different IDs', () => {
+      const testIds = [
+        'exec-001',
+        'exec-002',
+        'exec-003',
+        'exec-abc',
+        'exec-xyz',
+        'exec-test',
+        'exec-hello',
+        'exec-world',
+      ]
+      const colors = testIds.map((id) => getAgentColor(id))
+      const uniqueColors = new Set(colors)
+
+      // With 8 different IDs, we should get at least 3 unique colors
+      expect(uniqueColors.size).toBeGreaterThanOrEqual(3)
+    })
+
+    it('should return valid hex color format', () => {
+      const color = getAgentColor('exec-001')
+      expect(color).toMatch(/^#[0-9a-f]{6}$/i)
+    })
+  })
+
+  describe('getAgentColorClasses', () => {
+    it('should return Tailwind classes for each color property', () => {
+      const classes = getAgentColorClasses('exec-001')
+
+      expect(classes).toHaveProperty('bg')
+      expect(classes).toHaveProperty('text')
+      expect(classes).toHaveProperty('border')
+      expect(classes).toHaveProperty('ring')
+
+      expect(classes.bg).toMatch(/^bg-\w+-500$/)
+      expect(classes.text).toMatch(/^text-\w+-500$/)
+      expect(classes.border).toMatch(/^border-\w+-500$/)
+      expect(classes.ring).toMatch(/^ring-\w+-500$/)
+    })
+
+    it('should return consistent classes for the same ID', () => {
+      const classes1 = getAgentColorClasses('exec-abc123')
+      const classes2 = getAgentColorClasses('exec-abc123')
+      expect(classes1).toEqual(classes2)
+    })
+
+    it('should have matching bg and text colors', () => {
+      const classes = getAgentColorClasses('exec-001')
+      // Extract color name from bg class (e.g., 'blue' from 'bg-blue-500')
+      const bgColor = classes.bg.match(/bg-(\w+)-500/)?.[1]
+      const textColor = classes.text.match(/text-(\w+)-500/)?.[1]
+      expect(bgColor).toBe(textColor)
+    })
+  })
+
+  describe('AGENT_COLOR_PALETTE', () => {
+    it('should have at least 8 colors', () => {
+      expect(AGENT_COLOR_PALETTE.length).toBeGreaterThanOrEqual(8)
+    })
+
+    it('should contain only valid hex colors', () => {
+      for (const color of AGENT_COLOR_PALETTE) {
+        expect(color).toMatch(/^#[0-9a-f]{6}$/i)
+      }
+    })
+
+    it('should have unique colors', () => {
+      const uniqueColors = new Set(AGENT_COLOR_PALETTE)
+      expect(uniqueColors.size).toBe(AGENT_COLOR_PALETTE.length)
     })
   })
 })

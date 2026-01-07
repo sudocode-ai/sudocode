@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
   CodeMapComponent,
   useLayout,
@@ -12,6 +12,8 @@ import {
   detectLanguage,
 } from 'codeviz/browser'
 import { useCodeGraph, type FileTreeResponse } from '@/hooks/useCodeGraph'
+import { useActiveExecutions } from '@/hooks/useActiveExecutions'
+import { useCodeVizOverlays } from '@/hooks/useCodeVizOverlays'
 import { useTheme } from '@/contexts/ThemeContext'
 import { Loader2, Zap, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -268,6 +270,15 @@ export function CodeMapContainer() {
   } = useCodeGraph()
   const { theme: appTheme } = useTheme()
 
+  // Agent overlay integration
+  const { executions } = useActiveExecutions()
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
+  const { overlayPort } = useCodeVizOverlays({
+    executions,
+    selectedAgentId,
+    onAgentClick: setSelectedAgentId,
+  })
+
   // Use full CodeGraph if available, otherwise transform file tree
   const codeGraph = useMemo(() => {
     if (fullCodeGraph) return fullCodeGraph
@@ -324,6 +335,7 @@ export function CodeMapContainer() {
       <CodevizThemeProvider initialTheme={codevizTheme}>
         <CodeMapComponent
           codeMap={codeMap}
+          overlayPort={overlayPort}
           onNodeClick={(nodeId, node) => {
             console.log('Node clicked:', nodeId, node)
           }}
