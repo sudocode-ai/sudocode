@@ -29,6 +29,12 @@ vi.mock('@/hooks/useCodeVizOverlays', () => ({
   useCodeVizOverlays: (options: any) => mockUseCodeVizOverlays(options),
 }))
 
+// Mock useFileEntityMap hook
+const mockUseFileEntityMap = vi.fn()
+vi.mock('@/hooks/useFileEntityMap', () => ({
+  useFileEntityMap: () => mockUseFileEntityMap(),
+}))
+
 // Mock ThemeContext
 vi.mock('@/contexts/ThemeContext', () => ({
   useTheme: () => ({
@@ -108,8 +114,19 @@ describe('CodeMapContainer', () => {
       overlayPort: mockOverlayPort,
       overlayCount: 0,
       clearAgentOverlays: vi.fn(),
+      clearFileHighlights: vi.fn(),
+      clearChangeBadges: vi.fn(),
       highlightFile: vi.fn(),
       removeHighlight: vi.fn(),
+      getFileAgentInfo: vi.fn().mockReturnValue([]),
+    })
+    // Default mock for useFileEntityMap
+    mockUseFileEntityMap.mockReturnValue({
+      fileEntityMap: {},
+      isLoading: false,
+      error: null,
+      fileCount: 0,
+      executionCount: 0,
     })
   })
 
@@ -443,6 +460,84 @@ describe('CodeMapContainer', () => {
       render(<CodeMapContainer />)
 
       expect(mockUseActiveExecutions).toHaveBeenCalled()
+    })
+
+    it('should use useFileEntityMap hook', () => {
+      mockUseCodeGraph.mockReturnValue({
+        codeGraph: mockCodeGraph,
+        fileTree: mockFileTree,
+        isLoading: false,
+        isAnalyzing: false,
+        analysisProgress: null,
+        error: null,
+        triggerAnalysis: mockTriggerAnalysis,
+      })
+
+      render(<CodeMapContainer />)
+
+      expect(mockUseFileEntityMap).toHaveBeenCalled()
+    })
+
+    it('should pass fileEntityMap to useCodeVizOverlays', () => {
+      const mockFileEntityMapData = {
+        'src/index.ts': {
+          executions: ['exec-001'],
+          issues: ['i-abc1'],
+          specs: [],
+          changes: {
+            'exec-001': { additions: 10, deletions: 5, status: 'M' },
+          },
+        },
+      }
+
+      mockUseFileEntityMap.mockReturnValue({
+        fileEntityMap: mockFileEntityMapData,
+        isLoading: false,
+        error: null,
+        fileCount: 1,
+        executionCount: 1,
+      })
+
+      mockUseCodeGraph.mockReturnValue({
+        codeGraph: mockCodeGraph,
+        fileTree: mockFileTree,
+        isLoading: false,
+        isAnalyzing: false,
+        analysisProgress: null,
+        error: null,
+        triggerAnalysis: mockTriggerAnalysis,
+      })
+
+      render(<CodeMapContainer />)
+
+      expect(mockUseCodeVizOverlays).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileEntityMap: mockFileEntityMapData,
+          showFileHighlights: true,
+          showChangeBadges: true,
+        })
+      )
+    })
+
+    it('should enable file highlights and badges by default', () => {
+      mockUseCodeGraph.mockReturnValue({
+        codeGraph: mockCodeGraph,
+        fileTree: mockFileTree,
+        isLoading: false,
+        isAnalyzing: false,
+        analysisProgress: null,
+        error: null,
+        triggerAnalysis: mockTriggerAnalysis,
+      })
+
+      render(<CodeMapContainer />)
+
+      expect(mockUseCodeVizOverlays).toHaveBeenCalledWith(
+        expect.objectContaining({
+          showFileHighlights: true,
+          showChangeBadges: true,
+        })
+      )
     })
   })
 })

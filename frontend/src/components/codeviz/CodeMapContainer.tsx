@@ -14,6 +14,7 @@ import {
 import { useCodeGraph, type FileTreeResponse } from '@/hooks/useCodeGraph'
 import { useActiveExecutions } from '@/hooks/useActiveExecutions'
 import { useCodeVizOverlays } from '@/hooks/useCodeVizOverlays'
+import { useFileEntityMap } from '@/hooks/useFileEntityMap'
 import { useTheme } from '@/contexts/ThemeContext'
 import { Loader2, Zap, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -273,10 +274,17 @@ export function CodeMapContainer() {
   // Agent overlay integration
   const { executions } = useActiveExecutions()
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
+
+  // File entity mapping for highlights and badges
+  const { fileEntityMap } = useFileEntityMap()
+
   const { overlayPort } = useCodeVizOverlays({
     executions,
     selectedAgentId,
     onAgentClick: setSelectedAgentId,
+    fileEntityMap,
+    showFileHighlights: true,
+    showChangeBadges: true,
   })
 
   // Use full CodeGraph if available, otherwise transform file tree
