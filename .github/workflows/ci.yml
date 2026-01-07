@@ -44,7 +44,7 @@ jobs:
         run: npm run link
 
       - name: Run tests
-        run: npm run test:summary
+        run: npm run test
 
       - name: Create test summary
         if: always()
