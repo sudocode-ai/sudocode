@@ -744,8 +744,48 @@ export interface FileTreeResponse {
   }
 }
 
+/**
+ * CodeGraph response from the server (cached analysis)
+ */
+export interface CodeGraphResponse {
+  codeGraph: import('codeviz/browser').CodeGraph
+  gitSha: string
+  analyzedAt: string
+  stats: {
+    fileCount: number
+    symbolCount: number
+    analysisDurationMs: number
+  }
+}
+
+/**
+ * Analysis trigger response
+ */
+export interface AnalyzeResponse {
+  analysisId: string | null
+  gitSha: string
+  status: 'started' | 'already_running' | 'already_cached'
+}
+
+/**
+ * Analysis status response
+ */
+export interface AnalysisStatusResponse {
+  analysisId?: string
+  status: 'idle' | 'running' | 'completed' | 'failed'
+  gitSha: string
+  phase?: 'scanning' | 'parsing' | 'resolving'
+  progress?: { current: number; total: number }
+  currentFile?: string
+  error?: string
+  startedAt?: string
+}
+
 export const codevizApi = {
   getFileTree: () => get<FileTreeResponse>('/codeviz/file-tree'),
+  getCodeGraph: () => get<CodeGraphResponse>('/codeviz/code-graph'),
+  triggerAnalysis: () => post<AnalyzeResponse>('/codeviz/analyze', {}),
+  getAnalysisStatus: () => get<AnalysisStatusResponse>('/codeviz/analyze/status'),
 }
 
 export default api

@@ -263,6 +263,21 @@ CREATE TABLE IF NOT EXISTS workflow_events (
 );
 `;
 
+// CodeGraph cache table - caches full codebase analysis results keyed by git SHA
+export const CODE_GRAPH_CACHE_TABLE = `
+CREATE TABLE IF NOT EXISTS code_graph_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    git_sha TEXT NOT NULL UNIQUE,
+    code_graph TEXT NOT NULL,
+    file_tree TEXT NOT NULL,
+    analyzed_at DATETIME NOT NULL,
+    file_count INTEGER NOT NULL DEFAULT 0,
+    symbol_count INTEGER NOT NULL DEFAULT 0,
+    analysis_duration_ms INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+`;
+
 /**
  * Index definitions
  */
@@ -364,6 +379,11 @@ CREATE INDEX IF NOT EXISTS idx_workflow_events_created_at ON workflow_events(cre
 CREATE INDEX IF NOT EXISTS idx_workflow_events_unprocessed ON workflow_events(workflow_id, processed_at) WHERE processed_at IS NULL;
 `;
 
+export const CODE_GRAPH_CACHE_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_code_graph_cache_sha ON code_graph_cache(git_sha);
+CREATE INDEX IF NOT EXISTS idx_code_graph_cache_analyzed_at ON code_graph_cache(analyzed_at);
+`;
+
 /**
  * View definitions
  */
@@ -424,6 +444,7 @@ export const ALL_TABLES = [
   EXECUTION_LOGS_TABLE,
   WORKFLOWS_TABLE,
   WORKFLOW_EVENTS_TABLE,
+  CODE_GRAPH_CACHE_TABLE,
 ];
 
 export const ALL_INDEXES = [
@@ -438,6 +459,7 @@ export const ALL_INDEXES = [
   EXECUTION_LOGS_INDEXES,
   WORKFLOWS_INDEXES,
   WORKFLOW_EVENTS_INDEXES,
+  CODE_GRAPH_CACHE_INDEXES,
 ];
 
 export const ALL_VIEWS = [READY_ISSUES_VIEW, BLOCKED_ISSUES_VIEW];

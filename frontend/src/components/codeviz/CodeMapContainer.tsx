@@ -11,12 +11,14 @@ import {
   generateDirectoryId,
   detectLanguage,
 } from 'codeviz/browser'
-import { useFileTree, type FileTreeResponse } from '@/hooks/useFileTree'
+import { useCodeGraph, type FileTreeResponse } from '@/hooks/useCodeGraph'
 import { useTheme } from '@/contexts/ThemeContext'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Zap, CheckCircle2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 /**
  * Transform FileTreeResponse from the server into codeviz CodeGraph format.
+ * Used as fallback when full CodeGraph is not yet analyzed.
  */
 function transformToCodeGraph(fileTree: FileTreeResponse): CodeGraph {
   const { files, directories, metadata } = fileTree
@@ -186,17 +188,92 @@ function EmptyState() {
 }
 
 /**
- * CodeMapContainer - Fetches file tree and renders the codeviz CodeMapComponent
+ * Analysis status indicator component
+ */
+function AnalysisIndicator({
+  isAnalyzing,
+  hasFullCodeGraph,
+  analysisProgress,
+  onAnalyze,
+}: {
+  isAnalyzing: boolean
+  hasFullCodeGraph: boolean
+  analysisProgress: { phase: string; current: number; total: number; currentFile?: string } | null
+  onAnalyze: () => void
+}) {
+  if (isAnalyzing && analysisProgress) {
+    const percentage =
+      analysisProgress.total > 0
+        ? Math.round((analysisProgress.current / analysisProgress.total) * 100)
+        : 0
+
+    return (
+      <div className="absolute left-1/2 top-4 z-50 -translate-x-1/2">
+        <div className="flex items-center gap-3 rounded-lg border bg-background/95 px-4 py-2 shadow-lg backdrop-blur">
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          <div className="flex flex-col">
+            <span className="text-sm font-medium">
+              Analyzing: {analysisProgress.current}/{analysisProgress.total} files ({percentage}%)
+            </span>
+            {analysisProgress.currentFile && (
+              <span className="max-w-[300px] truncate text-xs text-muted-foreground">
+                {analysisProgress.currentFile}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (hasFullCodeGraph) {
+    return (
+      <div className="absolute right-4 top-4 z-50">
+        <div className="flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-1.5 text-sm shadow-sm backdrop-blur">
+          <CheckCircle2 className="h-4 w-4 text-green-500" />
+          <span className="text-muted-foreground">Full analysis</span>
+        </div>
+      </div>
+    )
+  }
+
+  // No CodeGraph cached - show analyze button
+  return (
+    <div className="absolute right-4 top-4 z-50">
+      <Button variant="outline" size="sm" onClick={onAnalyze} className="gap-2">
+        <Zap className="h-4 w-4" />
+        Analyze for symbols
+      </Button>
+    </div>
+  )
+}
+
+/**
+ * CodeMapContainer - Fetches CodeGraph and renders the codeviz CodeMapComponent
+ *
+ * Features progressive enhancement:
+ * - Immediately shows file tree structure (fast)
+ * - Shows full CodeGraph with symbols when cached
+ * - Provides "Analyze" button to trigger background analysis
  */
 export function CodeMapContainer() {
-  const { data: fileTree, isLoading, error } = useFileTree()
+  const {
+    codeGraph: fullCodeGraph,
+    fileTree,
+    isLoading,
+    isAnalyzing,
+    analysisProgress,
+    error,
+    triggerAnalysis,
+  } = useCodeGraph()
   const { theme: appTheme } = useTheme()
 
-  // Transform file tree to CodeGraph
+  // Use full CodeGraph if available, otherwise transform file tree
   const codeGraph = useMemo(() => {
-    if (!fileTree) return null
-    return transformToCodeGraph(fileTree)
-  }, [fileTree])
+    if (fullCodeGraph) return fullCodeGraph
+    if (fileTree) return transformToCodeGraph(fileTree)
+    return null
+  }, [fullCodeGraph, fileTree])
 
   // Compute layout using codeviz hook
   const { codeMap, isComputing, error: layoutError } = useLayout(codeGraph)
@@ -237,16 +314,24 @@ export function CodeMapContainer() {
   const codevizTheme = appTheme === 'dark' ? 'dark' : 'light'
 
   return (
-    <CodevizThemeProvider initialTheme={codevizTheme}>
-      <CodeMapComponent
-        codeMap={codeMap}
-        onNodeClick={(nodeId, node) => {
-          console.log('Node clicked:', nodeId, node)
-        }}
-        onZoomLevelChange={(level) => {
-          console.log('Zoom level:', level)
-        }}
+    <div className="relative h-full w-full">
+      <AnalysisIndicator
+        isAnalyzing={isAnalyzing}
+        hasFullCodeGraph={!!fullCodeGraph}
+        analysisProgress={analysisProgress}
+        onAnalyze={triggerAnalysis}
       />
-    </CodevizThemeProvider>
+      <CodevizThemeProvider initialTheme={codevizTheme}>
+        <CodeMapComponent
+          codeMap={codeMap}
+          onNodeClick={(nodeId, node) => {
+            console.log('Node clicked:', nodeId, node)
+          }}
+          onZoomLevelChange={(level) => {
+            console.log('Zoom level:', level)
+          }}
+        />
+      </CodevizThemeProvider>
+    </div>
   )
 }

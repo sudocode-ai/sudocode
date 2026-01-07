@@ -621,6 +621,50 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 6,
+    name: "add-code-graph-cache-table",
+    up: (db: Database.Database) => {
+      // Check if table already exists
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='code_graph_cache'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (tables.length > 0) {
+        // Already migrated
+        return;
+      }
+
+      // Create the code_graph_cache table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS code_graph_cache (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          git_sha TEXT NOT NULL UNIQUE,
+          code_graph TEXT NOT NULL,
+          file_tree TEXT NOT NULL,
+          analyzed_at DATETIME NOT NULL,
+          file_count INTEGER NOT NULL DEFAULT 0,
+          symbol_count INTEGER NOT NULL DEFAULT 0,
+          analysis_duration_ms INTEGER NOT NULL DEFAULT 0,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+      // Create indexes
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_code_graph_cache_sha ON code_graph_cache(git_sha);
+        CREATE INDEX IF NOT EXISTS idx_code_graph_cache_analyzed_at ON code_graph_cache(analyzed_at);
+      `);
+
+      console.log("  ✓ Added code_graph_cache table for CodeViz caching");
+    },
+    down: (db: Database.Database) => {
+      db.exec(`DROP TABLE IF EXISTS code_graph_cache;`);
+      console.log("  ✓ Removed code_graph_cache table");
+    },
+  },
 ];
 
 /**

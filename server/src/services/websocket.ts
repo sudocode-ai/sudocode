@@ -79,7 +79,10 @@ export interface ServerMessage {
     // TTS streaming message types
     | "tts_audio"
     | "tts_end"
-    | "tts_error";
+    | "tts_error"
+    // CodeViz analysis events
+    | "code_graph_ready"
+    | "code_graph_progress";
   projectId?: string; // Project ID for project-scoped messages
   data?: any;
   message?: string;
@@ -966,4 +969,46 @@ export function broadcastToProject(
   message: { type: string; [key: string]: unknown }
 ): void {
   websocketManager.broadcastGeneric(projectId, message as ServerMessage);
+}
+
+/**
+ * Broadcast CodeGraph ready event when analysis completes
+ *
+ * @param projectId - ID of the project
+ * @param data - CodeGraph completion data
+ */
+export function broadcastCodeGraphReady(
+  projectId: string,
+  data: {
+    gitSha: string;
+    fileCount: number;
+    symbolCount: number;
+    analysisDurationMs: number;
+  }
+): void {
+  websocketManager.broadcastGeneric(projectId, {
+    type: "code_graph_ready",
+    data,
+  });
+}
+
+/**
+ * Broadcast CodeGraph analysis progress for real-time updates
+ *
+ * @param projectId - ID of the project
+ * @param data - Analysis progress data
+ */
+export function broadcastCodeGraphProgress(
+  projectId: string,
+  data: {
+    phase: "scanning" | "parsing" | "resolving";
+    current: number;
+    total: number;
+    currentFile?: string;
+  }
+): void {
+  websocketManager.broadcastGeneric(projectId, {
+    type: "code_graph_progress",
+    data,
+  });
 }

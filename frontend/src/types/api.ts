@@ -193,6 +193,8 @@ export interface WebSocketMessage {
     | 'tts_audio'
     | 'tts_end'
     | 'tts_error'
+    | 'code_graph_ready'
+    | 'code_graph_progress'
     | 'error'
   projectId?: string // Project ID for project-scoped messages
   data?: Issue | Spec | Relationship | IssueFeedback | Execution | any
