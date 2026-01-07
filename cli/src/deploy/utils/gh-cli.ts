@@ -117,7 +117,7 @@ export async function createCodespace(config: CodespaceConfig): Promise<Codespac
     `--repo ${config.repository}`,
     `--machine ${config.machine}`,
     `--idle-timeout ${config.idleTimeout}m`,
-    `--retention-period ${config.retentionPeriod}d`,
+    `--retention-period ${config.retentionPeriod * 24}h`,
     '--json name,state'
   ].join(' ');
 

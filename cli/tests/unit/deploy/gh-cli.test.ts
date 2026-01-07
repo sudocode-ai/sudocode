@@ -117,7 +117,7 @@ describe('gh-cli utilities', () => {
         expect(cmd).toContain('--repo owner/repo');
         expect(cmd).toContain('--machine basicLinux32gb');
         expect(cmd).toContain('--idle-timeout 240m');
-        expect(cmd).toContain('--retention-period 14d');
+        expect(cmd).toContain('--retention-period 336h');
 
         callback(null, {
           stdout: JSON.stringify(mockResponse),
@@ -154,6 +154,75 @@ describe('gh-cli utilities', () => {
           retentionPeriod: 14
         })
       ).rejects.toThrow('Failed to create Codespace');
+    });
+
+    it('should convert 1 day to 24h', async () => {
+      const mockResponse = {
+        name: 'test-codespace',
+        state: 'Starting'
+      };
+
+      vi.mocked(exec).mockImplementation((cmd: any, callback: any) => {
+        expect(cmd).toContain('--retention-period 24h');
+        callback(null, {
+          stdout: JSON.stringify(mockResponse),
+          stderr: ''
+        });
+        return {} as any;
+      });
+
+      await ghCli.createCodespace({
+        repository: 'owner/repo',
+        machine: 'basicLinux32gb',
+        idleTimeout: 240,
+        retentionPeriod: 1
+      });
+    });
+
+    it('should convert 30 days to 720h (maximum)', async () => {
+      const mockResponse = {
+        name: 'test-codespace',
+        state: 'Starting'
+      };
+
+      vi.mocked(exec).mockImplementation((cmd: any, callback: any) => {
+        expect(cmd).toContain('--retention-period 720h');
+        callback(null, {
+          stdout: JSON.stringify(mockResponse),
+          stderr: ''
+        });
+        return {} as any;
+      });
+
+      await ghCli.createCodespace({
+        repository: 'owner/repo',
+        machine: 'basicLinux32gb',
+        idleTimeout: 240,
+        retentionPeriod: 30
+      });
+    });
+
+    it('should convert 7 days to 168h', async () => {
+      const mockResponse = {
+        name: 'test-codespace',
+        state: 'Starting'
+      };
+
+      vi.mocked(exec).mockImplementation((cmd: any, callback: any) => {
+        expect(cmd).toContain('--retention-period 168h');
+        callback(null, {
+          stdout: JSON.stringify(mockResponse),
+          stderr: ''
+        });
+        return {} as any;
+      });
+
+      await ghCli.createCodespace({
+        repository: 'owner/repo',
+        machine: 'basicLinux32gb',
+        idleTimeout: 240,
+        retentionPeriod: 7
+      });
     });
   });
 
