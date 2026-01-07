@@ -1,6 +1,6 @@
 {
   "name": "sudocode",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "private": true,
   "description": "Git-native spec and issue management for AI-assisted software development",
   "type": "module",

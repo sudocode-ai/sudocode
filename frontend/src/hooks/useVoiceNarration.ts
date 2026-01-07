@@ -28,7 +28,7 @@ interface QueuedNarration {
 export interface UseVoiceNarrationOptions {
   /** Execution ID to filter narration events for */
   executionId: string
-  /** Whether narration is enabled (default: true) */
+  /** Whether narration is enabled (default: false) */
   enabled?: boolean
   /** TTS provider to use (default: 'browser') */
   ttsProvider?: TTSProvider
@@ -126,7 +126,7 @@ const LOW_PRIORITY_QUEUE_THRESHOLD = 3
 export function useVoiceNarration(options: UseVoiceNarrationOptions): UseVoiceNarrationReturn {
   const {
     executionId,
-    enabled: initialEnabled = true,
+    enabled: initialEnabled = false,
     ttsProvider = 'browser',
     kokoroMode = 'browser',
     voice,
