@@ -224,7 +224,7 @@ describe('useVoiceNarration', () => {
   describe('speak()', () => {
     it('should start speaking text', () => {
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true })
       )
 
       act(() => {
@@ -250,7 +250,7 @@ describe('useVoiceNarration', () => {
 
     it('should not speak empty text', () => {
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true })
       )
 
       act(() => {
@@ -271,6 +271,7 @@ describe('useVoiceNarration', () => {
       const { result } = renderHook(() =>
         useVoiceNarration({
           executionId: 'exec-123',
+          enabled: true,
           rate: 1.5,
           volume: 0.8,
         })
@@ -295,6 +296,7 @@ describe('useVoiceNarration', () => {
       const { result } = renderHook(() =>
         useVoiceNarration({
           executionId: 'exec-123',
+          enabled: true,
           rate: 5.0, // Too high
         })
       )
@@ -316,6 +318,7 @@ describe('useVoiceNarration', () => {
       const { result } = renderHook(() =>
         useVoiceNarration({
           executionId: 'exec-123',
+          enabled: true,
           volume: 2.0, // Too high
         })
       )
@@ -336,7 +339,7 @@ describe('useVoiceNarration', () => {
       })
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true })
       )
 
       act(() => {
@@ -356,7 +359,7 @@ describe('useVoiceNarration', () => {
       })
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true })
       )
 
       act(() => {
@@ -379,7 +382,7 @@ describe('useVoiceNarration', () => {
       })
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true })
       )
 
       // Fill the queue
@@ -410,7 +413,7 @@ describe('useVoiceNarration', () => {
       })
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true })
       )
 
       act(() => {
@@ -434,7 +437,7 @@ describe('useVoiceNarration', () => {
   describe('Controls', () => {
     it('should pause speech', () => {
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true })
       )
 
       act(() => {
@@ -448,7 +451,7 @@ describe('useVoiceNarration', () => {
 
     it('should resume speech', () => {
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true })
       )
 
       act(() => {
@@ -467,7 +470,7 @@ describe('useVoiceNarration', () => {
       })
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true })
       )
 
       act(() => {
@@ -498,7 +501,7 @@ describe('useVoiceNarration', () => {
       })
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true })
       )
 
       act(() => {
@@ -564,7 +567,7 @@ describe('useVoiceNarration', () => {
       const onStart = vi.fn()
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123', onStart })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true, onStart })
       )
 
       act(() => {
@@ -584,7 +587,7 @@ describe('useVoiceNarration', () => {
       const onEnd = vi.fn()
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123', onEnd })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true, onEnd })
       )
 
       act(() => {
@@ -610,7 +613,7 @@ describe('useVoiceNarration', () => {
       const onError = vi.fn()
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123', onError })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true, onError })
       )
 
       act(() => {
@@ -640,7 +643,7 @@ describe('useVoiceNarration', () => {
       const onError = vi.fn()
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123', onError })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true, onError })
       )
 
       act(() => {
@@ -671,7 +674,7 @@ describe('useVoiceNarration', () => {
       })
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true })
       )
 
       // Simulate receiving a voice_narration message
@@ -698,7 +701,7 @@ describe('useVoiceNarration', () => {
       })
 
       renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true })
       )
 
       // Simulate message for different execution
@@ -724,7 +727,7 @@ describe('useVoiceNarration', () => {
       })
 
       renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true })
       )
 
       // Simulate different message type
@@ -770,7 +773,7 @@ describe('useVoiceNarration', () => {
       vi.useRealTimers()
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true })
       )
 
       await waitFor(() => {
@@ -790,6 +793,7 @@ describe('useVoiceNarration', () => {
       const { result } = renderHook(() =>
         useVoiceNarration({
           executionId: 'exec-123',
+          enabled: true,
           voice: 'English Voice',
         })
       )
@@ -812,7 +816,7 @@ describe('useVoiceNarration', () => {
       })
 
       const { result, unmount } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true })
       )
 
       act(() => {
@@ -832,7 +836,7 @@ describe('useVoiceNarration', () => {
       })
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true })
       )
 
       act(() => {
@@ -881,7 +885,7 @@ describe('useVoiceNarration', () => {
       })
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true, ttsProvider: 'kokoro' })
       )
 
       expect(result.current.kokoroState).toEqual({
@@ -895,7 +899,7 @@ describe('useVoiceNarration', () => {
       mockIsKokoroReady.mockReturnValue(false)
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true, ttsProvider: 'kokoro' })
       )
 
       await act(async () => {
@@ -910,7 +914,7 @@ describe('useVoiceNarration', () => {
       mockIsKokoroReady.mockReturnValue(true)
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true, ttsProvider: 'kokoro' })
       )
 
       await act(async () => {
@@ -931,6 +935,7 @@ describe('useVoiceNarration', () => {
       const { result } = renderHook(() =>
         useVoiceNarration({
           executionId: 'exec-123',
+          enabled: true,
           ttsProvider: 'kokoro',
           voice: 'am_adam',
           rate: 1.5,
@@ -952,7 +957,7 @@ describe('useVoiceNarration', () => {
       mockIsKokoroReady.mockReturnValue(false)
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true, ttsProvider: 'kokoro' })
       )
 
       await act(async () => {
@@ -973,7 +978,7 @@ describe('useVoiceNarration', () => {
       mockLoadKokoroModel.mockResolvedValue(undefined)
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true, ttsProvider: 'kokoro' })
       )
 
       await act(async () => {
@@ -992,7 +997,7 @@ describe('useVoiceNarration', () => {
       mockGenerateSpeech.mockRejectedValue(new Error('Kokoro generation failed'))
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true, ttsProvider: 'kokoro' })
       )
 
       await act(async () => {
@@ -1018,7 +1023,7 @@ describe('useVoiceNarration', () => {
       mockGenerateSpeech.mockResolvedValue(mockBuffer)
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true, ttsProvider: 'kokoro' })
       )
 
       await act(async () => {
@@ -1033,7 +1038,7 @@ describe('useVoiceNarration', () => {
       mockIsKokoroReady.mockReturnValue(true)
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true, ttsProvider: 'kokoro' })
       )
 
       // Start speaking
@@ -1058,7 +1063,7 @@ describe('useVoiceNarration', () => {
       mockAudioStart.mockImplementation(() => {})
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true, ttsProvider: 'kokoro' })
       )
 
       await act(async () => {
@@ -1079,7 +1084,7 @@ describe('useVoiceNarration', () => {
       mockAudioStart.mockImplementation(() => {})
 
       const { result } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true, ttsProvider: 'kokoro' })
       )
 
       await act(async () => {
@@ -1099,7 +1104,7 @@ describe('useVoiceNarration', () => {
       mockIsKokoroReady.mockReturnValue(true)
 
       const { result, unmount } = renderHook(() =>
-        useVoiceNarration({ executionId: 'exec-123', ttsProvider: 'kokoro' })
+        useVoiceNarration({ executionId: 'exec-123', enabled: true, ttsProvider: 'kokoro' })
       )
 
       await act(async () => {
@@ -1121,6 +1126,7 @@ describe('useVoiceNarration', () => {
       const { result } = renderHook(() =>
         useVoiceNarration({
           executionId: 'exec-123',
+          enabled: true,
           ttsProvider: 'kokoro',
           onError,
         })

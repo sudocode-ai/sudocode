@@ -79,12 +79,12 @@ function readVoiceConfig(sudocodeDir: string): VoiceSettingsConfig | undefined {
 
 /**
  * Check if voice is enabled for a project.
- * Defaults to true if not explicitly set.
+ * Defaults to false if not explicitly set.
  */
 function isVoiceEnabled(sudocodeDir: string): boolean {
   const voiceConfig = readVoiceConfig(sudocodeDir);
-  // Default to true if not configured
-  return voiceConfig?.enabled !== false;
+  // Default to false if not configured
+  return voiceConfig?.enabled === true;
 }
 
 /**

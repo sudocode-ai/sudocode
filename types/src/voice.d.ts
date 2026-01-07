@@ -44,7 +44,7 @@ export type TTSProvider = "browser" | "kokoro" | "openai";
  * ```
  */
 export interface VoiceSettingsConfig {
-  /** Whether voice features are enabled (default: true) */
+  /** Whether voice features are enabled (default: false) */
   enabled?: boolean;
   /** Speech-to-text settings */
   stt?: {
