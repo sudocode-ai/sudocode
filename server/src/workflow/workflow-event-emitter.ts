@@ -2,7 +2,7 @@
  * Workflow Event Emitter
  *
  * Provides a typed event system for workflow lifecycle events.
- * Uses the typed listener set pattern (like AG-UI adapter), NOT Node.js EventEmitter.
+ * Uses the typed listener set pattern, NOT Node.js EventEmitter.
  */
 
 import type { Workflow, WorkflowStep } from "@sudocode-ai/types";
@@ -224,7 +224,7 @@ export type WorkflowEventListener = (event: WorkflowEventPayload) => void;
 /**
  * Typed event emitter for workflow events.
  *
- * Uses a Set of listeners (like AG-UI adapter pattern) for:
+ * Uses a Set of listeners for:
  * - O(1) add/remove operations
  * - Safe iteration during emit (Set creates snapshot)
  * - No duplicate listeners

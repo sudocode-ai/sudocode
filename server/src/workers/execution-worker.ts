@@ -65,7 +65,7 @@ function sendToMain(message: WorkerToMainMessage): void {
 
 /**
  * Send log event to main process
- * Note: Currently unused as AgentExecutorWrapper handles log storage directly.
+ * Note: Currently unused as executor wrappers handle log storage directly.
  * Kept for backward compatibility with IPC protocol.
  */
 // function sendLog(data: OutputEvent): void {
@@ -247,7 +247,7 @@ async function runExecution(): Promise<void> {
       workerId: WORKER_ID!,
     });
 
-    // 6. Create services for AgentExecutorWrapper
+    // 6. Create services for executor wrapper
     const lifecycleService = new ExecutionLifecycleService(db, REPO_PATH!);
     const logsStore = new ExecutionLogsStore(db);
 
@@ -298,7 +298,7 @@ async function runExecution(): Promise<void> {
 
     // 12. Update status to running
     console.log(
-      `[Worker:${WORKER_ID}] Starting execution with AgentExecutorWrapper (${agentType})`
+      `[Worker:${WORKER_ID}] Starting execution with executor wrapper (${agentType})`
     );
     sendStatus("running");
 

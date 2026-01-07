@@ -64,8 +64,8 @@ export type ExecutorWrapper = AcpExecutorWrapper | LegacyShimExecutorWrapper;
 /**
  * Create an executor wrapper for the specified agent type
  *
- * Routes to specialized wrappers for certain agents (like Claude Code)
- * or creates a generic AgentExecutorWrapper for others.
+ * Routes to AcpExecutorWrapper for ACP-native agents (like Claude Code)
+ * or LegacyShimExecutorWrapper for legacy agents (copilot, cursor).
  *
  * @param agentType - The type of agent to create an executor for
  * @param agentConfig - Agent-specific configuration

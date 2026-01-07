@@ -112,11 +112,10 @@ interface ILegacyExecutor {
  * converts their NormalizedEntry output to CoalescedSessionUpdate events.
  * This provides a unified interface compatible with the ACP migration path.
  *
- * Key Differences from AgentExecutorWrapper:
- * - Emits CoalescedSessionUpdate instead of NormalizedEntry
- * - Uses 'session_update' WebSocket message type
- * - Stores to 'raw_logs' column (not 'normalized_entry')
- * - No AG-UI adapter translation layer
+ * Key Implementation Details:
+ * - Converts NormalizedEntry from agent-execution-engine to CoalescedSessionUpdate
+ * - Uses 'session_update' WebSocket message type (unified with AcpExecutorWrapper)
+ * - Stores to 'raw_logs' column as CoalescedSessionUpdate JSON
  *
  * @example
  * ```typescript

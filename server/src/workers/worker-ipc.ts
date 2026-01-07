@@ -8,7 +8,7 @@
  */
 
 import type { ExecutionStatus } from "@sudocode-ai/types";
-// AG-UI events are various event types (RunStartedEvent, TextMessageStartEvent, etc.)
+// SessionUpdate events from ACP (agent_message_chunk, tool_call, etc.)
 // We use `any` here since we're just forwarding them via IPC
 
 /**
@@ -44,11 +44,10 @@ export type WorkerToMainMessage =
       executionId: string;
       data: OutputEvent;
     }
-  // TODO: Support generalized events.
   | {
-      type: "agui-event";
+      type: "session-update";
       executionId: string;
-      event: any; // AG-UI event (RunStartedEvent, TextMessageStartEvent, etc.)
+      event: any; // SessionUpdate event from ACP
     }
   | {
       type: "status";
@@ -100,7 +99,7 @@ export function isWorkerMessage(msg: any): msg is WorkerToMainMessage {
     typeof msg === "object" &&
     "type" in msg &&
     typeof msg.type === "string" &&
-    ["ready", "log", "agui-event", "status", "complete", "error"].includes(
+    ["ready", "log", "session-update", "status", "complete", "error"].includes(
       msg.type
     )
   );
