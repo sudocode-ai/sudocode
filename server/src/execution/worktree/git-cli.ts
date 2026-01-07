@@ -440,7 +440,7 @@ export class GitCli implements IGitCli {
         // For squash merges, we need to commit separately
         const message = options.message || `Squash merge branch '${sourceBranch}'`;
         const escapedMessage = this.escapeShellArg(message);
-        this.execGit(`git commit -m ${escapedMessage}`, repoPath);
+        this.execGit(`git commit --no-verify -m ${escapedMessage}`, repoPath);
 
         const mergeCommit = await this.getCurrentCommit(repoPath);
         return {

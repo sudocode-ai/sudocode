@@ -1879,7 +1879,7 @@ export function createWorkflowsRouter(): Router {
           // Commit with custom message or default
           const commitMessage =
             message || `Squash merge branch '${source_branch}'`;
-          execSync(`git commit -m "${commitMessage.replace(/"/g, '\\"')}"`, {
+          execSync(`git commit --no-verify -m "${commitMessage.replace(/"/g, '\\"')}"`, {
             cwd: workflowRow.worktree_path,
             stdio: "pipe",
           });

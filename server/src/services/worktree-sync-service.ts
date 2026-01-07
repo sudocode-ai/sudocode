@@ -911,7 +911,7 @@ export class WorktreeSyncService {
       const fileList = uncommittedFiles.join(", ");
       const message = `Auto-commit uncommitted JSONL changes before sync\n\nFiles: ${fileList}`;
 
-      execSync(`git commit -m ${this._escapeShellArg(message)}`, {
+      execSync(`git commit --no-verify -m ${this._escapeShellArg(message)}`, {
         cwd: worktreePath,
         stdio: "pipe",
       });
@@ -1514,7 +1514,7 @@ Synced changes from worktree execution.`;
    */
   private _createCommit(message: string): string {
     try {
-      execSync(`git commit -m ${this._escapeShellArg(message)}`, {
+      execSync(`git commit --no-verify -m ${this._escapeShellArg(message)}`, {
         cwd: this.repoPath,
         stdio: "pipe",
       });

@@ -1343,7 +1343,7 @@ export function createExecutionsRouter(): Router {
 
           // Commit using -F - to read message from stdin (safer than shell escaping)
           const { spawnSync } = await import("child_process");
-          const commitResult = spawnSync("git", ["commit", "-m", message], {
+          const commitResult = spawnSync("git", ["commit", "--no-verify", "-m", message], {
             cwd: workingDir,
             encoding: "utf-8",
             stdio: "pipe",
