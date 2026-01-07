@@ -9,6 +9,7 @@ import {
   PlayCircle,
   GitBranch,
   Network,
+  Map,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -70,6 +71,12 @@ export default function Sidebar({ open, collapsed, onClose }: SidebarProps) {
       basePath: '/worktrees',
       label: 'Worktrees',
       icon: GitBranch,
+    },
+    {
+      path: paths.codeviz(),
+      basePath: '/codeviz',
+      label: 'CodeViz',
+      icon: Map,
     },
   ], [paths])
 

@@ -26,6 +26,7 @@ import { createVersionRouter } from "./routes/version.js";
 import { createUpdateRouter, setServerInstance } from "./routes/update.js";
 import { createWorkflowsRouter } from "./routes/workflows.js";
 import { createVoiceRouter } from "./routes/voice.js";
+import { createCodevizRouter } from "./routes/codeviz.js";
 import { TransportManager } from "./execution/transport/transport-manager.js";
 import { ProjectRegistry } from "./services/project-registry.js";
 import { ProjectManager } from "./services/project-manager.js";
@@ -172,6 +173,9 @@ app.use("/api/agents", createAgentsRouter());
 
 // Voice endpoint - requires project context for config
 app.use("/api/voice", requireProject(projectManager), createVoiceRouter());
+
+// CodeViz endpoint - codebase visualization
+app.use("/api/codeviz", requireProject(projectManager), createCodevizRouter());
 
 // Project status endpoint - returns ready issues, active executions, running workflows
 app.get(

@@ -718,4 +718,34 @@ export const updateApi = {
   restart: () => post<UpdateRestartResponse>('/update/restart'),
 }
 
+/**
+ * CodeViz API
+ */
+export interface FileTreeNode {
+  path: string
+  name: string
+  extension: string
+  directoryPath: string
+}
+
+export interface DirectoryTreeNode {
+  path: string
+  name: string
+  parentPath: string | null
+}
+
+export interface FileTreeResponse {
+  files: FileTreeNode[]
+  directories: DirectoryTreeNode[]
+  metadata: {
+    totalFiles: number
+    totalDirectories: number
+    generatedAt: string
+  }
+}
+
+export const codevizApi = {
+  getFileTree: () => get<FileTreeResponse>('/codeviz/file-tree'),
+}
+
 export default api

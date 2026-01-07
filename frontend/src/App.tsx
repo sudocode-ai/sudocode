@@ -21,6 +21,7 @@ import ProjectsPage from '@/pages/ProjectsPage'
 import ExecutionsPage from '@/pages/ExecutionsPage'
 import WorkflowsPage from '@/pages/WorkflowsPage'
 import WorkflowDetailPage from '@/pages/WorkflowDetailPage'
+import CodeVizPage from '@/pages/CodeVizPage'
 
 // Configure TanStack Query
 const queryClient = new QueryClient({
@@ -134,6 +135,14 @@ function App() {
                         element={
                           <ProtectedRoute>
                             <WorkflowDetailPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="codeviz"
+                        element={
+                          <ProtectedRoute>
+                            <CodeVizPage />
                           </ProtectedRoute>
                         }
                       />
