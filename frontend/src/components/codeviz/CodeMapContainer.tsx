@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, forwardRef, useImperativeHandle, useCallback } from 'react'
 import {
   CodeMapComponent,
   useLayout,
@@ -16,6 +16,7 @@ import { useActiveExecutions } from '@/hooks/useActiveExecutions'
 import { useCodeVizOverlays } from '@/hooks/useCodeVizOverlays'
 import { useFileEntityMap } from '@/hooks/useFileEntityMap'
 import { useTheme } from '@/contexts/ThemeContext'
+import { getAgentColor } from '@/utils/colors'
 import { Loader2, Zap, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -152,6 +153,28 @@ function transformToCodeGraph(fileTree: FileTreeResponse): CodeGraph {
 }
 
 /**
+ * Props for CodeMapContainer
+ */
+export interface CodeMapContainerProps {
+  /** Externally controlled selected execution ID */
+  selectedExecutionId?: string | null
+  /** Callback when an agent/execution is clicked */
+  onExecutionSelect?: (executionId: string | null) => void
+}
+
+/**
+ * Ref handle for CodeMapContainer
+ */
+export interface CodeMapContainerRef {
+  /** Highlight a file on the map */
+  highlightFile: (filePath: string, color?: string) => string
+  /** Remove a file highlight */
+  removeHighlight: (highlightId: string) => void
+  /** Get agent color for an execution */
+  getAgentColor: (executionId: string) => string
+}
+
+/**
  * Loading state component
  */
 function LoadingState() {
@@ -259,7 +282,8 @@ function AnalysisIndicator({
  * - Shows full CodeGraph with symbols when cached
  * - Provides "Analyze" button to trigger background analysis
  */
-export function CodeMapContainer() {
+export const CodeMapContainer = forwardRef<CodeMapContainerRef, CodeMapContainerProps>(
+  function CodeMapContainer({ selectedExecutionId, onExecutionSelect }, ref) {
   const {
     codeGraph: fullCodeGraph,
     fileTree,
@@ -273,19 +297,40 @@ export function CodeMapContainer() {
 
   // Agent overlay integration
   const { executions } = useActiveExecutions()
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
+
+  // Use external selection if provided, otherwise manage internally
+  const [internalSelectedId, setInternalSelectedId] = useState<string | null>(null)
+  const selectedAgentId = selectedExecutionId !== undefined ? selectedExecutionId : internalSelectedId
+
+  // Handle agent selection
+  const handleAgentClick = useCallback((executionId: string) => {
+    if (onExecutionSelect) {
+      // External control: toggle selection
+      onExecutionSelect(selectedAgentId === executionId ? null : executionId)
+    } else {
+      // Internal control
+      setInternalSelectedId((prev) => (prev === executionId ? null : executionId))
+    }
+  }, [onExecutionSelect, selectedAgentId])
 
   // File entity mapping for highlights and badges
   const { fileEntityMap } = useFileEntityMap()
 
-  const { overlayPort } = useCodeVizOverlays({
+  const { overlayPort, highlightFile, removeHighlight } = useCodeVizOverlays({
     executions,
     selectedAgentId,
-    onAgentClick: setSelectedAgentId,
+    onAgentClick: handleAgentClick,
     fileEntityMap,
     showFileHighlights: true,
     showChangeBadges: true,
   })
+
+  // Expose highlight functions via ref
+  useImperativeHandle(ref, () => ({
+    highlightFile,
+    removeHighlight,
+    getAgentColor,
+  }), [highlightFile, removeHighlight])
 
   // Use full CodeGraph if available, otherwise transform file tree
   const codeGraph = useMemo(() => {
@@ -354,4 +399,4 @@ export function CodeMapContainer() {
       </CodevizThemeProvider>
     </div>
   )
-}
+})
