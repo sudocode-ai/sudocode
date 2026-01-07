@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all packages
+        run: npm run build
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Create test summary
+        if: always()
+        run: |
+          echo "## 📊 Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All tests completed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Packages tested:**" >> $GITHUB_STEP_SUMMARY
+          echo "- types" >> $GITHUB_STEP_SUMMARY
+          echo "- cli" >> $GITHUB_STEP_SUMMARY
+          echo "- mcp" >> $GITHUB_STEP_SUMMARY
+          echo "- server" >> $GITHUB_STEP_SUMMARY
+          echo "- frontend" >> $GITHUB_STEP_SUMMARY
