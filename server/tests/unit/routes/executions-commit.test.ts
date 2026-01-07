@@ -199,7 +199,7 @@ describe("POST /api/executions/:executionId/commit", () => {
     // git commit is now called via spawnSync for safer message handling
     expect(child_process.spawnSync).toHaveBeenCalledWith(
       "git",
-      ["commit", "-m", "feat: implement new feature"],
+      ["commit", "--no-verify", "-m", "feat: implement new feature"],
       expect.any(Object)
     );
     expect(child_process.execSync).toHaveBeenCalledWith(

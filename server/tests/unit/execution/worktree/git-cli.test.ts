@@ -358,7 +358,7 @@ HEAD abc123def456
         if (command.includes('merge --squash')) {
           return '';
         }
-        if (command.includes('commit -m')) {
+        if (command.includes('commit --no-verify -m')) {
           return '';
         }
         if (command.includes('rev-parse HEAD')) {
@@ -373,7 +373,7 @@ HEAD abc123def456
       expect(result.strategy).toBe('squash');
       expect(result.mergeCommit).toBe('squash123commit');
       expect(commands.some(c => c.includes('merge --squash'))).toBe(true);
-      expect(commands.some(c => c.includes('commit -m'))).toBe(true);
+      expect(commands.some(c => c.includes('commit --no-verify -m'))).toBe(true);
     });
 
     it('should use custom commit message', async () => {
@@ -385,7 +385,7 @@ HEAD abc123def456
         if (command.includes('merge --squash')) {
           return '';
         }
-        if (command.includes('commit -m')) {
+        if (command.includes('commit --no-verify -m')) {
           return '';
         }
         if (command.includes('rev-parse HEAD')) {
