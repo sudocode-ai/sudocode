@@ -32,8 +32,11 @@ jobs:
       - name: Build all packages
         run: npm run build
 
+      - name: Link packages globally
+        run: npm run link
+
       - name: Run tests
-        run: npm run test
+        run: npm run test:summary
 
       - name: Create test summary
         if: always()
