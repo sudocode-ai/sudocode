@@ -41,6 +41,12 @@ import {
   handleFeedbackRelocate,
 } from "./cli/feedback-commands.js";
 import { handleServerStart } from "./cli/server-commands.js";
+import {
+  handleDeployRemote,
+  handleDeployList,
+  handleDeployStop,
+  handleDeployCleanup,
+} from "./cli/deploy-commands.js";
 import { handleInit } from "./cli/init-commands.js";
 import { handleUpdate, handleUpdateCheck } from "./cli/update-commands.js";
 import {
@@ -133,7 +139,7 @@ program
   .version(VERSION)
   .option("--db <path>", "Database path (default: auto-discover)")
   .option("--json", "Output in JSON format")
-  .hook("preAction", (thisCommand) => {
+  .hook("preAction", (thisCommand: any) => {
     // Get global options
     const opts = thisCommand.optsWithGlobals();
     if (opts.db) dbPath = opts.db;
@@ -477,9 +483,80 @@ program
   .command("server")
   .description("Start the sudocode local server")
   .option("-p, --port <port>", "Port to run server on")
+  .option("--host <host>", "Host to bind to (default: localhost)")
+  .option("--keep-alive <duration>", "Keep Codespace alive for duration (e.g., 72h, 168h)")
   .option("-d, --detach", "Run server in background")
   .action(async (options) => {
     await handleServerStart(getContext(), options);
+  });
+
+// ============================================================================
+// DEPLOY COMMANDS
+// ============================================================================
+
+const deploy = program
+  .command("deploy")
+  .description("Deploy sudocode to remote environments");
+
+deploy
+  .command("remote")
+  .description("Deploy to GitHub Codespaces")
+  .option("--machine <type>", "Machine type (default: basicLinux32gb)")
+  .option("--keep-alive <duration>", "Keep Codespace alive duration (e.g., 72h, 168h) (default: 72h)")
+  .option("--retention-period <days>", "Auto-delete after days (default: 14)", parseInt)
+  .option("--no-open", "Skip opening browser tabs")
+  .addHelpText('after', `
+Examples:
+  $ sudocode deploy remote
+  Deploy with default settings (72h keep-alive, 14 day retention)
+
+  $ sudocode deploy remote --machine 4core --keep-alive 168h
+  Deploy on larger machine with 7-day keep-alive
+
+  $ sudocode deploy remote --retention-period 30 --no-open
+  Deploy with 30-day retention, don't open browser
+`)
+  .action(async (options) => {
+    await handleDeployRemote(options);
+  });
+
+deploy
+  .command("list")
+  .description("List all tracked deployments")
+  .addHelpText('after', `
+Examples:
+  $ sudocode deploy list
+  Show all tracked Codespace deployments with status
+`)
+  .action(async () => {
+    await handleDeployList();
+  });
+
+deploy
+  .command("stop <name>")
+  .description("Stop and delete a Codespace deployment")
+  .addHelpText('after', `
+Examples:
+  $ sudocode deploy stop friendly-space-adventure-abc123
+  Stop and delete the specified Codespace
+
+  $ sudocode deploy list
+  First list deployments to get the Codespace name
+`)
+  .action(async (name) => {
+    await handleDeployStop(name);
+  });
+
+deploy
+  .command("cleanup")
+  .description("Clean up deployment tracking (remove deleted Codespaces)")
+  .addHelpText('after', `
+Examples:
+  $ sudocode deploy cleanup
+  Remove tracking entries for Codespaces that no longer exist
+`)
+  .action(async () => {
+    await handleDeployCleanup();
   });
 
 // ============================================================================
@@ -640,7 +717,7 @@ plugin
   });
 
 // Parse arguments
-program.parse();
+program.parse(process.argv);
 
 // Check for updates (non-blocking)
 // Skip for update and server commands (server handles it explicitly)

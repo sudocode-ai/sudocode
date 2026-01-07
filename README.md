@@ -51,6 +51,8 @@ Use the CLI for managing specs and issues in sudocode's agent memory system. It 
 
 Use the local server to automatically sync memory and enable agent execution and visualization. The issue kanban view helps you track issue status and progress. You can spawn new agents, update agent implementation plans, and provide feedback or guidance to running agents in a single, focused view.
 
+**Remote Deployment**: Deploy sudocode to GitHub Codespaces with a single command for cloud-based development accessible from anywhere. See the [Remote Deployment guide](cli/README.md#remote-deployment) for details.
+
 <div style="margin: 2em 0;">
   <img src="media/screenshots/issue-kanban.png" alt="Issue kanban view">
 </div>

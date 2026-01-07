@@ -328,3 +328,144 @@ sudocode feedback list --spec SPEC-1
 # Check for stale anchors
 sudocode feedback stale
 ```
+
+## Remote Deployment
+
+Deploy sudocode to GitHub Codespaces for cloud-based development accessible from anywhere.
+
+### Prerequisites
+
+- [GitHub CLI](https://cli.github.com) installed and authenticated (`gh auth login`)
+- Repository pushed to GitHub
+- Git repository with GitHub remote
+
+### Quick Start
+
+Deploy with defaults (72-hour keep-alive, 14-day retention):
+
+```bash
+sudocode deploy remote
+```
+
+This will:
+1. Create a GitHub Codespace
+2. Install sudocode globally
+3. Start the sudocode server
+4. Make the UI accessible via public HTTPS URL
+5. Keep the Codespace active for 72 hours
+6. Auto-delete after 14 days
+
+### Custom Configuration
+
+```bash
+# Use larger machine
+sudocode deploy remote --machine 4core
+
+# Keep alive for 7 days (168 hours)
+sudocode deploy remote --keep-alive 168h
+
+# Custom retention period (30 days)
+sudocode deploy remote --retention-period 30
+
+# Combine options
+sudocode deploy remote --machine 4core --keep-alive 168h --retention-period 30
+
+# Skip opening browsers
+sudocode deploy remote --no-open
+```
+
+### Managing Deployments
+
+List all deployments:
+
+```bash
+sudocode deploy list
+```
+
+Stop and delete a deployment:
+
+```bash
+sudocode deploy stop <codespace-name>
+```
+
+### How It Works
+
+**Two-Tier Timeout System:**
+- **Codespace timeout**: GitHub's maximum (4 hours of inactivity)
+- **Keep-alive**: Sudocode keeps the Codespace active for your configured duration (default: 72 hours)
+- **Auto-delete**: Codespaces are deleted after the retention period (default: 14 days)
+
+After the keep-alive duration expires, the Codespace will naturally shut down within 4 hours of inactivity.
+
+**Port Forwarding:**
+- Server runs on port 3000 in the Codespace
+- GitHub automatically provides a public HTTPS URL: `https://<codespace-name>-3000.app.github.dev`
+- Ports are made public for easy access
+
+### Available Machine Types
+
+- `basicLinux32gb` (default) - 2-core, 8GB RAM
+- `standardLinux32gb` - 4-core, 16GB RAM
+- `premiumLinux` - 8-core, 32GB RAM
+
+See [GitHub Codespaces machine types](https://docs.github.com/en/codespaces/customizing-your-codespace/changing-the-machine-type-for-your-codespace) for more details.
+
+### Troubleshooting
+
+**Error: GitHub CLI not found**
+```bash
+# Install GitHub CLI
+# macOS
+brew install gh
+
+# Linux
+# See https://cli.github.com/manual/installation
+
+# Authenticate
+gh auth login
+```
+
+**Error: Not authenticated with GitHub**
+```bash
+gh auth login
+```
+
+**Error: Not in a git repository with GitHub remote**
+```bash
+# Initialize git and add GitHub remote
+git init
+git remote add origin git@github.com:username/repo.git
+git push -u origin main
+```
+
+**Deployment stuck or failed**
+- Check Codespace status: `gh codespace list`
+- View Codespace logs: `gh codespace ssh --codespace <name> -- tail -f /tmp/sudocode.log`
+- Delete and retry: `sudocode deploy stop <name>` then `sudocode deploy remote`
+
+**Server not accessible**
+- Verify Codespace is running: `gh codespace list`
+- Check port forwarding: `gh codespace ports list --codespace <name>`
+- Ensure port visibility is public: `gh codespace ports visibility 3000:public --codespace <name>`
+
+### Manual Authentication in Codespace
+
+For the MVP, you'll need to manually authenticate Claude Code inside the Codespace:
+
+1. SSH into the Codespace: `gh codespace ssh --codespace <name>`
+2. Run: `claude setup-token`
+3. Follow the prompts to generate and configure your token
+
+Future versions will automate this process.
+
+### Cost Considerations
+
+GitHub Codespaces usage is billed based on:
+- Machine type (compute hours)
+- Storage (GB-months)
+
+Free tier includes:
+- 120 core-hours per month (60 hours on 2-core machine)
+- 15 GB storage
+
+See [GitHub Codespaces pricing](https://docs.github.com/en/billing/managing-billing-for-github-codespaces/about-billing-for-github-codespaces) for details.

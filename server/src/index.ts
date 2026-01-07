@@ -36,6 +36,8 @@ import {
   shutdownWebSocketServer,
   getWebSocketServer,
 } from "./services/websocket.js";
+import { CodespaceKeepAlive } from "./services/codespace-keepalive.js";
+import { parseKeepAliveDuration } from "./utils/duration-parser.js";
 
 const app = express();
 const DEFAULT_PORT = 3000;
@@ -47,6 +49,9 @@ let transportManager!: TransportManager;
 // Multi-project infrastructure
 let projectRegistry!: ProjectRegistry;
 let projectManager!: ProjectManager;
+
+// Keep-alive service for Codespaces
+let keepAliveService: CodespaceKeepAlive | null = null;
 
 // Start file watcher (enabled by default, disable with SUDOCODE_WATCH=false)
 const WATCH_ENABLED = process.env.SUDOCODE_WATCH !== "false";
@@ -461,6 +466,20 @@ const actualPort = await startServer(startPort, MAX_PORT_ATTEMPTS);
 const actualServerUrl = `http://localhost:${actualPort}`;
 projectManager.updateServerUrl(actualServerUrl);
 
+// Initialize keep-alive service if in Codespaces and duration is provided
+const isCodespace = process.env.CODESPACES === 'true';
+const keepAliveDuration = process.env.SUDOCODE_KEEP_ALIVE;
+
+if (isCodespace && keepAliveDuration) {
+  try {
+    const hours = parseKeepAliveDuration(keepAliveDuration);
+    keepAliveService = new CodespaceKeepAlive(hours);
+    await keepAliveService.start();
+  } catch (error) {
+    console.error('[server] Failed to start keep-alive service:', error instanceof Error ? error.message : String(error));
+  }
+}
+
 // Format URLs as clickable links with color
 const httpUrl = `http://localhost:${actualPort}`;
 const wsUrl = `ws://localhost:${actualPort}/ws`;
@@ -510,6 +529,11 @@ process.on("unhandledRejection", (reason, promise) => {
 process.on("SIGINT", async () => {
   console.log("\nShutting down server...");
 
+  // Stop keep-alive service
+  if (keepAliveService) {
+    keepAliveService.stop();
+  }
+
   // Shutdown ProjectManager (closes all projects and their watchers)
   // This will shutdown all per-project ExecutionServices and close all databases
   if (projectManager) {
@@ -540,6 +564,11 @@ process.on("SIGINT", async () => {
 
 process.on("SIGTERM", async () => {
   console.log("\nShutting down server...");
+
+  // Stop keep-alive service
+  if (keepAliveService) {
+    keepAliveService.stop();
+  }
 
   // Shutdown ProjectManager (closes all projects and their watchers)
   // This will shutdown all per-project ExecutionServices and close all databases

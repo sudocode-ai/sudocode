@@ -14,6 +14,8 @@ export interface CommandContext {
 
 export interface ServerStartOptions {
   port?: string;
+  host?: string;
+  keepAlive?: string;
   detach?: boolean;
 }
 
@@ -102,6 +104,15 @@ export async function handleServerStart(
   // Only set SUDOCODE_PORT if explicitly provided - otherwise let server scan for available ports
   if (options.port) {
     env.SUDOCODE_PORT = options.port;
+  }
+
+  // Pass host and keep-alive options via environment variables
+  if (options.host) {
+    env.SUDOCODE_HOST = options.host;
+  }
+
+  if (options.keepAlive) {
+    env.SUDOCODE_KEEP_ALIVE = options.keepAlive;
   }
 
   console.log(chalk.blue("Starting sudocode local server..."));

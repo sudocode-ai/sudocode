@@ -43,6 +43,16 @@ export interface CodespaceInfo {
 }
 
 /**
+ * Codespace status information (alias for spec compatibility)
+ */
+export interface CodespaceStatus {
+  name: string;
+  repository: string;
+  state: string;
+  createdAt: string;
+}
+
+/**
  * Verify GitHub CLI is installed
  */
 export async function checkGhCliInstalled(): Promise<void> {
@@ -89,6 +99,13 @@ export async function getCurrentGitRepo(): Promise<string> {
   }
 
   return match[1];
+}
+
+/**
+ * Alias for getCurrentGitRepo (spec compatibility)
+ */
+export async function getCurrentRepo(): Promise<string> {
+  return getCurrentGitRepo();
 }
 
 /**
@@ -165,6 +182,35 @@ export async function deleteCodespace(name: string): Promise<void> {
     await execAsync(`gh codespace delete --codespace ${name} --force`);
   } catch (error: any) {
     throw new Error(`Failed to delete Codespace ${name}: ${error.message}`);
+  }
+}
+
+/**
+ * Execute a command in a Codespace via SSH
+ * @param codespaceName Name of the Codespace
+ * @param command Command to execute
+ * @returns stdout from the command
+ */
+export async function execInCodespace(
+  codespaceName: string,
+  command: string
+): Promise<string> {
+  try {
+    // Escape command for shell execution
+    // Use single quotes to avoid most escaping issues
+    const escapedCommand = command.replace(/'/g, "'\\''");
+
+    const { stdout } = await execAsync(
+      `gh codespace ssh --codespace ${codespaceName} -- '${escapedCommand}'`
+    );
+
+    return stdout;
+  } catch (error: any) {
+    // Extract stderr if available for better error messages
+    const stderr = error.stderr || error.message;
+    throw new Error(
+      `Failed to execute command in Codespace ${codespaceName}: ${stderr}`
+    );
   }
 }
 
