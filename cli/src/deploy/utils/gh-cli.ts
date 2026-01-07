@@ -117,18 +117,18 @@ export async function createCodespace(config: CodespaceConfig): Promise<Codespac
     `--repo ${config.repository}`,
     `--machine ${config.machine}`,
     `--idle-timeout ${config.idleTimeout}m`,
-    `--retention-period ${config.retentionPeriod * 24}h`,
-    '--json name,state'
+    `--retention-period ${config.retentionPeriod * 24}h`
   ].join(' ');
 
   try {
     const { stdout } = await execAsync(cmd);
-    const result = JSON.parse(stdout);
+    // Output is just the codespace name (e.g., "friendly-space-abc123")
+    const name = stdout.trim();
 
     return {
-      name: result.name,
-      url: `https://${result.name}.github.dev`,
-      state: result.state
+      name,
+      url: `https://${name}.github.dev`,
+      state: 'Starting' // Default state after creation
     };
   } catch (error: any) {
     throw new Error(`Failed to create Codespace: ${error.message}`);

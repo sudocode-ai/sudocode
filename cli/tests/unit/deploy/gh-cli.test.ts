@@ -107,20 +107,16 @@ describe('gh-cli utilities', () => {
 
   describe('createCodespace', () => {
     it('should create Codespace with correct configuration', async () => {
-      const mockResponse = {
-        name: 'friendly-space-abc123',
-        state: 'Starting'
-      };
-
       vi.mocked(exec).mockImplementation((cmd: any, callback: any) => {
         expect(cmd).toContain('gh codespace create');
         expect(cmd).toContain('--repo owner/repo');
         expect(cmd).toContain('--machine basicLinux32gb');
         expect(cmd).toContain('--idle-timeout 240m');
         expect(cmd).toContain('--retention-period 336h');
+        expect(cmd).not.toContain('--json'); // Verify --json NOT present
 
         callback(null, {
-          stdout: JSON.stringify(mockResponse),
+          stdout: 'friendly-space-abc123\n', // Plain text output
           stderr: ''
         });
         return {} as any;
@@ -157,15 +153,11 @@ describe('gh-cli utilities', () => {
     });
 
     it('should convert 1 day to 24h', async () => {
-      const mockResponse = {
-        name: 'test-codespace',
-        state: 'Starting'
-      };
-
       vi.mocked(exec).mockImplementation((cmd: any, callback: any) => {
         expect(cmd).toContain('--retention-period 24h');
+        expect(cmd).not.toContain('--json');
         callback(null, {
-          stdout: JSON.stringify(mockResponse),
+          stdout: 'test-codespace\n',
           stderr: ''
         });
         return {} as any;
@@ -180,15 +172,11 @@ describe('gh-cli utilities', () => {
     });
 
     it('should convert 30 days to 720h (maximum)', async () => {
-      const mockResponse = {
-        name: 'test-codespace',
-        state: 'Starting'
-      };
-
       vi.mocked(exec).mockImplementation((cmd: any, callback: any) => {
         expect(cmd).toContain('--retention-period 720h');
+        expect(cmd).not.toContain('--json');
         callback(null, {
-          stdout: JSON.stringify(mockResponse),
+          stdout: 'test-codespace\n',
           stderr: ''
         });
         return {} as any;
@@ -203,15 +191,11 @@ describe('gh-cli utilities', () => {
     });
 
     it('should convert 7 days to 168h', async () => {
-      const mockResponse = {
-        name: 'test-codespace',
-        state: 'Starting'
-      };
-
       vi.mocked(exec).mockImplementation((cmd: any, callback: any) => {
         expect(cmd).toContain('--retention-period 168h');
+        expect(cmd).not.toContain('--json');
         callback(null, {
-          stdout: JSON.stringify(mockResponse),
+          stdout: 'test-codespace\n',
           stderr: ''
         });
         return {} as any;
