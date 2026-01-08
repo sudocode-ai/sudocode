@@ -43,6 +43,9 @@ jobs:
       - name: Link packages globally
         run: npm run link
 
+      - name: Initialize sudocode
+        run: sudocode init
+
       - name: Run tests
         run: npm run test
 
