@@ -207,13 +207,21 @@ async function startServerAndGetUrl(
   await waitForPortListening(name, port, 30); // 30 retries = 60 seconds
   console.log(`✓ Server started on port ${port}`);
 
-  // Make port public
-  console.log('\nConfiguring port forwarding...');
-  await setPortVisibility(name, port, 'public');
-  console.log('✓ Port made public');
-
   // Get the predictable URL
   const url = await getCodespacePortUrl(name, port);
+
+  // Trigger port forwarding by accessing the URL (lazy forwarding)
+  // This will fail with auth error, but triggers GitHub to create the forward
+  console.log('\nTriggering port forwarding...');
+  await waitForUrlAccessible(url, 3).catch(() => {
+    // Ignore errors - we just need to trigger the forwarding
+    console.log('✓ Port forwarding triggered');
+  });
+
+  // Make port public (must be done AFTER port is forwarded)
+  console.log('\nConfiguring port visibility...');
+  await setPortVisibility(name, port, 'public');
+  console.log('✓ Port made public');
 
   // Health check - wait for URL to be accessible
   console.log('\nRunning health check...');
