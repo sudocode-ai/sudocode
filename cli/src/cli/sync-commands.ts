@@ -475,15 +475,16 @@ function determineSyncDirection(ctx: CommandContext): {
     syncToMarkdown = true;
     reasons.push("Spec markdown files missing, database has entries");
   } else if (dbSpecsTime && specsMarkdownTime) {
-    // Both exist - compare markdown file time against database time
-    if (specsMarkdownTime > dbSpecsTime) {
+    // Both exist - compare markdown file time against database time (at second precision)
+    const comparison = compareDatesAtSecondPrecision(specsMarkdownTime, dbSpecsTime);
+    if (comparison > 0) {
       syncFromMarkdown = true;
       reasons.push(
         `Spec markdown files are newer than database (${formatTime(
           specsMarkdownTime
         )} > ${formatTime(dbSpecsTime)})`
       );
-    } else if (dbSpecsTime > specsMarkdownTime) {
+    } else if (comparison < 0) {
       syncToMarkdown = true;
       reasons.push(
         `Spec database is newer than markdown files (${formatTime(dbSpecsTime)} > ${formatTime(
@@ -508,15 +509,16 @@ function determineSyncDirection(ctx: CommandContext): {
     syncToMarkdown = true;
     reasons.push("Issue markdown files missing, database has entries");
   } else if (dbIssuesTime && issuesMarkdownTime) {
-    // Both exist - compare markdown file time against database time
-    if (issuesMarkdownTime > dbIssuesTime) {
+    // Both exist - compare markdown file time against database time (at second precision)
+    const comparison = compareDatesAtSecondPrecision(issuesMarkdownTime, dbIssuesTime);
+    if (comparison > 0) {
       syncFromMarkdown = true;
       reasons.push(
         `Issue markdown files are newer than database (${formatTime(
           issuesMarkdownTime
         )} > ${formatTime(dbIssuesTime)})`
       );
-    } else if (dbIssuesTime > issuesMarkdownTime) {
+    } else if (comparison < 0) {
       syncToMarkdown = true;
       reasons.push(
         `Issue database is newer than markdown files (${formatTime(dbIssuesTime)} > ${formatTime(
@@ -560,4 +562,14 @@ function determineSyncDirection(ctx: CommandContext): {
  */
 function formatTime(date: Date): string {
   return date.toISOString().replace("T", " ").substring(0, 19);
+}
+
+// Compare dates with second-level precision (ignore milliseconds)
+// Returns: -1 if a < b, 0 if equal, 1 if a > b
+function compareDatesAtSecondPrecision(a: Date, b: Date): number {
+  const aSeconds = Math.floor(a.getTime() / 1000);
+  const bSeconds = Math.floor(b.getTime() / 1000);
+  if (aSeconds < bSeconds) return -1;
+  if (aSeconds > bSeconds) return 1;
+  return 0;
 }
