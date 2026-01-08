@@ -1152,6 +1152,11 @@ Fresh content from markdown`;
       const issuesDir = path.join(tempDir, "issues");
       fs.mkdirSync(issuesDir, { recursive: true });
 
+      // Mark as initialized to prevent handleSync from re-initializing
+      // (which would reset database timestamps and break the test scenario)
+      fs.writeFileSync(path.join(tempDir, "config.json"), JSON.stringify({ version: "0.1.0" }));
+      fs.mkdirSync(path.join(tempDir, "specs"), { recursive: true });
+
       // Create two issues with different states
       const pastTime = new Date(Date.now() - 10000);
 
