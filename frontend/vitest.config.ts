@@ -23,6 +23,8 @@ export default defineConfig({
       '@/types': path.resolve(__dirname, './src/types'),
       '@/contexts': path.resolve(__dirname, './src/contexts'),
       '@/stores': path.resolve(__dirname, './src/stores'),
+      // Allow codeviz mock to be resolved in tests
+      'codeviz/browser': path.resolve(__dirname, './src/test/__mocks__/codeviz-browser.ts'),
     },
   },
 })

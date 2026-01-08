@@ -7,8 +7,8 @@
 
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useActiveExecutions, type ActiveExecution } from '@/hooks/useActiveExecutions'
-import { issuesApi, relationshipsApi } from '@/lib/api'
+import { useActiveExecutions } from '@/hooks/useActiveExecutions'
+import { relationshipsApi } from '@/lib/api'
 import { useProject } from '@/hooks/useProject'
 import type { FileChangeStat } from '@/types/execution'
 
