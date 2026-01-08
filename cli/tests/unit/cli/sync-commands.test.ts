@@ -1189,6 +1189,11 @@ Fresh content from markdown`;
 
       await exportToJSONL(db, { outputDir: tempDir });
 
+      // Force database to flush to disk by closing and reopening
+      const dbPath = path.join(tempDir, "cache.db");
+      db.close();
+      db = initDatabase({ path: dbPath });
+
       // Create stale markdown for issue1
       const md1Path = path.join(issuesDir, "i-conf1.md");
       fs.writeFileSync(md1Path, `---\nid: i-conf1\ntitle: Stale\n---\nStale`, "utf8");
