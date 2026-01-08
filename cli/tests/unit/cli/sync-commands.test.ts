@@ -1189,7 +1189,7 @@ Fresh content from markdown`;
       const md2Path = path.join(issuesDir, "i-conf2.md");
       fs.writeFileSync(md2Path, `---\nid: i-conf2\ntitle: Fresh MD\n---\nFresh`, "utf8");
 
-      await sleep(100);
+      await sleep(1100); // Sleep longer to ensure timestamp difference (filesystem may have 1s resolution)
 
       // Touch JSONL to make it newer than all markdown files
       // This simulates database being the source of truth
