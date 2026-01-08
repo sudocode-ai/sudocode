@@ -793,4 +793,340 @@ describe("LegacyShimExecutorWrapper", () => {
       expect(parsed.status).toBe("failed");
     });
   });
+
+  describe("message deduplication", () => {
+    it("should skip exact duplicate messages", async () => {
+      const { CopilotExecutor } = await import("agent-execution-engine/agents");
+      const mockExecutorWithDuplicates = {
+        executeTask: vi.fn().mockResolvedValue({
+          process: {
+            process: {
+              pid: 12345,
+              kill: vi.fn(),
+              on: vi.fn((event: string, handler: Function) => {
+                if (event === "exit") {
+                  setTimeout(() => handler(0), 10);
+                }
+              }),
+            },
+            streams: {
+              stdout: { [Symbol.asyncIterator]: async function* () {} },
+              stderr: { [Symbol.asyncIterator]: async function* () {} },
+            },
+          },
+        }),
+        normalizeOutput: vi.fn().mockImplementation(async function* () {
+          // Simulate PlainTextLogProcessor emitting duplicate messages
+          yield {
+            index: 0,
+            timestamp: new Date(),
+            type: { kind: "assistant_message" },
+            content: "Hello world",
+          };
+          // Exact duplicate - should be skipped
+          yield {
+            index: 0,
+            timestamp: new Date(),
+            type: { kind: "assistant_message" },
+            content: "Hello world",
+          };
+          // Different message - should be emitted
+          yield {
+            index: 1,
+            timestamp: new Date(),
+            type: { kind: "assistant_message" },
+            content: "Goodbye world",
+          };
+        }),
+        getCapabilities: vi.fn().mockReturnValue({ supportsSessionResume: false }),
+      };
+
+      (CopilotExecutor as any).mockImplementation(() => mockExecutorWithDuplicates);
+
+      const dedupeLogsStore = {
+        appendRawLog: vi.fn(),
+        appendNormalizedEntry: vi.fn(),
+      };
+
+      const dedupeWrapper = new LegacyShimExecutorWrapper({
+        agentType: "copilot",
+        agentConfig: { workDir: "/test/workdir" },
+        lifecycleService: mockLifecycleService,
+        logsStore: dedupeLogsStore,
+        projectId: "test-project",
+        db: mockDb,
+      });
+
+      await dedupeWrapper.executeWithLifecycle(
+        "exec-dedupe-123",
+        { id: "task-1", prompt: "Test" },
+        "/test/workdir"
+      );
+
+      // Should only have 2 calls (duplicate was skipped)
+      expect(dedupeLogsStore.appendRawLog).toHaveBeenCalledTimes(2);
+
+      const firstCall = JSON.parse(dedupeLogsStore.appendRawLog.mock.calls[0][1]);
+      const secondCall = JSON.parse(dedupeLogsStore.appendRawLog.mock.calls[1][1]);
+
+      expect(firstCall.content.text).toBe("Hello world");
+      expect(secondCall.content.text).toBe("Goodbye world");
+    });
+
+    it("should skip streaming 'replace' patches with cumulative content", async () => {
+      const { CopilotExecutor } = await import("agent-execution-engine/agents");
+
+      // Long content to trigger emission (needs to exceed 50-char threshold for short messages)
+      const longAddition =
+        "This is a much longer line that should definitely exceed the fifty character threshold for emission";
+
+      const mockExecutorWithStreaming = {
+        executeTask: vi.fn().mockResolvedValue({
+          process: {
+            process: {
+              pid: 12345,
+              kill: vi.fn(),
+              on: vi.fn((event: string, handler: Function) => {
+                if (event === "exit") {
+                  setTimeout(() => handler(0), 10);
+                }
+              }),
+            },
+            streams: {
+              stdout: { [Symbol.asyncIterator]: async function* () {} },
+              stderr: { [Symbol.asyncIterator]: async function* () {} },
+            },
+          },
+        }),
+        normalizeOutput: vi.fn().mockImplementation(async function* () {
+          // Simulate PlainTextLogProcessor 'replace' patches
+          // First line
+          yield {
+            index: 0,
+            timestamp: new Date(),
+            type: { kind: "assistant_message" },
+            content: "Line 1",
+          };
+          // Small addition (< 50 chars for short messages) - should be skipped
+          yield {
+            index: 0,
+            timestamp: new Date(),
+            type: { kind: "assistant_message" },
+            content: "Line 1\nLine 2 short",
+          };
+          // Larger addition (> 50 chars) - should be emitted
+          yield {
+            index: 0,
+            timestamp: new Date(),
+            type: { kind: "assistant_message" },
+            content: `Line 1\nLine 2 short\n${longAddition}`,
+          };
+        }),
+        getCapabilities: vi.fn().mockReturnValue({ supportsSessionResume: false }),
+      };
+
+      (CopilotExecutor as any).mockImplementation(() => mockExecutorWithStreaming);
+
+      const streamLogsStore = {
+        appendRawLog: vi.fn(),
+        appendNormalizedEntry: vi.fn(),
+      };
+
+      const streamWrapper = new LegacyShimExecutorWrapper({
+        agentType: "copilot",
+        agentConfig: { workDir: "/test/workdir" },
+        lifecycleService: mockLifecycleService,
+        logsStore: streamLogsStore,
+        projectId: "test-project",
+        db: mockDb,
+      });
+
+      await streamWrapper.executeWithLifecycle(
+        "exec-stream-123",
+        { id: "task-1", prompt: "Test" },
+        "/test/workdir"
+      );
+
+      // Should have 2 calls (small addition was skipped)
+      expect(streamLogsStore.appendRawLog).toHaveBeenCalledTimes(2);
+
+      const firstCall = JSON.parse(streamLogsStore.appendRawLog.mock.calls[0][1]);
+      const secondCall = JSON.parse(streamLogsStore.appendRawLog.mock.calls[1][1]);
+
+      expect(firstCall.content.text).toBe("Line 1");
+      expect(secondCall.content.text).toBe(`Line 1\nLine 2 short\n${longAddition}`);
+    });
+
+    it("should deduplicate tool_use entries based on status and result", async () => {
+      const { CopilotExecutor } = await import("agent-execution-engine/agents");
+      const mockExecutorWithToolDupes = {
+        executeTask: vi.fn().mockResolvedValue({
+          process: {
+            process: {
+              pid: 12345,
+              kill: vi.fn(),
+              on: vi.fn((event: string, handler: Function) => {
+                if (event === "exit") {
+                  setTimeout(() => handler(0), 10);
+                }
+              }),
+            },
+            streams: {
+              stdout: { [Symbol.asyncIterator]: async function* () {} },
+              stderr: { [Symbol.asyncIterator]: async function* () {} },
+            },
+          },
+        }),
+        normalizeOutput: vi.fn().mockImplementation(async function* () {
+          // Tool call started
+          yield {
+            index: 0,
+            timestamp: new Date(),
+            type: {
+              kind: "tool_use",
+              tool: {
+                toolName: "Read",
+                action: { kind: "file_read", path: "/test.ts" },
+                status: "running",
+                result: null,
+              },
+            },
+            content: "Reading file",
+          };
+          // Same tool call with same status - should be skipped
+          yield {
+            index: 0,
+            timestamp: new Date(),
+            type: {
+              kind: "tool_use",
+              tool: {
+                toolName: "Read",
+                action: { kind: "file_read", path: "/test.ts" },
+                status: "running",
+                result: null,
+              },
+            },
+            content: "Reading file",
+          };
+          // Tool call completed with result - should be emitted
+          yield {
+            index: 0,
+            timestamp: new Date(),
+            type: {
+              kind: "tool_use",
+              tool: {
+                toolName: "Read",
+                action: { kind: "file_read", path: "/test.ts" },
+                status: "success",
+                result: { success: true, data: "file contents" },
+              },
+            },
+            content: "Reading file",
+          };
+        }),
+        getCapabilities: vi.fn().mockReturnValue({ supportsSessionResume: false }),
+      };
+
+      (CopilotExecutor as any).mockImplementation(() => mockExecutorWithToolDupes);
+
+      const toolDedupeLogsStore = {
+        appendRawLog: vi.fn(),
+        appendNormalizedEntry: vi.fn(),
+      };
+
+      const toolDedupeWrapper = new LegacyShimExecutorWrapper({
+        agentType: "copilot",
+        agentConfig: { workDir: "/test/workdir" },
+        lifecycleService: mockLifecycleService,
+        logsStore: toolDedupeLogsStore,
+        projectId: "test-project",
+        db: mockDb,
+      });
+
+      await toolDedupeWrapper.executeWithLifecycle(
+        "exec-tool-dedupe-123",
+        { id: "task-1", prompt: "Test" },
+        "/test/workdir"
+      );
+
+      // Should have 2 calls (duplicate running status was skipped)
+      expect(toolDedupeLogsStore.appendRawLog).toHaveBeenCalledTimes(2);
+
+      const firstCall = JSON.parse(toolDedupeLogsStore.appendRawLog.mock.calls[0][1]);
+      const secondCall = JSON.parse(toolDedupeLogsStore.appendRawLog.mock.calls[1][1]);
+
+      expect(firstCall.status).toBe("working"); // running maps to working
+      expect(secondCall.status).toBe("completed"); // success maps to completed
+    });
+
+    it("should not deduplicate different message indices", async () => {
+      const { CopilotExecutor } = await import("agent-execution-engine/agents");
+      const mockExecutorWithDiffIndices = {
+        executeTask: vi.fn().mockResolvedValue({
+          process: {
+            process: {
+              pid: 12345,
+              kill: vi.fn(),
+              on: vi.fn((event: string, handler: Function) => {
+                if (event === "exit") {
+                  setTimeout(() => handler(0), 10);
+                }
+              }),
+            },
+            streams: {
+              stdout: { [Symbol.asyncIterator]: async function* () {} },
+              stderr: { [Symbol.asyncIterator]: async function* () {} },
+            },
+          },
+        }),
+        normalizeOutput: vi.fn().mockImplementation(async function* () {
+          // Same content but different indices - should all be emitted
+          yield {
+            index: 0,
+            timestamp: new Date(),
+            type: { kind: "assistant_message" },
+            content: "Same content",
+          };
+          yield {
+            index: 1,
+            timestamp: new Date(),
+            type: { kind: "assistant_message" },
+            content: "Same content",
+          };
+          yield {
+            index: 2,
+            timestamp: new Date(),
+            type: { kind: "assistant_message" },
+            content: "Same content",
+          };
+        }),
+        getCapabilities: vi.fn().mockReturnValue({ supportsSessionResume: false }),
+      };
+
+      (CopilotExecutor as any).mockImplementation(() => mockExecutorWithDiffIndices);
+
+      const diffIndexLogsStore = {
+        appendRawLog: vi.fn(),
+        appendNormalizedEntry: vi.fn(),
+      };
+
+      const diffIndexWrapper = new LegacyShimExecutorWrapper({
+        agentType: "copilot",
+        agentConfig: { workDir: "/test/workdir" },
+        lifecycleService: mockLifecycleService,
+        logsStore: diffIndexLogsStore,
+        projectId: "test-project",
+        db: mockDb,
+      });
+
+      await diffIndexWrapper.executeWithLifecycle(
+        "exec-diff-index-123",
+        { id: "task-1", prompt: "Test" },
+        "/test/workdir"
+      );
+
+      // All 3 should be emitted (different indices)
+      expect(diffIndexLogsStore.appendRawLog).toHaveBeenCalledTimes(3);
+    });
+  });
 });

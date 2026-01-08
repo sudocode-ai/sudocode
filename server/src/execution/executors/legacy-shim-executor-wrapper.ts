@@ -607,6 +607,10 @@ export class LegacyShimExecutorWrapper {
    *
    * Converts each NormalizedEntry to CoalescedSessionUpdate,
    * broadcasts to WebSocket, and stores to raw_logs.
+   *
+   * Deduplication: PlainTextLogProcessor emits 'replace' patches for streaming
+   * updates, resulting in multiple entries with the same index. We track the
+   * last content for each (index, kind) pair and only emit when content changes.
    */
   private async processNormalizedOutput(
     executionId: string,
@@ -617,6 +621,11 @@ export class LegacyShimExecutorWrapper {
     );
 
     let entryCount = 0;
+    let emittedCount = 0;
+
+    // Track last emitted content for each (index, kind) pair to deduplicate
+    // PlainTextLogProcessor emits 'replace' patches with cumulative content
+    const lastEmittedContent = new Map<string, string>();
 
     for await (const entry of normalized) {
       entryCount++;
@@ -634,16 +643,65 @@ export class LegacyShimExecutorWrapper {
       }
 
       try {
+        // Deduplicate: Check if this is a duplicate/streaming update
+        // PlainTextLogProcessor emits 'replace' patches with cumulative content
+        const dedupeKey = `${entry.index}:${entry.type.kind}`;
+        const lastContent = lastEmittedContent.get(dedupeKey);
+
+        // Calculate content hash for deduplication
+        // For tool_use, include tool status and result in the hash
+        let contentHash = entry.content;
+        if (entry.type.kind === "tool_use") {
+          const tool = entry.type.tool;
+          contentHash = `${entry.content}|${tool.status}|${tool.result?.data ?? ""}`;
+        }
+
+        // Check for duplicates
+        if (lastContent !== undefined) {
+          // Skip exact duplicates
+          if (contentHash === lastContent) {
+            continue;
+          }
+
+          // For assistant_message, handle streaming 'replace' patches
+          // PlainTextLogProcessor emits cumulative content with each update
+          if (entry.type.kind === "assistant_message") {
+            // Skip if current content is a prefix of last emitted (streaming artifact)
+            if (lastContent.startsWith(entry.content)) {
+              continue;
+            }
+
+            // Skip if new content is the old content with additions
+            // This handles cumulative 'replace' patches where each update
+            // includes all previous content plus new content
+            if (entry.content.startsWith(lastContent)) {
+              const addedLength = entry.content.length - lastContent.length;
+              // Use a more aggressive threshold for deduplication:
+              // - For short messages (<200 chars), wait for 50+ char additions
+              // - For longer messages, wait for 100+ char additions
+              // This prevents showing every small streaming update
+              const threshold = lastContent.length < 200 ? 50 : 100;
+              if (addedLength < threshold) {
+                continue;
+              }
+            }
+          }
+        }
+
         // 1. Convert to CoalescedSessionUpdate
         const sessionUpdate = this.normalizedEntryToSessionUpdate(entry);
         if (!sessionUpdate) {
           continue;
         }
 
-        // 2. Broadcast to frontend via WebSocket
+        // 2. Update tracking
+        lastEmittedContent.set(dedupeKey, contentHash);
+        emittedCount++;
+
+        // 3. Broadcast to frontend via WebSocket
         this.broadcastSessionUpdate(executionId, sessionUpdate);
 
-        // 3. Store to raw_logs column
+        // 4. Store to raw_logs column
         this.logsStore.appendRawLog(
           executionId,
           serializeCoalescedUpdate(sessionUpdate)
@@ -662,7 +720,7 @@ export class LegacyShimExecutorWrapper {
     }
 
     console.log(
-      `[LegacyShimExecutorWrapper] Finished processing ${entryCount} entries for ${executionId}`
+      `[LegacyShimExecutorWrapper] Finished processing ${entryCount} entries for ${executionId} (emitted ${emittedCount})`
     );
   }
 

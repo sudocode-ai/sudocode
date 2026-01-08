@@ -105,7 +105,7 @@ vi.mock("acp-factory", () => {
   return {
     AgentFactory: {
       spawn: vi.fn().mockImplementation(() => Promise.resolve(createMockAgent())),
-      listAgents: vi.fn().mockReturnValue(["claude-code"]),
+      listAgents: vi.fn().mockReturnValue(["claude-code", "codex", "gemini", "opencode"]),
       getConfig: vi.fn(),
     },
   };
@@ -321,11 +321,13 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
 
     it("should provide metadata for all agents", () => {
       const agents = agentRegistryService.getAvailableAgents();
-      expect(agents).toHaveLength(4);
+      expect(agents).toHaveLength(6);
 
       const agentNames = agents.map((a) => a.name);
       expect(agentNames).toContain("claude-code");
       expect(agentNames).toContain("codex");
+      expect(agentNames).toContain("gemini");
+      expect(agentNames).toContain("opencode");
       expect(agentNames).toContain("copilot");
       expect(agentNames).toContain("cursor");
     });
@@ -333,6 +335,8 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
     it("should identify implemented agents", () => {
       expect(agentRegistryService.isAgentImplemented("claude-code")).toBe(true);
       expect(agentRegistryService.isAgentImplemented("codex")).toBe(true);
+      expect(agentRegistryService.isAgentImplemented("gemini")).toBe(true);
+      expect(agentRegistryService.isAgentImplemented("opencode")).toBe(true);
       expect(agentRegistryService.isAgentImplemented("cursor")).toBe(true);
     });
 
@@ -366,12 +370,28 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
       expect(wrapper.constructor.name).toBe("AcpExecutorWrapper");
     });
 
-    it("should throw for unsupported agent types (codex not yet registered)", () => {
-      // Codex is defined in acp-factory source but not yet registered in npm
-      // Should throw since it's not in ACP or legacy agent lists
+    it("should create executor for codex agent (ACP-native)", () => {
+      // Codex is an ACP-native agent supported via acp-factory
+      const wrapper = createExecutorForAgent(
+        "codex",
+        { workDir: testDir },
+        {
+          workDir: testDir,
+          lifecycleService: executionService["lifecycleService"],
+          logsStore: executionService["logsStore"],
+          projectId: "test-project",
+          db,
+        }
+      );
+      expect(wrapper).toBeDefined();
+      expect(wrapper.constructor.name).toBe("AcpExecutorWrapper");
+    });
+
+    it("should throw for unsupported agent types", () => {
+      // Unknown agent types should throw
       expect(() => {
         createExecutorForAgent(
-          "codex",
+          "unknown-agent" as any,
           { workDir: testDir },
           {
             workDir: testDir,
@@ -381,7 +401,7 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
             db,
           }
         );
-      }).toThrow(/Unknown agent type: codex/);
+      }).toThrow(/Unknown agent type: unknown-agent/);
     });
 
     it("should create executor for copilot agent", () => {
@@ -466,16 +486,29 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
       expect(execution.agent_type).toBe("claude-code");
     });
 
-    it("should reject unsupported agent types (codex not yet registered)", async () => {
-      // Codex is not yet registered in acp-factory npm or legacy agents
+    it("should create execution for codex agent (ACP-native)", async () => {
+      // Codex is an ACP-native agent supported via acp-factory
+      const execution = await executionService.createExecution(
+        testIssueId,
+        { mode: "worktree" as const },
+        issueContent,
+        "codex"
+      );
+
+      expect(execution).toBeDefined();
+      expect(execution.agent_type).toBe("codex");
+    });
+
+    it("should reject unknown agent types", async () => {
+      // Unknown agent types should be rejected
       await expect(
         executionService.createExecution(
           testIssueId,
           { mode: "worktree" as const },
           issueContent,
-          "codex"
+          "unknown-agent" as any
         )
-      ).rejects.toThrow(/Unknown agent type: codex/);
+      ).rejects.toThrow(/Unknown agent type: unknown-agent/);
     });
 
     it("should create execution for copilot agent", async () => {

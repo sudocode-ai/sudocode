@@ -33,13 +33,64 @@ import { notifyExecutionEvent } from "../../services/execution-event-callbacks.j
 import type { FileChangeStat } from "@sudocode-ai/types";
 
 /**
+ * Sudocode's MCP server configuration format
+ * Used by ExecutionService.buildExecutionConfig()
+ */
+export interface SudocodeMcpServerConfig {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+/**
+ * MCP servers config as produced by ExecutionService
+ * Key is the server name, value is the config
+ */
+export type SudocodeMcpServersConfig = Record<string, SudocodeMcpServerConfig>;
+
+/**
+ * Convert sudocode's MCP config format to acp-factory's McpServer[] format
+ *
+ * sudocode format: { "server-name": { command, args?, env?: Record } }
+ * acp-factory format: [{ name, command, args: [], env: [{name, value}] }]
+ */
+export function convertMcpServers(
+  config: SudocodeMcpServersConfig | McpServer[] | undefined
+): McpServer[] {
+  if (!config) {
+    return [];
+  }
+
+  // Already in array format (McpServer[])
+  if (Array.isArray(config)) {
+    return config;
+  }
+
+  // Convert from Record<string, SudocodeMcpServerConfig> to McpServer[]
+  return Object.entries(config).map(([name, serverConfig]) => ({
+    name,
+    command: serverConfig.command,
+    args: serverConfig.args ?? [],
+    env: serverConfig.env
+      ? Object.entries(serverConfig.env).map(([envName, value]) => ({
+          name: envName,
+          value,
+        }))
+      : [],
+  }));
+}
+
+/**
  * Configuration for ACP-based execution
  */
 export interface AcpExecutionConfig {
   /** Agent type (must be ACP-registered) */
   agentType: string;
-  /** MCP servers to connect to the agent session */
-  mcpServers?: McpServer[];
+  /**
+   * MCP servers to connect to the agent session
+   * Accepts both sudocode format (Record<string, config>) and acp-factory format (McpServer[])
+   */
+  mcpServers?: SudocodeMcpServersConfig | McpServer[];
   /** Permission handling mode */
   permissionMode?: PermissionMode;
   /** Environment variables to pass to the agent */
@@ -58,8 +109,11 @@ export interface AcpExecutionTask {
   prompt: string;
   /** Optional metadata */
   metadata?: {
-    /** MCP servers specific to this task */
-    mcpServers?: McpServer[];
+    /**
+     * MCP servers specific to this task
+     * Accepts both sudocode format (Record<string, config>) and acp-factory format (McpServer[])
+     */
+    mcpServers?: SudocodeMcpServersConfig | McpServer[];
     /** Additional system prompt to append */
     appendSystemPrompt?: string;
     /** Whether to skip permission prompts */
@@ -168,7 +222,10 @@ export class AcpExecutorWrapper {
       this.activeAgents.set(executionId, agent);
 
       // 2. Create session with MCP servers
-      const mcpServers = task.metadata?.mcpServers ?? this.acpConfig.mcpServers ?? [];
+      // Convert from sudocode format (Record<string, config>) to acp-factory format (McpServer[])
+      const mcpServers = convertMcpServers(
+        task.metadata?.mcpServers ?? this.acpConfig.mcpServers
+      );
       console.log(
         `[AcpExecutorWrapper] Creating session for ${executionId}`,
         { mcpServers: mcpServers.map((s) => s.name) }

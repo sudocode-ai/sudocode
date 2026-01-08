@@ -10,6 +10,7 @@ import type {
   IAgentAdapter,
   AgentMetadata,
 } from "agent-execution-engine/agents";
+import { AgentFactory } from "acp-factory";
 import type { AgentType } from "@sudocode-ai/types/agents";
 import { ClaudeCodeAdapter } from "../execution/adapters/claude-adapter.js";
 import { CodexAdapter } from "../execution/adapters/codex-adapter.js";
@@ -73,6 +74,8 @@ export class AgentRegistryService {
   private implementedAgents = new Set<string>([
     "claude-code",
     "codex",
+    "gemini",
+    "opencode",
     "cursor",
     "copilot",
   ]);
@@ -84,6 +87,8 @@ export class AgentRegistryService {
   private agentExecutables: Record<string, string> = {
     "claude-code": "claude",
     codex: "codex",
+    gemini: "gemini",
+    opencode: "opencode",
     cursor: "cursor-agent",
     copilot: "copilot",
   };
@@ -125,14 +130,52 @@ export class AgentRegistryService {
   /**
    * Get all available agents with their metadata and implementation status
    *
+   * Includes both:
+   * 1. Agents with adapters in agent-execution-engine (claude-code, codex, cursor, copilot)
+   * 2. ACP-native agents from acp-factory that don't have adapters (gemini, opencode)
+   *
    * @returns Array of agent information
    */
   getAvailableAgents(): AgentInfo[] {
     this.initialize();
-    return this.registry.getAll().map((adapter: IAgentAdapter) => ({
+
+    // Get agents from the registry (have adapters)
+    const registryAgents = this.registry.getAll().map((adapter: IAgentAdapter) => ({
       ...adapter.metadata,
       implemented: this.implementedAgents.has(adapter.metadata.name),
     }));
+
+    // Get set of already-included agent names
+    const registryAgentNames = new Set(registryAgents.map((a) => a.name));
+
+    // Get ACP-native agents from acp-factory that aren't already in registry
+    const acpAgentNames = AgentFactory.listAgents();
+    const additionalAcpAgents: AgentInfo[] = acpAgentNames
+      .filter((name) => !registryAgentNames.has(name))
+      .map((name) => ({
+        name,
+        displayName: this.formatAgentDisplayName(name),
+        supportedModes: ["structured", "interactive"],
+        supportsStreaming: true,
+        supportsStructuredOutput: true,
+        implemented: this.implementedAgents.has(name),
+      }));
+
+    return [...registryAgents, ...additionalAcpAgents];
+  }
+
+  /**
+   * Format agent name for display
+   * @param name - Raw agent name (e.g., "gemini", "opencode")
+   * @returns Formatted display name (e.g., "Gemini", "Opencode")
+   */
+  private formatAgentDisplayName(name: string): string {
+    // Handle special cases
+    const displayNames: Record<string, string> = {
+      gemini: "Gemini CLI",
+      opencode: "Opencode",
+    };
+    return displayNames[name] || name.charAt(0).toUpperCase() + name.slice(1);
   }
 
   /**
@@ -163,14 +206,17 @@ export class AgentRegistryService {
   }
 
   /**
-   * Check if an agent is registered in the registry
+   * Check if an agent is registered in the registry or acp-factory
    *
    * @param agentType - The agent type to check
-   * @returns True if the agent is registered
+   * @returns True if the agent is registered or ACP-supported
    */
   hasAgent(agentType: AgentType): boolean {
     this.initialize();
-    return this.registry.has(agentType);
+    return (
+      this.registry.has(agentType) ||
+      AgentFactory.listAgents().includes(agentType)
+    );
   }
 
   /**

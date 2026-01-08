@@ -1438,11 +1438,12 @@ ${feedback}`;
     // 2. Check if agent already has sudocode-mcp configured
     const mcpPresent = await this.detectAgentMcp(agentType);
 
-    // 3. For Cursor, MCP MUST be configured (no CLI injection available)
+    // 3. For Cursor, MCP must be configured via .cursor/mcp.json (no CLI injection available)
+    // If not configured, log a warning and skip MCP injection instead of failing
     if (agentType === "cursor" && !mcpPresent) {
-      throw new Error(
-        "Cursor agent requires sudocode-mcp to be configured in .cursor/mcp.json.\n" +
-          "Please create .cursor/mcp.json in your project root with:\n\n" +
+      console.warn(
+        "[ExecutionService] Cursor agent does not have sudocode-mcp configured.\n" +
+          "To enable MCP tools, create .cursor/mcp.json in your project root with:\n\n" +
           JSON.stringify(
             {
               mcpServers: {
@@ -1456,6 +1457,8 @@ ${feedback}`;
           ) +
           "\n\nVisit: https://github.com/sudocode-ai/sudocode"
       );
+      // Skip MCP injection for Cursor - return config as-is
+      return mergedConfig;
     }
 
     // For Cursor with sudocode-mcp, auto-approve MCP servers in headless mode
@@ -1860,7 +1863,19 @@ ${feedback}`;
       }
     }
 
-    // For other agents, return true (safe default)
+    // For gemini and opencode, MCP is not yet configured
+    // Return false to allow auto-injection
+    if (agentType === "gemini" || agentType === "opencode") {
+      console.info(
+        `[ExecutionService] MCP detection not implemented for ${agentType} - will auto-inject`
+      );
+      return false;
+    }
+
+    // For other/unknown agents, return true (safe default - skip injection)
+    console.warn(
+      `[ExecutionService] Unknown agent type for MCP detection: ${agentType}`
+    );
     return true;
   }
 }

@@ -1234,52 +1234,56 @@ describe("ExecutionService.buildExecutionConfig", () => {
     });
   });
 
-  describe("cursor error handling", () => {
-    it("should throw error when cursor agent has no MCP config", async () => {
+  describe("cursor warning handling", () => {
+    it("should warn (not throw) when cursor agent has no MCP config", async () => {
       // Mock detectSudocodeMcp to return true (package installed)
       await mockSudocodeMcpDetection(true);
 
       // Mock detectAgentMcp to return false for cursor (no .cursor/mcp.json)
       vi.spyOn(service, "detectAgentMcp").mockResolvedValue(false);
 
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
       const userConfig: ExecutionConfig = {
         mode: "worktree",
       };
 
-      try {
-        await service.buildExecutionConfig("cursor", userConfig);
-        expect.fail("Should have thrown error");
-      } catch (error) {
-        expect(error).toBeInstanceOf(Error);
-        const message = (error as Error).message;
-        expect(message).toContain("Cursor agent requires sudocode-mcp");
-        expect(message).toContain(".cursor/mcp.json");
-        expect(message).toContain("project root");
-        expect(message).toContain("github.com/sudocode-ai/sudocode");
-      }
+      // Should not throw - just warn and return config
+      const result = await service.buildExecutionConfig("cursor", userConfig);
+      expect(result).toBeDefined();
+
+      // Should have logged a warning
+      expect(warnSpy).toHaveBeenCalled();
+      const warnMessage = warnSpy.mock.calls[0][0];
+      expect(warnMessage).toContain(".cursor/mcp.json");
+
+      warnSpy.mockRestore();
     });
 
-    it("should include example config in error message for cursor", async () => {
+    it("should include example config in warning message for cursor", async () => {
       // Mock detectSudocodeMcp to return true (package installed)
       await mockSudocodeMcpDetection(true);
 
       // Mock detectAgentMcp to return false for cursor
       vi.spyOn(service, "detectAgentMcp").mockResolvedValue(false);
 
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
       const userConfig: ExecutionConfig = {
         mode: "worktree",
       };
 
-      try {
-        await service.buildExecutionConfig("cursor", userConfig);
-        expect.fail("Should have thrown error");
-      } catch (error) {
-        expect(error).toBeInstanceOf(Error);
-        const message = (error as Error).message;
-        expect(message).toContain("mcpServers");
-        expect(message).toContain("sudocode-mcp");
-        expect(message).toContain("command");
-      }
+      // Should not throw - just warn
+      const result = await service.buildExecutionConfig("cursor", userConfig);
+      expect(result).toBeDefined();
+
+      // Warning should include example config
+      expect(warnSpy).toHaveBeenCalled();
+      const warnMessage = warnSpy.mock.calls[0][0];
+      expect(warnMessage).toContain("mcpServers");
+      expect(warnMessage).toContain("sudocode-mcp");
+
+      warnSpy.mockRestore();
     });
 
     it("should not throw when cursor agent has MCP config", async () => {
@@ -1316,17 +1320,34 @@ describe("ExecutionService.buildExecutionConfig", () => {
     });
 
     it("should not set approveMcps for cursor when sudocode-mcp is not detected", async () => {
-      // This test verifies the negative case - but cursor without MCP config throws error
-      // So we can't actually test this scenario as it fails before approveMcps would be set
-      // This is expected behavior - cursor REQUIRES MCP config
-    });
-
-    it("should throw cursor error even if user provides mcpServers in config", async () => {
       // Mock detectSudocodeMcp to return true (package installed)
       await mockSudocodeMcpDetection(true);
 
       // Mock detectAgentMcp to return false for cursor (no .cursor/mcp.json)
       vi.spyOn(service, "detectAgentMcp").mockResolvedValue(false);
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const userConfig: ExecutionConfig = {
+        mode: "worktree",
+      };
+
+      const result = await service.buildExecutionConfig("cursor", userConfig);
+
+      // approveMcps should not be set when MCP is not detected
+      expect((result as any).approveMcps).toBeUndefined();
+
+      warnSpy.mockRestore();
+    });
+
+    it("should warn even if user provides mcpServers in config for cursor", async () => {
+      // Mock detectSudocodeMcp to return true (package installed)
+      await mockSudocodeMcpDetection(true);
+
+      // Mock detectAgentMcp to return false for cursor (no .cursor/mcp.json)
+      vi.spyOn(service, "detectAgentMcp").mockResolvedValue(false);
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
       const userConfig: ExecutionConfig = {
         mode: "worktree",
@@ -1338,16 +1359,16 @@ describe("ExecutionService.buildExecutionConfig", () => {
         },
       };
 
-      // Should still throw because Cursor can't accept CLI-injected MCP config
-      try {
-        await service.buildExecutionConfig("cursor", userConfig);
-        expect.fail("Should have thrown error");
-      } catch (error) {
-        expect(error).toBeInstanceOf(Error);
-        const message = (error as Error).message;
-        expect(message).toContain("Cursor agent requires sudocode-mcp");
-        expect(message).toContain(".cursor/mcp.json");
-      }
+      // Should warn but not throw - Cursor can't accept CLI-injected MCP config
+      const result = await service.buildExecutionConfig("cursor", userConfig);
+      expect(result).toBeDefined();
+
+      // Should have warned about missing .cursor/mcp.json
+      expect(warnSpy).toHaveBeenCalled();
+      const warnMessage = warnSpy.mock.calls[0][0];
+      expect(warnMessage).toContain(".cursor/mcp.json");
+
+      warnSpy.mockRestore();
     });
   });
 });

@@ -3,7 +3,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { AcpExecutorWrapper } from "../../../../src/execution/executors/acp-executor-wrapper.js";
+import {
+  AcpExecutorWrapper,
+  convertMcpServers,
+  type SudocodeMcpServersConfig,
+} from "../../../../src/execution/executors/acp-executor-wrapper.js";
 
 // Mock external dependencies
 vi.mock("acp-factory", () => {
@@ -359,5 +363,69 @@ describe("AcpExecutorWrapper", () => {
       // Check that the resumed message was stored
       expect(mockLogsStore.appendRawLog).toHaveBeenCalled();
     });
+  });
+});
+
+describe("convertMcpServers", () => {
+  it("should return empty array for undefined input", () => {
+    expect(convertMcpServers(undefined)).toEqual([]);
+  });
+
+  it("should pass through array format unchanged", () => {
+    const mcpServers = [
+      { name: "test-server", command: "test-cmd", args: [], env: [] },
+    ];
+    expect(convertMcpServers(mcpServers)).toBe(mcpServers);
+  });
+
+  it("should convert Record format to array format", () => {
+    const sudocodeConfig: SudocodeMcpServersConfig = {
+      "sudocode-mcp": {
+        command: "sudocode-mcp",
+        args: ["--scope", "all"],
+      },
+      "other-server": {
+        command: "other-cmd",
+      },
+    };
+
+    const result = convertMcpServers(sudocodeConfig);
+
+    expect(result).toHaveLength(2);
+    expect(result).toContainEqual({
+      name: "sudocode-mcp",
+      command: "sudocode-mcp",
+      args: ["--scope", "all"],
+      env: [],
+    });
+    expect(result).toContainEqual({
+      name: "other-server",
+      command: "other-cmd",
+      args: [],
+      env: [],
+    });
+  });
+
+  it("should convert env Record to env Array", () => {
+    const sudocodeConfig: SudocodeMcpServersConfig = {
+      "test-server": {
+        command: "test-cmd",
+        env: {
+          API_KEY: "secret123",
+          DEBUG: "true",
+        },
+      },
+    };
+
+    const result = convertMcpServers(sudocodeConfig);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].env).toContainEqual({ name: "API_KEY", value: "secret123" });
+    expect(result[0].env).toContainEqual({ name: "DEBUG", value: "true" });
+  });
+
+  it("should handle empty config object", () => {
+    const result = convertMcpServers({});
+    expect(result).toEqual([]);
   });
 });
