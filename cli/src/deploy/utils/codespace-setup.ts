@@ -129,14 +129,13 @@ export async function installSudocodeFromLocal(name: string): Promise<void> {
   console.log('Installing sudocode from local repository...');
 
   // Navigate to workspace directory (Codespace clones repo to /workspaces/<repo-name>)
-  // Install dependencies, build all packages, and add CLI to PATH
+  // Install dependencies, build all packages, and link globally
   const commands = [
     'cd /workspaces/*',
     'npm install',
     'npm run build',
-    // Create global symlinks for CLI and server
-    'npm link --prefix cli',
-    'npm link --prefix server'
+    // Create global symlinks using the workspace link script
+    'npm run link'
   ].join(' && ');
 
   await execInCodespace(
