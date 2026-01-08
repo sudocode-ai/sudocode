@@ -342,14 +342,18 @@ export async function deployRemote(options: DeployOptions = {}): Promise<Deploym
 
   } catch (error: any) {
     // Cleanup on failure: delete Codespace if it was created
+    // TEMPORARILY DISABLED FOR DEBUGGING
     if (codespaceName) {
-      console.log('\nDeployment failed, cleaning up Codespace...');
-      try {
-        await deleteCodespace(codespaceName);
-        console.log('✓ Codespace deleted');
-      } catch (cleanupError: any) {
-        console.warn(`⚠ Warning: Failed to delete Codespace: ${cleanupError.message}`);
-      }
+      console.log('\n⚠ Deployment failed - Codespace NOT deleted for debugging');
+      console.log(`   Codespace name: ${codespaceName}`);
+      console.log('   To manually delete: gh codespace delete --codespace ' + codespaceName);
+      // console.log('\nDeployment failed, cleaning up Codespace...');
+      // try {
+      //   await deleteCodespace(codespaceName);
+      //   console.log('✓ Codespace deleted');
+      // } catch (cleanupError: any) {
+      //   console.warn(`⚠ Warning: Failed to delete Codespace: ${cleanupError.message}`);
+      // }
     }
     throw error;
   }
