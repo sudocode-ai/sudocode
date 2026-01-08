@@ -29,6 +29,7 @@ export interface CodespaceConfig {
   machine: string;         // e.g., 'basicLinux32gb'
   idleTimeout: number;     // minutes (max 240)
   retentionPeriod: number; // days
+  branch?: string;         // optional branch name (uses repo default if not specified)
 }
 
 /**
@@ -109,16 +110,35 @@ export async function getCurrentRepo(): Promise<string> {
 }
 
 /**
+ * Get current git branch name
+ */
+export async function getCurrentGitBranch(): Promise<string> {
+  try {
+    const result = await execAsync('git rev-parse --abbrev-ref HEAD');
+    return result.stdout.trim();
+  } catch (error) {
+    throw new Error('Failed to get current git branch');
+  }
+}
+
+/**
  * Create a new Codespace with the specified configuration
  */
 export async function createCodespace(config: CodespaceConfig): Promise<CodespaceInfo> {
-  const cmd = [
+  const cmdParts = [
     'gh codespace create',
     `--repo ${config.repository}`,
     `--machine ${config.machine}`,
     `--idle-timeout ${config.idleTimeout}m`,
     `--retention-period ${config.retentionPeriod * 24}h`
-  ].join(' ');
+  ];
+
+  // Add branch if specified
+  if (config.branch) {
+    cmdParts.push(`--branch ${config.branch}`);
+  }
+
+  const cmd = cmdParts.join(' ');
 
   try {
     const { stdout } = await execAsync(cmd);

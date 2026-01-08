@@ -19,6 +19,7 @@ export {
   checkGhCliInstalled,
   checkGhAuthenticated,
   getCurrentRepo,
+  getCurrentGitBranch,
   createCodespace,
   deleteCodespace,
   listCodespaces,

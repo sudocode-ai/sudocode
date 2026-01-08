@@ -9,6 +9,7 @@ import {
   checkGhCliInstalled,
   checkGhAuthenticated,
   getCurrentRepo,
+  getCurrentGitBranch,
   createCodespace,
   waitForCodespaceReady,
   deleteCodespace,
@@ -20,6 +21,7 @@ import {
 import {
   installClaudeCode,
   installSudocodeGlobally,
+  installSudocodeFromLocal,
   initializeSudocodeProject,
   startSudocodeServer
 } from './utils/codespace-setup.js';
@@ -47,6 +49,7 @@ export interface DeployOptions {
   keepAlive?: string;         // Default: '72h'
   retentionPeriod?: number;   // Default: 14 (days)
   open?: boolean;             // Default: true
+  dev?: boolean;              // Default: false - Install local sudocode for development/testing
 }
 
 /**
@@ -156,17 +159,22 @@ async function waitForReady(name: string): Promise<void> {
 /**
  * Install sudocode in the Codespace
  * - Installs Claude Code
- * - Installs sudocode packages globally
+ * - Installs sudocode packages (globally or from local build)
  * - Initializes sudocode project
  */
-async function installSudocode(name: string): Promise<void> {
-  console.log('\nInstalling sudocode...');
+async function installSudocode(name: string, isDev: boolean): Promise<void> {
+  console.log(`\nInstalling sudocode${isDev ? ' (dev mode)' : ''}...`);
 
-  // Install Claude Code
+  // Install Claude Code (always needed)
   await installClaudeCode(name);
 
-  // Install sudocode packages
-  await installSudocodeGlobally(name);
+  if (isDev) {
+    // Dev mode: Install from local repository
+    await installSudocodeFromLocal(name);
+  } else {
+    // Production mode: Install from npm
+    await installSudocodeGlobally(name);
+  }
 
   // Initialize project
   await initializeSudocodeProject(name);
@@ -185,12 +193,13 @@ async function installSudocode(name: string): Promise<void> {
 async function startServerAndGetUrl(
   name: string,
   port: number,
-  keepAliveHours: number
+  keepAliveHours: number,
+  isDev: boolean = false
 ): Promise<string> {
   console.log('\nStarting server...');
 
   // Start server in background
-  await startSudocodeServer(name, port, keepAliveHours);
+  await startSudocodeServer(name, port, keepAliveHours, isDev);
 
   // Wait for server to be listening on the port
   console.log(`Waiting for server to start on port ${port}...`);
@@ -292,11 +301,19 @@ export async function deployRemote(options: DeployOptions = {}): Promise<Deploym
     console.log('\nCreating Codespace...');
     const repository = await getCurrentRepo();
 
+    // In dev mode, use the current branch instead of the default branch
+    let branch: string | undefined;
+    if (options.dev) {
+      branch = await getCurrentGitBranch();
+      console.log(`✓ Using current branch: ${branch}`);
+    }
+
     const codespace = await createCodespace({
       repository,
       machine: options.machine || 'basicLinux32gb',
       idleTimeout: 240, // Always use GitHub's max (4 hours)
-      retentionPeriod: options.retentionPeriod || 14
+      retentionPeriod: options.retentionPeriod || 14,
+      branch
     });
     codespaceName = codespace.name;
     console.log(`✓ Codespace created: ${codespace.name}`);
@@ -305,7 +322,7 @@ export async function deployRemote(options: DeployOptions = {}): Promise<Deploym
     await waitForReady(codespace.name);
 
     // 5. Install sudocode
-    await installSudocode(codespace.name);
+    await installSudocode(codespace.name, options.dev || false);
 
     // 6. Start server and get URL with port retry logic (ports 3000-3020)
     let port: number | null = null;
@@ -314,7 +331,7 @@ export async function deployRemote(options: DeployOptions = {}): Promise<Deploym
     for (let portAttempt = 3000; portAttempt <= 3020; portAttempt++) {
       try {
         console.log(`\nAttempting port ${portAttempt}...`);
-        url = await startServerAndGetUrl(codespace.name, portAttempt, keepAliveHours);
+        url = await startServerAndGetUrl(codespace.name, portAttempt, keepAliveHours, options.dev || false);
         port = portAttempt;
         break; // Success!
       } catch (error: any) {

@@ -505,6 +505,7 @@ deploy
   .option("--keep-alive <duration>", "Keep Codespace alive duration (e.g., 72h, 168h) (default: 72h)")
   .option("--retention-period <days>", "Auto-delete after days (default: 14)", parseInt)
   .option("--no-open", "Skip opening browser tabs")
+  .option("--dev", "Install local sudocode for development/testing")
   .addHelpText('after', `
 Examples:
   $ sudocode deploy remote
@@ -515,6 +516,9 @@ Examples:
 
   $ sudocode deploy remote --retention-period 30 --no-open
   Deploy with 30-day retention, don't open browser
+
+  $ sudocode deploy remote --dev
+  Deploy with local sudocode build (for development/testing)
 `)
   .action(async (options: any) => {
     await handleDeployRemote(options);

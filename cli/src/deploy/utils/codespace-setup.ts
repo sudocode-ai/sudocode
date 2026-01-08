@@ -111,6 +111,47 @@ export async function initializeSudocodeProject(name: string): Promise<void> {
 }
 
 /**
+ * Install sudocode from local repository (dev mode)
+ *
+ * Builds the monorepo and makes the CLI available globally.
+ * Used for development and testing of local changes.
+ *
+ * @param name - Codespace name
+ * @throws Error if build fails
+ *
+ * @example
+ * ```typescript
+ * await installSudocodeFromLocal('friendly-space-abc123');
+ * console.log('Local sudocode built and configured');
+ * ```
+ */
+export async function installSudocodeFromLocal(name: string): Promise<void> {
+  console.log('Installing sudocode from local repository...');
+
+  // Navigate to workspace directory (Codespace clones repo to /workspaces/<repo-name>)
+  // Install dependencies, build all packages, and add CLI to PATH
+  const commands = [
+    'cd /workspaces/*',
+    'npm install',
+    'npm run build',
+    // Create global symlinks for CLI and server
+    'npm link --prefix cli',
+    'npm link --prefix server'
+  ].join(' && ');
+
+  await execInCodespace(
+    name,
+    commands,
+    {
+      timeout: 600000,      // 10 minutes for install + build
+      streamOutput: true    // Show progress
+    }
+  );
+
+  console.log('✓ Local sudocode built and configured');
+}
+
+/**
  * Start sudocode server in background
  *
  * Starts the server using nohup for persistence, redirecting output to a log file.
@@ -122,6 +163,7 @@ export async function initializeSudocodeProject(name: string): Promise<void> {
  * @param name - Codespace name
  * @param port - Port number to listen on
  * @param keepAliveHours - Keep-alive duration in hours
+ * @param isDev - Whether to use local build (default: false)
  * @throws Error if server start command fails
  *
  * @example
@@ -136,16 +178,22 @@ export async function initializeSudocodeProject(name: string): Promise<void> {
 export async function startSudocodeServer(
   name: string,
   port: number,
-  keepAliveHours: number
+  keepAliveHours: number,
+  isDev: boolean = false
 ): Promise<void> {
-  console.log(`Starting sudocode server on port ${port}...`);
+  console.log(`Starting sudocode server on port ${port}${isDev ? ' (dev mode)' : ''}...`);
+
+  // In dev mode, use the local build; otherwise use global install
+  const serverCommand = isDev
+    ? 'cd /workspaces/* && node server/dist/cli.js'
+    : 'sudocode server';
 
   // Start in background with nohup
   // Output is redirected to /tmp/sudocode-<port>.log
   // & makes it run in background, nohup prevents hangup on SSH disconnect
   await execInCodespace(
     name,
-    `nohup sudocode server --port ${port} --keep-alive ${keepAliveHours}h ` +
+    `nohup ${serverCommand} --port ${port} --keep-alive ${keepAliveHours}h ` +
     `> /tmp/sudocode-${port}.log 2>&1 &`,
     {
       streamOutput: false,  // No output expected from background start
