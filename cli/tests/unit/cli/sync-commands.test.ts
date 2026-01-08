@@ -46,9 +46,6 @@ describe("Sync Commands - Auto Direction Detection", () => {
   let consoleErrorSpy: any;
 
   beforeEach(() => {
-    // Create a fresh in-memory database for each test
-    db = initDatabase({ path: ":memory:" });
-
     // Create temporary directory
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "sudocode-sync-test-"));
     specsDir = path.join(tempDir, "specs");
@@ -71,9 +68,10 @@ describe("Sync Commands - Auto Direction Detection", () => {
       "utf8"
     );
 
-    // Create cache.db file
+    // Create database at cache.db path (not in-memory) so handleSync can use it
     const dbPath = path.join(tempDir, "cache.db");
-    fs.writeFileSync(dbPath, "");
+    db = initDatabase({ path: dbPath });
+    db.pragma('wal_checkpoint(FULL)'); // Force file creation
 
     // Spy on console methods
     consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -540,12 +538,16 @@ describe("Export and Import Commands", () => {
   let processExitSpy: any;
 
   beforeEach(() => {
-    db = initDatabase({ path: ":memory:" });
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "sudocode-export-test-"));
     outputDir = path.join(tempDir, "output");
 
     // Create output directory
     fs.mkdirSync(outputDir, { recursive: true });
+
+    // Create database at cache.db path (not in-memory) so handleSync can use it
+    const dbPath = path.join(tempDir, "cache.db");
+    db = initDatabase({ path: dbPath });
+    db.pragma('wal_checkpoint(FULL)'); // Force file creation
 
     // Spy on console methods
     consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -1152,6 +1154,11 @@ Fresh content from markdown`;
       const issuesDir = path.join(tempDir, "issues");
       fs.mkdirSync(issuesDir, { recursive: true });
 
+      // Mark as initialized to prevent handleSync from re-initializing
+      // (which would reset database timestamps and break the test scenario)
+      fs.writeFileSync(path.join(tempDir, "config.json"), JSON.stringify({ version: "0.1.0" }));
+      fs.mkdirSync(path.join(tempDir, "specs"), { recursive: true });
+
       // Create two issues with different states
       const pastTime = new Date(Date.now() - 10000);
 
@@ -1188,6 +1195,14 @@ Fresh content from markdown`;
       // Create fresh markdown for issue2
       const md2Path = path.join(issuesDir, "i-conf2.md");
       fs.writeFileSync(md2Path, `---\nid: i-conf2\ntitle: Fresh MD\n---\nFresh`, "utf8");
+
+      await sleep(1100); // Sleep longer to ensure timestamp difference (filesystem may have 1s resolution)
+
+      // Touch JSONL to make it newer than all markdown files
+      // This simulates database being the source of truth
+      const jsonlPath = path.join(tempDir, "issues.jsonl");
+      const now = new Date();
+      fs.utimesSync(jsonlPath, now, now);
 
       // Run sync - should prefer database as source of truth in conflict
       await handleSync(ctx, {});

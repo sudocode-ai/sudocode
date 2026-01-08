@@ -273,7 +273,9 @@ describe('AgentConfigPanel', () => {
       })
 
       // Initially should show branch in worktree mode
-      expect(screen.getByText('main')).toBeInTheDocument()
+      await waitFor(() => {
+        expect(screen.getByText('main')).toBeInTheDocument()
+      })
 
       // Switch to local mode
       const triggers = screen.getAllByRole('combobox')
