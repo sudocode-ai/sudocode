@@ -1189,6 +1189,14 @@ Fresh content from markdown`;
       const md2Path = path.join(issuesDir, "i-conf2.md");
       fs.writeFileSync(md2Path, `---\nid: i-conf2\ntitle: Fresh MD\n---\nFresh`, "utf8");
 
+      await sleep(100);
+
+      // Touch JSONL to make it newer than all markdown files
+      // This simulates database being the source of truth
+      const jsonlPath = path.join(tempDir, "issues.jsonl");
+      const now = new Date();
+      fs.utimesSync(jsonlPath, now, now);
+
       // Run sync - should prefer database as source of truth in conflict
       await handleSync(ctx, {});
 
