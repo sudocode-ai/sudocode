@@ -1154,6 +1154,15 @@ Fresh content from markdown`;
       fs.writeFileSync(path.join(tempDir, "config.json"), JSON.stringify({ version: "0.1.0" }));
       fs.mkdirSync(path.join(tempDir, "specs"), { recursive: true });
 
+      // Debug: verify initialization markers exist
+      const { isInitialized } = await import("../../../src/cli/init-commands.js");
+      console.log(`[DEBUG] tempDir: ${tempDir}`);
+      console.log(`[DEBUG] isInitialized: ${isInitialized(tempDir)}`);
+      console.log(`[DEBUG] config.json exists: ${fs.existsSync(path.join(tempDir, "config.json"))}`);
+      console.log(`[DEBUG] cache.db exists: ${fs.existsSync(path.join(tempDir, "cache.db"))}`);
+      console.log(`[DEBUG] specs/ exists: ${fs.existsSync(path.join(tempDir, "specs"))}`);
+      console.log(`[DEBUG] issues/ exists: ${fs.existsSync(path.join(tempDir, "issues"))}`);
+
       // Create two issues with different states
       const pastTime = new Date(Date.now() - 10000);
 
