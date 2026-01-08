@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ToolCallViewer } from '@/components/executions/ToolCallViewer'
-import type { ToolCallTracking } from '@/hooks/useAgUiStream'
+import type { ToolCallTracking } from '@/types/stream'
 
 describe('ToolCallViewer', () => {
   describe('Empty State', () => {

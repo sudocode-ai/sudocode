@@ -21,8 +21,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
-import { useAgUiStream } from '@/hooks/useAgUiStream'
-import type { MessageBuffer, ToolCallTracking } from '@/hooks/useAgUiStream'
+import { useSessionUpdateStream, type AgentMessage, type ToolCall } from '@/hooks/useSessionUpdateStream'
 import type { EscalationData, EscalationResponseRequest } from '@/types/workflow'
 import { EscalationPanel } from './EscalationPanel'
 
@@ -53,13 +52,13 @@ type TrajectoryItem =
       type: 'message'
       timestamp: number
       index?: number
-      data: MessageBuffer
+      data: AgentMessage
     }
   | {
       type: 'tool_call'
       timestamp: number
       index?: number
-      data: ToolCallTracking
+      data: ToolCall
     }
   | {
       type: 'wakeup'
@@ -79,18 +78,19 @@ interface FormattedToolCall {
   isEscalation?: boolean
 }
 
-function formatToolCall(toolCall: ToolCallTracking): FormattedToolCall {
+function formatToolCall(toolCall: ToolCall): FormattedToolCall {
   let args: Record<string, unknown> = {}
-  if (toolCall.args) {
+  const rawInput = toolCall.rawInput
+  if (rawInput) {
     try {
-      args = JSON.parse(toolCall.args)
+      args = typeof rawInput === 'string' ? JSON.parse(rawInput) : rawInput as Record<string, unknown>
     } catch {
       // Args may be incomplete (still streaming) or malformed - use empty object
       args = {}
     }
   }
 
-  switch (toolCall.toolCallName) {
+  switch (toolCall.title) {
     case 'execute_issue':
       return {
         icon: <Play className="h-4 w-4" />,
@@ -99,16 +99,17 @@ function formatToolCall(toolCall: ToolCallTracking): FormattedToolCall {
         variant: 'primary',
       }
 
-    case 'execution_status':
+    case 'execution_status': {
       let result = null
       if (toolCall.result) {
         try {
-          result = JSON.parse(toolCall.result)
+          result = typeof toolCall.result === 'string' ? JSON.parse(toolCall.result) : toolCall.result
         } catch {
           // Result may be malformed - use null
         }
       }
-      const status = result?.data?.status || 'checking'
+      const resultData = result as Record<string, any> | null
+      const status = resultData?.data?.status || 'checking'
       const execId = args.execution_id as string | undefined
       return {
         icon: <Activity className="h-4 w-4" />,
@@ -123,6 +124,7 @@ function formatToolCall(toolCall: ToolCallTracking): FormattedToolCall {
                 : `Status: ${status}`,
         variant: status === 'completed' ? 'success' : status === 'failed' ? 'error' : 'default',
       }
+    }
 
     case 'execution_cancel': {
       const cancelExecId = args.execution_id as string | undefined
@@ -178,7 +180,7 @@ function formatToolCall(toolCall: ToolCallTracking): FormattedToolCall {
     default:
       return {
         icon: <Wrench className="h-4 w-4" />,
-        title: toolCall.toolCallName,
+        title: toolCall.title,
         variant: 'default',
       }
   }
@@ -225,8 +227,8 @@ export function OrchestratorTrajectory({
 }: OrchestratorTrajectoryProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Use the ag-ui stream hook to get real-time execution data
-  const { messages, toolCalls, isConnected, error } = useAgUiStream({ executionId })
+  // Use the session update stream hook to get real-time execution data
+  const { messages, toolCalls, isConnected, error } = useSessionUpdateStream({ executionId })
 
   // Build chronological trajectory
   const trajectory = useMemo(() => {
@@ -239,7 +241,7 @@ export function OrchestratorTrajectory({
       }
       items.push({
         type: 'message',
-        timestamp: message.timestamp,
+        timestamp: message.timestamp.getTime(),
         index: message.index,
         data: message,
       })
@@ -249,7 +251,7 @@ export function OrchestratorTrajectory({
     toolCalls.forEach((toolCall) => {
       items.push({
         type: 'tool_call',
-        timestamp: toolCall.startTime,
+        timestamp: toolCall.timestamp.getTime(),
         index: toolCall.index,
         data: toolCall,
       })
@@ -329,7 +331,7 @@ export function OrchestratorTrajectory({
           if (item.type === 'message') {
             const message = item.data
             return (
-              <div key={`msg-${message.messageId}`} className="flex items-start gap-3">
+              <div key={`msg-${message.id}`} className="flex items-start gap-3">
                 <div className="mt-1 flex-shrink-0">
                   <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10">
                     <MessageSquare className="h-4 w-4 text-primary" />
@@ -340,11 +342,11 @@ export function OrchestratorTrajectory({
                     <Badge variant="outline" className="text-xs">
                       orchestrator
                     </Badge>
-                    {!message.complete && (
+                    {message.isStreaming && (
                       <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                     )}
                     <span className="ml-auto text-xs text-muted-foreground">
-                      {formatTime(message.timestamp)}
+                      {formatTime(message.timestamp.getTime())}
                     </span>
                   </div>
                   <div className="rounded-lg bg-muted/50 p-3 text-sm whitespace-pre-wrap">
@@ -360,8 +362,15 @@ export function OrchestratorTrajectory({
           const formatted = formatToolCall(toolCall)
           const styles = VARIANT_STYLES[formatted.variant]
 
+          // Get error from result if status is failed
+          const toolError = toolCall.status === 'failed' && toolCall.result
+            ? (typeof toolCall.result === 'object' && toolCall.result !== null
+                ? (toolCall.result as Record<string, unknown>).error as string | undefined
+                : undefined)
+            : undefined
+
           return (
-            <div key={`tool-${toolCall.toolCallId}`} className="flex items-start gap-3">
+            <div key={`tool-${toolCall.id}`} className="flex items-start gap-3">
               <div className="mt-1 flex-shrink-0">
                 <div
                   className={cn(
@@ -378,12 +387,12 @@ export function OrchestratorTrajectory({
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm">{formatted.title}</span>
-                      {(toolCall.status === 'started' || toolCall.status === 'executing') && (
+                      {(toolCall.status === 'pending' || toolCall.status === 'running') && (
                         <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                       )}
                     </div>
                     <span className="text-xs text-muted-foreground">
-                      {formatTime(toolCall.startTime)}
+                      {formatTime(toolCall.timestamp.getTime())}
                     </span>
                   </div>
 
@@ -393,9 +402,9 @@ export function OrchestratorTrajectory({
                   )}
 
                   {/* Error */}
-                  {toolCall.error && (
+                  {toolError && (
                     <div className="mt-2 rounded bg-destructive/10 p-2 text-xs text-destructive">
-                      {toolCall.error}
+                      {toolError}
                     </div>
                   )}
                 </div>

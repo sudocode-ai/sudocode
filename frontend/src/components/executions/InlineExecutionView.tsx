@@ -25,7 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import type { ToolCallTracking } from '@/hooks/useAgUiStream'
+import type { ToolCallTracking } from '@/types/stream'
 import type { Execution } from '@/types/execution'
 import {
   Loader2,

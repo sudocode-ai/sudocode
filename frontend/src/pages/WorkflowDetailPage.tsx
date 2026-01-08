@@ -598,7 +598,7 @@ export default function WorkflowDetailPage() {
                               />
                             </div>
                           )}
-                          {/* Execution View - uses ClaudeCodeTrajectory for claude-code agents */}
+                          {/* Execution View - shows unified AgentTrajectory */}
                           <div className="p-2">
                             <InlineExecutionView
                               executionId={workflow.orchestratorExecutionId!}

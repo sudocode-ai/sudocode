@@ -44,7 +44,6 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@ag-ui/core": "^0.0.39",
     "@codemirror/lang-json": "^6.0.1",
     "@codemirror/state": "^6.4.0",
     "@codemirror/view": "^6.23.0",

@@ -8,8 +8,6 @@
 
 import { Router, Request, Response } from "express";
 import { execSync } from "child_process";
-import { NormalizedEntryToAgUiAdapter } from "../execution/output/normalized-to-ag-ui-adapter.js";
-import { AgUiEventAdapter } from "../execution/output/ag-ui-adapter.js";
 import { agentRegistryService } from "../services/agent-registry.js";
 import {
   AgentNotFoundError,
@@ -526,10 +524,10 @@ export function createExecutionsRouter(): Router {
   /**
    * GET /api/executions/:executionId/logs
    *
-   * Get AG-UI events for historical replay
+   * Get CoalescedSessionUpdate events for historical replay
    *
-   * Fetches NormalizedEntry logs from storage and converts them to AG-UI events on-demand.
-   * This preserves full structured data in storage while serving UI-ready events to frontend.
+   * Returns logs in unified CoalescedSessionUpdate format.
+   * Automatically detects storage format (ACP or legacy) and converts as needed.
    */
   router.get(
     "/executions/:executionId/logs",
@@ -549,33 +547,18 @@ export function createExecutionsRouter(): Router {
           return;
         }
 
-        // Fetch normalized entries from storage
-        const normalizedEntries =
-          req.project!.logsStore!.getNormalizedEntries(executionId);
+        // Get logs in unified CoalescedSessionUpdate format
+        // This handles both ACP (raw_logs) and legacy (normalized_entry) formats
+        const events = req.project!.logsStore!.getCoalescedLogs(executionId);
         const metadata = req.project!.logsStore!.getLogMetadata(executionId);
-
-        // Convert NormalizedEntry to AG-UI events on-demand
-        const events: any[] = [];
-
-        // Create a temporary AG-UI adapter to collect events
-        const agUiAdapter = new AgUiEventAdapter(executionId);
-        agUiAdapter.onEvent((event) => {
-          events.push(event);
-        });
-
-        // Create normalized adapter to transform entries
-        const normalizedAdapter = new NormalizedEntryToAgUiAdapter(agUiAdapter);
-
-        // Process all normalized entries through the adapter
-        for (const entry of normalizedEntries) {
-          await normalizedAdapter.processEntry(entry);
-        }
+        const format = req.project!.logsStore!.detectLogFormat(executionId);
 
         res.json({
           success: true,
           data: {
             executionId,
             events,
+            format, // Include format for debugging/transparency
             metadata: metadata
               ? {
                   lineCount: metadata.line_count,

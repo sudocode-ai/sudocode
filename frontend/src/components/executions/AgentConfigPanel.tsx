@@ -148,6 +148,12 @@ const DEFAULT_AGENT_CONFIGS: Record<string, any> = {
     allowAllTools: true,
     model: 'claude-sonnet-4.5',
   } as CopilotConfig,
+  gemini: {
+    // Gemini CLI defaults
+  },
+  opencode: {
+    // Opencode defaults
+  },
 }
 
 // localStorage keys for persisting config

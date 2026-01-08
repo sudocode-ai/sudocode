@@ -4,11 +4,26 @@
  * Manages persistence of raw execution logs to the database.
  * Provides CRUD operations for execution_logs table.
  *
+ * Supports two log formats:
+ * - ACP (CoalescedSessionUpdate): Modern format stored in raw_logs column
+ * - Legacy (NormalizedEntry): Legacy format stored in normalized_entry column
+ *
  * @module services/execution-logs-store
  */
 
 import type Database from "better-sqlite3";
 import type { NormalizedEntry } from "agent-execution-engine/agents";
+import type { CoalescedSessionUpdate } from "../execution/output/coalesced-types.js";
+import {
+  deserializeCoalescedUpdate,
+  isCoalescedUpdate,
+} from "../execution/output/coalesced-types.js";
+import { convertNormalizedEntryToCoalesced } from "../execution/output/normalized-to-coalesced.js";
+
+/**
+ * Log format type for detection
+ */
+export type LogFormat = "acp" | "normalized_entry" | "empty";
 
 /**
  * Metadata for execution logs (without the full logs text)
@@ -438,5 +453,157 @@ export class ExecutionLogsStore {
     }
 
     return stats;
+  }
+
+  // ============================================================================
+  // Unified Log Access (ACP Migration)
+  // ============================================================================
+
+  /**
+   * Detect the log format for an execution
+   *
+   * Checks which column has data and inspects the first line to determine format:
+   * - 'acp': raw_logs contains CoalescedSessionUpdate (has 'sessionUpdate' key)
+   * - 'normalized_entry': normalized_entry column has NormalizedEntry (has 'type.kind')
+   * - 'empty': No logs found
+   *
+   * @param executionId - Unique execution identifier
+   * @returns The detected log format
+   *
+   * @example
+   * ```typescript
+   * const format = store.detectLogFormat('exec-123');
+   * if (format === 'acp') {
+   *   const logs = store.getCoalescedLogs('exec-123');
+   * }
+   * ```
+   */
+  detectLogFormat(executionId: string): LogFormat {
+    const stmt = this.db.prepare(`
+      SELECT raw_logs, normalized_entry
+      FROM execution_logs
+      WHERE execution_id = ?
+    `);
+
+    const result = stmt.get(executionId) as
+      | { raw_logs: string | null; normalized_entry: string | null }
+      | undefined;
+
+    if (!result) {
+      return "empty";
+    }
+
+    // Check raw_logs first (ACP format)
+    if (result.raw_logs && result.raw_logs.trim().length > 0) {
+      const firstLine = result.raw_logs.split("\n")[0];
+      if (firstLine) {
+        try {
+          const parsed = JSON.parse(firstLine);
+          if ("sessionUpdate" in parsed) {
+            return "acp";
+          }
+        } catch {
+          // Not valid JSON, fall through
+        }
+      }
+    }
+
+    // Check normalized_entry (legacy format)
+    if (result.normalized_entry && result.normalized_entry.trim().length > 0) {
+      // Find first non-empty line (appendNormalizedEntry may prefix with newline)
+      const lines = result.normalized_entry.split("\n");
+      const firstLine = lines.find((line) => line.trim().length > 0);
+      if (firstLine) {
+        try {
+          const parsed = JSON.parse(firstLine);
+          if (parsed.type && "kind" in parsed.type) {
+            return "normalized_entry";
+          }
+        } catch {
+          // Not valid JSON, fall through
+        }
+      }
+    }
+
+    return "empty";
+  }
+
+  /**
+   * Get logs as CoalescedSessionUpdate array (unified format)
+   *
+   * Automatically detects the storage format and converts to CoalescedSessionUpdate.
+   * - For ACP logs: Deserializes directly from raw_logs
+   * - For legacy logs: Converts NormalizedEntry to CoalescedSessionUpdate
+   *
+   * @param executionId - Unique execution identifier
+   * @returns Array of CoalescedSessionUpdate events
+   *
+   * @example
+   * ```typescript
+   * const logs = store.getCoalescedLogs('exec-123');
+   * logs.forEach(event => {
+   *   console.log(event.sessionUpdate, event);
+   * });
+   * ```
+   */
+  getCoalescedLogs(executionId: string): CoalescedSessionUpdate[] {
+    const format = this.detectLogFormat(executionId);
+
+    switch (format) {
+      case "acp":
+        return this.getAcpLogs(executionId);
+
+      case "normalized_entry":
+        return this.convertLegacyLogs(executionId);
+
+      case "empty":
+      default:
+        return [];
+    }
+  }
+
+  /**
+   * Get ACP logs directly from raw_logs column
+   *
+   * @private
+   */
+  private getAcpLogs(executionId: string): CoalescedSessionUpdate[] {
+    const rawLogs = this.getRawLogs(executionId);
+    const results: CoalescedSessionUpdate[] = [];
+
+    for (const line of rawLogs) {
+      try {
+        const parsed = deserializeCoalescedUpdate(line);
+        if (isCoalescedUpdate(parsed)) {
+          results.push(parsed);
+        }
+      } catch (error) {
+        console.warn(
+          `[ExecutionLogsStore] Failed to parse ACP log line for ${executionId}:`,
+          error
+        );
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Convert legacy NormalizedEntry logs to CoalescedSessionUpdate
+   *
+   * @private
+   */
+  private convertLegacyLogs(executionId: string): CoalescedSessionUpdate[] {
+    const entries = this.getNormalizedEntries(executionId);
+    const results: CoalescedSessionUpdate[] = [];
+
+    for (const entry of entries) {
+      const converted = convertNormalizedEntryToCoalesced(entry);
+      if (converted) {
+        results.push(converted);
+      }
+    }
+
+    return results;
   }
 }

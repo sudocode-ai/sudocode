@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { TodoTracker } from '@/components/executions/TodoTracker'
 import { buildTodoHistory } from '@/utils/todoExtractor'
-import type { ToolCallTracking } from '@/hooks/useAgUiStream'
+import type { ToolCallTracking } from '@/types/stream'
 
 /**
  * Helper to create TodoWrite args with nested structure

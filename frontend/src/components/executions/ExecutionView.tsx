@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Execution, ExecutionConfig, SyncMode } from '@/types/execution'
-import type { ToolCallTracking } from '@/hooks/useAgUiStream'
+import type { ToolCallTracking } from '@/types/stream'
 import {
   Loader2,
   XCircle,

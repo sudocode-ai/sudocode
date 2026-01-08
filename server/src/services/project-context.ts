@@ -1,5 +1,4 @@
 import type Database from "better-sqlite3";
-import type { TransportManager } from "../execution/transport/transport-manager.js";
 import type { ExecutionService } from "./execution-service.js";
 import type { ExecutionLogsStore } from "./execution-logs-store.js";
 import type { ServerWatcherControl } from "./watcher.js";
@@ -17,7 +16,6 @@ import type { IntegrationSyncService } from "./integration-sync-service.js";
  * - Database connection
  * - File watcher
  * - Execution service
- * - Transport manager (for SSE streaming)
  * - Logs store
  * - Worktree manager
  *
@@ -35,9 +33,6 @@ export class ProjectContext {
 
   /** SQLite database connection for this project */
   readonly db: Database.Database;
-
-  /** Transport manager for SSE streaming */
-  readonly transportManager: TransportManager;
 
   /** Execution service for managing issue executions */
   readonly executionService: ExecutionService;
@@ -84,7 +79,6 @@ export class ProjectContext {
     path: string,
     sudocodeDir: string,
     db: Database.Database,
-    transportManager: TransportManager,
     executionService: ExecutionService,
     logsStore: ExecutionLogsStore,
     worktreeManager: WorktreeManager,
@@ -94,7 +88,6 @@ export class ProjectContext {
     this.path = path;
     this.sudocodeDir = sudocodeDir;
     this.db = db;
-    this.transportManager = transportManager;
     this.executionService = executionService;
     this.logsStore = logsStore;
     this.worktreeManager = worktreeManager;
@@ -146,12 +139,7 @@ export class ProjectContext {
         this.watcher = null;
       }
 
-      // 5. Close transport streams
-      if (this.transportManager) {
-        this.transportManager.shutdown();
-      }
-
-      // 6. Database will be closed by ProjectManager (it manages the cache)
+      // 5. Database will be closed by ProjectManager (it manages the cache)
 
       console.log(`Project context shutdown complete: ${this.id}`);
     } catch (error) {

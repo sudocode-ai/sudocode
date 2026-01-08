@@ -7,7 +7,7 @@
 
 import { Badge } from '@/components/ui/badge'
 import { Loader2 } from 'lucide-react'
-import type { ToolCallTracking } from '@/hooks/useAgUiStream'
+import type { ToolCallTracking } from '@/types/stream'
 
 export interface ToolCallViewerProps {
   /**

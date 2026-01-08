@@ -16,7 +16,7 @@ import { useAgentActions } from '@/hooks/useAgentActions'
 import { useWebSocketContext } from '@/contexts/WebSocketContext'
 import type { Execution, ExecutionConfig } from '@/types/execution'
 import type { WebSocketMessage } from '@/types/api'
-import type { ToolCallTracking } from '@/hooks/useAgUiStream'
+import type { ToolCallTracking } from '@/types/stream'
 import { Loader2, Clock, CheckCircle2, XCircle, AlertCircle, X, PauseCircle } from 'lucide-react'
 
 export interface ExecutionChainTileProps {

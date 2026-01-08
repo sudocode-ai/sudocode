@@ -23,7 +23,6 @@ import {
 import { randomUUID } from "crypto";
 import { execSync } from "child_process";
 import type { ExecutionTask } from "agent-execution-engine/engine";
-import type { TransportManager } from "../execution/transport/transport-manager.js";
 import { ExecutionLogsStore } from "./execution-logs-store.js";
 import { ExecutionWorkerPool } from "./execution-worker-pool.js";
 import { broadcastExecutionUpdate } from "./websocket.js";
@@ -144,7 +143,6 @@ export class ExecutionService {
   private projectId: string;
   private lifecycleService: ExecutionLifecycleService;
   private repoPath: string;
-  private transportManager?: TransportManager;
   private logsStore: ExecutionLogsStore;
   private workerPool?: ExecutionWorkerPool;
   private serverUrl?: string;
@@ -156,7 +154,6 @@ export class ExecutionService {
    * @param projectId - Project ID for WebSocket broadcasts
    * @param repoPath - Path to the git repository
    * @param lifecycleService - Optional execution lifecycle service (creates one if not provided)
-   * @param transportManager - Optional transport manager for SSE streaming
    * @param logsStore - Optional execution logs store (creates one if not provided)
    * @param workerPool - Optional worker pool for isolated execution processes
    */
@@ -165,7 +162,6 @@ export class ExecutionService {
     projectId: string,
     repoPath: string,
     lifecycleService?: ExecutionLifecycleService,
-    transportManager?: TransportManager,
     logsStore?: ExecutionLogsStore,
     workerPool?: ExecutionWorkerPool
   ) {
@@ -174,7 +170,6 @@ export class ExecutionService {
     this.repoPath = repoPath;
     this.lifecycleService =
       lifecycleService || new ExecutionLifecycleService(db, repoPath);
-    this.transportManager = transportManager;
     this.logsStore = logsStore || new ExecutionLogsStore(db);
     this.workerPool = workerPool;
   }
@@ -473,7 +468,6 @@ export class ExecutionService {
         logsStore: this.logsStore,
         projectId: this.projectId,
         db: this.db,
-        transportManager: this.transportManager,
         // Merge narration config: voiceSettings from config.json, then execution overrides, then enabled flag
         narrationConfig: {
           ...voiceNarrationSettings,
@@ -744,7 +738,6 @@ ${feedback}`;
         logsStore: this.logsStore,
         projectId: this.projectId,
         db: this.db,
-        transportManager: this.transportManager,
         // Merge narration config: voiceSettings from config.json, then execution overrides, then enabled flag
         narrationConfig: {
           ...voiceNarrationSettings,
@@ -894,11 +887,10 @@ ${feedback}`;
       return; // Worker pool handles DB updates and broadcasts
     }
 
-    // For in-process executions using AgentExecutorWrapper:
+    // For in-process executions using AcpExecutorWrapper/LegacyShimExecutorWrapper:
     // The wrapper manages its own lifecycle and cancellation.
     // We update the database status, which the wrapper may check,
     // or we rely on process termination to stop execution.
-    // TODO: Add cancellation registry in AgentExecutorWrapper for direct process control
 
     // Update status in database
     updateExecution(this.db, executionId, {
@@ -1190,10 +1182,9 @@ ${feedback}`;
       await this.workerPool.shutdown();
     }
 
-    // For in-process executions using AgentExecutorWrapper:
+    // For in-process executions using AcpExecutorWrapper/LegacyShimExecutorWrapper:
     // The wrapper manages its own lifecycle. Processes will be terminated
     // when the Node.js process exits.
-    // TODO: Add active execution tracking to AgentExecutorWrapper for graceful shutdown
   }
 
   /**
@@ -1447,11 +1438,12 @@ ${feedback}`;
     // 2. Check if agent already has sudocode-mcp configured
     const mcpPresent = await this.detectAgentMcp(agentType);
 
-    // 3. For Cursor, MCP MUST be configured (no CLI injection available)
+    // 3. For Cursor, MCP must be configured via .cursor/mcp.json (no CLI injection available)
+    // If not configured, log a warning and skip MCP injection instead of failing
     if (agentType === "cursor" && !mcpPresent) {
-      throw new Error(
-        "Cursor agent requires sudocode-mcp to be configured in .cursor/mcp.json.\n" +
-          "Please create .cursor/mcp.json in your project root with:\n\n" +
+      console.warn(
+        "[ExecutionService] Cursor agent does not have sudocode-mcp configured.\n" +
+          "To enable MCP tools, create .cursor/mcp.json in your project root with:\n\n" +
           JSON.stringify(
             {
               mcpServers: {
@@ -1465,6 +1457,8 @@ ${feedback}`;
           ) +
           "\n\nVisit: https://github.com/sudocode-ai/sudocode"
       );
+      // Skip MCP injection for Cursor - return config as-is
+      return mergedConfig;
     }
 
     // For Cursor with sudocode-mcp, auto-approve MCP servers in headless mode
@@ -1869,7 +1863,19 @@ ${feedback}`;
       }
     }
 
-    // For other agents, return true (safe default)
+    // For gemini and opencode, MCP is not yet configured
+    // Return false to allow auto-injection
+    if (agentType === "gemini" || agentType === "opencode") {
+      console.info(
+        `[ExecutionService] MCP detection not implemented for ${agentType} - will auto-inject`
+      );
+      return false;
+    }
+
+    // For other/unknown agents, return true (safe default - skip injection)
+    console.warn(
+      `[ExecutionService] Unknown agent type for MCP detection: ${agentType}`
+    );
     return true;
   }
 }

@@ -65,9 +65,8 @@ export interface WorkerPoolEventHandlers {
   /** Called when worker emits log output */
   onLog?: (executionId: string, event: OutputEvent) => void;
 
-  // TODO: Generalize this beyond AG-UI events.
-  /** Called when worker emits AG-UI event */
-  onAgUiEvent?: (executionId: string, event: any) => void;
+/** Called when worker emits SessionUpdate event */
+  onSessionUpdate?: (executionId: string, event: any) => void;
 
   /** Called when worker status changes */
   onStatusChange?: (executionId: string, status: string) => void;
@@ -270,14 +269,14 @@ export class ExecutionWorkerPool {
         this.eventHandlers.onLog?.(executionId, message.data);
         break;
 
-      case "agui-event":
-        // Forward AG-UI event to transport manager for SSE streaming
+      case "session-update":
+        // Forward SessionUpdate event to transport manager for SSE streaming
         if (this.config.verbose) {
           console.log(
-            `[WorkerPool:${this.projectId}] AG-UI event from ${workerId}: ${message.event.type}`
+            `[WorkerPool:${this.projectId}] SessionUpdate from ${workerId}: ${message.event.type}`
           );
         }
-        this.eventHandlers.onAgUiEvent?.(executionId, message.event);
+        this.eventHandlers.onSessionUpdate?.(executionId, message.event);
         break;
 
       case "status":
