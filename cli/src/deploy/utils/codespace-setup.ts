@@ -193,12 +193,15 @@ export async function startSudocodeServer(
   // Dev mode uses the local build (via npm run link), production uses npm packages
   // Server must be run from the workspace directory where .sudocode exists
   const workspaceDir = `/workspaces/${workspaceName}`;
+
+  // Use bash -c with subshell to properly background the process through SSH
+  // The parentheses create a subshell that detaches, and sleep ensures SSH returns immediately
   await execInCodespace(
     name,
-    `cd ${workspaceDir} && nohup sudocode server --port ${port} --keep-alive ${keepAliveHours}h > /tmp/sudocode-${port}.log 2>&1 &`,
+    `bash -c 'cd ${workspaceDir} && (nohup sudocode server --port ${port} --keep-alive ${keepAliveHours}h > /tmp/sudocode-${port}.log 2>&1 </dev/null &) && sleep 1'`,
     {
       streamOutput: false,  // No output expected from background start
-      timeout: 5000         // Just starting the process, not waiting for it
+      timeout: 10000        // Allow time for process start + sleep
     }
   );
 

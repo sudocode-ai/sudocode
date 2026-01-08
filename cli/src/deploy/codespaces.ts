@@ -204,7 +204,7 @@ async function startServerAndGetUrl(
 
   // Wait for server to be listening on the port
   console.log(`Waiting for server to start on port ${port}...`);
-  await waitForPortListening(name, port, 8); // 8 retries = 16 seconds
+  await waitForPortListening(name, port, 30); // 30 retries = 60 seconds
   console.log(`✓ Server started on port ${port}`);
 
   // Make port public

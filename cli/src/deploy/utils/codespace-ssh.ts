@@ -61,7 +61,7 @@ export async function execInCodespace(
 ): Promise<string> {
   const {
     timeout = 120000,
-    cwd = '/workspaces/*',
+    cwd,
     streamOutput = true
   } = options;
 
@@ -96,6 +96,9 @@ export async function execInCodespace(
 /**
  * Check if a port is listening in the Codespace
  *
+ * Uses curl to actually connect to the server rather than lsof,
+ * which is more reliable for detecting if the server is truly accepting connections.
+ *
  * @param name - Codespace name
  * @param port - Port number to check
  * @returns true if port is listening, false otherwise
@@ -113,12 +116,16 @@ export async function checkPortListening(
   port: number
 ): Promise<boolean> {
   try {
-    const result = await execInCodespace(
+    // Try to connect to the server with curl
+    // -s: silent, -f: fail on HTTP errors, -o /dev/null: discard output
+    // --max-time 2: timeout after 2 seconds
+    // We just want to know if we can connect, don't care about the response
+    await execInCodespace(
       name,
-      `lsof -ti:${port} > /dev/null 2>&1 && echo "1" || echo "0"`,
-      { streamOutput: false }
+      `curl -sf --max-time 2 -o /dev/null http://localhost:${port}/ || curl -sf --max-time 2 -o /dev/null http://localhost:${port}/health`,
+      { streamOutput: false, timeout: 5000 }
     );
-    return result.trim() === '1';
+    return true;
   } catch {
     return false;
   }
