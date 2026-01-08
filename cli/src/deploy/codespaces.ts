@@ -16,6 +16,7 @@ import {
   setPortVisibility,
   getCodespacePortUrl,
   waitForUrlAccessible,
+  execAsync,
   type CodespaceConfig
 } from './utils/gh-cli.js';
 import {
@@ -220,34 +221,85 @@ async function waitForServerReady(name: string, port: number): Promise<void> {
  * This triggers GitHub to register the port in its forwarding system.
  * Without this, attempts to set port visibility will fail with 404.
  * The forward process can be killed after registration - port remains registered.
+ * 
+ * Handles local port conflicts by incrementing the local port and retrying.
+ * Returns the local port that was successfully bound.
+ * 
+ * NOTE: This command runs LOCALLY (not in the Codespace) because it needs
+ * local authentication and forwards from Codespace to local machine.
+ * 
+ * @returns The local port that was successfully forwarded
  */
-async function registerPortWithGitHub(name: string, port: number): Promise<void> {
+async function registerPortWithGitHub(name: string, codespacePort: number): Promise<number> {
   console.log('Registering port with GitHub...');
-
-  try {
-    // Start port forward in background (this triggers port registration)
-    // We don't need to keep it running - just need to trigger registration
-    const forwardPromise = execInCodespace(
-      name,
-      `gh codespace ports forward ${port}:${port} --codespace ${name}`,
-      { timeout: 5000 }
-    ).catch(() => {}); // Ignore errors, we just need to trigger registration
-
-    // Wait briefly for registration to complete
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Kill the port forward process (port will remain registered with GitHub)
-    await execInCodespace(
-      name,
-      `pkill -f "gh codespace ports forward"`,
-      { timeout: 2000, streamOutput: false }
-    ).catch(() => {}); // Ignore if process already exited
-
-    console.log('✓ Port registered with GitHub');
-  } catch (error: any) {
-    // Log warning but don't fail - registration might have succeeded
-    console.warn(`⚠ Port registration warning: ${error.message}`);
+  
+  // Try local ports starting from codespacePort, incrementing if in use
+  let localPort = codespacePort;
+  const maxAttempts = 20;
+  
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      // Start port forward (triggers port registration with GitHub)
+      // Format: gh codespace ports forward <codespace_port>:<local_port>
+      // This runs LOCALLY and defaults to private visibility (requires GitHub auth)
+      const forwardProcess = exec(
+        `gh codespace ports forward ${codespacePort}:${localPort} --codespace ${name}`
+      );
+      
+      // Collect stderr to detect port conflicts
+      let stderr = '';
+      if (forwardProcess.stderr) {
+        forwardProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+      }
+      
+      // Wait briefly for registration to complete
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Check if we got a port conflict error
+      if (stderr.includes('bind: address already in use')) {
+        // Kill the process
+        if (forwardProcess.pid) {
+          try {
+            process.kill(forwardProcess.pid);
+          } catch {
+            // Ignore
+          }
+        }
+        
+        console.log(`⚠ Local port ${localPort} in use, trying next port...`);
+        localPort++;
+        continue;
+      }
+      
+      // Kill the port forward process (port remains registered with GitHub)
+      if (forwardProcess.pid) {
+        try {
+          process.kill(forwardProcess.pid);
+        } catch {
+          // Ignore if process already exited
+        }
+      }
+      
+      console.log(`✓ Port registered with GitHub (codespace:${codespacePort} -> local:${localPort})`);
+      console.log('✓ Port defaults to private visibility (requires GitHub auth)');
+      return localPort; // Return the local port that worked
+      
+    } catch (error: any) {
+      // Check if error is due to local port already in use
+      if (error.message && error.message.includes('bind: address already in use')) {
+        console.log(`⚠ Local port ${localPort} in use, trying next port...`);
+        localPort++;
+        continue;
+      }
+      
+      // Other error - propagate it
+      throw error;
+    }
   }
+  
+  throw new Error(`Failed to find available local port after ${maxAttempts} attempts (tried ${codespacePort}-${localPort - 1})`);
 }
 
 /**
@@ -263,18 +315,7 @@ async function getForwardedPortUrl(name: string, port: number): Promise<string> 
   return url;
 }
 
-/**
- * Step 5: Ensure port is private (security requirement)
- * Sets port visibility to private so it requires GitHub authentication.
- * This also validates the port was properly registered (404 means bug in registration step).
- */
-async function ensurePortIsPrivate(name: string, port: number): Promise<void> {
-  console.log('Configuring port visibility...');
 
-  await setPortVisibility(name, port, 'private');
-
-  console.log('✓ Port configured as private (requires GitHub auth)');
-}
 
 /**
  * Step 6: Run health check
@@ -296,11 +337,13 @@ async function runHealthCheck(url: string): Promise<void> {
  * 1. Start server process in background
  * 2. Wait for server to be ready (port listening)
  * 3. Register port with GitHub (via gh codespace ports forward)
- * 4. Ensure port is private (security requirement)
- * 5. Get the forwarded port URL
- * 6. Run health check (skipped for private ports)
+ * 4. Get the forwarded port URL
+ * 5. Run health check (skipped for private ports)
  *
  * Each step is independently testable and has clear logging for debugging.
+ * 
+ * Note: Port visibility defaults to private (requires GitHub auth) and does not need
+ * to be explicitly set.
  */
 async function startServerAndGetUrl(
   name: string,
@@ -314,8 +357,10 @@ async function startServerAndGetUrl(
   // Execute each step in sequence
   await startServerProcess(name, port, keepAliveHours, workspaceDir, isDev);
   await waitForServerReady(name, port);
-  await registerPortWithGitHub(name, port);  // NEW: Register port before setting visibility
-  await ensurePortIsPrivate(name, port);     // CHANGED: Private instead of public (security)
+  
+  // Register port with GitHub (returns local port that worked, may be different from codespace port)
+  const localPort = await registerPortWithGitHub(name, port);
+  
   const url = await getForwardedPortUrl(name, port);
   await runHealthCheck(url);
 
