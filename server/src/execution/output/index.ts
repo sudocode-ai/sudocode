@@ -29,5 +29,17 @@ export type {
 
 export { DEFAULT_USAGE_METRICS } from "./types.js";
 
-export { AgUiEventAdapter } from "./ag-ui-adapter.js";
-export type { AgUiEventListener } from "./ag-ui-adapter.js";
+// ACP SessionUpdate coalescing for storage
+export { SessionUpdateCoalescer } from "./session-update-coalescer.js";
+export type {
+  CoalescedSessionUpdate,
+  AgentMessageComplete,
+  AgentThoughtComplete,
+  ToolCallComplete,
+  UserMessageComplete,
+} from "./coalesced-types.js";
+export {
+  isCoalescedUpdate,
+  serializeCoalescedUpdate,
+  deserializeCoalescedUpdate,
+} from "./coalesced-types.js";

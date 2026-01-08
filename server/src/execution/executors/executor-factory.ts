@@ -2,7 +2,10 @@
  * Executor Factory
  *
  * Factory functions for creating the appropriate executor wrapper based on agent type.
- * All agents now use the unified AgentExecutorWrapper.
+ * All executors now produce SessionUpdate events for unified frontend consumption:
+ *
+ * - AcpExecutorWrapper: For ACP-native agents (claude-code) - native SessionUpdate
+ * - LegacyShimExecutorWrapper: For legacy agents (copilot, cursor) - converts NormalizedEntry → SessionUpdate
  *
  * @module execution/executors/executor-factory
  */
@@ -11,15 +14,15 @@ import type { AgentType, BaseAgentConfig } from "@sudocode-ai/types/agents";
 import type Database from "better-sqlite3";
 import type { ExecutionLifecycleService } from "../../services/execution-lifecycle.js";
 import type { ExecutionLogsStore } from "../../services/execution-logs-store.js";
-import type { TransportManager } from "../transport/transport-manager.js";
+import { agentRegistryService } from "../../services/agent-registry.js";
 import {
-  agentRegistryService,
-  AgentNotImplementedError,
-} from "../../services/agent-registry.js";
+  AcpExecutorWrapper,
+  type AcpExecutorWrapperConfig,
+} from "./acp-executor-wrapper.js";
 import {
-  AgentExecutorWrapper,
-  type AgentExecutorWrapperConfig,
-} from "./agent-executor-wrapper.js";
+  LegacyShimExecutorWrapper,
+  type LegacyShimExecutorWrapperConfig,
+} from "./legacy-shim-executor-wrapper.js";
 import type { NarrationConfig } from "../../services/narration-service.js";
 
 /**
@@ -46,21 +49,23 @@ export interface ExecutorFactoryConfig {
   logsStore: ExecutionLogsStore;
   projectId: string;
   db: Database.Database;
-  transportManager?: TransportManager;
   /** Voice narration configuration for this execution */
   narrationConfig?: Partial<NarrationConfig>;
 }
 
 /**
  * Union type of all possible executor wrapper types
+ *
+ * - AcpExecutorWrapper: For ACP-native agents (claude-code, etc.)
+ * - LegacyShimExecutorWrapper: For legacy agents (copilot, cursor) via shim
  */
-export type ExecutorWrapper = AgentExecutorWrapper<any>;
+export type ExecutorWrapper = AcpExecutorWrapper | LegacyShimExecutorWrapper;
 
 /**
  * Create an executor wrapper for the specified agent type
  *
- * Routes to specialized wrappers for certain agents (like Claude Code)
- * or creates a generic AgentExecutorWrapper for others.
+ * Routes to AcpExecutorWrapper for ACP-native agents (like Claude Code)
+ * or LegacyShimExecutorWrapper for legacy agents (copilot, cursor).
  *
  * @param agentType - The type of agent to create an executor for
  * @param agentConfig - Agent-specific configuration
@@ -81,7 +86,6 @@ export type ExecutorWrapper = AgentExecutorWrapper<any>;
  *     logsStore,
  *     projectId: 'my-project',
  *     db,
- *     transportManager,
  *   }
  * );
  *
@@ -98,51 +102,61 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
     workDir: factoryConfig.workDir,
   });
 
-  // Get adapter from registry (will throw if not found)
-  const adapter = agentRegistryService.getAdapter(agentType);
+  // Check if agent is ACP-native (registered in AgentFactory)
+  if (AcpExecutorWrapper.isAcpSupported(agentType)) {
+    console.log(`[ExecutorFactory] Using AcpExecutorWrapper for ${agentType}`);
 
-  // Merge adapter defaults with provided config
-  // Filter undefined values so they don't override defaults
-  const defaults = adapter.getDefaultConfig?.() || {};
-  const filteredConfig = Object.fromEntries(
-    Object.entries(agentConfig).filter(([_, v]) => v !== undefined)
+    const acpConfig: AcpExecutorWrapperConfig = {
+      agentType,
+      acpConfig: {
+        agentType,
+        // Extract MCP servers from agent config if present
+        mcpServers: (agentConfig as any).mcpServers,
+        // Default to auto-approve, but respect config if set
+        permissionMode: (agentConfig as any).dangerouslySkipPermissions
+          ? "auto-approve"
+          : "auto-approve", // TODO: Make configurable
+        env: (agentConfig as any).env,
+        mode: (agentConfig as any).mode,
+      },
+      lifecycleService: factoryConfig.lifecycleService,
+      logsStore: factoryConfig.logsStore,
+      projectId: factoryConfig.projectId,
+      db: factoryConfig.db,
+    };
+
+    return new AcpExecutorWrapper(acpConfig);
+  }
+
+  // Check if this is a legacy agent (copilot, cursor)
+  if (LegacyShimExecutorWrapper.isLegacyAgent(agentType)) {
+    console.log(
+      `[ExecutorFactory] Using LegacyShimExecutorWrapper for ${agentType}`
+    );
+
+    const shimConfig: LegacyShimExecutorWrapperConfig = {
+      agentType: agentType as "copilot" | "cursor",
+      agentConfig: {
+        workDir: factoryConfig.workDir,
+        model: (agentConfig as any).model,
+        env: (agentConfig as any).env,
+      },
+      lifecycleService: factoryConfig.lifecycleService,
+      logsStore: factoryConfig.logsStore,
+      projectId: factoryConfig.projectId,
+      db: factoryConfig.db,
+    };
+
+    return new LegacyShimExecutorWrapper(shimConfig);
+  }
+
+  // Unknown agent type - throw error
+  throw new Error(
+    `Unknown agent type: ${agentType}. Supported agents: ${[
+      ...AcpExecutorWrapper.listAcpAgents(),
+      ...LegacyShimExecutorWrapper.listLegacyAgents(),
+    ].join(", ")}`
   );
-  const mergedConfig = {
-    ...defaults,
-    ...filteredConfig,
-  } as TConfig;
-
-  // Validate merged configuration
-  if (adapter.validateConfig) {
-    const validationErrors = adapter.validateConfig(mergedConfig);
-    if (validationErrors.length > 0) {
-      throw new AgentConfigValidationError(agentType, validationErrors);
-    }
-  }
-
-  // All agents use the unified AgentExecutorWrapper
-  console.log(`[ExecutorFactory] Using AgentExecutorWrapper for ${agentType}`);
-
-  // Check if agent is implemented
-  if (!agentRegistryService.isAgentImplemented(agentType)) {
-    // This will throw AgentNotImplementedError when buildProcessConfig is called
-    // But we want to throw it earlier for better error messages
-    throw new AgentNotImplementedError(agentType);
-  }
-
-  const wrapperConfig: AgentExecutorWrapperConfig<any> = {
-    adapter,
-    agentConfig: mergedConfig,
-    agentType,
-    lifecycleService: factoryConfig.lifecycleService,
-    logsStore: factoryConfig.logsStore,
-    projectId: factoryConfig.projectId,
-    db: factoryConfig.db,
-    transportManager: factoryConfig.transportManager,
-    narrationConfig: factoryConfig.narrationConfig,
-  };
-
-  return new AgentExecutorWrapper(wrapperConfig);
 }
 
 /**
@@ -179,4 +193,73 @@ export function validateAgentConfig<TConfig extends BaseAgentConfig>(
   }
 
   return adapter.validateConfig(agentConfig);
+}
+
+/**
+ * Check if an agent type uses ACP (Agent Client Protocol)
+ *
+ * ACP-native agents use the new unified AcpExecutorWrapper which provides:
+ * - Direct SessionUpdate streaming
+ * - Unified agent lifecycle management
+ * - Support for session resume and forking
+ *
+ * @param agentType - The type of agent to check
+ * @returns true if the agent uses ACP, false for legacy agents
+ *
+ * @example
+ * ```typescript
+ * if (isAcpAgent('claude-code')) {
+ *   // Agent uses ACP protocol
+ * }
+ * ```
+ */
+export function isAcpAgent(agentType: string): boolean {
+  return AcpExecutorWrapper.isAcpSupported(agentType);
+}
+
+/**
+ * List all available ACP-native agents
+ *
+ * @returns Array of agent type names that support ACP
+ */
+export function listAcpAgents(): string[] {
+  return AcpExecutorWrapper.listAcpAgents();
+}
+
+/**
+ * Check if an agent type is a legacy agent (using LegacyShimExecutorWrapper)
+ *
+ * Legacy agents use agent-execution-engine adapters internally but emit
+ * SessionUpdate events via the shim for unified frontend consumption.
+ *
+ * @param agentType - The type of agent to check
+ * @returns true if the agent is a legacy type (copilot, cursor)
+ *
+ * @example
+ * ```typescript
+ * if (isLegacyAgent('copilot')) {
+ *   // Agent uses LegacyShimExecutorWrapper
+ * }
+ * ```
+ */
+export function isLegacyAgent(agentType: string): boolean {
+  return LegacyShimExecutorWrapper.isLegacyAgent(agentType);
+}
+
+/**
+ * List all legacy agents
+ *
+ * @returns Array of legacy agent type names
+ */
+export function listLegacyAgents(): string[] {
+  return LegacyShimExecutorWrapper.listLegacyAgents();
+}
+
+/**
+ * List all supported agents (ACP + legacy)
+ *
+ * @returns Array of all supported agent type names
+ */
+export function listAllAgents(): string[] {
+  return [...listAcpAgents(), ...listLegacyAgents()];
 }

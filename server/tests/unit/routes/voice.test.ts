@@ -14,7 +14,6 @@ const mockProjectContext = {
   path: "/test/project",
   sudocodeDir: "/test/project/.sudocode",
   db: {} as any,
-  transportManager: {} as any,
   executionService: {} as any,
   logsStore: {} as any,
   worktreeManager: {} as any,

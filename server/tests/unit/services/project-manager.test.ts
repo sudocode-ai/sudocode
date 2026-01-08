@@ -113,7 +113,6 @@ describe("ProjectManager", () => {
         expect(result.value.path).toBe(testProjectPath);
         expect(result.value.db).toBeDefined();
         expect(result.value.executionService).toBeDefined();
-        expect(result.value.transportManager).toBeDefined();
       }
     });
 

@@ -172,6 +172,7 @@ export interface WebSocketMessage {
     | 'execution_updated'
     | 'execution_status_changed'
     | 'execution_deleted'
+    | 'session_update'
     | 'project_opened'
     | 'project_closed'
     | 'workflow_created'

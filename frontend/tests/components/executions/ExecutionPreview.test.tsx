@@ -1,80 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { renderWithProviders } from '@/test/test-utils'
 import { ExecutionPreview } from '@/components/executions/ExecutionPreview'
 import type { Execution } from '@/types/execution'
+import type { AgentMessage, ToolCall } from '@/hooks/useSessionUpdateStream'
 
-// Mock hooks
-vi.mock('@/hooks/useAgUiStream', () => ({
-  useAgUiStream: vi.fn(() => ({
-    connectionStatus: 'connected',
-    execution: {
-      status: 'running',
-      runId: 'run-123',
-      threadId: null,
-      currentStep: null,
-      error: null,
-      startTime: null,
-      endTime: null,
-    },
-    messages: new Map([
-      [
-        'msg-1',
-        {
-          messageId: 'msg-1',
-          role: 'assistant',
-          content: 'Starting execution...',
-          complete: true,
-          timestamp: Date.now(),
-        },
-      ],
-      [
-        'msg-2',
-        {
-          messageId: 'msg-2',
-          role: 'assistant',
-          content:
-            'Analyzing the codebase to find relevant files...\nFound 5 files to process.',
-          complete: true,
-          timestamp: Date.now(),
-        },
-      ],
-    ]),
-    toolCalls: new Map([
-      [
-        'tool-1',
-        {
-          toolCallId: 'tool-1',
-          toolCallName: 'Edit',
-          args: '{"file": "test.ts"}',
-          status: 'completed',
-          result: 'File edited successfully',
-          startTime: Date.now() - 5000,
-          endTime: Date.now() - 3000,
-        },
-      ],
-      [
-        'tool-2',
-        {
-          toolCallId: 'tool-2',
-          toolCallName: 'Bash',
-          args: '{"command": "npm test"}',
-          status: 'executing',
-          startTime: Date.now() - 2000,
-        },
-      ],
-    ]),
-    state: {
-      filesChanged: 3,
-      tokenUsage: 1500,
-      cost: 0.0025,
-    },
-    error: null,
-    connect: vi.fn(),
-    disconnect: vi.fn(),
-    reconnect: vi.fn(),
-    isConnected: true,
-  })),
+// Mock useSessionUpdateStream hook
+const mockUseSessionUpdateStream = vi.fn()
+vi.mock('@/hooks/useSessionUpdateStream', () => ({
+  useSessionUpdateStream: (props: { executionId: string | null }) =>
+    mockUseSessionUpdateStream(props),
 }))
 
 vi.mock('@/hooks/useExecutionLogs', () => ({
@@ -101,6 +37,25 @@ vi.mock('@/hooks/useExecutionLogs', () => ({
     metadata: {},
   })),
 }))
+
+const createMessage = (partial: Partial<AgentMessage>): AgentMessage => ({
+  id: 'msg-1',
+  content: 'Test message',
+  timestamp: new Date(),
+  isStreaming: false,
+  index: 0,
+  ...partial,
+})
+
+const createToolCall = (partial: Partial<ToolCall>): ToolCall => ({
+  id: 'tool-1',
+  title: 'Edit',
+  rawInput: '{}',
+  status: 'success',
+  timestamp: new Date(),
+  index: 0,
+  ...partial,
+})
 
 describe('ExecutionPreview', () => {
   const mockExecution: Execution = {
@@ -138,11 +93,55 @@ describe('ExecutionPreview', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockUseSessionUpdateStream.mockReturnValue({
+      connectionStatus: 'connected',
+      execution: {
+        runId: 'run-123',
+        status: 'running',
+        error: null,
+        startTime: Date.now() - 5000,
+        endTime: null,
+      },
+      messages: [
+        createMessage({
+          id: 'msg-1',
+          content: 'Starting execution...',
+          timestamp: new Date(Date.now() - 5000),
+        }),
+        createMessage({
+          id: 'msg-2',
+          content:
+            'Analyzing the codebase to find relevant files...\nFound 5 files to process.',
+          timestamp: new Date(),
+        }),
+      ],
+      toolCalls: [
+        createToolCall({
+          id: 'tool-1',
+          title: 'Edit',
+          rawInput: '{"file": "test.ts"}',
+          status: 'success',
+          result: 'File edited successfully',
+          timestamp: new Date(Date.now() - 5000),
+        }),
+        createToolCall({
+          id: 'tool-2',
+          title: 'Bash',
+          rawInput: '{"command": "npm test"}',
+          status: 'running',
+          timestamp: new Date(Date.now() - 2000),
+        }),
+      ],
+      thoughts: [],
+      isStreaming: true,
+      isConnected: true,
+      error: null,
+    })
   })
 
   describe('Compact Variant', () => {
     it('should render compact preview with status badge', () => {
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={mockExecution}
@@ -164,7 +163,7 @@ describe('ExecutionPreview', () => {
       const user = userEvent.setup()
       const onViewFull = vi.fn()
 
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={mockExecution}
@@ -181,7 +180,7 @@ describe('ExecutionPreview', () => {
     })
 
     it('should not show View button when onViewFull not provided', () => {
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={mockExecution}
@@ -193,7 +192,7 @@ describe('ExecutionPreview', () => {
     })
 
     it('should render compact preview without status label when showStatusLabel is false', () => {
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={mockExecution}
@@ -215,7 +214,7 @@ describe('ExecutionPreview', () => {
 
   describe('Standard Variant', () => {
     it('should render standard preview with status and metrics', () => {
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={mockExecution}
@@ -231,13 +230,10 @@ describe('ExecutionPreview', () => {
 
       // Should show metrics
       expect(screen.getByText(/tool calls/)).toBeInTheDocument()
-      expect(screen.getAllByText(/files/).length).toBeGreaterThan(0)
-      expect(screen.getByText(/tokens/)).toBeInTheDocument()
-      expect(screen.getByText('$0.0025')).toBeInTheDocument()
     })
 
     it('should display tool calls with status icons', () => {
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={mockExecution}
@@ -248,13 +244,10 @@ describe('ExecutionPreview', () => {
       // Should show tool call names
       expect(screen.getByText('Edit')).toBeInTheDocument()
       expect(screen.getByText('Bash')).toBeInTheDocument()
-
-      // Should show duration for completed tool call
-      expect(screen.getByText(/2\.0s/)).toBeInTheDocument()
     })
 
     it('should display messages with truncation', () => {
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={mockExecution}
@@ -273,7 +266,7 @@ describe('ExecutionPreview', () => {
     })
 
     it('should truncate long messages to maxLines', () => {
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={mockExecution}
@@ -295,7 +288,7 @@ describe('ExecutionPreview', () => {
       const user = userEvent.setup()
       const onViewFull = vi.fn()
 
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={mockExecution}
@@ -314,7 +307,7 @@ describe('ExecutionPreview', () => {
 
   describe('Detailed Variant', () => {
     it('should render detailed preview with all information', () => {
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={mockExecution}
@@ -327,7 +320,6 @@ describe('ExecutionPreview', () => {
 
       // Should show metrics
       expect(screen.getByText(/tool calls/)).toBeInTheDocument()
-      expect(screen.getAllByText(/files/).length).toBeGreaterThan(0)
 
       // Should show tool calls with results
       expect(screen.getByText('Edit')).toBeInTheDocument()
@@ -335,7 +327,7 @@ describe('ExecutionPreview', () => {
     })
 
     it('should show more messages and tool calls than standard', () => {
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={mockExecution}
@@ -362,7 +354,7 @@ describe('ExecutionPreview', () => {
         status: 'completed',
       }
 
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={completedExecution}
@@ -379,7 +371,7 @@ describe('ExecutionPreview', () => {
         status: 'failed',
       }
 
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={failedExecution}
@@ -391,7 +383,7 @@ describe('ExecutionPreview', () => {
     })
 
     it('should hide status when showStatus is false', () => {
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={mockExecution}
@@ -407,7 +399,7 @@ describe('ExecutionPreview', () => {
 
   describe('Custom Overrides', () => {
     it('should respect maxMessages override', () => {
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={mockExecution}
@@ -421,7 +413,7 @@ describe('ExecutionPreview', () => {
     })
 
     it('should respect maxToolCalls override', () => {
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={mockExecution}
@@ -435,7 +427,7 @@ describe('ExecutionPreview', () => {
     })
 
     it('should respect maxLines override', () => {
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={mockExecution}
@@ -451,7 +443,7 @@ describe('ExecutionPreview', () => {
 
   describe('Metrics Display', () => {
     it('should hide metrics when showMetrics is false', () => {
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={mockExecution}
@@ -462,11 +454,10 @@ describe('ExecutionPreview', () => {
 
       // Metrics should not be visible (check that container doesn't have metrics text)
       expect(screen.queryByText(/tool calls/)).not.toBeInTheDocument()
-      expect(screen.queryByText(/tokens/)).not.toBeInTheDocument()
     })
 
     it('should show metrics when showMetrics is true', () => {
-      render(
+      renderWithProviders(
         <ExecutionPreview
           executionId="exec-123"
           execution={mockExecution}
@@ -477,7 +468,6 @@ describe('ExecutionPreview', () => {
 
       // Metrics should be visible
       expect(screen.getByText(/tool calls/)).toBeInTheDocument()
-      expect(screen.getByText(/tokens/)).toBeInTheDocument()
     })
   })
 })

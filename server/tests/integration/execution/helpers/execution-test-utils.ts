@@ -9,7 +9,6 @@ import Database from 'better-sqlite3';
 import { ExecutionService } from '../../../../src/services/execution-service.js';
 import { ExecutionLifecycleService } from '../../../../src/services/execution-lifecycle.js';
 import { ExecutionLogsStore } from '../../../../src/services/execution-logs-store.js';
-import { TransportManager } from '../../../../src/execution/transport/transport-manager.js';
 import * as fs from 'fs/promises';
 import { vi } from 'vitest';
 import {
@@ -92,7 +91,6 @@ export interface ExecutionServiceSetup {
   service: ExecutionService;
   lifecycleService: ExecutionLifecycleService;
   logsStore: ExecutionLogsStore;
-  transportManager: TransportManager;
   mockWorktreeManager: any;
 }
 
@@ -108,14 +106,12 @@ export function createExecutionServiceSetup(
     mockWorktreeManager
   );
   const logsStore = new ExecutionLogsStore(db);
-  const transportManager = new TransportManager();
 
   const service = new ExecutionService(
     db,
     projectId,
     repoPath,
     lifecycleService,
-    transportManager,
     logsStore
   );
 
@@ -124,7 +120,6 @@ export function createExecutionServiceSetup(
     service,
     lifecycleService,
     logsStore,
-    transportManager,
     mockWorktreeManager,
   };
 }

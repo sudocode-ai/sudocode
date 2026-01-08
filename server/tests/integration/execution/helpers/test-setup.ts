@@ -17,7 +17,6 @@ import {
 import { runMigrations } from '@sudocode-ai/types/migrations';
 import { ExecutionLifecycleService } from '../../../../src/services/execution-lifecycle.js';
 import { ExecutionLogsStore } from '../../../../src/services/execution-logs-store.js';
-import { TransportManager } from '../../../../src/execution/transport/transport-manager.js';
 
 /**
  * Create an in-memory SQLite database with the required schema
@@ -40,14 +39,13 @@ export function createTestDatabase(): Database.Database {
 }
 
 /**
- * Create test services (lifecycle, logs, transport)
+ * Create test services (lifecycle, logs)
  */
 export function createTestServices(db: Database.Database) {
   const lifecycleService = new ExecutionLifecycleService(db, '/tmp/test-repo');
   const logsStore = new ExecutionLogsStore(db);
-  const transportManager = new TransportManager();
 
-  return { lifecycleService, logsStore, transportManager };
+  return { lifecycleService, logsStore };
 }
 
 /**

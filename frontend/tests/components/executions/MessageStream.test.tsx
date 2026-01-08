@@ -7,7 +7,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MessageStream } from '@/components/executions/MessageStream'
-import type { MessageBuffer } from '@/hooks/useAgUiStream'
+import type { MessageBuffer } from '@/types/stream'
 
 describe('MessageStream', () => {
   describe('Empty State', () => {
