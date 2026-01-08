@@ -77,31 +77,34 @@ export async function installSudocodeGlobally(name: string): Promise<void> {
  * Skips initialization if the project is already set up.
  *
  * @param name - Codespace name
+ * @param workspaceName - Workspace directory name (e.g., 'sudocode')
  * @throws Error if initialization fails
  *
  * @example
  * ```typescript
  * // First call creates .sudocode
- * await initializeSudocodeProject('friendly-space-abc123');
+ * await initializeSudocodeProject('friendly-space-abc123', 'sudocode');
  *
  * // Second call skips initialization
- * await initializeSudocodeProject('friendly-space-abc123');
+ * await initializeSudocodeProject('friendly-space-abc123', 'sudocode');
  * ```
  */
-export async function initializeSudocodeProject(name: string): Promise<void> {
+export async function initializeSudocodeProject(name: string, workspaceName: string): Promise<void> {
   console.log('Initializing sudocode project...');
 
-  // Check if .sudocode already exists
+  const workspaceDir = `/workspaces/${workspaceName}`;
+
+  // Check if .sudocode already exists in the workspace directory
   const exists = await execInCodespace(
     name,
-    'test -d .sudocode && echo "1" || echo "0"',
+    `test -d ${workspaceDir}/.sudocode && echo "1" || echo "0"`,
     { streamOutput: false }
   );
 
   if (exists.trim() === '0') {
     await execInCodespace(
       name,
-      'sudocode init',
+      `cd ${workspaceDir} && sudocode init`,
       { timeout: 10000 } // 10 seconds should be plenty
     );
     console.log('✓ Project initialized');
@@ -117,21 +120,23 @@ export async function initializeSudocodeProject(name: string): Promise<void> {
  * Used for development and testing of local changes.
  *
  * @param name - Codespace name
+ * @param workspaceName - Workspace directory name (e.g., 'sudocode')
  * @throws Error if build fails
  *
  * @example
  * ```typescript
- * await installSudocodeFromLocal('friendly-space-abc123');
+ * await installSudocodeFromLocal('friendly-space-abc123', 'sudocode');
  * console.log('Local sudocode built and configured');
  * ```
  */
-export async function installSudocodeFromLocal(name: string): Promise<void> {
+export async function installSudocodeFromLocal(name: string, workspaceName: string): Promise<void> {
   console.log('Installing sudocode from local repository...');
 
-  // Navigate to workspace directory (Codespace clones repo to /workspaces/<repo-name>)
+  // Navigate to workspace directory (Codespace clones repo to /workspaces/<workspace-name>)
   // Install dependencies, build all packages, and link globally
+  const workspaceDir = `/workspaces/${workspaceName}`;
   const commands = [
-    'cd /workspaces/*',
+    `cd ${workspaceDir}`,
     'npm install',
     'npm run build',
     // Create global symlinks using the workspace link script
@@ -162,13 +167,14 @@ export async function installSudocodeFromLocal(name: string): Promise<void> {
  * @param name - Codespace name
  * @param port - Port number to listen on
  * @param keepAliveHours - Keep-alive duration in hours
+ * @param workspaceName - Workspace directory name (e.g., 'sudocode')
  * @param isDev - Whether to use local build (default: false)
  * @throws Error if server start command fails
  *
  * @example
  * ```typescript
  * // Start server in background
- * await startSudocodeServer('friendly-space-abc123', 3000, 72);
+ * await startSudocodeServer('friendly-space-abc123', 3000, 72, 'sudocode');
  *
  * // Wait for server to be ready (use waitForPortListening)
  * await waitForPortListening('friendly-space-abc123', 3000);
@@ -178,22 +184,18 @@ export async function startSudocodeServer(
   name: string,
   port: number,
   keepAliveHours: number,
+  workspaceName: string,
   isDev: boolean = false
 ): Promise<void> {
   console.log(`Starting sudocode server on port ${port}${isDev ? ' (dev mode)' : ''}...`);
 
-  // In dev mode, use the local build; otherwise use global install
-  const serverCommand = isDev
-    ? 'cd /workspaces/* && node server/dist/cli.js'
-    : 'sudocode server';
-
-  // Start in background with nohup
-  // Output is redirected to /tmp/sudocode-<port>.log
-  // & makes it run in background, nohup prevents hangup on SSH disconnect
+  // Both dev and production modes use the globally linked sudocode command
+  // Dev mode uses the local build (via npm run link), production uses npm packages
+  // Server must be run from the workspace directory where .sudocode exists
+  const workspaceDir = `/workspaces/${workspaceName}`;
   await execInCodespace(
     name,
-    `nohup ${serverCommand} --port ${port} --keep-alive ${keepAliveHours}h ` +
-    `> /tmp/sudocode-${port}.log 2>&1 &`,
+    `cd ${workspaceDir} && nohup sudocode server --port ${port} --keep-alive ${keepAliveHours}h > /tmp/sudocode-${port}.log 2>&1 &`,
     {
       streamOutput: false,  // No output expected from background start
       timeout: 5000         // Just starting the process, not waiting for it

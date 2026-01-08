@@ -162,7 +162,7 @@ async function waitForReady(name: string): Promise<void> {
  * - Installs sudocode packages (globally or from local build)
  * - Initializes sudocode project
  */
-async function installSudocode(name: string, isDev: boolean): Promise<void> {
+async function installSudocode(name: string, isDev: boolean, workspaceName: string): Promise<void> {
   console.log(`\nInstalling sudocode${isDev ? ' (dev mode)' : ''}...`);
 
   // Install Claude Code (always needed)
@@ -170,14 +170,14 @@ async function installSudocode(name: string, isDev: boolean): Promise<void> {
 
   if (isDev) {
     // Dev mode: Install from local repository
-    await installSudocodeFromLocal(name);
+    await installSudocodeFromLocal(name, workspaceName);
   } else {
     // Production mode: Install from npm
     await installSudocodeGlobally(name);
   }
 
-  // Initialize project
-  await initializeSudocodeProject(name);
+  // Initialize project in the workspace directory
+  await initializeSudocodeProject(name, workspaceName);
 
   console.log('✓ Installation complete');
 }
@@ -194,12 +194,13 @@ async function startServerAndGetUrl(
   name: string,
   port: number,
   keepAliveHours: number,
+  workspaceName: string,
   isDev: boolean = false
 ): Promise<string> {
   console.log('\nStarting server...');
 
   // Start server in background
-  await startSudocodeServer(name, port, keepAliveHours, isDev);
+  await startSudocodeServer(name, port, keepAliveHours, workspaceName, isDev);
 
   // Wait for server to be listening on the port
   console.log(`Waiting for server to start on port ${port}...`);
@@ -300,6 +301,7 @@ export async function deployRemote(options: DeployOptions = {}): Promise<Deploym
     // 3. Create Codespace
     console.log('\nCreating Codespace...');
     const repository = await getCurrentRepo();
+    const workspaceName = repository.split('/')[1]; // Extract 'sudocode' from 'owner/sudocode'
 
     // In dev mode, use the current branch instead of the default branch
     let branch: string | undefined;
@@ -322,7 +324,7 @@ export async function deployRemote(options: DeployOptions = {}): Promise<Deploym
     await waitForReady(codespace.name);
 
     // 5. Install sudocode
-    await installSudocode(codespace.name, options.dev || false);
+    await installSudocode(codespace.name, options.dev || false, workspaceName);
 
     // 6. Start server and get URL with port retry logic (ports 3000-3020)
     let port: number | null = null;
@@ -331,7 +333,7 @@ export async function deployRemote(options: DeployOptions = {}): Promise<Deploym
     for (let portAttempt = 3000; portAttempt <= 3020; portAttempt++) {
       try {
         console.log(`\nAttempting port ${portAttempt}...`);
-        url = await startServerAndGetUrl(codespace.name, portAttempt, keepAliveHours, options.dev || false);
+        url = await startServerAndGetUrl(codespace.name, portAttempt, keepAliveHours, workspaceName, options.dev || false);
         port = portAttempt;
         break; // Success!
       } catch (error: any) {
