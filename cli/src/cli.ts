@@ -516,7 +516,7 @@ Examples:
   $ sudocode deploy remote --retention-period 30 --no-open
   Deploy with 30-day retention, don't open browser
 `)
-  .action(async (options) => {
+  .action(async (options: any) => {
     await handleDeployRemote(options);
   });
 
@@ -543,7 +543,7 @@ Examples:
   $ sudocode deploy list
   First list deployments to get the Codespace name
 `)
-  .action(async (name) => {
+  .action(async (name: string) => {
     await handleDeployStop(name);
   });
 

@@ -116,6 +116,7 @@ export async function initializeSudocodeProject(name: string): Promise<void> {
  * Starts the server using nohup for persistence, redirecting output to a log file.
  * Returns immediately - caller should poll the port separately to verify startup.
  *
+ * Command used: `sudocode server --port <port> --keep-alive <hours>h`
  * Log file location: /tmp/sudocode-<port>.log
  *
  * @param name - Codespace name
@@ -144,7 +145,7 @@ export async function startSudocodeServer(
   // & makes it run in background, nohup prevents hangup on SSH disconnect
   await execInCodespace(
     name,
-    `nohup sudocode server start --host 0.0.0.0 --port ${port} --keep-alive ${keepAliveHours}h ` +
+    `nohup sudocode server --port ${port} --keep-alive ${keepAliveHours}h ` +
     `> /tmp/sudocode-${port}.log 2>&1 &`,
     {
       streamOutput: false,  // No output expected from background start

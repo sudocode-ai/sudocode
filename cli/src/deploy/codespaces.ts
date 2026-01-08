@@ -24,7 +24,8 @@ import {
   startSudocodeServer
 } from './utils/codespace-setup.js';
 import {
-  waitForPortListening
+  waitForPortListening,
+  killProcessOnPort
 } from './utils/codespace-ssh.js';
 import {
   addDeployment,
@@ -193,7 +194,7 @@ async function startServerAndGetUrl(
 
   // Wait for server to be listening on the port
   console.log(`Waiting for server to start on port ${port}...`);
-  await waitForPortListening(name, port, 15); // 15 retries = 30 seconds
+  await waitForPortListening(name, port, 8); // 8 retries = 16 seconds
   console.log(`✓ Server started on port ${port}`);
 
   // Make port public
@@ -306,9 +307,36 @@ export async function deployRemote(options: DeployOptions = {}): Promise<Deploym
     // 5. Install sudocode
     await installSudocode(codespace.name);
 
-    // 6. Start server and get URL (based on i-886l findings)
-    const port = 3000; // Fixed port
-    const url = await startServerAndGetUrl(codespace.name, port, keepAliveHours);
+    // 6. Start server and get URL with port retry logic (ports 3000-3020)
+    let port: number | null = null;
+    let url: string | null = null;
+
+    for (let portAttempt = 3000; portAttempt <= 3020; portAttempt++) {
+      try {
+        console.log(`\nAttempting port ${portAttempt}...`);
+        url = await startServerAndGetUrl(codespace.name, portAttempt, keepAliveHours);
+        port = portAttempt;
+        break; // Success!
+      } catch (error: any) {
+        console.warn(`Port ${portAttempt} failed: ${error.message}`);
+
+        // Kill any process that might be running on this port
+        await killProcessOnPort(codespace.name, portAttempt);
+
+        // Continue to next port
+        if (portAttempt === 3020) {
+          // Last attempt failed
+          throw new Error(
+            `Failed to start server after 20 attempts (ports 3000-3020). ` +
+            `All ports were either occupied or failed to start.`
+          );
+        }
+      }
+    }
+
+    if (!port || !url) {
+      throw new Error('Unexpected error: port or URL is null after retry logic');
+    }
 
     // 7. Track deployment
     const deployment: Deployment = {

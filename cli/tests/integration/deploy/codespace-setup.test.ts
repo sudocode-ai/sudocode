@@ -123,9 +123,9 @@ describe('Codespace Setup Integration Tests', () => {
     }, TEST_TIMEOUT);
 
     it('should have server listening on port after start', async () => {
-      // Wait for server to be listening (up to 30 seconds)
+      // Wait for server to be listening (up to 16 seconds)
       await expect(
-        waitForPortListening(testCodespaceName, SERVER_PORT, 15)
+        waitForPortListening(testCodespaceName, SERVER_PORT, 8)
       ).resolves.not.toThrow();
 
       console.log(`✓ Server is listening on port ${SERVER_PORT}`);
