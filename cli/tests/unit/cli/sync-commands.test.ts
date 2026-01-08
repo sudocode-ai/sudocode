@@ -46,9 +46,6 @@ describe("Sync Commands - Auto Direction Detection", () => {
   let consoleErrorSpy: any;
 
   beforeEach(() => {
-    // Create a fresh in-memory database for each test
-    db = initDatabase({ path: ":memory:" });
-
     // Create temporary directory
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "sudocode-sync-test-"));
     specsDir = path.join(tempDir, "specs");
@@ -71,9 +68,9 @@ describe("Sync Commands - Auto Direction Detection", () => {
       "utf8"
     );
 
-    // Create cache.db file
+    // Create database at cache.db path (not in-memory) so handleSync can use it
     const dbPath = path.join(tempDir, "cache.db");
-    fs.writeFileSync(dbPath, "");
+    db = initDatabase({ path: dbPath });
 
     // Spy on console methods
     consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
