@@ -71,6 +71,7 @@ describe("Sync Commands - Auto Direction Detection", () => {
     // Create database at cache.db path (not in-memory) so handleSync can use it
     const dbPath = path.join(tempDir, "cache.db");
     db = initDatabase({ path: dbPath });
+    db.pragma('wal_checkpoint(FULL)'); // Force file creation
 
     // Spy on console methods
     consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -537,12 +538,16 @@ describe("Export and Import Commands", () => {
   let processExitSpy: any;
 
   beforeEach(() => {
-    db = initDatabase({ path: ":memory:" });
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "sudocode-export-test-"));
     outputDir = path.join(tempDir, "output");
 
     // Create output directory
     fs.mkdirSync(outputDir, { recursive: true });
+
+    // Create database at cache.db path (not in-memory) so handleSync can use it
+    const dbPath = path.join(tempDir, "cache.db");
+    db = initDatabase({ path: dbPath });
+    db.pragma('wal_checkpoint(FULL)'); // Force file creation
 
     // Spy on console methods
     consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -1154,15 +1159,6 @@ Fresh content from markdown`;
       fs.writeFileSync(path.join(tempDir, "config.json"), JSON.stringify({ version: "0.1.0" }));
       fs.mkdirSync(path.join(tempDir, "specs"), { recursive: true });
 
-      // Debug: verify initialization markers exist
-      const { isInitialized } = await import("../../../src/cli/init-commands.js");
-      console.log(`[DEBUG] tempDir: ${tempDir}`);
-      console.log(`[DEBUG] isInitialized: ${isInitialized(tempDir)}`);
-      console.log(`[DEBUG] config.json exists: ${fs.existsSync(path.join(tempDir, "config.json"))}`);
-      console.log(`[DEBUG] cache.db exists: ${fs.existsSync(path.join(tempDir, "cache.db"))}`);
-      console.log(`[DEBUG] specs/ exists: ${fs.existsSync(path.join(tempDir, "specs"))}`);
-      console.log(`[DEBUG] issues/ exists: ${fs.existsSync(path.join(tempDir, "issues"))}`);
-
       // Create two issues with different states
       const pastTime = new Date(Date.now() - 10000);
 
@@ -1188,11 +1184,6 @@ Fresh content from markdown`;
       });
 
       await exportToJSONL(db, { outputDir: tempDir });
-
-      // Force database to flush to disk by closing and reopening
-      const dbPath = path.join(tempDir, "cache.db");
-      db.close();
-      db = initDatabase({ path: dbPath });
 
       // Create stale markdown for issue1
       const md1Path = path.join(issuesDir, "i-conf1.md");
