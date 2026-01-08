@@ -162,71 +162,141 @@ async function waitForReady(name: string): Promise<void> {
  * - Installs sudocode packages (globally or from local build)
  * - Initializes sudocode project
  */
-async function installSudocode(name: string, isDev: boolean, workspaceName: string): Promise<void> {
+async function installSudocode(name: string, isDev: boolean, workspaceDir: string): Promise<void> {
   console.log(`\nInstalling sudocode${isDev ? ' (dev mode)' : ''}...`);
 
   // Install Claude Code (always needed)
-  await installClaudeCode(name);
+  await installClaudeCode(name, workspaceDir);
 
   if (isDev) {
     // Dev mode: Install from local repository
-    await installSudocodeFromLocal(name, workspaceName);
+    await installSudocodeFromLocal(name, workspaceDir);
   } else {
     // Production mode: Install from npm
-    await installSudocodeGlobally(name);
+    await installSudocodeGlobally(name, workspaceDir);
   }
 
   // Initialize project in the workspace directory
-  await initializeSudocodeProject(name, workspaceName);
+  await initializeSudocodeProject(name, workspaceDir);
 
   console.log('✓ Installation complete');
 }
 
 /**
- * Start server and get the public URL
- * Based on findings from i-886l:
- * - Fixed port 3000 (no retry logic needed)
- * - Predictable URL format: https://<name>-3000.app.github.dev
- * - Make port public via gh CLI
- * - Health check with retries
+ * Step 1: Start server process in background
+ * Just starts the server, doesn't wait for it to be ready
+ */
+async function startServerProcess(
+  name: string,
+  port: number,
+  keepAliveHours: number,
+  workspaceDir: string,
+  isDev: boolean
+): Promise<void> {
+  console.log(`Starting sudocode server on port ${port}...`);
+
+  await startSudocodeServer(name, port, keepAliveHours, workspaceDir, isDev);
+
+  console.log('✓ Server process started');
+}
+
+/**
+ * Step 2: Wait for server to be ready
+ * Checks that port is listening
+ */
+async function waitForServerReady(name: string, port: number): Promise<void> {
+  console.log('Waiting for server startup...');
+
+  await waitForPortListening(name, port, 30); // 30 retries = 60 seconds
+
+  console.log('✓ Server started successfully');
+}
+
+/**
+ * Step 3: Trigger port forwarding via external URL access
+ * This triggers GitHub to recognize the port and set up forwarding
+ * Note: We access the external URL (not internal curl) to trigger lazy forwarding
+ */
+async function triggerPortForwarding(name: string, port: number): Promise<void> {
+  console.log('Triggering port forwarding...');
+
+  // Get the URL first to trigger forwarding
+  const url = await getCodespacePortUrl(name, port);
+
+  // Access the URL to trigger lazy forwarding (will fail with auth error, but that's OK)
+  await waitForUrlAccessible(url, 3).catch(() => {
+    // Ignore errors - we just need to trigger the forwarding
+  });
+
+  console.log('✓ Port forwarding triggered');
+}
+
+/**
+ * Step 4: Get forwarded port URL
+ * Returns the public URL for the forwarded port
+ */
+async function getForwardedPortUrl(name: string, port: number): Promise<string> {
+  console.log('Getting port URL...');
+
+  const url = await getCodespacePortUrl(name, port);
+
+  console.log(`✓ Port URL: ${url}`);
+  return url;
+}
+
+/**
+ * Step 5: Make port public
+ * Sets port visibility to public so it's accessible externally
+ */
+async function makePortPublic(name: string, port: number): Promise<void> {
+  console.log('Configuring port visibility...');
+
+  await setPortVisibility(name, port, 'public');
+
+  console.log('✓ Port made public');
+}
+
+/**
+ * Step 6: Run health check
+ * Verifies the server is accessible from external URL
+ */
+async function runHealthCheck(url: string): Promise<void> {
+  console.log('Running health check...');
+
+  await waitForUrlAccessible(url, 15); // 15 retries = 30 seconds
+
+  console.log('✓ Health check passed');
+}
+
+/**
+ * Orchestrate all server startup steps
+ *
+ * This function breaks down server startup into discrete sequential steps:
+ * 1. Start server process in background
+ * 2. Wait for server to be ready (port listening)
+ * 3. Trigger port forwarding via external URL access
+ * 4. Get the forwarded port URL
+ * 5. Make port public
+ * 6. Run health check to verify accessibility
+ *
+ * Each step is independently testable and has clear logging for debugging.
  */
 async function startServerAndGetUrl(
   name: string,
   port: number,
   keepAliveHours: number,
-  workspaceName: string,
+  workspaceDir: string,
   isDev: boolean = false
 ): Promise<string> {
   console.log('\nStarting server...');
 
-  // Start server in background
-  await startSudocodeServer(name, port, keepAliveHours, workspaceName, isDev);
-
-  // Wait for server to be listening on the port
-  console.log(`Waiting for server to start on port ${port}...`);
-  await waitForPortListening(name, port, 30); // 30 retries = 60 seconds
-  console.log(`✓ Server started on port ${port}`);
-
-  // Get the predictable URL
-  const url = await getCodespacePortUrl(name, port);
-
-  // Trigger port forwarding by accessing the URL (lazy forwarding)
-  // This will fail with auth error, but triggers GitHub to create the forward
-  console.log('\nTriggering port forwarding...');
-  await waitForUrlAccessible(url, 3).catch(() => {
-    // Ignore errors - we just need to trigger the forwarding
-    console.log('✓ Port forwarding triggered');
-  });
-
-  // Make port public (must be done AFTER port is forwarded)
-  console.log('\nConfiguring port visibility...');
-  await setPortVisibility(name, port, 'public');
-  console.log('✓ Port made public');
-
-  // Health check - wait for URL to be accessible
-  console.log('\nRunning health check...');
-  await waitForUrlAccessible(url, 15); // 15 retries = 30 seconds
-  console.log('✓ Health check passed');
+  // Execute each step in sequence
+  await startServerProcess(name, port, keepAliveHours, workspaceDir, isDev);
+  await waitForServerReady(name, port);
+  await triggerPortForwarding(name, port);
+  const url = await getForwardedPortUrl(name, port);
+  await makePortPublic(name, port);
+  await runHealthCheck(url);
 
   return url;
 }
@@ -311,6 +381,10 @@ export async function deployRemote(options: DeployOptions = {}): Promise<Deploym
     const repository = await getCurrentRepo();
     const workspaceName = repository.split('/')[1]; // Extract 'sudocode' from 'owner/sudocode'
 
+    // Construct workspaceDir once at the top
+    // TODO: Support overriding with devcontainer.json workspace configuration
+    const workspaceDir = `/workspaces/${workspaceName}`;
+
     // In dev mode, use the current branch instead of the default branch
     let branch: string | undefined;
     if (options.dev) {
@@ -332,7 +406,7 @@ export async function deployRemote(options: DeployOptions = {}): Promise<Deploym
     await waitForReady(codespace.name);
 
     // 5. Install sudocode
-    await installSudocode(codespace.name, options.dev || false, workspaceName);
+    await installSudocode(codespace.name, options.dev || false, workspaceDir);
 
     // 6. Start server and get URL with port retry logic (ports 3000-3020)
     let port: number | null = null;
@@ -341,7 +415,7 @@ export async function deployRemote(options: DeployOptions = {}): Promise<Deploym
     for (let portAttempt = 3000; portAttempt <= 3020; portAttempt++) {
       try {
         console.log(`\nAttempting port ${portAttempt}...`);
-        url = await startServerAndGetUrl(codespace.name, portAttempt, keepAliveHours, workspaceName, options.dev || false);
+        url = await startServerAndGetUrl(codespace.name, portAttempt, keepAliveHours, workspaceDir, options.dev || false);
         port = portAttempt;
         break; // Success!
       } catch (error: any) {

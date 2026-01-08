@@ -17,15 +17,17 @@ import { execInCodespace } from './codespace-ssh.js';
  * Streams output to provide visibility into installation progress.
  *
  * @param name - Codespace name
+ * @param workspaceDir - Full path to workspace directory (e.g., /workspaces/sudocode)
+ *                       TODO: Support overriding with devcontainer.json workspace configuration
  * @throws Error if installation fails
  *
  * @example
  * ```typescript
- * await installClaudeCode('friendly-space-abc123');
+ * await installClaudeCode('friendly-space-abc123', '/workspaces/sudocode');
  * console.log('Claude Code is ready to use');
  * ```
  */
-export async function installClaudeCode(name: string): Promise<void> {
+export async function installClaudeCode(name: string, workspaceDir: string): Promise<void> {
   console.log('Installing Claude Code...');
 
   await execInCodespace(
@@ -47,15 +49,17 @@ export async function installClaudeCode(name: string): Promise<void> {
  * Uses a 5-minute timeout and streams output for visibility.
  *
  * @param name - Codespace name
+ * @param workspaceDir - Full path to workspace directory (e.g., /workspaces/sudocode)
+ *                       TODO: Support overriding with devcontainer.json workspace configuration
  * @throws Error if installation fails
  *
  * @example
  * ```typescript
- * await installSudocodeGlobally('friendly-space-abc123');
+ * await installSudocodeGlobally('friendly-space-abc123', '/workspaces/sudocode');
  * // Now sudocode CLI is available globally
  * ```
  */
-export async function installSudocodeGlobally(name: string): Promise<void> {
+export async function installSudocodeGlobally(name: string, workspaceDir: string): Promise<void> {
   console.log('Installing sudocode packages...');
 
   await execInCodespace(
@@ -77,22 +81,21 @@ export async function installSudocodeGlobally(name: string): Promise<void> {
  * Skips initialization if the project is already set up.
  *
  * @param name - Codespace name
- * @param workspaceName - Workspace directory name (e.g., 'sudocode')
+ * @param workspaceDir - Full path to workspace directory (e.g., /workspaces/sudocode)
+ *                       TODO: Support overriding with devcontainer.json workspace configuration
  * @throws Error if initialization fails
  *
  * @example
  * ```typescript
  * // First call creates .sudocode
- * await initializeSudocodeProject('friendly-space-abc123', 'sudocode');
+ * await initializeSudocodeProject('friendly-space-abc123', '/workspaces/sudocode');
  *
  * // Second call skips initialization
- * await initializeSudocodeProject('friendly-space-abc123', 'sudocode');
+ * await initializeSudocodeProject('friendly-space-abc123', '/workspaces/sudocode');
  * ```
  */
-export async function initializeSudocodeProject(name: string, workspaceName: string): Promise<void> {
+export async function initializeSudocodeProject(name: string, workspaceDir: string): Promise<void> {
   console.log('Initializing sudocode project...');
-
-  const workspaceDir = `/workspaces/${workspaceName}`;
 
   // Check if .sudocode already exists in the workspace directory
   const exists = await execInCodespace(
@@ -120,21 +123,21 @@ export async function initializeSudocodeProject(name: string, workspaceName: str
  * Used for development and testing of local changes.
  *
  * @param name - Codespace name
- * @param workspaceName - Workspace directory name (e.g., 'sudocode')
+ * @param workspaceDir - Full path to workspace directory (e.g., /workspaces/sudocode)
+ *                       TODO: Support overriding with devcontainer.json workspace configuration
  * @throws Error if build fails
  *
  * @example
  * ```typescript
- * await installSudocodeFromLocal('friendly-space-abc123', 'sudocode');
+ * await installSudocodeFromLocal('friendly-space-abc123', '/workspaces/sudocode');
  * console.log('Local sudocode built and configured');
  * ```
  */
-export async function installSudocodeFromLocal(name: string, workspaceName: string): Promise<void> {
+export async function installSudocodeFromLocal(name: string, workspaceDir: string): Promise<void> {
   console.log('Installing sudocode from local repository...');
 
   // Navigate to workspace directory (Codespace clones repo to /workspaces/<workspace-name>)
   // Install dependencies, build all packages, and link globally
-  const workspaceDir = `/workspaces/${workspaceName}`;
   const commands = [
     `cd ${workspaceDir}`,
     'npm install',
@@ -167,14 +170,15 @@ export async function installSudocodeFromLocal(name: string, workspaceName: stri
  * @param name - Codespace name
  * @param port - Port number to listen on
  * @param keepAliveHours - Keep-alive duration in hours
- * @param workspaceName - Workspace directory name (e.g., 'sudocode')
+ * @param workspaceDir - Full path to workspace directory (e.g., /workspaces/sudocode)
+ *                       TODO: Support overriding with devcontainer.json workspace configuration
  * @param isDev - Whether to use local build (default: false)
  * @throws Error if server start command fails
  *
  * @example
  * ```typescript
  * // Start server in background
- * await startSudocodeServer('friendly-space-abc123', 3000, 72, 'sudocode');
+ * await startSudocodeServer('friendly-space-abc123', 3000, 72, '/workspaces/sudocode');
  *
  * // Wait for server to be ready (use waitForPortListening)
  * await waitForPortListening('friendly-space-abc123', 3000);
@@ -184,7 +188,7 @@ export async function startSudocodeServer(
   name: string,
   port: number,
   keepAliveHours: number,
-  workspaceName: string,
+  workspaceDir: string,
   isDev: boolean = false
 ): Promise<void> {
   console.log(`Starting sudocode server on port ${port}${isDev ? ' (dev mode)' : ''}...`);
@@ -192,7 +196,6 @@ export async function startSudocodeServer(
   // Both dev and production modes use the globally linked sudocode command
   // Dev mode uses the local build (via npm run link), production uses npm packages
   // Server must be run from the workspace directory where .sudocode exists
-  const workspaceDir = `/workspaces/${workspaceName}`;
 
   // Use bash -c with subshell to properly background the process through SSH
   // The parentheses create a subshell that detaches, and sleep ensures SSH returns immediately

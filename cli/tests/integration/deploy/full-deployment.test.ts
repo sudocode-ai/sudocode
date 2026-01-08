@@ -40,6 +40,7 @@ const KEEP_ALIVE_HOURS = 2;
 // Shared test Codespace
 let testCodespaceName: string;
 let testRepository: string;
+let testWorkspaceDir: string;
 
 describe('Full Sudocode Server Deployment', () => {
   beforeAll(async () => {
@@ -49,7 +50,11 @@ describe('Full Sudocode Server Deployment', () => {
 
     // Get current repository
     testRepository = await ghCli.getCurrentGitRepo();
+    const workspaceName = testRepository.split('/')[1];
+    testWorkspaceDir = `/workspaces/${workspaceName}`;
+
     console.log(`Testing against repository: ${testRepository}`);
+    console.log(`Workspace directory: ${testWorkspaceDir}`);
 
     // Create test Codespace
     console.log('Creating test Codespace...');
@@ -85,17 +90,17 @@ describe('Full Sudocode Server Deployment', () => {
   it('should deploy sudocode server and access via public URL', async () => {
     // Step 1: Install sudocode globally
     console.log('Installing sudocode globally...');
-    await installSudocodeGlobally(testCodespaceName);
+    await installSudocodeGlobally(testCodespaceName, testWorkspaceDir);
     console.log('✓ Sudocode installed');
 
     // Step 2: Initialize sudocode project
     console.log('Initializing sudocode project...');
-    await initializeSudocodeProject(testCodespaceName);
+    await initializeSudocodeProject(testCodespaceName, testWorkspaceDir);
     console.log('✓ Project initialized');
 
     // Step 3: Start sudocode server
     console.log('Starting sudocode server...');
-    await startSudocodeServer(testCodespaceName, SERVER_PORT, KEEP_ALIVE_HOURS);
+    await startSudocodeServer(testCodespaceName, SERVER_PORT, KEEP_ALIVE_HOURS, testWorkspaceDir);
     console.log('✓ Server start command executed');
 
     // Step 4: Wait for server to be listening on port

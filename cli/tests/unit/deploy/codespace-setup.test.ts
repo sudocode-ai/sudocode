@@ -19,6 +19,7 @@ vi.mock('../../../src/deploy/utils/codespace-ssh.js');
 
 describe('Codespace Setup Utilities', () => {
   const mockCodespaceName = 'test-codespace-abc123';
+  const mockWorkspaceDir = '/workspaces/sudocode';
   let execInCodespaceMock: any;
 
   beforeEach(() => {
@@ -31,7 +32,7 @@ describe('Codespace Setup Utilities', () => {
     it('should execute installation command with correct parameters', async () => {
       execInCodespaceMock.mockResolvedValue('Installation complete');
 
-      await installClaudeCode(mockCodespaceName);
+      await installClaudeCode(mockCodespaceName, mockWorkspaceDir);
 
       expect(execInCodespaceMock).toHaveBeenCalledWith(
         mockCodespaceName,
@@ -46,7 +47,7 @@ describe('Codespace Setup Utilities', () => {
     it('should throw error if installation fails', async () => {
       execInCodespaceMock.mockRejectedValue(new Error('Installation failed'));
 
-      await expect(installClaudeCode(mockCodespaceName))
+      await expect(installClaudeCode(mockCodespaceName, mockWorkspaceDir))
         .rejects.toThrow('Installation failed');
     });
   });
@@ -55,7 +56,7 @@ describe('Codespace Setup Utilities', () => {
     it('should execute npm install with correct packages and timeout', async () => {
       execInCodespaceMock.mockResolvedValue('Packages installed');
 
-      await installSudocodeGlobally(mockCodespaceName);
+      await installSudocodeGlobally(mockCodespaceName, mockWorkspaceDir);
 
       expect(execInCodespaceMock).toHaveBeenCalledWith(
         mockCodespaceName,
@@ -70,7 +71,7 @@ describe('Codespace Setup Utilities', () => {
     it('should stream output during installation', async () => {
       execInCodespaceMock.mockResolvedValue('Packages installed');
 
-      await installSudocodeGlobally(mockCodespaceName);
+      await installSudocodeGlobally(mockCodespaceName, mockWorkspaceDir);
 
       const callOptions = execInCodespaceMock.mock.calls[0][2];
       expect(callOptions.streamOutput).toBe(true);
@@ -79,7 +80,7 @@ describe('Codespace Setup Utilities', () => {
     it('should throw error if npm install fails', async () => {
       execInCodespaceMock.mockRejectedValue(new Error('npm install failed'));
 
-      await expect(installSudocodeGlobally(mockCodespaceName))
+      await expect(installSudocodeGlobally(mockCodespaceName, mockWorkspaceDir))
         .rejects.toThrow('npm install failed');
     });
   });
@@ -90,13 +91,13 @@ describe('Codespace Setup Utilities', () => {
         .mockResolvedValueOnce('0')  // .sudocode doesn't exist
         .mockResolvedValueOnce('');  // sudocode init completes
 
-      await initializeSudocodeProject(mockCodespaceName);
+      await initializeSudocodeProject(mockCodespaceName, mockWorkspaceDir);
 
       // First call checks for directory
       expect(execInCodespaceMock).toHaveBeenNthCalledWith(
         1,
         mockCodespaceName,
-        'test -d .sudocode && echo "1" || echo "0"',
+        `test -d ${mockWorkspaceDir}/.sudocode && echo "1" || echo "0"`,
         { streamOutput: false }
       );
 
@@ -104,7 +105,7 @@ describe('Codespace Setup Utilities', () => {
       expect(execInCodespaceMock).toHaveBeenNthCalledWith(
         2,
         mockCodespaceName,
-        'sudocode init',
+        `cd ${mockWorkspaceDir} && sudocode init`,
         { timeout: 10000 }
       );
     });
@@ -112,13 +113,13 @@ describe('Codespace Setup Utilities', () => {
     it('should skip initialization if .sudocode already exists', async () => {
       execInCodespaceMock.mockResolvedValue('1');  // .sudocode exists
 
-      await initializeSudocodeProject(mockCodespaceName);
+      await initializeSudocodeProject(mockCodespaceName, mockWorkspaceDir);
 
       // Only one call to check for directory
       expect(execInCodespaceMock).toHaveBeenCalledTimes(1);
       expect(execInCodespaceMock).toHaveBeenCalledWith(
         mockCodespaceName,
-        'test -d .sudocode && echo "1" || echo "0"',
+        `test -d ${mockWorkspaceDir}/.sudocode && echo "1" || echo "0"`,
         { streamOutput: false }
       );
     });
@@ -128,7 +129,7 @@ describe('Codespace Setup Utilities', () => {
         .mockResolvedValueOnce('  0\n')  // .sudocode doesn't exist (with whitespace)
         .mockResolvedValueOnce('');      // sudocode init completes
 
-      await initializeSudocodeProject(mockCodespaceName);
+      await initializeSudocodeProject(mockCodespaceName, mockWorkspaceDir);
 
       expect(execInCodespaceMock).toHaveBeenCalledTimes(2);
     });
@@ -138,15 +139,14 @@ describe('Codespace Setup Utilities', () => {
     it('should start server with nohup in background', async () => {
       execInCodespaceMock.mockResolvedValue('');
 
-      await startSudocodeServer(mockCodespaceName, 3000, 72);
+      await startSudocodeServer(mockCodespaceName, 3000, 72, mockWorkspaceDir);
 
       expect(execInCodespaceMock).toHaveBeenCalledWith(
         mockCodespaceName,
-        'nohup sudocode server start --host 0.0.0.0 --port 3000 --keep-alive 72h ' +
-        '> /tmp/sudocode-3000.log 2>&1 &',
+        `bash -c 'cd ${mockWorkspaceDir} && (nohup sudocode server --port 3000 --keep-alive 72h > /tmp/sudocode-3000.log 2>&1 </dev/null &) && sleep 1'`,
         {
           streamOutput: false,
-          timeout: 5000
+          timeout: 10000
         }
       );
     });
@@ -154,7 +154,7 @@ describe('Codespace Setup Utilities', () => {
     it('should use custom port and keep-alive duration', async () => {
       execInCodespaceMock.mockResolvedValue('');
 
-      await startSudocodeServer(mockCodespaceName, 8080, 24);
+      await startSudocodeServer(mockCodespaceName, 8080, 24, mockWorkspaceDir);
 
       const command = execInCodespaceMock.mock.calls[0][1];
       expect(command).toContain('--port 8080');
@@ -165,7 +165,7 @@ describe('Codespace Setup Utilities', () => {
     it('should not stream output for background process', async () => {
       execInCodespaceMock.mockResolvedValue('');
 
-      await startSudocodeServer(mockCodespaceName, 3000, 72);
+      await startSudocodeServer(mockCodespaceName, 3000, 72, mockWorkspaceDir);
 
       const callOptions = execInCodespaceMock.mock.calls[0][2];
       expect(callOptions.streamOutput).toBe(false);
@@ -174,16 +174,16 @@ describe('Codespace Setup Utilities', () => {
     it('should use short timeout for background start', async () => {
       execInCodespaceMock.mockResolvedValue('');
 
-      await startSudocodeServer(mockCodespaceName, 3000, 72);
+      await startSudocodeServer(mockCodespaceName, 3000, 72, mockWorkspaceDir);
 
       const callOptions = execInCodespaceMock.mock.calls[0][2];
-      expect(callOptions.timeout).toBe(5000);  // 5 seconds
+      expect(callOptions.timeout).toBe(10000);  // 10 seconds
     });
 
     it('should redirect both stdout and stderr to log file', async () => {
       execInCodespaceMock.mockResolvedValue('');
 
-      await startSudocodeServer(mockCodespaceName, 3000, 72);
+      await startSudocodeServer(mockCodespaceName, 3000, 72, mockWorkspaceDir);
 
       const command = execInCodespaceMock.mock.calls[0][1];
       expect(command).toContain('2>&1');  // stderr redirected to stdout

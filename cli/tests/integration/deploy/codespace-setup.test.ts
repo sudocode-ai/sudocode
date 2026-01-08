@@ -32,6 +32,7 @@ const KEEP_ALIVE_HOURS = 2;
 // Shared test Codespace (created once, used by all tests, deleted at end)
 let testCodespaceName: string;
 let testRepository: string;
+let testWorkspaceDir: string;
 
 describe('Codespace Setup Integration Tests', () => {
   beforeAll(async () => {
@@ -41,8 +42,11 @@ describe('Codespace Setup Integration Tests', () => {
 
     // Get current repository for tests
     testRepository = await ghCli.getCurrentGitRepo();
+    const workspaceName = testRepository.split('/')[1];
+    testWorkspaceDir = `/workspaces/${workspaceName}`;
 
     console.log(`Running setup tests against repository: ${testRepository}`);
+    console.log(`Workspace directory: ${testWorkspaceDir}`);
 
     // Create a test Codespace
     console.log('Creating test Codespace...');
@@ -81,7 +85,7 @@ describe('Codespace Setup Integration Tests', () => {
       // may not be critical for all test runs and takes significant time.
       // Remove .skip to run this test when needed.
 
-      await expect(installClaudeCode(testCodespaceName)).resolves.not.toThrow();
+      await expect(installClaudeCode(testCodespaceName, testWorkspaceDir)).resolves.not.toThrow();
 
       console.log('✓ Claude Code installation completed');
     }, TEST_TIMEOUT);
@@ -89,7 +93,7 @@ describe('Codespace Setup Integration Tests', () => {
 
   describe('installSudocodeGlobally', () => {
     it('should install sudocode packages globally', async () => {
-      await expect(installSudocodeGlobally(testCodespaceName)).resolves.not.toThrow();
+      await expect(installSudocodeGlobally(testCodespaceName, testWorkspaceDir)).resolves.not.toThrow();
 
       console.log('✓ Sudocode packages installed');
 
@@ -100,14 +104,14 @@ describe('Codespace Setup Integration Tests', () => {
 
   describe('initializeSudocodeProject', () => {
     it('should create .sudocode directory on first call', async () => {
-      await expect(initializeSudocodeProject(testCodespaceName)).resolves.not.toThrow();
+      await expect(initializeSudocodeProject(testCodespaceName, testWorkspaceDir)).resolves.not.toThrow();
 
       console.log('✓ Project initialized');
     }, TEST_TIMEOUT);
 
     it('should skip initialization if .sudocode already exists', async () => {
       // Call again - should skip because .sudocode now exists
-      await expect(initializeSudocodeProject(testCodespaceName)).resolves.not.toThrow();
+      await expect(initializeSudocodeProject(testCodespaceName, testWorkspaceDir)).resolves.not.toThrow();
 
       console.log('✓ Project initialization skipped (already exists)');
     }, TEST_TIMEOUT);
@@ -116,7 +120,7 @@ describe('Codespace Setup Integration Tests', () => {
   describe('startSudocodeServer', () => {
     it('should start server in background', async () => {
       await expect(
-        startSudocodeServer(testCodespaceName, SERVER_PORT, KEEP_ALIVE_HOURS)
+        startSudocodeServer(testCodespaceName, SERVER_PORT, KEEP_ALIVE_HOURS, testWorkspaceDir)
       ).resolves.not.toThrow();
 
       console.log('✓ Server start command executed');
