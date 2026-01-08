@@ -7,7 +7,10 @@
  * @module services/narration-service
  */
 
-import type { NormalizedEntry, ActionType } from "agent-execution-engine/agents";
+import type {
+  NormalizedEntry,
+  ActionType,
+} from "agent-execution-engine/agents";
 import type {
   VoiceNarrationEvent,
   NarrationCategory,
@@ -54,6 +57,13 @@ export interface NarrationConfig {
    * Default: true
    */
   narrateAssistantMessages: boolean;
+  /**
+   * Whether to only narrate explicit speak tool calls.
+   * When true, ignores narrateToolUse, narrateToolResults, and narrateAssistantMessages.
+   * Only narrates when the agent explicitly calls the speak tool.
+   * Default: false
+   */
+  narrateSpeakOnly: boolean;
 }
 
 /**
@@ -69,6 +79,7 @@ const DEFAULT_CONFIG: NarrationConfig = {
   narrateToolResults: false,
   narrateToolUse: true,
   narrateAssistantMessages: true,
+  narrateSpeakOnly: false,
 };
 
 /**
@@ -122,6 +133,19 @@ export class NarrationService {
    * @returns NarrationResult if the event should be narrated, null otherwise
    */
   summarizeForVoice(entry: NormalizedEntry): NarrationResult | null {
+    // If narrateSpeakOnly is enabled, only narrate explicit speak tool calls
+    if (this.config.narrateSpeakOnly) {
+      if (entry.type.kind !== "tool_use") {
+        return null;
+      }
+      const toolName = entry.type.tool.toolName.toLowerCase();
+      // TODO: Filter for sudocode MCP?
+      if (toolName !== "speak") {
+        return null;
+      }
+      // Fall through to describeToolUse for speak tool
+    }
+
     switch (entry.type.kind) {
       case "tool_use":
         return this.describeToolUse(entry);
@@ -428,7 +452,10 @@ export class NarrationService {
     // Take first 1-2 sentences
     const firstSentence = sentences[0].trim();
     if (sentences.length === 1 || firstSentence.length > 80) {
-      return this.truncate(firstSentence, this.config.maxAssistantMessageLength);
+      return this.truncate(
+        firstSentence,
+        this.config.maxAssistantMessageLength
+      );
     }
 
     const secondSentence = sentences[1]?.trim();
@@ -702,9 +729,7 @@ export class NarrationRateLimiter {
    * Check if there are any pending narrations
    */
   hasPending(): boolean {
-    return (
-      this.pendingQueue.length > 0 || this.coalescingToolCalls.length > 0
-    );
+    return this.pendingQueue.length > 0 || this.coalescingToolCalls.length > 0;
   }
 
   /**
@@ -888,6 +913,7 @@ interface NarrationSettingsConfig {
   narrateToolUse?: boolean;
   narrateToolResults?: boolean;
   narrateAssistantMessages?: boolean;
+  narrateSpeakOnly?: boolean;
 }
 
 /**
@@ -895,7 +921,9 @@ interface NarrationSettingsConfig {
  *
  * @param voiceConfig - Optional narration settings from project config.json
  */
-export function getNarrationConfig(voiceConfig?: { narration?: NarrationSettingsConfig }): Partial<NarrationConfig> {
+export function getNarrationConfig(voiceConfig?: {
+  narration?: NarrationSettingsConfig;
+}): Partial<NarrationConfig> {
   const config: Partial<NarrationConfig> = {};
 
   if (voiceConfig?.narration?.narrateToolUse !== undefined) {
@@ -907,7 +935,12 @@ export function getNarrationConfig(voiceConfig?: { narration?: NarrationSettings
   }
 
   if (voiceConfig?.narration?.narrateAssistantMessages !== undefined) {
-    config.narrateAssistantMessages = voiceConfig.narration.narrateAssistantMessages;
+    config.narrateAssistantMessages =
+      voiceConfig.narration.narrateAssistantMessages;
+  }
+
+  if (voiceConfig?.narration?.narrateSpeakOnly !== undefined) {
+    config.narrateSpeakOnly = voiceConfig.narration.narrateSpeakOnly;
   }
 
   return config;
@@ -939,7 +972,10 @@ export function getNarrationService(
   if (!narrationServiceInstance) {
     // Merge: voiceConfig/env < provided config
     const baseConfig = getNarrationConfig(voiceConfig);
-    narrationServiceInstance = new NarrationService({ ...baseConfig, ...config });
+    narrationServiceInstance = new NarrationService({
+      ...baseConfig,
+      ...config,
+    });
   }
   return narrationServiceInstance;
 }

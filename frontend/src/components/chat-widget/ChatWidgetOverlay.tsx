@@ -12,9 +12,9 @@ export function ChatWidgetOverlay({ children, className }: ChatWidgetOverlayProp
       className={cn(
         'fixed z-[45]',
         'bottom-6 right-6', // Same position as FAB (replaces it)
-        'h-[500px] w-[400px]',
-        'max-h-[calc(100vh-8rem)]',
-        'flex flex-col',
+        'w-[420px]',
+        'h-[calc(100vh-7rem)]', // Fixed viewport-based height for proper scrolling
+        'flex flex-col overflow-hidden',
         // Slightly elevated background using theme colors
         'bg-white dark:bg-card',
         'border border-border',

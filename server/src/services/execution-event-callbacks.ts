@@ -7,7 +7,7 @@
  *
  * Usage:
  * - Workflow engine registers a callback to record workflow events
- * - AgentExecutorWrapper calls notifyExecutionEvent on completion/failure
+ * - Executor wrappers call notifyExecutionEvent on completion/failure
  * - Callbacks receive execution context including workflow info
  *
  * @module services/execution-event-callbacks

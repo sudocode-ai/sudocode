@@ -339,7 +339,7 @@ export function ChatWidgetContent({
                   target_branch: chainData.executions[0].target_branch,
                   agent_type: chainData.executions[0].agent_type,
                 }
-              : { id: '', mode: executionConfig.mode || 'local', config: executionConfig }
+              : { id: '', mode: executionConfig.mode || 'local', config: executionConfig, agent_type: agentType }
           }
           promptPlaceholder={
             chainData && chainData.executions.length > 0

@@ -181,6 +181,18 @@ export function AgentSettingsDialog({
             }}
           />
         )
+      case 'gemini':
+        return (
+          <p className="text-sm text-muted-foreground">
+            Gemini CLI uses default settings. Model and advanced options coming soon.
+          </p>
+        )
+      case 'opencode':
+        return (
+          <p className="text-sm text-muted-foreground">
+            Opencode uses default settings. Model and advanced options coming soon.
+          </p>
+        )
       default:
         return (
           <p className="text-sm text-muted-foreground">

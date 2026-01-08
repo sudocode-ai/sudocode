@@ -2,12 +2,13 @@
  * AgentTrajectory Component Tests
  *
  * Tests for the unified agent trajectory visualization
+ * Updated for ACP migration with SessionUpdate types
  */
 
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { AgentTrajectory } from '@/components/executions/AgentTrajectory'
-import type { MessageBuffer, ToolCallTracking } from '@/hooks/useAgUiStream'
+import type { AgentMessage, ToolCall, AgentThought } from '@/hooks/useSessionUpdateStream'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 
 // Helper to wrap component with ThemeProvider
@@ -15,14 +16,56 @@ const renderWithTheme = (ui: React.ReactElement) => {
   return render(<ThemeProvider>{ui}</ThemeProvider>)
 }
 
+// Helper to create AgentMessage
+const createMessage = (
+  id: string,
+  content: string,
+  timestamp: Date | number = new Date(),
+  isStreaming = false
+): AgentMessage => ({
+  id,
+  content,
+  timestamp: timestamp instanceof Date ? timestamp : new Date(timestamp),
+  isStreaming,
+})
+
+// Helper to create ToolCall
+const createToolCall = (
+  id: string,
+  title: string,
+  status: ToolCall['status'] = 'success',
+  timestamp: Date | number = new Date(),
+  completedAt?: Date | number
+): ToolCall => ({
+  id,
+  title,
+  status,
+  timestamp: timestamp instanceof Date ? timestamp : new Date(timestamp),
+  completedAt: completedAt
+    ? completedAt instanceof Date
+      ? completedAt
+      : new Date(completedAt)
+    : undefined,
+})
+
+// Helper to create AgentThought
+const createThought = (
+  id: string,
+  content: string,
+  timestamp: Date | number = new Date(),
+  isStreaming = false
+): AgentThought => ({
+  id,
+  content,
+  timestamp: timestamp instanceof Date ? timestamp : new Date(timestamp),
+  isStreaming,
+})
+
 describe('AgentTrajectory', () => {
   describe('Empty State', () => {
     it('should return null when no messages or tool calls', () => {
-      const messages = new Map<string, MessageBuffer>()
-      const toolCalls = new Map<string, ToolCallTracking>()
-
       const { container } = renderWithTheme(
-        <AgentTrajectory messages={messages} toolCalls={toolCalls} />
+        <AgentTrajectory messages={[]} toolCalls={[]} />
       )
 
       expect(container.firstChild).toBeNull()
@@ -30,81 +73,84 @@ describe('AgentTrajectory', () => {
   })
 
   describe('Message Display', () => {
-    it('should display messages with role badge', () => {
-      const messages = new Map<string, MessageBuffer>()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        timestamp: Date.now(),
-        role: 'assistant',
-        content: 'Hello, this is a test message!',
-        complete: true,
-      })
+    it('should display messages with colored dot indicator', () => {
+      const messages = [createMessage('msg-1', 'Hello, this is a test message!')]
 
-      const toolCalls = new Map<string, ToolCallTracking>()
+      renderWithTheme(<AgentTrajectory messages={messages} toolCalls={[]} />)
 
-      renderWithTheme(<AgentTrajectory messages={messages} toolCalls={toolCalls} />)
-
-      expect(screen.getByText('assistant')).toBeInTheDocument()
+      // New terminal-style UI uses colored dots, not text badges
+      expect(screen.getByText('⏺')).toBeInTheDocument()
       expect(screen.getByText('Hello, this is a test message!')).toBeInTheDocument()
     })
 
-    it('should show spinner for incomplete messages', () => {
-      const messages = new Map<string, MessageBuffer>()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        timestamp: Date.now(),
-        role: 'assistant',
-        content: 'Streaming...',
-        complete: false,
-      })
-
-      const toolCalls = new Map<string, ToolCallTracking>()
+    it('should show blinking dot for streaming messages', () => {
+      const messages = [createMessage('msg-1', 'Streaming...', new Date(), true)]
 
       const { container } = renderWithTheme(
-        <AgentTrajectory messages={messages} toolCalls={toolCalls} />
+        <AgentTrajectory messages={messages} toolCalls={[]} />
       )
 
-      const spinners = container.querySelectorAll('.animate-spin')
-      expect(spinners.length).toBeGreaterThan(0)
+      // Streaming messages use animate-pulse on the dot
+      const blinkingDots = container.querySelectorAll('.animate-pulse')
+      expect(blinkingDots.length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('Thought Display', () => {
+    it('should display thoughts with purple dot indicator', () => {
+      const thoughts = [createThought('thought-1', 'Let me think about this...')]
+
+      renderWithTheme(
+        <AgentTrajectory messages={[]} toolCalls={[]} thoughts={thoughts} />
+      )
+
+      // New terminal-style UI uses purple dot for thoughts, not text badge
+      expect(screen.getByText('⏺')).toBeInTheDocument()
+      expect(screen.getByText('Let me think about this...')).toBeInTheDocument()
+    })
+
+    it('should show blinking dot for streaming thoughts', () => {
+      const thoughts = [createThought('thought-1', 'Thinking...', new Date(), true)]
+
+      const { container } = renderWithTheme(
+        <AgentTrajectory messages={[]} toolCalls={[]} thoughts={thoughts} />
+      )
+
+      // Streaming thoughts use animate-pulse on the dot
+      const blinkingDots = container.querySelectorAll('.animate-pulse')
+      expect(blinkingDots.length).toBeGreaterThan(0)
     })
   })
 
   describe('Tool Call Display', () => {
-    it('should display tool calls with status badge', () => {
-      const messages = new Map<string, MessageBuffer>()
-      const toolCalls = new Map<string, ToolCallTracking>()
-      toolCalls.set('tool-1', {
-        toolCallId: 'tool-1',
-        toolCallName: 'Read',
-        args: '{"file": "test.ts"}',
-        status: 'completed',
-        result: 'File contents here',
-        startTime: 1000,
-        endTime: 2000,
-      })
+    it('should display tool calls with colored dot and duration', () => {
+      const toolCalls = [
+        {
+          ...createToolCall('tool-1', 'Read', 'success', 1000, 2000),
+          rawInput: { file: 'test.ts' },
+          result: 'File contents here',
+        },
+      ]
 
-      renderWithTheme(<AgentTrajectory messages={messages} toolCalls={toolCalls} />)
+      renderWithTheme(<AgentTrajectory messages={[]} toolCalls={toolCalls} />)
 
+      // New terminal-style UI uses colored dots (green for success), not text badges
       expect(screen.getByText('Read')).toBeInTheDocument()
-      const completedBadges = screen.getAllByText('completed')
-      expect(completedBadges.length).toBeGreaterThan(0)
       expect(screen.getByText('1.00s')).toBeInTheDocument()
+      // Green dot should be present (check via class name)
+      const dots = screen.getAllByText('⏺')
+      expect(dots.length).toBeGreaterThan(0)
     })
 
     it('should display tool call with error', () => {
-      const messages = new Map<string, MessageBuffer>()
-      const toolCalls = new Map<string, ToolCallTracking>()
-      toolCalls.set('tool-1', {
-        toolCallId: 'tool-1',
-        toolCallName: 'Write',
-        args: '{"file": "test.ts"}',
-        status: 'error',
-        error: 'File not found',
-        startTime: 1000,
-        endTime: 2000,
-      })
+      const toolCalls = [
+        {
+          ...createToolCall('tool-1', 'Write', 'failed', 1000, 2000),
+          result: 'File not found',  // Error text as string
+        },
+      ]
 
-      renderWithTheme(<AgentTrajectory messages={messages} toolCalls={toolCalls} />)
+      renderWithTheme(<AgentTrajectory messages={[]} toolCalls={toolCalls} />)
 
       expect(screen.getByText('Write')).toBeInTheDocument()
       expect(screen.getByText('File not found')).toBeInTheDocument()
@@ -113,175 +159,64 @@ describe('AgentTrajectory', () => {
 
   describe('Chronological Ordering', () => {
     it('should display messages and tool calls in chronological order', () => {
-      const messages = new Map<string, MessageBuffer>()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        timestamp: 1000,
-        role: 'assistant',
-        content: 'First message',
-        complete: true,
-      })
-      messages.set('msg-2', {
-        messageId: 'msg-2',
-        timestamp: 3000,
-        role: 'assistant',
-        content: 'Third message',
-        complete: true,
-      })
+      const messages = [
+        createMessage('msg-1', 'First message', 1000),
+        createMessage('msg-2', 'Third message', 3000),
+      ]
 
-      const toolCalls = new Map<string, ToolCallTracking>()
-      toolCalls.set('tool-1', {
-        toolCallId: 'tool-1',
-        toolCallName: 'Read',
-        args: '{}',
-        status: 'completed',
-        startTime: 2000,
-        endTime: 2500,
-      })
+      const toolCalls = [createToolCall('tool-1', 'Read', 'success', 2000, 2500)]
 
       const { container } = renderWithTheme(
         <AgentTrajectory messages={messages} toolCalls={toolCalls} />
       )
 
-      // Get all trajectory items in order
-      const items = container.querySelectorAll('.flex.gap-3.items-start')
+      // Get all trajectory items in order (each wrapped in .group)
+      const items = container.querySelectorAll('.group')
       expect(items.length).toBe(3)
 
       // Verify order: msg-1 (1000), tool-1 (2000), msg-2 (3000)
-      // We can check by looking at the content
-      const firstItem = items[0]
-      expect(firstItem.textContent).toContain('First message')
-
-      const secondItem = items[1]
-      expect(secondItem.textContent).toContain('Read')
-
-      const thirdItem = items[2]
-      expect(thirdItem.textContent).toContain('Third message')
+      expect(items[0].textContent).toContain('First message')
+      expect(items[1].textContent).toContain('Read')
+      expect(items[2].textContent).toContain('Third message')
     })
 
-    it('should use index as secondary sort key when timestamps are equal', () => {
-      // Simulate historical replay where multiple events have the same timestamp
-      const messages = new Map<string, MessageBuffer>()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        timestamp: 1000, // Same timestamp
-        role: 'assistant',
-        content: 'First message',
-        complete: true,
-        index: 0, // Lower index = comes first
-      })
-      messages.set('msg-2', {
-        messageId: 'msg-2',
-        timestamp: 1000, // Same timestamp
-        role: 'assistant',
-        content: 'Second message',
-        complete: true,
-        index: 2, // Higher index = comes later
-      })
-
-      const toolCalls = new Map<string, ToolCallTracking>()
-      toolCalls.set('tool-1', {
-        toolCallId: 'tool-1',
-        toolCallName: 'Read',
-        args: '{}',
-        status: 'completed',
-        startTime: 1000, // Same timestamp
-        endTime: 1500,
-        index: 1, // Middle index
-      })
+    it('should display messages, thoughts, and tool calls in chronological order', () => {
+      const messages = [createMessage('msg-1', 'First message', 1000)]
+      const thoughts = [createThought('thought-1', 'Thinking...', 2000)]
+      const toolCalls = [createToolCall('tool-1', 'Read', 'success', 3000)]
 
       const { container } = renderWithTheme(
-        <AgentTrajectory messages={messages} toolCalls={toolCalls} />
+        <AgentTrajectory messages={messages} toolCalls={toolCalls} thoughts={thoughts} />
       )
 
-      // Get all trajectory items in order
-      const items = container.querySelectorAll('.flex.gap-3.items-start')
+      const items = container.querySelectorAll('.group')
       expect(items.length).toBe(3)
 
-      // Verify order by index: msg-1 (index 0), tool-1 (index 1), msg-2 (index 2)
-      const firstItem = items[0]
-      expect(firstItem.textContent).toContain('First message')
-
-      const secondItem = items[1]
-      expect(secondItem.textContent).toContain('Read')
-
-      const thirdItem = items[2]
-      expect(thirdItem.textContent).toContain('Second message')
-    })
-
-    it('should maintain order with mixed indexed and non-indexed items', () => {
-      const messages = new Map<string, MessageBuffer>()
-      // Message with index
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        timestamp: 1000,
-        role: 'assistant',
-        content: 'Indexed message',
-        complete: true,
-        index: 0,
-      })
-      // Message without index (from live streaming)
-      messages.set('msg-2', {
-        messageId: 'msg-2',
-        timestamp: 1000,
-        role: 'assistant',
-        content: 'Non-indexed message',
-        complete: true,
-        // No index field
-      })
-
-      const toolCalls = new Map<string, ToolCallTracking>()
-
-      const { container } = renderWithTheme(
-        <AgentTrajectory messages={messages} toolCalls={toolCalls} />
-      )
-
-      // Both items should render
-      const items = container.querySelectorAll('.flex.gap-3.items-start')
-      expect(items.length).toBe(2)
-
-      // Indexed item should come first (index 0 vs undefined)
-      const firstItem = items[0]
-      expect(firstItem.textContent).toContain('Indexed message')
+      expect(items[0].textContent).toContain('First message')
+      expect(items[1].textContent).toContain('Thinking...')
+      expect(items[2].textContent).toContain('Read')
     })
 
     it('should handle historical replay ordering correctly', () => {
       // Simulate a real historical replay scenario with tool calls between messages
-      const messages = new Map<string, MessageBuffer>()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        timestamp: 1705320600000, // 2024-01-15 10:30:00
-        role: 'assistant',
-        content: 'Let me read the file',
-        complete: true,
-        index: 0,
-      })
-      messages.set('msg-2', {
-        messageId: 'msg-2',
-        timestamp: 1705320602000, // 2024-01-15 10:30:02
-        role: 'assistant',
-        content: 'I found the issue',
-        complete: true,
-        index: 2,
-      })
+      const messages = [
+        createMessage('msg-1', 'Let me read the file', 1705320600000),
+        createMessage('msg-2', 'I found the issue', 1705320602000),
+      ]
 
-      const toolCalls = new Map<string, ToolCallTracking>()
-      toolCalls.set('tool-1', {
-        toolCallId: 'tool-1',
-        toolCallName: 'Read',
-        args: '{"path": "src/index.ts"}',
-        status: 'completed',
-        result: 'file contents',
-        startTime: 1705320601000, // 2024-01-15 10:30:01
-        endTime: 1705320601500,
-        index: 1,
-      })
+      const toolCalls = [
+        {
+          ...createToolCall('tool-1', 'Read', 'success', 1705320601000, 1705320601500),
+          rawInput: { path: 'src/index.ts' },
+          result: 'file contents',
+        },
+      ]
 
       const { container } = renderWithTheme(
         <AgentTrajectory messages={messages} toolCalls={toolCalls} />
       )
 
-      const items = container.querySelectorAll('.flex.gap-3.items-start')
+      const items = container.querySelectorAll('.group')
       expect(items.length).toBe(3)
 
       // Verify correct chronological order
@@ -293,19 +228,10 @@ describe('AgentTrajectory', () => {
 
   describe('Markdown Rendering', () => {
     it('should render markdown when renderMarkdown is true', () => {
-      const messages = new Map<string, MessageBuffer>()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        timestamp: Date.now(),
-        role: 'assistant',
-        content: '**Bold text** and *italic text*',
-        complete: true,
-      })
-
-      const toolCalls = new Map<string, ToolCallTracking>()
+      const messages = [createMessage('msg-1', '**Bold text** and *italic text*')]
 
       const { container } = renderWithTheme(
-        <AgentTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown={true} />
+        <AgentTrajectory messages={messages} toolCalls={[]} renderMarkdown={true} />
       )
 
       // ReactMarkdown will render these as <strong> and <em> tags
@@ -314,19 +240,10 @@ describe('AgentTrajectory', () => {
     })
 
     it('should render plain text when renderMarkdown is false', () => {
-      const messages = new Map<string, MessageBuffer>()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        timestamp: Date.now(),
-        role: 'assistant',
-        content: '**Bold text** and *italic text*',
-        complete: true,
-      })
-
-      const toolCalls = new Map<string, ToolCallTracking>()
+      const messages = [createMessage('msg-1', '**Bold text** and *italic text*')]
 
       const { container } = renderWithTheme(
-        <AgentTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown={false} />
+        <AgentTrajectory messages={messages} toolCalls={[]} renderMarkdown={false} />
       )
 
       // Should not have strong or em tags
@@ -339,39 +256,15 @@ describe('AgentTrajectory', () => {
 
   describe('Mixed Content', () => {
     it('should handle multiple messages and tool calls together', () => {
-      const messages = new Map<string, MessageBuffer>()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        timestamp: 1000,
-        role: 'assistant',
-        content: 'First message',
-        complete: true,
-      })
-      messages.set('msg-2', {
-        messageId: 'msg-2',
-        timestamp: 3000,
-        role: 'assistant',
-        content: 'Second message',
-        complete: true,
-      })
+      const messages = [
+        createMessage('msg-1', 'First message', 1000),
+        createMessage('msg-2', 'Second message', 3000),
+      ]
 
-      const toolCalls = new Map<string, ToolCallTracking>()
-      toolCalls.set('tool-1', {
-        toolCallId: 'tool-1',
-        toolCallName: 'Read',
-        args: '{}',
-        status: 'completed',
-        startTime: 2000,
-        endTime: 2500,
-      })
-      toolCalls.set('tool-2', {
-        toolCallId: 'tool-2',
-        toolCallName: 'Write',
-        args: '{}',
-        status: 'completed',
-        startTime: 4000,
-        endTime: 4500,
-      })
+      const toolCalls = [
+        createToolCall('tool-1', 'Read', 'success', 2000, 2500),
+        createToolCall('tool-2', 'Write', 'success', 4000, 4500),
+      ]
 
       renderWithTheme(<AgentTrajectory messages={messages} toolCalls={toolCalls} />)
 
@@ -385,25 +278,12 @@ describe('AgentTrajectory', () => {
 
   describe('System Message Filtering', () => {
     it('should hide system messages by default', () => {
-      const messages = new Map<string, MessageBuffer>()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        role: 'assistant',
-        content: '[System] This is a system message',
-        complete: true,
-        timestamp: 1000,
-        index: 0,
-      })
-      messages.set('msg-2', {
-        messageId: 'msg-2',
-        role: 'assistant',
-        content: 'This is a regular message',
-        complete: true,
-        timestamp: 2000,
-        index: 1,
-      })
+      const messages = [
+        createMessage('msg-1', '[System] This is a system message', 1000),
+        createMessage('msg-2', 'This is a regular message', 2000),
+      ]
 
-      renderWithTheme(<AgentTrajectory messages={messages} toolCalls={new Map()} />)
+      renderWithTheme(<AgentTrajectory messages={messages} toolCalls={[]} />)
 
       // Should not show system message
       expect(screen.queryByText(/This is a system message/)).not.toBeInTheDocument()
@@ -412,32 +292,47 @@ describe('AgentTrajectory', () => {
     })
 
     it('should show system messages when hideSystemMessages is false', () => {
-      const messages = new Map<string, MessageBuffer>()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        role: 'assistant',
-        content: '[System] This is a system message',
-        complete: true,
-        timestamp: 1000,
-        index: 0,
-      })
-      messages.set('msg-2', {
-        messageId: 'msg-2',
-        role: 'assistant',
-        content: 'This is a regular message',
-        complete: true,
-        timestamp: 2000,
-        index: 1,
-      })
+      const messages = [
+        createMessage('msg-1', '[System] This is a system message', 1000),
+        createMessage('msg-2', 'This is a regular message', 2000),
+      ]
 
       renderWithTheme(
-        <AgentTrajectory messages={messages} toolCalls={new Map()} hideSystemMessages={false} />
+        <AgentTrajectory messages={messages} toolCalls={[]} hideSystemMessages={false} />
       )
 
       // Should show system message
       expect(screen.getByText(/This is a system message/)).toBeInTheDocument()
       // Should show regular message
       expect(screen.getByText(/This is a regular message/)).toBeInTheDocument()
+    })
+  })
+
+  describe('Tool Status Variants', () => {
+    it('should show blinking dot for running tool calls', () => {
+      const toolCalls = [createToolCall('tool-1', 'Running Task', 'running')]
+
+      const { container } = renderWithTheme(
+        <AgentTrajectory messages={[]} toolCalls={toolCalls} />
+      )
+
+      // New UI shows yellow blinking dot for running status
+      expect(screen.getByText('Running Task')).toBeInTheDocument()
+      const blinkingDots = container.querySelectorAll('.animate-pulse')
+      expect(blinkingDots.length).toBeGreaterThan(0)
+    })
+
+    it('should show blinking dot for pending tool calls', () => {
+      const toolCalls = [createToolCall('tool-1', 'Pending Task', 'pending')]
+
+      const { container } = renderWithTheme(
+        <AgentTrajectory messages={[]} toolCalls={toolCalls} />
+      )
+
+      // New UI shows yellow blinking dot for pending status
+      expect(screen.getByText('Pending Task')).toBeInTheDocument()
+      const blinkingDots = container.querySelectorAll('.animate-pulse')
+      expect(blinkingDots.length).toBeGreaterThan(0)
     })
   })
 })

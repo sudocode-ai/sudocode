@@ -57,8 +57,8 @@ describe('ChatWidgetOverlay', () => {
     )
 
     const overlay = screen.getByRole('dialog')
-    expect(overlay.className).toContain('h-[500px]')
-    expect(overlay.className).toContain('w-[400px]')
+    expect(overlay.className).toContain('h-[calc(100vh-7rem)]')
+    expect(overlay.className).toContain('w-[420px]')
   })
 
   it('should have opaque background', () => {

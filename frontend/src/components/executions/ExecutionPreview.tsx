@@ -12,7 +12,7 @@
  */
 
 import { useMemo } from 'react'
-import { useAgUiStream, type MessageBuffer, type ToolCallTracking } from '@/hooks/useAgUiStream'
+import { useSessionUpdateStream, type AgentMessage, type ToolCall } from '@/hooks/useSessionUpdateStream'
 import { useExecutionLogs } from '@/hooks/useExecutionLogs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -173,107 +173,144 @@ export function ExecutionPreview({
     return activeStatuses.includes(executionProp.status)
   }, [executionProp])
 
-  // Use SSE streaming for active executions
-  const sseStream = useAgUiStream({
-    executionId,
-    autoConnect: isActive,
+  // Use WebSocket streaming for active executions
+  const wsStream = useSessionUpdateStream({
+    executionId: isActive ? executionId : null,
   })
 
   // Use logs API for completed executions
   const logsResult = useExecutionLogs(executionId)
 
+  // Process logs into messages and tool calls format
+  const processedLogs = useMemo(() => {
+    const messages: AgentMessage[] = []
+    const toolCalls: ToolCall[] = []
+    const messageMap = new Map<string, AgentMessage>()
+    const toolCallMap = new Map<string, ToolCall>()
+    let messageIndex = 0
+    let toolCallIndex = 0
+
+    if (logsResult.events) {
+      logsResult.events.forEach((event: any) => {
+        const eventType = event.type || event.name
+
+        // Handle messages
+        if (eventType === 'TEXT_MESSAGE_START') {
+          const messageId = event.messageId || `msg-${messageIndex}`
+          messageMap.set(messageId, {
+            id: messageId,
+            content: '',
+            timestamp: new Date(event.timestamp || Date.now()),
+            isStreaming: true,
+            index: messageIndex++,
+          })
+        } else if (eventType === 'TEXT_MESSAGE_CONTENT') {
+          const messageId = event.messageId
+          const existing = messageMap.get(messageId)
+          if (existing) {
+            messageMap.set(messageId, {
+              ...existing,
+              content: existing.content + (event.delta || ''),
+            })
+          }
+        } else if (eventType === 'TEXT_MESSAGE_END') {
+          const messageId = event.messageId
+          const existing = messageMap.get(messageId)
+          if (existing) {
+            messageMap.set(messageId, {
+              ...existing,
+              isStreaming: false,
+            })
+          }
+        }
+        // Handle tool calls
+        else if (eventType === 'TOOL_CALL_START') {
+          const toolCallId = event.toolCallId
+          toolCallMap.set(toolCallId, {
+            id: toolCallId,
+            title: event.toolCallName || event.name || 'Unknown',
+            status: 'running',
+            timestamp: new Date(event.timestamp || Date.now()),
+            rawInput: '',
+            index: toolCallIndex++,
+          })
+        } else if (eventType === 'TOOL_CALL_ARGS') {
+          const toolCallId = event.toolCallId
+          const existing = toolCallMap.get(toolCallId)
+          if (existing) {
+            const currentInput = existing.rawInput || ''
+            toolCallMap.set(toolCallId, {
+              ...existing,
+              rawInput: currentInput + (event.delta || ''),
+            })
+          }
+        } else if (eventType === 'TOOL_CALL_END') {
+          const toolCallId = event.toolCallId
+          const existing = toolCallMap.get(toolCallId)
+          if (existing) {
+            toolCallMap.set(toolCallId, {
+              ...existing,
+              status: 'success',
+              completedAt: new Date(event.timestamp || Date.now()),
+            })
+          }
+        } else if (eventType === 'TOOL_CALL_RESULT') {
+          const toolCallId = event.toolCallId
+          const existing = toolCallMap.get(toolCallId)
+          if (existing) {
+            toolCallMap.set(toolCallId, {
+              ...existing,
+              status: 'success',
+              result: event.result,
+              completedAt: new Date(event.timestamp || Date.now()),
+            })
+          }
+        }
+      })
+    }
+
+    messages.push(...messageMap.values())
+    toolCalls.push(...toolCallMap.values())
+
+    return { messages, toolCalls }
+  }, [logsResult.events])
+
   // Select the appropriate data source
-  const { execution, messages, toolCalls, state, error } = useMemo(() => {
-    if (isActive) {
+  const { messages, toolCalls, executionStatus, error } = useMemo(() => {
+    if (isActive && wsStream.messages.length > 0) {
       return {
-        execution: sseStream.execution,
-        messages: sseStream.messages,
-        toolCalls: sseStream.toolCalls,
-        state: sseStream.state,
-        error: sseStream.error,
+        messages: wsStream.messages,
+        toolCalls: wsStream.toolCalls,
+        executionStatus: wsStream.execution.status,
+        error: wsStream.error,
       }
     } else {
-      // Transform logs to messages/toolCalls format
-      const messages = new Map<string, MessageBuffer>()
-      const toolCalls = new Map<string, ToolCallTracking>()
-      const state: any = {}
-
-      if (logsResult.events) {
-        logsResult.events.forEach((event: any) => {
-          if (event.type === 'TEXT_MESSAGE_CONTENT' || event.name === 'TEXT_MESSAGE_CONTENT') {
-            const content = event.value || event
-            const messageId = `msg-${messages.size}`
-            messages.set(messageId, {
-              messageId,
-              role: 'assistant',
-              content: content.content || content.text || '',
-              complete: true,
-              timestamp: event.timestamp || Date.now(),
-            })
-          } else if (event.type === 'TOOL_CALL_START' || event.name === 'TOOL_CALL_START') {
-            const value = event.value || event
-            toolCalls.set(value.toolCallId, {
-              toolCallId: value.toolCallId,
-              toolCallName: value.name || '',
-              args: '',
-              status: 'started',
-              startTime: event.timestamp || Date.now(),
-            })
-          } else if (event.type === 'TOOL_CALL_RESULT' || event.name === 'TOOL_CALL_RESULT') {
-            const value = event.value || event
-            const existing = toolCalls.get(value.toolCallId)
-            if (existing) {
-              toolCalls.set(value.toolCallId, {
-                ...existing,
-                status: 'completed',
-                result: value.result,
-                endTime: event.timestamp || Date.now(),
-              })
-            }
-          }
-        })
-      }
-
       return {
-        execution: {
-          status: executionProp?.status || 'completed',
-          runId: executionId,
-          threadId: null,
-          currentStep: null,
-          error: logsResult.error?.message || null,
-          startTime: null,
-          endTime: null,
-        },
-        messages,
-        toolCalls,
-        state,
+        messages: processedLogs.messages,
+        toolCalls: processedLogs.toolCalls,
+        executionStatus: executionProp?.status || 'completed',
         error: logsResult.error,
       }
     }
-  }, [isActive, sseStream, logsResult, executionId, executionProp])
+  }, [isActive, wsStream, processedLogs, executionProp, logsResult.error])
 
   // Get last N messages
   const lastMessages = useMemo(() => {
-    const allMessages = Array.from(messages.values())
-    return allMessages.slice(-maxMessages)
+    return messages.slice(-maxMessages)
   }, [messages, maxMessages])
 
   // Get last N tool calls
   const lastToolCalls = useMemo(() => {
-    const allToolCalls = Array.from(toolCalls.values())
-    return allToolCalls.slice(-maxToolCalls)
+    return toolCalls.slice(-maxToolCalls)
   }, [toolCalls, maxToolCalls])
 
   // Calculate metrics
-  const toolCallCount = toolCalls.size
-  const messageCount = messages.size
-  const filesChanged = state.filesChanged || 0
-  const tokenUsage = state.tokenUsage || 0
-  const cost = state.cost || 0
+  const toolCallCount = toolCalls.length
+  const messageCount = messages.length
 
   // Get execution status display
   const statusInfo = useMemo(() => {
-    const status = executionProp?.status || execution.status
+    const status = executionProp?.status || executionStatus
     switch (status) {
       case 'preparing':
         return { icon: Loader2, label: 'Preparing', color: 'text-yellow-600', spin: true }
@@ -294,7 +331,7 @@ export function ExecutionPreview({
       default:
         return { icon: AlertCircle, label: 'Unknown', color: 'text-gray-600', spin: false }
     }
-  }, [executionProp, execution])
+  }, [executionProp, executionStatus])
 
   // Truncate text to N lines
   const truncateText = (text: string, lines: number): { text: string; truncated: boolean } => {
@@ -377,7 +414,7 @@ export function ExecutionPreview({
       </div>
 
       {/* Metrics */}
-      {showMetrics && (toolCallCount > 0 || messageCount > 0 || filesChanged > 0) && (
+      {showMetrics && (toolCallCount > 0 || messageCount > 0) && (
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
           {toolCallCount > 0 && (
             <span>
@@ -385,20 +422,10 @@ export function ExecutionPreview({
               {toolCallCount !== 1 ? 's' : ''}
             </span>
           )}
-          {filesChanged > 0 && (
+          {messageCount > 0 && (
             <span>
-              <span className="font-medium">{filesChanged}</span> file
-              {filesChanged !== 1 ? 's' : ''}
-            </span>
-          )}
-          {tokenUsage > 0 && (
-            <span>
-              <span className="font-medium">{tokenUsage.toLocaleString()}</span> tokens
-            </span>
-          )}
-          {cost > 0 && (
-            <span>
-              <span className="font-medium">${cost.toFixed(4)}</span>
+              <span className="font-medium">{messageCount}</span> message
+              {messageCount !== 1 ? 's' : ''}
             </span>
           )}
         </div>
@@ -409,31 +436,37 @@ export function ExecutionPreview({
         <div className="space-y-1">
           {lastToolCalls.map((toolCall) => {
             const statusBadge =
-              toolCall.status === 'completed' ? (
+              toolCall.status === 'success' ? (
                 <CheckCircle2 className="h-3 w-3 text-green-600" />
-              ) : toolCall.status === 'error' ? (
+              ) : toolCall.status === 'failed' ? (
                 <XCircle className="h-3 w-3 text-red-600" />
               ) : (
                 <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
               )
 
             const duration =
-              toolCall.endTime && toolCall.startTime
-                ? `${((toolCall.endTime - toolCall.startTime) / 1000).toFixed(1)}s`
+              toolCall.completedAt && toolCall.timestamp
+                ? `${((toolCall.completedAt.getTime() - toolCall.timestamp.getTime()) / 1000).toFixed(1)}s`
                 : null
 
+            const resultText = toolCall.result
+              ? typeof toolCall.result === 'string'
+                ? toolCall.result
+                : JSON.stringify(toolCall.result)
+              : null
+
             return (
-              <div key={toolCall.toolCallId} className="flex items-start gap-2 text-xs">
+              <div key={toolCall.id} className="flex items-start gap-2 text-xs">
                 <Wrench className="mt-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     {statusBadge}
-                    <span className="truncate font-mono font-medium">{toolCall.toolCallName}</span>
+                    <span className="truncate font-mono font-medium">{toolCall.title}</span>
                     {duration && <span className="text-muted-foreground">({duration})</span>}
                   </div>
-                  {variant === 'detailed' && toolCall.result && (
+                  {variant === 'detailed' && resultText && (
                     <div className="mt-1 text-muted-foreground">
-                      {truncateText(toolCall.result, 2).text}
+                      {truncateText(resultText, 2).text}
                     </div>
                   )}
                 </div>
@@ -455,7 +488,7 @@ export function ExecutionPreview({
           {lastMessages.map((message) => {
             const { text, truncated } = truncateText(message.content, maxLines)
             return (
-              <div key={message.messageId} className="flex items-start gap-2 text-xs">
+              <div key={message.id} className="flex items-start gap-2 text-xs">
                 <MessageSquare className="mt-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <div className="whitespace-pre-wrap break-words">{text}</div>

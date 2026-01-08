@@ -23,9 +23,9 @@ describe("AgentRegistryService", () => {
       expect(service).toBeDefined();
     });
 
-    it("should register all 4 agents", () => {
+    it("should register all 6 agents", () => {
       const agents = service.getAvailableAgents();
-      expect(agents).toHaveLength(4);
+      expect(agents).toHaveLength(6);
     });
 
     it("should register agents with correct names", () => {
@@ -33,6 +33,8 @@ describe("AgentRegistryService", () => {
       const names = agents.map((a) => a.name);
       expect(names).toContain("claude-code");
       expect(names).toContain("codex");
+      expect(names).toContain("gemini");
+      expect(names).toContain("opencode");
       expect(names).toContain("copilot");
       expect(names).toContain("cursor");
     });
@@ -62,10 +64,14 @@ describe("AgentRegistryService", () => {
     it("should mark all agents as implemented", () => {
       const agents = service.getAvailableAgents();
       const codex = agents.find((a) => a.name === "codex");
+      const gemini = agents.find((a) => a.name === "gemini");
+      const opencode = agents.find((a) => a.name === "opencode");
       const copilot = agents.find((a) => a.name === "copilot");
       const cursor = agents.find((a) => a.name === "cursor");
 
       expect(codex?.implemented).toBe(true);
+      expect(gemini?.implemented).toBe(true);
+      expect(opencode?.implemented).toBe(true);
       expect(cursor?.implemented).toBe(true);
       expect(copilot?.implemented).toBe(true);
     });
@@ -130,6 +136,14 @@ describe("AgentRegistryService", () => {
       expect(service.isAgentImplemented("codex")).toBe(true);
     });
 
+    it("should return true for Gemini", () => {
+      expect(service.isAgentImplemented("gemini")).toBe(true);
+    });
+
+    it("should return true for Opencode", () => {
+      expect(service.isAgentImplemented("opencode")).toBe(true);
+    });
+
     it("should return true for Cursor", () => {
       expect(service.isAgentImplemented("cursor")).toBe(true);
     });
@@ -143,6 +157,8 @@ describe("AgentRegistryService", () => {
     it("should return true for registered agents", () => {
       expect(service.hasAgent("claude-code")).toBe(true);
       expect(service.hasAgent("codex")).toBe(true);
+      expect(service.hasAgent("gemini")).toBe(true);
+      expect(service.hasAgent("opencode")).toBe(true);
       expect(service.hasAgent("copilot")).toBe(true);
       expect(service.hasAgent("cursor")).toBe(true);
     });

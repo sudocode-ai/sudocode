@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { ProjectContext } from '../../../src/services/project-context.js'
 import type Database from 'better-sqlite3'
-import type { TransportManager } from '../../../src/execution/transport/transport-manager.js'
 import type { ExecutionService } from '../../../src/services/execution-service.js'
 import type { ExecutionLogsStore } from '../../../src/services/execution-logs-store.js'
 import type { WorktreeManager } from '../../../src/execution/worktree/manager.js'
@@ -9,7 +8,6 @@ import type { ServerWatcherControl } from '../../../src/services/watcher.js'
 
 describe('ProjectContext', () => {
   let mockDb: Database.Database
-  let mockTransportManager: TransportManager
   let mockExecutionService: ExecutionService
   let mockLogsStore: ExecutionLogsStore
   let mockWorktreeManager: WorktreeManager
@@ -18,10 +16,6 @@ describe('ProjectContext', () => {
     // Create mock objects
     mockDb = {
       close: vi.fn(),
-    } as any
-
-    mockTransportManager = {
-      shutdown: vi.fn(),
     } as any
 
     mockExecutionService = {
@@ -40,7 +34,6 @@ describe('ProjectContext', () => {
         '/path/to/project',
         '/path/to/project/.sudocode',
         mockDb,
-        mockTransportManager,
         mockExecutionService,
         mockLogsStore,
         mockWorktreeManager
@@ -50,7 +43,6 @@ describe('ProjectContext', () => {
       expect(context.path).toBe('/path/to/project')
       expect(context.sudocodeDir).toBe('/path/to/project/.sudocode')
       expect(context.db).toBe(mockDb)
-      expect(context.transportManager).toBe(mockTransportManager)
       expect(context.executionService).toBe(mockExecutionService)
       expect(context.logsStore).toBe(mockLogsStore)
       expect(context.worktreeManager).toBe(mockWorktreeManager)
@@ -65,7 +57,6 @@ describe('ProjectContext', () => {
         '/path',
         '/path/.sudocode',
         mockDb,
-        mockTransportManager,
         mockExecutionService,
         mockLogsStore,
         mockWorktreeManager
@@ -82,7 +73,6 @@ describe('ProjectContext', () => {
         '/path',
         '/path/.sudocode',
         mockDb,
-        mockTransportManager,
         mockExecutionService,
         mockLogsStore,
         mockWorktreeManager
@@ -99,7 +89,6 @@ describe('ProjectContext', () => {
         '/path',
         '/path/.sudocode',
         mockDb,
-        mockTransportManager,
         mockExecutionService,
         mockLogsStore,
         mockWorktreeManager
@@ -121,7 +110,6 @@ describe('ProjectContext', () => {
         '/path',
         '/path/.sudocode',
         mockDb,
-        mockTransportManager,
         mockExecutionService,
         mockLogsStore,
         mockWorktreeManager
@@ -140,9 +128,6 @@ describe('ProjectContext', () => {
       // Should stop file watcher
       expect(mockWatcher.stop).toHaveBeenCalledOnce()
       expect(context.watcher).toBeNull()
-
-      // Should close transport streams
-      expect(mockTransportManager.shutdown).toHaveBeenCalledOnce()
     })
 
     it('should shutdown without watcher if not set', async () => {
@@ -151,7 +136,6 @@ describe('ProjectContext', () => {
         '/path',
         '/path/.sudocode',
         mockDb,
-        mockTransportManager,
         mockExecutionService,
         mockLogsStore,
         mockWorktreeManager
@@ -160,7 +144,6 @@ describe('ProjectContext', () => {
       await expect(context.shutdown()).resolves.toBeUndefined()
 
       expect(mockExecutionService.shutdown).toHaveBeenCalledOnce()
-      expect(mockTransportManager.shutdown).toHaveBeenCalledOnce()
     })
 
     it('should propagate errors from shutdown', async () => {
@@ -169,7 +152,6 @@ describe('ProjectContext', () => {
         '/path',
         '/path/.sudocode',
         mockDb,
-        mockTransportManager,
         mockExecutionService,
         mockLogsStore,
         mockWorktreeManager
@@ -189,7 +171,6 @@ describe('ProjectContext', () => {
         '/path/to/project',
         '/path/to/project/.sudocode',
         mockDb,
-        mockTransportManager,
         mockExecutionService,
         mockLogsStore,
         mockWorktreeManager
@@ -213,7 +194,6 @@ describe('ProjectContext', () => {
         '/path',
         '/path/.sudocode',
         mockDb,
-        mockTransportManager,
         mockExecutionService,
         mockLogsStore,
         mockWorktreeManager
@@ -236,7 +216,6 @@ describe('ProjectContext', () => {
         '/path',
         '/path/.sudocode',
         mockDb,
-        mockTransportManager,
         mockExecutionService,
         mockLogsStore,
         mockWorktreeManager
@@ -253,7 +232,6 @@ describe('ProjectContext', () => {
         '/path',
         '/path/.sudocode',
         mockDb,
-        mockTransportManager,
         mockExecutionService,
         mockLogsStore,
         mockWorktreeManager
@@ -276,7 +254,6 @@ describe('ProjectContext', () => {
         '/path',
         '/path/.sudocode',
         mockDb,
-        mockTransportManager,
         mockExecutionService,
         mockLogsStore,
         mockWorktreeManager
@@ -295,7 +272,6 @@ describe('ProjectContext', () => {
         '/path',
         '/path/.sudocode',
         mockDb,
-        mockTransportManager,
         mockExecutionService,
         mockLogsStore,
         mockWorktreeManager

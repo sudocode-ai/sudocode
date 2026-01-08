@@ -44,7 +44,7 @@ export type TTSProvider = "browser" | "kokoro" | "openai";
  * ```
  */
 export interface VoiceSettingsConfig {
-  /** Whether voice features are enabled (default: true) */
+  /** Whether voice features are enabled (default: false) */
   enabled?: boolean;
   /** Speech-to-text settings */
   stt?: {
@@ -82,6 +82,10 @@ export interface VoiceSettingsConfig {
     narrateToolResults?: boolean;
     /** Whether to narrate assistant messages (default: true) */
     narrateAssistantMessages?: boolean;
+    /** Whether to only narrate explicit speak tool calls (default: false)
+     * When true, ignores narrateToolUse, narrateToolResults, and narrateAssistantMessages
+     * and only narrates when the agent explicitly calls the speak tool */
+    narrateSpeakOnly?: boolean;
   };
 }
 

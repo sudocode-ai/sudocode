@@ -278,7 +278,7 @@ export class GitSyncCli {
     this.execGit(mergeCommand);
 
     // Create commit with provided message
-    const commitCommand = `git commit -m ${escapedMessage}`;
+    const commitCommand = `git commit --no-verify -m ${escapedMessage}`;
     this.execGit(commitCommand);
   }
 

@@ -222,4 +222,64 @@ describe("scopes", () => {
       expect(SCOPE_TOOLS["executions:write"]).toContain("cancel_execution");
     });
   });
+
+  describe("voice scope", () => {
+    it("parses voice scope", () => {
+      expect(parseScopes("voice")).toEqual(["voice"]);
+    });
+
+    it("parses voice with other scopes", () => {
+      expect(parseScopes("default,voice")).toEqual(["default", "voice"]);
+    });
+
+    it("has speak tool in voice scope", () => {
+      expect(SCOPE_TOOLS.voice).toContain("speak");
+      expect(SCOPE_TOOLS.voice).toHaveLength(1);
+    });
+
+    it("returns speak tool for voice scope", () => {
+      const tools = getToolsForScopes(new Set(["voice"]));
+      expect(tools).toContain("speak");
+      expect(tools).toHaveLength(1);
+    });
+
+    it("returns correct scope for speak tool", () => {
+      expect(getScopeForTool("speak")).toBe("voice");
+    });
+
+    it("voice scope requires server URL", () => {
+      expect(toolRequiresServer("speak")).toBe(true);
+    });
+
+    it("voice scope is excluded when no server URL", () => {
+      const enabled = new Set<any>(["default", "voice"]);
+      const usable = getUsableScopes(enabled, undefined);
+      expect(usable.has("default")).toBe(true);
+      expect(usable.has("voice")).toBe(false);
+    });
+
+    it("voice scope is included when server URL is provided", () => {
+      const enabled = new Set<any>(["default", "voice"]);
+      const usable = getUsableScopes(enabled, "http://localhost:3000");
+      expect(usable.has("default")).toBe(true);
+      expect(usable.has("voice")).toBe(true);
+    });
+
+    it("speak tool is available when voice scope is usable", () => {
+      const usable = new Set<any>(["voice"]);
+      expect(isToolAvailable("speak", usable)).toBe(true);
+    });
+
+    it("speak tool is unavailable when voice scope is not enabled", () => {
+      const usable = new Set<any>(["default"]);
+      expect(isToolAvailable("speak", usable)).toBe(false);
+    });
+
+    it("combines voice with default and other scopes", () => {
+      const tools = getToolsForScopes(new Set(["default", "voice", "overview"]));
+      expect(tools).toContain("ready");
+      expect(tools).toContain("speak");
+      expect(tools).toContain("project_status");
+    });
+  });
 });

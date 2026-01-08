@@ -13,7 +13,6 @@ import { createSpecsRouter } from "./routes/specs.js";
 import { createRelationshipsRouter } from "./routes/relationships.js";
 import { createFeedbackRouter } from "./routes/feedback.js";
 import { createExecutionsRouter } from "./routes/executions.js";
-import { createExecutionStreamRoutes } from "./routes/executions-stream.js";
 import { createEditorsRouter } from "./routes/editors.js";
 import { createProjectsRouter } from "./routes/projects.js";
 import { createConfigRouter } from "./routes/config.js";
@@ -26,7 +25,6 @@ import { createVersionRouter } from "./routes/version.js";
 import { createUpdateRouter, setServerInstance } from "./routes/update.js";
 import { createWorkflowsRouter } from "./routes/workflows.js";
 import { createVoiceRouter } from "./routes/voice.js";
-import { TransportManager } from "./execution/transport/transport-manager.js";
 import { ProjectRegistry } from "./services/project-registry.js";
 import { ProjectManager } from "./services/project-manager.js";
 import { requireProject } from "./middleware/project-context.js";
@@ -42,9 +40,6 @@ import { parseKeepAliveDuration } from "./utils/duration-parser.js";
 const app = express();
 const DEFAULT_PORT = 3000;
 const MAX_PORT_ATTEMPTS = 20;
-
-// Initialize transport manager
-let transportManager!: TransportManager;
 
 // Multi-project infrastructure
 let projectRegistry!: ProjectRegistry;
@@ -120,10 +115,6 @@ async function initialize() {
         );
       }
     }
-
-    // Initialize transport manager for SSE streaming
-    transportManager = new TransportManager();
-    console.log("Transport manager initialized");
   } catch (error) {
     console.error("Failed to initialize server:", error);
     process.exit(1);
@@ -255,14 +246,9 @@ app.get(
   }
 );
 
-// Mount execution routes (must be before stream routes to avoid conflicts)
+// Mount execution routes
 // TODO: Make these all relative to /executions
 app.use("/api", requireProject(projectManager), createExecutionsRouter());
-app.use(
-  "/api/executions",
-  requireProject(projectManager),
-  createExecutionStreamRoutes()
-);
 
 // Mount editor routes
 app.use("/api", requireProject(projectManager), createEditorsRouter());
@@ -543,12 +529,6 @@ process.on("SIGINT", async () => {
   // Shutdown WebSocket server
   await shutdownWebSocketServer();
 
-  // Shutdown transport manager
-  if (transportManager) {
-    transportManager.shutdown();
-    console.log("Transport manager shutdown complete");
-  }
-
   // Close HTTP server
   server.close(() => {
     console.log("Server closed");
@@ -579,12 +559,6 @@ process.on("SIGTERM", async () => {
   // Shutdown WebSocket server
   await shutdownWebSocketServer();
 
-  // Shutdown transport manager
-  if (transportManager) {
-    transportManager.shutdown();
-    console.log("Transport manager shutdown complete");
-  }
-
   // Close HTTP server
   server.close(() => {
     console.log("Server closed");
@@ -593,4 +567,3 @@ process.on("SIGTERM", async () => {
 });
 
 export default app;
-export { transportManager };

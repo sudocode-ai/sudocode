@@ -1264,7 +1264,7 @@ export class SequentialWorkflowEngine extends BaseWorkflowEngine {
       // Stage all changes and commit
       // Escape double quotes in message for shell safety
       const escapedMessage = message.replace(/"/g, '\\"');
-      await execAsync(`git add -A && git commit -m "${escapedMessage}"`, {
+      await execAsync(`git add -A && git commit --no-verify -m "${escapedMessage}"`, {
         cwd: workflow.worktreePath,
         maxBuffer: 10 * 1024 * 1024,
       });

@@ -120,7 +120,7 @@ export function useVoiceConfig(): VoiceConfigState {
   // Check browser support once
   const webSpeechSupported = isSpeechRecognitionSupported()
 
-  const fetchConfig = useCallback(async () => {
+  const fetchConfig = useCallback(async (signal?: AbortSignal) => {
     // Check cache first
     if (cachedConfig && Date.now() - cacheTimestamp < CACHE_TTL_MS) {
       setConfig(cachedConfig)
@@ -134,7 +134,10 @@ export function useVoiceConfig(): VoiceConfigState {
     try {
       // Single API call - returns runtime capabilities + user settings
       // Note: The API interceptor already unwraps { success, data } to just data
-      const voiceConfig = await api.get<VoiceConfig, VoiceConfig>('/voice/config')
+      const voiceConfig = await api.get<VoiceConfig, VoiceConfig>('/voice/config', { signal })
+
+      // Skip state updates if aborted (component unmounted)
+      if (signal?.aborted) return
 
       // Update cache
       cachedConfig = voiceConfig
@@ -142,26 +145,39 @@ export function useVoiceConfig(): VoiceConfigState {
 
       setConfig(voiceConfig)
     } catch (err) {
+      // Skip state updates if aborted (component unmounted)
+      if (signal?.aborted) return
+
       const message = err instanceof Error ? err.message : 'Failed to fetch voice config'
       setError(message)
       // Don't clear config on error - keep using cached value if available
     } finally {
-      setIsLoading(false)
+      // Skip state updates if aborted (component unmounted)
+      if (!signal?.aborted) {
+        setIsLoading(false)
+      }
     }
   }, [])
 
-  // Fetch on mount
+  // Fetch on mount with cleanup
   useEffect(() => {
-    fetchConfig()
+    const controller = new AbortController()
+    fetchConfig(controller.signal)
+    return () => controller.abort()
   }, [fetchConfig])
 
   // Subscribe to cache invalidation events
   useEffect(() => {
+    let controller: AbortController | null = null
     const handleCacheInvalidation = () => {
-      fetchConfig()
+      // Abort any in-flight request before starting new one
+      controller?.abort()
+      controller = new AbortController()
+      fetchConfig(controller.signal)
     }
     cacheInvalidationListeners.add(handleCacheInvalidation)
     return () => {
+      controller?.abort()
       cacheInvalidationListeners.delete(handleCacheInvalidation)
     }
   }, [fetchConfig])
