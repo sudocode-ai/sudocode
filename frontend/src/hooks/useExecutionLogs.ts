@@ -35,6 +35,15 @@ interface ContentBlock {
 }
 
 /**
+ * Plan entry (todo item) from ACP
+ */
+export interface PlanEntry {
+  content: string
+  status: 'pending' | 'in_progress' | 'completed'
+  priority: 'high' | 'medium' | 'low'
+}
+
+/**
  * Tool call status from ACP
  */
 type ToolCallStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'working' | 'incomplete'
@@ -73,6 +82,15 @@ export interface UserMessageComplete {
 }
 
 /**
+ * Plan update containing todos/tasks from Claude Code
+ */
+export interface PlanUpdateEvent {
+  sessionUpdate: 'plan'
+  entries: PlanEntry[]
+  timestamp: string | Date
+}
+
+/**
  * Union of all CoalescedSessionUpdate types
  */
 export type CoalescedSessionUpdate =
@@ -80,6 +98,7 @@ export type CoalescedSessionUpdate =
   | AgentThoughtComplete
   | ToolCallComplete
   | UserMessageComplete
+  | PlanUpdateEvent
 
 /**
  * API response shape from GET /api/executions/:id/logs
@@ -98,6 +117,10 @@ export interface ProcessedLogs {
   messages: AgentMessage[]
   toolCalls: ToolCall[]
   thoughts: AgentThought[]
+  /** Plan updates (todo list state changes) */
+  planUpdates: PlanUpdateEvent[]
+  /** Latest plan state (most recent plan update) */
+  latestPlan: PlanEntry[] | null
 }
 
 /**
@@ -163,16 +186,24 @@ function mapToolCallStatus(
 }
 
 /**
- * Process CoalescedSessionUpdate events into messages, toolCalls, and thoughts
+ * Process CoalescedSessionUpdate events into messages, toolCalls, thoughts, and plans
  */
 export function processCoalescedEvents(events: CoalescedSessionUpdate[]): ProcessedLogs {
   const messages: AgentMessage[] = []
   const toolCalls: ToolCall[] = []
   const thoughts: AgentThought[] = []
+  const planUpdates: PlanUpdateEvent[] = []
 
   let messageIndex = 0
   let toolCallIndex = 0
   let thoughtIndex = 0
+
+  // Debug: Log event types received
+  const eventTypes = events.reduce((acc, e) => {
+    acc[e.sessionUpdate] = (acc[e.sessionUpdate] || 0) + 1
+    return acc
+  }, {} as Record<string, number>)
+  console.log('[useExecutionLogs] Processing events:', events.length, 'by type:', eventTypes)
 
   for (const event of events) {
     switch (event.sessionUpdate) {
@@ -213,13 +244,24 @@ export function processCoalescedEvents(events: CoalescedSessionUpdate[]): Proces
         toolCallIndex++
         break
 
+      case 'plan':
+        // Store plan updates for todo tracking
+        planUpdates.push(event)
+        console.log('[useExecutionLogs] Plan update:', event.entries?.length, 'entries')
+        break
+
       case 'user_message_complete':
         // User messages are typically not displayed in trajectory
         break
     }
   }
 
-  return { messages, toolCalls, thoughts }
+  // Get latest plan state (last plan update)
+  const latestPlan = planUpdates.length > 0
+    ? planUpdates[planUpdates.length - 1].entries
+    : null
+
+  return { messages, toolCalls, thoughts, planUpdates, latestPlan }
 }
 
 // ============================================================================
@@ -285,6 +327,10 @@ export function useExecutionLogs(executionId: string): UseExecutionLogsResult {
         )
 
         // Store events and metadata
+        console.log('[useExecutionLogs] Received from API:', {
+          eventsCount: data.events?.length || 0,
+          format: data.format,
+        })
         setEvents(data.events || [])
         setMetadata(data.metadata)
         setFormat(data.format)

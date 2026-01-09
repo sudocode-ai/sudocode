@@ -622,7 +622,7 @@ describe('IssuePanel', () => {
       // Initial placeholder should be for continuing
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText('Continue the previous conversation... (ctrl+k for new, @ for context)')
+          screen.getByPlaceholderText('Continue the previous conversation... (ctrl+k for new, @ for context, / for commands)')
         ).toBeInTheDocument()
       })
 
@@ -632,7 +632,7 @@ describe('IssuePanel', () => {
       // After clicking, placeholder should change to new execution mode
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText('Start a new execution... (ctrl+k to continue previous, @ for context)')
+          screen.getByPlaceholderText('Start a new execution... (ctrl+k to continue previous, @ for context, / for commands)')
         ).toBeInTheDocument()
       })
     })
@@ -669,7 +669,7 @@ describe('IssuePanel', () => {
       // Should show follow-up placeholder (meaning it found the child execution to continue)
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText('Continue the previous conversation... (ctrl+k for new, @ for context)')
+          screen.getByPlaceholderText('Continue the previous conversation... (ctrl+k for new, @ for context, / for commands)')
         ).toBeInTheDocument()
       })
 

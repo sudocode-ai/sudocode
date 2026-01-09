@@ -31,8 +31,11 @@ import { useProject } from '@/hooks/useProject'
 import { useAgentActions } from '@/hooks/useAgentActions'
 import { useWorktrees } from '@/hooks/useWorktrees'
 import { useVoiceConfig } from '@/hooks/useVoiceConfig'
+import { useAgentCommands } from '@/hooks/useAgentCommands'
 import type { CodexConfig } from './CodexConfigForm'
 import type { CopilotConfig } from './CopilotConfigForm'
+import type { GeminiConfig } from './GeminiConfigForm'
+import type { OpencodeConfig } from './OpencodeConfigForm'
 
 interface AgentConfigPanelProps {
   /**
@@ -130,11 +133,21 @@ interface AgentConfigPanelProps {
    * Default prompt to pre-populate the textarea
    */
   defaultPrompt?: string
+  /**
+   * Available slash commands from the agent (for autocomplete)
+   */
+  availableCommands?: import('@/hooks/useSessionUpdateStream').AvailableCommand[]
 }
 
 // TODO: Move this somewhere more central.
 // Map of default agent-specific configurations
+// Note: For claude-code, dangerouslySkipPermissions is loaded from localStorage
+// via getDefaultAgentConfig() to persist user preference
 const DEFAULT_AGENT_CONFIGS: Record<string, any> = {
+  'claude-code': {
+    dangerouslySkipPermissions: false, // Will be overridden by getDefaultAgentConfig()
+    restrictToWorkDir: true,
+  },
   codex: {
     fullAuto: true,
     search: true,
@@ -149,16 +162,58 @@ const DEFAULT_AGENT_CONFIGS: Record<string, any> = {
     model: 'claude-sonnet-4.5',
   } as CopilotConfig,
   gemini: {
-    // Gemini CLI defaults
-  },
+    sandbox: false,
+    yolo: false,
+  } as GeminiConfig,
   opencode: {
-    // Opencode defaults
-  },
+    dangerouslySkipPermissions: false,
+  } as OpencodeConfig,
 }
 
 // localStorage keys for persisting config
 const LAST_EXECUTION_CONFIG_KEY = 'sudocode:lastExecutionConfig'
 const LAST_AGENT_TYPE_KEY = 'sudocode:lastAgentType'
+const SKIP_PERMISSIONS_KEY = 'sudocode:skipPermissions'
+
+/**
+ * Load skip permissions setting from localStorage
+ */
+function loadSkipPermissionsSetting(): boolean {
+  try {
+    const saved = localStorage.getItem(SKIP_PERMISSIONS_KEY)
+    return saved === 'true'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Save skip permissions setting to localStorage
+ */
+function saveSkipPermissionsSetting(value: boolean): void {
+  try {
+    localStorage.setItem(SKIP_PERMISSIONS_KEY, String(value))
+  } catch (error) {
+    console.warn('Failed to save skip permissions setting:', error)
+  }
+}
+
+/**
+ * Get default agent config, merging in any persisted settings from localStorage
+ */
+function getDefaultAgentConfig(agentType: string): any {
+  const baseConfig = DEFAULT_AGENT_CONFIGS[agentType] ?? {}
+
+  // For claude-code, merge in the persisted skip permissions setting
+  if (agentType === 'claude-code') {
+    return {
+      ...baseConfig,
+      dangerouslySkipPermissions: loadSkipPermissionsSetting(),
+    }
+  }
+
+  return baseConfig
+}
 
 /**
  * Get verification status icon and color for an agent
@@ -198,6 +253,20 @@ function getAgentVerificationStatus(agent: any) {
     color: 'text-destructive',
     tooltip: agent.verificationError || 'Warning: Agent CLI not found in PATH',
   }
+}
+
+/**
+ * Sanitizes a config object by removing deprecated top-level fields.
+ * These fields have been moved to agentConfig and should not persist at top-level.
+ */
+function sanitizeConfig(config: any): any {
+  if (!config || typeof config !== 'object') return config
+
+  // Remove deprecated top-level fields that have moved to agentConfig
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { dangerouslySkipPermissions, ...rest } = config
+
+  return rest
 }
 
 /**
@@ -286,6 +355,7 @@ export function AgentConfigPanel({
   commitsAhead,
   worktreeExists = true,
   defaultPrompt,
+  availableCommands = [],
 }: AgentConfigPanelProps) {
   const [loading, setLoading] = useState(false)
   const [prompt, setPrompt] = useState(defaultPrompt || '')
@@ -308,8 +378,10 @@ export function AgentConfigPanel({
   const [config, setConfig] = useState<ExecutionConfig>(() => {
     // Try to use last execution config (works for both follow-up and new execution modes)
     if (lastExecution?.config) {
+      // Sanitize to remove deprecated top-level fields
+      const sanitizedConfig = sanitizeConfig(lastExecution.config)
       const executionConfig = {
-        ...lastExecution.config,
+        ...sanitizedConfig,
         mode: (lastExecution.mode as ExecutionMode) || 'worktree',
         baseBranch: lastExecution.target_branch,
       }
@@ -331,8 +403,10 @@ export function AgentConfigPanel({
       const savedConfigStr = localStorage.getItem(LAST_EXECUTION_CONFIG_KEY)
       if (savedConfigStr) {
         const parsed = JSON.parse(savedConfigStr)
-        if (isValidExecutionConfig(parsed)) {
-          savedConfig = parsed
+        // Sanitize to remove deprecated top-level fields
+        const sanitized = sanitizeConfig(parsed)
+        if (isValidExecutionConfig(sanitized)) {
+          savedConfig = sanitized
         } else {
           console.warn('Saved config is invalid, clearing localStorage')
           localStorage.removeItem(LAST_EXECUTION_CONFIG_KEY)
@@ -387,6 +461,36 @@ export function AgentConfigPanel({
 
   // Fetch available agents
   const { agents, loading: agentsLoading } = useAgents()
+
+  // Agent command discovery (for slash command autocomplete)
+  const {
+    getCommands: getCachedCommands,
+    discoverCommands,
+    refreshCommands,
+    updateCache: updateCommandsCache,
+    isDiscovering: isDiscoveringCommands,
+  } = useAgentCommands()
+
+  // Merge WebSocket commands (prop) with discovered commands (cache)
+  // WebSocket commands take priority as they are more recent
+  const effectiveCommands = useMemo(() => {
+    if (availableCommands.length > 0) {
+      // WebSocket provided commands - update cache and use them
+      updateCommandsCache(selectedAgentType, availableCommands)
+      return availableCommands
+    }
+    return getCachedCommands(selectedAgentType) ?? []
+  }, [availableCommands, selectedAgentType, getCachedCommands, updateCommandsCache])
+
+  // Handler to trigger command discovery when "/" is typed
+  const handleDiscoverCommands = useCallback(() => {
+    discoverCommands(selectedAgentType)
+  }, [discoverCommands, selectedAgentType])
+
+  // Handler to refresh commands (bypass cache)
+  const handleRefreshCommands = useCallback(() => {
+    refreshCommands(selectedAgentType)
+  }, [refreshCommands, selectedAgentType])
 
   // Get contextual actions based on execution state
   // Actions are handled internally by the hook
@@ -465,8 +569,10 @@ export function AgentConfigPanel({
     const loadConfigForIssue = (): ExecutionConfig => {
       // Try last execution config first
       if (lastExecution?.config) {
+        // Sanitize to remove deprecated top-level fields
+        const sanitizedConfig = sanitizeConfig(lastExecution.config)
         const executionConfig = {
-          ...lastExecution.config,
+          ...sanitizedConfig,
           mode: (lastExecution.mode as ExecutionMode) || 'worktree',
           baseBranch: lastExecution.target_branch,
         }
@@ -488,8 +594,10 @@ export function AgentConfigPanel({
         const savedConfigStr = localStorage.getItem(LAST_EXECUTION_CONFIG_KEY)
         if (savedConfigStr) {
           const parsed = JSON.parse(savedConfigStr)
-          if (isValidExecutionConfig(parsed)) {
-            savedConfig = parsed
+          // Sanitize to remove deprecated top-level fields
+          const sanitized = sanitizeConfig(parsed)
+          if (isValidExecutionConfig(sanitized)) {
+            savedConfig = sanitized
           } else {
             console.warn('Saved config is invalid, clearing localStorage')
             localStorage.removeItem(LAST_EXECUTION_CONFIG_KEY)
@@ -647,22 +755,70 @@ export function AgentConfigPanel({
     setConfig({ ...config, ...updates })
   }
 
-  // When agent type changes, initialize agentConfig with defaults if not present
+  // When agent type changes, reset agentConfig to defaults for the new agent
+  // This ensures we don't carry over config from a different agent type
+  const prevAgentTypeRef = useRef<string | undefined>(selectedAgentType)
   useEffect(() => {
-    if (selectedAgentType && !config.agentConfig) {
-      const defaultAgentConfig = DEFAULT_AGENT_CONFIGS[selectedAgentType]
-      if (defaultAgentConfig) {
+    const prevAgentType = prevAgentTypeRef.current
+    prevAgentTypeRef.current = selectedAgentType
+
+    if (selectedAgentType) {
+      // Always reset agentConfig when agent type changes
+      const agentChanged = prevAgentType !== undefined && prevAgentType !== selectedAgentType
+      const needsInit = !config.agentConfig || agentChanged
+
+      if (needsInit) {
+        // Use getDefaultAgentConfig to include localStorage-persisted settings
+        const defaultAgentConfig = getDefaultAgentConfig(selectedAgentType)
         updateConfig({ agentConfig: defaultAgentConfig })
       }
     }
   }, [selectedAgentType])
 
+  // Persist skip permissions setting to localStorage whenever it changes
+  useEffect(() => {
+    if (selectedAgentType === 'claude-code' && config.agentConfig) {
+      const skipPerms = config.agentConfig.dangerouslySkipPermissions ?? false
+      saveSkipPermissionsSetting(skipPerms)
+    }
+  }, [selectedAgentType, config.agentConfig?.dangerouslySkipPermissions])
+
+  // Sync agentConfig from lastExecution when it changes (handles skip-all-permissions)
+  // This is needed because the main config reset useEffect skips in follow-up mode
+  useEffect(() => {
+    if (!lastExecution?.config) return
+
+    // Parse config if it's a string
+    const parsedConfig =
+      typeof lastExecution.config === 'string'
+        ? JSON.parse(lastExecution.config)
+        : lastExecution.config
+
+    // Check if lastExecution has agentConfig with dangerouslySkipPermissions
+    const lastAgentConfig = parsedConfig?.agentConfig
+    if (lastAgentConfig?.dangerouslySkipPermissions !== undefined) {
+      const lastSkipPerms = lastAgentConfig.dangerouslySkipPermissions
+
+      // Only update if different from current config
+      if (config.agentConfig?.dangerouslySkipPermissions !== lastSkipPerms) {
+        updateConfig({
+          agentConfig: {
+            ...config.agentConfig,
+            dangerouslySkipPermissions: lastSkipPerms,
+          },
+        })
+      }
+    }
+  }, [lastExecution?.config, lastExecution?.id])
+
   const handleStart = () => {
     // Save config and agent type to localStorage for future executions
     // Only save if config is valid to prevent persisting corrupted data
-    if (isValidExecutionConfig(config)) {
+    // Sanitize before saving to ensure deprecated fields are not persisted
+    const sanitizedConfig = sanitizeConfig(config)
+    if (isValidExecutionConfig(sanitizedConfig)) {
       try {
-        localStorage.setItem(LAST_EXECUTION_CONFIG_KEY, JSON.stringify(config))
+        localStorage.setItem(LAST_EXECUTION_CONFIG_KEY, JSON.stringify(sanitizedConfig))
         localStorage.setItem(LAST_AGENT_TYPE_KEY, selectedAgentType)
       } catch (error) {
         console.warn('Failed to save execution config to localStorage:', error)
@@ -761,13 +917,17 @@ export function AgentConfigPanel({
             placeholder={
               isRunning
                 ? 'Execution is running (esc to cancel)'
-                : promptPlaceholder || 'Send feedback to the agent... (@ for context)'
+                : promptPlaceholder || 'Send feedback to the agent... (@ for context, / for commands)'
             }
             disabled={loading || disabled}
             className="max-h-[150px] min-h-0 resize-none overflow-y-auto border-none bg-muted/80 py-2 text-sm shadow-none transition-[height] duration-100 focus-visible:ring-0 focus-visible:ring-offset-0"
             projectId={currentProjectId || ''}
             autoResize
             maxHeight={150}
+            availableCommands={effectiveCommands}
+            onDiscoverCommands={handleDiscoverCommands}
+            isLoadingCommands={isDiscoveringCommands}
+            onRefreshCommands={handleRefreshCommands}
           />
         </div>
         <TooltipProvider>
@@ -860,22 +1020,26 @@ export function AgentConfigPanel({
                   : isFollowUp
                     ? forceNewExecution
                       ? isWorktreeCleaned
-                        ? 'Worktree cleaned up. Start a new execution... (@ for context)'
+                        ? 'Worktree cleaned up. Start a new execution... (@ for context, / for commands)'
                         : allowModeToggle
-                          ? 'Start a new execution... (ctrl+k to continue previous, @ for context)'
-                          : 'Start a new execution... (@ for context)'
+                          ? 'Start a new execution... (ctrl+k to continue previous, @ for context, / for commands)'
+                          : 'Start a new execution... (@ for context, / for commands)'
                       : allowModeToggle
-                        ? 'Continue the previous conversation... (ctrl+k for new, @ for context)'
-                        : 'Continue the previous conversation... (@ for context)'
+                        ? 'Continue the previous conversation... (ctrl+k for new, @ for context, / for commands)'
+                        : 'Continue the previous conversation... (@ for context, / for commands)'
                     : issueId
-                      ? 'Add additional context (optional) for the agent... (@ for context)'
-                      : 'Enter a prompt for the agent... (@ for context)')
+                      ? 'Add additional context (optional) for the agent... (@ for context, / for commands)'
+                      : 'Enter a prompt for the agent... (@ for context, / for commands)')
           }
           disabled={loading || disabled}
           className="max-h-[300px] min-h-0 resize-none overflow-y-auto border-none bg-muted/80 py-2 text-sm shadow-none transition-[height] duration-100 focus-visible:ring-0 focus-visible:ring-offset-0"
           projectId={currentProjectId || ''}
           autoResize
           maxHeight={300}
+          availableCommands={effectiveCommands}
+          onDiscoverCommands={handleDiscoverCommands}
+          isLoadingCommands={isDiscoveringCommands}
+          onRefreshCommands={handleRefreshCommands}
         />
       </div>
 

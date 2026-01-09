@@ -12,6 +12,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useWebSocketContext } from '@/contexts/WebSocketContext'
 import type { WebSocketMessage, Execution } from '@/types/api'
+import type { PermissionRequest } from '@/types/permissions'
 
 // ============================================================================
 // Types
@@ -35,6 +36,14 @@ export interface AgentMessage {
 }
 
 /**
+ * Content produced by a tool call (from ACP)
+ */
+export type ToolCallContentItem =
+  | { type: 'content'; content: { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string } }
+  | { type: 'diff'; path: string; oldText?: string | null; newText: string }
+  | { type: 'terminal'; terminalId: string }
+
+/**
  * Tool call tracking
  */
 export interface ToolCall {
@@ -44,6 +53,8 @@ export interface ToolCall {
   result?: unknown
   rawInput?: unknown
   rawOutput?: unknown
+  /** Structured content from tool call (ACP content field) */
+  content?: ToolCallContentItem[]
   timestamp: Date
   completedAt?: Date
   /** Optional index for stable ordering when timestamps are equal */
@@ -58,6 +69,44 @@ export interface AgentThought {
   content: string
   timestamp: Date
   isStreaming?: boolean
+  /** Optional index for stable ordering when timestamps are equal */
+  index?: number
+}
+
+/**
+ * Available command input specification from ACP
+ */
+export interface AvailableCommandInput {
+  hint: string
+}
+
+/**
+ * Available slash command from ACP
+ * Agents advertise these via available_commands_update session notifications
+ */
+export interface AvailableCommand {
+  name: string
+  description: string
+  input?: AvailableCommandInput
+}
+
+/**
+ * Plan entry (todo item) from Claude Code's TodoWrite tool
+ * Exposed via ACP 'plan' session updates (not tool_call events)
+ */
+export interface PlanEntry {
+  content: string
+  status: 'pending' | 'in_progress' | 'completed'
+  priority: 'high' | 'medium' | 'low'
+}
+
+/**
+ * Plan update event from ACP
+ */
+export interface PlanUpdateEvent {
+  id: string
+  entries: PlanEntry[]
+  timestamp: Date
   /** Optional index for stable ordering when timestamps are equal */
   index?: number
 }
@@ -92,6 +141,8 @@ export interface UseSessionUpdateStreamOptions {
     onMessage?: (message: AgentMessage) => void
     onToolCall?: (toolCall: ToolCall) => void
     onThought?: (thought: AgentThought) => void
+    onPermissionRequest?: (request: PermissionRequest) => void
+    onPlanUpdate?: (planUpdate: PlanUpdateEvent) => void
   }
 }
 
@@ -109,6 +160,16 @@ export interface UseSessionUpdateStreamResult {
   toolCalls: ToolCall[]
   /** Agent thoughts/reasoning */
   thoughts: AgentThought[]
+  /** Plan updates (todo list state changes from Claude Code) */
+  planUpdates: PlanUpdateEvent[]
+  /** Latest plan state (most recent plan update) */
+  latestPlan: PlanEntry[] | null
+  /** Pending permission requests */
+  permissionRequests: PermissionRequest[]
+  /** Mark a permission request as responded (call after REST API success) */
+  markPermissionResponded: (requestId: string, selectedOptionId: string) => void
+  /** Available slash commands advertised by the agent */
+  availableCommands: AvailableCommand[]
   /** Whether currently receiving streaming updates */
   isStreaming: boolean
   /** Error if any */
@@ -160,6 +221,7 @@ interface ToolCallEvent {
   status?: ToolCallStatus
   rawInput?: unknown
   rawOutput?: unknown
+  content?: ToolCallContentItem[]
 }
 
 interface ToolCallUpdateEvent {
@@ -169,6 +231,7 @@ interface ToolCallUpdateEvent {
   status?: ToolCallStatus | null
   rawInput?: unknown
   rawOutput?: unknown
+  content?: ToolCallContentItem[] | null
 }
 
 /**
@@ -196,8 +259,59 @@ interface ToolCallComplete {
   result?: unknown
   rawInput?: unknown
   rawOutput?: unknown
+  content?: ToolCallContentItem[]
   timestamp: string | Date
   completedAt?: string | Date
+}
+
+/**
+ * Permission request event from ACP interactive mode
+ */
+interface PermissionRequestEvent {
+  sessionUpdate: 'permission_request'
+  requestId: string
+  sessionId: string
+  toolCall: {
+    toolCallId: string
+    title: string
+    status: string
+    rawInput?: unknown
+  }
+  options: Array<{
+    optionId: string
+    name: string
+    kind: 'allow_once' | 'allow_always' | 'deny_once' | 'deny_always'
+  }>
+}
+
+/**
+ * Plan event from ACP - contains Claude Code's todo list state
+ * This is how TodoWrite operations are exposed (NOT via tool_call events)
+ */
+interface PlanEvent {
+  sessionUpdate: 'plan'
+  plan?: {
+    entries?: Array<{
+      content: string
+      status: string
+      priority: string
+    }>
+  }
+}
+
+/**
+ * Available commands update event from ACP
+ * Agents advertise slash commands via this session notification
+ */
+interface AvailableCommandsUpdateEvent {
+  sessionUpdate: 'available_commands_update'
+  commands: Array<{
+    name: string
+    description: string
+    input?: {
+      hint: string
+    }
+  }>
 }
 
 /**
@@ -211,6 +325,9 @@ type SessionUpdate =
   | AgentMessageComplete
   | AgentThoughtComplete
   | ToolCallComplete
+  | PermissionRequestEvent
+  | PlanEvent
+  | AvailableCommandsUpdateEvent
 
 /**
  * WebSocket session_update message payload
@@ -346,6 +463,11 @@ export function useSessionUpdateStream(
   const [messages, setMessages] = useState<Map<string, AgentMessage>>(new Map())
   const [toolCalls, setToolCalls] = useState<Map<string, ToolCall>>(new Map())
   const [thoughts, setThoughts] = useState<Map<string, AgentThought>>(new Map())
+  const [permissionRequests, setPermissionRequests] = useState<Map<string, PermissionRequest>>(
+    new Map()
+  )
+  const [planUpdates, setPlanUpdates] = useState<Map<string, PlanUpdateEvent>>(new Map())
+  const [availableCommands, setAvailableCommands] = useState<AvailableCommand[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<Error | null>(null)
   const [execution, setExecution] = useState<ExecutionState>(initialExecutionState)
@@ -354,6 +476,11 @@ export function useSessionUpdateStream(
   const currentMessageIdRef = useRef<string | null>(null)
   const currentThoughtIdRef = useRef<string | null>(null)
   const onEventRef = useRef(onEvent)
+
+  // Counter for stable ordering of events during streaming
+  const eventIndexRef = useRef(0)
+  // Track assigned indices for tool calls (to handle tool_call vs tool_call_complete race)
+  const toolCallIndicesRef = useRef(new Map<string, number>())
 
   // Update ref when onEvent changes
   useEffect(() => {
@@ -377,35 +504,56 @@ export function useSessionUpdateStream(
    * Process a SessionUpdate event
    */
   const processUpdate = useCallback((update: SessionUpdate) => {
+    // Debug: Log received events (but throttle to avoid spam)
+    const eventType = update.sessionUpdate
+    if (eventType === 'tool_call' || eventType === 'tool_call_update' || eventType === 'tool_call_complete') {
+      console.log('[useSessionUpdateStream] Received tool call event:', eventType, {
+        toolCallId: (update as { toolCallId?: string }).toolCallId,
+        title: (update as { title?: string }).title,
+        status: (update as { status?: string }).status,
+      })
+    }
+
     switch (update.sessionUpdate) {
       // Streaming: agent_message_chunk
       case 'agent_message_chunk': {
         setIsStreaming(true)
         const text = getTextFromContentBlock(update.content)
 
+        // Check if we need to start a new streaming message (sync check via ref)
+        const needsNewMessage = !currentMessageIdRef.current
+        let assignedIndex: number | undefined
+        let newMessageId: string | undefined
+
+        if (needsNewMessage) {
+          // Assign index synchronously before setState to ensure correct ordering
+          assignedIndex = eventIndexRef.current++
+          newMessageId = generateStreamId('msg')
+          currentMessageIdRef.current = newMessageId
+        }
+
         setMessages((prev) => {
           const next = new Map(prev)
+          const messageId = currentMessageIdRef.current!
 
-          // Get or create current streaming message
-          let messageId = currentMessageIdRef.current
-          if (!messageId || !next.has(messageId) || !next.get(messageId)?.isStreaming) {
-            // Start a new streaming message
-            messageId = generateStreamId('msg')
-            currentMessageIdRef.current = messageId
+          // Check if message exists and is streaming (may have been finalized)
+          const existing = next.get(messageId)
+          if (!existing || !existing.isStreaming) {
+            // Create new streaming message with pre-assigned index
             next.set(messageId, {
               id: messageId,
-              content: '',
+              content: text,
               timestamp: new Date(),
               isStreaming: true,
+              index: assignedIndex,
+            })
+          } else {
+            // Append text to current message
+            next.set(messageId, {
+              ...existing,
+              content: existing.content + text,
             })
           }
-
-          // Append text to current message
-          const existing = next.get(messageId)!
-          next.set(messageId, {
-            ...existing,
-            content: existing.content + text,
-          })
 
           return next
         })
@@ -416,7 +564,10 @@ export function useSessionUpdateStream(
       case 'agent_message_complete': {
         const text = getTextFromContentBlock(update.content)
         // Use provided messageId (from legacy agents) or current streaming ID or generate new
+        const isNewMessage = !update.messageId && !currentMessageIdRef.current
         const messageId = update.messageId || currentMessageIdRef.current || generateStreamId('msg')
+        // Assign index only for brand new messages (existing streaming messages already have an index)
+        const assignedIndex = isNewMessage ? eventIndexRef.current++ : undefined
 
         setMessages((prev) => {
           const next = new Map(prev)
@@ -424,18 +575,20 @@ export function useSessionUpdateStream(
 
           if (existing) {
             // Update existing message (for legacy agent cumulative updates)
+            // Preserve existing index
             next.set(messageId, {
               ...existing,
               content: text || existing.content,
               isStreaming: false,
             })
           } else {
-            // Add complete message directly
+            // Add complete message directly with new index
             next.set(messageId, {
               id: messageId,
               content: text,
               timestamp: parseDate(update.timestamp),
               isStreaming: false,
+              index: assignedIndex,
             })
           }
 
@@ -456,29 +609,38 @@ export function useSessionUpdateStream(
         setIsStreaming(true)
         const text = getTextFromContentBlock(update.content)
 
+        // Check if we need to start a new streaming thought (sync check via ref)
+        const needsNewThought = !currentThoughtIdRef.current
+        let assignedIndex: number | undefined
+
+        if (needsNewThought) {
+          // Assign index synchronously before setState to ensure correct ordering
+          assignedIndex = eventIndexRef.current++
+          currentThoughtIdRef.current = generateStreamId('thought')
+        }
+
         setThoughts((prev) => {
           const next = new Map(prev)
+          const thoughtId = currentThoughtIdRef.current!
 
-          // Get or create current streaming thought
-          let thoughtId = currentThoughtIdRef.current
-          if (!thoughtId || !next.has(thoughtId) || !next.get(thoughtId)?.isStreaming) {
-            // Start a new streaming thought
-            thoughtId = generateStreamId('thought')
-            currentThoughtIdRef.current = thoughtId
+          // Check if thought exists and is streaming (may have been finalized)
+          const existing = next.get(thoughtId)
+          if (!existing || !existing.isStreaming) {
+            // Create new streaming thought with pre-assigned index
             next.set(thoughtId, {
               id: thoughtId,
-              content: '',
+              content: text,
               timestamp: new Date(),
               isStreaming: true,
+              index: assignedIndex,
+            })
+          } else {
+            // Append text to current thought
+            next.set(thoughtId, {
+              ...existing,
+              content: existing.content + text,
             })
           }
-
-          // Append text to current thought
-          const existing = next.get(thoughtId)!
-          next.set(thoughtId, {
-            ...existing,
-            content: existing.content + text,
-          })
 
           return next
         })
@@ -488,26 +650,30 @@ export function useSessionUpdateStream(
       // Coalesced: agent_thought_complete
       case 'agent_thought_complete': {
         const text = getTextFromContentBlock(update.content)
+        const isNewThought = !currentThoughtIdRef.current
         const thoughtId = currentThoughtIdRef.current || generateStreamId('thought')
+        // Assign index only for brand new thoughts (existing streaming thoughts already have an index)
+        const assignedIndex = isNewThought ? eventIndexRef.current++ : undefined
 
         setThoughts((prev) => {
           const next = new Map(prev)
           const existing = next.get(thoughtId)
 
           if (existing) {
-            // Finalize streaming thought
+            // Finalize streaming thought - preserve existing index
             next.set(thoughtId, {
               ...existing,
               content: text || existing.content,
               isStreaming: false,
             })
           } else {
-            // Add complete thought directly
+            // Add complete thought directly with new index
             next.set(thoughtId, {
               id: thoughtId,
               content: text,
               timestamp: parseDate(update.timestamp),
               isStreaming: false,
+              index: assignedIndex,
             })
           }
 
@@ -522,7 +688,42 @@ export function useSessionUpdateStream(
 
       // Streaming: tool_call (new tool call started)
       case 'tool_call': {
+        // Finalize any current streaming message - a tool call starting means
+        // the previous message is complete. This ensures proper message boundaries.
+        if (currentMessageIdRef.current) {
+          const messageIdToFinalize = currentMessageIdRef.current
+          setMessages((prev) => {
+            const next = new Map(prev)
+            const existing = next.get(messageIdToFinalize)
+            if (existing && existing.isStreaming) {
+              next.set(messageIdToFinalize, { ...existing, isStreaming: false })
+            }
+            return next
+          })
+          currentMessageIdRef.current = null
+        }
+
+        // Also finalize any current streaming thought
+        if (currentThoughtIdRef.current) {
+          const thoughtIdToFinalize = currentThoughtIdRef.current
+          setThoughts((prev) => {
+            const next = new Map(prev)
+            const existing = next.get(thoughtIdToFinalize)
+            if (existing && existing.isStreaming) {
+              next.set(thoughtIdToFinalize, { ...existing, isStreaming: false })
+            }
+            return next
+          })
+          currentThoughtIdRef.current = null
+        }
+
         const toolId = update.toolCallId
+        // Assign index synchronously and track it for this tool call
+        let assignedIndex = toolCallIndicesRef.current.get(toolId)
+        if (assignedIndex === undefined) {
+          assignedIndex = eventIndexRef.current++
+          toolCallIndicesRef.current.set(toolId, assignedIndex)
+        }
 
         setToolCalls((prev) => {
           const next = new Map(prev)
@@ -532,7 +733,9 @@ export function useSessionUpdateStream(
             status: mapToolCallStatus(update.status),
             rawInput: update.rawInput,
             rawOutput: update.rawOutput,
+            content: update.content as ToolCallContentItem[] | undefined,
             timestamp: new Date(),
+            index: assignedIndex,
           })
           return next
         })
@@ -548,12 +751,14 @@ export function useSessionUpdateStream(
           const existing = next.get(toolId)
 
           if (existing) {
+            // Preserve existing index
             next.set(toolId, {
               ...existing,
               title: update.title ?? existing.title,
               status: update.status ? mapToolCallStatus(update.status) : existing.status,
               rawInput: update.rawInput ?? existing.rawInput,
               rawOutput: update.rawOutput ?? existing.rawOutput,
+              content: update.content ? (update.content as ToolCallContentItem[]) : existing.content,
               completedAt:
                 update.status === 'completed' || update.status === 'failed'
                   ? new Date()
@@ -568,7 +773,42 @@ export function useSessionUpdateStream(
 
       // Coalesced: tool_call_complete (final tool call state)
       case 'tool_call_complete': {
+        // Finalize any current streaming message - ensures proper message boundaries
+        // even when tool_call_complete arrives directly (e.g., from stored logs)
+        if (currentMessageIdRef.current) {
+          const messageIdToFinalize = currentMessageIdRef.current
+          setMessages((prev) => {
+            const next = new Map(prev)
+            const existing = next.get(messageIdToFinalize)
+            if (existing && existing.isStreaming) {
+              next.set(messageIdToFinalize, { ...existing, isStreaming: false })
+            }
+            return next
+          })
+          currentMessageIdRef.current = null
+        }
+
+        // Also finalize any current streaming thought
+        if (currentThoughtIdRef.current) {
+          const thoughtIdToFinalize = currentThoughtIdRef.current
+          setThoughts((prev) => {
+            const next = new Map(prev)
+            const existing = next.get(thoughtIdToFinalize)
+            if (existing && existing.isStreaming) {
+              next.set(thoughtIdToFinalize, { ...existing, isStreaming: false })
+            }
+            return next
+          })
+          currentThoughtIdRef.current = null
+        }
+
         const toolId = update.toolCallId
+        // Get existing index from tracking map or assign new one
+        let assignedIndex = toolCallIndicesRef.current.get(toolId)
+        if (assignedIndex === undefined) {
+          assignedIndex = eventIndexRef.current++
+          toolCallIndicesRef.current.set(toolId, assignedIndex)
+        }
 
         setToolCalls((prev) => {
           const next = new Map(prev)
@@ -579,14 +819,120 @@ export function useSessionUpdateStream(
             result: update.result,
             rawInput: update.rawInput,
             rawOutput: update.rawOutput,
+            content: update.content as ToolCallContentItem[] | undefined,
             timestamp: parseDate(update.timestamp),
             completedAt: update.completedAt ? parseDate(update.completedAt) : undefined,
+            index: assignedIndex,
           })
           return next
         })
         break
       }
+
+      // Interactive mode: permission_request
+      case 'permission_request': {
+        // Assign index synchronously for stable ordering
+        const assignedIndex = eventIndexRef.current++
+
+        const request: PermissionRequest = {
+          requestId: update.requestId,
+          sessionId: update.sessionId,
+          toolCall: {
+            toolCallId: update.toolCall.toolCallId,
+            title: update.toolCall.title,
+            status: update.toolCall.status,
+            rawInput: update.toolCall.rawInput,
+          },
+          options: update.options,
+          responded: false,
+          timestamp: new Date(),
+          index: assignedIndex,
+        }
+
+        setPermissionRequests((prev) => {
+          const next = new Map(prev)
+          next.set(update.requestId, request)
+          return next
+        })
+
+        // Trigger callback
+        if (onEventRef.current?.onPermissionRequest) {
+          onEventRef.current.onPermissionRequest(request)
+        }
+        break
+      }
+
+      // Plan updates from Claude Code's TodoWrite tool
+      // ACP plan structure: { sessionUpdate: "plan", entries: [...] } - entries are directly on update
+      case 'plan': {
+        // Parse plan entries from ACP format - entries are directly on the update object
+        const planData = update as { entries?: Array<{ content: string; status: string; priority: string }> }
+        const entries = planData.entries?.map((e) => ({
+          content: e.content,
+          status: e.status as 'pending' | 'in_progress' | 'completed',
+          priority: e.priority as 'high' | 'medium' | 'low',
+        })) || []
+
+        if (entries.length > 0) {
+          // Assign index synchronously for stable ordering
+          const assignedIndex = eventIndexRef.current++
+          const planId = generateStreamId('plan')
+
+          const planUpdate: PlanUpdateEvent = {
+            id: planId,
+            entries,
+            timestamp: new Date(),
+            index: assignedIndex,
+          }
+
+          setPlanUpdates((prev) => {
+            const next = new Map(prev)
+            next.set(planId, planUpdate)
+            return next
+          })
+
+          // Trigger callback
+          if (onEventRef.current?.onPlanUpdate) {
+            onEventRef.current.onPlanUpdate(planUpdate)
+          }
+        }
+        break
+      }
+
+      // Available commands update from agent
+      // Agents advertise slash commands via this session notification
+      case 'available_commands_update': {
+        const commandsData = update as AvailableCommandsUpdateEvent
+        if (commandsData.commands && Array.isArray(commandsData.commands)) {
+          const commands: AvailableCommand[] = commandsData.commands.map((cmd) => ({
+            name: cmd.name,
+            description: cmd.description,
+            input: cmd.input,
+          }))
+          setAvailableCommands(commands)
+        }
+        break
+      }
     }
+  }, [])
+
+  /**
+   * Mark a permission request as responded
+   * Call this after successfully responding via REST API
+   */
+  const markPermissionResponded = useCallback((requestId: string, selectedOptionId: string) => {
+    setPermissionRequests((prev) => {
+      const next = new Map(prev)
+      const existing = next.get(requestId)
+      if (existing) {
+        next.set(requestId, {
+          ...existing,
+          responded: true,
+          selectedOptionId,
+        })
+      }
+      return next
+    })
   }, [])
 
   /**
@@ -731,11 +1077,16 @@ export function useSessionUpdateStream(
     setMessages(new Map())
     setToolCalls(new Map())
     setThoughts(new Map())
+    setPermissionRequests(new Map())
+    setPlanUpdates(new Map())
+    setAvailableCommands([])
     setIsStreaming(false)
     setError(null)
     setExecution(initialExecutionState)
     currentMessageIdRef.current = null
     currentThoughtIdRef.current = null
+    eventIndexRef.current = 0
+    toolCallIndicesRef.current = new Map()
 
     // Subscribe to execution updates
     subscribe('execution', executionId)
@@ -755,6 +1106,21 @@ export function useSessionUpdateStream(
   const messagesArray = useMemo(() => Array.from(messages.values()), [messages])
   const toolCallsArray = useMemo(() => Array.from(toolCalls.values()), [toolCalls])
   const thoughtsArray = useMemo(() => Array.from(thoughts.values()), [thoughts])
+  const permissionRequestsArray = useMemo(
+    () => Array.from(permissionRequests.values()),
+    [permissionRequests]
+  )
+  const planUpdatesArray = useMemo(() => Array.from(planUpdates.values()), [planUpdates])
+
+  // Compute latest plan (from most recent plan update)
+  const latestPlan = useMemo(() => {
+    if (planUpdatesArray.length === 0) return null
+    // Sort by timestamp descending and take the most recent
+    const sorted = [...planUpdatesArray].sort(
+      (a, b) => b.timestamp.getTime() - a.timestamp.getTime()
+    )
+    return sorted[0]?.entries || null
+  }, [planUpdatesArray])
 
   return {
     connectionStatus,
@@ -762,6 +1128,11 @@ export function useSessionUpdateStream(
     messages: messagesArray,
     toolCalls: toolCallsArray,
     thoughts: thoughtsArray,
+    planUpdates: planUpdatesArray,
+    latestPlan,
+    permissionRequests: permissionRequestsArray,
+    markPermissionResponded,
+    availableCommands,
     isStreaming,
     error,
     isConnected: connected,

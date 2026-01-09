@@ -14,14 +14,15 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { ChevronDown } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronDown, Loader2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import axios from 'axios'
 
 export interface ClaudeCodeConfig {
   model?: string
   dangerouslySkipPermissions?: boolean
   restrictToWorkDir?: boolean
-  permissionMode?: 'acceptEdits' | 'bypassPermissions' | 'default' | 'dontAsk' | 'plan'
+  permissionMode?: 'default' | 'plan' | 'bypassPermissions'
 }
 
 interface ClaudeCodeConfigFormProps {
@@ -29,22 +30,103 @@ interface ClaudeCodeConfigFormProps {
   onChange: (config: ClaudeCodeConfig) => void
 }
 
-const MODELS = [
-  { value: 'sonnet', label: 'Claude Sonnet (Default)' },
-  { value: 'opus', label: 'Claude Opus' },
-  { value: 'haiku', label: 'Claude Haiku' },
-]
+// Special value for "let agent decide" - will be converted to undefined when saving
+const DEFAULT_MODEL_VALUE = '__default__'
+
+// Default option shown while loading or if API fails
+const DEFAULT_MODEL_OPTION = { value: DEFAULT_MODEL_VALUE, label: 'Default (Agent Decides)' }
 
 const PERMISSION_MODES = [
   { value: 'default', label: 'Default', description: 'Standard permission prompts' },
-  { value: 'acceptEdits', label: 'Accept Edits', description: 'Auto-accept file edits' },
-  { value: 'dontAsk', label: "Don't Ask", description: 'Minimal prompts' },
-  { value: 'plan', label: 'Plan Mode', description: 'Plan before executing' },
-  { value: 'bypassPermissions', label: 'Bypass Permissions', description: 'Skip all prompts' },
+  { value: 'plan', label: 'Plan Mode', description: 'Read-only planning before execution' },
+  { value: 'bypassPermissions', label: 'Bypass Permissions', description: 'Skip all prompts (YOLO mode)' },
 ]
+
+/**
+ * Format a model ID into a human-readable label
+ * e.g., "claude-sonnet-4-20250514" -> "Claude Sonnet 4"
+ */
+function formatModelName(modelId: string): string {
+  // Handle common short names
+  const shortNames: Record<string, string> = {
+    sonnet: 'Claude Sonnet',
+    opus: 'Claude Opus',
+    haiku: 'Claude Haiku',
+  }
+
+  if (shortNames[modelId.toLowerCase()]) {
+    return shortNames[modelId.toLowerCase()]
+  }
+
+  // Parse full model IDs like "claude-sonnet-4-20250514"
+  const match = modelId.match(/^claude[_-]?(sonnet|opus|haiku)[_-]?(\d+(?:\.\d+)?)?/i)
+  if (match) {
+    const modelType = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase()
+    const version = match[2] || ''
+    return `Claude ${modelType}${version ? ` ${version}` : ''}`
+  }
+
+  // Fallback: capitalize and clean up
+  return modelId
+    .replace(/[-_]/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+interface ModelOption {
+  value: string
+  label: string
+}
 
 export function ClaudeCodeConfigForm({ config, onChange }: ClaudeCodeConfigFormProps) {
   const [showAdvanced, setShowAdvanced] = useState(false)
+  // Start with just the default option while loading
+  const [models, setModels] = useState<ModelOption[]>([DEFAULT_MODEL_OPTION])
+  const [modelsLoading, setModelsLoading] = useState(true)
+
+  // Fetch available models from the agent
+  useEffect(() => {
+    let cancelled = false
+
+    async function fetchModels() {
+      try {
+        // Use axios directly - /agents endpoints don't use ApiResponse wrapper
+        const response = await axios.get<{ models: string[]; cached: boolean; fallback?: boolean }>(
+          '/api/agents/claude-code/models'
+        )
+
+        if (cancelled) return
+
+        const data = response.data
+
+        if (data.models && data.models.length > 0) {
+          // Filter out "default" from API response (we add our own Default option)
+          // and build model options
+          const apiModels = data.models
+            .filter((model: string) => model.toLowerCase() !== 'default')
+            .map((model: string) => ({
+              value: model,
+              label: formatModelName(model),
+            }))
+
+          // Always include our Default option first, then dynamic models from API
+          setModels([DEFAULT_MODEL_OPTION, ...apiModels])
+        }
+      } catch (error) {
+        // Keep just the default option on error
+        console.warn('Failed to fetch models:', error)
+      } finally {
+        if (!cancelled) {
+          setModelsLoading(false)
+        }
+      }
+    }
+
+    fetchModels()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const updateConfig = (updates: Partial<ClaudeCodeConfig>) => {
     onChange({ ...config, ...updates })
@@ -54,19 +136,22 @@ export function ClaudeCodeConfigForm({ config, onChange }: ClaudeCodeConfigFormP
     <div className="space-y-4">
       {/* Model Selection */}
       <div className="space-y-2">
-        <Label htmlFor="claude-model" className="text-xs">
+        <Label htmlFor="claude-model" className="text-xs flex items-center gap-1">
           Model
+          {modelsLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
         </Label>
         <Select
-          value={config.model || 'sonnet'}
-          onValueChange={(value) => updateConfig({ model: value })}
+          value={config.model || DEFAULT_MODEL_VALUE}
+          onValueChange={(value) =>
+            updateConfig({ model: value === DEFAULT_MODEL_VALUE ? undefined : value })
+          }
         >
           <SelectTrigger id="claude-model" className="h-8 text-xs">
             <SelectValue placeholder="Select model" />
           </SelectTrigger>
           <SelectContent>
-            {MODELS.map((model) => (
-              <SelectItem key={model.value} value={model.value} className="text-xs">
+            {models.map((model) => (
+              <SelectItem key={model.value || 'default'} value={model.value} className="text-xs">
                 {model.label}
               </SelectItem>
             ))}

@@ -106,7 +106,7 @@ describe('AgentConfigPanel', () => {
       await waitFor(() => {
         expect(
           screen.getByPlaceholderText(
-            'Add additional context (optional) for the agent... (@ for context)'
+            'Add additional context (optional) for the agent... (@ for context, / for commands)'
           )
         ).toBeInTheDocument()
       })
@@ -311,7 +311,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -385,7 +385,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -403,7 +403,7 @@ describe('AgentConfigPanel', () => {
       )
 
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -417,7 +417,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -467,7 +467,7 @@ describe('AgentConfigPanel', () => {
 
       // Enter prompt
       const textarea = screen.getByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -549,7 +549,7 @@ describe('AgentConfigPanel', () => {
       await waitFor(() => {
         expect(
           screen.getByPlaceholderText(
-            'Add additional context (optional) for the agent... (@ for context)'
+            'Add additional context (optional) for the agent... (@ for context, / for commands)'
           )
         ).toBeInTheDocument()
       })
@@ -631,7 +631,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -742,7 +742,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -857,7 +857,7 @@ describe('AgentConfigPanel', () => {
 
       // Now submit and verify the merged config
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -903,7 +903,7 @@ describe('AgentConfigPanel', () => {
 
       // Submit and verify the config uses defaults for other fields
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -919,6 +919,135 @@ describe('AgentConfigPanel', () => {
         expect.any(String),
         false
       )
+    })
+  })
+
+  describe('Skip Permissions Persistence', () => {
+    beforeEach(() => {
+      localStorage.clear()
+    })
+
+    it('should load skip permissions setting from localStorage for claude-code agent', async () => {
+      // Set skip permissions in localStorage
+      localStorage.setItem('sudocode:skipPermissions', 'true')
+
+      const user = userEvent.setup()
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Claude')).toBeInTheDocument()
+      })
+
+      // Open settings dialog to check the value
+      const buttons = screen.getAllByRole('button')
+      const settingsButton = buttons.find((btn) => btn.className.includes('border-input'))
+      expect(settingsButton).toBeDefined()
+      await user.click(settingsButton!)
+
+      await waitFor(() => {
+        expect(screen.getByText('Advanced Agent Settings')).toBeInTheDocument()
+      })
+
+      // The skip permissions switch should be checked
+      const skipSwitch = screen.getByRole('switch', { name: /Skip Permission Prompts/i })
+      expect(skipSwitch).toBeChecked()
+    })
+
+    it('should save skip permissions setting to localStorage when toggled', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Claude')).toBeInTheDocument()
+      })
+
+      // Open settings dialog
+      const buttons = screen.getAllByRole('button')
+      const settingsButton = buttons.find((btn) => btn.className.includes('border-input'))
+      await user.click(settingsButton!)
+
+      await waitFor(() => {
+        expect(screen.getByText('Advanced Agent Settings')).toBeInTheDocument()
+      })
+
+      // Toggle skip permissions
+      const skipSwitch = screen.getByRole('switch', { name: /Skip Permission Prompts/i })
+      await user.click(skipSwitch)
+
+      await waitFor(() => {
+        // Check localStorage was updated
+        expect(localStorage.getItem('sudocode:skipPermissions')).toBe('true')
+      })
+    })
+
+    it('should sync skip permissions from lastExecution config', async () => {
+      const user = userEvent.setup()
+
+      const lastExecution = {
+        id: 'exec-prev-123',
+        mode: 'worktree',
+        agent_type: 'claude-code',
+        config: {
+          mode: 'worktree' as const,
+          baseBranch: 'main',
+          cleanupMode: 'manual' as const,
+          agentConfig: {
+            dangerouslySkipPermissions: true,
+          },
+        },
+      }
+
+      renderWithProviders(
+        <AgentConfigPanel issueId="i-test1" onStart={mockOnStart} lastExecution={lastExecution} />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('Claude')).toBeInTheDocument()
+      })
+
+      // Open settings dialog to verify the value was synced
+      const buttons = screen.getAllByRole('button')
+      const settingsButton = buttons.find((btn) => btn.className.includes('border-input'))
+      await user.click(settingsButton!)
+
+      await waitFor(() => {
+        expect(screen.getByText('Advanced Agent Settings')).toBeInTheDocument()
+      })
+
+      // The skip permissions switch should be checked (synced from lastExecution)
+      const skipSwitch = screen.getByRole('switch', { name: /Skip Permission Prompts/i })
+      expect(skipSwitch).toBeChecked()
+
+      // And localStorage should also be updated
+      expect(localStorage.getItem('sudocode:skipPermissions')).toBe('true')
+    })
+
+    it('should default to false when localStorage has no skip permissions setting', async () => {
+      const user = userEvent.setup()
+
+      // Ensure localStorage is empty
+      expect(localStorage.getItem('sudocode:skipPermissions')).toBeNull()
+
+      renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Claude')).toBeInTheDocument()
+      })
+
+      // Open settings dialog
+      const buttons = screen.getAllByRole('button')
+      const settingsButton = buttons.find((btn) => btn.className.includes('border-input'))
+      await user.click(settingsButton!)
+
+      await waitFor(() => {
+        expect(screen.getByText('Advanced Agent Settings')).toBeInTheDocument()
+      })
+
+      // The skip permissions switch should not be checked
+      const skipSwitch = screen.getByRole('switch', { name: /Skip Permission Prompts/i })
+      expect(skipSwitch).not.toBeChecked()
     })
   })
 
@@ -949,7 +1078,7 @@ describe('AgentConfigPanel', () => {
       await waitFor(() => {
         expect(
           screen.getByPlaceholderText(
-            'Continue the previous conversation... (ctrl+k for new, @ for context)'
+            'Continue the previous conversation... (ctrl+k for new, @ for context, / for commands)'
           )
         ).toBeInTheDocument()
       })
@@ -1071,7 +1200,7 @@ describe('AgentConfigPanel', () => {
 
       // Enter feedback prompt
       const textarea = await screen.findByPlaceholderText(
-        'Continue the previous conversation... (ctrl+k for new, @ for context)'
+        'Continue the previous conversation... (ctrl+k for new, @ for context, / for commands)'
       )
       await user.type(textarea, 'Continue with this feedback')
 
@@ -1122,7 +1251,7 @@ describe('AgentConfigPanel', () => {
       )
 
       const textarea = await screen.findByPlaceholderText(
-        'Continue the previous conversation... (ctrl+k for new, @ for context)'
+        'Continue the previous conversation... (ctrl+k for new, @ for context, / for commands)'
       )
 
       // Press Ctrl+K to toggle to new execution mode
@@ -1150,7 +1279,7 @@ describe('AgentConfigPanel', () => {
       )
 
       const textarea = await screen.findByPlaceholderText(
-        'Start a new execution... (ctrl+k to continue previous, @ for context)'
+        'Start a new execution... (ctrl+k to continue previous, @ for context, / for commands)'
       )
 
       // Press Ctrl+K to toggle back to continue mode
@@ -1176,7 +1305,7 @@ describe('AgentConfigPanel', () => {
       await waitFor(() => {
         expect(
           screen.getByPlaceholderText(
-            'Start a new execution... (ctrl+k to continue previous, @ for context)'
+            'Start a new execution... (ctrl+k to continue previous, @ for context, / for commands)'
           )
         ).toBeInTheDocument()
       })
@@ -1196,7 +1325,7 @@ describe('AgentConfigPanel', () => {
       )
 
       const textarea = await screen.findByPlaceholderText(
-        'Start a new execution... (ctrl+k to continue previous, @ for context)'
+        'Start a new execution... (ctrl+k to continue previous, @ for context, / for commands)'
       )
       await user.type(textarea, 'Create a new execution')
 
@@ -1228,7 +1357,7 @@ describe('AgentConfigPanel', () => {
       )
 
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
 
       await user.click(textarea)
@@ -1254,7 +1383,7 @@ describe('AgentConfigPanel', () => {
       )
 
       const textarea = await screen.findByPlaceholderText(
-        'Continue the previous conversation... (@ for context)'
+        'Continue the previous conversation... (@ for context, / for commands)'
       )
 
       await user.click(textarea)
@@ -1277,14 +1406,14 @@ describe('AgentConfigPanel', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText('Continue the previous conversation... (@ for context)')
+          screen.getByPlaceholderText('Continue the previous conversation... (@ for context, / for commands)')
         ).toBeInTheDocument()
       })
 
       // Should not show the ctrl+k hint
       expect(
         screen.queryByPlaceholderText(
-          'Continue the previous conversation... (ctrl+k for new, @ for context)'
+          'Continue the previous conversation... (ctrl+k for new, @ for context, / for commands)'
         )
       ).not.toBeInTheDocument()
     })
@@ -1303,14 +1432,14 @@ describe('AgentConfigPanel', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText('Start a new execution... (@ for context)')
+          screen.getByPlaceholderText('Start a new execution... (@ for context, / for commands)')
         ).toBeInTheDocument()
       })
 
       // Should not show the ctrl+k hint
       expect(
         screen.queryByPlaceholderText(
-          'Start a new execution... (ctrl+k to continue previous, @ for context)'
+          'Start a new execution... (ctrl+k to continue previous, @ for context, / for commands)'
         )
       ).not.toBeInTheDocument()
     })

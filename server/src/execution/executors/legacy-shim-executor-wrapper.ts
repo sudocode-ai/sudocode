@@ -659,21 +659,13 @@ export class LegacyShimExecutorWrapper {
     executionId: string,
     update: CoalescedSessionUpdate
   ): void {
-    const execution = getExecution(this.db, executionId);
-
-    // Broadcast to execution subscribers
+    // Broadcast to execution subscribers only
+    // Note: Do NOT broadcast to issue subscribers - this causes duplicate messages
+    // when a page is subscribed to both execution:X and issue:Y channels
     websocketManager.broadcast(this.projectId, "execution", executionId, {
       type: "session_update" as unknown as "execution_created",
       data: { update, executionId },
     });
-
-    // Also broadcast to issue subscribers if applicable
-    if (execution?.issue_id) {
-      websocketManager.broadcast(this.projectId, "issue", execution.issue_id, {
-        type: "session_update" as unknown as "execution_created",
-        data: { update, executionId },
-      });
-    }
   }
 
   /**
