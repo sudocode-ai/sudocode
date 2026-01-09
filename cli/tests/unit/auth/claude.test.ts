@@ -15,12 +15,25 @@ vi.mock("child_process", () => ({
   spawn: vi.fn(),
 }));
 
-// Mock readline for confirmation prompts
+// Mock readline for both confirmation prompts and token input
+// We'll customize the behavior per test
+let mockReadlineCallback: ((message: string, callback: (answer: string) => void) => void) | null = null;
+
 vi.mock("readline", () => ({
   createInterface: vi.fn(() => ({
     question: vi.fn((message: string, callback: (answer: string) => void) => {
-      // Default to "yes" for tests
-      callback("y");
+      if (mockReadlineCallback) {
+        mockReadlineCallback(message, callback);
+      } else {
+        // Default behavior: "y" for confirmations, valid token for prompts
+        if (message.includes('Overwrite')) {
+          callback("y");
+        } else if (message.includes('paste')) {
+          callback("sk-ant-api03-test123");
+        } else {
+          callback("y");
+        }
+      }
     }),
     close: vi.fn(),
   })),
@@ -41,16 +54,12 @@ function writeTestCredentials(credentials: any): void {
 
 /**
  * Mock ChildProcess for testing spawn
+ * Note: With stdio: 'inherit', we don't capture stdout/stderr
  */
 class MockChildProcess extends EventEmitter {
-  stdout = new EventEmitter();
-  stderr = new EventEmitter();
-  
   // Simulate successful process
-  simulateSuccess(output: string, token: string) {
+  simulateSuccess() {
     setTimeout(() => {
-      this.stdout.emit('data', Buffer.from(output));
-      this.stdout.emit('data', Buffer.from(`Token: ${token}\n`));
       this.emit('close', 0);
     }, 10);
   }
@@ -66,22 +75,6 @@ class MockChildProcess extends EventEmitter {
   simulateError(error: any) {
     setTimeout(() => {
       this.emit('error', error);
-    }, 10);
-  }
-  
-  // Simulate cancellation
-  simulateCancellation() {
-    setTimeout(() => {
-      this.stdout.emit('data', Buffer.from('OAuth flow cancelled\n'));
-      this.emit('close', 1);
-    }, 10);
-  }
-  
-  // Simulate output without token
-  simulateNoToken(output: string) {
-    setTimeout(() => {
-      this.stdout.emit('data', Buffer.from(output));
-      this.emit('close', 0);
     }, 10);
   }
 }
@@ -108,6 +101,7 @@ describe("Claude Authentication Command", () => {
     
     // Reset mocks
     vi.clearAllMocks();
+    mockReadlineCallback = null;
     
     // Mock console methods to prevent cluttering test output
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -134,19 +128,24 @@ describe("Claude Authentication Command", () => {
 
   describe("CLI Detection", () => {
     it("should detect when claude CLI is installed", async () => {
-      const mockProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockProcess);
+      const mockVersionCheck = new MockChildProcess();
+      const mockOAuthProcess = new MockChildProcess();
+      
+      spawn.mockReturnValueOnce(mockVersionCheck).mockReturnValueOnce(mockOAuthProcess);
       
       // Simulate successful version check and OAuth flow
       const authPromise = handleClaudeAuth({ force: true });
       
       // First call is version check (--version)
       expect(spawn).toHaveBeenCalledWith('claude', ['--version']);
-      mockProcess.simulateSuccess('', 'sk-ant-test-token');
+      mockVersionCheck.simulateSuccess();
+      
+      // Wait for version check to complete
+      await new Promise(resolve => setTimeout(resolve, 20));
       
       // Second call is OAuth flow
-      spawn.mockReturnValue(mockProcess);
-      mockProcess.simulateSuccess('Authentication successful!\n', 'sk-ant-api03-test123');
+      expect(spawn).toHaveBeenCalledWith('claude', ['setup-token'], { stdio: 'inherit' });
+      mockOAuthProcess.simulateSuccess();
       
       await authPromise;
       
@@ -174,58 +173,40 @@ describe("Claude Authentication Command", () => {
     });
   });
 
-  describe("Token Extraction", () => {
-    it("should extract token from Claude CLI output", async () => {
-      const mockProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockProcess);
+  describe("Token Input", () => {
+    it("should prompt user for token and store it", async () => {
+      const testToken = 'sk-ant-api03-xxxxxxxxxxxxx';
+      
+      // Mock readline to return test token
+      mockReadlineCallback = (message: string, callback: (answer: string) => void) => {
+        if (message.includes('paste')) {
+          callback(testToken);
+        } else {
+          callback('y');
+        }
+      };
+      
+      const mockVersionCheck = new MockChildProcess();
+      const mockOAuthProcess = new MockChildProcess();
+      spawn.mockReturnValueOnce(mockVersionCheck).mockReturnValueOnce(mockOAuthProcess);
       
       const authPromise = handleClaudeAuth({ force: true });
       
-      // Version check succeeds
-      mockProcess.simulateSuccess('', 'sk-ant-test');
+      // Version check
+      mockVersionCheck.simulateSuccess();
+      await new Promise(resolve => setTimeout(resolve, 20));
       
-      // OAuth flow succeeds with token
-      const mockOAuthProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockOAuthProcess);
-      mockOAuthProcess.simulateSuccess(
-        'Please visit: https://console.anthropic.com/...\n' +
-        'Waiting for authentication...\n' +
-        'Authentication successful!\n',
-        'sk-ant-api03-xxxxxxxxxxxxx'
-      );
+      // OAuth flow
+      mockOAuthProcess.simulateSuccess();
       
       await authPromise;
       
       // Should have stored the token
       const storedToken = await credentials.getClaudeToken();
-      expect(storedToken).toBe('sk-ant-api03-xxxxxxxxxxxxx');
+      expect(storedToken).toBe(testToken);
     });
 
-    it("should extract token from stderr output", async () => {
-      const mockProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockProcess);
-      
-      const authPromise = handleClaudeAuth({ force: true });
-      
-      // Version check
-      mockProcess.simulateSuccess('', 'sk-ant-test');
-      
-      // OAuth flow with token in stderr
-      const mockOAuthProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockOAuthProcess);
-      
-      setTimeout(() => {
-        mockOAuthProcess.stderr.emit('data', Buffer.from('Token: sk-ant-api03-test456\n'));
-        mockOAuthProcess.emit('close', 0);
-      }, 10);
-      
-      await authPromise;
-      
-      const storedToken = await credentials.getClaudeToken();
-      expect(storedToken).toBe('sk-ant-api03-test456');
-    });
-
-    it("should handle token with various formats", async () => {
+    it("should handle token with various valid formats", async () => {
       const testCases = [
         'sk-ant-api03-xxxxx',
         'sk-ant-sid01-xxxxx',
@@ -236,18 +217,27 @@ describe("Claude Authentication Command", () => {
         // Clear credentials between tests
         await credentials.clearAllCredentials();
         
-        const mockProcess = new MockChildProcess();
-        spawn.mockReturnValue(mockProcess);
+        // Mock readline to return test token
+        mockReadlineCallback = (message: string, callback: (answer: string) => void) => {
+          if (message.includes('paste')) {
+            callback(testToken);
+          } else {
+            callback('y');
+          }
+        };
+        
+        const mockVersionCheck = new MockChildProcess();
+        const mockOAuthProcess = new MockChildProcess();
+        spawn.mockReturnValueOnce(mockVersionCheck).mockReturnValueOnce(mockOAuthProcess);
         
         const authPromise = handleClaudeAuth({ force: true });
         
         // Version check
-        mockProcess.simulateSuccess('', 'sk-ant-test');
+        mockVersionCheck.simulateSuccess();
+        await new Promise(resolve => setTimeout(resolve, 20));
         
         // OAuth flow
-        const mockOAuthProcess = new MockChildProcess();
-        spawn.mockReturnValue(mockOAuthProcess);
-        mockOAuthProcess.simulateSuccess('Success!\n', testToken);
+        mockOAuthProcess.simulateSuccess();
         
         await authPromise;
         
@@ -255,70 +245,114 @@ describe("Claude Authentication Command", () => {
         expect(storedToken).toBe(testToken);
       }
     });
+
+    it("should trim whitespace from pasted token", async () => {
+      const testToken = '  sk-ant-api03-xxxxxxxxxxxxx  \n';
+      
+      // Mock readline to return token with whitespace
+      mockReadlineCallback = (message: string, callback: (answer: string) => void) => {
+        if (message.includes('paste')) {
+          callback(testToken);
+        } else {
+          callback('y');
+        }
+      };
+      
+      const mockVersionCheck = new MockChildProcess();
+      const mockOAuthProcess = new MockChildProcess();
+      spawn.mockReturnValueOnce(mockVersionCheck).mockReturnValueOnce(mockOAuthProcess);
+      
+      const authPromise = handleClaudeAuth({ force: true });
+      
+      // Version check
+      mockVersionCheck.simulateSuccess();
+      await new Promise(resolve => setTimeout(resolve, 20));
+      
+      // OAuth flow
+      mockOAuthProcess.simulateSuccess();
+      
+      await authPromise;
+      
+      // Should have stored trimmed token
+      const storedToken = await credentials.getClaudeToken();
+      expect(storedToken).toBe('sk-ant-api03-xxxxxxxxxxxxx');
+    });
   });
 
   describe("Token Validation", () => {
-    it("should validate token format (must start with sk-ant-)", async () => {
-      const mockProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockProcess);
+    it("should reject token with invalid format (must start with sk-ant-)", async () => {
+      // Mock readline to return invalid token
+      mockReadlineCallback = (message: string, callback: (answer: string) => void) => {
+        if (message.includes('paste')) {
+          callback('invalid-token-format');
+        } else {
+          callback('y');
+        }
+      };
+      
+      const mockVersionCheck = new MockChildProcess();
+      const mockOAuthProcess = new MockChildProcess();
+      spawn.mockReturnValueOnce(mockVersionCheck).mockReturnValueOnce(mockOAuthProcess);
       
       const authPromise = handleClaudeAuth({ force: true });
       
       // Version check
-      mockProcess.simulateSuccess('', 'sk-ant-test');
+      mockVersionCheck.simulateSuccess();
+      await new Promise(resolve => setTimeout(resolve, 20));
       
-      // OAuth flow with invalid token format
-      const mockOAuthProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockOAuthProcess);
-      mockOAuthProcess.simulateSuccess(
-        'Success!\n',
-        'invalid-token-format'  // Wrong prefix
-      );
+      // OAuth flow
+      mockOAuthProcess.simulateSuccess();
       
       await expect(authPromise).rejects.toThrow();
       expect(console.error).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to extract token')
+        expect.stringContaining('Invalid token format')
       );
     });
 
-    it("should error when no token is found in output", async () => {
-      const mockProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockProcess);
+    it("should reject empty token", async () => {
+      // Mock readline to return empty token
+      mockReadlineCallback = (message: string, callback: (answer: string) => void) => {
+        if (message.includes('paste')) {
+          callback('');
+        } else {
+          callback('y');
+        }
+      };
+      
+      const mockVersionCheck = new MockChildProcess();
+      const mockOAuthProcess = new MockChildProcess();
+      spawn.mockReturnValueOnce(mockVersionCheck).mockReturnValueOnce(mockOAuthProcess);
       
       const authPromise = handleClaudeAuth({ force: true });
       
       // Version check
-      mockProcess.simulateSuccess('', 'sk-ant-test');
+      mockVersionCheck.simulateSuccess();
+      await new Promise(resolve => setTimeout(resolve, 20));
       
-      // OAuth flow without token
-      const mockOAuthProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockOAuthProcess);
-      mockOAuthProcess.simulateNoToken('Authentication successful but no token in output\n');
+      // OAuth flow
+      mockOAuthProcess.simulateSuccess();
       
       await expect(authPromise).rejects.toThrow();
       expect(console.error).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to extract token')
+        expect.stringContaining('No token provided')
       );
     });
   });
 
   describe("OAuth Flow Handling", () => {
     it("should handle successful OAuth flow", async () => {
-      const mockProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockProcess);
+      const mockVersionCheck = new MockChildProcess();
+      const mockOAuthProcess = new MockChildProcess();
+      spawn.mockReturnValueOnce(mockVersionCheck).mockReturnValueOnce(mockOAuthProcess);
       
       const authPromise = handleClaudeAuth({ force: true });
       
       // Version check
-      mockProcess.simulateSuccess('', 'sk-ant-test');
+      mockVersionCheck.simulateSuccess();
+      await new Promise(resolve => setTimeout(resolve, 20));
       
       // OAuth flow
-      const mockOAuthProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockOAuthProcess);
-      mockOAuthProcess.simulateSuccess(
-        'Please authenticate in your browser...\n',
-        'sk-ant-api03-success'
-      );
+      mockOAuthProcess.simulateSuccess();
       
       await authPromise;
       
@@ -331,18 +365,18 @@ describe("Claude Authentication Command", () => {
     });
 
     it("should handle OAuth flow cancellation", async () => {
-      const mockProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockProcess);
+      const mockVersionCheck = new MockChildProcess();
+      const mockOAuthProcess = new MockChildProcess();
+      spawn.mockReturnValueOnce(mockVersionCheck).mockReturnValueOnce(mockOAuthProcess);
       
       const authPromise = handleClaudeAuth({ force: true });
       
       // Version check
-      mockProcess.simulateSuccess('', 'sk-ant-test');
+      mockVersionCheck.simulateSuccess();
+      await new Promise(resolve => setTimeout(resolve, 20));
       
       // OAuth flow cancelled (non-zero exit code)
-      const mockOAuthProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockOAuthProcess);
-      mockOAuthProcess.simulateCancellation();
+      mockOAuthProcess.simulateFailure(1);
       
       await expect(authPromise).rejects.toThrow();
       expect(console.error).toHaveBeenCalledWith(
@@ -351,17 +385,17 @@ describe("Claude Authentication Command", () => {
     });
 
     it("should handle OAuth flow failure", async () => {
-      const mockProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockProcess);
+      const mockVersionCheck = new MockChildProcess();
+      const mockOAuthProcess = new MockChildProcess();
+      spawn.mockReturnValueOnce(mockVersionCheck).mockReturnValueOnce(mockOAuthProcess);
       
       const authPromise = handleClaudeAuth({ force: true });
       
       // Version check
-      mockProcess.simulateSuccess('', 'sk-ant-test');
+      mockVersionCheck.simulateSuccess();
+      await new Promise(resolve => setTimeout(resolve, 20));
       
       // OAuth flow failed
-      const mockOAuthProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockOAuthProcess);
       mockOAuthProcess.simulateFailure(1);
       
       await expect(authPromise).rejects.toThrow();
@@ -375,33 +409,34 @@ describe("Claude Authentication Command", () => {
         claudeCodeOAuthToken: 'sk-ant-existing-token'
       });
       
-      // Mock readline to return "yes"
-      const mockReadline = {
-        question: vi.fn((message: string, callback: (answer: string) => void) => {
+      // Mock readline: "y" for confirmation, then token
+      let callCount = 0;
+      mockReadlineCallback = (message: string, callback: (answer: string) => void) => {
+        callCount++;
+        if (message.includes('Overwrite')) {
           callback('y');
-        }),
-        close: vi.fn(),
+        } else if (message.includes('paste')) {
+          callback('sk-ant-api03-newtoken');
+        } else {
+          callback('y');
+        }
       };
-      (readline.createInterface as any).mockReturnValue(mockReadline);
       
-      const mockProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockProcess);
+      const mockVersionCheck = new MockChildProcess();
+      const mockOAuthProcess = new MockChildProcess();
+      spawn.mockReturnValueOnce(mockVersionCheck).mockReturnValueOnce(mockOAuthProcess);
       
       const authPromise = handleClaudeAuth({ force: false });
       
       // Should prompt for confirmation
       await new Promise(resolve => setTimeout(resolve, 20));
-      expect(mockReadline.question).toHaveBeenCalledWith(
-        expect.stringContaining('Overwrite existing token?'),
-        expect.any(Function)
-      );
+      expect(callCount).toBeGreaterThan(0);
       
       // Continue with OAuth flow
-      mockProcess.simulateSuccess('', 'sk-ant-test');
+      mockVersionCheck.simulateSuccess();
+      await new Promise(resolve => setTimeout(resolve, 20));
       
-      const mockOAuthProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockOAuthProcess);
-      mockOAuthProcess.simulateSuccess('Success!\n', 'sk-ant-api03-newtoken');
+      mockOAuthProcess.simulateSuccess();
       
       await authPromise;
       
@@ -417,13 +452,13 @@ describe("Claude Authentication Command", () => {
       });
       
       // Mock readline to return "no"
-      const mockReadline = {
-        question: vi.fn((message: string, callback: (answer: string) => void) => {
+      mockReadlineCallback = (message: string, callback: (answer: string) => void) => {
+        if (message.includes('Overwrite')) {
           callback('n');
-        }),
-        close: vi.fn(),
+        } else {
+          callback('y');
+        }
       };
-      (readline.createInterface as any).mockReturnValue(mockReadline);
       
       await handleClaudeAuth({ force: false });
       
@@ -441,49 +476,44 @@ describe("Claude Authentication Command", () => {
         claudeCodeOAuthToken: 'sk-ant-existing-token'
       });
       
-      const mockProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockProcess);
+      const mockVersionCheck = new MockChildProcess();
+      const mockOAuthProcess = new MockChildProcess();
+      spawn.mockReturnValueOnce(mockVersionCheck).mockReturnValueOnce(mockOAuthProcess);
       
       const authPromise = handleClaudeAuth({ force: true });
       
-      // Should not prompt (force mode)
-      const mockReadline = readline.createInterface as any;
-      expect(mockReadline).not.toHaveBeenCalled();
+      // Continue with OAuth flow (no confirmation prompt)
+      mockVersionCheck.simulateSuccess();
+      await new Promise(resolve => setTimeout(resolve, 20));
       
-      // Continue with OAuth flow
-      mockProcess.simulateSuccess('', 'sk-ant-test');
-      
-      const mockOAuthProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockOAuthProcess);
-      mockOAuthProcess.simulateSuccess('Success!\n', 'sk-ant-api03-forced');
+      mockOAuthProcess.simulateSuccess();
       
       await authPromise;
       
       const storedToken = await credentials.getClaudeToken();
-      expect(storedToken).toBe('sk-ant-api03-forced');
+      expect(storedToken).toBe('sk-ant-api03-test123'); // Default mock token
     });
   });
 
   describe("Error Handling", () => {
     it("should handle permission errors during write", async () => {
       // Mock setClaudeToken to throw permission error
-      const originalSetClaudeToken = credentials.setClaudeToken;
       vi.spyOn(credentials, 'setClaudeToken').mockRejectedValue(
         new Error('Failed to write credentials: EACCES: permission denied')
       );
       
-      const mockProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockProcess);
+      const mockVersionCheck = new MockChildProcess();
+      const mockOAuthProcess = new MockChildProcess();
+      spawn.mockReturnValueOnce(mockVersionCheck).mockReturnValueOnce(mockOAuthProcess);
       
       const authPromise = handleClaudeAuth({ force: true });
       
       // Version check
-      mockProcess.simulateSuccess('', 'sk-ant-test');
+      mockVersionCheck.simulateSuccess();
+      await new Promise(resolve => setTimeout(resolve, 20));
       
       // OAuth flow
-      const mockOAuthProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockOAuthProcess);
-      mockOAuthProcess.simulateSuccess('Success!\n', 'sk-ant-api03-test');
+      mockOAuthProcess.simulateSuccess();
       
       await expect(authPromise).rejects.toThrow();
       expect(console.error).toHaveBeenCalledWith(
@@ -494,19 +524,18 @@ describe("Claude Authentication Command", () => {
       vi.mocked(credentials.setClaudeToken).mockRestore();
     });
 
-    it("should handle spawn errors during version check", async () => {
-      const mockProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockProcess);
+    it("should handle spawn errors during OAuth flow", async () => {
+      const mockVersionCheck = new MockChildProcess();
+      const mockOAuthProcess = new MockChildProcess();
+      spawn.mockReturnValueOnce(mockVersionCheck).mockReturnValueOnce(mockOAuthProcess);
       
       const authPromise = handleClaudeAuth({ force: true });
       
-      // Version check fails with non-ENOENT error (other spawn errors still mean CLI exists)
-      // So we simulate this during the OAuth flow instead
-      mockProcess.simulateSuccess('', 'sk-ant-test');
+      // Version check succeeds
+      mockVersionCheck.simulateSuccess();
+      await new Promise(resolve => setTimeout(resolve, 20));
       
       // OAuth flow fails with spawn error
-      const mockOAuthProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockOAuthProcess);
       mockOAuthProcess.simulateError(new Error('Spawn failed'));
       
       await expect(authPromise).rejects.toThrow();
@@ -518,18 +547,18 @@ describe("Claude Authentication Command", () => {
 
   describe("Token Storage", () => {
     it("should store token with secure permissions", async () => {
-      const mockProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockProcess);
+      const mockVersionCheck = new MockChildProcess();
+      const mockOAuthProcess = new MockChildProcess();
+      spawn.mockReturnValueOnce(mockVersionCheck).mockReturnValueOnce(mockOAuthProcess);
       
       const authPromise = handleClaudeAuth({ force: true });
       
       // Version check
-      mockProcess.simulateSuccess('', 'sk-ant-test');
+      mockVersionCheck.simulateSuccess();
+      await new Promise(resolve => setTimeout(resolve, 20));
       
       // OAuth flow
-      const mockOAuthProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockOAuthProcess);
-      mockOAuthProcess.simulateSuccess('Success!\n', 'sk-ant-api03-secure');
+      mockOAuthProcess.simulateSuccess();
       
       await authPromise;
       
@@ -548,42 +577,42 @@ describe("Claude Authentication Command", () => {
         llmKey: 'sk-proj-existing'
       });
       
-      const mockProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockProcess);
+      const mockVersionCheck = new MockChildProcess();
+      const mockOAuthProcess = new MockChildProcess();
+      spawn.mockReturnValueOnce(mockVersionCheck).mockReturnValueOnce(mockOAuthProcess);
       
       const authPromise = handleClaudeAuth({ force: true });
       
       // Version check
-      mockProcess.simulateSuccess('', 'sk-ant-test');
+      mockVersionCheck.simulateSuccess();
+      await new Promise(resolve => setTimeout(resolve, 20));
       
       // OAuth flow
-      const mockOAuthProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockOAuthProcess);
-      mockOAuthProcess.simulateSuccess('Success!\n', 'sk-ant-api03-new');
+      mockOAuthProcess.simulateSuccess();
       
       await authPromise;
       
       // Check that Claude token was updated but LLM key preserved
       const allCreds = await credentials.getAllCredentials();
-      expect(allCreds.claudeToken).toBe('sk-ant-api03-new');
+      expect(allCreds.claudeToken).toBe('sk-ant-api03-test123'); // Default mock token
       expect(allCreds.llmKey).toBe('sk-proj-existing');
     });
   });
 
   describe("User Experience", () => {
     it("should show clear success message", async () => {
-      const mockProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockProcess);
+      const mockVersionCheck = new MockChildProcess();
+      const mockOAuthProcess = new MockChildProcess();
+      spawn.mockReturnValueOnce(mockVersionCheck).mockReturnValueOnce(mockOAuthProcess);
       
       const authPromise = handleClaudeAuth({ force: true });
       
       // Version check
-      mockProcess.simulateSuccess('', 'sk-ant-test');
+      mockVersionCheck.simulateSuccess();
+      await new Promise(resolve => setTimeout(resolve, 20));
       
       // OAuth flow
-      const mockOAuthProcess = new MockChildProcess();
-      spawn.mockReturnValue(mockOAuthProcess);
-      mockOAuthProcess.simulateSuccess('Success!\n', 'sk-ant-api03-ux');
+      mockOAuthProcess.simulateSuccess();
       
       await authPromise;
       

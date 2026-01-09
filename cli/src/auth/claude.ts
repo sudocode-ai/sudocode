@@ -69,68 +69,58 @@ function validateTokenFormat(token: string): boolean {
 }
 
 /**
- * Extract Claude token from CLI output
- * Claude CLI outputs token in format: "Token: sk-ant-api03-..."
- * 
- * @param output Combined stdout/stderr output from Claude CLI
- * @returns Extracted token or null if not found
+ * Prompt user to paste their token
+ * @returns Promise that resolves to the user-provided token
  */
-function extractToken(output: string): string | null {
-  const tokenMatch = output.match(/Token:\s*(sk-ant-[^\s]+)/);
-  if (!tokenMatch) {
-    return null;
-  }
+async function promptForToken(): Promise<string> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
   
-  const token = tokenMatch[1];
-  
-  // Validate token format
-  if (!validateTokenFormat(token)) {
-    return null;
-  }
-  
-  return token;
+  return new Promise((resolve) => {
+    rl.question(
+      chalk.yellow('\nPlease paste your OAuth token from above: '),
+      (answer) => {
+        rl.close();
+        resolve(answer.trim());
+      }
+    );
+  });
 }
 
 /**
  * Run Claude CLI OAuth flow
- * @returns Promise that resolves to the extracted token
+ * @returns Promise that resolves to the user-provided token
  */
 async function runClaudeOAuthFlow(): Promise<string> {
   return new Promise((resolve, reject) => {
-    let tokenOutput = '';
-    
     console.log(chalk.blue('\nStarting OAuth flow...'));
     console.log(chalk.dim('(Claude CLI will open your browser for authentication)\n'));
     
+    // Run fully interactively - no output capture
     const claudeProcess = spawn('claude', ['setup-token'], {
-      stdio: ['inherit', 'pipe', 'pipe']
-    });
-    
-    // Capture stdout (also display to user)
-    claudeProcess.stdout.on('data', (data) => {
-      const output = data.toString();
-      process.stdout.write(output);
-      tokenOutput += output;
-    });
-    
-    // Capture stderr (also display to user)
-    claudeProcess.stderr.on('data', (data) => {
-      const output = data.toString();
-      process.stderr.write(output);
-      tokenOutput += output;
+      stdio: 'inherit'
     });
     
     // Handle process completion
-    claudeProcess.on('close', (code) => {
+    claudeProcess.on('close', async (code) => {
       if (code !== 0) {
         reject(new Error('OAuth flow failed or was cancelled'));
         return;
       }
       
-      // Extract token from output
-      const token = extractToken(tokenOutput);
+      // Prompt user to paste the token
+      console.log('\n' + chalk.blue('━'.repeat(60)));
+      const token = await promptForToken();
+      
       if (!token) {
-        reject(new Error('Failed to extract token from Claude CLI output'));
+        reject(new Error('No token provided'));
+        return;
+      }
+      
+      if (!validateTokenFormat(token)) {
+        reject(new Error('Invalid token format. Token must start with "sk-ant-"'));
         return;
       }
       
@@ -197,13 +187,18 @@ export async function handleClaudeAuth(options: ClaudeAuthOptions = {}): Promise
       process.exit(1);
     }
     
-    if (error.message.includes('extract token')) {
-      console.error(chalk.red('\n✗ Failed to extract token from Claude CLI output\n'));
-      console.error('This may indicate:');
-      console.error('  • The OAuth flow didn\'t complete successfully');
-      console.error('  • The Claude CLI version is incompatible');
-      console.error('  • The token format has changed\n');
-      console.error(chalk.dim('Please try again or report this issue.\n'));
+    if (error.message.includes('No token provided')) {
+      console.error(chalk.red('\n✗ No token provided\n'));
+      console.error('You must paste the OAuth token to complete authentication.\n');
+      console.error(chalk.dim('Please try again.\n'));
+      process.exit(1);
+    }
+    
+    if (error.message.includes('Invalid token format')) {
+      console.error(chalk.red('\n✗ Invalid token format\n'));
+      console.error('The token must start with "sk-ant-".');
+      console.error('Please ensure you copied the complete token.\n');
+      console.error(chalk.dim('Please try again.\n'));
       process.exit(1);
     }
     
