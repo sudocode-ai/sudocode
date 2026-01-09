@@ -34,6 +34,8 @@ import {
   type JSONLEntity,
 } from "@sudocode-ai/cli/dist/jsonl.js";
 import * as os from "os";
+import type { DataplaneAdapter } from "./dataplane-adapter.js";
+import type { CascadeReport } from "./dataplane-types.js";
 
 /**
  * Worktree sync error codes
@@ -131,21 +133,87 @@ export interface SyncResult {
   uncommittedFilesIncluded?: number;
   error?: string;
   cleanupOffered?: boolean;
+  /** Cascade report when dataplane is enabled (streams that were rebased) */
+  cascade?: CascadeReport;
+  /** Backup tag created for rollback capability */
+  backupTag?: string;
 }
 
 /**
  * WorktreeSyncService
  *
- * Main service class for orchestrating worktree sync operations
+ * Main service class for orchestrating worktree sync operations.
+ * Optionally integrates with DataplaneAdapter for stream-based tracking
+ * and cascade operations when dataplane is enabled.
  */
 export class WorktreeSyncService {
   private gitSync: GitSyncCli;
+  private dataplaneAdapter: DataplaneAdapter | null;
 
   constructor(
     private db: Database.Database,
-    private repoPath: string
+    private repoPath: string,
+    dataplaneAdapter?: DataplaneAdapter | null
   ) {
     this.gitSync = new GitSyncCli(repoPath);
+    this.dataplaneAdapter = dataplaneAdapter ?? null;
+  }
+
+  /**
+   * Check if dataplane integration is enabled
+   */
+  get isDataplaneEnabled(): boolean {
+    return this.dataplaneAdapter !== null && this.dataplaneAdapter.isInitialized;
+  }
+
+  /**
+   * Reconcile stream state with git before operations (dataplane only)
+   *
+   * When dataplane is enabled, this ensures the stream's database state
+   * is synchronized with the actual git state before performing sync operations.
+   *
+   * @param execution - Execution to reconcile
+   */
+  private async _reconcileStreamIfNeeded(execution: Execution): Promise<void> {
+    if (!this.isDataplaneEnabled || !execution.stream_id) {
+      return;
+    }
+
+    try {
+      await this.dataplaneAdapter!.reconcileStream(execution.stream_id);
+    } catch (error) {
+      // Log but don't fail - reconciliation is best-effort
+      console.warn(
+        `Failed to reconcile stream ${execution.stream_id}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  /**
+   * Trigger cascade rebase after successful sync (dataplane only)
+   *
+   * After merging a stream to target, this triggers rebase of any
+   * dependent streams to keep them up to date.
+   *
+   * @param execution - Execution that was synced
+   * @returns Cascade report if dataplane is enabled, undefined otherwise
+   */
+  private async _triggerCascadeIfNeeded(
+    execution: Execution
+  ): Promise<CascadeReport | undefined> {
+    if (!this.isDataplaneEnabled || !execution.stream_id) {
+      return undefined;
+    }
+
+    try {
+      return await this.dataplaneAdapter!.triggerCascade(execution.stream_id);
+    } catch (error) {
+      // Log but don't fail - cascade is best-effort
+      console.warn(
+        `Failed to trigger cascade for stream ${execution.stream_id}: ${error instanceof Error ? error.message : String(error)}`
+      );
+      return undefined;
+    }
   }
 
   /**
@@ -157,6 +225,9 @@ export class WorktreeSyncService {
   async previewSync(executionId: string): Promise<SyncPreviewResult> {
     // 1. Load execution and validate
     const execution = await this._loadAndValidateExecution(executionId);
+
+    // 1.5. Reconcile stream state with git (dataplane only)
+    await this._reconcileStreamIfNeeded(execution);
 
     // 2. Validate critical preconditions (ones that prevent us from getting any info)
     // These are "hard" failures - we can't get diff/commits if these fail
@@ -1589,6 +1660,9 @@ Synced changes from worktree execution.`;
     // 1. Load and validate execution
     const execution = await this._loadAndValidateExecution(executionId);
 
+    // 1.5. Reconcile stream state with git (dataplane only)
+    await this._reconcileStreamIfNeeded(execution);
+
     // 2. Validate preconditions (allow JSONL-only changes, they'll be auto-merged)
     await this._validateSyncPreconditions(execution, { allowJsonlOnlyChanges: true });
 
@@ -1680,12 +1754,17 @@ Synced changes from worktree execution.`;
         await this._restoreUncommittedJsonl();
       }
 
-      // 12. Return success result
+      // 12. Trigger cascade rebase of dependent streams (dataplane only)
+      const cascade = await this._triggerCascadeIfNeeded(execution);
+
+      // 13. Return success result
       return {
         success: true,
         finalCommit,
         filesChanged: mergeResult.filesChanged,
         cleanupOffered: true,
+        cascade,
+        backupTag: safetyTag,
       };
     } catch (error: any) {
       // Restore uncommitted JSONL files even on failure (to avoid losing user changes)
@@ -1919,6 +1998,9 @@ Synced changes from worktree execution.`;
     // 1. Load and validate execution
     const execution = await this._loadAndValidateExecution(executionId);
 
+    // 1.5. Reconcile stream state with git (dataplane only)
+    await this._reconcileStreamIfNeeded(execution);
+
     // 2. Validate preconditions (allow JSONL-only changes, they'll be auto-merged)
     await this._validateSyncPreconditions(execution, { allowJsonlOnlyChanges: true });
 
@@ -2070,12 +2152,17 @@ Synced changes from worktree execution.`;
         await this._restoreUncommittedJsonl();
       }
 
-      // 14. Return success result
+      // 14. Trigger cascade rebase of dependent streams (dataplane only)
+      const cascade = await this._triggerCascadeIfNeeded(execution);
+
+      // 15. Return success result
       return {
         success: true,
         finalCommit,
         filesChanged,
         cleanupOffered: true,
+        cascade,
+        backupTag: safetyTag,
       };
     } catch (error: any) {
       // Restore uncommitted JSONL files even on failure (to avoid losing user changes)

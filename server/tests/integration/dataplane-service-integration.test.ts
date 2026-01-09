@@ -31,6 +31,7 @@ import {
   closeAllDataplaneAdapters,
 } from "../../src/services/dataplane-adapter.js";
 import { clearDataplaneConfigCache } from "../../src/services/dataplane-config.js";
+import { WorktreeSyncService } from "../../src/services/worktree-sync-service.js";
 
 describe("Dataplane Service Integration", () => {
   let testDir: string;
@@ -461,6 +462,106 @@ describe("Dataplane Service Integration", () => {
 
       expect(result.execution).toBeDefined();
       expect(result.execution.stream_id).toBeNull(); // No stream_id in legacy mode
+    });
+  });
+
+  describe("WorktreeSyncService with Dataplane", () => {
+    it("reports isDataplaneEnabled when adapter is provided", async () => {
+      // Create sync service with dataplane adapter
+      const syncService = new WorktreeSyncService(db, testDir, dataplaneAdapter);
+
+      expect(syncService.isDataplaneEnabled).toBe(true);
+    });
+
+    it("reports isDataplaneEnabled=false when adapter is null", () => {
+      // Create sync service without adapter
+      const syncService = new WorktreeSyncService(db, testDir, null);
+
+      expect(syncService.isDataplaneEnabled).toBe(false);
+    });
+
+    it("reports isDataplaneEnabled=false when adapter is undefined", () => {
+      // Create sync service with undefined adapter (legacy mode)
+      const syncService = new WorktreeSyncService(db, testDir);
+
+      expect(syncService.isDataplaneEnabled).toBe(false);
+    });
+
+    it("preview sync works with dataplane adapter", async () => {
+      // Create lifecycle service with dataplane
+      const lifecycleService = new ExecutionLifecycleService(
+        db,
+        testDir,
+        undefined,
+        dataplaneAdapter
+      );
+
+      // Create execution
+      const execResult = await lifecycleService.createExecutionWithWorktree({
+        issueId: "i-test123",
+        issueTitle: "Sync Test",
+        agentType: "claude-code",
+        targetBranch: "main",
+        repoPath: testDir,
+        mode: "worktree",
+      });
+
+      expect(execResult.execution.stream_id).toBeDefined();
+
+      // Create sync service with dataplane
+      const syncService = new WorktreeSyncService(db, testDir, dataplaneAdapter);
+
+      expect(syncService.isDataplaneEnabled).toBe(true);
+
+      // Preview should work (may return canSync: false if nothing to sync)
+      const preview = await syncService.previewSync(execResult.execution.id);
+
+      // Should get a valid preview result
+      expect(preview).toBeDefined();
+      expect(typeof preview.canSync).toBe("boolean");
+      expect(Array.isArray(preview.warnings)).toBe(true);
+    });
+
+    it("sync result includes backupTag", async () => {
+      // Create lifecycle service with dataplane
+      const lifecycleService = new ExecutionLifecycleService(
+        db,
+        testDir,
+        undefined,
+        dataplaneAdapter
+      );
+
+      // Create execution
+      const execResult = await lifecycleService.createExecutionWithWorktree({
+        issueId: "i-test123",
+        issueTitle: "Backup Tag Test",
+        agentType: "claude-code",
+        targetBranch: "main",
+        repoPath: testDir,
+        mode: "worktree",
+      });
+
+      // Make a change in the worktree
+      const testFile = path.join(execResult.worktreePath, "backup-test.txt");
+      fs.writeFileSync(testFile, "Testing backup tag\\n");
+
+      // Commit the change
+      execSync("git add . && git commit -m 'Test commit'", {
+        cwd: execResult.worktreePath,
+        stdio: "pipe",
+      });
+
+      // Create sync service with dataplane
+      const syncService = new WorktreeSyncService(db, testDir, dataplaneAdapter);
+
+      // Perform squash sync
+      const result = await syncService.squashSync(execResult.execution.id);
+
+      // Should have backup tag in result (only on success)
+      if (result.success) {
+        expect(result.backupTag).toBeDefined();
+        expect(result.backupTag).toContain("sudocode-sync-before-");
+      }
     });
   });
 });

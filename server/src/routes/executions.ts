@@ -20,6 +20,7 @@ import {
   WorktreeSyncErrorCode,
 } from "../services/worktree-sync-service.js";
 import { ExecutionChangesService } from "../services/execution-changes-service.js";
+import { getDataplaneAdapterSync } from "../services/dataplane-adapter.js";
 
 /**
  * Get WorktreeSyncService instance for a request
@@ -30,7 +31,9 @@ import { ExecutionChangesService } from "../services/execution-changes-service.j
 function getWorktreeSyncService(req: Request): WorktreeSyncService {
   const db = req.project!.db;
   const repoPath = req.project!.path;
-  return new WorktreeSyncService(db, repoPath);
+  // Get dataplane adapter if initialized (non-blocking check)
+  const dataplaneAdapter = getDataplaneAdapterSync(repoPath);
+  return new WorktreeSyncService(db, repoPath, dataplaneAdapter);
 }
 
 /**
