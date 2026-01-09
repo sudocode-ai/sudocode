@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { AgentTrajectory } from '@/components/executions/AgentTrajectory'
 import type { AgentMessage, ToolCall, AgentThought } from '@/hooks/useSessionUpdateStream'
+import type { PermissionRequest } from '@/types/permissions'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 
 // Helper to wrap component with ThemeProvider
@@ -59,6 +60,29 @@ const createThought = (
   content,
   timestamp: timestamp instanceof Date ? timestamp : new Date(timestamp),
   isStreaming,
+})
+
+// Helper to create PermissionRequest
+const createPermissionRequest = (
+  requestId: string,
+  toolCallId: string,
+  title: string,
+  timestamp: Date | number = new Date(),
+  responded = false
+): PermissionRequest => ({
+  requestId,
+  sessionId: 'session-1',
+  toolCall: {
+    toolCallId,
+    title,
+    status: 'pending',
+  },
+  options: [
+    { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+    { optionId: 'deny', name: 'Deny', kind: 'deny_once' },
+  ],
+  responded,
+  timestamp: timestamp instanceof Date ? timestamp : new Date(timestamp),
 })
 
 describe('AgentTrajectory', () => {
@@ -333,6 +357,85 @@ describe('AgentTrajectory', () => {
       expect(screen.getByText('Pending Task')).toBeInTheDocument()
       const blinkingDots = container.querySelectorAll('.animate-pulse')
       expect(blinkingDots.length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('Permission Request Deduplication', () => {
+    it('should not show duplicate tool call when permission request exists for same tool', () => {
+      // When a tool call requires permission, both a tool_call and permission_request
+      // event are received with the same toolCallId. We should only show the permission
+      // request, not both.
+      const toolCalls = [createToolCall('tool-1', 'Write', 'pending', 1000)]
+      const permissionRequests = [createPermissionRequest('perm-1', 'tool-1', 'Write', 2000)]
+
+      const { container } = renderWithTheme(
+        <AgentTrajectory
+          messages={[]}
+          toolCalls={toolCalls}
+          permissionRequests={permissionRequests}
+          onPermissionRespond={() => {}}
+        />
+      )
+
+      // Should only show ONE item (the permission request), not two
+      const items = container.querySelectorAll('.group')
+      expect(items.length).toBe(1)
+
+      // Should show the permission request options
+      expect(screen.getByText('Allow')).toBeInTheDocument()
+      expect(screen.getByText('Deny')).toBeInTheDocument()
+    })
+
+    it('should show tool calls without permission requests normally', () => {
+      // Tool calls that don't have a corresponding permission request should display normally
+      const toolCalls = [
+        createToolCall('tool-1', 'Read', 'success', 1000),
+        createToolCall('tool-2', 'Write', 'pending', 2000),
+      ]
+      const permissionRequests = [createPermissionRequest('perm-1', 'tool-2', 'Write', 2500)]
+
+      const { container } = renderWithTheme(
+        <AgentTrajectory
+          messages={[]}
+          toolCalls={toolCalls}
+          permissionRequests={permissionRequests}
+          onPermissionRespond={() => {}}
+        />
+      )
+
+      // Should show 2 items: tool-1 (Read) and perm-1 (Write permission)
+      const items = container.querySelectorAll('.group')
+      expect(items.length).toBe(2)
+
+      // Read should be visible (no permission request for it)
+      expect(screen.getByText('Read')).toBeInTheDocument()
+      // Permission options for Write should be visible
+      expect(screen.getByText('Allow')).toBeInTheDocument()
+    })
+
+    it('should handle multiple tool calls with multiple permission requests', () => {
+      const toolCalls = [
+        createToolCall('tool-1', 'Read', 'success', 1000),
+        createToolCall('tool-2', 'Write', 'pending', 2000),
+        createToolCall('tool-3', 'Bash', 'pending', 3000),
+      ]
+      const permissionRequests = [
+        createPermissionRequest('perm-1', 'tool-2', 'Write', 2500),
+        createPermissionRequest('perm-2', 'tool-3', 'Bash', 3500),
+      ]
+
+      const { container } = renderWithTheme(
+        <AgentTrajectory
+          messages={[]}
+          toolCalls={toolCalls}
+          permissionRequests={permissionRequests}
+          onPermissionRespond={() => {}}
+        />
+      )
+
+      // Should show 3 items: tool-1 (Read) + 2 permission requests
+      const items = container.querySelectorAll('.group')
+      expect(items.length).toBe(3)
     })
   })
 })

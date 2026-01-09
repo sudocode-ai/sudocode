@@ -771,6 +771,76 @@ export function createExecutionsRouter(): Router {
   );
 
   /**
+   * POST /api/executions/:executionId/skip-all-permissions
+   *
+   * Stop current execution and restart with skip-permissions enabled
+   *
+   * This is used when the user wants to bypass all remaining permission prompts.
+   * It creates a follow-up execution with dangerouslySkipPermissions: true.
+   *
+   * Request body (optional):
+   * - feedback?: string - Optional feedback to include in the follow-up prompt
+   */
+  router.post(
+    "/executions/:executionId/skip-all-permissions",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+        const { feedback } = req.body;
+
+        // 1. Cancel the current execution
+        try {
+          await req.project!.executionService!.cancelExecution(executionId);
+        } catch (cancelError) {
+          // Execution might already be stopped/completed - continue anyway
+          console.log(
+            `[skip-all-permissions] Cancel returned error (may be expected): ${cancelError}`
+          );
+        }
+
+        // 2. Create follow-up with dangerouslySkipPermissions enabled
+        const followUpExecution =
+          await req.project!.executionService!.createFollowUp(
+            executionId,
+            feedback || "Continue from where you left off.",
+            {
+              configOverrides: {
+                dangerouslySkipPermissions: true,
+                // Also update agentConfig to reflect the change
+                agentConfig: {
+                  dangerouslySkipPermissions: true,
+                },
+              },
+            }
+          );
+
+        res.status(201).json({
+          success: true,
+          data: {
+            previousExecutionId: executionId,
+            newExecution: followUpExecution,
+          },
+          message:
+            "Execution restarted with skip-all-permissions enabled. Future permission prompts will be auto-approved.",
+        });
+      } catch (error) {
+        console.error("Error in skip-all-permissions:", error);
+
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        const statusCode = errorMessage.includes("not found") ? 404 : 500;
+
+        res.status(statusCode).json({
+          success: false,
+          data: null,
+          error_data: errorMessage,
+          message: "Failed to restart execution with skip-all-permissions",
+        });
+      }
+    }
+  );
+
+  /**
    * POST /api/executions/:executionId/cancel
    *
    * Cancel a running execution
@@ -801,6 +871,314 @@ export function createExecutionsRouter(): Router {
           data: null,
           error_data: errorMessage,
           message: "Failed to cancel execution",
+        });
+      }
+    }
+  );
+
+  /**
+   * POST /api/executions/:executionId/permission/:requestId
+   *
+   * Respond to a permission request for an interactive execution
+   *
+   * Request body:
+   * - optionId: string (required) - The selected option ID (e.g., 'allow_once', 'reject_always')
+   */
+  router.post(
+    "/executions/:executionId/permission/:requestId",
+    (req: Request, res: Response) => {
+      try {
+        const { executionId, requestId } = req.params;
+        const { optionId } = req.body;
+
+        // Validate required fields
+        if (!optionId || typeof optionId !== "string") {
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: "optionId is required and must be a string",
+          });
+          return;
+        }
+
+        // Attempt to respond to the permission
+        const success = req.project!.executionService!.respondToPermission(
+          executionId,
+          requestId,
+          optionId
+        );
+
+        if (!success) {
+          res.status(404).json({
+            success: false,
+            data: null,
+            message: `Permission request ${requestId} not found or already resolved`,
+          });
+          return;
+        }
+
+        res.json({
+          success: true,
+          data: { executionId, requestId, optionId },
+          message: "Permission response sent successfully",
+        });
+      } catch (error) {
+        console.error("Error responding to permission:", error);
+
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        const statusCode =
+          errorMessage.includes("not found") ||
+          errorMessage.includes("not active")
+            ? 404
+            : 500;
+
+        res.status(statusCode).json({
+          success: false,
+          data: null,
+          error_data: errorMessage,
+          message: "Failed to respond to permission request",
+        });
+      }
+    }
+  );
+
+  /**
+   * GET /api/executions/:executionId/permissions
+   *
+   * Get pending permission requests for an execution
+   */
+  router.get(
+    "/executions/:executionId/permissions",
+    (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+
+        const pendingIds =
+          req.project!.executionService!.getPendingPermissionIds(executionId);
+        const hasPending =
+          req.project!.executionService!.hasPendingPermissions(executionId);
+
+        res.json({
+          success: true,
+          data: {
+            executionId,
+            hasPending,
+            pendingRequestIds: pendingIds,
+          },
+        });
+      } catch (error) {
+        console.error("Error getting pending permissions:", error);
+        res.status(500).json({
+          success: false,
+          data: null,
+          error_data: error instanceof Error ? error.message : String(error),
+          message: "Failed to get pending permissions",
+        });
+      }
+    }
+  );
+
+  /**
+   * POST /api/executions/:executionId/mode
+   *
+   * Set the session mode for an active execution
+   *
+   * Request body:
+   * - mode: string (required) - The mode to set (e.g., "code", "plan", "architect")
+   */
+  router.post(
+    "/executions/:executionId/mode",
+    (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+        const { mode } = req.body;
+
+        // Validate required fields
+        if (!mode || typeof mode !== "string") {
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: "mode is required and must be a string",
+          });
+          return;
+        }
+
+        // Attempt to set the mode
+        const success = req.project!.executionService!.setMode(
+          executionId,
+          mode
+        );
+
+        if (!success) {
+          res.status(404).json({
+            success: false,
+            data: null,
+            message: `Failed to set mode for execution ${executionId}`,
+          });
+          return;
+        }
+
+        res.json({
+          success: true,
+          data: { executionId, mode },
+          message: `Mode set to "${mode}" successfully`,
+        });
+      } catch (error) {
+        console.error("Error setting execution mode:", error);
+
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        const statusCode =
+          errorMessage.includes("not found") ||
+          errorMessage.includes("not active")
+            ? 404
+            : 500;
+
+        res.status(statusCode).json({
+          success: false,
+          data: null,
+          error_data: errorMessage,
+          message: "Failed to set execution mode",
+        });
+      }
+    }
+  );
+
+  /**
+   * POST /api/executions/:executionId/interrupt
+   *
+   * Interrupt an active execution
+   *
+   * Cancels the agent's current work without providing new instructions.
+   * The session remains valid and can receive new prompts via follow-up.
+   *
+   * Request body (optional):
+   * - prompt?: string - If provided, cancel current work and continue with this prompt
+   */
+  router.post(
+    "/executions/:executionId/interrupt",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+        const { prompt } = req.body;
+
+        if (prompt && typeof prompt === "string" && prompt.trim()) {
+          // Interrupt and continue with new prompt
+          await req.project!.executionService!.interruptWithPrompt(
+            executionId,
+            prompt
+          );
+
+          res.json({
+            success: true,
+            data: { executionId, interrupted: true, redirected: true },
+            message: "Execution interrupted and redirected",
+          });
+        } else {
+          // Simple cancel
+          const success =
+            await req.project!.executionService!.interruptExecution(
+              executionId
+            );
+
+          if (!success) {
+            res.status(404).json({
+              success: false,
+              data: null,
+              message: `Failed to interrupt execution ${executionId}`,
+            });
+            return;
+          }
+
+          res.json({
+            success: true,
+            data: { executionId, interrupted: true },
+            message: "Execution interrupted",
+          });
+        }
+      } catch (error) {
+        console.error("Error interrupting execution:", error);
+
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        let statusCode = 500;
+
+        if (
+          errorMessage.includes("not found") ||
+          errorMessage.includes("not active")
+        ) {
+          statusCode = 404;
+        } else if (
+          errorMessage.includes("not an ACP execution") ||
+          errorMessage.includes("does not support interruption")
+        ) {
+          statusCode = 400;
+        }
+
+        res.status(statusCode).json({
+          success: false,
+          data: null,
+          error_data: errorMessage,
+          message: "Failed to interrupt execution",
+        });
+      }
+    }
+  );
+
+  /**
+   * POST /api/executions/:executionId/fork
+   *
+   * Fork an active execution into a new independent execution
+   *
+   * Creates a new execution that inherits the conversation history from the parent
+   * session. The forked execution runs independently but preserves context.
+   *
+   * This is useful for:
+   * - Exploring alternative approaches without losing progress
+   * - Creating checkpoint branches for experimentation
+   * - Parallel exploration of different solutions
+   *
+   * Note: This relies on the experimental session/fork ACP capability
+   */
+  router.post(
+    "/executions/:executionId/fork",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+
+        const forkedExecution =
+          await req.project!.executionService!.forkExecution(executionId);
+
+        res.status(201).json({
+          success: true,
+          data: forkedExecution,
+          message: "Execution forked successfully",
+        });
+      } catch (error) {
+        console.error("Error forking execution:", error);
+
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        let statusCode = 500;
+
+        if (
+          errorMessage.includes("not found") ||
+          errorMessage.includes("not active")
+        ) {
+          statusCode = 404;
+        } else if (
+          errorMessage.includes("not an ACP execution") ||
+          errorMessage.includes("does not support forking")
+        ) {
+          statusCode = 400;
+        }
+
+        res.status(statusCode).json({
+          success: false,
+          data: null,
+          error_data: errorMessage,
+          message: "Failed to fork execution",
         });
       }
     }

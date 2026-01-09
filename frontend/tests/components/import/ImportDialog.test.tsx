@@ -271,11 +271,16 @@ describe('ImportDialog', () => {
 
     renderWithProviders(<ImportDialog {...defaultProps} />)
 
+    // Wait for the auto-search to complete first (triggered by canBrowseRepo).
+    // The component auto-loads issues from the current repo after a 50ms delay.
+    // We wait for results to appear before interacting.
     await waitFor(() => {
-      expect(screen.getByPlaceholderText('Paste URL or search...')).toBeInTheDocument()
-    })
+      expect(screen.getByText('First Issue')).toBeInTheDocument()
+    }, { timeout: 3000 })
 
+    // Now perform a manual search which will reset the selection state
     const input = screen.getByPlaceholderText('Paste URL or search...')
+    await user.clear(input)
     await user.type(input, 'test')
 
     const searchButton = screen.getByRole('button', { name: '' })

@@ -392,5 +392,252 @@ describe("ExecutorFactory", () => {
       expect(executor).toBeInstanceOf(LegacyShimExecutorWrapper);
       expect((executor as any).agentConfig.model).toBe("gpt-4o");
     });
+
+    it("should pass ANTHROPIC_MODEL env var for claude-code agent model selection", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        { workDir: testDir, model: "claude-sonnet-4-20250514" },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      // Model should be mapped to ANTHROPIC_MODEL env var
+      const acpConfig = (executor as any).acpConfig;
+      expect(acpConfig.env).toBeDefined();
+      expect(acpConfig.env.ANTHROPIC_MODEL).toBe("claude-sonnet-4-20250514");
+    });
+
+    it("should merge model env var with existing env config for ACP agents", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        {
+          workDir: testDir,
+          model: "claude-sonnet-4-20250514",
+          env: { CUSTOM_VAR: "custom-value" }
+        },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      expect(acpConfig.env).toBeDefined();
+      // Both model env var and custom env should be present
+      expect(acpConfig.env.ANTHROPIC_MODEL).toBe("claude-sonnet-4-20250514");
+      expect(acpConfig.env.CUSTOM_VAR).toBe("custom-value");
+    });
+
+    it("should not set ANTHROPIC_MODEL if no model specified", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        { workDir: testDir },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      // env might be undefined or not have ANTHROPIC_MODEL
+      expect(acpConfig.env?.ANTHROPIC_MODEL).toBeUndefined();
+    });
+  });
+
+  describe("permission mode mapping", () => {
+    let testDir: string;
+    let db: Database.Database;
+    let factoryConfigWithDb: ExecutorFactoryConfig;
+
+    beforeAll(() => {
+      // Create temporary directory for test database
+      testDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), "sudocode-test-executor-factory-perm-")
+      );
+      const dbPath = path.join(testDir, "test.db");
+
+      // Create database
+      db = new Database(dbPath);
+
+      // Initialize minimal schema
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS executions (
+          id TEXT PRIMARY KEY,
+          issue_id TEXT,
+          agent_type TEXT NOT NULL,
+          status TEXT NOT NULL,
+          mode TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          completed_at TEXT,
+          before_commit TEXT,
+          after_commit TEXT,
+          worktree_path TEXT,
+          session_id TEXT,
+          exit_code INTEGER,
+          error_message TEXT,
+          files_changed TEXT,
+          parent_execution_id TEXT,
+          workflow_execution_id TEXT,
+          step_type TEXT,
+          step_index INTEGER,
+          step_config TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS execution_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          execution_id TEXT NOT NULL,
+          timestamp TEXT NOT NULL,
+          raw_logs TEXT,
+          normalized_entry TEXT,
+          FOREIGN KEY (execution_id) REFERENCES executions(id)
+        );
+      `);
+
+      // Create minimal factory config
+      const lifecycleService = new ExecutionLifecycleService(db, testDir);
+      const logsStore = new ExecutionLogsStore(db);
+
+      factoryConfigWithDb = {
+        workDir: testDir,
+        lifecycleService,
+        logsStore,
+        projectId: "test-project",
+        db,
+      };
+    });
+
+    afterAll(() => {
+      // Clean up
+      db.close();
+      fs.rmSync(testDir, { recursive: true, force: true });
+    });
+
+    it("should map permissionMode 'plan' to session mode 'plan'", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        {
+          workDir: testDir,
+          permissionMode: "plan",
+        },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      expect(acpConfig.mode).toBe("plan");
+      // Should still use interactive for permission handling
+      expect(acpConfig.permissionMode).toBe("interactive");
+    });
+
+    it("should map permissionMode 'bypassPermissions' to auto-approve", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        {
+          workDir: testDir,
+          permissionMode: "bypassPermissions",
+        },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      expect(acpConfig.permissionMode).toBe("auto-approve");
+    });
+
+    it("should use dangerouslySkipPermissions for auto-approve", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        {
+          workDir: testDir,
+          dangerouslySkipPermissions: true,
+        },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      expect(acpConfig.permissionMode).toBe("auto-approve");
+    });
+
+    it("should use nested agentConfig.permissionMode for mode mapping", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        {
+          workDir: testDir,
+          agentConfig: {
+            permissionMode: "plan",
+          },
+        },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      expect(acpConfig.mode).toBe("plan");
+    });
+
+    it("should use nested agentConfig.dangerouslySkipPermissions for auto-approve", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        {
+          workDir: testDir,
+          agentConfig: {
+            dangerouslySkipPermissions: true,
+          },
+        },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      expect(acpConfig.permissionMode).toBe("auto-approve");
+    });
+
+    it("should prefer explicit mode over permissionMode-derived mode", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        {
+          workDir: testDir,
+          mode: "ask",
+          permissionMode: "plan",
+        },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      // Explicit mode takes precedence
+      expect(acpConfig.mode).toBe("ask");
+    });
+
+    it("should use interactive permission mode for 'default' permissionMode", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        {
+          workDir: testDir,
+          permissionMode: "default",
+        },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      expect(acpConfig.permissionMode).toBe("interactive");
+      expect(acpConfig.mode).toBeUndefined();
+    });
+
+    it("should use interactive permission mode for 'acceptEdits' permissionMode", () => {
+      // acceptEdits currently maps to interactive (full implementation TBD)
+      const executor = createExecutorForAgent(
+        "claude-code",
+        {
+          workDir: testDir,
+          permissionMode: "acceptEdits",
+        },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      // For now, acceptEdits uses interactive mode
+      expect(acpConfig.permissionMode).toBe("interactive");
+    });
   });
 });

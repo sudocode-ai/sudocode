@@ -959,6 +959,87 @@ describe("ExecutionService", () => {
       expect(followUpConfig.appendSystemPrompt).toBe("Always be helpful");
       expect(followUpConfig.model).toBe("claude-sonnet-4");
     });
+
+    it("should deep merge agentConfig when configOverrides is provided", async () => {
+      // Create initial execution with agentConfig
+      const issueContent = "Add OAuth2 authentication with JWT tokens";
+      const initialExecution = await service.createExecution(
+        testIssueId,
+        {
+          mode: "worktree" as const,
+          agentConfig: {
+            restrictToWorkDir: true,
+            model: "sonnet",
+          },
+        },
+        issueContent
+      );
+
+      // Verify initial execution has the agentConfig
+      const initialConfig = JSON.parse(initialExecution.config!);
+      expect(initialConfig.agentConfig.restrictToWorkDir).toBe(true);
+      expect(initialConfig.agentConfig.model).toBe("sonnet");
+
+      // Create follow-up with configOverrides that only updates dangerouslySkipPermissions
+      const followUpExecution = await service.createFollowUp(
+        initialExecution.id,
+        "Continue with skip permissions",
+        {
+          configOverrides: {
+            dangerouslySkipPermissions: true,
+            agentConfig: {
+              dangerouslySkipPermissions: true,
+            },
+          },
+        }
+      );
+
+      // Verify follow-up has deep-merged agentConfig
+      const followUpConfig = JSON.parse(followUpExecution.config!);
+
+      // Top-level dangerouslySkipPermissions should be set
+      expect(followUpConfig.dangerouslySkipPermissions).toBe(true);
+
+      // agentConfig should have BOTH the parent settings AND the override
+      expect(followUpConfig.agentConfig.dangerouslySkipPermissions).toBe(true);
+      expect(followUpConfig.agentConfig.restrictToWorkDir).toBe(true); // preserved from parent
+      expect(followUpConfig.agentConfig.model).toBe("sonnet"); // preserved from parent
+    });
+
+    it("should allow configOverrides to override parent agentConfig settings", async () => {
+      // Create initial execution with agentConfig
+      const issueContent = "Add OAuth2 authentication with JWT tokens";
+      const initialExecution = await service.createExecution(
+        testIssueId,
+        {
+          mode: "worktree" as const,
+          agentConfig: {
+            model: "sonnet",
+            dangerouslySkipPermissions: false,
+          },
+        },
+        issueContent
+      );
+
+      // Create follow-up with configOverrides that changes an existing setting
+      const followUpExecution = await service.createFollowUp(
+        initialExecution.id,
+        "Continue with skip permissions",
+        {
+          configOverrides: {
+            agentConfig: {
+              dangerouslySkipPermissions: true,
+              // model not specified - should preserve parent's value
+            },
+          },
+        }
+      );
+
+      // Verify the override took effect while preserving other settings
+      const followUpConfig = JSON.parse(followUpExecution.config!);
+      expect(followUpConfig.agentConfig.dangerouslySkipPermissions).toBe(true); // overridden
+      expect(followUpConfig.agentConfig.model).toBe("sonnet"); // preserved from parent
+    });
   });
 
   describe("worktree system prompt context", () => {

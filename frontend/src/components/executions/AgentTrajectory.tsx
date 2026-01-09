@@ -14,12 +14,19 @@ import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { JsonView, defaultStyles, darkStyles } from 'react-json-view-lite'
 import 'react-json-view-lite/dist/index.css'
-import type { AgentMessage, ToolCall, AgentThought } from '@/hooks/useSessionUpdateStream'
+import type {
+  AgentMessage,
+  ToolCall,
+  AgentThought,
+  ToolCallContentItem,
+} from '@/hooks/useSessionUpdateStream'
+import type { PermissionRequest as PermissionRequestType } from '@/types/permissions'
 import { TodoTracker } from './TodoTracker'
 import { buildTodoHistoryFromToolCalls } from '@/utils/todoExtractor'
 import { DiffViewer } from './DiffViewer'
 import { parseClaudeToolArgs } from '@/utils/claude'
 import { useTheme } from '@/contexts/ThemeContext'
+import { PermissionRequest } from './PermissionRequest'
 
 const MAX_CHARS_BEFORE_TRUNCATION = 500
 
@@ -56,13 +63,33 @@ export interface AgentTrajectoryProps {
   showTodoTracker?: boolean
 
   /**
+   * Array of pending permission requests
+   */
+  permissionRequests?: PermissionRequestType[]
+
+  /**
+   * Callback when user responds to a permission request
+   */
+  onPermissionRespond?: (requestId: string, optionId: string) => void
+
+  /**
+   * Callback when user wants to skip all remaining permissions
+   */
+  onSkipAllPermissions?: () => void
+
+  /**
+   * Whether skip-all action is in progress
+   */
+  isSkippingAllPermissions?: boolean
+
+  /**
    * Custom class name
    */
   className?: string
 }
 
 /**
- * Trajectory item representing a message, thought, or tool call
+ * Trajectory item representing a message, thought, tool call, or permission request
  */
 type TrajectoryItem =
   | {
@@ -82,6 +109,12 @@ type TrajectoryItem =
       timestamp: number
       index?: number
       data: ToolCall
+    }
+  | {
+      type: 'permission_request'
+      timestamp: number
+      index?: number
+      data: PermissionRequestType
     }
 
 /**
@@ -137,23 +170,22 @@ function formatToolArgs(toolName: string, rawInput: unknown): string {
     }
 
     // For TodoWrite, show summary of todos
+    // Detect by content structure since ACP titles are human-readable, not tool names
     if (toolName === 'TodoWrite' && parsed.todos && Array.isArray(parsed.todos)) {
       const count = parsed.todos.length
-      const statuses = parsed.todos.reduce((acc: Record<string, number>, todo: { status?: string }) => {
-        if (todo.status) {
-          acc[todo.status] = (acc[todo.status] || 0) + 1
-        }
-        return acc
-      }, {})
+      const statuses = parsed.todos.reduce(
+        (acc: Record<string, number>, todo: { status?: string }) => {
+          if (todo.status) {
+            acc[todo.status] = (acc[todo.status] || 0) + 1
+          }
+          return acc
+        },
+        {}
+      )
       const parts: string[] = [`${count} todo${count !== 1 ? 's' : ''}`]
       if (statuses.in_progress) parts.push(`${statuses.in_progress} in progress`)
       if (statuses.completed) parts.push(`${statuses.completed} completed`)
       return parts.join(', ')
-    }
-
-    // For TodoRead, show that it's reading the list
-    if (toolName === 'TodoRead') {
-      return 'reading todo list'
     }
 
     // For other tools, show first key-value pair
@@ -176,7 +208,11 @@ function formatToolArgs(toolName: string, rawInput: unknown): string {
 /**
  * Format tool result summary for collapsed view
  */
-function formatResultSummary(toolName: string, result: string, maxChars: number = 250): string | null {
+function formatResultSummary(
+  toolName: string,
+  result: string,
+  maxChars: number = 250
+): string | null {
   try {
     if (toolName === 'Bash') {
       const lines = result.split('\n').filter((line) => line.trim())
@@ -221,36 +257,30 @@ function formatResultSummary(toolName: string, result: string, maxChars: number 
       return 'Search completed'
     }
 
-    if (toolName === 'TodoWrite') {
-      try {
-        const parsed = JSON.parse(result)
-        if (parsed.todos && Array.isArray(parsed.todos)) {
-          return `Updated ${parsed.todos.length} todo${parsed.todos.length !== 1 ? 's' : ''}`
-        }
-      } catch {
-        // Fallback
+    // Detect todo tools by result structure since ACP titles are human-readable
+    try {
+      const parsed = JSON.parse(result)
+      if (parsed.todos && Array.isArray(parsed.todos)) {
+        // Result contains todos array - summarize it
+        const pending = parsed.todos.filter(
+          (t: { status?: string }) => t.status === 'pending'
+        ).length
+        const inProgress = parsed.todos.filter(
+          (t: { status?: string }) => t.status === 'in_progress'
+        ).length
+        const completed = parsed.todos.filter(
+          (t: { status?: string }) => t.status === 'completed'
+        ).length
+        const parts: string[] = []
+        if (pending) parts.push(`${pending} pending`)
+        if (inProgress) parts.push(`${inProgress} in progress`)
+        if (completed) parts.push(`${completed} completed`)
+        return parts.length > 0
+          ? parts.join(', ')
+          : `${parsed.todos.length} todo${parsed.todos.length !== 1 ? 's' : ''}`
       }
-      return 'Todo list updated'
-    }
-
-    if (toolName === 'TodoRead') {
-      try {
-        const parsed = JSON.parse(result)
-        if (parsed.todos && Array.isArray(parsed.todos)) {
-          const pending = parsed.todos.filter((t: { status?: string }) => t.status === 'pending').length
-          const inProgress = parsed.todos.filter((t: { status?: string }) => t.status === 'in_progress').length
-          const completed = parsed.todos.filter((t: { status?: string }) => t.status === 'completed').length
-          const parts: string[] = []
-          if (pending) parts.push(`${pending} pending`)
-          if (inProgress) parts.push(`${inProgress} in progress`)
-          if (completed) parts.push(`${completed} completed`)
-          return parts.length > 0 ? parts.join(', ') : `${parsed.todos.length} todos`
-        }
-      } catch {
-        // Fallback
-      }
-      const lines = result.split('\n').filter((line) => line.trim())
-      return `${lines.length} todos`
+    } catch {
+      // Not JSON - continue to other checks
     }
 
     return null
@@ -324,6 +354,44 @@ function valueToString(value: unknown): string {
 }
 
 /**
+ * Extract text content from ACP content array
+ * Prioritizes text content, falls back to describing other types
+ */
+function extractContentText(content: ToolCallContentItem[] | undefined): string | null {
+  if (!content || content.length === 0) return null
+
+  const textParts: string[] = []
+  for (const item of content) {
+    if (item.type === 'content' && item.content.type === 'text') {
+      textParts.push(item.content.text)
+    } else if (item.type === 'terminal') {
+      // Terminal content is displayed separately via rawOutput
+      continue
+    } else if (item.type === 'diff') {
+      // Diffs are rendered via DiffViewer
+      continue
+    }
+  }
+
+  return textParts.length > 0 ? textParts.join('\n') : null
+}
+
+/**
+ * Check if content array has a diff
+ */
+function getContentDiff(
+  content: ToolCallContentItem[] | undefined
+): { path: string; oldText?: string | null; newText: string } | null {
+  if (!content) return null
+  for (const item of content) {
+    if (item.type === 'diff') {
+      return item
+    }
+  }
+  return null
+}
+
+/**
  * AgentTrajectory Component
  *
  * Unified terminal-style rendering for all agent executions.
@@ -343,6 +411,10 @@ export function AgentTrajectory({
   messages,
   toolCalls,
   thoughts = [],
+  permissionRequests = [],
+  onPermissionRespond,
+  onSkipAllPermissions,
+  isSkippingAllPermissions = false,
   renderMarkdown = true,
   hideSystemMessages = true,
   showTodoTracker = true,
@@ -354,6 +426,13 @@ export function AgentTrajectory({
   // Merge messages, thoughts, and tool calls into a chronological timeline
   const trajectory = useMemo(() => {
     const items: TrajectoryItem[] = []
+
+    // Build a set of tool call IDs that have pending permission requests
+    // These tool calls will be represented by their permission request instead
+    const toolCallsWithPermissions = new Set<string>()
+    permissionRequests.forEach((request) => {
+      toolCallsWithPermissions.add(request.toolCall.toolCallId)
+    })
 
     // Add messages (filtering out system messages if requested)
     messages.forEach((message) => {
@@ -378,8 +457,12 @@ export function AgentTrajectory({
       })
     })
 
-    // Add tool calls
+    // Add tool calls (excluding those with pending permission requests)
     toolCalls.forEach((toolCall) => {
+      // Skip tool calls that have a permission request - they'll be shown as permission requests instead
+      if (toolCallsWithPermissions.has(toolCall.id)) {
+        return
+      }
       items.push({
         type: 'tool_call',
         timestamp: toolCall.timestamp.getTime(),
@@ -388,16 +471,32 @@ export function AgentTrajectory({
       })
     })
 
-    // Sort by timestamp, using index as secondary key for stable ordering
+    // Add permission requests
+    permissionRequests.forEach((request) => {
+      items.push({
+        type: 'permission_request',
+        timestamp: request.timestamp.getTime(),
+        index: request.index,
+        data: request,
+      })
+    })
+
+    // Sort by index (primary) for stable ordering during streaming,
+    // falling back to timestamp for items without indices
     return items.sort((a, b) => {
-      const timeDiff = a.timestamp - b.timestamp
-      if (timeDiff !== 0) return timeDiff
+      // If both items have indices, use index as primary sort key
+      // This ensures stable ordering during streaming since index is assigned
+      // synchronously in order of event arrival
       if (a.index !== undefined && b.index !== undefined) {
         return a.index - b.index
       }
-      return 0
+      // Items with indices come before items without
+      if (a.index !== undefined) return -1
+      if (b.index !== undefined) return 1
+      // Fallback to timestamp for items without indices
+      return a.timestamp - b.timestamp
     })
-  }, [messages, toolCalls, thoughts, hideSystemMessages])
+  }, [messages, toolCalls, thoughts, permissionRequests, hideSystemMessages])
 
   if (trajectory.length === 0) {
     return null
@@ -407,9 +506,26 @@ export function AgentTrajectory({
     <div className={`space-y-1 font-mono text-sm ${className}`}>
       {trajectory.map((item, idx) => {
         if (item.type === 'message') {
-          return <MessageItem key={`msg-${item.data.id}-${idx}`} message={item.data} renderMarkdown={renderMarkdown} />
+          return (
+            <MessageItem
+              key={`msg-${item.data.id}-${idx}`}
+              message={item.data}
+              renderMarkdown={renderMarkdown}
+            />
+          )
         } else if (item.type === 'thought') {
           return <ThoughtItem key={`thought-${item.data.id}-${idx}`} thought={item.data} />
+        } else if (item.type === 'permission_request') {
+          return (
+            <PermissionRequest
+              key={`perm-${item.data.requestId}-${idx}`}
+              request={item.data}
+              onRespond={onPermissionRespond ?? (() => {})}
+              onSkipAll={onSkipAllPermissions}
+              isSkippingAll={isSkippingAllPermissions}
+              autoFocus={false}
+            />
+          )
         } else {
           return <ToolCallItem key={`tool-${item.data.id}-${idx}`} toolCall={item.data} />
         }
@@ -428,11 +544,21 @@ export function AgentTrajectory({
 /**
  * MessageItem - Terminal-style message rendering
  */
-function MessageItem({ message, renderMarkdown }: { message: AgentMessage; renderMarkdown: boolean }) {
+function MessageItem({
+  message,
+  renderMarkdown,
+}: {
+  message: AgentMessage
+  renderMarkdown: boolean
+}) {
   return (
     <div className="group">
       <div className="flex items-start gap-2">
-        <span className={`mt-0.5 select-none text-foreground ${message.isStreaming ? 'animate-pulse' : ''}`}>⏺</span>
+        <span
+          className={`mt-0.5 select-none text-foreground ${message.isStreaming ? 'animate-pulse' : ''}`}
+        >
+          ⏺
+        </span>
         <div className="min-w-0 flex-1 py-0.5">
           {renderMarkdown ? (
             <ReactMarkdown
@@ -457,7 +583,12 @@ function MessageItem({ message, renderMarkdown }: { message: AgentMessage; rende
                     return (
                       <code
                         className="!inline rounded bg-muted px-1 py-0.5 font-mono text-xs"
-                        style={{ display: 'inline', whiteSpace: 'nowrap', width: 'auto', maxWidth: 'none' }}
+                        style={{
+                          display: 'inline',
+                          whiteSpace: 'nowrap',
+                          width: 'auto',
+                          maxWidth: 'none',
+                        }}
                         {...props}
                       >
                         {children}
@@ -484,8 +615,12 @@ function MessageItem({ message, renderMarkdown }: { message: AgentMessage; rende
                   </a>
                 ),
                 h1: ({ children }) => <h1 className="mb-1 mt-2 text-base font-bold">{children}</h1>,
-                h2: ({ children }) => <h2 className="mb-1 mt-2 text-sm font-semibold">{children}</h2>,
-                h3: ({ children }) => <h3 className="mb-1 mt-1 text-sm font-semibold">{children}</h3>,
+                h2: ({ children }) => (
+                  <h2 className="mb-1 mt-2 text-sm font-semibold">{children}</h2>
+                ),
+                h3: ({ children }) => (
+                  <h3 className="mb-1 mt-1 text-sm font-semibold">{children}</h3>
+                ),
               }}
             >
               {message.content}
@@ -506,7 +641,11 @@ function ThoughtItem({ thought }: { thought: AgentThought }) {
   return (
     <div className="group">
       <div className="flex items-start gap-2">
-        <span className={`mt-0.5 select-none text-purple-500 ${thought.isStreaming ? 'animate-pulse' : ''}`}>⏺</span>
+        <span
+          className={`mt-0.5 select-none text-purple-500 ${thought.isStreaming ? 'animate-pulse' : ''}`}
+        >
+          ⏺
+        </span>
         <div className="min-w-0 flex-1 py-0.5">
           <div className="whitespace-pre-wrap text-xs italic leading-relaxed text-muted-foreground">
             {thought.content}
@@ -528,7 +667,13 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCall }) {
   const toolName = toolCall.title
   const formattedArgs = formatToolArgs(toolName, toolCall.rawInput)
   const argsString = valueToString(toolCall.rawInput)
-  const resultString = valueToString(toolCall.result ?? toolCall.rawOutput)
+
+  // Prefer content text over rawOutput for result display
+  const contentText = extractContentText(toolCall.content)
+  const resultString = contentText ?? valueToString(toolCall.result ?? toolCall.rawOutput)
+
+  // Check for structured diff in content
+  const contentDiff = getContentDiff(toolCall.content)
 
   const argsData = argsString ? truncateText(argsString, 2) : null
   const resultData = resultString ? truncateText(resultString, 2) : null
@@ -589,13 +734,17 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCall }) {
                     {showFullArgs ? (
                       <>
                         {'> Hide ('}
-                        {argsData.lineCount > 2 ? `${argsData.lineCount} lines` : `${argsData.charCount} chars`}
+                        {argsData.lineCount > 2
+                          ? `${argsData.lineCount} lines`
+                          : `${argsData.charCount} chars`}
                         {')'}
                       </>
                     ) : argsData.lineCount > 2 ? (
                       <>{'> +' + (argsData.lineCount - 2) + ' more lines'}</>
                     ) : (
-                      <>{'> +' + (argsData.charCount - MAX_CHARS_BEFORE_TRUNCATION) + ' more chars'}</>
+                      <>
+                        {'> +' + (argsData.charCount - MAX_CHARS_BEFORE_TRUNCATION) + ' more chars'}
+                      </>
                     )}
                   </button>
                 )}
@@ -603,37 +752,63 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCall }) {
             </div>
           )}
 
-          {/* Diff viewer for Edit tools */}
-          {toolName === 'Edit' &&
+          {/* Diff viewer for Edit tools - prefer ACP content diff if available */}
+          {(toolName === 'Edit' || contentDiff) &&
             (() => {
-              try {
-                const { oldContent, newContent, filePath } = parseClaudeToolArgs(toolName, argsString)
+              // Prefer ACP content diff if available
+              if (contentDiff) {
                 return (
                   <div className="mt-0.5 flex items-start gap-2">
                     <span className="select-none text-muted-foreground">∟</span>
                     <div className="min-w-0 flex-1">
                       <DiffViewer
-                        oldContent={oldContent}
-                        newContent={newContent}
-                        filePath={filePath}
+                        oldContent={contentDiff.oldText ?? ''}
+                        newContent={contentDiff.newText}
+                        filePath={contentDiff.path}
                         className="my-1"
                         maxLines={50}
                       />
                     </div>
                   </div>
                 )
-              } catch {
-                return (
-                  <div className="mt-0.5 flex items-start gap-2">
-                    <span className="select-none text-muted-foreground">∟</span>
-                    <div className="min-w-0 flex-1">
-                      <div className="rounded border border-destructive/20 bg-destructive/5 p-2 text-xs text-destructive">
-                        Unable to display diff
+              }
+
+              // Fall back to parsing from rawInput for Edit tool
+              if (toolName === 'Edit') {
+                try {
+                  const { oldContent, newContent, filePath } = parseClaudeToolArgs(
+                    toolName,
+                    argsString
+                  )
+                  return (
+                    <div className="mt-0.5 flex items-start gap-2">
+                      <span className="select-none text-muted-foreground">∟</span>
+                      <div className="min-w-0 flex-1">
+                        <DiffViewer
+                          oldContent={oldContent}
+                          newContent={newContent}
+                          filePath={filePath}
+                          className="my-1"
+                          maxLines={50}
+                        />
                       </div>
                     </div>
-                  </div>
-                )
+                  )
+                } catch {
+                  return (
+                    <div className="mt-0.5 flex items-start gap-2">
+                      <span className="select-none text-muted-foreground">∟</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="rounded border border-destructive/20 bg-destructive/5 p-2 text-xs text-destructive">
+                          Unable to display diff
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }
               }
+
+              return null
             })()}
 
           {/* Tool result */}
@@ -652,7 +827,9 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCall }) {
                           return <div className="text-xs leading-relaxed">{summary}</div>
                         }
                         return (
-                          <pre className="whitespace-pre-wrap text-xs leading-relaxed">{resultData.truncated}</pre>
+                          <pre className="whitespace-pre-wrap text-xs leading-relaxed">
+                            {resultData.truncated}
+                          </pre>
                         )
                       })()}
                     {showFullResult &&
@@ -674,11 +851,17 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCall }) {
                             )
                           } catch {
                             return (
-                              <pre className="whitespace-pre-wrap text-xs leading-relaxed">{resultString}</pre>
+                              <pre className="whitespace-pre-wrap text-xs leading-relaxed">
+                                {resultString}
+                              </pre>
                             )
                           }
                         }
-                        return <pre className="whitespace-pre-wrap text-xs leading-relaxed">{resultString}</pre>
+                        return (
+                          <pre className="whitespace-pre-wrap text-xs leading-relaxed">
+                            {resultString}
+                          </pre>
+                        )
                       })()}
                     {resultData.hasMore && (
                       <button
@@ -696,7 +879,11 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCall }) {
                         ) : resultData.lineCount > 2 ? (
                           <>{'> +' + (resultData.lineCount - 2) + ' more lines'}</>
                         ) : (
-                          <>{'> +' + (resultData.charCount - MAX_CHARS_BEFORE_TRUNCATION) + ' more chars'}</>
+                          <>
+                            {'> +' +
+                              (resultData.charCount - MAX_CHARS_BEFORE_TRUNCATION) +
+                              ' more chars'}
+                          </>
                         )}
                       </button>
                     )}

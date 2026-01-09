@@ -159,6 +159,15 @@ describe("AcpExecutorWrapper", () => {
       expect(AgentFactory.spawn).toHaveBeenCalledWith("claude-code", {
         env: undefined,
         permissionMode: "auto-approve",
+        // Terminal handlers
+        onTerminalCreate: expect.any(Function),
+        onTerminalOutput: expect.any(Function),
+        onTerminalKill: expect.any(Function),
+        onTerminalRelease: expect.any(Function),
+        onTerminalWaitForExit: expect.any(Function),
+        // File handlers
+        onFileRead: expect.any(Function),
+        onFileWrite: expect.any(Function),
       });
 
       expect(mockAgent.createSession).toHaveBeenCalledWith("/test/workdir", {
@@ -247,6 +256,36 @@ describe("AcpExecutorWrapper", () => {
           }),
         })
       );
+    });
+
+    it("should NOT broadcast session_update to issue subscribers (prevents duplicates)", async () => {
+      const { AgentFactory } = await import("acp-factory");
+      const { websocketManager } = await import("../../../../src/services/websocket.js");
+      const mockAgent = await AgentFactory.spawn("claude-code");
+
+      (mockAgent.createSession as any).mockResolvedValueOnce({
+        id: "session-abc",
+        cwd: "/test/workdir",
+        modes: ["code"],
+        models: ["claude-sonnet"],
+        prompt: vi.fn().mockImplementation(async function* () {
+          yield { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Test" } };
+        }),
+        cancel: vi.fn(),
+      });
+
+      await wrapper.executeWithLifecycle(
+        "exec-123",
+        { id: "task-1", prompt: "Test prompt" },
+        "/test/workdir"
+      );
+
+      // Verify session_update was NOT broadcast to issue subscribers
+      // (broadcasting to both causes duplicate messages when frontend subscribes to both channels)
+      const issueSessionUpdateCalls = (websocketManager.broadcast as any).mock.calls.filter(
+        (call: any[]) => call[1] === "issue" && call[3]?.type === "session_update"
+      );
+      expect(issueSessionUpdateCalls).toHaveLength(0);
     });
 
     it("should update execution status on completion", async () => {
