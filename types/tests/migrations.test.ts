@@ -1057,6 +1057,451 @@ describe("Database Migrations", () => {
     });
   });
 
+  describe("Migration 6: add-stream-id-to-executions", () => {
+    beforeEach(() => {
+      // Create old schema without stream_id column
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS executions (
+          id TEXT PRIMARY KEY,
+          issue_id TEXT,
+          issue_uuid TEXT,
+          mode TEXT CHECK(mode IN ('worktree', 'local')),
+          prompt TEXT,
+          config TEXT,
+          agent_type TEXT,
+          session_id TEXT,
+          workflow_execution_id TEXT,
+          target_branch TEXT NOT NULL,
+          branch_name TEXT NOT NULL,
+          before_commit TEXT,
+          after_commit TEXT,
+          worktree_path TEXT,
+          status TEXT NOT NULL CHECK(status IN (
+            'preparing', 'pending', 'running', 'paused',
+            'completed', 'failed', 'cancelled', 'stopped'
+          )),
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          started_at DATETIME,
+          completed_at DATETIME,
+          cancelled_at DATETIME,
+          exit_code INTEGER,
+          error_message TEXT,
+          error TEXT,
+          model TEXT,
+          summary TEXT,
+          files_changed TEXT,
+          parent_execution_id TEXT,
+          step_type TEXT,
+          step_index INTEGER,
+          step_config TEXT
+        )
+      `);
+
+      // Insert test data
+      db.prepare(
+        `
+        INSERT INTO executions (
+          id, target_branch, branch_name, status, agent_type
+        ) VALUES (?, ?, ?, ?, ?)
+      `
+      ).run("exec-1", "main", "test-branch-1", "running", "claude-code");
+    });
+
+    it("should add stream_id column", () => {
+      runMigrations(db);
+
+      const tableInfo = db.pragma("table_info(executions)") as Array<{
+        name: string;
+      }>;
+
+      const columnNames = tableInfo.map((col) => col.name);
+      expect(columnNames).toContain("stream_id");
+    });
+
+    it("should preserve existing execution data", () => {
+      runMigrations(db);
+
+      const exec = db
+        .prepare("SELECT * FROM executions WHERE id = ?")
+        .get("exec-1") as {
+        id: string;
+        agent_type: string;
+        status: string;
+        stream_id: string | null;
+      };
+
+      expect(exec).toBeDefined();
+      expect(exec.id).toBe("exec-1");
+      expect(exec.agent_type).toBe("claude-code");
+      expect(exec.status).toBe("running");
+      expect(exec.stream_id).toBeNull();
+    });
+
+    it("should create index for stream_id", () => {
+      runMigrations(db);
+
+      const indexes = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='executions'"
+        )
+        .all() as Array<{ name: string }>;
+
+      const indexNames = indexes.map((idx) => idx.name);
+      expect(indexNames).toContain("idx_executions_stream_id");
+    });
+
+    it("should be idempotent (safe to run multiple times)", () => {
+      runMigrations(db);
+      runMigrations(db); // Run again
+
+      // Should not throw and data should still be intact
+      const exec = db
+        .prepare("SELECT * FROM executions WHERE id = ?")
+        .get("exec-1") as { id: string; agent_type: string };
+
+      expect(exec).toBeDefined();
+      expect(exec.id).toBe("exec-1");
+      expect(exec.agent_type).toBe("claude-code");
+    });
+
+    it("should handle databases that already have stream_id column", () => {
+      // Create database with new schema already in place
+      const newDb = new Database(":memory:");
+
+      // Record previous migrations as already applied
+      newDb.exec(`
+        CREATE TABLE IF NOT EXISTS migrations (
+          version INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      newDb.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        1,
+        "generalize-feedback-table"
+      );
+      newDb.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        2,
+        "add-normalized-entry-support"
+      );
+      newDb.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        3,
+        "remove-agent-type-constraints"
+      );
+      newDb.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        4,
+        "add-external-links-column"
+      );
+      newDb.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        5,
+        "make-feedback-from-id-nullable"
+      );
+
+      // Create issues table (required for FK constraints in migration 7)
+      newDb.exec(`
+        CREATE TABLE IF NOT EXISTS issues (
+          id TEXT PRIMARY KEY,
+          uuid TEXT NOT NULL UNIQUE,
+          title TEXT NOT NULL
+        )
+      `);
+
+      // Create executions table with stream_id already present
+      newDb.exec(`
+        CREATE TABLE IF NOT EXISTS executions (
+          id TEXT PRIMARY KEY,
+          issue_id TEXT,
+          issue_uuid TEXT,
+          mode TEXT CHECK(mode IN ('worktree', 'local')),
+          prompt TEXT,
+          config TEXT,
+          agent_type TEXT,
+          session_id TEXT,
+          workflow_execution_id TEXT,
+          target_branch TEXT NOT NULL,
+          branch_name TEXT NOT NULL,
+          before_commit TEXT,
+          after_commit TEXT,
+          worktree_path TEXT,
+          status TEXT NOT NULL CHECK(status IN (
+            'preparing', 'pending', 'running', 'paused',
+            'completed', 'failed', 'cancelled', 'stopped'
+          )),
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          started_at DATETIME,
+          completed_at DATETIME,
+          cancelled_at DATETIME,
+          exit_code INTEGER,
+          error_message TEXT,
+          error TEXT,
+          model TEXT,
+          summary TEXT,
+          files_changed TEXT,
+          parent_execution_id TEXT,
+          step_type TEXT,
+          step_index INTEGER,
+          step_config TEXT,
+          stream_id TEXT
+        )
+      `);
+
+      // Should not throw when running migration on already-migrated database
+      expect(() => runMigrations(newDb)).not.toThrow();
+
+      newDb.close();
+    });
+  });
+
+  describe("Migration 7: add-conflicted-status-to-executions", () => {
+    beforeEach(() => {
+      // Create issues table (required for FK constraints in migration 7)
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS issues (
+          id TEXT PRIMARY KEY,
+          uuid TEXT NOT NULL UNIQUE,
+          title TEXT NOT NULL
+        )
+      `);
+
+      // Create schema without 'conflicted' in status CHECK constraint
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS executions (
+          id TEXT PRIMARY KEY,
+          issue_id TEXT,
+          issue_uuid TEXT,
+          mode TEXT CHECK(mode IN ('worktree', 'local')),
+          prompt TEXT,
+          config TEXT,
+          agent_type TEXT,
+          session_id TEXT,
+          workflow_execution_id TEXT,
+          target_branch TEXT NOT NULL,
+          branch_name TEXT NOT NULL,
+          before_commit TEXT,
+          after_commit TEXT,
+          worktree_path TEXT,
+          status TEXT NOT NULL CHECK(status IN (
+            'preparing', 'pending', 'running', 'paused',
+            'completed', 'failed', 'cancelled', 'stopped'
+          )),
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          started_at DATETIME,
+          completed_at DATETIME,
+          cancelled_at DATETIME,
+          exit_code INTEGER,
+          error_message TEXT,
+          error TEXT,
+          model TEXT,
+          summary TEXT,
+          files_changed TEXT,
+          parent_execution_id TEXT,
+          step_type TEXT,
+          step_index INTEGER,
+          step_config TEXT,
+          stream_id TEXT
+        )
+      `);
+
+      // Insert test data with various statuses
+      db.prepare(
+        `
+        INSERT INTO executions (
+          id, target_branch, branch_name, status, agent_type
+        ) VALUES (?, ?, ?, ?, ?)
+      `
+      ).run("exec-1", "main", "test-branch-1", "running", "claude-code");
+
+      db.prepare(
+        `
+        INSERT INTO executions (
+          id, target_branch, branch_name, status, agent_type
+        ) VALUES (?, ?, ?, ?, ?)
+      `
+      ).run("exec-2", "main", "test-branch-2", "completed", "codex");
+    });
+
+    it("should allow 'conflicted' status after migration", () => {
+      runMigrations(db);
+
+      // Should allow inserting execution with 'conflicted' status
+      expect(() => {
+        db.prepare(
+          `
+          INSERT INTO executions (
+            id, target_branch, branch_name, status, agent_type
+          ) VALUES (?, ?, ?, ?, ?)
+        `
+        ).run("exec-3", "main", "test-branch-3", "conflicted", "claude-code");
+      }).not.toThrow();
+
+      // Verify the conflicted execution was stored
+      const exec = db
+        .prepare("SELECT status FROM executions WHERE id = ?")
+        .get("exec-3") as { status: string };
+
+      expect(exec.status).toBe("conflicted");
+    });
+
+    it("should preserve existing execution data", () => {
+      runMigrations(db);
+
+      const exec1 = db
+        .prepare("SELECT * FROM executions WHERE id = ?")
+        .get("exec-1") as {
+        id: string;
+        agent_type: string;
+        status: string;
+      };
+
+      const exec2 = db
+        .prepare("SELECT * FROM executions WHERE id = ?")
+        .get("exec-2") as {
+        id: string;
+        agent_type: string;
+        status: string;
+      };
+
+      expect(exec1).toBeDefined();
+      expect(exec1.id).toBe("exec-1");
+      expect(exec1.agent_type).toBe("claude-code");
+      expect(exec1.status).toBe("running");
+
+      expect(exec2).toBeDefined();
+      expect(exec2.id).toBe("exec-2");
+      expect(exec2.agent_type).toBe("codex");
+      expect(exec2.status).toBe("completed");
+    });
+
+    it("should preserve stream_id column", () => {
+      // Add a stream_id value before migration
+      db.prepare("UPDATE executions SET stream_id = ? WHERE id = ?").run(
+        "stream-123",
+        "exec-1"
+      );
+
+      runMigrations(db);
+
+      const tableInfo = db.pragma("table_info(executions)") as Array<{
+        name: string;
+      }>;
+
+      const columnNames = tableInfo.map((col) => col.name);
+      expect(columnNames).toContain("stream_id");
+
+      // Verify stream_id value is preserved
+      const exec = db
+        .prepare("SELECT stream_id FROM executions WHERE id = ?")
+        .get("exec-1") as { stream_id: string };
+
+      expect(exec.stream_id).toBe("stream-123");
+    });
+
+    it("should recreate all indexes", () => {
+      runMigrations(db);
+
+      const indexes = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='executions'"
+        )
+        .all() as Array<{ name: string }>;
+
+      const indexNames = indexes.map((idx) => idx.name);
+      expect(indexNames).toContain("idx_executions_issue_id");
+      expect(indexNames).toContain("idx_executions_issue_uuid");
+      expect(indexNames).toContain("idx_executions_status");
+      expect(indexNames).toContain("idx_executions_session_id");
+      expect(indexNames).toContain("idx_executions_parent");
+      expect(indexNames).toContain("idx_executions_created_at");
+      expect(indexNames).toContain("idx_executions_workflow");
+      expect(indexNames).toContain("idx_executions_workflow_step");
+      expect(indexNames).toContain("idx_executions_step_type");
+      expect(indexNames).toContain("idx_executions_stream_id");
+    });
+
+    it("should be idempotent (safe to run multiple times)", () => {
+      runMigrations(db);
+      runMigrations(db); // Run again
+
+      // Should not throw and data should still be intact
+      const exec = db
+        .prepare("SELECT * FROM executions WHERE id = ?")
+        .get("exec-1") as { id: string; status: string };
+
+      expect(exec).toBeDefined();
+      expect(exec.id).toBe("exec-1");
+      expect(exec.status).toBe("running");
+    });
+
+    it("should handle new databases without executions table", () => {
+      // Create a new database without executions table
+      const newDb = new Database(":memory:");
+
+      // Should not throw when running migration on database without table
+      expect(() => runMigrations(newDb)).not.toThrow();
+
+      newDb.close();
+    });
+
+    it("should handle databases that already have conflicted in CHECK constraint", () => {
+      // Create database with new schema already in place
+      const newDb = new Database(":memory:");
+
+      // Record all previous migrations as already applied
+      newDb.exec(`
+        CREATE TABLE IF NOT EXISTS migrations (
+          version INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      newDb.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        1,
+        "generalize-feedback-table"
+      );
+      newDb.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        2,
+        "add-normalized-entry-support"
+      );
+      newDb.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        3,
+        "remove-agent-type-constraints"
+      );
+      newDb.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        4,
+        "add-external-links-column"
+      );
+      newDb.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        5,
+        "make-feedback-from-id-nullable"
+      );
+      newDb.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        6,
+        "add-stream-id-to-executions"
+      );
+
+      newDb.exec(`
+        CREATE TABLE IF NOT EXISTS executions (
+          id TEXT PRIMARY KEY,
+          target_branch TEXT NOT NULL,
+          branch_name TEXT NOT NULL,
+          status TEXT NOT NULL CHECK(status IN (
+            'preparing', 'pending', 'running', 'paused',
+            'completed', 'failed', 'cancelled', 'stopped', 'conflicted'
+          )),
+          stream_id TEXT
+        )
+      `);
+
+      // Should not throw when running migration on already-migrated database
+      expect(() => runMigrations(newDb)).not.toThrow();
+
+      newDb.close();
+    });
+  });
+
   describe("runMigrations", () => {
     it("should run all pending migrations in order", () => {
       // Create old schema for both migrations
@@ -1118,15 +1563,15 @@ describe("Database Migrations", () => {
 
       runMigrations(db);
 
-      // Should have run all five migrations
-      expect(getCurrentMigrationVersion(db)).toBe(5);
+      // Should have run all seven migrations
+      expect(getCurrentMigrationVersion(db)).toBe(7);
 
       // Verify all migrations were applied
       const migrations = db
         .prepare("SELECT * FROM migrations ORDER BY version")
         .all() as Array<{ version: number; name: string }>;
 
-      expect(migrations).toHaveLength(5);
+      expect(migrations).toHaveLength(7);
       expect(migrations[0].version).toBe(1);
       expect(migrations[0].name).toBe("generalize-feedback-table");
       expect(migrations[1].version).toBe(2);
@@ -1137,6 +1582,10 @@ describe("Database Migrations", () => {
       expect(migrations[3].name).toBe("add-external-links-column");
       expect(migrations[4].version).toBe(5);
       expect(migrations[4].name).toBe("make-feedback-from-id-nullable");
+      expect(migrations[5].version).toBe(6);
+      expect(migrations[5].name).toBe("add-stream-id-to-executions");
+      expect(migrations[6].version).toBe(7);
+      expect(migrations[6].name).toBe("add-conflicted-status-to-executions");
     });
 
     it("should skip already-applied migrations", () => {
@@ -1213,18 +1662,20 @@ describe("Database Migrations", () => {
 
       runMigrations(db);
 
-      // Should run migrations 2, 3, 4, and 5
-      expect(getCurrentMigrationVersion(db)).toBe(5);
+      // Should run migrations 2, 3, 4, 5, 6, and 7
+      expect(getCurrentMigrationVersion(db)).toBe(7);
 
       const migrations = db
         .prepare("SELECT * FROM migrations ORDER BY version")
         .all() as Array<{ version: number; name: string }>;
 
-      expect(migrations).toHaveLength(5);
+      expect(migrations).toHaveLength(7);
       expect(migrations[1].version).toBe(2);
       expect(migrations[2].version).toBe(3);
       expect(migrations[3].version).toBe(4);
       expect(migrations[4].version).toBe(5);
+      expect(migrations[5].version).toBe(6);
+      expect(migrations[6].version).toBe(7);
     });
 
     it("should not run if no pending migrations", () => {
@@ -1257,13 +1708,21 @@ describe("Database Migrations", () => {
         5,
         "make-feedback-from-id-nullable"
       );
+      db.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        6,
+        "add-stream-id-to-executions"
+      );
+      db.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        7,
+        "add-conflicted-status-to-executions"
+      );
 
-      expect(getCurrentMigrationVersion(db)).toBe(5);
+      expect(getCurrentMigrationVersion(db)).toBe(7);
 
       // Should not throw, just skip
       expect(() => runMigrations(db)).not.toThrow();
 
-      expect(getCurrentMigrationVersion(db)).toBe(5);
+      expect(getCurrentMigrationVersion(db)).toBe(7);
     });
   });
 });

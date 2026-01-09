@@ -356,6 +356,46 @@ export const executionsApi = {
   // Open worktree in IDE
   openInIde: (worktreePath: string, request?: { editorType?: string }) =>
     post(`/open-in-ide`, { worktreePath, ...request }),
+
+  // Conflict resolution operations
+  getConflicts: (executionId: string) =>
+    get<{
+      conflicts: Array<{
+        id: string
+        execution_id: string
+        path: string
+        type: 'code' | 'jsonl' | 'binary'
+        auto_resolvable: boolean
+        conflicting_stream_id?: string
+        conflicting_issue_id?: string
+        details?: string
+        detected_at: string
+        resolved_at?: string
+        resolution_strategy?: string
+      }>
+      hasUnresolved: boolean
+    }>(`/executions/${executionId}/conflicts`),
+
+  resolveConflict: (
+    executionId: string,
+    conflictId: string,
+    strategy: 'ours' | 'theirs' | 'manual'
+  ) =>
+    post<{ resolved: boolean; allResolved: boolean; remainingConflicts: number }>(
+      `/executions/${executionId}/conflicts/${conflictId}/resolve`,
+      { strategy }
+    ),
+
+  resolveAllConflicts: (executionId: string, strategy: 'ours' | 'theirs') =>
+    post<{
+      resolved: number
+      failed: number
+      errors?: string[]
+      allResolved: boolean
+    }>(`/executions/${executionId}/conflicts/resolve-all`, { strategy }),
+
+  retryAfterConflictResolution: (executionId: string) =>
+    post<{ message: string; preview: SyncPreviewResult }>(`/executions/${executionId}/retry`),
 }
 
 /**

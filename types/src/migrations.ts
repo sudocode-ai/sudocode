@@ -666,6 +666,209 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 7,
+    name: "add-conflicted-status-to-executions",
+    up: (db: Database.Database) => {
+      // Check if executions table exists
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='executions'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (tables.length === 0) {
+        // Table doesn't exist yet, will be created with new schema
+        return;
+      }
+
+      // Check if already migrated by checking the CREATE statement for 'conflicted'
+      const tableSchema = db
+        .prepare(
+          "SELECT sql FROM sqlite_master WHERE type='table' AND name='executions'"
+        )
+        .get() as { sql: string } | undefined;
+
+      if (!tableSchema) {
+        return;
+      }
+
+      // If 'conflicted' is already in the CHECK constraint, skip
+      if (tableSchema.sql.includes("'conflicted'")) {
+        return;
+      }
+
+      // Get existing columns from the current table
+      const existingColumns = db.pragma("table_info(executions)") as Array<{
+        name: string;
+      }>;
+      const columnNames = existingColumns.map((col) => col.name);
+
+      // All possible columns in the full schema
+      const allColumns = [
+        "id",
+        "issue_id",
+        "issue_uuid",
+        "mode",
+        "prompt",
+        "config",
+        "agent_type",
+        "session_id",
+        "workflow_execution_id",
+        "target_branch",
+        "branch_name",
+        "before_commit",
+        "after_commit",
+        "worktree_path",
+        "status",
+        "created_at",
+        "updated_at",
+        "started_at",
+        "completed_at",
+        "cancelled_at",
+        "exit_code",
+        "error_message",
+        "error",
+        "model",
+        "summary",
+        "files_changed",
+        "parent_execution_id",
+        "step_type",
+        "step_index",
+        "step_config",
+        "stream_id",
+      ];
+
+      // Only include columns that exist in the current table
+      const columnsToMigrate = allColumns.filter((col) =>
+        columnNames.includes(col)
+      );
+      const columnList = columnsToMigrate.join(", ");
+
+      // SQLite doesn't support ALTER CONSTRAINT, so we need to recreate the table
+      db.exec(`PRAGMA foreign_keys = OFF;`);
+
+      // Create new table with updated CHECK constraint
+      db.exec(`
+        CREATE TABLE executions_new (
+          id TEXT PRIMARY KEY,
+          issue_id TEXT,
+          issue_uuid TEXT,
+          mode TEXT CHECK(mode IN ('worktree', 'local')),
+          prompt TEXT,
+          config TEXT,
+          agent_type TEXT,
+          session_id TEXT,
+          workflow_execution_id TEXT,
+          target_branch TEXT NOT NULL,
+          branch_name TEXT NOT NULL,
+          before_commit TEXT,
+          after_commit TEXT,
+          worktree_path TEXT,
+          status TEXT NOT NULL CHECK(status IN (
+            'preparing', 'pending', 'running', 'paused',
+            'completed', 'failed', 'cancelled', 'stopped', 'conflicted'
+          )),
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          started_at DATETIME,
+          completed_at DATETIME,
+          cancelled_at DATETIME,
+          exit_code INTEGER,
+          error_message TEXT,
+          error TEXT,
+          model TEXT,
+          summary TEXT,
+          files_changed TEXT,
+          parent_execution_id TEXT,
+          step_type TEXT,
+          step_index INTEGER,
+          step_config TEXT,
+          stream_id TEXT,
+          FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL,
+          FOREIGN KEY (issue_uuid) REFERENCES issues(uuid) ON DELETE SET NULL,
+          FOREIGN KEY (parent_execution_id) REFERENCES executions(id) ON DELETE SET NULL
+        );
+      `);
+
+      // Copy data from old table (only existing columns)
+      db.exec(`
+        INSERT INTO executions_new (${columnList})
+        SELECT ${columnList}
+        FROM executions;
+      `);
+
+      // Drop old table
+      db.exec(`DROP TABLE executions;`);
+
+      // Rename new table
+      db.exec(`ALTER TABLE executions_new RENAME TO executions;`);
+
+      // Recreate indexes (only for columns that exist)
+      if (columnNames.includes("issue_id")) {
+        db.exec(
+          `CREATE INDEX IF NOT EXISTS idx_executions_issue_id ON executions(issue_id);`
+        );
+      }
+      if (columnNames.includes("issue_uuid")) {
+        db.exec(
+          `CREATE INDEX IF NOT EXISTS idx_executions_issue_uuid ON executions(issue_uuid);`
+        );
+      }
+      db.exec(
+        `CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);`
+      );
+      if (columnNames.includes("session_id")) {
+        db.exec(
+          `CREATE INDEX IF NOT EXISTS idx_executions_session_id ON executions(session_id);`
+        );
+      }
+      if (columnNames.includes("parent_execution_id")) {
+        db.exec(
+          `CREATE INDEX IF NOT EXISTS idx_executions_parent ON executions(parent_execution_id);`
+        );
+      }
+      if (columnNames.includes("created_at")) {
+        db.exec(
+          `CREATE INDEX IF NOT EXISTS idx_executions_created_at ON executions(created_at);`
+        );
+      }
+      if (columnNames.includes("workflow_execution_id")) {
+        db.exec(
+          `CREATE INDEX IF NOT EXISTS idx_executions_workflow ON executions(workflow_execution_id);`
+        );
+        if (columnNames.includes("step_index")) {
+          db.exec(
+            `CREATE INDEX IF NOT EXISTS idx_executions_workflow_step ON executions(workflow_execution_id, step_index);`
+          );
+        }
+      }
+      if (columnNames.includes("step_type")) {
+        db.exec(
+          `CREATE INDEX IF NOT EXISTS idx_executions_step_type ON executions(step_type);`
+        );
+      }
+      if (columnNames.includes("stream_id")) {
+        db.exec(
+          `CREATE INDEX IF NOT EXISTS idx_executions_stream_id ON executions(stream_id);`
+        );
+      }
+
+      // Re-enable foreign keys
+      db.exec(`PRAGMA foreign_keys = ON;`);
+
+      console.log(
+        "  ✓ Added 'conflicted' status to executions table CHECK constraint"
+      );
+    },
+    down: (db: Database.Database) => {
+      // Rollback: remove 'conflicted' from CHECK constraint
+      // Note: This will fail if there are executions with 'conflicted' status
+      console.log(
+        "  Note: To rollback, manually update any 'conflicted' executions to a different status first"
+      );
+    },
+  },
 ];
 
 /**

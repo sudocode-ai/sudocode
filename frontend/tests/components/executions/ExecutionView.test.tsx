@@ -160,6 +160,7 @@ describe('ExecutionView', () => {
     step_type: null,
     step_index: null,
     step_config: null,
+    stream_id: null,
   }
 
   // Helper to create a chain response with a single execution

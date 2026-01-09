@@ -1396,5 +1396,408 @@ export function createExecutionsRouter(): Router {
     }
   );
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Conflict Resolution Endpoints
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * GET /api/executions/:executionId/conflicts
+   *
+   * List all conflicts for an execution
+   *
+   * Returns array of ExecutionConflict objects for executions in 'conflicted' status
+   */
+  router.get(
+    "/executions/:executionId/conflicts",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+        const db = req.project!.db;
+
+        // Get execution
+        const execution = db
+          .prepare("SELECT * FROM executions WHERE id = ?")
+          .get(executionId) as { status: string } | undefined;
+
+        if (!execution) {
+          res.status(404).json({
+            success: false,
+            data: null,
+            error: "Execution not found",
+          });
+          return;
+        }
+
+        // Get conflicts from execution_conflicts table
+        const conflicts = db
+          .prepare("SELECT * FROM execution_conflicts WHERE execution_id = ? ORDER BY detected_at ASC")
+          .all(executionId) as Array<{ resolved_at: string | null }>;
+
+        res.json({
+          success: true,
+          data: {
+            conflicts,
+            hasUnresolved: conflicts.some((c) => !c.resolved_at),
+          },
+        });
+      } catch (error) {
+        console.error(
+          `Failed to get conflicts for execution ${req.params.executionId}:`,
+          error
+        );
+
+        res.status(500).json({
+          success: false,
+          data: null,
+          error: "Internal server error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  );
+
+  /**
+   * POST /api/executions/:executionId/conflicts/:conflictId/resolve
+   *
+   * Resolve a single conflict
+   *
+   * Request body:
+   * - strategy: 'ours' | 'theirs' | 'manual' (required)
+   */
+  router.post(
+    "/executions/:executionId/conflicts/:conflictId/resolve",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId, conflictId } = req.params;
+        const { strategy } = req.body;
+        const db = req.project!.db;
+        const repoPath = req.project!.path;
+
+        // Validate strategy
+        if (!strategy || !["ours", "theirs", "manual"].includes(strategy)) {
+          res.status(400).json({
+            success: false,
+            data: null,
+            error: "Invalid strategy. Must be 'ours', 'theirs', or 'manual'",
+          });
+          return;
+        }
+
+        // Get conflict
+        const conflict = db
+          .prepare("SELECT * FROM execution_conflicts WHERE id = ? AND execution_id = ?")
+          .get(conflictId, executionId) as { path: string; resolved_at: string | null } | undefined;
+
+        if (!conflict) {
+          res.status(404).json({
+            success: false,
+            data: null,
+            error: "Conflict not found",
+          });
+          return;
+        }
+
+        if (conflict.resolved_at) {
+          res.status(400).json({
+            success: false,
+            data: null,
+            error: "Conflict already resolved",
+          });
+          return;
+        }
+
+        // Get execution for worktree path
+        const execution = db
+          .prepare("SELECT * FROM executions WHERE id = ?")
+          .get(executionId) as { worktree_path: string | null } | undefined;
+
+        if (!execution) {
+          res.status(404).json({
+            success: false,
+            data: null,
+            error: "Execution not found",
+          });
+          return;
+        }
+
+        const workingDir = execution.worktree_path || repoPath;
+
+        // Resolve conflict based on strategy
+        if (strategy === "ours" || strategy === "theirs") {
+          try {
+            // Use git checkout --ours/--theirs to resolve
+            execSync(`git checkout --${strategy} "${conflict.path}"`, {
+              cwd: workingDir,
+              encoding: "utf-8",
+              stdio: "pipe",
+            });
+            // Stage the resolved file
+            execSync(`git add "${conflict.path}"`, {
+              cwd: workingDir,
+              encoding: "utf-8",
+              stdio: "pipe",
+            });
+          } catch (gitError) {
+            console.error(`Failed to resolve conflict with ${strategy}:`, gitError);
+            res.status(500).json({
+              success: false,
+              data: null,
+              error: `Failed to resolve conflict: ${gitError instanceof Error ? gitError.message : String(gitError)}`,
+            });
+            return;
+          }
+        }
+        // For 'manual', user is expected to have edited the file already
+
+        // Update conflict record
+        db.prepare(
+          "UPDATE execution_conflicts SET resolved_at = datetime('now'), resolution_strategy = ? WHERE id = ?"
+        ).run(strategy, conflictId);
+
+        // Check if all conflicts are resolved
+        const unresolvedCount = db
+          .prepare("SELECT COUNT(*) as count FROM execution_conflicts WHERE execution_id = ? AND resolved_at IS NULL")
+          .get(executionId) as { count: number };
+
+        // If all conflicts resolved, update execution status
+        if (unresolvedCount.count === 0) {
+          db.prepare("UPDATE executions SET status = 'paused', updated_at = datetime('now') WHERE id = ?").run(
+            executionId
+          );
+        }
+
+        res.json({
+          success: true,
+          data: {
+            resolved: true,
+            allResolved: unresolvedCount.count === 0,
+            remainingConflicts: unresolvedCount.count,
+          },
+        });
+      } catch (error) {
+        console.error(
+          `Failed to resolve conflict ${req.params.conflictId}:`,
+          error
+        );
+
+        res.status(500).json({
+          success: false,
+          data: null,
+          error: "Internal server error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  );
+
+  /**
+   * POST /api/executions/:executionId/conflicts/resolve-all
+   *
+   * Resolve all conflicts with the same strategy
+   *
+   * Request body:
+   * - strategy: 'ours' | 'theirs' (required)
+   */
+  router.post(
+    "/executions/:executionId/conflicts/resolve-all",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+        const { strategy } = req.body;
+        const db = req.project!.db;
+        const repoPath = req.project!.path;
+
+        // Validate strategy (manual not supported for bulk)
+        if (!strategy || !["ours", "theirs"].includes(strategy)) {
+          res.status(400).json({
+            success: false,
+            data: null,
+            error: "Invalid strategy. Must be 'ours' or 'theirs' for bulk resolution",
+          });
+          return;
+        }
+
+        // Get execution
+        const execution = db
+          .prepare("SELECT * FROM executions WHERE id = ?")
+          .get(executionId) as { worktree_path: string | null } | undefined;
+
+        if (!execution) {
+          res.status(404).json({
+            success: false,
+            data: null,
+            error: "Execution not found",
+          });
+          return;
+        }
+
+        const workingDir = execution.worktree_path || repoPath;
+
+        // Get all unresolved conflicts
+        const conflicts = db
+          .prepare("SELECT * FROM execution_conflicts WHERE execution_id = ? AND resolved_at IS NULL")
+          .all(executionId) as Array<{ id: string; path: string }>;
+
+        if (conflicts.length === 0) {
+          res.json({
+            success: true,
+            data: {
+              resolved: 0,
+              message: "No unresolved conflicts",
+            },
+          });
+          return;
+        }
+
+        // Resolve each conflict
+        let resolvedCount = 0;
+        const errors: string[] = [];
+
+        for (const conflict of conflicts) {
+          try {
+            execSync(`git checkout --${strategy} "${conflict.path}"`, {
+              cwd: workingDir,
+              encoding: "utf-8",
+              stdio: "pipe",
+            });
+            execSync(`git add "${conflict.path}"`, {
+              cwd: workingDir,
+              encoding: "utf-8",
+              stdio: "pipe",
+            });
+
+            db.prepare(
+              "UPDATE execution_conflicts SET resolved_at = datetime('now'), resolution_strategy = ? WHERE id = ?"
+            ).run(strategy, conflict.id);
+
+            resolvedCount++;
+          } catch (gitError) {
+            errors.push(`${conflict.path}: ${gitError instanceof Error ? gitError.message : String(gitError)}`);
+          }
+        }
+
+        // Update execution status if all resolved
+        if (errors.length === 0) {
+          db.prepare("UPDATE executions SET status = 'paused', updated_at = datetime('now') WHERE id = ?").run(
+            executionId
+          );
+        }
+
+        res.json({
+          success: errors.length === 0,
+          data: {
+            resolved: resolvedCount,
+            failed: errors.length,
+            errors: errors.length > 0 ? errors : undefined,
+            allResolved: errors.length === 0,
+          },
+        });
+      } catch (error) {
+        console.error(
+          `Failed to resolve all conflicts for execution ${req.params.executionId}:`,
+          error
+        );
+
+        res.status(500).json({
+          success: false,
+          data: null,
+          error: "Internal server error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  );
+
+  /**
+   * POST /api/executions/:executionId/retry
+   *
+   * Retry the original operation after conflicts have been resolved
+   *
+   * This re-attempts the sync/merge/rebase operation that originally caused conflicts
+   */
+  router.post(
+    "/executions/:executionId/retry",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+        const db = req.project!.db;
+
+        // Get execution
+        const execution = db
+          .prepare("SELECT * FROM executions WHERE id = ?")
+          .get(executionId) as { status: string; worktree_path: string | null } | undefined;
+
+        if (!execution) {
+          res.status(404).json({
+            success: false,
+            data: null,
+            error: "Execution not found",
+          });
+          return;
+        }
+
+        // Check for unresolved conflicts
+        const unresolvedCount = db
+          .prepare("SELECT COUNT(*) as count FROM execution_conflicts WHERE execution_id = ? AND resolved_at IS NULL")
+          .get(executionId) as { count: number };
+
+        if (unresolvedCount.count > 0) {
+          res.status(400).json({
+            success: false,
+            data: null,
+            error: `Cannot retry: ${unresolvedCount.count} unresolved conflict(s) remaining`,
+          });
+          return;
+        }
+
+        // Get worktree sync service
+        const syncService = getWorktreeSyncService(req);
+
+        // Preview to check current state
+        const preview = await syncService.previewSync(executionId);
+
+        if (!preview.canSync) {
+          res.status(400).json({
+            success: false,
+            data: null,
+            error: "Cannot sync: preview indicates sync is not possible",
+            preview,
+          });
+          return;
+        }
+
+        res.json({
+          success: true,
+          data: {
+            message: "Ready to sync. Use squash, preserve, or stage endpoint to complete.",
+            preview,
+          },
+        });
+      } catch (error) {
+        console.error(
+          `Failed to retry for execution ${req.params.executionId}:`,
+          error
+        );
+
+        if (error instanceof WorktreeSyncError) {
+          const statusCode = getStatusCodeForSyncError(error);
+          res.status(statusCode).json({
+            success: false,
+            data: null,
+            error: error.message,
+            code: error.code,
+          });
+        } else {
+          res.status(500).json({
+            success: false,
+            data: null,
+            error: "Internal server error",
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+  );
+
   return router;
 }

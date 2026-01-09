@@ -75,6 +75,7 @@ describe('ExecutionHistory', () => {
     step_type: null,
     step_index: null,
     step_config: null,
+    stream_id: null,
   }
 
   const mockExecutionRunning: Execution = {
@@ -108,6 +109,7 @@ describe('ExecutionHistory', () => {
     step_type: null,
     step_index: null,
     step_config: null,
+    stream_id: null,
   }
 
   const mockExecutionFailed: Execution = {
@@ -141,6 +143,7 @@ describe('ExecutionHistory', () => {
     step_type: null,
     step_index: null,
     step_config: null,
+    stream_id: null,
   }
 
   beforeEach(() => {

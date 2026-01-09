@@ -59,6 +59,11 @@ const STATUS_CONFIG: Record<
     variant: 'secondary',
     icon: <StopCircle className="h-3 w-3" />,
   },
+  conflicted: {
+    label: 'Conflicted',
+    variant: 'destructive',
+    icon: <XCircle className="h-3 w-3" />,
+  },
 }
 
 function formatTimestamp(timestamp: string | Date | null | undefined): string {

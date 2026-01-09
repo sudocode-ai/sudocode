@@ -328,7 +328,46 @@ export type ExecutionStatus =
   | "completed" // Successfully finished
   | "failed" // Execution failed
   | "cancelled" // User cancelled
-  | "stopped"; // User stopped (legacy alias for cancelled)
+  | "stopped" // User stopped (legacy alias for cancelled)
+  | "conflicted"; // Has unresolved merge/rebase conflicts
+
+/**
+ * Strategy for resolving conflicts
+ */
+export type ConflictStrategy = "ours" | "theirs" | "manual" | "abort";
+
+/**
+ * Type of conflict encountered during merge/rebase
+ */
+export type ConflictType = "code" | "jsonl" | "binary";
+
+/**
+ * Represents a merge/rebase conflict in an execution
+ */
+export interface ExecutionConflict {
+  /** Unique conflict identifier */
+  id: string;
+  /** Execution ID this conflict belongs to */
+  execution_id: string;
+  /** File path with conflict */
+  path: string;
+  /** Type of conflict */
+  type: ConflictType;
+  /** Whether this conflict can be auto-resolved */
+  auto_resolvable: boolean;
+  /** Stream ID that caused the conflict (if from cascade) */
+  conflicting_stream_id?: string;
+  /** Issue ID of conflicting stream */
+  conflicting_issue_id?: string;
+  /** Conflict details or markers */
+  details?: string;
+  /** When conflict was detected */
+  detected_at: string;
+  /** When conflict was resolved (null if unresolved) */
+  resolved_at?: string;
+  /** Resolution strategy used */
+  resolution_strategy?: ConflictStrategy;
+}
 
 /**
  * Represents a single agent run on an issue

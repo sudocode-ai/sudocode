@@ -285,4 +285,146 @@ describe("DataplaneAdapter", () => {
       expect(adapter.isEnabled).toBe(true);
     });
   });
+
+  describe("syncIssueDependencies", () => {
+    it("throws when not initialized", async () => {
+      const sudocodeDir = path.join(testDir, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sudocodeDir, "config.json"),
+        JSON.stringify({ dataplane: { enabled: true } })
+      );
+
+      const { DataplaneAdapter } = await import(
+        "../../../src/services/dataplane-adapter.js"
+      );
+      const adapter = new DataplaneAdapter(testDir);
+
+      // Mock db - the method requires it for relationship queries
+      const mockDb = {} as never;
+
+      await expect(adapter.syncIssueDependencies("i-test", mockDb)).rejects.toThrow(
+        "DataplaneAdapter not initialized"
+      );
+    });
+  });
+
+  describe("triggerCascade", () => {
+    it("throws when not initialized", async () => {
+      const sudocodeDir = path.join(testDir, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sudocodeDir, "config.json"),
+        JSON.stringify({ dataplane: { enabled: true } })
+      );
+
+      const { DataplaneAdapter } = await import(
+        "../../../src/services/dataplane-adapter.js"
+      );
+      const adapter = new DataplaneAdapter(testDir);
+
+      await expect(adapter.triggerCascade("stream-1")).rejects.toThrow(
+        "DataplaneAdapter not initialized"
+      );
+    });
+
+    it("returns empty report when cascade is disabled", async () => {
+      const sudocodeDir = path.join(testDir, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sudocodeDir, "config.json"),
+        JSON.stringify({
+          dataplane: {
+            enabled: true,
+            cascadeOnMerge: false,
+          },
+        })
+      );
+
+      // Initialize git repo
+      const { execSync } = await import("child_process");
+      execSync("git init", { cwd: testDir, stdio: "pipe" });
+      execSync("git config user.email test@test.com", {
+        cwd: testDir,
+        stdio: "pipe",
+      });
+      execSync("git config user.name Test", { cwd: testDir, stdio: "pipe" });
+      fs.writeFileSync(path.join(testDir, "README.md"), "# Test");
+      execSync("git add . && git commit -m 'init'", {
+        cwd: testDir,
+        stdio: "pipe",
+      });
+
+      const { DataplaneAdapter } = await import(
+        "../../../src/services/dataplane-adapter.js"
+      );
+      const adapter = new DataplaneAdapter(testDir);
+      await adapter.initialize();
+
+      const report = await adapter.triggerCascade("stream-1");
+
+      expect(report).toEqual({
+        triggered_by: "stream-1",
+        affected_streams: [],
+        complete: true,
+      });
+
+      adapter.close();
+    });
+
+    it("returns empty report when no dependents exist", async () => {
+      const sudocodeDir = path.join(testDir, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sudocodeDir, "config.json"),
+        JSON.stringify({
+          dataplane: {
+            enabled: true,
+            cascadeOnMerge: true,
+          },
+        })
+      );
+
+      // Initialize git repo
+      const { execSync } = await import("child_process");
+      execSync("git init", { cwd: testDir, stdio: "pipe" });
+      execSync("git config user.email test@test.com", {
+        cwd: testDir,
+        stdio: "pipe",
+      });
+      execSync("git config user.name Test", { cwd: testDir, stdio: "pipe" });
+      fs.writeFileSync(path.join(testDir, "README.md"), "# Test");
+      execSync("git add . && git commit -m 'init'", {
+        cwd: testDir,
+        stdio: "pipe",
+      });
+
+      const { DataplaneAdapter } = await import(
+        "../../../src/services/dataplane-adapter.js"
+      );
+      const adapter = new DataplaneAdapter(testDir);
+      await adapter.initialize();
+
+      // Create a stream
+      const stream = await adapter.createExecutionStream({
+        executionId: "exec-1",
+        issueId: "i-test",
+        agentType: "claude-code",
+        targetBranch: "main",
+        mode: "worktree",
+        agentId: "agent-1",
+      });
+
+      // Trigger cascade - no dependents so empty report
+      const report = await adapter.triggerCascade(stream.streamId);
+
+      expect(report).toEqual({
+        triggered_by: stream.streamId,
+        affected_streams: [],
+        complete: true,
+      });
+
+      adapter.close();
+    });
+  });
 });

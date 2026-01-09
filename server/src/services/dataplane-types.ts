@@ -331,22 +331,35 @@ export interface HealthReport {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Result for a single stream in cascade
+ */
+export interface CascadeStreamResult {
+  /** Stream ID */
+  stream_id: string;
+  /** Associated issue ID (if known) */
+  issue_id?: string;
+  /** Result status */
+  result: 'rebased' | 'conflict' | 'skipped' | 'failed';
+  /** Files with conflicts (if result is 'conflict') */
+  conflict_files?: string[];
+  /** New HEAD commit after rebase */
+  new_head?: string;
+  /** Error message if failed */
+  error?: string;
+}
+
+/**
  * Cascade operation report
  */
 export interface CascadeReport {
-  /** Root stream that triggered cascade */
-  rootStream: string;
-  /** Streams that were updated */
-  updated: string[];
-  /** Streams that were skipped (conflicts) */
-  skipped: string[];
-  /** Streams that failed */
-  failed: Array<{
-    streamId: string;
-    error: string;
-  }>;
-  /** Whether cascade completed fully */
+  /** Stream that triggered the cascade */
+  triggered_by: string;
+  /** Affected streams with results */
+  affected_streams: CascadeStreamResult[];
+  /** Whether cascade completed fully (no failures/conflicts stopped it) */
   complete: boolean;
+  /** Streams with deferred conflicts (for defer_conflicts strategy) */
+  deferred?: string[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

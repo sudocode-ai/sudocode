@@ -154,7 +154,7 @@ CREATE TABLE IF NOT EXISTS executions (
     -- Status (unified - supports both old and new statuses)
     status TEXT NOT NULL CHECK(status IN (
         'preparing', 'pending', 'running', 'paused',
-        'completed', 'failed', 'cancelled', 'stopped'
+        'completed', 'failed', 'cancelled', 'stopped', 'conflicted'
     )),
 
     -- Timing (consistent with other tables)
@@ -221,6 +221,27 @@ CREATE TABLE IF NOT EXISTS execution_logs (
     FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE,
     CHECK (raw_logs IS NOT NULL OR normalized_entry IS NOT NULL)
 );
+`;
+
+// Execution conflicts table - tracks merge/rebase conflicts
+export const EXECUTION_CONFLICTS_TABLE = `
+CREATE TABLE IF NOT EXISTS execution_conflicts (
+    id TEXT PRIMARY KEY,
+    execution_id TEXT NOT NULL,
+    path TEXT NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('code', 'jsonl', 'binary')),
+    auto_resolvable INTEGER NOT NULL DEFAULT 0,
+    conflicting_stream_id TEXT,
+    conflicting_issue_id TEXT,
+    details TEXT,
+    detected_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at DATETIME,
+    resolution_strategy TEXT CHECK(resolution_strategy IN ('ours', 'theirs', 'manual', 'abort')),
+    FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_execution_conflicts_execution ON execution_conflicts(execution_id);
+CREATE INDEX IF NOT EXISTS idx_execution_conflicts_unresolved ON execution_conflicts(execution_id, resolved_at) WHERE resolved_at IS NULL;
 `;
 
 // Workflows table - orchestrates multi-issue execution
@@ -426,6 +447,7 @@ export const ALL_TABLES = [
   EXECUTIONS_TABLE,
   PROMPT_TEMPLATES_TABLE,
   EXECUTION_LOGS_TABLE,
+  EXECUTION_CONFLICTS_TABLE,
   WORKFLOWS_TABLE,
   WORKFLOW_EVENTS_TABLE,
 ];

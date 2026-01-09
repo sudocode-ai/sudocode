@@ -8,6 +8,7 @@ import { SyncPreviewDialog } from './SyncPreviewDialog'
 import { CommitChangesDialog } from './CommitChangesDialog'
 import { CleanupWorktreeDialog } from './CleanupWorktreeDialog'
 import { CodeChangesPanel } from './CodeChangesPanel'
+import { ConflictPanel } from './ConflictPanel'
 import { TodoTracker } from './TodoTracker'
 import { buildTodoHistory } from '@/utils/todoExtractor'
 import { useExecutionSync } from '@/hooks/useExecutionSync'
@@ -93,6 +94,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
   const [hasUncommittedChanges, setHasUncommittedChanges] = useState<boolean | undefined>(undefined)
   const [commitsAhead, setCommitsAhead] = useState<number | undefined>(undefined)
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // Sync state management
   const {
@@ -288,7 +290,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
     }
 
     loadChain()
-  }, [executionId])
+  }, [executionId, refreshKey])
 
   // Reload chain when an execution completes
   const handleExecutionComplete = useCallback(async (completedExecutionId: string) => {
@@ -754,6 +756,21 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
                 <>
                   <div className="my-3" />
                   <TodoTracker todos={allTodos} />
+                </>
+              )}
+
+              {/* Conflict Resolution Panel - shows when execution has conflicts */}
+              {executions.some((exec) => exec.status === 'conflicted') && (
+                <>
+                  <div className="my-3" />
+                  <ConflictPanel
+                    executionId={rootExecution.id}
+                    worktreePath={rootExecution.worktree_path}
+                    onAllResolved={() => {
+                      // Refresh the chain data after all conflicts resolved
+                      setRefreshKey((k) => k + 1)
+                    }}
+                  />
                 </>
               )}
 

@@ -10,9 +10,14 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
+import type Database from 'better-sqlite3';
 import type { AgentType } from '@sudocode-ai/types';
 import { mergeThreeWay, type JSONLEntity } from '@sudocode-ai/cli/dist/merge-resolver.js';
 import { readJSONLSync } from '@sudocode-ai/cli/dist/jsonl.js';
+import {
+  getIncomingRelationships,
+  getOutgoingRelationships,
+} from '@sudocode-ai/cli/dist/operations/relationships.js';
 import {
   type DataplaneConfig,
   getDataplaneConfig,
@@ -37,6 +42,7 @@ import type {
   ReconcileResult,
   HealthReport,
   CascadeReport,
+  CascadeStreamResult,
   QueueEntry,
   ReorderResult,
   MergeResult,
@@ -103,7 +109,26 @@ interface DataplaneTracker {
     limit?: number;
     strategy?: string;
   }): ProcessQueueResult;
+  // Dependency methods
+  addDependency(streamId: string, dependsOnId: string): void;
+  removeDependency(streamId: string, dependsOnId: string): void;
+  getDependencies(streamId: string): string[];
+  getDependents(streamId: string): string[];
+  // Rebase methods
+  syncWithParent(
+    streamId: string,
+    agentId: string,
+    worktree: string,
+    onConflict?: 'abort' | 'defer' | 'ours' | 'theirs'
+  ): DataplaneRebaseResult;
   close(): void;
+}
+
+interface DataplaneRebaseResult {
+  success: boolean;
+  newHead?: string;
+  conflicts?: Array<{ path: string; type: string }>;
+  error?: string;
 }
 
 interface DataplaneStream {
@@ -918,22 +943,216 @@ export class DataplaneAdapter {
   // ───────────────────────────────────────────────────────────────────────────
 
   /**
-   * Sync issue dependencies to dataplane
+   * Sync issue dependencies to dataplane stream dependencies
+   *
+   * Maps sudocode issue relationships (blocks, depends-on) to dataplane stream
+   * dependencies. This enables cascade rebase to propagate changes correctly.
+   *
+   * Relationship semantics:
+   * - `A blocks B` → B's stream depends on A's stream
+   * - `A depends-on B` → A's stream depends on B's stream
+   *
+   * @param issueId - Issue ID to sync dependencies for
+   * @param db - Sudocode database connection
    */
-  async syncIssueDependencies(_issueId: string): Promise<void> {
-    // Would map sudocode issue dependencies to dataplane stream dependencies
+  async syncIssueDependencies(issueId: string, db: Database.Database): Promise<void> {
+    const tracker = this.ensureInitialized();
+
+    // Get the stream for this issue
+    const issueStream = this.getStreamByIssueId(issueId);
+    if (!issueStream) {
+      // No stream for this issue yet - nothing to sync
+      return;
+    }
+
+    // Get incoming "blocks" relationships - other issues that block this one
+    // If X blocks issueId, then issueId's stream depends on X's stream
+    const blockedBy = getIncomingRelationships(db, issueId, 'issue', 'blocks');
+    for (const rel of blockedBy) {
+      const blockerStream = this.getStreamByIssueId(rel.from_id);
+      if (blockerStream) {
+        try {
+          tracker.addDependency(issueStream.id, blockerStream.id);
+        } catch (error) {
+          // Ignore if dependency already exists or would create cycle
+          console.warn(
+            `Failed to add dependency ${issueStream.id} → ${blockerStream.id}: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      }
+    }
+
+    // Get outgoing "depends-on" relationships - issues this one depends on
+    // If issueId depends-on Y, then issueId's stream depends on Y's stream
+    const dependsOn = getOutgoingRelationships(db, issueId, 'issue', 'depends-on');
+    for (const rel of dependsOn) {
+      const dependencyStream = this.getStreamByIssueId(rel.to_id);
+      if (dependencyStream) {
+        try {
+          tracker.addDependency(issueStream.id, dependencyStream.id);
+        } catch (error) {
+          // Ignore if dependency already exists or would create cycle
+          console.warn(
+            `Failed to add dependency ${issueStream.id} → ${dependencyStream.id}: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * Get stream by issue ID (searches all streams with issue metadata)
+   */
+  private getStreamByIssueId(issueId: string): DataplaneStream | null {
+    const tracker = this.ensureInitialized();
+    const streams = tracker.listStreams();
+
+    for (const stream of streams) {
+      const metadata = stream.metadata as unknown as SudocodeStreamMetadata | undefined;
+      if (metadata?.sudocode?.issue_id === issueId) {
+        return stream;
+      }
+    }
+
+    return null;
   }
 
   /**
    * Trigger cascade rebase from a stream
+   *
+   * After a stream is merged/rebased, this triggers rebase of all dependent
+   * streams to keep them up to date with the new base.
+   *
+   * @param streamId - Stream that was just merged/rebased
+   * @returns Cascade report with affected streams
    */
   async triggerCascade(streamId: string): Promise<CascadeReport> {
+    const tracker = this.ensureInitialized();
+
+    // Check if cascade is enabled in config
+    if (!this.config.cascadeOnMerge) {
+      return {
+        triggered_by: streamId,
+        affected_streams: [],
+        complete: true,
+      };
+    }
+
+    // Get dependents of this stream
+    const dependents = tracker.getDependents(streamId);
+    if (dependents.length === 0) {
+      return {
+        triggered_by: streamId,
+        affected_streams: [],
+        complete: true,
+      };
+    }
+
+    // Map cascade strategy from config to dataplane strategy
+    const strategy = this.config.conflictStrategy.cascade;
+
+    // Build cascade results
+    const affectedStreams: CascadeStreamResult[] = [];
+
+    // Process dependents in order (topologically sorted would be ideal)
+    for (const dependentId of dependents) {
+      const stream = tracker.getStream(dependentId);
+      if (!stream) {
+        affectedStreams.push({
+          stream_id: dependentId,
+          result: 'skipped',
+          error: 'Stream not found',
+        });
+        continue;
+      }
+
+      // Get issue ID from stream metadata
+      const metadata = stream.metadata as unknown as SudocodeStreamMetadata | undefined;
+      const issueId = metadata?.sudocode?.issue_id;
+
+      try {
+        // Perform rebase using syncWithParent
+        // Note: This is a simplified implementation - full cascade would use
+        // dataplane's cascadeRebase function which handles topological ordering
+        // and conflict strategies
+        const worktree = tracker.getWorktree(stream.agentId);
+        if (!worktree) {
+          affectedStreams.push({
+            stream_id: dependentId,
+            issue_id: issueId,
+            result: 'skipped',
+            error: 'No worktree available for rebase',
+          });
+          continue;
+        }
+
+        const rebaseResult = tracker.syncWithParent(
+          dependentId,
+          stream.agentId,
+          worktree.path,
+          strategy === 'stop_on_conflict' ? 'abort' : 'defer'
+        );
+
+        if (rebaseResult.success) {
+          affectedStreams.push({
+            stream_id: dependentId,
+            issue_id: issueId,
+            result: 'rebased',
+            new_head: rebaseResult.newHead,
+          });
+        } else if (rebaseResult.conflicts && rebaseResult.conflicts.length > 0) {
+          affectedStreams.push({
+            stream_id: dependentId,
+            issue_id: issueId,
+            result: 'conflict',
+            conflict_files: rebaseResult.conflicts.map((c) => c.path),
+          });
+
+          // Stop on first conflict if configured
+          if (strategy === 'stop_on_conflict') {
+            break;
+          }
+        } else {
+          affectedStreams.push({
+            stream_id: dependentId,
+            issue_id: issueId,
+            result: 'failed',
+            error: rebaseResult.error || 'Unknown error',
+          });
+        }
+      } catch (error) {
+        affectedStreams.push({
+          stream_id: dependentId,
+          issue_id: issueId,
+          result: 'failed',
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        // Stop on first error if configured
+        if (strategy === 'stop_on_conflict') {
+          break;
+        }
+      }
+    }
+
+    // Determine if cascade completed fully
+    const complete = affectedStreams.every(
+      (s) => s.result === 'rebased' || s.result === 'skipped'
+    );
+
+    // Get deferred conflicts if using defer strategy
+    const deferred =
+      strategy === 'defer_conflicts'
+        ? affectedStreams
+            .filter((s) => s.result === 'conflict')
+            .map((s) => s.stream_id)
+        : undefined;
+
     return {
-      rootStream: streamId,
-      updated: [],
-      skipped: [],
-      failed: [],
-      complete: false,
+      triggered_by: streamId,
+      affected_streams: affectedStreams,
+      complete,
+      deferred,
     };
   }
 
