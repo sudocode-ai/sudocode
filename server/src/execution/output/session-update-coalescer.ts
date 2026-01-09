@@ -15,6 +15,7 @@ import type {
   AgentThoughtComplete,
   ToolCallComplete,
   UserMessageComplete,
+  PlanUpdate,
 } from "./coalesced-types.js";
 
 /**
@@ -160,8 +161,34 @@ export class SessionUpdateCoalescer {
         }
         break;
 
+      // Plan updates contain todo/task state - store them for replay
+      // ACP plan structure: { sessionUpdate: "plan", entries: [...] }
+      // NOT { sessionUpdate: "plan", plan: { entries: [...] } }
+      case "plan": {
+        // Flush pending text if any
+        if (this.pendingText) {
+          results.push(this.flushPendingText()!);
+        }
+        // Store plan update with entries - entries are directly on the update object
+        const planUpdate = update as {
+          sessionUpdate: "plan";
+          entries?: Array<{ content: string; status: string; priority: string }>;
+        };
+        if (planUpdate.entries && planUpdate.entries.length > 0) {
+          results.push({
+            sessionUpdate: "plan",
+            entries: planUpdate.entries.map((e) => ({
+              content: e.content,
+              status: e.status as "pending" | "in_progress" | "completed",
+              priority: e.priority as "high" | "medium" | "low",
+            })),
+            timestamp: new Date(),
+          } as PlanUpdate);
+        }
+        break;
+      }
+
       // These events pass through without coalescing (informational/metadata)
-      case "plan":
       case "available_commands_update":
       case "current_mode_update":
         // Metadata updates - no coalescing needed

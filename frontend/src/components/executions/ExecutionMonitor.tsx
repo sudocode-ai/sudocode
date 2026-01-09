@@ -23,7 +23,7 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { AgentTrajectory } from './AgentTrajectory'
 import { TodoTracker } from './TodoTracker'
-import { buildTodoHistoryFromToolCalls } from '@/utils/todoExtractor'
+import { buildTodoHistoryFromPlanUpdates, planEntriesToTodoItems } from '@/utils/todoExtractor'
 import { AlertCircle, CheckCircle2, Loader2, XCircle } from 'lucide-react'
 import type { Execution } from '@/types/execution'
 import type { ToolCallTracking } from '@/types/stream'
@@ -60,6 +60,15 @@ export interface ExecutionMonitorProps {
    */
   onToolCallsUpdate?: (
     toolCalls: Map<string, ToolCallTracking>
+  ) => void
+
+  /**
+   * Callback when todos are updated (computed from plan updates)
+   * Use this instead of onToolCallsUpdate for Claude Code executions
+   */
+  onTodosUpdate?: (
+    executionId: string,
+    todos: import('./TodoTracker').TodoItem[]
   ) => void
 
   /**
@@ -169,6 +178,7 @@ export function ExecutionMonitor({
   onError,
   onContentChange,
   onToolCallsUpdate,
+  onTodosUpdate,
   onCancel,
   onSkipAllPermissionsComplete,
   compact = false,
@@ -196,11 +206,23 @@ export function ExecutionMonitor({
 
   // Use pre-processed logs from hook (already converted from CoalescedSessionUpdate)
   const processedLogs = useMemo(() => {
+    console.log('[ExecutionMonitor] Processing logs:', {
+      messagesCount: logsResult.processed.messages.length,
+      toolCallsCount: logsResult.processed.toolCalls.length,
+      wsToolCallsCount: wsStream.toolCalls.length,
+    })
+    if (logsResult.processed.toolCalls.length > 0) {
+      console.log('[ExecutionMonitor] First 3 processed log tool calls:', logsResult.processed.toolCalls.slice(0, 3).map(tc => ({
+        id: tc.id,
+        title: tc.title,
+        status: tc.status,
+      })))
+    }
     return {
       messages: logsResult.processed.messages,
       toolCalls: logsResult.processed.toolCalls,
     }
-  }, [logsResult.processed])
+  }, [logsResult.processed, wsStream.toolCalls.length])
 
   // Select the appropriate data source
   // Key insight: When transitioning from active to completed, keep showing WebSocket data
@@ -218,6 +240,18 @@ export function ExecutionMonitor({
       const logsLoaded = !logsResult.loading && logsResult.events.length > 0
       const hasWsData = wsStream.messages.length > 0 || wsStream.toolCalls.length > 0
       const hasLogsData = processedLogs.messages.length > 0 || processedLogs.toolCalls.length > 0
+
+      console.log('[ExecutionMonitor] Data source selection:', {
+        isActive,
+        logsLoaded,
+        hasWsData,
+        hasLogsData,
+        wsToolCalls: wsStream.toolCalls.length,
+        logsToolCalls: processedLogs.toolCalls.length,
+        wsConnectionStatus: wsStream.connectionStatus,
+        logsLoading: logsResult.loading,
+        logsEventsCount: logsResult.events.length,
+      })
 
       // For active executions, use WebSocket stream if available
       // BUT: If WebSocket has disconnected/errored and we have no data, fall back to logs
@@ -312,6 +346,18 @@ export function ExecutionMonitor({
         }
       }
     }, [isActive, wsStream, logsResult, processedLogs, executionId, executionProp])
+
+  // Debug: Log selected toolCalls
+  useEffect(() => {
+    console.log('[ExecutionMonitor] Selected toolCalls:', toolCalls.length, 'isActive:', isActive)
+    if (toolCalls.length > 0) {
+      const todoLikeTools = toolCalls.filter(tc =>
+        tc.title.toLowerCase().includes('todo') ||
+        (tc.rawInput && JSON.stringify(tc.rawInput).includes('todos'))
+      )
+      console.log('[ExecutionMonitor] Todo-like tool calls:', todoLikeTools.length)
+    }
+  }, [toolCalls, isActive])
 
   // Track whether onComplete has already been called to prevent infinite loops
   // When an execution is already 'completed' on mount, we should not call onComplete
@@ -432,8 +478,38 @@ export function ExecutionMonitor({
     }
   }
 
-  // Extract todos from tool calls for TodoTracker
-  const todos = useMemo(() => buildTodoHistoryFromToolCalls(toolCalls), [toolCalls])
+  // Extract todos from plan updates for TodoTracker
+  // Note: Claude Code's TodoWrite does NOT emit tool_call events - it uses ACP plan session updates
+  const todos = useMemo(() => {
+    // For active executions, prefer WebSocket plan data (real-time)
+    // For completed executions, prefer logs plan data (historical)
+    if (isActive && wsStream.planUpdates.length > 0) {
+      return buildTodoHistoryFromPlanUpdates(wsStream.planUpdates)
+    }
+
+    // Use logs plan data for completed executions or when WebSocket has no plans yet
+    if (logsResult.processed.planUpdates.length > 0) {
+      return buildTodoHistoryFromPlanUpdates(logsResult.processed.planUpdates)
+    }
+
+    // If we have latestPlan directly, convert it to TodoItems
+    if (isActive && wsStream.latestPlan) {
+      return planEntriesToTodoItems(wsStream.latestPlan)
+    }
+
+    if (logsResult.processed.latestPlan) {
+      return planEntriesToTodoItems(logsResult.processed.latestPlan)
+    }
+
+    return []
+  }, [isActive, wsStream.planUpdates, wsStream.latestPlan, logsResult.processed.planUpdates, logsResult.processed.latestPlan])
+
+  // Notify parent of todos updates (for aggregating across executions)
+  useEffect(() => {
+    if (onTodosUpdate && todos.length > 0) {
+      onTodosUpdate(executionId, todos)
+    }
+  }, [executionId, todos, onTodosUpdate])
 
   // Render status badge
   const renderStatusBadge = () => {

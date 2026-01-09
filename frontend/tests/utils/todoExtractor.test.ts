@@ -9,9 +9,11 @@ import { describe, it, expect } from 'vitest'
 import {
   buildTodoHistory,
   buildTodoHistoryFromToolCalls,
+  buildTodoHistoryFromPlanUpdates,
+  planEntriesToTodoItems,
 } from '@/utils/todoExtractor'
 import type { ToolCallTracking } from '@/types/stream'
-import type { ToolCall } from '@/hooks/useSessionUpdateStream'
+import type { ToolCall, PlanUpdateEvent, PlanEntry } from '@/hooks/useSessionUpdateStream'
 
 describe('todoExtractor', () => {
   describe('buildTodoHistoryFromToolCalls (ACP format)', () => {
@@ -374,6 +376,204 @@ describe('todoExtractor', () => {
       expect(result).toHaveLength(1)
       expect(result[0].content).toBe('Nested legacy')
       expect(result[0].wasCompleted).toBe(true)
+    })
+  })
+
+  describe('buildTodoHistoryFromPlanUpdates (ACP plan session updates)', () => {
+    it('should return empty array for no plan updates', () => {
+      const result = buildTodoHistoryFromPlanUpdates([])
+      expect(result).toEqual([])
+    })
+
+    it('should extract todos from a single plan update', () => {
+      const planUpdates: PlanUpdateEvent[] = [
+        {
+          id: 'plan-1',
+          entries: [
+            { content: 'Task 1', status: 'pending', priority: 'high' },
+            { content: 'Task 2', status: 'in_progress', priority: 'medium' },
+            { content: 'Task 3', status: 'completed', priority: 'low' },
+          ],
+          timestamp: new Date(1000),
+        },
+      ]
+
+      const result = buildTodoHistoryFromPlanUpdates(planUpdates)
+
+      expect(result).toHaveLength(3)
+      expect(result[0].content).toBe('Task 1')
+      expect(result[0].status).toBe('pending')
+      expect(result[1].content).toBe('Task 2')
+      expect(result[1].status).toBe('in_progress')
+      expect(result[2].content).toBe('Task 3')
+      expect(result[2].status).toBe('completed')
+      expect(result[2].wasCompleted).toBe(true)
+    })
+
+    it('should track todo state changes across multiple plan updates', () => {
+      const planUpdates: PlanUpdateEvent[] = [
+        {
+          id: 'plan-1',
+          entries: [
+            { content: 'Task A', status: 'pending', priority: 'high' },
+            { content: 'Task B', status: 'pending', priority: 'medium' },
+          ],
+          timestamp: new Date(1000),
+        },
+        {
+          id: 'plan-2',
+          entries: [
+            { content: 'Task A', status: 'completed', priority: 'high' },
+            { content: 'Task B', status: 'in_progress', priority: 'medium' },
+          ],
+          timestamp: new Date(2000),
+        },
+      ]
+
+      const result = buildTodoHistoryFromPlanUpdates(planUpdates)
+
+      expect(result).toHaveLength(2)
+      const taskA = result.find((t) => t.content === 'Task A')
+      expect(taskA?.status).toBe('completed')
+      expect(taskA?.wasCompleted).toBe(true)
+      const taskB = result.find((t) => t.content === 'Task B')
+      expect(taskB?.status).toBe('in_progress')
+    })
+
+    it('should mark todos as removed when they disappear from plan', () => {
+      const planUpdates: PlanUpdateEvent[] = [
+        {
+          id: 'plan-1',
+          entries: [
+            { content: 'Task X', status: 'pending', priority: 'high' },
+            { content: 'Task Y', status: 'pending', priority: 'medium' },
+            { content: 'Task Z', status: 'pending', priority: 'low' },
+          ],
+          timestamp: new Date(1000),
+        },
+        {
+          id: 'plan-2',
+          entries: [
+            // Task Y removed
+            { content: 'Task X', status: 'completed', priority: 'high' },
+            { content: 'Task Z', status: 'in_progress', priority: 'low' },
+          ],
+          timestamp: new Date(2000),
+        },
+      ]
+
+      const result = buildTodoHistoryFromPlanUpdates(planUpdates)
+
+      expect(result).toHaveLength(3)
+      const taskY = result.find((t) => t.content === 'Task Y')
+      expect(taskY?.wasRemoved).toBe(true)
+    })
+
+    it('should un-mark todo as removed if it reappears', () => {
+      const planUpdates: PlanUpdateEvent[] = [
+        {
+          id: 'plan-1',
+          entries: [{ content: 'Task', status: 'pending', priority: 'high' }],
+          timestamp: new Date(1000),
+        },
+        {
+          id: 'plan-2',
+          entries: [], // Task removed
+          timestamp: new Date(2000),
+        },
+        {
+          id: 'plan-3',
+          entries: [{ content: 'Task', status: 'in_progress', priority: 'high' }], // Task reappears
+          timestamp: new Date(3000),
+        },
+      ]
+
+      const result = buildTodoHistoryFromPlanUpdates(planUpdates)
+
+      expect(result).toHaveLength(1)
+      expect(result[0].wasRemoved).toBe(false)
+      expect(result[0].status).toBe('in_progress')
+    })
+
+    it('should sort plan updates by timestamp before processing', () => {
+      const planUpdates: PlanUpdateEvent[] = [
+        {
+          id: 'plan-2',
+          entries: [{ content: 'Task', status: 'completed', priority: 'high' }],
+          timestamp: new Date(2000), // Later
+        },
+        {
+          id: 'plan-1',
+          entries: [{ content: 'Task', status: 'pending', priority: 'high' }],
+          timestamp: new Date(1000), // Earlier (but second in array)
+        },
+      ]
+
+      const result = buildTodoHistoryFromPlanUpdates(planUpdates)
+
+      // Should process in timestamp order, so final state is 'completed'
+      expect(result).toHaveLength(1)
+      expect(result[0].status).toBe('completed')
+    })
+
+    it('should handle timestamp as string (from logs)', () => {
+      const planUpdates = [
+        {
+          id: 'plan-1',
+          entries: [{ content: 'Task', status: 'pending' as const, priority: 'high' as const }],
+          timestamp: '2024-01-01T00:00:00.000Z', // String timestamp
+        },
+      ]
+
+      // Cast via unknown since string timestamp is intentional for this test
+      const result = buildTodoHistoryFromPlanUpdates(planUpdates as unknown as PlanUpdateEvent[])
+
+      expect(result).toHaveLength(1)
+      expect(result[0].content).toBe('Task')
+    })
+
+    it('should skip plan updates with empty entries', () => {
+      const planUpdates: PlanUpdateEvent[] = [
+        {
+          id: 'plan-1',
+          entries: [],
+          timestamp: new Date(1000),
+        },
+        {
+          id: 'plan-2',
+          entries: [{ content: 'Task', status: 'pending', priority: 'high' }],
+          timestamp: new Date(2000),
+        },
+      ]
+
+      const result = buildTodoHistoryFromPlanUpdates(planUpdates)
+
+      expect(result).toHaveLength(1)
+      expect(result[0].content).toBe('Task')
+    })
+  })
+
+  describe('planEntriesToTodoItems', () => {
+    it('should return empty array for null input', () => {
+      const result = planEntriesToTodoItems(null)
+      expect(result).toEqual([])
+    })
+
+    it('should convert plan entries to todo items', () => {
+      const entries: PlanEntry[] = [
+        { content: 'Task 1', status: 'pending', priority: 'high' },
+        { content: 'Task 2', status: 'completed', priority: 'low' },
+      ]
+
+      const result = planEntriesToTodoItems(entries)
+
+      expect(result).toHaveLength(2)
+      expect(result[0].content).toBe('Task 1')
+      expect(result[0].status).toBe('pending')
+      expect(result[0].wasCompleted).toBe(false)
+      expect(result[1].content).toBe('Task 2')
+      expect(result[1].status).toBe('completed')
+      expect(result[1].wasCompleted).toBe(true)
     })
   })
 })

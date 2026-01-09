@@ -14,7 +14,12 @@ import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { JsonView, defaultStyles, darkStyles } from 'react-json-view-lite'
 import 'react-json-view-lite/dist/index.css'
-import type { AgentMessage, ToolCall, AgentThought, ToolCallContentItem } from '@/hooks/useSessionUpdateStream'
+import type {
+  AgentMessage,
+  ToolCall,
+  AgentThought,
+  ToolCallContentItem,
+} from '@/hooks/useSessionUpdateStream'
 import type { PermissionRequest as PermissionRequestType } from '@/types/permissions'
 import { TodoTracker } from './TodoTracker'
 import { buildTodoHistoryFromToolCalls } from '@/utils/todoExtractor'
@@ -165,23 +170,22 @@ function formatToolArgs(toolName: string, rawInput: unknown): string {
     }
 
     // For TodoWrite, show summary of todos
+    // Detect by content structure since ACP titles are human-readable, not tool names
     if (toolName === 'TodoWrite' && parsed.todos && Array.isArray(parsed.todos)) {
       const count = parsed.todos.length
-      const statuses = parsed.todos.reduce((acc: Record<string, number>, todo: { status?: string }) => {
-        if (todo.status) {
-          acc[todo.status] = (acc[todo.status] || 0) + 1
-        }
-        return acc
-      }, {})
+      const statuses = parsed.todos.reduce(
+        (acc: Record<string, number>, todo: { status?: string }) => {
+          if (todo.status) {
+            acc[todo.status] = (acc[todo.status] || 0) + 1
+          }
+          return acc
+        },
+        {}
+      )
       const parts: string[] = [`${count} todo${count !== 1 ? 's' : ''}`]
       if (statuses.in_progress) parts.push(`${statuses.in_progress} in progress`)
       if (statuses.completed) parts.push(`${statuses.completed} completed`)
       return parts.join(', ')
-    }
-
-    // For TodoRead, show that it's reading the list
-    if (toolName === 'TodoRead') {
-      return 'reading todo list'
     }
 
     // For other tools, show first key-value pair
@@ -204,7 +208,11 @@ function formatToolArgs(toolName: string, rawInput: unknown): string {
 /**
  * Format tool result summary for collapsed view
  */
-function formatResultSummary(toolName: string, result: string, maxChars: number = 250): string | null {
+function formatResultSummary(
+  toolName: string,
+  result: string,
+  maxChars: number = 250
+): string | null {
   try {
     if (toolName === 'Bash') {
       const lines = result.split('\n').filter((line) => line.trim())
@@ -249,36 +257,30 @@ function formatResultSummary(toolName: string, result: string, maxChars: number 
       return 'Search completed'
     }
 
-    if (toolName === 'TodoWrite') {
-      try {
-        const parsed = JSON.parse(result)
-        if (parsed.todos && Array.isArray(parsed.todos)) {
-          return `Updated ${parsed.todos.length} todo${parsed.todos.length !== 1 ? 's' : ''}`
-        }
-      } catch {
-        // Fallback
+    // Detect todo tools by result structure since ACP titles are human-readable
+    try {
+      const parsed = JSON.parse(result)
+      if (parsed.todos && Array.isArray(parsed.todos)) {
+        // Result contains todos array - summarize it
+        const pending = parsed.todos.filter(
+          (t: { status?: string }) => t.status === 'pending'
+        ).length
+        const inProgress = parsed.todos.filter(
+          (t: { status?: string }) => t.status === 'in_progress'
+        ).length
+        const completed = parsed.todos.filter(
+          (t: { status?: string }) => t.status === 'completed'
+        ).length
+        const parts: string[] = []
+        if (pending) parts.push(`${pending} pending`)
+        if (inProgress) parts.push(`${inProgress} in progress`)
+        if (completed) parts.push(`${completed} completed`)
+        return parts.length > 0
+          ? parts.join(', ')
+          : `${parsed.todos.length} todo${parsed.todos.length !== 1 ? 's' : ''}`
       }
-      return 'Todo list updated'
-    }
-
-    if (toolName === 'TodoRead') {
-      try {
-        const parsed = JSON.parse(result)
-        if (parsed.todos && Array.isArray(parsed.todos)) {
-          const pending = parsed.todos.filter((t: { status?: string }) => t.status === 'pending').length
-          const inProgress = parsed.todos.filter((t: { status?: string }) => t.status === 'in_progress').length
-          const completed = parsed.todos.filter((t: { status?: string }) => t.status === 'completed').length
-          const parts: string[] = []
-          if (pending) parts.push(`${pending} pending`)
-          if (inProgress) parts.push(`${inProgress} in progress`)
-          if (completed) parts.push(`${completed} completed`)
-          return parts.length > 0 ? parts.join(', ') : `${parsed.todos.length} todos`
-        }
-      } catch {
-        // Fallback
-      }
-      const lines = result.split('\n').filter((line) => line.trim())
-      return `${lines.length} todos`
+    } catch {
+      // Not JSON - continue to other checks
     }
 
     return null
@@ -377,7 +379,9 @@ function extractContentText(content: ToolCallContentItem[] | undefined): string 
 /**
  * Check if content array has a diff
  */
-function getContentDiff(content: ToolCallContentItem[] | undefined): { path: string; oldText?: string | null; newText: string } | null {
+function getContentDiff(
+  content: ToolCallContentItem[] | undefined
+): { path: string; oldText?: string | null; newText: string } | null {
   if (!content) return null
   for (const item of content) {
     if (item.type === 'diff') {
@@ -502,7 +506,13 @@ export function AgentTrajectory({
     <div className={`space-y-1 font-mono text-sm ${className}`}>
       {trajectory.map((item, idx) => {
         if (item.type === 'message') {
-          return <MessageItem key={`msg-${item.data.id}-${idx}`} message={item.data} renderMarkdown={renderMarkdown} />
+          return (
+            <MessageItem
+              key={`msg-${item.data.id}-${idx}`}
+              message={item.data}
+              renderMarkdown={renderMarkdown}
+            />
+          )
         } else if (item.type === 'thought') {
           return <ThoughtItem key={`thought-${item.data.id}-${idx}`} thought={item.data} />
         } else if (item.type === 'permission_request') {
@@ -534,11 +544,21 @@ export function AgentTrajectory({
 /**
  * MessageItem - Terminal-style message rendering
  */
-function MessageItem({ message, renderMarkdown }: { message: AgentMessage; renderMarkdown: boolean }) {
+function MessageItem({
+  message,
+  renderMarkdown,
+}: {
+  message: AgentMessage
+  renderMarkdown: boolean
+}) {
   return (
     <div className="group">
       <div className="flex items-start gap-2">
-        <span className={`mt-0.5 select-none text-foreground ${message.isStreaming ? 'animate-pulse' : ''}`}>⏺</span>
+        <span
+          className={`mt-0.5 select-none text-foreground ${message.isStreaming ? 'animate-pulse' : ''}`}
+        >
+          ⏺
+        </span>
         <div className="min-w-0 flex-1 py-0.5">
           {renderMarkdown ? (
             <ReactMarkdown
@@ -563,7 +583,12 @@ function MessageItem({ message, renderMarkdown }: { message: AgentMessage; rende
                     return (
                       <code
                         className="!inline rounded bg-muted px-1 py-0.5 font-mono text-xs"
-                        style={{ display: 'inline', whiteSpace: 'nowrap', width: 'auto', maxWidth: 'none' }}
+                        style={{
+                          display: 'inline',
+                          whiteSpace: 'nowrap',
+                          width: 'auto',
+                          maxWidth: 'none',
+                        }}
                         {...props}
                       >
                         {children}
@@ -590,8 +615,12 @@ function MessageItem({ message, renderMarkdown }: { message: AgentMessage; rende
                   </a>
                 ),
                 h1: ({ children }) => <h1 className="mb-1 mt-2 text-base font-bold">{children}</h1>,
-                h2: ({ children }) => <h2 className="mb-1 mt-2 text-sm font-semibold">{children}</h2>,
-                h3: ({ children }) => <h3 className="mb-1 mt-1 text-sm font-semibold">{children}</h3>,
+                h2: ({ children }) => (
+                  <h2 className="mb-1 mt-2 text-sm font-semibold">{children}</h2>
+                ),
+                h3: ({ children }) => (
+                  <h3 className="mb-1 mt-1 text-sm font-semibold">{children}</h3>
+                ),
               }}
             >
               {message.content}
@@ -612,7 +641,11 @@ function ThoughtItem({ thought }: { thought: AgentThought }) {
   return (
     <div className="group">
       <div className="flex items-start gap-2">
-        <span className={`mt-0.5 select-none text-purple-500 ${thought.isStreaming ? 'animate-pulse' : ''}`}>⏺</span>
+        <span
+          className={`mt-0.5 select-none text-purple-500 ${thought.isStreaming ? 'animate-pulse' : ''}`}
+        >
+          ⏺
+        </span>
         <div className="min-w-0 flex-1 py-0.5">
           <div className="whitespace-pre-wrap text-xs italic leading-relaxed text-muted-foreground">
             {thought.content}
@@ -701,13 +734,17 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCall }) {
                     {showFullArgs ? (
                       <>
                         {'> Hide ('}
-                        {argsData.lineCount > 2 ? `${argsData.lineCount} lines` : `${argsData.charCount} chars`}
+                        {argsData.lineCount > 2
+                          ? `${argsData.lineCount} lines`
+                          : `${argsData.charCount} chars`}
                         {')'}
                       </>
                     ) : argsData.lineCount > 2 ? (
                       <>{'> +' + (argsData.lineCount - 2) + ' more lines'}</>
                     ) : (
-                      <>{'> +' + (argsData.charCount - MAX_CHARS_BEFORE_TRUNCATION) + ' more chars'}</>
+                      <>
+                        {'> +' + (argsData.charCount - MAX_CHARS_BEFORE_TRUNCATION) + ' more chars'}
+                      </>
                     )}
                   </button>
                 )}
@@ -739,7 +776,10 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCall }) {
               // Fall back to parsing from rawInput for Edit tool
               if (toolName === 'Edit') {
                 try {
-                  const { oldContent, newContent, filePath } = parseClaudeToolArgs(toolName, argsString)
+                  const { oldContent, newContent, filePath } = parseClaudeToolArgs(
+                    toolName,
+                    argsString
+                  )
                   return (
                     <div className="mt-0.5 flex items-start gap-2">
                       <span className="select-none text-muted-foreground">∟</span>
@@ -787,7 +827,9 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCall }) {
                           return <div className="text-xs leading-relaxed">{summary}</div>
                         }
                         return (
-                          <pre className="whitespace-pre-wrap text-xs leading-relaxed">{resultData.truncated}</pre>
+                          <pre className="whitespace-pre-wrap text-xs leading-relaxed">
+                            {resultData.truncated}
+                          </pre>
                         )
                       })()}
                     {showFullResult &&
@@ -809,11 +851,17 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCall }) {
                             )
                           } catch {
                             return (
-                              <pre className="whitespace-pre-wrap text-xs leading-relaxed">{resultString}</pre>
+                              <pre className="whitespace-pre-wrap text-xs leading-relaxed">
+                                {resultString}
+                              </pre>
                             )
                           }
                         }
-                        return <pre className="whitespace-pre-wrap text-xs leading-relaxed">{resultString}</pre>
+                        return (
+                          <pre className="whitespace-pre-wrap text-xs leading-relaxed">
+                            {resultString}
+                          </pre>
+                        )
                       })()}
                     {resultData.hasMore && (
                       <button
@@ -831,7 +879,11 @@ function ToolCallItem({ toolCall }: { toolCall: ToolCall }) {
                         ) : resultData.lineCount > 2 ? (
                           <>{'> +' + (resultData.lineCount - 2) + ' more lines'}</>
                         ) : (
-                          <>{'> +' + (resultData.charCount - MAX_CHARS_BEFORE_TRUNCATION) + ' more chars'}</>
+                          <>
+                            {'> +' +
+                              (resultData.charCount - MAX_CHARS_BEFORE_TRUNCATION) +
+                              ' more chars'}
+                          </>
                         )}
                       </button>
                     )}

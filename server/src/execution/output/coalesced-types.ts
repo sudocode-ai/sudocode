@@ -74,13 +74,38 @@ export interface UserMessageComplete {
 }
 
 /**
+ * A plan entry (task/todo item) from Claude Code
+ */
+export interface PlanEntry {
+  /** Human-readable description of the task */
+  content: string;
+  /** Current execution status */
+  status: "pending" | "in_progress" | "completed";
+  /** Task priority */
+  priority: "high" | "medium" | "low";
+}
+
+/**
+ * A plan update containing the current state of all tasks/todos
+ * This is how Claude Code exposes its todo list through ACP
+ */
+export interface PlanUpdate {
+  sessionUpdate: "plan";
+  /** All current plan entries (replaces previous state) */
+  entries: PlanEntry[];
+  /** Timestamp of the plan update */
+  timestamp: Date;
+}
+
+/**
  * Union of all coalesced event types for storage
  */
 export type CoalescedSessionUpdate =
   | AgentMessageComplete
   | AgentThoughtComplete
   | ToolCallComplete
-  | UserMessageComplete;
+  | UserMessageComplete
+  | PlanUpdate;
 
 /**
  * Type guard for checking if an event is a coalesced type
@@ -94,7 +119,8 @@ export function isCoalescedUpdate(
     u.sessionUpdate === "agent_message_complete" ||
     u.sessionUpdate === "agent_thought_complete" ||
     u.sessionUpdate === "tool_call_complete" ||
-    u.sessionUpdate === "user_message_complete"
+    u.sessionUpdate === "user_message_complete" ||
+    u.sessionUpdate === "plan"
   );
 }
 

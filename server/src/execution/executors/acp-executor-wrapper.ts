@@ -312,6 +312,31 @@ export class AcpExecutorWrapper {
           );
         }
 
+        // Always log tool_call events with details for debugging
+        if (
+          update.sessionUpdate === "tool_call" ||
+          update.sessionUpdate === "tool_call_update"
+        ) {
+          const toolUpdate = update as {
+            sessionUpdate: string;
+            toolCallId?: string;
+            title?: string;
+            status?: string;
+            rawInput?: unknown;
+          };
+          console.log(`[AcpExecutorWrapper] Tool call event:`, {
+            type: toolUpdate.sessionUpdate,
+            toolCallId: toolUpdate.toolCallId,
+            title: toolUpdate.title,
+            status: toolUpdate.status,
+            hasRawInput: !!toolUpdate.rawInput,
+            rawInputPreview:
+              typeof toolUpdate.rawInput === "object"
+                ? JSON.stringify(toolUpdate.rawInput).substring(0, 200)
+                : undefined,
+          });
+        }
+
         // Handle permission requests (for interactive mode)
         if (update.sessionUpdate === "permission_request") {
           const permUpdate = update as PermissionRequestUpdate;
@@ -482,6 +507,31 @@ export class AcpExecutorWrapper {
       let updateCount = 0;
       for await (const update of session.prompt(task.prompt)) {
         updateCount++;
+
+        // Debug: Log tool_call events
+        if (
+          update.sessionUpdate === "tool_call" ||
+          update.sessionUpdate === "tool_call_update"
+        ) {
+          const toolUpdate = update as {
+            sessionUpdate: string;
+            toolCallId?: string;
+            title?: string;
+            status?: string;
+            rawInput?: unknown;
+          };
+          console.log(`[AcpExecutorWrapper] Tool call event (interactive):`, {
+            type: toolUpdate.sessionUpdate,
+            toolCallId: toolUpdate.toolCallId,
+            title: toolUpdate.title,
+            status: toolUpdate.status,
+            hasRawInput: !!toolUpdate.rawInput,
+            rawInputPreview:
+              typeof toolUpdate.rawInput === "object"
+                ? JSON.stringify(toolUpdate.rawInput).substring(0, 200)
+                : undefined,
+          });
+        }
 
         // Handle permission requests (for interactive mode)
         if (update.sessionUpdate === "permission_request") {

@@ -74,6 +74,27 @@ export interface AgentThought {
 }
 
 /**
+ * Plan entry (todo item) from Claude Code's TodoWrite tool
+ * Exposed via ACP 'plan' session updates (not tool_call events)
+ */
+export interface PlanEntry {
+  content: string
+  status: 'pending' | 'in_progress' | 'completed'
+  priority: 'high' | 'medium' | 'low'
+}
+
+/**
+ * Plan update event from ACP
+ */
+export interface PlanUpdateEvent {
+  id: string
+  entries: PlanEntry[]
+  timestamp: Date
+  /** Optional index for stable ordering when timestamps are equal */
+  index?: number
+}
+
+/**
  * Execution lifecycle tracking (compatible with useAgUiStream's WorkflowExecution)
  */
 export interface ExecutionState {
@@ -104,6 +125,7 @@ export interface UseSessionUpdateStreamOptions {
     onToolCall?: (toolCall: ToolCall) => void
     onThought?: (thought: AgentThought) => void
     onPermissionRequest?: (request: PermissionRequest) => void
+    onPlanUpdate?: (planUpdate: PlanUpdateEvent) => void
   }
 }
 
@@ -121,6 +143,10 @@ export interface UseSessionUpdateStreamResult {
   toolCalls: ToolCall[]
   /** Agent thoughts/reasoning */
   thoughts: AgentThought[]
+  /** Plan updates (todo list state changes from Claude Code) */
+  planUpdates: PlanUpdateEvent[]
+  /** Latest plan state (most recent plan update) */
+  latestPlan: PlanEntry[] | null
   /** Pending permission requests */
   permissionRequests: PermissionRequest[]
   /** Mark a permission request as responded (call after REST API success) */
@@ -240,6 +266,21 @@ interface PermissionRequestEvent {
 }
 
 /**
+ * Plan event from ACP - contains Claude Code's todo list state
+ * This is how TodoWrite operations are exposed (NOT via tool_call events)
+ */
+interface PlanEvent {
+  sessionUpdate: 'plan'
+  plan?: {
+    entries?: Array<{
+      content: string
+      status: string
+      priority: string
+    }>
+  }
+}
+
+/**
  * Union of all SessionUpdate types we handle
  */
 type SessionUpdate =
@@ -251,6 +292,7 @@ type SessionUpdate =
   | AgentThoughtComplete
   | ToolCallComplete
   | PermissionRequestEvent
+  | PlanEvent
 
 /**
  * WebSocket session_update message payload
@@ -389,6 +431,7 @@ export function useSessionUpdateStream(
   const [permissionRequests, setPermissionRequests] = useState<Map<string, PermissionRequest>>(
     new Map()
   )
+  const [planUpdates, setPlanUpdates] = useState<Map<string, PlanUpdateEvent>>(new Map())
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<Error | null>(null)
   const [execution, setExecution] = useState<ExecutionState>(initialExecutionState)
@@ -425,6 +468,16 @@ export function useSessionUpdateStream(
    * Process a SessionUpdate event
    */
   const processUpdate = useCallback((update: SessionUpdate) => {
+    // Debug: Log received events (but throttle to avoid spam)
+    const eventType = update.sessionUpdate
+    if (eventType === 'tool_call' || eventType === 'tool_call_update' || eventType === 'tool_call_complete') {
+      console.log('[useSessionUpdateStream] Received tool call event:', eventType, {
+        toolCallId: (update as { toolCallId?: string }).toolCallId,
+        title: (update as { title?: string }).title,
+        status: (update as { status?: string }).status,
+      })
+    }
+
     switch (update.sessionUpdate) {
       // Streaming: agent_message_chunk
       case 'agent_message_chunk': {
@@ -772,6 +825,43 @@ export function useSessionUpdateStream(
         }
         break
       }
+
+      // Plan updates from Claude Code's TodoWrite tool
+      // ACP plan structure: { sessionUpdate: "plan", entries: [...] } - entries are directly on update
+      case 'plan': {
+        // Parse plan entries from ACP format - entries are directly on the update object
+        const planData = update as { entries?: Array<{ content: string; status: string; priority: string }> }
+        const entries = planData.entries?.map((e) => ({
+          content: e.content,
+          status: e.status as 'pending' | 'in_progress' | 'completed',
+          priority: e.priority as 'high' | 'medium' | 'low',
+        })) || []
+
+        if (entries.length > 0) {
+          // Assign index synchronously for stable ordering
+          const assignedIndex = eventIndexRef.current++
+          const planId = generateStreamId('plan')
+
+          const planUpdate: PlanUpdateEvent = {
+            id: planId,
+            entries,
+            timestamp: new Date(),
+            index: assignedIndex,
+          }
+
+          setPlanUpdates((prev) => {
+            const next = new Map(prev)
+            next.set(planId, planUpdate)
+            return next
+          })
+
+          // Trigger callback
+          if (onEventRef.current?.onPlanUpdate) {
+            onEventRef.current.onPlanUpdate(planUpdate)
+          }
+        }
+        break
+      }
     }
   }, [])
 
@@ -937,6 +1027,7 @@ export function useSessionUpdateStream(
     setToolCalls(new Map())
     setThoughts(new Map())
     setPermissionRequests(new Map())
+    setPlanUpdates(new Map())
     setIsStreaming(false)
     setError(null)
     setExecution(initialExecutionState)
@@ -967,6 +1058,17 @@ export function useSessionUpdateStream(
     () => Array.from(permissionRequests.values()),
     [permissionRequests]
   )
+  const planUpdatesArray = useMemo(() => Array.from(planUpdates.values()), [planUpdates])
+
+  // Compute latest plan (from most recent plan update)
+  const latestPlan = useMemo(() => {
+    if (planUpdatesArray.length === 0) return null
+    // Sort by timestamp descending and take the most recent
+    const sorted = [...planUpdatesArray].sort(
+      (a, b) => b.timestamp.getTime() - a.timestamp.getTime()
+    )
+    return sorted[0]?.entries || null
+  }, [planUpdatesArray])
 
   return {
     connectionStatus,
@@ -974,6 +1076,8 @@ export function useSessionUpdateStream(
     messages: messagesArray,
     toolCalls: toolCallsArray,
     thoughts: thoughtsArray,
+    planUpdates: planUpdatesArray,
+    latestPlan,
     permissionRequests: permissionRequestsArray,
     markPermissionResponded,
     isStreaming,
