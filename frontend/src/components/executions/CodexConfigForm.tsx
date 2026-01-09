@@ -14,8 +14,9 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { ChevronDown } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronDown, Loader2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import axios from 'axios'
 
 export interface CodexConfig {
   model?: string
@@ -32,11 +33,33 @@ interface CodexConfigFormProps {
   onChange: (config: CodexConfig) => void
 }
 
-const MODELS = [
-  { value: 'gpt-5-codex', label: 'GPT-5 Codex (Default)' },
-  { value: 'gpt-5', label: 'GPT-5' },
-  { value: 'gpt-4-codex', label: 'GPT-4 Codex' },
-]
+// Special value for "let agent decide" - will be converted to undefined when saving
+const DEFAULT_MODEL_VALUE = '__default__'
+
+// Default option shown while loading or if API fails
+const DEFAULT_MODEL_OPTION = { value: DEFAULT_MODEL_VALUE, label: 'Default (Agent Decides)' }
+
+/**
+ * Format a model ID into a human-readable label
+ */
+function formatModelName(modelId: string): string {
+  // Handle common patterns
+  if (modelId.includes('gpt')) {
+    return modelId.toUpperCase().replace(/-/g, ' ')
+  }
+  if (modelId.includes('o1') || modelId.includes('o3')) {
+    return modelId.toUpperCase()
+  }
+  // Fallback: capitalize and clean up
+  return modelId
+    .replace(/[-_]/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+interface ModelOption {
+  value: string
+  label: string
+}
 
 const SANDBOX_OPTIONS = [
   { value: 'read-only', label: 'Read Only', description: 'Can only read files' },
@@ -54,6 +77,51 @@ const APPROVAL_OPTIONS = [
 export function CodexConfigForm({ config, onChange }: CodexConfigFormProps) {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [models, setModels] = useState<ModelOption[]>([DEFAULT_MODEL_OPTION])
+  const [modelsLoading, setModelsLoading] = useState(true)
+
+  // Fetch available models from the agent
+  useEffect(() => {
+    let cancelled = false
+
+    async function fetchModels() {
+      try {
+        // Use axios directly - /agents endpoints don't use ApiResponse wrapper
+        const response = await axios.get<{ models: string[]; cached: boolean; fallback?: boolean }>(
+          '/api/agents/codex/models'
+        )
+
+        if (cancelled) return
+
+        const data = response.data
+
+        if (data.models && data.models.length > 0) {
+          // Filter out "default" from API response (we add our own Default option)
+          const apiModels = data.models
+            .filter((model: string) => model.toLowerCase() !== 'default')
+            .map((model: string) => ({
+              value: model,
+              label: formatModelName(model),
+            }))
+
+          setModels([DEFAULT_MODEL_OPTION, ...apiModels])
+        }
+      } catch (error) {
+        // Keep just the default option on error
+        console.warn('Failed to fetch Codex models:', error)
+      } finally {
+        if (!cancelled) {
+          setModelsLoading(false)
+        }
+      }
+    }
+
+    fetchModels()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const validateConfig = (newConfig: CodexConfig): Record<string, string> => {
     const newErrors: Record<string, string> = {}
@@ -85,19 +153,22 @@ export function CodexConfigForm({ config, onChange }: CodexConfigFormProps) {
       )}
       {/* Model Selection */}
       <div className="space-y-2">
-        <Label htmlFor="codex-model" className="text-xs">
+        <Label htmlFor="codex-model" className="text-xs flex items-center gap-1">
           Model
+          {modelsLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
         </Label>
         <Select
-          value={config.model || 'gpt-5-codex'}
-          onValueChange={(value) => updateConfig({ model: value })}
+          value={config.model || DEFAULT_MODEL_VALUE}
+          onValueChange={(value) =>
+            updateConfig({ model: value === DEFAULT_MODEL_VALUE ? undefined : value })
+          }
         >
           <SelectTrigger id="codex-model" className="h-8 text-xs">
             <SelectValue placeholder="Select model" />
           </SelectTrigger>
           <SelectContent>
-            {MODELS.map((model) => (
-              <SelectItem key={model.value} value={model.value} className="text-xs">
+            {models.map((model) => (
+              <SelectItem key={model.value || 'default'} value={model.value} className="text-xs">
                 {model.label}
               </SelectItem>
             ))}

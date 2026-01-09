@@ -37,10 +37,14 @@ function createMockStreamResult(overrides: {
   messages?: AgentMessage[]
   toolCalls?: ToolCall[]
   thoughts?: useSessionUpdateStreamModule.AgentThought[]
+  planUpdates?: useSessionUpdateStreamModule.PlanUpdateEvent[]
+  latestPlan?: useSessionUpdateStreamModule.PlanEntry[] | null
+  permissionRequests?: useSessionUpdateStreamModule.UseSessionUpdateStreamResult['permissionRequests']
+  markPermissionResponded?: useSessionUpdateStreamModule.UseSessionUpdateStreamResult['markPermissionResponded']
   error?: Error | null
   isConnected?: boolean
   isStreaming?: boolean
-}) {
+}): useSessionUpdateStreamModule.UseSessionUpdateStreamResult {
   return {
     connectionStatus: overrides.connectionStatus ?? 'idle',
     execution: {
@@ -54,6 +58,10 @@ function createMockStreamResult(overrides: {
     messages: overrides.messages ?? [],
     toolCalls: overrides.toolCalls ?? [],
     thoughts: overrides.thoughts ?? [],
+    planUpdates: overrides.planUpdates ?? [],
+    latestPlan: overrides.latestPlan ?? null,
+    permissionRequests: overrides.permissionRequests ?? [],
+    markPermissionResponded: overrides.markPermissionResponded ?? vi.fn(),
     error: overrides.error ?? null,
     isConnected: overrides.isConnected ?? false,
     isStreaming: overrides.isStreaming ?? false,
@@ -63,14 +71,21 @@ function createMockStreamResult(overrides: {
 // Helper to create mock result for useExecutionLogs
 function createMockLogsResult(overrides: {
   events?: useExecutionLogsModule.CoalescedSessionUpdate[]
-  processed?: useExecutionLogsModule.ProcessedLogs
+  processed?: Partial<useExecutionLogsModule.ProcessedLogs>
   loading?: boolean
   error?: Error | null
   metadata?: useExecutionLogsModule.ExecutionLogMetadata | null
   format?: 'acp' | 'normalized_entry' | 'empty' | null
 }): useExecutionLogsModule.UseExecutionLogsResult {
   const events = overrides.events ?? []
-  const processed = overrides.processed ?? { messages: [], toolCalls: [], thoughts: [] }
+  const defaultProcessed: useExecutionLogsModule.ProcessedLogs = {
+    messages: [],
+    toolCalls: [],
+    thoughts: [],
+    planUpdates: [],
+    latestPlan: null,
+  }
+  const processed = { ...defaultProcessed, ...overrides.processed }
   return {
     events,
     processed,
@@ -1099,22 +1114,18 @@ describe('ExecutionMonitor', () => {
   })
 
   describe('TodoTracker Integration', () => {
-    it('should display TodoTracker when there are todo tool calls', () => {
-      const toolCalls: ToolCall[] = [
+    it('should display TodoTracker when there are plan updates', () => {
+      // Note: Claude Code's TodoWrite is an internal tool that does NOT emit tool_call events.
+      // Instead, todo state is exposed via ACP "plan" session updates.
+      const planUpdates: useSessionUpdateStreamModule.PlanUpdateEvent[] = [
         {
-          id: 'tool-1',
-          title: 'TodoWrite',
-          rawInput: JSON.stringify({
-            todos: [
-              { content: 'Task 1', status: 'pending', activeForm: 'Task 1' },
-              { content: 'Task 2', status: 'in_progress', activeForm: 'Task 2' },
-              { content: 'Task 3', status: 'completed', activeForm: 'Task 3' },
-            ],
-          }),
-          status: 'success',
-          result: 'Updated',
+          id: 'plan-1',
+          entries: [
+            { content: 'Task 1', status: 'pending', priority: 'high' },
+            { content: 'Task 2', status: 'in_progress', priority: 'medium' },
+            { content: 'Task 3', status: 'completed', priority: 'low' },
+          ],
           timestamp: new Date(1000),
-          completedAt: new Date(1100),
           index: 0,
         },
       ]
@@ -1127,7 +1138,7 @@ describe('ExecutionMonitor', () => {
             status: 'running',
             startTime: Date.now(),
           },
-          toolCalls,
+          planUpdates,
           isConnected: true,
         })
       )
@@ -1146,7 +1157,8 @@ describe('ExecutionMonitor', () => {
       expect(screen.getByText('Task 3')).toBeInTheDocument()
     })
 
-    it('should not display TodoTracker when there are no todo tool calls', () => {
+    it('should not display TodoTracker when there are no plan updates', () => {
+      // When there are no plan updates, TodoTracker should not display
       const toolCalls: ToolCall[] = [
         {
           id: 'tool-1',
@@ -1169,6 +1181,7 @@ describe('ExecutionMonitor', () => {
             startTime: Date.now(),
           },
           toolCalls,
+          planUpdates: [], // No plan updates means no todos
           isConnected: true,
         })
       )
@@ -1378,6 +1391,93 @@ describe('ExecutionMonitor', () => {
       // Use textContent to check the full text with preserved newlines
       const promptElement = container.querySelector('.whitespace-pre-wrap')
       expect(promptElement?.textContent).toBe(multilinePrompt)
+    })
+  })
+
+  describe('Skip All Permissions', () => {
+    it('should pass onSkipAllPermissions prop to AgentTrajectory when permission requests exist', () => {
+      const permissionRequests = [
+        {
+          requestId: 'perm-1',
+          sessionId: 'session-123',
+          toolCall: {
+            toolCallId: 'tool-1',
+            title: 'Bash',
+            status: 'pending',
+            rawInput: { command: 'npm test' },
+          },
+          options: [
+            { optionId: 'allow_once', name: 'Allow', kind: 'allow_once' as const },
+            { optionId: 'deny_once', name: 'Deny', kind: 'deny_once' as const },
+          ],
+          responded: false,
+          timestamp: new Date(),
+        },
+      ]
+
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          permissionRequests,
+          isConnected: true,
+        })
+      )
+
+      renderWithTheme(
+        <ExecutionMonitor
+          executionId="test-exec-1"
+          onSkipAllPermissionsComplete={vi.fn()}
+        />
+      )
+
+      // Should render the permission request with Skip All button
+      expect(screen.getByText('Bash')).toBeInTheDocument()
+      expect(screen.getByText('awaiting permission')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Skip All' })).toBeInTheDocument()
+    })
+
+    it('should not render Skip All button when onSkipAllPermissionsComplete is not provided', () => {
+      const permissionRequests = [
+        {
+          requestId: 'perm-1',
+          sessionId: 'session-123',
+          toolCall: {
+            toolCallId: 'tool-1',
+            title: 'Bash',
+            status: 'pending',
+            rawInput: { command: 'npm test' },
+          },
+          options: [
+            { optionId: 'allow_once', name: 'Allow', kind: 'allow_once' as const },
+          ],
+          responded: false,
+          timestamp: new Date(),
+        },
+      ]
+
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          permissionRequests,
+          isConnected: true,
+        })
+      )
+
+      renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
+
+      // Should render permission request but NOT the Skip All button
+      expect(screen.getByText('Bash')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Skip All' })).not.toBeInTheDocument()
     })
   })
 })

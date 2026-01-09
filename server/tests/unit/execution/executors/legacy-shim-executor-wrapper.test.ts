@@ -263,7 +263,7 @@ describe("LegacyShimExecutorWrapper", () => {
       );
     });
 
-    it("should also broadcast to issue subscribers", async () => {
+    it("should NOT broadcast session_update to issue subscribers (prevents duplicates)", async () => {
       const { websocketManager } = await import(
         "../../../../src/services/websocket.js"
       );
@@ -274,15 +274,22 @@ describe("LegacyShimExecutorWrapper", () => {
         "/test/workdir"
       );
 
-      // Should also broadcast to issue subscribers
+      // Verify session_update was broadcast to execution subscribers
       expect(websocketManager.broadcast).toHaveBeenCalledWith(
         "test-project",
-        "issue",
-        "test-issue-456",
+        "execution",
+        "exec-123",
         expect.objectContaining({
           type: "session_update",
         })
       );
+
+      // Verify session_update was NOT broadcast to issue subscribers
+      // (broadcasting to both causes duplicate messages when frontend subscribes to both channels)
+      const issueSessionUpdateCalls = (websocketManager.broadcast as any).mock.calls.filter(
+        (call: any[]) => call[1] === "issue" && call[3]?.type === "session_update"
+      );
+      expect(issueSessionUpdateCalls).toHaveLength(0);
     });
   });
 

@@ -914,7 +914,12 @@ describe('useSessionUpdateStream', () => {
         )
       })
 
-      // Start a tool call
+      // At this point, both are still streaming (no tool call yet)
+      expect(result.current.messages[0].isStreaming).toBe(true)
+      expect(result.current.thoughts[0].isStreaming).toBe(true)
+
+      // Start a tool call - this finalizes the previous message and thought
+      // because a tool call starting signals the end of the preceding text content
       act(() => {
         simulateMessage(
           createSessionUpdateMessage('exec-123', {
@@ -926,10 +931,10 @@ describe('useSessionUpdateStream', () => {
         )
       })
 
-      expect(result.current.messages[0].isStreaming).toBe(true)
-      expect(result.current.thoughts[0].isStreaming).toBe(true)
+      // Message and thought should be finalized by the tool_call
+      expect(result.current.messages[0].isStreaming).toBe(false)
+      expect(result.current.thoughts[0].isStreaming).toBe(false)
       expect(result.current.toolCalls[0].status).toBe('running')
-      expect(result.current.isStreaming).toBe(true)
 
       // Simulate execution cancellation
       act(() => {
@@ -944,7 +949,7 @@ describe('useSessionUpdateStream', () => {
         })
       })
 
-      // All streaming content should be finalized
+      // Tool call should be marked as failed on cancellation
       expect(result.current.messages[0].isStreaming).toBe(false)
       expect(result.current.thoughts[0].isStreaming).toBe(false)
       expect(result.current.toolCalls[0].status).toBe('failed')

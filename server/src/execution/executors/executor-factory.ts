@@ -106,18 +106,70 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
   if (AcpExecutorWrapper.isAcpSupported(agentType)) {
     console.log(`[ExecutorFactory] Using AcpExecutorWrapper for ${agentType}`);
 
+    // Build env vars, mapping model to agent-specific env var
+    const modelEnvVars: Record<string, string> = {};
+    const model = (agentConfig as any).model;
+    if (model) {
+      // Map model to agent-specific environment variable
+      if (agentType === "claude-code") {
+        modelEnvVars.ANTHROPIC_MODEL = model;
+      }
+      // Add other agent type mappings here as needed:
+      // else if (agentType === "codex") { modelEnvVars.OPENAI_MODEL = model; }
+    }
+
+    // Merge model env vars with any existing env config
+    const existingEnv = (agentConfig as any).env;
+    const mergedEnv =
+      Object.keys(modelEnvVars).length > 0 || existingEnv
+        ? { ...modelEnvVars, ...existingEnv }
+        : undefined;
+
+    // Check for dangerouslySkipPermissions in multiple locations for backwards compatibility:
+    // 1. Top-level (from destructured config)
+    // 2. Nested in agentConfig (from frontend's agentConfig object)
+    const skipPermissions =
+      (agentConfig as any).dangerouslySkipPermissions === true ||
+      (agentConfig as any).agentConfig?.dangerouslySkipPermissions === true;
+
+    // Map frontend permissionMode values to ACP mode and permission settings
+    // Frontend sends: 'default' | 'acceptEdits' | 'dontAsk' | 'plan' | 'bypassPermissions'
+    const frontendPermissionMode =
+      (agentConfig as any).permissionMode ||
+      (agentConfig as any).agentConfig?.permissionMode;
+
+    // Determine session mode (ACP modes: "code", "ask", "plan", "architect")
+    let sessionMode: string | undefined = (agentConfig as any).mode;
+    if (!sessionMode && frontendPermissionMode === "plan") {
+      sessionMode = "plan";
+    }
+
+    // Determine ACP permission mode
+    // bypassPermissions = full auto-approve (YOLO mode)
+    // Other modes use interactive with frontend handling permission requests
+    const effectiveSkipPermissions =
+      skipPermissions || frontendPermissionMode === "bypassPermissions";
+
+    console.log("[ExecutorFactory] Permission mode config:", {
+      topLevel: (agentConfig as any).dangerouslySkipPermissions,
+      nested: (agentConfig as any).agentConfig?.dangerouslySkipPermissions,
+      frontendPermissionMode,
+      sessionMode,
+      resolved: effectiveSkipPermissions ? "auto-approve" : "interactive",
+    });
+
     const acpConfig: AcpExecutorWrapperConfig = {
       agentType,
       acpConfig: {
         agentType,
         // Extract MCP servers from agent config if present
         mcpServers: (agentConfig as any).mcpServers,
-        // Default to auto-approve, but respect config if set
-        permissionMode: (agentConfig as any).dangerouslySkipPermissions
-          ? "auto-approve"
-          : "auto-approve", // TODO: Make configurable
-        env: (agentConfig as any).env,
-        mode: (agentConfig as any).mode,
+        // Default to interactive mode for UI permission approval
+        // Only auto-approve when explicitly enabled via dangerouslySkipPermissions or bypassPermissions
+        permissionMode: effectiveSkipPermissions ? "auto-approve" : "interactive",
+        env: mergedEnv,
+        // Session mode (e.g., "code", "plan", "ask")
+        mode: sessionMode,
       },
       lifecycleService: factoryConfig.lifecycleService,
       logsStore: factoryConfig.logsStore,
