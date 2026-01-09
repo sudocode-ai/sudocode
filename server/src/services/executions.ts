@@ -21,6 +21,7 @@ export interface CreateExecutionInput {
   branch_name: string; // Required for worktree integration
   worktree_path?: string; // Optional, set after worktree creation
   parent_execution_id?: string; // Optional, set for follow-up executions
+  stream_id?: string; // Optional, dataplane stream ID for tracking
 }
 
 /**
@@ -78,9 +79,10 @@ export function createExecution(
       branch_name,
       worktree_path,
       parent_execution_id,
+      stream_id,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -98,6 +100,7 @@ export function createExecution(
     input.branch_name,
     input.worktree_path || null,
     input.parent_execution_id || null,
+    input.stream_id || null,
     now,
     now
   );

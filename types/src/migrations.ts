@@ -621,6 +621,51 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 6,
+    name: "add-stream-id-to-executions",
+    up: (db: Database.Database) => {
+      // Check if executions table exists
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='executions'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (tables.length === 0) {
+        // Table doesn't exist yet, will be created with new schema
+        return;
+      }
+
+      // Check if stream_id column already exists
+      const tableInfo = db.pragma("table_info(executions)") as Array<{
+        name: string;
+      }>;
+      const hasStreamId = tableInfo.some((col) => col.name === "stream_id");
+
+      if (hasStreamId) {
+        // Already migrated
+        return;
+      }
+
+      // Add stream_id column
+      db.exec(`ALTER TABLE executions ADD COLUMN stream_id TEXT;`);
+
+      // Create index for stream_id lookups
+      db.exec(
+        `CREATE INDEX IF NOT EXISTS idx_executions_stream_id ON executions(stream_id);`
+      );
+
+      console.log("  ✓ Added stream_id column to executions table");
+    },
+    down: (db: Database.Database) => {
+      // SQLite doesn't support DROP COLUMN in older versions
+      // For rollback, we'd need to recreate the table without the column
+      console.log(
+        "  Note: stream_id column cannot be removed (SQLite limitation)"
+      );
+    },
+  },
 ];
 
 /**

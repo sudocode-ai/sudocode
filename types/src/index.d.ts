@@ -380,6 +380,9 @@ export interface Execution {
   step_type: string | null;
   step_index: number | null;
   step_config: string | null;
+
+  // Dataplane integration
+  stream_id: string | null;
 }
 
 // Re-export execution artifact types

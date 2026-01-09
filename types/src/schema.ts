@@ -180,6 +180,9 @@ CREATE TABLE IF NOT EXISTS executions (
     step_index INTEGER,
     step_config TEXT,
 
+    -- Dataplane integration
+    stream_id TEXT,
+
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL,
     FOREIGN KEY (issue_uuid) REFERENCES issues(uuid) ON DELETE SET NULL,
     FOREIGN KEY (parent_execution_id) REFERENCES executions(id) ON DELETE SET NULL
@@ -334,6 +337,7 @@ CREATE INDEX IF NOT EXISTS idx_executions_created_at ON executions(created_at);
 CREATE INDEX IF NOT EXISTS idx_executions_workflow ON executions(workflow_execution_id);
 CREATE INDEX IF NOT EXISTS idx_executions_workflow_step ON executions(workflow_execution_id, step_index);
 CREATE INDEX IF NOT EXISTS idx_executions_step_type ON executions(step_type);
+CREATE INDEX IF NOT EXISTS idx_executions_stream_id ON executions(stream_id);
 `;
 
 export const PROMPT_TEMPLATES_INDEXES = `

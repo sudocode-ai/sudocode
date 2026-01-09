@@ -1108,20 +1108,102 @@ export class DataplaneAdapter {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Factory
+// Singleton Factory
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Create a DataplaneAdapter instance if enabled
+ * Singleton cache for DataplaneAdapter instances
+ * Keyed by normalized repository path
  */
-export async function createDataplaneAdapter(
+const adapterCache = new Map<string, DataplaneAdapter>();
+
+/**
+ * Normalize a path for use as cache key
+ */
+function normalizeRepoPath(repoPath: string): string {
+  return path.resolve(repoPath);
+}
+
+/**
+ * Get the singleton DataplaneAdapter instance for a repository
+ * Returns null if dataplane is not enabled in config
+ */
+export async function getDataplaneAdapter(
   repoPath: string
 ): Promise<DataplaneAdapter | null> {
+  const normalizedPath = normalizeRepoPath(repoPath);
+
+  // Check if we already have an initialized adapter
+  const cached = adapterCache.get(normalizedPath);
+  if (cached && cached.isInitialized) {
+    return cached;
+  }
+
+  // Check if dataplane is enabled
   if (!isDataplaneEnabled(repoPath)) {
     return null;
   }
 
+  // Create and initialize new adapter
   const adapter = new DataplaneAdapter(repoPath);
-  await adapter.initialize();
-  return adapter;
+  try {
+    await adapter.initialize();
+    adapterCache.set(normalizedPath, adapter);
+    return adapter;
+  } catch (error) {
+    // Log error but return null - dataplane is optional
+    console.error(
+      `Failed to initialize dataplane adapter: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return null;
+  }
+}
+
+/**
+ * Get the DataplaneAdapter instance synchronously (if already initialized)
+ * Returns null if not initialized or not enabled
+ */
+export function getDataplaneAdapterSync(repoPath: string): DataplaneAdapter | null {
+  const normalizedPath = normalizeRepoPath(repoPath);
+  const cached = adapterCache.get(normalizedPath);
+
+  if (cached && cached.isInitialized) {
+    return cached;
+  }
+
+  return null;
+}
+
+/**
+ * Close and remove the DataplaneAdapter for a repository
+ */
+export function closeDataplaneAdapter(repoPath: string): void {
+  const normalizedPath = normalizeRepoPath(repoPath);
+  const adapter = adapterCache.get(normalizedPath);
+
+  if (adapter) {
+    adapter.close();
+    adapterCache.delete(normalizedPath);
+  }
+}
+
+/**
+ * Close all DataplaneAdapter instances
+ * Call this on server shutdown
+ */
+export function closeAllDataplaneAdapters(): void {
+  for (const adapter of adapterCache.values()) {
+    adapter.close();
+  }
+  adapterCache.clear();
+}
+
+/**
+ * Create a DataplaneAdapter instance if enabled (legacy factory)
+ * @deprecated Use getDataplaneAdapter() instead for singleton behavior
+ */
+export async function createDataplaneAdapter(
+  repoPath: string
+): Promise<DataplaneAdapter | null> {
+  return getDataplaneAdapter(repoPath);
 }
