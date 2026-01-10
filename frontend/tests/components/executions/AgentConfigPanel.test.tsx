@@ -106,7 +106,7 @@ describe('AgentConfigPanel', () => {
       await waitFor(() => {
         expect(
           screen.getByPlaceholderText(
-            'Add additional context (optional) for the agent... (@ for context)'
+            'Add additional context (optional) for the agent... (@ for context, / for commands)'
           )
         ).toBeInTheDocument()
       })
@@ -311,7 +311,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -385,7 +385,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -403,7 +403,7 @@ describe('AgentConfigPanel', () => {
       )
 
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -417,7 +417,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -467,7 +467,7 @@ describe('AgentConfigPanel', () => {
 
       // Enter prompt
       const textarea = screen.getByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -549,7 +549,7 @@ describe('AgentConfigPanel', () => {
       await waitFor(() => {
         expect(
           screen.getByPlaceholderText(
-            'Add additional context (optional) for the agent... (@ for context)'
+            'Add additional context (optional) for the agent... (@ for context, / for commands)'
           )
         ).toBeInTheDocument()
       })
@@ -631,7 +631,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -742,7 +742,7 @@ describe('AgentConfigPanel', () => {
       renderWithProviders(<AgentConfigPanel issueId="i-test1" onStart={mockOnStart} />)
 
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -857,7 +857,7 @@ describe('AgentConfigPanel', () => {
 
       // Now submit and verify the merged config
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -903,7 +903,7 @@ describe('AgentConfigPanel', () => {
 
       // Submit and verify the config uses defaults for other fields
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
       await user.type(textarea, 'Test prompt')
 
@@ -1078,7 +1078,7 @@ describe('AgentConfigPanel', () => {
       await waitFor(() => {
         expect(
           screen.getByPlaceholderText(
-            'Continue the previous conversation... (ctrl+k for new, @ for context)'
+            'Continue the previous conversation... (ctrl+k for new, @ for context, / for commands)'
           )
         ).toBeInTheDocument()
       })
@@ -1200,7 +1200,7 @@ describe('AgentConfigPanel', () => {
 
       // Enter feedback prompt
       const textarea = await screen.findByPlaceholderText(
-        'Continue the previous conversation... (ctrl+k for new, @ for context)'
+        'Continue the previous conversation... (ctrl+k for new, @ for context, / for commands)'
       )
       await user.type(textarea, 'Continue with this feedback')
 
@@ -1251,7 +1251,7 @@ describe('AgentConfigPanel', () => {
       )
 
       const textarea = await screen.findByPlaceholderText(
-        'Continue the previous conversation... (ctrl+k for new, @ for context)'
+        'Continue the previous conversation... (ctrl+k for new, @ for context, / for commands)'
       )
 
       // Press Ctrl+K to toggle to new execution mode
@@ -1279,7 +1279,7 @@ describe('AgentConfigPanel', () => {
       )
 
       const textarea = await screen.findByPlaceholderText(
-        'Start a new execution... (ctrl+k to continue previous, @ for context)'
+        'Start a new execution... (ctrl+k to continue previous, @ for context, / for commands)'
       )
 
       // Press Ctrl+K to toggle back to continue mode
@@ -1305,7 +1305,7 @@ describe('AgentConfigPanel', () => {
       await waitFor(() => {
         expect(
           screen.getByPlaceholderText(
-            'Start a new execution... (ctrl+k to continue previous, @ for context)'
+            'Start a new execution... (ctrl+k to continue previous, @ for context, / for commands)'
           )
         ).toBeInTheDocument()
       })
@@ -1325,7 +1325,7 @@ describe('AgentConfigPanel', () => {
       )
 
       const textarea = await screen.findByPlaceholderText(
-        'Start a new execution... (ctrl+k to continue previous, @ for context)'
+        'Start a new execution... (ctrl+k to continue previous, @ for context, / for commands)'
       )
       await user.type(textarea, 'Create a new execution')
 
@@ -1357,7 +1357,7 @@ describe('AgentConfigPanel', () => {
       )
 
       const textarea = await screen.findByPlaceholderText(
-        'Add additional context (optional) for the agent... (@ for context)'
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
       )
 
       await user.click(textarea)
@@ -1383,7 +1383,7 @@ describe('AgentConfigPanel', () => {
       )
 
       const textarea = await screen.findByPlaceholderText(
-        'Continue the previous conversation... (@ for context)'
+        'Continue the previous conversation... (@ for context, / for commands)'
       )
 
       await user.click(textarea)
@@ -1406,14 +1406,14 @@ describe('AgentConfigPanel', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText('Continue the previous conversation... (@ for context)')
+          screen.getByPlaceholderText('Continue the previous conversation... (@ for context, / for commands)')
         ).toBeInTheDocument()
       })
 
       // Should not show the ctrl+k hint
       expect(
         screen.queryByPlaceholderText(
-          'Continue the previous conversation... (ctrl+k for new, @ for context)'
+          'Continue the previous conversation... (ctrl+k for new, @ for context, / for commands)'
         )
       ).not.toBeInTheDocument()
     })
@@ -1432,14 +1432,14 @@ describe('AgentConfigPanel', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByPlaceholderText('Start a new execution... (@ for context)')
+          screen.getByPlaceholderText('Start a new execution... (@ for context, / for commands)')
         ).toBeInTheDocument()
       })
 
       // Should not show the ctrl+k hint
       expect(
         screen.queryByPlaceholderText(
-          'Start a new execution... (ctrl+k to continue previous, @ for context)'
+          'Start a new execution... (ctrl+k to continue previous, @ for context, / for commands)'
         )
       ).not.toBeInTheDocument()
     })

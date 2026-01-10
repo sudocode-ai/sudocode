@@ -31,6 +31,7 @@ import { useProject } from '@/hooks/useProject'
 import { useAgentActions } from '@/hooks/useAgentActions'
 import { useWorktrees } from '@/hooks/useWorktrees'
 import { useVoiceConfig } from '@/hooks/useVoiceConfig'
+import { useAgentCommands } from '@/hooks/useAgentCommands'
 import type { CodexConfig } from './CodexConfigForm'
 import type { CopilotConfig } from './CopilotConfigForm'
 import type { GeminiConfig } from './GeminiConfigForm'
@@ -132,6 +133,10 @@ interface AgentConfigPanelProps {
    * Default prompt to pre-populate the textarea
    */
   defaultPrompt?: string
+  /**
+   * Available slash commands from the agent (for autocomplete)
+   */
+  availableCommands?: import('@/hooks/useSessionUpdateStream').AvailableCommand[]
 }
 
 // TODO: Move this somewhere more central.
@@ -350,6 +355,7 @@ export function AgentConfigPanel({
   commitsAhead,
   worktreeExists = true,
   defaultPrompt,
+  availableCommands = [],
 }: AgentConfigPanelProps) {
   const [loading, setLoading] = useState(false)
   const [prompt, setPrompt] = useState(defaultPrompt || '')
@@ -455,6 +461,36 @@ export function AgentConfigPanel({
 
   // Fetch available agents
   const { agents, loading: agentsLoading } = useAgents()
+
+  // Agent command discovery (for slash command autocomplete)
+  const {
+    getCommands: getCachedCommands,
+    discoverCommands,
+    refreshCommands,
+    updateCache: updateCommandsCache,
+    isDiscovering: isDiscoveringCommands,
+  } = useAgentCommands()
+
+  // Merge WebSocket commands (prop) with discovered commands (cache)
+  // WebSocket commands take priority as they are more recent
+  const effectiveCommands = useMemo(() => {
+    if (availableCommands.length > 0) {
+      // WebSocket provided commands - update cache and use them
+      updateCommandsCache(selectedAgentType, availableCommands)
+      return availableCommands
+    }
+    return getCachedCommands(selectedAgentType) ?? []
+  }, [availableCommands, selectedAgentType, getCachedCommands, updateCommandsCache])
+
+  // Handler to trigger command discovery when "/" is typed
+  const handleDiscoverCommands = useCallback(() => {
+    discoverCommands(selectedAgentType)
+  }, [discoverCommands, selectedAgentType])
+
+  // Handler to refresh commands (bypass cache)
+  const handleRefreshCommands = useCallback(() => {
+    refreshCommands(selectedAgentType)
+  }, [refreshCommands, selectedAgentType])
 
   // Get contextual actions based on execution state
   // Actions are handled internally by the hook
@@ -881,13 +917,17 @@ export function AgentConfigPanel({
             placeholder={
               isRunning
                 ? 'Execution is running (esc to cancel)'
-                : promptPlaceholder || 'Send feedback to the agent... (@ for context)'
+                : promptPlaceholder || 'Send feedback to the agent... (@ for context, / for commands)'
             }
             disabled={loading || disabled}
             className="max-h-[150px] min-h-0 resize-none overflow-y-auto border-none bg-muted/80 py-2 text-sm shadow-none transition-[height] duration-100 focus-visible:ring-0 focus-visible:ring-offset-0"
             projectId={currentProjectId || ''}
             autoResize
             maxHeight={150}
+            availableCommands={effectiveCommands}
+            onDiscoverCommands={handleDiscoverCommands}
+            isLoadingCommands={isDiscoveringCommands}
+            onRefreshCommands={handleRefreshCommands}
           />
         </div>
         <TooltipProvider>
@@ -980,22 +1020,26 @@ export function AgentConfigPanel({
                   : isFollowUp
                     ? forceNewExecution
                       ? isWorktreeCleaned
-                        ? 'Worktree cleaned up. Start a new execution... (@ for context)'
+                        ? 'Worktree cleaned up. Start a new execution... (@ for context, / for commands)'
                         : allowModeToggle
-                          ? 'Start a new execution... (ctrl+k to continue previous, @ for context)'
-                          : 'Start a new execution... (@ for context)'
+                          ? 'Start a new execution... (ctrl+k to continue previous, @ for context, / for commands)'
+                          : 'Start a new execution... (@ for context, / for commands)'
                       : allowModeToggle
-                        ? 'Continue the previous conversation... (ctrl+k for new, @ for context)'
-                        : 'Continue the previous conversation... (@ for context)'
+                        ? 'Continue the previous conversation... (ctrl+k for new, @ for context, / for commands)'
+                        : 'Continue the previous conversation... (@ for context, / for commands)'
                     : issueId
-                      ? 'Add additional context (optional) for the agent... (@ for context)'
-                      : 'Enter a prompt for the agent... (@ for context)')
+                      ? 'Add additional context (optional) for the agent... (@ for context, / for commands)'
+                      : 'Enter a prompt for the agent... (@ for context, / for commands)')
           }
           disabled={loading || disabled}
           className="max-h-[300px] min-h-0 resize-none overflow-y-auto border-none bg-muted/80 py-2 text-sm shadow-none transition-[height] duration-100 focus-visible:ring-0 focus-visible:ring-offset-0"
           projectId={currentProjectId || ''}
           autoResize
           maxHeight={300}
+          availableCommands={effectiveCommands}
+          onDiscoverCommands={handleDiscoverCommands}
+          isLoadingCommands={isDiscoveringCommands}
+          onRefreshCommands={handleRefreshCommands}
         />
       </div>
 

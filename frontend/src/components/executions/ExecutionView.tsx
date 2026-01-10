@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { executionsApi, type ExecutionChainResponse } from '@/lib/api'
 import { ExecutionMonitor, RunIndicator } from './ExecutionMonitor'
+import type { AvailableCommand } from '@/hooks/useSessionUpdateStream'
 import { AgentConfigPanel } from './AgentConfigPanel'
 import { DeleteWorktreeDialog } from './DeleteWorktreeDialog'
 import { DeleteExecutionDialog } from './DeleteExecutionDialog'
@@ -136,6 +137,9 @@ export function ExecutionView({
 
   // Accumulated todos from all executions in the chain (from plan updates)
   const [todosByExecution, setTodosByExecution] = useState<Map<string, TodoItem[]>>(new Map())
+
+  // Available slash commands from the agent (for autocomplete)
+  const [availableCommands, setAvailableCommands] = useState<AvailableCommand[]>([])
 
   // Merge todos from all executions - dedupe by content, keep most recent status
   const allTodos = useMemo(() => {
@@ -671,6 +675,11 @@ export function ExecutionView({
     })
   }, [])
 
+  // Handle available commands update from ExecutionMonitor (for slash command autocomplete)
+  const handleAvailableCommandsUpdate = useCallback((commands: AvailableCommand[]) => {
+    setAvailableCommands(commands)
+  }, [])
+
   // Notify parent of status changes
   useEffect(() => {
     if (!chainData || chainData.executions.length === 0) return
@@ -801,6 +810,7 @@ export function ExecutionView({
                         handleToolCallsUpdate(execution.id, toolCalls)
                       }
                       onTodosUpdate={handleTodosUpdate}
+                      onAvailableCommandsUpdate={isLast ? handleAvailableCommandsUpdate : undefined}
                       onCancel={
                         isLast &&
                         ['preparing', 'pending', 'running', 'paused'].includes(execution.status)
@@ -961,6 +971,7 @@ export function ExecutionView({
               isRunning={!lastExecutionTerminal}
               onCancel={() => handleCancel(lastExecution.id)}
               isCancelling={cancelling}
+              availableCommands={availableCommands}
               lastExecution={{
                 id: lastExecution.id,
                 mode: rootExecution.mode || undefined,

@@ -1,8 +1,11 @@
-import { useState, useRef, useCallback, useEffect, forwardRef } from 'react'
+import { useState, useRef, useCallback, useEffect, forwardRef, useMemo } from 'react'
 import { Textarea } from '@/components/ui/textarea'
 import { ContextSearchDropdown } from '@/components/ui/context-search-dropdown'
 import { useContextSearch, saveRecentMention } from '@/hooks/useContextSearch'
 import type { ContextSearchResult } from '@/types/api'
+import type { AvailableCommand } from '@/hooks/useSessionUpdateStream'
+import { cn } from '@/lib/utils'
+import { Loader2, RefreshCw } from 'lucide-react'
 
 interface ContextSearchTextareaProps {
   value: string
@@ -14,6 +17,23 @@ interface ContextSearchTextareaProps {
   projectId: string
   autoResize?: boolean
   maxHeight?: number
+  /**
+   * Available slash commands from the agent
+   * When provided, enables `/` autocomplete at the start of input
+   */
+  availableCommands?: AvailableCommand[]
+  /**
+   * Callback to trigger command discovery when "/" is typed and no commands cached
+   */
+  onDiscoverCommands?: () => void
+  /**
+   * Whether command discovery is in progress
+   */
+  isLoadingCommands?: boolean
+  /**
+   * Callback to refresh commands (bypasses cache)
+   */
+  onRefreshCommands?: () => void
 }
 
 /**
@@ -32,13 +52,23 @@ export const ContextSearchTextarea = forwardRef<HTMLTextAreaElement, ContextSear
       projectId,
       autoResize = false,
       maxHeight = 300,
+      availableCommands = [],
+      onDiscoverCommands,
+      isLoadingCommands = false,
+      onRefreshCommands,
     },
     ref
   ) {
+    // Context search (@ mentions) state
     const [searchQuery, setSearchQuery] = useState('')
     const [showDropdown, setShowDropdown] = useState(false)
     const [selectedIndex, setSelectedIndex] = useState(-1)
     const [atSymbolPosition, setAtSymbolPosition] = useState(-1)
+
+    // Slash command state
+    const [slashQuery, setSlashQuery] = useState('')
+    const [showSlashDropdown, setShowSlashDropdown] = useState(false)
+    const [slashSelectedIndex, setSlashSelectedIndex] = useState(-1)
 
     const internalRef = useRef<HTMLTextAreaElement>(null)
     const textareaRef = (ref as React.RefObject<HTMLTextAreaElement>) || internalRef
@@ -49,6 +79,21 @@ export const ContextSearchTextarea = forwardRef<HTMLTextAreaElement, ContextSear
       projectId,
       enabled: showDropdown && atSymbolPosition !== -1,
     })
+
+    // Filter available commands based on slash query
+    const filteredCommands = useMemo(() => {
+      if (!slashQuery && showSlashDropdown) {
+        // Show all commands when just `/` is typed
+        return availableCommands
+      }
+      if (!slashQuery) return []
+      const query = slashQuery.toLowerCase()
+      return availableCommands.filter(
+        (cmd) =>
+          cmd.name.toLowerCase().includes(query) ||
+          cmd.description.toLowerCase().includes(query)
+      )
+    }, [availableCommands, slashQuery, showSlashDropdown])
 
     // Auto-resize textarea based on content
     useEffect(() => {
@@ -85,15 +130,47 @@ export const ContextSearchTextarea = forwardRef<HTMLTextAreaElement, ContextSear
       textarea.scrollTop = scrollTop
     }, [value, autoResize, maxHeight, textareaRef])
 
-    // Handle text changes and detect @ symbol
+    // Handle text changes and detect @ symbol or / command
     const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newValue = e.target.value
       const cursorPosition = e.target.selectionStart || 0
 
       onChange(newValue)
 
-      // Check for @ symbol before cursor
       const textBeforeCursor = newValue.slice(0, cursorPosition)
+
+      // Check for / at start of input (slash commands)
+      if (textBeforeCursor.startsWith('/')) {
+        // Extract text after / until first space or end
+        const textAfterSlash = textBeforeCursor.slice(1)
+        const spaceIndex = textAfterSlash.search(/\s/)
+        const query = spaceIndex === -1 ? textAfterSlash : ''
+
+        // Only show dropdown if we're still typing the command (no space yet)
+        if (spaceIndex === -1) {
+          // If no commands available and we have a discovery callback, trigger it
+          if (availableCommands.length === 0 && onDiscoverCommands) {
+            onDiscoverCommands()
+          }
+
+          setSlashQuery(query)
+          setShowSlashDropdown(true)
+          setSlashSelectedIndex(0)
+          // Close @ dropdown
+          setShowDropdown(false)
+          setSearchQuery('')
+          setAtSymbolPosition(-1)
+          setSelectedIndex(-1)
+          return
+        }
+      }
+
+      // Close slash dropdown if we're not in slash command context
+      setShowSlashDropdown(false)
+      setSlashQuery('')
+      setSlashSelectedIndex(-1)
+
+      // Check for @ symbol before cursor
       const lastAtIndex = textBeforeCursor.lastIndexOf('@')
 
       if (lastAtIndex !== -1) {
@@ -170,10 +247,65 @@ export const ContextSearchTextarea = forwardRef<HTMLTextAreaElement, ContextSear
       [atSymbolPosition, value, searchQuery, onChange, textareaRef]
     )
 
+    // Select a slash command and insert it
+    const selectSlashCommand = useCallback(
+      (command: AvailableCommand) => {
+        if (!textareaRef.current) return
+
+        // Replace the current /query with /commandname followed by a space
+        const commandText = `/${command.name} `
+        const afterSlash = value.slice(1 + slashQuery.length)
+        const newValue = commandText + afterSlash
+        onChange(newValue)
+
+        // Close dropdown
+        setShowSlashDropdown(false)
+        setSlashQuery('')
+        setSlashSelectedIndex(-1)
+
+        // Focus and set cursor position after command
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.focus()
+            textareaRef.current.setSelectionRange(commandText.length, commandText.length)
+          }
+        }, 0)
+      },
+      [value, slashQuery, onChange, textareaRef]
+    )
 
     // Handle keyboard navigation
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      // Handle dropdown navigation first
+      // Handle slash command dropdown navigation first
+      if (showSlashDropdown && filteredCommands.length > 0) {
+        switch (e.key) {
+          case 'ArrowDown':
+            e.preventDefault()
+            setSlashSelectedIndex((prev) => (prev < filteredCommands.length - 1 ? prev + 1 : 0))
+            return
+          case 'ArrowUp':
+            e.preventDefault()
+            setSlashSelectedIndex((prev) => (prev > 0 ? prev - 1 : filteredCommands.length - 1))
+            return
+          case 'Enter':
+          case 'Tab':
+            if (slashSelectedIndex >= 0) {
+              e.preventDefault()
+              selectSlashCommand(filteredCommands[slashSelectedIndex])
+              return
+            }
+            break
+          case 'Escape':
+            e.preventDefault()
+            e.stopPropagation()
+            setShowSlashDropdown(false)
+            setSlashQuery('')
+            setSlashSelectedIndex(-1)
+            return
+        }
+      }
+
+      // Handle @ mention dropdown navigation
       if (showDropdown && results.length > 0) {
         switch (e.key) {
           case 'ArrowDown':
@@ -206,7 +338,7 @@ export const ContextSearchTextarea = forwardRef<HTMLTextAreaElement, ContextSear
       onKeyDown?.(e)
     }
 
-    // Close dropdown on blur
+    // Close dropdowns on blur
     const handleBlur = () => {
       // Delay to allow click events on dropdown to fire
       setTimeout(() => {
@@ -214,6 +346,9 @@ export const ContextSearchTextarea = forwardRef<HTMLTextAreaElement, ContextSear
         setSearchQuery('')
         setAtSymbolPosition(-1)
         setSelectedIndex(-1)
+        setShowSlashDropdown(false)
+        setSlashQuery('')
+        setSlashSelectedIndex(-1)
       }, 200)
     }
 
@@ -230,6 +365,61 @@ export const ContextSearchTextarea = forwardRef<HTMLTextAreaElement, ContextSear
           className={className}
         />
 
+        {/* Slash command dropdown */}
+        {showSlashDropdown && (
+          <div className="mt-1">
+            <div className="relative rounded-md border bg-popover p-1 shadow-md">
+              {/* Floating refresh button */}
+              {onRefreshCommands && !isLoadingCommands && filteredCommands.length > 0 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onRefreshCommands()
+                  }}
+                  className="absolute right-1.5 top-1.5 z-10 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  title="Refresh commands"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                </button>
+              )}
+              {isLoadingCommands ? (
+                <div className="flex items-center gap-2 px-2 py-1 text-sm text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Discovering commands...
+                </div>
+              ) : filteredCommands.length > 0 ? (
+                <div className="max-h-[200px] overflow-y-auto">
+                  {filteredCommands.map((command, index) => (
+                    <button
+                      key={command.name}
+                      type="button"
+                      className={cn(
+                        'flex w-full items-baseline gap-2 rounded px-2 py-1 text-left text-sm',
+                        index === slashSelectedIndex
+                          ? 'bg-accent text-accent-foreground'
+                          : 'hover:bg-accent hover:text-accent-foreground'
+                      )}
+                      onClick={() => selectSlashCommand(command)}
+                      onMouseEnter={() => setSlashSelectedIndex(index)}
+                      title={`/${command.name} - ${command.description}`}
+                    >
+                      <span className="shrink-0 font-medium text-foreground">/{command.name}</span>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {command.description}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="px-2 py-1 text-sm text-muted-foreground">No commands available</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Context search dropdown */}
         {showDropdown && (
           <div className="mt-1">
             <ContextSearchDropdown

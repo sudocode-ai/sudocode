@@ -72,6 +72,13 @@ export interface ExecutionMonitorProps {
   ) => void
 
   /**
+   * Callback when available slash commands are updated from the agent
+   */
+  onAvailableCommandsUpdate?: (
+    commands: import('@/hooks/useSessionUpdateStream').AvailableCommand[]
+  ) => void
+
+  /**
    * Callback when execution is cancelled (ESC key pressed)
    */
   onCancel?: () => void
@@ -179,6 +186,7 @@ export function ExecutionMonitor({
   onContentChange,
   onToolCallsUpdate,
   onTodosUpdate,
+  onAvailableCommandsUpdate,
   onCancel,
   onSkipAllPermissionsComplete,
   compact = false,
@@ -510,6 +518,13 @@ export function ExecutionMonitor({
       onTodosUpdate(executionId, todos)
     }
   }, [executionId, todos, onTodosUpdate])
+
+  // Notify parent of available commands updates (for slash command autocomplete)
+  useEffect(() => {
+    if (onAvailableCommandsUpdate && wsStream.availableCommands.length > 0) {
+      onAvailableCommandsUpdate(wsStream.availableCommands)
+    }
+  }, [wsStream.availableCommands, onAvailableCommandsUpdate])
 
   // Render status badge
   const renderStatusBadge = () => {

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { agentRegistryService } from "../services/agent-registry.js";
 import { AgentFactory } from "acp-factory";
+import { CommandDiscoveryService } from "../services/command-discovery-service.js";
 
 // Cache for agent models (agentType -> models[])
 const modelsCache: Map<string, { models: string[]; timestamp: number }> = new Map();
@@ -155,6 +156,49 @@ export function createAgentsRouter(): Router {
 
       return res.status(500).json({
         error: `Failed to retrieve models for ${agentType}`,
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  /**
+   * POST /api/agents/:agentType/discover-commands
+   * Discovers available slash commands for an agent type
+   *
+   * Creates a temporary session to capture available_commands_update
+   * without creating an execution record. Used for lazy command discovery
+   * when user types "/" in the prompt input.
+   *
+   * Response: { commands: AvailableCommand[] }
+   */
+  router.post("/:agentType/discover-commands", async (req: Request, res: Response) => {
+    const { agentType } = req.params;
+
+    try {
+      // Check if agent is ACP-supported
+      const acpAgents = AgentFactory.listAgents();
+      if (!acpAgents.includes(agentType)) {
+        return res.status(400).json({
+          error: `Agent '${agentType}' is not an ACP agent or not supported`,
+          supportedAgents: acpAgents,
+        });
+      }
+
+      // Use project root if available, otherwise current working directory
+      const workDir = req.project?.path || process.cwd();
+
+      console.log(`[AgentsRouter] Discovering commands for ${agentType} in ${workDir}...`);
+
+      const discoveryService = new CommandDiscoveryService();
+      const commands = await discoveryService.discoverCommands(agentType, workDir);
+
+      console.log(`[AgentsRouter] Discovered ${commands.length} commands for ${agentType}`);
+
+      return res.status(200).json({ commands });
+    } catch (error) {
+      console.error(`[AgentsRouter] Failed to discover commands for ${agentType}:`, error);
+      return res.status(500).json({
+        error: `Failed to discover commands for ${agentType}`,
         details: error instanceof Error ? error.message : "Unknown error",
       });
     }

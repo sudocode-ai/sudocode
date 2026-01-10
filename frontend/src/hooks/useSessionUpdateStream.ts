@@ -74,6 +74,23 @@ export interface AgentThought {
 }
 
 /**
+ * Available command input specification from ACP
+ */
+export interface AvailableCommandInput {
+  hint: string
+}
+
+/**
+ * Available slash command from ACP
+ * Agents advertise these via available_commands_update session notifications
+ */
+export interface AvailableCommand {
+  name: string
+  description: string
+  input?: AvailableCommandInput
+}
+
+/**
  * Plan entry (todo item) from Claude Code's TodoWrite tool
  * Exposed via ACP 'plan' session updates (not tool_call events)
  */
@@ -151,6 +168,8 @@ export interface UseSessionUpdateStreamResult {
   permissionRequests: PermissionRequest[]
   /** Mark a permission request as responded (call after REST API success) */
   markPermissionResponded: (requestId: string, selectedOptionId: string) => void
+  /** Available slash commands advertised by the agent */
+  availableCommands: AvailableCommand[]
   /** Whether currently receiving streaming updates */
   isStreaming: boolean
   /** Error if any */
@@ -281,6 +300,21 @@ interface PlanEvent {
 }
 
 /**
+ * Available commands update event from ACP
+ * Agents advertise slash commands via this session notification
+ */
+interface AvailableCommandsUpdateEvent {
+  sessionUpdate: 'available_commands_update'
+  commands: Array<{
+    name: string
+    description: string
+    input?: {
+      hint: string
+    }
+  }>
+}
+
+/**
  * Union of all SessionUpdate types we handle
  */
 type SessionUpdate =
@@ -293,6 +327,7 @@ type SessionUpdate =
   | ToolCallComplete
   | PermissionRequestEvent
   | PlanEvent
+  | AvailableCommandsUpdateEvent
 
 /**
  * WebSocket session_update message payload
@@ -432,6 +467,7 @@ export function useSessionUpdateStream(
     new Map()
   )
   const [planUpdates, setPlanUpdates] = useState<Map<string, PlanUpdateEvent>>(new Map())
+  const [availableCommands, setAvailableCommands] = useState<AvailableCommand[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<Error | null>(null)
   const [execution, setExecution] = useState<ExecutionState>(initialExecutionState)
@@ -862,6 +898,21 @@ export function useSessionUpdateStream(
         }
         break
       }
+
+      // Available commands update from agent
+      // Agents advertise slash commands via this session notification
+      case 'available_commands_update': {
+        const commandsData = update as AvailableCommandsUpdateEvent
+        if (commandsData.commands && Array.isArray(commandsData.commands)) {
+          const commands: AvailableCommand[] = commandsData.commands.map((cmd) => ({
+            name: cmd.name,
+            description: cmd.description,
+            input: cmd.input,
+          }))
+          setAvailableCommands(commands)
+        }
+        break
+      }
     }
   }, [])
 
@@ -1028,6 +1079,7 @@ export function useSessionUpdateStream(
     setThoughts(new Map())
     setPermissionRequests(new Map())
     setPlanUpdates(new Map())
+    setAvailableCommands([])
     setIsStreaming(false)
     setError(null)
     setExecution(initialExecutionState)
@@ -1080,6 +1132,7 @@ export function useSessionUpdateStream(
     latestPlan,
     permissionRequests: permissionRequestsArray,
     markPermissionResponded,
+    availableCommands,
     isStreaming,
     error,
     isConnected: connected,
