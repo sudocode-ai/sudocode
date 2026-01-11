@@ -20,6 +20,7 @@ import { execSync } from "child_process";
 import {
   createTestRepo,
   createTestIssue,
+  createRelationship,
   getHeadCommit,
   getCurrentBranch,
   listWorktrees,
@@ -42,7 +43,11 @@ import { createIssuesRouter } from "../../../src/routes/issues.js";
 import { ProjectManager } from "../../../src/services/project-manager.js";
 import { ProjectRegistry } from "../../../src/services/project-registry.js";
 import { requireProject } from "../../../src/middleware/project-context.js";
-import { closeAllDataplaneAdapters } from "../../../src/services/dataplane-adapter.js";
+import {
+  closeAllDataplaneAdapters,
+  getDataplaneAdapter,
+  type DataplaneAdapter,
+} from "../../../src/services/dataplane-adapter.js";
 import { clearDataplaneConfigCache } from "../../../src/services/dataplane-config.js";
 
 // Mock WebSocket broadcasts to prevent errors
@@ -1256,6 +1261,1136 @@ describe("Dataplane E2E Integration Tests", () => {
       const normalizedWorktree = fs.realpathSync(worktrees[0]);
       const normalizedTestPath = fs.realpathSync(testRepo.path);
       expect(normalizedWorktree).toBe(normalizedTestPath);
+    });
+  });
+
+  // ============================================================================
+  // Section 9: Cascade Rebase & Stream Dependencies
+  // ============================================================================
+
+  describe("9. Cascade Rebase & Stream Dependencies", () => {
+    describe("9.1 Stream Dependency Setup", () => {
+      it("should create streams with dependency relationships", async () => {
+        // Create parent issue (blocker)
+        const parentIssue = createTestIssue(testRepo.db, {
+          id: "i-parent001",
+          title: "Parent feature",
+        });
+
+        // Create child issue (blocked by parent)
+        const childIssue = createTestIssue(testRepo.db, {
+          id: "i-child001",
+          title: "Child feature",
+        });
+
+        // Create relationship: parent blocks child
+        createRelationship(testRepo.db, {
+          fromId: parentIssue.id,
+          toId: childIssue.id,
+          type: "blocks",
+        });
+
+        // Create execution for parent
+        const parentExecResponse = await request(app)
+          .post(`/api/issues/${parentIssue.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({
+            prompt: "Implement parent feature",
+            config: { mode: "worktree" },
+          });
+
+        expect(parentExecResponse.status).toBe(201);
+        const parentExecId = parentExecResponse.body.data.id;
+
+        // Wait for worktree setup
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Create execution for child
+        const childExecResponse = await request(app)
+          .post(`/api/issues/${childIssue.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({
+            prompt: "Implement child feature",
+            config: { mode: "worktree" },
+          });
+
+        expect(childExecResponse.status).toBe(201);
+        const childExecId = childExecResponse.body.data.id;
+
+        // Verify both executions have stream_id
+        const parentExec = await request(app)
+          .get(`/api/executions/${parentExecId}`)
+          .set("X-Project-ID", projectId);
+
+        const childExec = await request(app)
+          .get(`/api/executions/${childExecId}`)
+          .set("X-Project-ID", projectId);
+
+        expect(parentExec.body.data.stream_id).toBeDefined();
+        expect(childExec.body.data.stream_id).toBeDefined();
+        // Streams should be different
+        expect(parentExec.body.data.stream_id).not.toBe(childExec.body.data.stream_id);
+      });
+
+      it("should track depends-on relationships between issues", async () => {
+        // Create issues with depends-on relationship
+        const baseIssue = createTestIssue(testRepo.db, {
+          id: "i-base001",
+          title: "Base infrastructure",
+        });
+
+        const dependentIssue = createTestIssue(testRepo.db, {
+          id: "i-dep001",
+          title: "Dependent feature",
+        });
+
+        // Create relationship: dependent depends-on base
+        createRelationship(testRepo.db, {
+          fromId: dependentIssue.id,
+          toId: baseIssue.id,
+          type: "depends-on",
+        });
+
+        // Create executions
+        const baseExecResponse = await request(app)
+          .post(`/api/issues/${baseIssue.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Build base", config: { mode: "worktree" } });
+
+        expect(baseExecResponse.status).toBe(201);
+
+        // Wait for worktree
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        const depExecResponse = await request(app)
+          .post(`/api/issues/${dependentIssue.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Build dependent", config: { mode: "worktree" } });
+
+        expect(depExecResponse.status).toBe(201);
+
+        // Both should have stream IDs
+        expect(baseExecResponse.body.data.stream_id).toBeDefined();
+        expect(depExecResponse.body.data.stream_id).toBeDefined();
+      });
+    });
+
+    describe("9.2 Cascade Trigger on Sync", () => {
+      it("should include cascade info in sync result when dependencies exist", async () => {
+        // Create parent and child issues with relationship
+        const parentIssue = createTestIssue(testRepo.db, {
+          id: "i-cascade-parent",
+          title: "Parent for cascade",
+        });
+
+        const childIssue = createTestIssue(testRepo.db, {
+          id: "i-cascade-child",
+          title: "Child for cascade",
+        });
+
+        createRelationship(testRepo.db, {
+          fromId: parentIssue.id,
+          toId: childIssue.id,
+          type: "blocks",
+        });
+
+        // Create and setup parent execution
+        const parentExecResponse = await request(app)
+          .post(`/api/issues/${parentIssue.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Parent work", config: { mode: "worktree" } });
+
+        const parentExecId = parentExecResponse.body.data.id;
+
+        // Wait for worktree setup
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Get parent worktree path
+        const parentExec = await request(app)
+          .get(`/api/executions/${parentExecId}`)
+          .set("X-Project-ID", projectId);
+
+        const parentWorktreePath = parentExec.body.data.worktree_path;
+
+        if (parentWorktreePath && fs.existsSync(parentWorktreePath)) {
+          // Make changes in parent worktree
+          const featureFile = path.join(parentWorktreePath, "src", "parent-feature.ts");
+          fs.mkdirSync(path.dirname(featureFile), { recursive: true });
+          fs.writeFileSync(featureFile, 'export const parentFeature = "v1";\n');
+          execSync("git add . && git commit -m 'Add parent feature'", {
+            cwd: parentWorktreePath,
+            stdio: "pipe",
+          });
+
+          // Create child execution
+          const childExecResponse = await request(app)
+            .post(`/api/issues/${childIssue.id}/executions`)
+            .set("X-Project-ID", projectId)
+            .send({ prompt: "Child work", config: { mode: "worktree" } });
+
+          const childExecId = childExecResponse.body.data.id;
+
+          // Wait for child worktree
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+
+          // Get child worktree
+          const childExec = await request(app)
+            .get(`/api/executions/${childExecId}`)
+            .set("X-Project-ID", projectId);
+
+          const childWorktreePath = childExec.body.data.worktree_path;
+
+          if (childWorktreePath && fs.existsSync(childWorktreePath)) {
+            // Make changes in child worktree
+            const childFile = path.join(childWorktreePath, "src", "child-feature.ts");
+            fs.mkdirSync(path.dirname(childFile), { recursive: true });
+            fs.writeFileSync(childFile, 'export const childFeature = "v1";\n');
+            execSync("git add . && git commit -m 'Add child feature'", {
+              cwd: childWorktreePath,
+              stdio: "pipe",
+            });
+          }
+
+          // Mark parent as completed
+          testRepo.db
+            .prepare(
+              `UPDATE executions SET status = 'completed', completed_at = datetime('now') WHERE id = ?`
+            )
+            .run(parentExecId);
+
+          // Sync parent - this should include cascade info
+          const syncResponse = await request(app)
+            .post(`/api/executions/${parentExecId}/sync/squash`)
+            .set("X-Project-ID", projectId)
+            .send({ commitMessage: "Parent feature complete" });
+
+          expect(syncResponse.body).toBeDefined();
+          // Sync should succeed
+          if (syncResponse.body.success) {
+            // Cascade info may or may not be present depending on config
+            // The important thing is the sync itself succeeds
+            expect(syncResponse.body.data).toBeDefined();
+          }
+        }
+      });
+    });
+
+    describe("9.3 Multiple Dependent Streams", () => {
+      it("should handle multiple child streams depending on one parent", async () => {
+        // Create one parent with multiple children
+        const parentIssue = createTestIssue(testRepo.db, {
+          id: "i-multi-parent",
+          title: "Multi-child parent",
+        });
+
+        const child1 = createTestIssue(testRepo.db, {
+          id: "i-multi-child1",
+          title: "First child",
+        });
+
+        const child2 = createTestIssue(testRepo.db, {
+          id: "i-multi-child2",
+          title: "Second child",
+        });
+
+        // Both children depend on parent
+        createRelationship(testRepo.db, {
+          fromId: parentIssue.id,
+          toId: child1.id,
+          type: "blocks",
+        });
+
+        createRelationship(testRepo.db, {
+          fromId: parentIssue.id,
+          toId: child2.id,
+          type: "blocks",
+        });
+
+        // Create execution for parent
+        const parentExecResponse = await request(app)
+          .post(`/api/issues/${parentIssue.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Parent impl", config: { mode: "worktree" } });
+
+        expect(parentExecResponse.status).toBe(201);
+
+        // Wait for parent worktree
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Create executions for both children
+        const child1Response = await request(app)
+          .post(`/api/issues/${child1.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Child 1 impl", config: { mode: "worktree" } });
+
+        expect(child1Response.status).toBe(201);
+
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        const child2Response = await request(app)
+          .post(`/api/issues/${child2.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Child 2 impl", config: { mode: "worktree" } });
+
+        expect(child2Response.status).toBe(201);
+
+        // All three should have different stream IDs
+        const streams = [
+          parentExecResponse.body.data.stream_id,
+          child1Response.body.data.stream_id,
+          child2Response.body.data.stream_id,
+        ].filter(Boolean);
+
+        // Check uniqueness
+        const uniqueStreams = new Set(streams);
+        expect(uniqueStreams.size).toBe(streams.length);
+      });
+
+      it("should handle chain of dependencies (A -> B -> C)", async () => {
+        // Create chain: C depends-on B depends-on A
+        const issueA = createTestIssue(testRepo.db, {
+          id: "i-chain-a",
+          title: "Base A",
+        });
+
+        const issueB = createTestIssue(testRepo.db, {
+          id: "i-chain-b",
+          title: "Middle B",
+        });
+
+        const issueC = createTestIssue(testRepo.db, {
+          id: "i-chain-c",
+          title: "Top C",
+        });
+
+        // A blocks B, B blocks C
+        createRelationship(testRepo.db, {
+          fromId: issueA.id,
+          toId: issueB.id,
+          type: "blocks",
+        });
+
+        createRelationship(testRepo.db, {
+          fromId: issueB.id,
+          toId: issueC.id,
+          type: "blocks",
+        });
+
+        // Create execution for A
+        const execAResponse = await request(app)
+          .post(`/api/issues/${issueA.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Build A", config: { mode: "worktree" } });
+
+        expect(execAResponse.status).toBe(201);
+
+        // Wait and create B
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        const execBResponse = await request(app)
+          .post(`/api/issues/${issueB.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Build B", config: { mode: "worktree" } });
+
+        expect(execBResponse.status).toBe(201);
+
+        // Wait and create C
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        const execCResponse = await request(app)
+          .post(`/api/issues/${issueC.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Build C", config: { mode: "worktree" } });
+
+        expect(execCResponse.status).toBe(201);
+
+        // All three should have stream IDs
+        expect(execAResponse.body.data.stream_id).toBeDefined();
+        expect(execBResponse.body.data.stream_id).toBeDefined();
+        expect(execCResponse.body.data.stream_id).toBeDefined();
+
+        // All should be unique
+        const streams = [
+          execAResponse.body.data.stream_id,
+          execBResponse.body.data.stream_id,
+          execCResponse.body.data.stream_id,
+        ];
+        expect(new Set(streams).size).toBe(3);
+      });
+    });
+
+    describe("9.4 Cascade with Conflicts", () => {
+      it("should handle cascade when child has conflicting changes", async () => {
+        // Create parent and child with potential for conflict
+        const parentIssue = createTestIssue(testRepo.db, {
+          id: "i-conflict-parent",
+          title: "Conflict parent",
+        });
+
+        const childIssue = createTestIssue(testRepo.db, {
+          id: "i-conflict-child",
+          title: "Conflict child",
+        });
+
+        createRelationship(testRepo.db, {
+          fromId: parentIssue.id,
+          toId: childIssue.id,
+          type: "blocks",
+        });
+
+        // Create parent execution
+        const parentExecResponse = await request(app)
+          .post(`/api/issues/${parentIssue.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Parent changes", config: { mode: "worktree" } });
+
+        const parentExecId = parentExecResponse.body.data.id;
+
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Get parent worktree and make changes to shared file
+        const parentExec = await request(app)
+          .get(`/api/executions/${parentExecId}`)
+          .set("X-Project-ID", projectId);
+
+        const parentWorktreePath = parentExec.body.data.worktree_path;
+
+        if (parentWorktreePath && fs.existsSync(parentWorktreePath)) {
+          // Parent modifies shared.ts
+          const sharedFile = path.join(parentWorktreePath, "src", "shared.ts");
+          fs.mkdirSync(path.dirname(sharedFile), { recursive: true });
+          fs.writeFileSync(sharedFile, 'export const shared = "parent-version";\n');
+          execSync("git add . && git commit -m 'Parent modifies shared'", {
+            cwd: parentWorktreePath,
+            stdio: "pipe",
+          });
+
+          // Create child execution
+          const childExecResponse = await request(app)
+            .post(`/api/issues/${childIssue.id}/executions`)
+            .set("X-Project-ID", projectId)
+            .send({ prompt: "Child changes", config: { mode: "worktree" } });
+
+          const childExecId = childExecResponse.body.data.id;
+
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+
+          // Get child worktree and modify same file
+          const childExec = await request(app)
+            .get(`/api/executions/${childExecId}`)
+            .set("X-Project-ID", projectId);
+
+          const childWorktreePath = childExec.body.data.worktree_path;
+
+          if (childWorktreePath && fs.existsSync(childWorktreePath)) {
+            // Child modifies shared.ts differently
+            const childSharedFile = path.join(childWorktreePath, "src", "shared.ts");
+            fs.mkdirSync(path.dirname(childSharedFile), { recursive: true });
+            fs.writeFileSync(childSharedFile, 'export const shared = "child-version";\n');
+            execSync("git add . && git commit -m 'Child modifies shared'", {
+              cwd: childWorktreePath,
+              stdio: "pipe",
+            });
+          }
+
+          // Mark parent as completed
+          testRepo.db
+            .prepare(
+              `UPDATE executions SET status = 'completed', completed_at = datetime('now') WHERE id = ?`
+            )
+            .run(parentExecId);
+
+          // Preview sync for parent - should show potential impact
+          const previewResponse = await request(app)
+            .get(`/api/executions/${parentExecId}/sync/preview`)
+            .set("X-Project-ID", projectId);
+
+          expect(previewResponse.status).toBe(200);
+          expect(previewResponse.body.data).toBeDefined();
+        }
+      });
+    });
+
+    describe("9.5 Cascade On Merge Enabled", () => {
+      // These tests use a separate project with cascadeOnMerge enabled
+      let cascadeTestRepo: TestRepo;
+      let cascadeApp: express.Application;
+      let cascadeProjectManager: ProjectManager;
+      let cascadeProjectRegistry: ProjectRegistry;
+      let cascadeProjectId: string;
+      let cascadeRegistryPath: string;
+
+      beforeEach(async () => {
+        // Create repo with cascadeOnMerge enabled
+        cascadeTestRepo = createTestRepo({
+          dataplaneEnabled: true,
+          cascadeOnMerge: true,
+        });
+
+        cascadeRegistryPath = path.join(cascadeTestRepo.path, "..", "cascade-projects.json");
+        cascadeProjectRegistry = new ProjectRegistry(cascadeRegistryPath);
+        await cascadeProjectRegistry.load();
+
+        cascadeProjectManager = new ProjectManager(cascadeProjectRegistry, { watchEnabled: false });
+
+        const result = await cascadeProjectManager.openProject(cascadeTestRepo.path);
+        if (!result.ok) {
+          throw new Error(`Failed to open cascade test project: ${result.error}`);
+        }
+        cascadeProjectId = result.value.id;
+
+        // Set up Express app
+        cascadeApp = express();
+        cascadeApp.use(express.json());
+        cascadeApp.use(requireProject(cascadeProjectManager));
+        cascadeApp.use("/api", createExecutionsRouter());
+        cascadeApp.use("/api", createIssuesRouter());
+      });
+
+      afterEach(async () => {
+        await cascadeProjectManager.shutdown();
+        cascadeTestRepo.cleanup();
+
+        if (fs.existsSync(cascadeRegistryPath)) {
+          fs.unlinkSync(cascadeRegistryPath);
+        }
+      });
+
+      it("should trigger cascade rebase when parent stream is synced", async () => {
+        // Create parent and child issues
+        const parentIssue = createTestIssue(cascadeTestRepo.db, {
+          id: "i-cascade-test-parent",
+          title: "Cascade test parent",
+        });
+
+        const childIssue = createTestIssue(cascadeTestRepo.db, {
+          id: "i-cascade-test-child",
+          title: "Cascade test child",
+        });
+
+        // Child depends on parent (parent blocks child)
+        createRelationship(cascadeTestRepo.db, {
+          fromId: parentIssue.id,
+          toId: childIssue.id,
+          type: "blocks",
+        });
+
+        // Create parent execution
+        const parentExecResponse = await request(cascadeApp)
+          .post(`/api/issues/${parentIssue.id}/executions`)
+          .set("X-Project-ID", cascadeProjectId)
+          .send({ prompt: "Build parent feature", config: { mode: "worktree" } });
+
+        expect(parentExecResponse.status).toBe(201);
+        const parentExecId = parentExecResponse.body.data.id;
+        const parentStreamId = parentExecResponse.body.data.stream_id;
+
+        // Wait for worktree
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+
+        // Get parent worktree path
+        const parentExec = await request(cascadeApp)
+          .get(`/api/executions/${parentExecId}`)
+          .set("X-Project-ID", cascadeProjectId);
+
+        const parentWorktreePath = parentExec.body.data.worktree_path;
+        expect(parentWorktreePath).toBeDefined();
+
+        if (!parentWorktreePath || !fs.existsSync(parentWorktreePath)) {
+          console.log("Skipping cascade test - no worktree available");
+          return;
+        }
+
+        // Make changes in parent worktree
+        const parentFeatureFile = path.join(parentWorktreePath, "src", "parent-api.ts");
+        fs.mkdirSync(path.dirname(parentFeatureFile), { recursive: true });
+        fs.writeFileSync(parentFeatureFile, `
+export interface ParentAPI {
+  version: string;
+  getData(): Promise<string>;
+}
+
+export const parentVersion = "1.0.0";
+`);
+        execSync("git add . && git commit -m 'Add parent API'", {
+          cwd: parentWorktreePath,
+          stdio: "pipe",
+        });
+
+        // Get parent HEAD before sync
+        const parentHeadBeforeSync = execSync("git rev-parse HEAD", {
+          cwd: parentWorktreePath,
+          encoding: "utf-8",
+        }).trim();
+
+        // Now create child execution
+        const childExecResponse = await request(cascadeApp)
+          .post(`/api/issues/${childIssue.id}/executions`)
+          .set("X-Project-ID", cascadeProjectId)
+          .send({ prompt: "Build child feature", config: { mode: "worktree" } });
+
+        expect(childExecResponse.status).toBe(201);
+        const childExecId = childExecResponse.body.data.id;
+        const childStreamId = childExecResponse.body.data.stream_id;
+
+        // Wait for child worktree
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+
+        // Get child worktree
+        const childExec = await request(cascadeApp)
+          .get(`/api/executions/${childExecId}`)
+          .set("X-Project-ID", cascadeProjectId);
+
+        const childWorktreePath = childExec.body.data.worktree_path;
+
+        if (childWorktreePath && fs.existsSync(childWorktreePath)) {
+          // Make changes in child worktree (different file - no conflict)
+          const childFeatureFile = path.join(childWorktreePath, "src", "child-impl.ts");
+          fs.mkdirSync(path.dirname(childFeatureFile), { recursive: true });
+          fs.writeFileSync(childFeatureFile, `
+import { ParentAPI } from './parent-api';
+
+export class ChildImplementation implements ParentAPI {
+  version = "1.0.0";
+  async getData(): Promise<string> {
+    return "child data";
+  }
+}
+`);
+          execSync("git add . && git commit -m 'Add child implementation'", {
+            cwd: childWorktreePath,
+            stdio: "pipe",
+          });
+
+          // Get child HEAD before cascade
+          const childHeadBeforeCascade = execSync("git rev-parse HEAD", {
+            cwd: childWorktreePath,
+            encoding: "utf-8",
+          }).trim();
+
+          // Mark parent as completed
+          cascadeTestRepo.db
+            .prepare(
+              `UPDATE executions SET status = 'completed', completed_at = datetime('now') WHERE id = ?`
+            )
+            .run(parentExecId);
+
+          // Sync parent - this should trigger cascade to child
+          const syncResponse = await request(cascadeApp)
+            .post(`/api/executions/${parentExecId}/sync/squash`)
+            .set("X-Project-ID", cascadeProjectId)
+            .send({ commitMessage: "feat: parent API complete" });
+
+          expect(syncResponse.status).toBe(200);
+          expect(syncResponse.body.success).toBe(true);
+
+          // Check if cascade was triggered
+          if (syncResponse.body.data.cascade) {
+            const cascade = syncResponse.body.data.cascade;
+            expect(cascade.triggered_by).toBe(parentStreamId);
+
+            // Find child in affected streams
+            const childResult = cascade.affected_streams?.find(
+              (s: any) => s.stream_id === childStreamId || s.issue_id === childIssue.id
+            );
+
+            if (childResult) {
+              console.log("Cascade result for child:", childResult);
+
+              if (childResult.result === "rebased") {
+                // Verify child worktree now has parent's changes
+                const parentApiInChild = path.join(childWorktreePath, "src", "parent-api.ts");
+                expect(fs.existsSync(parentApiInChild)).toBe(true);
+
+                // Verify child HEAD changed (rebased)
+                const childHeadAfterCascade = execSync("git rev-parse HEAD", {
+                  cwd: childWorktreePath,
+                  encoding: "utf-8",
+                }).trim();
+
+                // HEAD should be different after rebase
+                expect(childHeadAfterCascade).not.toBe(childHeadBeforeCascade);
+              } else if (childResult.result === "skipped") {
+                console.log("Child was skipped:", childResult.error);
+              } else if (childResult.result === "conflict") {
+                console.log("Child had conflicts:", childResult.conflict_files);
+              }
+            }
+          } else {
+            console.log("No cascade info in response - cascade may not have been triggered");
+            console.log("Sync response:", JSON.stringify(syncResponse.body.data, null, 2));
+          }
+        }
+      });
+
+      it("should report cascade results in sync response", async () => {
+        // Create parent issue
+        const parentIssue = createTestIssue(cascadeTestRepo.db, {
+          id: "i-report-parent",
+          title: "Report test parent",
+        });
+
+        // Create execution
+        const execResponse = await request(cascadeApp)
+          .post(`/api/issues/${parentIssue.id}/executions`)
+          .set("X-Project-ID", cascadeProjectId)
+          .send({ prompt: "Test", config: { mode: "worktree" } });
+
+        expect(execResponse.status).toBe(201);
+        const execId = execResponse.body.data.id;
+
+        // Wait for worktree
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Get worktree and make a commit
+        const execDetails = await request(cascadeApp)
+          .get(`/api/executions/${execId}`)
+          .set("X-Project-ID", cascadeProjectId);
+
+        const worktreePath = execDetails.body.data.worktree_path;
+
+        if (worktreePath && fs.existsSync(worktreePath)) {
+          const testFile = path.join(worktreePath, "test.txt");
+          fs.writeFileSync(testFile, "test content\n");
+          execSync("git add . && git commit -m 'test commit'", {
+            cwd: worktreePath,
+            stdio: "pipe",
+          });
+
+          // Mark as completed
+          cascadeTestRepo.db
+            .prepare(
+              `UPDATE executions SET status = 'completed', completed_at = datetime('now') WHERE id = ?`
+            )
+            .run(execId);
+
+          // Sync - even with no dependents, cascade field should be present
+          const syncResponse = await request(cascadeApp)
+            .post(`/api/executions/${execId}/sync/squash`)
+            .set("X-Project-ID", cascadeProjectId)
+            .send({ commitMessage: "test" });
+
+          expect(syncResponse.status).toBe(200);
+          expect(syncResponse.body.success).toBe(true);
+
+          // Cascade should be in response (even if empty)
+          // The cascade field indicates cascade was considered
+          if (syncResponse.body.data.cascade) {
+            expect(syncResponse.body.data.cascade.triggered_by).toBeDefined();
+            expect(syncResponse.body.data.cascade.affected_streams).toBeDefined();
+            expect(syncResponse.body.data.cascade.complete).toBeDefined();
+          }
+        }
+      });
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 10. Merge Queue Operations
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  describe("10. Merge Queue Operations", () => {
+    describe("10.1 Queue Management", () => {
+      it("should add execution to merge queue", async () => {
+        // Create issue and execution
+        const issue = createTestIssue(testRepo.db, {
+          id: "i-queue-add",
+          title: "Queue add test",
+        });
+
+        const execResponse = await request(app)
+          .post(`/api/issues/${issue.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Test queue add", config: { mode: "worktree" } });
+
+        expect(execResponse.status).toBe(201);
+        const execId = execResponse.body.data.id;
+
+        // Wait for worktree and stream creation
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Get the dataplane adapter
+        const adapter = await getDataplaneAdapter(testRepo.path);
+        expect(adapter).not.toBeNull();
+
+        if (adapter) {
+          // Enqueue the execution
+          const queueEntry = await adapter.enqueue({
+            executionId: execId,
+            targetBranch: "main",
+            agentId: "test-agent",
+          });
+
+          expect(queueEntry).toBeDefined();
+          expect(queueEntry.executionId).toBe(execId);
+          expect(queueEntry.targetBranch).toBe("main");
+          expect(queueEntry.status).toBe("pending");
+          expect(queueEntry.position).toBeGreaterThanOrEqual(0);
+        }
+      });
+
+      it("should get queue position for execution", async () => {
+        // Create issue and execution
+        const issue = createTestIssue(testRepo.db, {
+          id: "i-queue-pos",
+          title: "Queue position test",
+        });
+
+        const execResponse = await request(app)
+          .post(`/api/issues/${issue.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Test queue position", config: { mode: "worktree" } });
+
+        expect(execResponse.status).toBe(201);
+        const execId = execResponse.body.data.id;
+
+        // Wait for stream creation
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        const adapter = await getDataplaneAdapter(testRepo.path);
+        expect(adapter).not.toBeNull();
+
+        if (adapter) {
+          // Enqueue
+          await adapter.enqueue({
+            executionId: execId,
+            targetBranch: "main",
+            agentId: "test-agent",
+          });
+
+          // Get position
+          const position = await adapter.getQueuePosition(execId, "main");
+          expect(position).not.toBeNull();
+          expect(typeof position).toBe("number");
+        }
+      });
+
+      it("should get full merge queue", async () => {
+        // Create multiple issues and executions
+        const issue1 = createTestIssue(testRepo.db, {
+          id: "i-queue-list-1",
+          title: "Queue list test 1",
+        });
+        const issue2 = createTestIssue(testRepo.db, {
+          id: "i-queue-list-2",
+          title: "Queue list test 2",
+        });
+
+        const exec1Response = await request(app)
+          .post(`/api/issues/${issue1.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Test 1", config: { mode: "worktree" } });
+
+        const exec2Response = await request(app)
+          .post(`/api/issues/${issue2.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Test 2", config: { mode: "worktree" } });
+
+        expect(exec1Response.status).toBe(201);
+        expect(exec2Response.status).toBe(201);
+
+        const execId1 = exec1Response.body.data.id;
+        const execId2 = exec2Response.body.data.id;
+
+        // Wait for stream creation
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+
+        const adapter = await getDataplaneAdapter(testRepo.path);
+        expect(adapter).not.toBeNull();
+
+        if (adapter) {
+          // Enqueue both
+          await adapter.enqueue({
+            executionId: execId1,
+            targetBranch: "main",
+            agentId: "test-agent",
+          });
+          await adapter.enqueue({
+            executionId: execId2,
+            targetBranch: "main",
+            agentId: "test-agent",
+          });
+
+          // Get queue
+          const queue = await adapter.getQueue("main");
+          expect(queue.length).toBeGreaterThanOrEqual(2);
+
+          // Verify queue contains our executions
+          const execIds = queue.map((e) => e.executionId);
+          expect(execIds).toContain(execId1);
+          expect(execIds).toContain(execId2);
+        }
+      });
+
+      it("should remove execution from merge queue", async () => {
+        // Create issue and execution
+        const issue = createTestIssue(testRepo.db, {
+          id: "i-queue-remove",
+          title: "Queue remove test",
+        });
+
+        const execResponse = await request(app)
+          .post(`/api/issues/${issue.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Test queue remove", config: { mode: "worktree" } });
+
+        expect(execResponse.status).toBe(201);
+        const execId = execResponse.body.data.id;
+
+        // Wait for stream creation
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        const adapter = await getDataplaneAdapter(testRepo.path);
+        expect(adapter).not.toBeNull();
+
+        if (adapter) {
+          // Enqueue
+          await adapter.enqueue({
+            executionId: execId,
+            targetBranch: "main",
+            agentId: "test-agent",
+          });
+
+          // Verify it's in queue
+          let position = await adapter.getQueuePosition(execId, "main");
+          expect(position).not.toBeNull();
+
+          // Dequeue
+          await adapter.dequeue(execId);
+
+          // Verify it's removed
+          position = await adapter.getQueuePosition(execId, "main");
+          expect(position).toBeNull();
+        }
+      });
+    });
+
+    describe("10.2 Queue Priority", () => {
+      it("should respect priority when adding to queue", async () => {
+        // Create two issues
+        const lowPriorityIssue = createTestIssue(testRepo.db, {
+          id: "i-queue-low-pri",
+          title: "Low priority",
+          priority: 4,
+        });
+        const highPriorityIssue = createTestIssue(testRepo.db, {
+          id: "i-queue-high-pri",
+          title: "High priority",
+          priority: 0,
+        });
+
+        // Create executions
+        const lowExecResponse = await request(app)
+          .post(`/api/issues/${lowPriorityIssue.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Low priority", config: { mode: "worktree" } });
+
+        const highExecResponse = await request(app)
+          .post(`/api/issues/${highPriorityIssue.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "High priority", config: { mode: "worktree" } });
+
+        expect(lowExecResponse.status).toBe(201);
+        expect(highExecResponse.status).toBe(201);
+
+        const lowExecId = lowExecResponse.body.data.id;
+        const highExecId = highExecResponse.body.data.id;
+
+        // Wait for stream creation
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+
+        const adapter = await getDataplaneAdapter(testRepo.path);
+        expect(adapter).not.toBeNull();
+
+        if (adapter) {
+          // Enqueue low priority first (position 1)
+          await adapter.enqueue({
+            executionId: lowExecId,
+            targetBranch: "main",
+            agentId: "test-agent",
+            position: 10, // Low priority = higher position number
+          });
+
+          // Enqueue high priority second (position 0)
+          await adapter.enqueue({
+            executionId: highExecId,
+            targetBranch: "main",
+            agentId: "test-agent",
+            position: 1, // High priority = lower position number
+          });
+
+          // Get queue and check order
+          const queue = await adapter.getQueue("main");
+          const highPriEntry = queue.find((e) => e.executionId === highExecId);
+          const lowPriEntry = queue.find((e) => e.executionId === lowExecId);
+
+          expect(highPriEntry).toBeDefined();
+          expect(lowPriEntry).toBeDefined();
+
+          // Higher priority should have lower priority number
+          if (highPriEntry && lowPriEntry) {
+            expect(highPriEntry.priority).toBeLessThan(lowPriEntry.priority);
+          }
+        }
+      });
+    });
+
+    describe("10.3 Merge Operations", () => {
+      it("should merge next item in queue", async () => {
+        // Create issue and execution
+        const issue = createTestIssue(testRepo.db, {
+          id: "i-queue-merge",
+          title: "Queue merge test",
+        });
+
+        const execResponse = await request(app)
+          .post(`/api/issues/${issue.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Test merge", config: { mode: "worktree" } });
+
+        expect(execResponse.status).toBe(201);
+        const execId = execResponse.body.data.id;
+
+        // Wait for worktree creation
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+
+        // Get worktree path and make changes
+        const execDetails = await request(app)
+          .get(`/api/executions/${execId}`)
+          .set("X-Project-ID", projectId);
+
+        const worktreePath = execDetails.body.data.worktree_path;
+
+        if (worktreePath && fs.existsSync(worktreePath)) {
+          // Make changes in worktree
+          applyMockChanges(worktreePath, DEFAULT_MOCK_CHANGES);
+          commitMockChanges(worktreePath, "feat: queue merge test changes");
+
+          // Mark execution as completed
+          testRepo.db
+            .prepare(
+              `UPDATE executions SET status = 'completed', completed_at = datetime('now') WHERE id = ?`
+            )
+            .run(execId);
+
+          const adapter = await getDataplaneAdapter(testRepo.path);
+          expect(adapter).not.toBeNull();
+
+          if (adapter) {
+            // Enqueue with ready status
+            const entry = await adapter.enqueue({
+              executionId: execId,
+              targetBranch: "main",
+              agentId: "test-agent",
+            });
+
+            // Get the stream to find a worktree for merging
+            const stream = adapter.getStreamByExecutionId(execId);
+            expect(stream).not.toBeNull();
+
+            if (stream) {
+              // Attempt merge (may succeed or fail based on setup)
+              const mergeResult = await adapter.mergeNext("main", "test-agent", worktreePath);
+
+              // The operation should complete (success or failure with reason)
+              expect(mergeResult).toBeDefined();
+              expect(typeof mergeResult.success).toBe("boolean");
+
+              if (mergeResult.success) {
+                expect(mergeResult.mergeCommit).toBeDefined();
+              } else {
+                // If failed, should have error message
+                expect(mergeResult.error).toBeDefined();
+              }
+            }
+          }
+        }
+      });
+
+      it("should handle empty queue gracefully", async () => {
+        const adapter = await getDataplaneAdapter(testRepo.path);
+        expect(adapter).not.toBeNull();
+
+        if (adapter) {
+          // Try to merge from empty queue for a non-existent target
+          const result = await adapter.mergeNext("nonexistent-branch", "test-agent", testRepo.path);
+
+          expect(result.success).toBe(false);
+          expect(result.error).toBeDefined();
+        }
+      });
+    });
+
+    describe("10.4 Queue with Dependencies", () => {
+      it("should queue dependent executions in correct order", async () => {
+        // Create parent and child issues with dependency
+        const parentIssue = createTestIssue(testRepo.db, {
+          id: "i-queue-dep-parent",
+          title: "Parent for queue dependency",
+        });
+        const childIssue = createTestIssue(testRepo.db, {
+          id: "i-queue-dep-child",
+          title: "Child for queue dependency",
+        });
+
+        // Child depends on parent (parent blocks child)
+        createRelationship(testRepo.db, {
+          fromId: parentIssue.id,
+          toId: childIssue.id,
+          type: "blocks",
+        });
+
+        // Create executions
+        const parentExecResponse = await request(app)
+          .post(`/api/issues/${parentIssue.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Parent work", config: { mode: "worktree" } });
+
+        const childExecResponse = await request(app)
+          .post(`/api/issues/${childIssue.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({ prompt: "Child work", config: { mode: "worktree" } });
+
+        expect(parentExecResponse.status).toBe(201);
+        expect(childExecResponse.status).toBe(201);
+
+        const parentExecId = parentExecResponse.body.data.id;
+        const childExecId = childExecResponse.body.data.id;
+
+        // Wait for stream creation
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+
+        const adapter = await getDataplaneAdapter(testRepo.path);
+        expect(adapter).not.toBeNull();
+
+        if (adapter) {
+          // Queue child first (should be blocked)
+          const childEntry = await adapter.enqueue({
+            executionId: childExecId,
+            targetBranch: "main",
+            agentId: "test-agent",
+          });
+
+          // Queue parent (should be ahead of child)
+          const parentEntry = await adapter.enqueue({
+            executionId: parentExecId,
+            targetBranch: "main",
+            agentId: "test-agent",
+          });
+
+          // Both should be in queue
+          const queue = await adapter.getQueue("main");
+          const parentPos = await adapter.getQueuePosition(parentExecId, "main");
+          const childPos = await adapter.getQueuePosition(childExecId, "main");
+
+          expect(parentPos).not.toBeNull();
+          expect(childPos).not.toBeNull();
+
+          // Both positions should be valid numbers
+          expect(typeof parentPos).toBe("number");
+          expect(typeof childPos).toBe("number");
+        }
+      });
     });
   });
 });

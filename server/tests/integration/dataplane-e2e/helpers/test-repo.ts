@@ -42,6 +42,8 @@ export interface TestRepo {
 export interface CreateTestRepoOptions {
   /** Enable dataplane integration */
   dataplaneEnabled?: boolean;
+  /** Enable cascade on merge (requires dataplaneEnabled) */
+  cascadeOnMerge?: boolean;
   /** Additional config options */
   config?: Record<string, any>;
 }
@@ -52,7 +54,7 @@ export interface CreateTestRepoOptions {
 export function createTestRepo(
   options: CreateTestRepoOptions = {}
 ): TestRepo {
-  const { dataplaneEnabled = true, config = {} } = options;
+  const { dataplaneEnabled = true, cascadeOnMerge = false, config = {} } = options;
 
   // Create temp directory
   const testDir = fs.mkdtempSync(
@@ -116,6 +118,7 @@ export function createTestRepo(
       ? {
           enabled: true,
           dbPath: "dataplane.db",
+          cascadeOnMerge: cascadeOnMerge,
         }
       : { enabled: false },
     ...config,
@@ -308,4 +311,32 @@ export function getCommitHistory(
       const [hash, message] = line.split("|");
       return { hash, message };
     });
+}
+
+/**
+ * Create a relationship between entities
+ */
+export function createRelationship(
+  db: Database.Database,
+  data: {
+    fromId: string;
+    toId: string;
+    type: "blocks" | "implements" | "depends-on" | "references" | "discovered-from" | "related";
+    fromType?: "issue" | "spec";
+    toType?: "issue" | "spec";
+  }
+) {
+  const fromType = data.fromType || "issue";
+  const toType = data.toType || "issue";
+  const fromUuid = `uuid-${data.fromId}-${Date.now()}`;
+  const toUuid = `uuid-${data.toId}-${Date.now()}`;
+
+  db.prepare(
+    `
+    INSERT INTO relationships (from_id, from_uuid, from_type, to_id, to_uuid, to_type, relationship_type, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  `
+  ).run(data.fromId, fromUuid, fromType, data.toId, toUuid, toType, data.type);
+
+  return { fromId: data.fromId, toId: data.toId };
 }
