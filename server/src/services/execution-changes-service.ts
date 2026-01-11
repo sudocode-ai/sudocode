@@ -20,15 +20,41 @@ import type {
 } from "@sudocode-ai/types";
 import { getExecution } from "./executions.js";
 import { existsSync, readFileSync } from "fs";
+import {
+  type DataplaneAdapter,
+  getDataplaneAdapterSync,
+} from "./dataplane-adapter.js";
 
 /**
  * Service for calculating code changes from execution commits
+ *
+ * When dataplane is enabled and an execution has a stream_id,
+ * uses DataplaneAdapter for change tracking. Otherwise falls
+ * back to direct git commands.
  */
 export class ExecutionChangesService {
+  private dataplaneAdapter: DataplaneAdapter | null = null;
+
   constructor(
     private db: Database.Database,
-    private repoPath: string
-  ) {}
+    private repoPath: string,
+    dataplaneAdapter?: DataplaneAdapter | null
+  ) {
+    // Use provided dataplane adapter or try to get singleton
+    if (dataplaneAdapter !== undefined) {
+      this.dataplaneAdapter = dataplaneAdapter;
+    } else {
+      // Try to get existing initialized adapter (non-blocking)
+      this.dataplaneAdapter = getDataplaneAdapterSync(repoPath);
+    }
+  }
+
+  /**
+   * Check if dataplane is being used for change tracking
+   */
+  get isDataplaneEnabled(): boolean {
+    return this.dataplaneAdapter?.isInitialized ?? false;
+  }
 
   /**
    * Get code changes for an execution
@@ -77,6 +103,82 @@ export class ExecutionChangesService {
         reason: "incomplete_execution",
       };
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Dataplane Mode: Use DataplaneAdapter for change tracking when available
+    // ─────────────────────────────────────────────────────────────────────────
+    if (
+      this.isDataplaneEnabled &&
+      this.dataplaneAdapter &&
+      execution.stream_id
+    ) {
+      try {
+        console.log(
+          `[ExecutionChangesService] Using dataplane for changes (stream_id: ${execution.stream_id})`
+        );
+
+        // Get changes from dataplane adapter
+        const dataplaneChanges = await this.dataplaneAdapter.getChanges(
+          executionId
+        );
+
+        if (dataplaneChanges.totalFiles > 0 || dataplaneChanges.files.length > 0) {
+          // Convert dataplane changes to ExecutionChangesResult format
+          const files: FileChangeStat[] = dataplaneChanges.files.map((f) => ({
+            path: f.path,
+            additions: f.additions || 0,
+            deletions: f.deletions || 0,
+            status: f.status as "A" | "M" | "D" | "R",
+          }));
+
+          const summary = {
+            totalFiles: dataplaneChanges.totalFiles,
+            totalAdditions: files.reduce((sum, f) => sum + f.additions, 0),
+            totalDeletions: files.reduce((sum, f) => sum + f.deletions, 0),
+          };
+
+          const captured: ChangesSnapshot = {
+            files,
+            summary,
+            commitRange: null, // Dataplane tracks at stream level
+            uncommitted: false,
+          };
+
+          return {
+            available: true,
+            captured,
+            current: captured, // Same as captured for dataplane
+            branchName: execution.branch_name ?? undefined,
+            branchExists: true,
+            worktreeExists: execution.worktree_path
+              ? existsSync(execution.worktree_path)
+              : false,
+            executionMode: execution.mode as "worktree" | "local" | null,
+            additionalCommits: 0,
+            commitsAhead: 0,
+            // Legacy compatibility
+            changes: captured,
+            commitRange: null,
+            uncommitted: false,
+          };
+        }
+
+        // Fall through to legacy if dataplane returns empty (might be stale)
+        console.log(
+          `[ExecutionChangesService] Dataplane returned empty changes, falling back to git`
+        );
+      } catch (error) {
+        console.warn(
+          `[ExecutionChangesService] Dataplane change tracking failed, falling back to git:`,
+          error instanceof Error ? error.message : String(error)
+        );
+        // Fall through to legacy git-based change tracking
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Legacy Mode: Use git commands for change tracking
+    // ─────────────────────────────────────────────────────────────────────────
 
     // 3. Find root execution (for execution chains)
     const rootExecution = this.getRootExecution(execution);

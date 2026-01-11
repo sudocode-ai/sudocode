@@ -89,6 +89,7 @@ describe('ExecutionPreview', () => {
     step_type: null,
     step_index: null,
     step_config: null,
+    stream_id: null,
   }
 
   beforeEach(() => {

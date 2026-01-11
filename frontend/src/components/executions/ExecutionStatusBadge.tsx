@@ -4,6 +4,7 @@ import {
   XCircle,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   X,
   Clock,
   PauseCircle,
@@ -71,6 +72,13 @@ export function ExecutionStatusBadge({ status, className }: ExecutionStatusBadge
         <Badge variant="secondary" className={`flex items-center gap-1 ${className ?? ''}`}>
           <X className="h-3 w-3" />
           Stopped
+        </Badge>
+      )
+    case 'conflicted':
+      return (
+        <Badge variant="destructive" className={`flex items-center gap-1 bg-orange-500 ${className ?? ''}`}>
+          <AlertTriangle className="h-3 w-3" />
+          Conflicted
         </Badge>
       )
     default:

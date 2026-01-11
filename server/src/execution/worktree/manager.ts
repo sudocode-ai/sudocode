@@ -3,6 +3,16 @@
  *
  * Manages git worktrees for session isolation.
  *
+ * @deprecated This module is being replaced by DataplaneAdapter which provides
+ * stream-based worktree management with conflict tracking and merge queue support.
+ * When dataplane is enabled in config (.sudocode/config.json), ExecutionLifecycleService
+ * will use DataplaneAdapter instead of WorktreeManager for worktree operations.
+ *
+ * Migration path:
+ * 1. Enable dataplane in .sudocode/config.json: { "dataplane": { "enabled": true } }
+ * 2. Services will automatically use DataplaneAdapter when initialized
+ * 3. WorktreeManager remains available as fallback for non-dataplane projects
+ *
  * WORKTREE ISOLATION:
  * ===================
  * Each worktree created by this manager is completely isolated from the main

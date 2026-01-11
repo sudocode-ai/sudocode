@@ -19,6 +19,10 @@ import {
 import { getWorktreeConfig } from "../execution/worktree/config.js";
 import { createExecution, getExecution } from "./executions.js";
 import { randomUUID } from "crypto";
+import {
+  type DataplaneAdapter,
+  getDataplaneAdapterSync,
+} from "./dataplane-adapter.js";
 
 /**
  * Parameters for creating a workflow-level worktree
@@ -78,11 +82,15 @@ export interface CreateExecutionWithWorktreeResult {
  * - Creating executions with isolated worktrees
  * - Cleaning up executions and associated worktrees
  * - Handling orphaned worktrees
+ *
+ * When dataplane is enabled, uses DataplaneAdapter for stream-based
+ * worktree management with conflict tracking and merge queue support.
  */
 export class ExecutionLifecycleService {
   private worktreeManager: IWorktreeManager;
   private db: Database.Database;
   private repoPath: string;
+  private dataplaneAdapter: DataplaneAdapter | null = null;
 
   /**
    * Create a new ExecutionLifecycleService
@@ -90,14 +98,24 @@ export class ExecutionLifecycleService {
    * @param db - Database instance
    * @param repoPath - Path to the git repository
    * @param worktreeManager - Optional worktree manager (defaults to new instance)
+   * @param dataplaneAdapter - Optional dataplane adapter (uses singleton if not provided)
    */
   constructor(
     db: Database.Database,
     repoPath: string,
-    worktreeManager?: IWorktreeManager
+    worktreeManager?: IWorktreeManager,
+    dataplaneAdapter?: DataplaneAdapter | null
   ) {
     this.db = db;
     this.repoPath = repoPath;
+
+    // Use provided dataplane adapter or try to get singleton
+    if (dataplaneAdapter !== undefined) {
+      this.dataplaneAdapter = dataplaneAdapter;
+    } else {
+      // Try to get existing initialized adapter (non-blocking)
+      this.dataplaneAdapter = getDataplaneAdapterSync(repoPath);
+    }
 
     // Load config and create worktree manager if not provided
     if (worktreeManager) {
@@ -106,6 +124,13 @@ export class ExecutionLifecycleService {
       const config = getWorktreeConfig(repoPath);
       this.worktreeManager = new WorktreeManager(config);
     }
+  }
+
+  /**
+   * Check if dataplane is being used for worktree management
+   */
+  get isDataplaneEnabled(): boolean {
+    return this.dataplaneAdapter?.isInitialized ?? false;
   }
 
   /**
@@ -177,6 +202,74 @@ export class ExecutionLifecycleService {
 
     // Generate execution ID
     const executionId = randomUUID();
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Dataplane Mode: Use DataplaneAdapter for stream-based worktree management
+    // ─────────────────────────────────────────────────────────────────────────
+    if (this.isDataplaneEnabled && this.dataplaneAdapter) {
+      try {
+        console.log(
+          `[ExecutionLifecycle] Using dataplane for execution ${executionId}`
+        );
+
+        // Step 1: Create execution stream via dataplane
+        const streamResult = await this.dataplaneAdapter.createExecutionStream({
+          executionId,
+          issueId,
+          agentType,
+          targetBranch,
+          mode: "worktree",
+          agentId: `exec-${executionId.substring(0, 8)}`,
+        });
+
+        console.log(
+          `[ExecutionLifecycle] Created dataplane stream: ${streamResult.streamId}, branch: ${streamResult.branchName}`
+        );
+
+        // Step 2: Get or create worktree via dataplane
+        const worktreeInfo = await this.dataplaneAdapter.getOrCreateWorktree(
+          streamResult.streamId,
+          `exec-${executionId.substring(0, 8)}`,
+          path.join(repoPath, config.worktreeStoragePath, executionId)
+        );
+
+        console.log(
+          `[ExecutionLifecycle] Worktree ready at: ${worktreeInfo.path}`
+        );
+
+        // Step 3: Create execution record with stream_id
+        const execution = createExecution(this.db, {
+          id: executionId,
+          issue_id: issueId,
+          agent_type: agentType,
+          mode: params.mode,
+          prompt: params.prompt,
+          config: params.config,
+          before_commit: streamResult.baseCommit,
+          target_branch: targetBranch,
+          branch_name: streamResult.branchName,
+          worktree_path: worktreeInfo.path,
+          parent_execution_id: params.parentExecutionId,
+          stream_id: streamResult.streamId,
+        });
+
+        return {
+          execution,
+          worktreePath: worktreeInfo.path,
+          branchName: streamResult.branchName,
+        };
+      } catch (error) {
+        console.error(
+          `[ExecutionLifecycle] Dataplane execution creation failed, falling back to legacy:`,
+          error instanceof Error ? error.message : String(error)
+        );
+        // Fall through to legacy worktree management
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Legacy Mode: Use WorktreeManager directly
+    // ─────────────────────────────────────────────────────────────────────────
 
     // Determine branch name based on autoCreateBranches setting
     let branchName: string;

@@ -9,6 +9,7 @@ import { SyncPreviewDialog } from './SyncPreviewDialog'
 import { CommitChangesDialog } from './CommitChangesDialog'
 import { CleanupWorktreeDialog } from './CleanupWorktreeDialog'
 import { CodeChangesPanel } from './CodeChangesPanel'
+import { ConflictPanel } from './ConflictPanel'
 import { TodoTracker, type TodoItem } from './TodoTracker'
 import { useExecutionSync } from '@/hooks/useExecutionSync'
 import { useAgentActions } from '@/hooks/useAgentActions'
@@ -21,12 +22,7 @@ import { Card } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Execution, ExecutionConfig, SyncMode } from '@/types/execution'
 import type { ToolCallTracking } from '@/types/stream'
-import {
-  Loader2,
-  XCircle,
-  ArrowDown,
-  ArrowUp,
-} from 'lucide-react'
+import { Loader2, XCircle, ArrowDown, ArrowUp } from 'lucide-react'
 
 /**
  * Execution data exposed to parent component for header rendering
@@ -78,7 +74,12 @@ export interface ExecutionViewProps {
  * Each execution in the chain is rendered inline with its own ExecutionMonitor.
  * The follow-up input panel appears after the last execution.
  */
-export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, onHeaderDataChange }: ExecutionViewProps) {
+export function ExecutionView({
+  executionId,
+  onFollowUpCreated,
+  onStatusChange,
+  onHeaderDataChange,
+}: ExecutionViewProps) {
   const { deleteWorktree } = useWorktreeMutations()
   const { deleteExecution } = useExecutionMutations()
   const [chainData, setChainData] = useState<ExecutionChainResponse | null>(null)
@@ -93,6 +94,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
   const [hasUncommittedChanges, setHasUncommittedChanges] = useState<boolean | undefined>(undefined)
   const [commitsAhead, setCommitsAhead] = useState<number | undefined>(undefined)
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // Sync state management
   const {
@@ -106,7 +108,13 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
   } = useExecutionSync()
 
   // Get voice configuration from config.json
-  const { voiceEnabled, narration, ttsProvider, kokoroMode, isLoading: voiceConfigLoading } = useVoiceConfig()
+  const {
+    voiceEnabled,
+    narration,
+    ttsProvider,
+    kokoroMode,
+    isLoading: voiceConfigLoading,
+  } = useVoiceConfig()
 
   // Voice narration for the current execution
   // Only enable if:
@@ -305,7 +313,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
     }
 
     loadChain()
-  }, [executionId])
+  }, [executionId, refreshKey])
 
   // Reload chain when an execution completes
   const handleExecutionComplete = useCallback(async (completedExecutionId: string) => {
@@ -648,26 +656,24 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
   )
 
   // Handle todos update from ExecutionMonitor (from plan updates)
-  const handleTodosUpdate = useCallback(
-    (execId: string, todos: TodoItem[]) => {
-      setTodosByExecution((prev) => {
-        const existing = prev.get(execId)
-        // Only update if todos changed
-        if (existing && existing.length === todos.length) {
-          const isSame = existing.every((t, i) =>
+  const handleTodosUpdate = useCallback((execId: string, todos: TodoItem[]) => {
+    setTodosByExecution((prev) => {
+      const existing = prev.get(execId)
+      // Only update if todos changed
+      if (existing && existing.length === todos.length) {
+        const isSame = existing.every(
+          (t, i) =>
             t.content === todos[i].content &&
             t.status === todos[i].status &&
             t.wasCompleted === todos[i].wasCompleted
-          )
-          if (isSame) return prev
-        }
-        const next = new Map(prev)
-        next.set(execId, todos)
-        return next
-      })
-    },
-    []
-  )
+        )
+        if (isSame) return prev
+      }
+      const next = new Map(prev)
+      next.set(execId, todos)
+      return next
+    })
+  }, [])
 
   // Handle available commands update from ExecutionMonitor (for slash command autocomplete)
   const handleAvailableCommandsUpdate = useCallback((commands: AvailableCommand[]) => {
@@ -703,7 +709,14 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
         onOpenInIDE: handleOpenInIDE,
       }
     )
-  }, [chainData, worktreeExists, cancelling, deletingExecution, onHeaderDataChange, handleOpenInIDE])
+  }, [
+    chainData,
+    worktreeExists,
+    cancelling,
+    deletingExecution,
+    onHeaderDataChange,
+    handleOpenInIDE,
+  ])
 
   // Auto-scroll effect when chain data changes
   useEffect(() => {
@@ -820,6 +833,21 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
                 <>
                   <div className="my-3" />
                   <TodoTracker todos={allTodos} />
+                </>
+              )}
+
+              {/* Conflict Resolution Panel - shows when execution has conflicts */}
+              {executions.some((exec) => exec.status === 'conflicted') && (
+                <>
+                  <div className="my-3" />
+                  <ConflictPanel
+                    executionId={rootExecution.id}
+                    worktreePath={rootExecution.worktree_path}
+                    onAllResolved={() => {
+                      // Refresh the chain data after all conflicts resolved
+                      setRefreshKey((k) => k + 1)
+                    }}
+                  />
                 </>
               )}
 

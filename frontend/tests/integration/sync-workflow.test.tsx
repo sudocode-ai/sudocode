@@ -89,6 +89,7 @@ describe.skip('Sync Workflow Integration Tests', () => {
     step_type: null,
     step_index: null,
     step_config: null,
+    stream_id: null,
   }
 
   const mockChainResponse = (execution: Execution) => ({

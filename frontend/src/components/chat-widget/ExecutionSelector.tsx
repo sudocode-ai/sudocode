@@ -33,6 +33,7 @@ const statusConfig: Record<
   failed: { icon: XCircle, color: 'text-red-500', label: 'Failed' },
   cancelled: { icon: XCircle, color: 'text-muted-foreground', label: 'Cancelled' },
   stopped: { icon: XCircle, color: 'text-muted-foreground', label: 'Stopped' },
+  conflicted: { icon: XCircle, color: 'text-orange-500', label: 'Conflicted' },
 }
 
 function formatTimeAgo(dateString: string): string {
