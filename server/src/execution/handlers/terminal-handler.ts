@@ -58,26 +58,16 @@ export class TerminalHandler {
       }
     );
 
-    // Always use shell to properly handle command strings
+    // Use shell if no command provided, otherwise use the command directly
     const shell = process.platform === "win32" ? "cmd.exe" : "/bin/sh";
     const shellArgs = process.platform === "win32" ? ["/c"] : ["-c"];
 
-    // If command is provided, pass it to shell with -c
-    // If args are provided, join them with the command
-    let command: string;
-    let args: string[];
-    
-    if (params.command) {
-      command = shell;
-      const fullCommand = params.args && params.args.length > 0
-        ? `${params.command} ${params.args.join(" ")}`
-        : params.command;
-      args = [...shellArgs, fullCommand];
-    } else {
-      // No command provided, just spawn a shell
-      command = shell;
-      args = [];
-    }
+    const command = params.command || shell;
+    const args = params.command
+      ? params.args || []
+      : params.args
+        ? [...shellArgs, params.args.join(" ")]
+        : [];
 
     // Merge environment - only keep string values
     const env: NodeJS.ProcessEnv = {};
@@ -98,7 +88,7 @@ export class TerminalHandler {
     const proc = spawn(command, args, {
       cwd,
       env,
-      shell: false, // Spawn the binary directly (shell is already /bin/sh with -c args)
+      shell: !params.command, // Use shell if no explicit command
     });
 
     // Create terminal instance
