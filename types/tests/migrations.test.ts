@@ -1502,6 +1502,303 @@ describe("Database Migrations", () => {
     });
   });
 
+  describe("Migration 8: add-checkpoints-table", () => {
+    beforeEach(() => {
+      // Create required tables for foreign key constraints
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS issues (
+          id TEXT PRIMARY KEY,
+          uuid TEXT NOT NULL UNIQUE,
+          title TEXT NOT NULL
+        )
+      `);
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS executions (
+          id TEXT PRIMARY KEY,
+          issue_id TEXT,
+          target_branch TEXT NOT NULL,
+          branch_name TEXT NOT NULL,
+          status TEXT NOT NULL CHECK(status IN (
+            'preparing', 'pending', 'running', 'paused',
+            'completed', 'failed', 'cancelled', 'stopped', 'conflicted'
+          )),
+          stream_id TEXT,
+          FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL
+        )
+      `);
+
+      // Insert test data
+      db.prepare("INSERT INTO issues (id, uuid, title) VALUES (?, ?, ?)").run(
+        "i-test",
+        "uuid-issue",
+        "Test Issue"
+      );
+
+      db.prepare(
+        "INSERT INTO executions (id, issue_id, target_branch, branch_name, status, stream_id) VALUES (?, ?, ?, ?, ?, ?)"
+      ).run("exec-1", "i-test", "main", "test-branch", "completed", "stream-1");
+    });
+
+    it("should create checkpoints table", () => {
+      runMigrations(db);
+
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='checkpoints'"
+        )
+        .all() as Array<{ name: string }>;
+
+      expect(tables).toHaveLength(1);
+      expect(tables[0].name).toBe("checkpoints");
+    });
+
+    it("should create correct columns for checkpoints table", () => {
+      runMigrations(db);
+
+      const tableInfo = db.pragma("table_info(checkpoints)") as Array<{
+        name: string;
+        type: string;
+        notnull: number;
+      }>;
+
+      const columnNames = tableInfo.map((col) => col.name);
+      expect(columnNames).toContain("id");
+      expect(columnNames).toContain("issue_id");
+      expect(columnNames).toContain("execution_id");
+      expect(columnNames).toContain("stream_id");
+      expect(columnNames).toContain("commit_sha");
+      expect(columnNames).toContain("parent_commit");
+      expect(columnNames).toContain("changed_files");
+      expect(columnNames).toContain("additions");
+      expect(columnNames).toContain("deletions");
+      expect(columnNames).toContain("message");
+      expect(columnNames).toContain("checkpointed_at");
+      expect(columnNames).toContain("checkpointed_by");
+      expect(columnNames).toContain("review_status");
+      expect(columnNames).toContain("reviewed_at");
+      expect(columnNames).toContain("reviewed_by");
+      expect(columnNames).toContain("review_notes");
+    });
+
+    it("should create indexes for checkpoints table", () => {
+      runMigrations(db);
+
+      const indexes = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='checkpoints'"
+        )
+        .all() as Array<{ name: string }>;
+
+      const indexNames = indexes.map((idx) => idx.name);
+      expect(indexNames).toContain("idx_checkpoints_issue_id");
+      expect(indexNames).toContain("idx_checkpoints_execution_id");
+      expect(indexNames).toContain("idx_checkpoints_stream_id");
+      expect(indexNames).toContain("idx_checkpoints_review_status");
+      expect(indexNames).toContain("idx_checkpoints_checkpointed_at");
+    });
+
+    it("should allow inserting checkpoints", () => {
+      runMigrations(db);
+
+      expect(() => {
+        db.prepare(
+          `
+          INSERT INTO checkpoints (
+            id, issue_id, execution_id, stream_id, commit_sha, parent_commit,
+            changed_files, additions, deletions, message, checkpointed_at,
+            checkpointed_by, review_status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `
+        ).run(
+          "cp-1",
+          "i-test",
+          "exec-1",
+          "stream-1",
+          "abc123",
+          "def456",
+          5,
+          100,
+          20,
+          "Initial checkpoint",
+          new Date().toISOString(),
+          "user-1",
+          "pending"
+        );
+      }).not.toThrow();
+
+      const checkpoint = db
+        .prepare("SELECT * FROM checkpoints WHERE id = ?")
+        .get("cp-1") as {
+        id: string;
+        issue_id: string;
+        execution_id: string;
+        stream_id: string;
+        commit_sha: string;
+        changed_files: number;
+        review_status: string;
+      };
+
+      expect(checkpoint).toBeDefined();
+      expect(checkpoint.id).toBe("cp-1");
+      expect(checkpoint.issue_id).toBe("i-test");
+      expect(checkpoint.execution_id).toBe("exec-1");
+      expect(checkpoint.stream_id).toBe("stream-1");
+      expect(checkpoint.commit_sha).toBe("abc123");
+      expect(checkpoint.changed_files).toBe(5);
+      expect(checkpoint.review_status).toBe("pending");
+    });
+
+    it("should enforce review_status CHECK constraint", () => {
+      runMigrations(db);
+
+      // Should reject invalid status
+      expect(() => {
+        db.prepare(
+          `
+          INSERT INTO checkpoints (
+            id, issue_id, execution_id, stream_id, commit_sha,
+            changed_files, additions, deletions, message, checkpointed_at, review_status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `
+        ).run(
+          "cp-invalid",
+          "i-test",
+          "exec-1",
+          "stream-1",
+          "abc123",
+          1,
+          10,
+          5,
+          "Test",
+          new Date().toISOString(),
+          "invalid_status"
+        );
+      }).toThrow();
+
+      // Should allow all valid statuses
+      const validStatuses = ["pending", "approved", "rejected", "merged"];
+      for (let i = 0; i < validStatuses.length; i++) {
+        expect(() => {
+          db.prepare(
+            `
+            INSERT INTO checkpoints (
+              id, issue_id, execution_id, stream_id, commit_sha,
+              changed_files, additions, deletions, message, checkpointed_at, review_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `
+          ).run(
+            `cp-valid-${i}`,
+            "i-test",
+            "exec-1",
+            "stream-1",
+            `commit-${i}`,
+            1,
+            10,
+            5,
+            "Test",
+            new Date().toISOString(),
+            validStatuses[i]
+          );
+        }).not.toThrow();
+      }
+    });
+
+    it("should be idempotent (safe to run multiple times)", () => {
+      runMigrations(db);
+      runMigrations(db); // Run again
+
+      // Should not throw
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='checkpoints'"
+        )
+        .all() as Array<{ name: string }>;
+
+      expect(tables).toHaveLength(1);
+    });
+
+    it("should handle databases that already have checkpoints table", () => {
+      const newDb = new Database(":memory:");
+
+      // Record all previous migrations as applied
+      newDb.exec(`
+        CREATE TABLE IF NOT EXISTS migrations (
+          version INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      for (let i = 1; i <= 7; i++) {
+        newDb.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+          i,
+          `migration-${i}`
+        );
+      }
+
+      // Create checkpoints table
+      newDb.exec(`
+        CREATE TABLE IF NOT EXISTS checkpoints (
+          id TEXT PRIMARY KEY,
+          issue_id TEXT NOT NULL,
+          execution_id TEXT NOT NULL,
+          stream_id TEXT NOT NULL,
+          commit_sha TEXT NOT NULL,
+          message TEXT NOT NULL,
+          checkpointed_at TEXT NOT NULL,
+          review_status TEXT NOT NULL DEFAULT 'pending'
+        )
+      `);
+
+      // Should not throw when running migration on already-migrated database
+      expect(() => runMigrations(newDb)).not.toThrow();
+
+      newDb.close();
+    });
+
+    it("should cascade delete when issue is deleted", () => {
+      runMigrations(db);
+      db.exec("PRAGMA foreign_keys = ON");
+
+      // Insert a checkpoint
+      db.prepare(
+        `
+        INSERT INTO checkpoints (
+          id, issue_id, execution_id, stream_id, commit_sha,
+          changed_files, additions, deletions, message, checkpointed_at, review_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+      ).run(
+        "cp-cascade",
+        "i-test",
+        "exec-1",
+        "stream-1",
+        "abc123",
+        1,
+        10,
+        5,
+        "Test",
+        new Date().toISOString(),
+        "pending"
+      );
+
+      // Verify checkpoint exists
+      let checkpoint = db
+        .prepare("SELECT * FROM checkpoints WHERE id = ?")
+        .get("cp-cascade");
+      expect(checkpoint).toBeDefined();
+
+      // Delete the issue
+      db.prepare("DELETE FROM issues WHERE id = ?").run("i-test");
+
+      // Checkpoint should be deleted due to CASCADE
+      checkpoint = db
+        .prepare("SELECT * FROM checkpoints WHERE id = ?")
+        .get("cp-cascade");
+      expect(checkpoint).toBeUndefined();
+    });
+  });
+
   describe("runMigrations", () => {
     it("should run all pending migrations in order", () => {
       // Create old schema for both migrations
@@ -1563,15 +1860,15 @@ describe("Database Migrations", () => {
 
       runMigrations(db);
 
-      // Should have run all seven migrations
-      expect(getCurrentMigrationVersion(db)).toBe(7);
+      // Should have run all eight migrations
+      expect(getCurrentMigrationVersion(db)).toBe(8);
 
       // Verify all migrations were applied
       const migrations = db
         .prepare("SELECT * FROM migrations ORDER BY version")
         .all() as Array<{ version: number; name: string }>;
 
-      expect(migrations).toHaveLength(7);
+      expect(migrations).toHaveLength(8);
       expect(migrations[0].version).toBe(1);
       expect(migrations[0].name).toBe("generalize-feedback-table");
       expect(migrations[1].version).toBe(2);
@@ -1586,6 +1883,8 @@ describe("Database Migrations", () => {
       expect(migrations[5].name).toBe("add-stream-id-to-executions");
       expect(migrations[6].version).toBe(7);
       expect(migrations[6].name).toBe("add-conflicted-status-to-executions");
+      expect(migrations[7].version).toBe(8);
+      expect(migrations[7].name).toBe("add-checkpoints-table");
     });
 
     it("should skip already-applied migrations", () => {
@@ -1662,20 +1961,21 @@ describe("Database Migrations", () => {
 
       runMigrations(db);
 
-      // Should run migrations 2, 3, 4, 5, 6, and 7
-      expect(getCurrentMigrationVersion(db)).toBe(7);
+      // Should run migrations 2, 3, 4, 5, 6, 7, and 8
+      expect(getCurrentMigrationVersion(db)).toBe(8);
 
       const migrations = db
         .prepare("SELECT * FROM migrations ORDER BY version")
         .all() as Array<{ version: number; name: string }>;
 
-      expect(migrations).toHaveLength(7);
+      expect(migrations).toHaveLength(8);
       expect(migrations[1].version).toBe(2);
       expect(migrations[2].version).toBe(3);
       expect(migrations[3].version).toBe(4);
       expect(migrations[4].version).toBe(5);
       expect(migrations[5].version).toBe(6);
       expect(migrations[6].version).toBe(7);
+      expect(migrations[7].version).toBe(8);
     });
 
     it("should not run if no pending migrations", () => {
@@ -1716,13 +2016,17 @@ describe("Database Migrations", () => {
         7,
         "add-conflicted-status-to-executions"
       );
+      db.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        8,
+        "add-checkpoints-table"
+      );
 
-      expect(getCurrentMigrationVersion(db)).toBe(7);
+      expect(getCurrentMigrationVersion(db)).toBe(8);
 
       // Should not throw, just skip
       expect(() => runMigrations(db)).not.toThrow();
 
-      expect(getCurrentMigrationVersion(db)).toBe(7);
+      expect(getCurrentMigrationVersion(db)).toBe(8);
     });
   });
 });

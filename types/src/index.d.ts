@@ -370,6 +370,50 @@ export interface ExecutionConflict {
 }
 
 /**
+ * Review status for a checkpoint
+ */
+export type CheckpointReviewStatus = "pending" | "approved" | "rejected" | "merged";
+
+/**
+ * Represents a checkpoint of execution changes to an issue stream
+ * Part of the stacked diffs workflow - allows saving work before merging to main
+ */
+export interface Checkpoint {
+  /** Unique checkpoint identifier */
+  id: string;
+  /** Issue ID this checkpoint belongs to */
+  issue_id: string;
+  /** Execution ID that created this checkpoint */
+  execution_id: string;
+  /** Dataplane stream ID for the issue */
+  stream_id: string;
+  /** Git commit SHA of the checkpoint */
+  commit_sha: string;
+  /** Parent commit SHA (for incremental checkpoints) */
+  parent_commit?: string;
+  /** Number of files changed in this checkpoint */
+  changed_files: number;
+  /** Lines added */
+  additions: number;
+  /** Lines deleted */
+  deletions: number;
+  /** User-provided checkpoint message */
+  message: string;
+  /** When checkpoint was created (ISO 8601) */
+  checkpointed_at: string;
+  /** Who created the checkpoint (user/agent identifier) */
+  checkpointed_by?: string;
+  /** Review status of the checkpoint */
+  review_status: CheckpointReviewStatus;
+  /** When checkpoint was reviewed */
+  reviewed_at?: string;
+  /** Who reviewed the checkpoint */
+  reviewed_by?: string;
+  /** Review notes or comments */
+  review_notes?: string;
+}
+
+/**
  * Represents a single agent run on an issue
  * Tracks the full lifecycle of a coding agent execution
  */

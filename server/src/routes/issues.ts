@@ -485,5 +485,142 @@ export function createIssuesRouter(): Router {
     }
   });
 
+  /**
+   * GET /api/issues/:id/checkpoints - List all checkpoints for an issue
+   *
+   * Returns all checkpoints created for this issue, ordered by creation time (newest first).
+   * Also identifies the current/active checkpoint.
+   *
+   * Response:
+   * - checkpoints: Array of checkpoint records
+   * - current: The most recent checkpoint (or null if none)
+   */
+  router.get("/:id/checkpoints", (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const db = req.project!.db;
+
+      // Check if issue exists
+      const issue = getIssueById(db, id);
+      if (!issue) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Issue not found: ${id}`,
+        });
+        return;
+      }
+
+      // Get all checkpoints for this issue, ordered by creation time (newest first)
+      const checkpoints = db
+        .prepare(
+          `SELECT
+            id,
+            issue_id,
+            execution_id,
+            stream_id,
+            commit_sha,
+            parent_commit,
+            changed_files,
+            additions,
+            deletions,
+            message,
+            checkpointed_at,
+            checkpointed_by,
+            review_status,
+            reviewed_at,
+            reviewed_by,
+            review_notes
+          FROM checkpoints
+          WHERE issue_id = ?
+          ORDER BY checkpointed_at DESC`
+        )
+        .all(id);
+
+      // The first checkpoint in the list (if any) is the current/most recent
+      const current = checkpoints.length > 0 ? checkpoints[0] : null;
+
+      res.json({
+        success: true,
+        data: {
+          checkpoints,
+          current,
+        },
+      });
+    } catch (error) {
+      console.error("Error listing checkpoints:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to list checkpoints",
+      });
+    }
+  });
+
+  /**
+   * GET /api/issues/:id/checkpoint/current - Get the current checkpoint for an issue
+   *
+   * Returns the most recent checkpoint for this issue, or null if none exist.
+   * This is a convenience endpoint for quickly checking the latest checkpoint state.
+   */
+  router.get("/:id/checkpoint/current", (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const db = req.project!.db;
+
+      // Check if issue exists
+      const issue = getIssueById(db, id);
+      if (!issue) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Issue not found: ${id}`,
+        });
+        return;
+      }
+
+      // Get the most recent checkpoint for this issue
+      const checkpoint = db
+        .prepare(
+          `SELECT
+            id,
+            issue_id,
+            execution_id,
+            stream_id,
+            commit_sha,
+            parent_commit,
+            changed_files,
+            additions,
+            deletions,
+            message,
+            checkpointed_at,
+            checkpointed_by,
+            review_status,
+            reviewed_at,
+            reviewed_by,
+            review_notes
+          FROM checkpoints
+          WHERE issue_id = ?
+          ORDER BY checkpointed_at DESC
+          LIMIT 1`
+        )
+        .get(id);
+
+      res.json({
+        success: true,
+        data: checkpoint || null,
+      });
+    } catch (error) {
+      console.error("Error getting current checkpoint:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to get current checkpoint",
+      });
+    }
+  });
+
   return router;
 }

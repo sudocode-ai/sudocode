@@ -8,6 +8,7 @@ import { DeleteExecutionDialog } from './DeleteExecutionDialog'
 import { SyncPreviewDialog } from './SyncPreviewDialog'
 import { CommitChangesDialog } from './CommitChangesDialog'
 import { CleanupWorktreeDialog } from './CleanupWorktreeDialog'
+import { CheckpointDialog } from './CheckpointDialog'
 import { CodeChangesPanel } from './CodeChangesPanel'
 import { ConflictPanel } from './ConflictPanel'
 import { TodoTracker, type TodoItem } from './TodoTracker'
@@ -210,7 +211,7 @@ export function ExecutionView({
     }
   }, [executionId])
 
-  // Contextual actions (commit, sync, cleanup) - uses the common hook
+  // Contextual actions (commit, sync, cleanup, checkpoint) - uses the common hook
   const {
     actions: contextualActions,
     isCommitDialogOpen,
@@ -227,6 +228,12 @@ export function ExecutionView({
     setIsSyncPreviewOpen: setIsContextualSyncPreviewOpen,
     performSync: contextualPerformSync,
     isPreviewing: isContextualPreviewing,
+    // Checkpoint state
+    isCheckpointDialogOpen,
+    setIsCheckpointDialogOpen,
+    performCheckpoint,
+    checkpointResult,
+    isCheckpointing,
   } = useAgentActions({
     execution: lastExecutionForActions,
     issueId: rootExecutionForIssue?.issue_id ?? '',
@@ -1070,6 +1077,19 @@ export function ExecutionView({
             }
             onOpenIDE={handleOpenInIDE}
             isPreviewing={isContextualPreviewing}
+          />
+        )}
+
+        {/* Checkpoint Dialog (from contextual actions) */}
+        {lastExecution && (
+          <CheckpointDialog
+            execution={lastExecution}
+            issue={null}
+            isOpen={isCheckpointDialogOpen}
+            onClose={() => setIsCheckpointDialogOpen(false)}
+            onCheckpoint={(options) => performCheckpoint(lastExecution.id, options)}
+            isCheckpointing={isCheckpointing}
+            checkpointResult={checkpointResult}
           />
         )}
       </div>

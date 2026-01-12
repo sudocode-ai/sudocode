@@ -1,8 +1,9 @@
 import { useMemo, useCallback, useState } from 'react'
-import { GitCommit, GitMerge, Trash2 } from 'lucide-react'
+import { GitCommit, GitMerge, Trash2, Layers } from 'lucide-react'
 import type { Execution } from '@/types/execution'
 import type { LucideIcon } from 'lucide-react'
 import { useExecutionSync } from './useExecutionSync'
+import { useCheckpoint } from './useCheckpoint'
 import { toast } from 'sonner'
 import { executionsApi } from '@/lib/api'
 import { useQueryClient } from '@tanstack/react-query'
@@ -115,6 +116,24 @@ export function useAgentActions(options: UseAgentActionsOptions) {
     isPreviewing,
     syncStatus,
   } = useExecutionSync()
+
+  // Use checkpoint hook for checkpoint operations
+  const {
+    performCheckpoint,
+    isCheckpointDialogOpen,
+    setIsCheckpointDialogOpen,
+    checkpointResult,
+    isCheckpointing,
+    closeCheckpointDialog,
+  } = useCheckpoint({
+    onSuccess: () => {
+      // Invalidate execution queries after successful checkpoint
+      queryClient.invalidateQueries({ queryKey: ['executions'] })
+      queryClient.invalidateQueries({ queryKey: ['issues'] })
+      // Trigger CodeChangesPanel refresh
+      setChangesRefreshTrigger((prev) => prev + 1)
+    },
+  })
 
   // Dialog visibility state
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false)
@@ -286,6 +305,23 @@ export function useAgentActions(options: UseAgentActionsOptions) {
       })
     }
 
+    // Action: Checkpoint
+    // Available for worktree mode when worktree exists and has changes
+    // Checkpoints save changes to the issue stream for later merge to main
+    const canCheckpoint = hasSyncableWorktree && isTerminalState
+
+    if (canCheckpoint) {
+      availableActions.push({
+        id: 'checkpoint',
+        label: 'Checkpoint',
+        icon: Layers,
+        description: 'Save changes to issue stream for later merge',
+        onClick: () => setIsCheckpointDialogOpen(true),
+        variant: 'secondary',
+        disabled,
+      })
+    }
+
     // Action: Cleanup Worktree
     // Available whenever there's a worktree that still exists
     const canCleanup = isWorktreeMode && hasWorktreePath && worktreeExists
@@ -354,5 +390,13 @@ export function useAgentActions(options: UseAgentActionsOptions) {
     isPreviewing,
     syncStatus,
     fetchSyncPreview,
+
+    // Checkpoint dialog state (for CheckpointDialog)
+    isCheckpointDialogOpen,
+    setIsCheckpointDialogOpen,
+    performCheckpoint,
+    checkpointResult,
+    isCheckpointing,
+    closeCheckpointDialog,
   }
 }

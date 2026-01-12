@@ -29,7 +29,60 @@ export interface SudocodeStreamMetadata {
     target_branch?: string;
     /** Parent execution ID (for follow-ups) */
     parent_execution_id?: string;
+    /** Checkpoint tracking for issue streams */
+    checkpoint?: IssueCheckpointMetadata;
   };
+}
+
+/**
+ * Checkpoint metadata stored in issue stream
+ */
+export interface IssueCheckpointMetadata {
+  /** Number of checkpoints saved to this issue stream */
+  checkpoint_count: number;
+  /** Latest checkpoint info */
+  current_checkpoint?: {
+    /** Execution ID that created the checkpoint */
+    execution_id: string;
+    /** Checkpoint commit SHA */
+    commit: string;
+    /** When checkpoint was created (ISO 8601) */
+    checkpointed_at: string;
+  };
+  /** Review status of the issue stream */
+  review_status: 'none' | 'pending' | 'approved' | 'changes_requested';
+}
+
+/**
+ * Info about an issue-level stream
+ */
+export interface IssueStreamInfo {
+  /** Dataplane stream ID */
+  streamId: string;
+  /** Git branch name for the stream */
+  branchName: string;
+  /** Issue ID this stream belongs to */
+  issueId: string;
+  /** Base commit the stream was created from */
+  baseCommit: string;
+  /** Current HEAD commit */
+  currentHead: string | null;
+  /** Number of checkpoints */
+  checkpointCount: number;
+  /** Current checkpoint info */
+  currentCheckpoint?: {
+    executionId: string;
+    commit: string;
+    checkpointedAt: string;
+  };
+  /** Review status */
+  reviewStatus: 'none' | 'pending' | 'approved' | 'changes_requested';
+  /** Parent issue stream ID (for stacked issues) */
+  parentStreamId?: string;
+  /** Parent issue ID (for stacked issues) */
+  parentIssueId?: string;
+  /** When the stream was created */
+  createdAt: number;
 }
 
 /**
@@ -420,4 +473,73 @@ export interface MergeResult {
   error?: string;
   /** Conflicts if any */
   conflicts?: string[];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Checkpoint Types
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Options for checkpoint sync operation
+ */
+export interface CheckpointOptions {
+  /** Checkpoint commit message */
+  message?: string;
+  /** Squash execution commits into single commit (default: true) */
+  squash?: boolean;
+  /** Automatically add to merge queue (default: true) */
+  autoEnqueue?: boolean;
+  /** Who is performing the checkpoint */
+  checkpointedBy?: string;
+}
+
+/**
+ * Checkpoint information
+ */
+export interface CheckpointInfo {
+  /** Checkpoint ID */
+  id: string;
+  /** Issue ID this checkpoint belongs to */
+  issueId: string;
+  /** Execution ID that created this checkpoint */
+  executionId: string;
+  /** Commit SHA of the checkpoint */
+  commit: string;
+  /** Number of files changed */
+  changedFiles: number;
+  /** Lines added */
+  additions: number;
+  /** Lines deleted */
+  deletions: number;
+  /** Checkpoint message */
+  message: string;
+  /** When checkpoint was created (ISO 8601) */
+  checkpointedAt: string;
+  /** Who created the checkpoint */
+  checkpointedBy?: string;
+}
+
+/**
+ * Result of checkpoint sync operation
+ */
+export interface CheckpointResult {
+  /** Whether checkpoint succeeded */
+  success: boolean;
+  /** Checkpoint information (if successful) */
+  checkpoint?: CheckpointInfo;
+  /** Issue stream information */
+  issueStream?: {
+    /** Stream ID */
+    id: string;
+    /** Branch name */
+    branch: string;
+    /** Whether stream was created (vs already existed) */
+    created: boolean;
+  };
+  /** Queue entry if auto-enqueued */
+  queueEntry?: QueueEntry;
+  /** Conflicts if any were detected */
+  conflicts?: ConflictInfo[];
+  /** Error message if failed */
+  error?: string;
 }

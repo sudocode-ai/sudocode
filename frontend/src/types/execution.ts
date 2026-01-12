@@ -251,3 +251,97 @@ export interface PerformSyncRequest {
   mode: SyncMode
   commitMessage?: string
 }
+
+/**
+ * Checkpoint types
+ */
+
+/**
+ * Options for checkpoint operation
+ */
+export interface CheckpointOptions {
+  /** Checkpoint message */
+  message?: string
+  /** Whether to squash commits (default: true) */
+  squash?: boolean
+  /** Whether to add to merge queue (default: true) */
+  autoEnqueue?: boolean
+}
+
+/**
+ * Checkpoint review status
+ */
+export type CheckpointReviewStatus = 'pending' | 'approved' | 'rejected' | 'merged'
+
+/**
+ * Checkpoint information
+ */
+export interface Checkpoint {
+  id: string
+  issue_id: string
+  execution_id: string
+  stream_id?: string
+  commit_sha: string
+  parent_commit?: string
+  changed_files: number
+  additions: number
+  deletions: number
+  message: string
+  checkpointed_at: string
+  checkpointed_by?: string
+  review_status: CheckpointReviewStatus
+  reviewed_at?: string
+  reviewed_by?: string
+  review_notes?: string
+}
+
+/**
+ * Issue stream information for checkpoint result
+ */
+export interface IssueStreamInfo {
+  id: string
+  branch: string
+  created: boolean
+}
+
+/**
+ * Queue entry for checkpoint result
+ */
+export interface QueueEntry {
+  id: string
+  executionId: string
+  streamId: string
+  targetBranch: string
+  position: number
+  priority: number
+  status: 'pending' | 'ready' | 'merging' | 'merged' | 'failed' | 'cancelled'
+  addedAt: number
+  error?: string
+  mergeCommit?: string
+}
+
+/**
+ * Conflict information for checkpoint
+ */
+export interface CheckpointConflict {
+  id: string
+  streamId: string
+  path: string
+  ours?: string
+  theirs?: string
+  base?: string
+  markers?: string
+  detectedAt: number
+}
+
+/**
+ * Result of checkpoint operation
+ */
+export interface CheckpointResult {
+  success: boolean
+  checkpoint?: Checkpoint
+  issueStream?: IssueStreamInfo
+  queueEntry?: QueueEntry
+  conflicts?: CheckpointConflict[]
+  error?: string
+}

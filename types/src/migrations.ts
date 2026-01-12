@@ -869,6 +869,62 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 8,
+    name: "add-checkpoints-table",
+    up: (db: Database.Database) => {
+      // Check if checkpoints table already exists
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='checkpoints'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (tables.length > 0) {
+        // Already migrated
+        return;
+      }
+
+      // Create checkpoints table for stacked diffs workflow
+      db.exec(`
+        CREATE TABLE checkpoints (
+          id TEXT PRIMARY KEY,
+          issue_id TEXT NOT NULL,
+          execution_id TEXT NOT NULL,
+          stream_id TEXT NOT NULL,
+          commit_sha TEXT NOT NULL,
+          parent_commit TEXT,
+          changed_files INTEGER NOT NULL DEFAULT 0,
+          additions INTEGER NOT NULL DEFAULT 0,
+          deletions INTEGER NOT NULL DEFAULT 0,
+          message TEXT NOT NULL,
+          checkpointed_at TEXT NOT NULL,
+          checkpointed_by TEXT,
+          review_status TEXT NOT NULL DEFAULT 'pending' CHECK(review_status IN ('pending', 'approved', 'rejected', 'merged')),
+          reviewed_at TEXT,
+          reviewed_by TEXT,
+          review_notes TEXT,
+          FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
+          FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE
+        );
+      `);
+
+      // Create indexes for common queries
+      db.exec(`
+        CREATE INDEX idx_checkpoints_issue_id ON checkpoints(issue_id);
+        CREATE INDEX idx_checkpoints_execution_id ON checkpoints(execution_id);
+        CREATE INDEX idx_checkpoints_stream_id ON checkpoints(stream_id);
+        CREATE INDEX idx_checkpoints_review_status ON checkpoints(review_status);
+        CREATE INDEX idx_checkpoints_checkpointed_at ON checkpoints(checkpointed_at);
+      `);
+
+      console.log("  ✓ Created checkpoints table for stacked diffs workflow");
+    },
+    down: (db: Database.Database) => {
+      db.exec(`DROP TABLE IF EXISTS checkpoints;`);
+      console.log("  ✓ Dropped checkpoints table");
+    },
+  },
 ];
 
 /**

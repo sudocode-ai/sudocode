@@ -25,6 +25,8 @@ import {
 } from './dataplane-config.js';
 import type {
   SudocodeStreamMetadata,
+  IssueCheckpointMetadata,
+  IssueStreamInfo,
   ExecutionStreamResult,
   WorktreeInfo,
   ChangeSet,
@@ -46,6 +48,9 @@ import type {
   QueueEntry,
   ReorderResult,
   MergeResult,
+  CheckpointOptions,
+  CheckpointInfo,
+  CheckpointResult,
 } from './dataplane-types.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -303,8 +308,21 @@ export class DataplaneAdapter {
 
   /**
    * Ensure an issue has an associated stream
+   *
+   * For stacked issues (those with dependencies), the stream branches from
+   * the parent issue stream rather than main. This enables the checkpoint
+   * workflow where work builds on top of earlier issue checkpoints.
+   *
+   * @param issueId - Issue ID to create/get stream for
+   * @param agentId - Agent ID creating the stream
+   * @param db - Optional database for dependency lookup
+   * @returns Stream ID
    */
-  async ensureIssueStream(issueId: string, agentId: string): Promise<string> {
+  async ensureIssueStream(
+    issueId: string,
+    agentId: string,
+    db?: Database.Database
+  ): Promise<string> {
     const tracker = this.ensureInitialized();
 
     // Check if stream already exists for this issue
@@ -318,19 +336,193 @@ export class DataplaneAdapter {
       return existingStream.id;
     }
 
+    // Determine parent stream from issue dependencies if db provided
+    let parentStreamId: string | undefined;
+
+    if (db) {
+      // Check for blocking issues (issues that block this one)
+      const blockedBy = getIncomingRelationships(db, issueId, 'issue', 'blocks');
+      // Check for depends-on relationships
+      const dependsOn = getOutgoingRelationships(db, issueId, 'issue', 'depends-on');
+
+      // Combine both types of dependencies
+      const dependencies = [
+        ...blockedBy.map((rel) => rel.from_id),
+        ...dependsOn.map((rel) => rel.to_id),
+      ];
+
+      // Find the first dependency that has an issue stream
+      for (const depIssueId of dependencies) {
+        const depStream = this.getStreamByIssueId(depIssueId);
+        if (depStream) {
+          parentStreamId = depStream.id;
+          break;
+        }
+      }
+    }
+
+    // Create metadata with checkpoint tracking
+    const checkpointMeta: IssueCheckpointMetadata = {
+      checkpoint_count: 0,
+      review_status: 'none',
+    };
+
+    const metadata: SudocodeStreamMetadata = {
+      sudocode: {
+        type: 'issue',
+        issue_id: issueId,
+        checkpoint: checkpointMeta,
+      },
+    };
+
     // Create new stream for issue
+    // If parent stream exists, this creates a fork from that stream
     const streamId = tracker.createStream({
       name: `issue-${issueId}`,
       agentId,
-      metadata: {
-        sudocode: {
-          type: 'issue',
-          issue_id: issueId,
-        },
-      },
+      metadata: metadata as unknown as Record<string, unknown>,
     });
 
+    // Add dependency to parent stream if exists
+    if (parentStreamId) {
+      try {
+        tracker.addDependency(streamId, parentStreamId);
+      } catch (error) {
+        // Log but don't fail - dependency may already exist or would create cycle
+        console.warn(
+          `Failed to add dependency ${streamId} → ${parentStreamId}: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+
     return streamId;
+  }
+
+  /**
+   * Get information about an issue-level stream
+   *
+   * @param issueId - Issue ID to get stream info for
+   * @returns Issue stream info or null if not found
+   */
+  getIssueStreamInfo(issueId: string): IssueStreamInfo | null {
+    const tracker = this.ensureInitialized();
+    const stream = this.getStreamByIssueId(issueId);
+
+    if (!stream) {
+      return null;
+    }
+
+    const meta = getSudocodeMetadata(stream.metadata);
+    const checkpointMeta = meta?.checkpoint;
+    const branchName = tracker.getStreamBranchName(stream.id);
+    const currentHead = tracker.getStreamHead(stream.id);
+
+    // Get parent stream info from dependencies
+    const dependencies = tracker.getDependencies(stream.id);
+    let parentStreamId: string | undefined;
+    let parentIssueId: string | undefined;
+
+    for (const depId of dependencies) {
+      const depStream = tracker.getStream(depId);
+      if (depStream) {
+        const depMeta = getSudocodeMetadata(depStream.metadata);
+        if (depMeta?.type === 'issue') {
+          parentStreamId = depStream.id;
+          parentIssueId = depMeta.issue_id;
+          break;
+        }
+      }
+    }
+
+    return {
+      streamId: stream.id,
+      branchName,
+      issueId,
+      baseCommit: stream.baseCommit,
+      currentHead,
+      checkpointCount: checkpointMeta?.checkpoint_count || 0,
+      currentCheckpoint: checkpointMeta?.current_checkpoint
+        ? {
+            executionId: checkpointMeta.current_checkpoint.execution_id,
+            commit: checkpointMeta.current_checkpoint.commit,
+            checkpointedAt: checkpointMeta.current_checkpoint.checkpointed_at,
+          }
+        : undefined,
+      reviewStatus: checkpointMeta?.review_status || 'none',
+      parentStreamId,
+      parentIssueId,
+      createdAt: stream.createdAt,
+    };
+  }
+
+  /**
+   * Update issue stream metadata after a checkpoint operation
+   *
+   * @param issueId - Issue ID whose stream to update
+   * @param checkpoint - Checkpoint information
+   */
+  updateIssueStreamCheckpoint(
+    issueId: string,
+    checkpoint: {
+      executionId: string;
+      commit: string;
+      checkpointedAt: string;
+    }
+  ): void {
+    const tracker = this.ensureInitialized();
+    const stream = this.getStreamByIssueId(issueId);
+
+    if (!stream) {
+      throw new Error(`Issue stream not found: ${issueId}`);
+    }
+
+    // Get existing metadata
+    const existingMeta = getSudocodeMetadata(stream.metadata);
+    const existingCheckpoint = existingMeta?.checkpoint;
+
+    // Update checkpoint metadata
+    const newCheckpointMeta: IssueCheckpointMetadata = {
+      checkpoint_count: (existingCheckpoint?.checkpoint_count || 0) + 1,
+      current_checkpoint: {
+        execution_id: checkpoint.executionId,
+        commit: checkpoint.commit,
+        checkpointed_at: checkpoint.checkpointedAt,
+      },
+      review_status: 'pending', // New checkpoint sets status to pending
+    };
+
+    // Update stream metadata in database
+    // Note: This updates the metadata field in the dataplane streams table
+    const updateStmt = tracker.db.prepare(`
+      UPDATE streams SET metadata = json_set(metadata, '$.sudocode.checkpoint', json(?))
+      WHERE id = ?
+    `);
+    updateStmt.run(JSON.stringify(newCheckpointMeta), stream.id);
+  }
+
+  /**
+   * Update issue stream review status
+   *
+   * @param issueId - Issue ID whose stream to update
+   * @param status - New review status
+   */
+  updateIssueStreamReviewStatus(
+    issueId: string,
+    status: 'none' | 'pending' | 'approved' | 'changes_requested'
+  ): void {
+    const tracker = this.ensureInitialized();
+    const stream = this.getStreamByIssueId(issueId);
+
+    if (!stream) {
+      throw new Error(`Issue stream not found: ${issueId}`);
+    }
+
+    // Update review status in metadata
+    const updateStmt = tracker.db.prepare(`
+      UPDATE streams SET metadata = json_set(metadata, '$.sudocode.checkpoint.review_status', ?)
+      WHERE id = ?
+    `);
+    updateStmt.run(JSON.stringify(status), stream.id);
   }
 
   /**
@@ -817,6 +1009,244 @@ export class DataplaneAdapter {
    */
   async stageSync(_executionId: string): Promise<void> {
     throw new Error('stageSync not yet integrated - use WorktreeSyncService directly');
+  }
+
+  /**
+   * Checkpoint sync - merge execution changes to issue stream for review
+   *
+   * This is the core operation for the stacked diffs workflow. It:
+   * 1. Validates execution has changes
+   * 2. Ensures issue stream exists
+   * 3. Optionally squashes execution commits
+   * 4. Merges execution onto issue stream
+   * 5. Creates checkpoint record
+   * 6. Updates issue stream metadata
+   * 7. Optionally enqueues for main merge
+   *
+   * @param executionId - Execution ID to checkpoint
+   * @param db - Sudocode database connection (for checkpoint record creation)
+   * @param options - Checkpoint options
+   * @returns Checkpoint result
+   */
+  async checkpointSync(
+    executionId: string,
+    db: Database.Database,
+    options: CheckpointOptions = {}
+  ): Promise<CheckpointResult> {
+    const tracker = this.ensureInitialized();
+
+    // Set defaults
+    const squash = options.squash ?? true;
+    const autoEnqueue = options.autoEnqueue ?? true;
+
+    // 1. Get execution stream
+    const execStream = this.getStreamByExecutionId(executionId);
+    if (!execStream) {
+      return {
+        success: false,
+        error: `Execution stream not found: ${executionId}`,
+      };
+    }
+
+    // 2. Get execution's issue ID from stream metadata
+    const execMeta = getSudocodeMetadata(execStream.metadata);
+    const issueId = execMeta?.issue_id;
+    if (!issueId || issueId === 'standalone') {
+      return {
+        success: false,
+        error: 'Execution has no associated issue',
+      };
+    }
+
+    // 3. Get execution changes
+    const changes = await this.getChanges(executionId);
+    if (changes.totalFiles === 0) {
+      return {
+        success: false,
+        error: 'Execution has no changes to checkpoint',
+      };
+    }
+
+    // 4. Ensure issue stream exists
+    const issueStreamId = await this.ensureIssueStream(issueId, execStream.agentId, db);
+    const issueStream = tracker.getStream(issueStreamId);
+    if (!issueStream) {
+      return {
+        success: false,
+        error: 'Failed to create issue stream',
+      };
+    }
+
+    const issueStreamBranch = tracker.getStreamBranchName(issueStreamId);
+    const issueStreamCreated = issueStream.createdAt > Date.now() - 1000; // Just created
+
+    // 5. Get worktree for merge operations
+    const worktree = tracker.getWorktree(execStream.agentId);
+    if (!worktree) {
+      return {
+        success: false,
+        error: 'No worktree available for checkpoint operation',
+      };
+    }
+
+    const { execSync } = await import('child_process');
+    const execBranch = tracker.getStreamBranchName(execStream.id);
+
+    try {
+      // 6. Check for conflicts before merge
+      const mergeBase = execSync(
+        `git merge-base ${issueStreamBranch} ${execBranch}`,
+        { cwd: worktree.path, encoding: 'utf-8' }
+      ).trim();
+
+      // Check if there would be conflicts
+      try {
+        execSync(`git merge-tree ${mergeBase} ${issueStreamBranch} ${execBranch}`, {
+          cwd: worktree.path,
+          encoding: 'utf-8',
+        });
+      } catch {
+        // merge-tree returns non-zero if there are conflicts
+        return {
+          success: false,
+          error: 'Merge conflicts detected',
+          conflicts: [], // TODO: parse conflict files
+          issueStream: {
+            id: issueStreamId,
+            branch: issueStreamBranch,
+            created: issueStreamCreated,
+          },
+        };
+      }
+
+      // 7. Perform merge (checkout issue stream, merge exec stream)
+      // First, fetch the issue stream branch if it doesn't exist locally
+      execSync(`git checkout ${issueStreamBranch}`, {
+        cwd: worktree.path,
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      });
+
+      // Determine commit message
+      const message =
+        options.message ||
+        `Checkpoint: ${issueId} from execution ${executionId}`;
+
+      let mergeCommit: string;
+
+      if (squash) {
+        // Squash merge
+        execSync(`git merge --squash ${execBranch}`, {
+          cwd: worktree.path,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        });
+        execSync(`git commit -m "${message}"`, {
+          cwd: worktree.path,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        });
+      } else {
+        // Regular merge with commit
+        execSync(`git merge ${execBranch} -m "${message}"`, {
+          cwd: worktree.path,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        });
+      }
+
+      // Get the new HEAD
+      mergeCommit = execSync('git rev-parse HEAD', {
+        cwd: worktree.path,
+        encoding: 'utf-8',
+      }).trim();
+
+      // 8. Create checkpoint record in database
+      const checkpointId = `cp-${Date.now().toString(36)}`;
+      const checkpointedAt = new Date().toISOString();
+
+      const insertStmt = db.prepare(`
+        INSERT INTO checkpoints (
+          id, issue_id, execution_id, stream_id, commit_sha, parent_commit,
+          changed_files, additions, deletions, message, checkpointed_at,
+          checkpointed_by, review_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      `);
+
+      insertStmt.run(
+        checkpointId,
+        issueId,
+        executionId,
+        issueStreamId,
+        mergeCommit,
+        changes.commitRange.before,
+        changes.totalFiles,
+        changes.totalAdditions,
+        changes.totalDeletions,
+        message,
+        checkpointedAt,
+        options.checkpointedBy || null
+      );
+
+      // 9. Update issue stream metadata
+      this.updateIssueStreamCheckpoint(issueId, {
+        executionId,
+        commit: mergeCommit,
+        checkpointedAt,
+      });
+
+      // 10. Auto-enqueue to merge queue if enabled
+      let queueEntry: QueueEntry | undefined;
+      if (autoEnqueue && this.config.mergeQueue.enabled) {
+        try {
+          queueEntry = await this.enqueue({
+            executionId,
+            targetBranch: execMeta?.target_branch || 'main',
+            agentId: execStream.agentId,
+          });
+        } catch (error) {
+          // Log but don't fail - checkpoint succeeded
+          console.warn(
+            `Failed to enqueue checkpoint: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      }
+
+      // 11. Return result
+      const checkpoint: CheckpointInfo = {
+        id: checkpointId,
+        issueId,
+        executionId,
+        commit: mergeCommit,
+        changedFiles: changes.totalFiles,
+        additions: changes.totalAdditions,
+        deletions: changes.totalDeletions,
+        message,
+        checkpointedAt,
+        checkpointedBy: options.checkpointedBy,
+      };
+
+      return {
+        success: true,
+        checkpoint,
+        issueStream: {
+          id: issueStreamId,
+          branch: issueStreamBranch,
+          created: issueStreamCreated,
+        },
+        queueEntry,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        issueStream: {
+          id: issueStreamId,
+          branch: issueStreamBranch,
+          created: issueStreamCreated,
+        },
+      };
+    }
   }
 
   // ───────────────────────────────────────────────────────────────────────────

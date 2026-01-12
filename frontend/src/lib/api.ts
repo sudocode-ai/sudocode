@@ -28,6 +28,8 @@ import type {
   SyncResult,
   PerformSyncRequest,
   ExecutionChangesResult,
+  CheckpointOptions,
+  CheckpointResult,
 } from '@/types/execution'
 import type {
   ProjectInfo,
@@ -335,6 +337,10 @@ export const executionsApi = {
     executionId: string,
     options?: { includeUncommitted?: boolean; overrideLocalChanges?: boolean }
   ) => post<SyncResult>(`/executions/${executionId}/sync/stage`, options),
+
+  // Checkpoint to issue stream
+  checkpoint: (executionId: string, options?: CheckpointOptions) =>
+    post<CheckpointResult>(`/executions/${executionId}/checkpoint`, options),
 
   // Commit uncommitted changes
   commit: (executionId: string, request: { message: string }) =>

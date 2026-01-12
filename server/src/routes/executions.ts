@@ -2183,5 +2183,97 @@ export function createExecutionsRouter(): Router {
     }
   );
 
+  /**
+   * POST /api/executions/:executionId/checkpoint
+   *
+   * Checkpoint execution changes to the issue stream
+   *
+   * Creates a checkpoint by merging execution changes to the issue-level stream.
+   * This is part of the two-tier merge model: checkpoint (exec → issue) then promote (issue → main).
+   *
+   * Request body:
+   * - message?: string - Custom checkpoint message
+   * - squash?: boolean - Whether to squash commits (default: true)
+   * - autoEnqueue?: boolean - Whether to auto-enqueue for merge (default: true)
+   */
+  router.post(
+    "/executions/:executionId/checkpoint",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+        const { message, squash, autoEnqueue } = req.body || {};
+        const db = req.project!.db;
+        const repoPath = req.project!.path;
+
+        // Get dataplane adapter
+        const dataplaneAdapter = getDataplaneAdapterSync(repoPath);
+        if (!dataplaneAdapter) {
+          res.status(501).json({
+            success: false,
+            data: null,
+            error: "Dataplane not initialized",
+            message: "Checkpoint requires dataplane to be enabled. Enable it in config.json.",
+          });
+          return;
+        }
+
+        // Perform checkpoint sync
+        const result = await dataplaneAdapter.checkpointSync(executionId, db, {
+          message,
+          squash: squash !== false, // Default to true
+          autoEnqueue: autoEnqueue !== false, // Default to true
+          checkpointedBy: "user",
+        });
+
+        if (result.success) {
+          res.json({
+            success: true,
+            data: {
+              checkpoint: result.checkpoint,
+              issueStream: result.issueStream,
+              queueEntry: result.queueEntry,
+            },
+          });
+        } else if (result.conflicts && result.conflicts.length > 0) {
+          res.status(409).json({
+            success: false,
+            data: null,
+            error: "Conflicts detected during checkpoint",
+            conflicts: result.conflicts,
+          });
+        } else {
+          res.status(500).json({
+            success: false,
+            data: null,
+            error: result.error || "Checkpoint failed",
+          });
+        }
+      } catch (error) {
+        console.error(
+          `Failed to checkpoint execution ${req.params.executionId}:`,
+          error
+        );
+
+        if (error instanceof WorktreeSyncError) {
+          const statusCode = getStatusCodeForSyncError(error);
+          res.status(statusCode).json({
+            success: false,
+            data: null,
+            error: error.message,
+            code: error.code,
+          });
+        } else {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          res.status(500).json({
+            success: false,
+            data: null,
+            error: errorMessage,
+            message: errorMessage,
+          });
+        }
+      }
+    }
+  );
+
   return router;
 }
