@@ -773,7 +773,7 @@ describe("Dataplane E2E Integration Tests", () => {
 
   describe("5. Conflict Handling", () => {
     describe("5.1 Conflict Detection", () => {
-      it("should detect conflicts during sync preview when target branch has diverged", async () => {
+      it("should detect actual conflicts during sync preview when same lines modified", async () => {
         const issue = createTestIssue(testRepo.db, {
           id: "i-conflict001",
           title: "Conflict detection test",
@@ -801,7 +801,7 @@ describe("Dataplane E2E Integration Tests", () => {
         const worktreePath = execResponse.body.data.worktree_path;
 
         if (worktreePath && fs.existsSync(worktreePath)) {
-          // Make changes in worktree
+          // Make changes in worktree - modify the SAME line
           const conflictFile = path.join(worktreePath, "src", "conflict.ts");
           fs.mkdirSync(path.dirname(conflictFile), { recursive: true });
           fs.writeFileSync(conflictFile, 'export const value = "from-worktree";\n');
@@ -810,7 +810,7 @@ describe("Dataplane E2E Integration Tests", () => {
             stdio: "pipe",
           });
 
-          // Make conflicting changes on main branch
+          // Make conflicting changes on main branch - modify the SAME line
           createConflictingChanges(
             testRepo.path,
             "main",
@@ -825,15 +825,124 @@ describe("Dataplane E2E Integration Tests", () => {
             )
             .run(executionId);
 
-          // Get sync preview - should detect potential conflicts
+          // Get sync preview - should detect actual conflicts
           const previewResponse = await request(app)
             .get(`/api/executions/${executionId}/sync/preview`)
             .set("X-Project-ID", projectId);
 
           expect(previewResponse.status).toBe(200);
           expect(previewResponse.body.success).toBe(true);
-          // Preview should indicate there are potential conflicts or show the diverged state
           expect(previewResponse.body.data).toBeDefined();
+
+          // Verify actual conflict detection
+          const preview = previewResponse.body.data;
+          expect(preview.conflicts).toBeDefined();
+          expect(preview.conflicts.hasConflicts).toBe(true);
+          expect(preview.conflicts.codeConflicts.length).toBeGreaterThan(0);
+
+          // Verify the conflicting file is identified
+          const conflictingFiles = preview.conflicts.codeConflicts.map(
+            (c: any) => c.filePath
+          );
+          expect(conflictingFiles).toContain("src/conflict.ts");
+        }
+      });
+
+      it("should NOT report conflicts when changes are in different parts of file", async () => {
+        // First, create a base file on main with multiple lines BEFORE creating execution
+        const baseContent = `// Line 1
+// Line 2
+// Line 3
+// Line 4
+// Line 5
+`;
+        fs.writeFileSync(
+          path.join(testRepo.path, "src", "multiline.ts"),
+          baseContent
+        );
+        execSync("git add . && git commit -m 'add base file'", {
+          cwd: testRepo.path,
+          stdio: "pipe",
+        });
+
+        const issue = createTestIssue(testRepo.db, {
+          id: "i-noconflict001",
+          title: "No conflict test",
+        });
+
+        // Create execution - worktree will branch from current main (with base file)
+        const createResponse = await request(app)
+          .post(`/api/issues/${issue.id}/executions`)
+          .set("X-Project-ID", projectId)
+          .send({
+            prompt: "Make non-conflicting changes",
+            config: { mode: "worktree" },
+          });
+
+        const executionId = createResponse.body.data.id;
+
+        // Wait for worktree setup
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Get worktree path
+        const execResponse = await request(app)
+          .get(`/api/executions/${executionId}`)
+          .set("X-Project-ID", projectId);
+
+        const worktreePath = execResponse.body.data.worktree_path;
+
+        if (worktreePath && fs.existsSync(worktreePath)) {
+          // Modify FIRST line in worktree
+          const worktreeContent = `// Line 1 - modified in worktree
+// Line 2
+// Line 3
+// Line 4
+// Line 5
+`;
+          fs.writeFileSync(
+            path.join(worktreePath, "src", "multiline.ts"),
+            worktreeContent
+          );
+          execSync("git add . && git commit -m 'modify first line'", {
+            cwd: worktreePath,
+            stdio: "pipe",
+          });
+
+          // Modify LAST line on main branch (different from worktree change)
+          const mainContent = `// Line 1
+// Line 2
+// Line 3
+// Line 4
+// Line 5 - modified in main
+`;
+          fs.writeFileSync(
+            path.join(testRepo.path, "src", "multiline.ts"),
+            mainContent
+          );
+          execSync("git add . && git commit -m 'modify last line'", {
+            cwd: testRepo.path,
+            stdio: "pipe",
+          });
+
+          // Mark execution as completed
+          testRepo.db
+            .prepare(
+              `UPDATE executions SET status = 'completed', completed_at = datetime('now') WHERE id = ?`
+            )
+            .run(executionId);
+
+          // Get sync preview - should NOT detect conflicts (changes in different parts)
+          const previewResponse = await request(app)
+            .get(`/api/executions/${executionId}/sync/preview`)
+            .set("X-Project-ID", projectId);
+
+          expect(previewResponse.status).toBe(200);
+          expect(previewResponse.body.success).toBe(true);
+
+          // Should NOT have code conflicts (git can auto-merge different line changes)
+          const preview = previewResponse.body.data;
+          expect(preview.conflicts).toBeDefined();
+          expect(preview.conflicts.codeConflicts.length).toBe(0);
         }
       });
 

@@ -1430,14 +1430,16 @@ export function createExecutionsRouter(): Router {
             success: false,
             data: null,
             error: error.message,
+            message: error.message,
             code: error.code,
           });
         } else {
+          const errorMessage = error instanceof Error ? error.message : String(error);
           res.status(500).json({
             success: false,
             data: null,
-            error: "Internal server error",
-            message: error instanceof Error ? error.message : String(error),
+            error: errorMessage,
+            message: errorMessage,
           });
         }
       }
@@ -1488,14 +1490,16 @@ export function createExecutionsRouter(): Router {
             success: false,
             data: null,
             error: error.message,
+            message: error.message,
             code: error.code,
           });
         } else {
+          const errorMessage = error instanceof Error ? error.message : String(error);
           res.status(500).json({
             success: false,
             data: null,
-            error: "Internal server error",
-            message: error instanceof Error ? error.message : String(error),
+            error: errorMessage,
+            message: errorMessage,
           });
         }
       }
@@ -1538,14 +1542,16 @@ export function createExecutionsRouter(): Router {
             success: false,
             data: null,
             error: error.message,
+            message: error.message,
             code: error.code,
           });
         } else {
+          const errorMessage = error instanceof Error ? error.message : String(error);
           res.status(500).json({
             success: false,
             data: null,
-            error: "Internal server error",
-            message: error instanceof Error ? error.message : String(error),
+            error: errorMessage,
+            message: errorMessage,
           });
         }
       }

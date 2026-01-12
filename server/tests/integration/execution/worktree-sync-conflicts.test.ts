@@ -368,7 +368,9 @@ describe("ConflictDetector Integration", () => {
         "hex"
       );
       fs.writeFileSync(path.join(testRepo, "assets/image.png"), image1);
-      commitFile(testRepo, "assets/image.png", "", "Update image on branch1");
+      // Don't use commitFile here - it overwrites binary content with empty string
+      require("child_process").execSync("git add assets/image.png", { cwd: testRepo, stdio: "pipe" });
+      require("child_process").execSync('git commit -m "Update image on branch1"', { cwd: testRepo, stdio: "pipe" });
 
       // main: Also modify binary (different content)
       checkoutBranch(testRepo, "main");
@@ -377,7 +379,9 @@ describe("ConflictDetector Integration", () => {
         "hex"
       );
       fs.writeFileSync(path.join(testRepo, "assets/image.png"), image2);
-      commitFile(testRepo, "assets/image.png", "", "Update image on main");
+      // Don't use commitFile here - it overwrites binary content with empty string
+      require("child_process").execSync("git add assets/image.png", { cwd: testRepo, stdio: "pipe" });
+      require("child_process").execSync('git commit -m "Update image on main"', { cwd: testRepo, stdio: "pipe" });
 
       // Detect conflicts
       const detector = new ConflictDetector(testRepo);
