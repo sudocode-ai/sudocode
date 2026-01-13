@@ -49,6 +49,7 @@ vi.mock("../../../../src/services/executions.js", () => ({
 
 vi.mock("../../../../src/services/websocket.js", () => ({
   broadcastExecutionUpdate: vi.fn(),
+  broadcastSessionEvent: vi.fn(),
   websocketManager: {
     broadcast: vi.fn(),
     onDisconnect: vi.fn().mockReturnValue(() => {}),
@@ -542,18 +543,15 @@ describe("Persistent Sessions", () => {
         { sessionMode: "persistent" }
       );
 
-      // Should broadcast session_waiting event
-      expect(websocketManager.broadcast).toHaveBeenCalledWith(
+      // Should broadcast session_waiting event via broadcastSessionEvent
+      const { broadcastSessionEvent } = await import(
+        "../../../../src/services/websocket.js"
+      );
+      expect(broadcastSessionEvent).toHaveBeenCalledWith(
         "test-project",
-        "execution",
         "exec-123",
-        expect.objectContaining({
-          type: "session_waiting",
-          data: expect.objectContaining({
-            executionId: "exec-123",
-            promptCount: 1,
-          }),
-        })
+        "session_waiting",
+        { promptCount: 1 }
       );
     });
 
@@ -726,18 +724,15 @@ describe("Persistent Sessions", () => {
       // Should no longer be a persistent session
       expect(wrapper.isPersistentSession("exec-123")).toBe(false);
 
-      // Should broadcast session_ended event
-      expect(websocketManager.broadcast).toHaveBeenCalledWith(
+      // Should broadcast session_ended event via broadcastSessionEvent
+      const { broadcastSessionEvent } = await import(
+        "../../../../src/services/websocket.js"
+      );
+      expect(broadcastSessionEvent).toHaveBeenCalledWith(
         "test-project",
-        "execution",
         "exec-123",
-        expect.objectContaining({
-          type: "session_ended",
-          data: expect.objectContaining({
-            executionId: "exec-123",
-            reason: "explicit",
-          }),
-        })
+        "session_ended",
+        { reason: "explicit" }
       );
     });
 

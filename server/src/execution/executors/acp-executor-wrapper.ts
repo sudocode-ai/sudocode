@@ -32,6 +32,7 @@ import { serializeCoalescedUpdate } from "../output/coalesced-types.js";
 import { updateExecution, getExecution } from "../../services/executions.js";
 import {
   broadcastExecutionUpdate,
+  broadcastSessionEvent,
   websocketManager,
 } from "../../services/websocket.js";
 import { execSync } from "child_process";
@@ -1170,8 +1171,12 @@ export class AcpExecutorWrapper {
    * Closes the agent, cleans up resources, and marks the execution as completed.
    *
    * @param executionId - Execution ID with active persistent session
+   * @param reason - Reason for ending the session (default: "explicit")
    */
-  async endSession(executionId: string): Promise<void> {
+  async endSession(
+    executionId: string,
+    reason: "explicit" | "timeout" | "disconnect" = "explicit"
+  ): Promise<void> {
     const persistentState = this.persistentSessions.get(executionId);
     if (!persistentState) {
       console.warn(
@@ -1227,10 +1232,9 @@ export class AcpExecutorWrapper {
 
     this.fileHandlers.delete(executionId);
 
-    // Broadcast session ended event
-    websocketManager.broadcast(this.projectId, "execution", executionId, {
-      type: "session_ended" as unknown as "execution_created",
-      data: { executionId, reason: "explicit" },
+    // Broadcast session ended event with the specified reason
+    broadcastSessionEvent(this.projectId, executionId, "session_ended", {
+      reason,
     });
   }
 
@@ -1351,12 +1355,7 @@ export class AcpExecutorWrapper {
         console.log(
           `[AcpExecutorWrapper] Idle timeout reached for ${executionId}`
         );
-        await this.endSession(executionId);
-        // Broadcast with timeout reason
-        websocketManager.broadcast(this.projectId, "execution", executionId, {
-          type: "session_ended" as unknown as "execution_created",
-          data: { executionId, reason: "timeout" },
-        });
+        await this.endSession(executionId, "timeout");
       }, persistentState.config.idleTimeoutMs);
     }
 
@@ -1375,9 +1374,8 @@ export class AcpExecutorWrapper {
 
     // Broadcast session state change event
     const eventType = targetState === "paused" ? "session_paused" : "session_waiting";
-    websocketManager.broadcast(this.projectId, "execution", executionId, {
-      type: eventType as unknown as "execution_created",
-      data: { executionId, promptCount: persistentState.promptCount },
+    broadcastSessionEvent(this.projectId, executionId, eventType, {
+      promptCount: persistentState.promptCount,
     });
   }
 
@@ -1430,12 +1428,7 @@ export class AcpExecutorWrapper {
           console.log(
             `[AcpExecutorWrapper] Last subscriber disconnected for ${executionId}, ending session`
           );
-          await this.endSession(executionId);
-          // Broadcast with disconnect reason
-          websocketManager.broadcast(this.projectId, "execution", executionId, {
-            type: "session_ended" as unknown as "execution_created",
-            data: { executionId, reason: "disconnect" },
-          });
+          await this.endSession(executionId, "disconnect");
         }
       }
     );

@@ -26,6 +26,7 @@ import {
   XCircle,
   ArrowDown,
   ArrowUp,
+  StopCircle,
 } from 'lucide-react'
 
 /**
@@ -93,6 +94,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
   const [hasUncommittedChanges, setHasUncommittedChanges] = useState<boolean | undefined>(undefined)
   const [commitsAhead, setCommitsAhead] = useState<number | undefined>(undefined)
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
+  const [endingSession, setEndingSession] = useState(false)
 
   // Sync state management
   const {
@@ -403,7 +405,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
     [executionId, onFollowUpCreated]
   )
 
-  // Handle follow-up submission - creates new execution and adds to chain
+  // Handle follow-up submission - either sends prompt to persistent session or creates new execution
   const handleFollowUpStart = async (
     _config: ExecutionConfig,
     prompt: string,
@@ -411,32 +413,101 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
   ) => {
     if (!chainData || chainData.executions.length === 0) return
 
-    // Get the last execution in the chain to create follow-up from
+    // Get the last execution in the chain
     const lastExecution = chainData.executions[chainData.executions.length - 1]
+
+    // Check if this is a persistent session that's ready for another prompt
+    const isPersistentSessionReady =
+      lastExecution.status === 'waiting' || lastExecution.status === 'paused'
 
     setSubmittingFollowUp(true)
     try {
-      const newExecution = await executionsApi.createFollowUp(lastExecution.id, {
-        feedback: prompt,
-      })
+      if (isPersistentSessionReady) {
+        // Send prompt to existing persistent session
+        await executionsApi.sendPrompt(lastExecution.id, prompt)
 
-      // Add the new execution to the chain immediately
-      setChainData((prev) => {
-        if (!prev) return prev
-        return {
-          ...prev,
-          executions: [...prev.executions, newExecution],
+        // Update the execution status locally to reflect it's now running
+        // The WebSocket will update with the actual status
+        setChainData((prev) => {
+          if (!prev) return prev
+          const updatedExecutions = [...prev.executions]
+          const lastIdx = updatedExecutions.length - 1
+          updatedExecutions[lastIdx] = {
+            ...updatedExecutions[lastIdx],
+            status: 'running',
+          }
+          return {
+            ...prev,
+            executions: updatedExecutions,
+          }
+        })
+      } else {
+        // Create a new follow-up execution
+        const newExecution = await executionsApi.createFollowUp(lastExecution.id, {
+          feedback: prompt,
+        })
+
+        // Add the new execution to the chain immediately
+        setChainData((prev) => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            executions: [...prev.executions, newExecution],
+          }
+        })
+
+        // Notify parent if callback provided (for URL updates, etc.)
+        if (onFollowUpCreated) {
+          onFollowUpCreated(newExecution.id)
         }
-      })
-
-      // Notify parent if callback provided (for URL updates, etc.)
-      if (onFollowUpCreated) {
-        onFollowUpCreated(newExecution.id)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create follow-up')
+      setError(
+        err instanceof Error
+          ? err.message
+          : isPersistentSessionReady
+            ? 'Failed to send prompt to session'
+            : 'Failed to create follow-up'
+      )
     } finally {
       setSubmittingFollowUp(false)
+    }
+  }
+
+  // Handle ending a persistent session
+  const handleEndSession = async () => {
+    if (!chainData || chainData.executions.length === 0) return
+
+    const lastExecution = chainData.executions[chainData.executions.length - 1]
+
+    // Only end if the session is in a state that can be ended
+    if (lastExecution.status !== 'waiting' && lastExecution.status !== 'paused') {
+      return
+    }
+
+    setEndingSession(true)
+    try {
+      await executionsApi.endSession(lastExecution.id)
+
+      // Update the execution status locally
+      // The WebSocket will update with the actual completed status
+      setChainData((prev) => {
+        if (!prev) return prev
+        const updatedExecutions = [...prev.executions]
+        const lastIdx = updatedExecutions.length - 1
+        updatedExecutions[lastIdx] = {
+          ...updatedExecutions[lastIdx],
+          status: 'completed',
+        }
+        return {
+          ...prev,
+          executions: updatedExecutions,
+        }
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to end session')
+    } finally {
+      setEndingSession(false)
     }
   }
 
@@ -750,14 +821,17 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
   const rootExecution = executions[0]
   const lastExecution = executions[executions.length - 1]
 
-  // Determine if we can enable follow-up panel (last execution must be terminal)
-  // Follow-ups work for both issue-based and adhoc executions
+  // Determine if we can enable follow-up/prompt panel
+  // Terminal statuses allow creating a new follow-up execution
+  // Waiting/paused statuses allow sending a prompt to a persistent session
   const lastExecutionTerminal =
     lastExecution.status === 'completed' ||
     lastExecution.status === 'failed' ||
     lastExecution.status === 'stopped' ||
     lastExecution.status === 'cancelled'
-  const canEnableFollowUp = lastExecutionTerminal
+  const isPersistentSessionReady =
+    lastExecution.status === 'waiting' || lastExecution.status === 'paused'
+  const canEnableFollowUp = lastExecutionTerminal || isPersistentSessionReady
 
   return (
     <TooltipProvider>
@@ -840,8 +914,33 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
                 </>
               )}
 
+              {/* Persistent Session Actions - shown when session is waiting/paused */}
+              {isPersistentSessionReady && (
+                <div className="flex flex-wrap items-center gap-2 pt-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleEndSession}
+                    disabled={endingSession}
+                    className="h-8 text-xs"
+                    title="End the persistent session"
+                  >
+                    {endingSession ? (
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <StopCircle className="mr-1.5 h-3.5 w-3.5" />
+                    )}
+                    {endingSession ? 'Ending...' : 'End Session'}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Session {lastExecution.status === 'paused' ? 'paused' : 'waiting'} for input
+                  </span>
+                </div>
+              )}
+
               {/* Contextual Actions - shown after execution completes */}
               {!executions.some((exec) => exec.status === 'running') &&
+                !isPersistentSessionReady &&
                 contextualActions.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2 pt-4">
                     {contextualActions.map((action) => {

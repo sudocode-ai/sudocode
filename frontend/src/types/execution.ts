@@ -251,3 +251,16 @@ export interface PerformSyncRequest {
   mode: SyncMode
   commitMessage?: string
 }
+
+/**
+ * Persistent session state response
+ */
+export type SessionMode = 'discrete' | 'persistent'
+export type SessionState = 'running' | 'waiting' | 'paused' | 'ended'
+
+export interface SessionStateResponse {
+  mode: SessionMode
+  state: SessionState | null // null for discrete mode
+  promptCount: number
+  idleTimeMs?: number
+}

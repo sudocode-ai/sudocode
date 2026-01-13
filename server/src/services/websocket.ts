@@ -57,6 +57,10 @@ export interface ServerMessage {
     | "execution_status_changed"
     | "execution_deleted"
     | "voice_narration"
+    // Persistent session events
+    | "session_waiting"
+    | "session_paused"
+    | "session_ended"
     | "workflow_created"
     | "workflow_updated"
     | "workflow_deleted"
@@ -897,6 +901,31 @@ export function broadcastExecutionUpdate(
       data,
     });
   }
+}
+
+/**
+ * Broadcast persistent session state change events
+ *
+ * Used for session_waiting, session_paused, and session_ended events.
+ *
+ * @param projectId - ID of the project
+ * @param executionId - ID of the execution with the persistent session
+ * @param event - The session event type
+ * @param data - Event-specific data (promptCount for waiting/paused, reason for ended)
+ */
+export function broadcastSessionEvent(
+  projectId: string,
+  executionId: string,
+  event: "session_waiting" | "session_paused" | "session_ended",
+  data: { promptCount: number } | { reason: "explicit" | "timeout" | "disconnect" }
+): void {
+  websocketManager.broadcast(projectId, "execution", executionId, {
+    type: event,
+    data: {
+      executionId,
+      ...data,
+    },
+  });
 }
 
 /**
