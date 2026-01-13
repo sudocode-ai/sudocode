@@ -796,6 +796,26 @@ export function broadcastRelationshipUpdate(
 }
 
 /**
+ * Broadcast queue update to subscribed clients
+ *
+ * Used for queue reordering, additions, and removals
+ */
+export function broadcastQueueUpdate(
+  projectId: string,
+  action: "reordered" | "entry_added" | "entry_removed" | "status_changed",
+  data?: {
+    entryId?: string;
+    executionId?: string;
+    newOrder?: string[];
+  }
+): void {
+  websocketManager.broadcastGeneric(projectId, {
+    type: `queue_${action}` as any,
+    data,
+  });
+}
+
+/**
  * Broadcast execution updates to subscribed clients for a specific project
  * Also optionally broadcasts to parent issue subscribers
  *

@@ -2013,14 +2013,110 @@ export class DataplaneAdapter {
   }
 
   /**
-   * Reorder queue entry
+   * Reorder queue entry to a new position
+   *
+   * @param executionId - The execution ID to reorder
+   * @param newPosition - The desired position (1-indexed, 1 = first)
+   * @param targetBranch - The target branch queue to reorder in (default: 'main')
+   * @returns ReorderResult with new queue order
    */
-  async reorderQueue(_executionId: string, _newPosition: number): Promise<ReorderResult> {
+  async reorderQueue(
+    executionId: string,
+    newPosition: number,
+    targetBranch: string = 'main'
+  ): Promise<ReorderResult> {
+    const tracker = this.ensureInitialized();
+
+    // 1. Get the stream for this execution
+    const stream = this.getStreamByExecutionId(executionId);
+    if (!stream) {
+      return {
+        success: false,
+        newOrder: [],
+        cascadeTriggered: false,
+        error: `Stream not found for execution: ${executionId}`,
+      };
+    }
+
+    // 2. Get the current queue
+    const queue = tracker.getMergeQueue({ targetBranch });
+    const entry = queue.find((e) => e.streamId === stream.id);
+
+    if (!entry) {
+      return {
+        success: false,
+        newOrder: [],
+        cascadeTriggered: false,
+        error: `Queue entry not found for execution: ${executionId}`,
+      };
+    }
+
+    // 3. Validate new position
+    if (newPosition < 1) {
+      newPosition = 1;
+    }
+    if (newPosition > queue.length) {
+      newPosition = queue.length;
+    }
+
+    // 4. Calculate new priority based on position
+    // Priority determines order: lower priority = earlier in queue
+    // We use position * 10 to leave gaps for future insertions
+    // To insert at position N, we need priority between position N-1 and N entries
+    let newPriority: number;
+
+    if (newPosition === 1) {
+      // Moving to first position - priority lower than current first
+      const firstEntry = queue[0];
+      newPriority = firstEntry.id === entry.id ? entry.priority : firstEntry.priority - 10;
+    } else if (newPosition >= queue.length) {
+      // Moving to last position - priority higher than current last
+      const lastEntry = queue[queue.length - 1];
+      newPriority = lastEntry.id === entry.id ? entry.priority : lastEntry.priority + 10;
+    } else {
+      // Moving to middle - calculate priority between adjacent entries
+      // Account for the entry being moved (it will be removed from current position)
+      const sortedQueue = queue.filter((e) => e.id !== entry.id);
+      const beforeEntry = sortedQueue[newPosition - 2]; // Entry that will be before
+      const afterEntry = sortedQueue[newPosition - 1]; // Entry that will be after
+
+      if (beforeEntry && afterEntry) {
+        newPriority = Math.floor((beforeEntry.priority + afterEntry.priority) / 2);
+        // If priorities are adjacent, shift the after entry
+        if (newPriority === beforeEntry.priority) {
+          newPriority = beforeEntry.priority + 1;
+        }
+      } else if (beforeEntry) {
+        newPriority = beforeEntry.priority + 10;
+      } else if (afterEntry) {
+        newPriority = afterEntry.priority - 10;
+      } else {
+        newPriority = newPosition * 10;
+      }
+    }
+
+    // 5. Update the entry's priority in the database
+    try {
+      tracker.db
+        .prepare('UPDATE merge_queue SET priority = ?, updated_at = ? WHERE id = ?')
+        .run(newPriority, Date.now(), entry.id);
+    } catch (error) {
+      return {
+        success: false,
+        newOrder: [],
+        cascadeTriggered: false,
+        error: `Failed to update queue entry: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+
+    // 6. Get the new queue order and return
+    const newQueue = tracker.getMergeQueue({ targetBranch });
+    const newOrder = newQueue.map((e) => (e.metadata.executionId as string) || '');
+
     return {
-      success: false,
-      newOrder: [],
+      success: true,
+      newOrder,
       cascadeTriggered: false,
-      error: 'reorderQueue not yet implemented',
     };
   }
 

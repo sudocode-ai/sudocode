@@ -243,6 +243,12 @@ import type {
   CreateStackRequest,
   UpdateStackRequest,
 } from '@/types/stack'
+import type {
+  QueueListResponse,
+  QueueStats,
+  ReorderResponse,
+  GetQueueOptions,
+} from '@/types/queue'
 
 export const stacksApi = {
   /** List all stacks (auto + manual) */
@@ -272,6 +278,37 @@ export const stacksApi = {
 
   /** Get the stack containing a specific issue */
   getForIssue: (issueId: string) => get<StackInfo | null>(`/issues/${issueId}/stack`),
+}
+
+/**
+ * Queue API - Merge queue management
+ */
+export const queueApi = {
+  /** Get all queue entries with enriched data */
+  getAll: (options?: GetQueueOptions) => {
+    const params = new URLSearchParams()
+    if (options?.targetBranch) params.set('target_branch', options.targetBranch)
+    if (options?.status && options.status.length > 0) {
+      options.status.forEach((s) => params.append('status', s))
+    }
+    if (options?.includeMerged) params.set('include_merged', 'true')
+    const queryString = params.toString()
+    return get<QueueListResponse>(`/queue${queryString ? `?${queryString}` : ''}`)
+  },
+
+  /** Reorder a queue entry to a new position */
+  reorder: (executionId: string, newPosition: number, targetBranch?: string) =>
+    post<ReorderResponse>('/queue/reorder', {
+      execution_id: executionId,
+      new_position: newPosition,
+      target_branch: targetBranch,
+    }),
+
+  /** Get queue statistics */
+  getStats: (targetBranch?: string) => {
+    const params = targetBranch ? `?target_branch=${encodeURIComponent(targetBranch)}` : ''
+    return get<QueueStats>(`/queue/stats${params}`)
+  },
 }
 
 /**

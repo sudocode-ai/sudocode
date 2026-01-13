@@ -194,6 +194,10 @@ export interface WebSocketMessage {
     | 'tts_audio'
     | 'tts_end'
     | 'tts_error'
+    | 'queue_reordered'
+    | 'queue_entry_added'
+    | 'queue_entry_removed'
+    | 'queue_entry_status_changed'
     | 'error'
   projectId?: string // Project ID for project-scoped messages
   data?: Issue | Spec | Relationship | IssueFeedback | Execution | any

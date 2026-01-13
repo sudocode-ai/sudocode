@@ -8,9 +8,11 @@
 
 import { useState, useMemo } from 'react'
 import { useStacks, useStackMutations } from '@/hooks/useStacks'
+import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { StackPanel } from '@/components/stacks/StackPanel'
+import { MergeQueuePanel } from '@/components/queue'
 import { Loader2, Layers, ListOrdered, Package, Plus, GitBranch } from 'lucide-react'
 
 /**
@@ -133,19 +135,25 @@ function StacksTabContent() {
 }
 
 /**
- * Queue tab placeholder
+ * Queue tab content - displays merge queue with filtering and reordering
  */
 function QueueTabContent() {
+  const { data: repoInfo } = useRepositoryInfo()
+
+  // Get branches from repo info, default to main
+  const targetBranches = useMemo(() => {
+    const branches = ['main']
+    if (repoInfo?.branch && !branches.includes(repoInfo.branch)) {
+      branches.push(repoInfo.branch)
+    }
+    return branches
+  }, [repoInfo?.branch])
+
   return (
-    <div className="flex flex-col items-center justify-center h-64 gap-4">
-      <ListOrdered className="h-12 w-12 text-muted-foreground" />
-      <div className="text-center">
-        <h3 className="font-medium">Merge Queue</h3>
-        <p className="text-sm text-muted-foreground mt-1">
-          Coming in Phase 4
-        </p>
-      </div>
-    </div>
+    <MergeQueuePanel
+      defaultTargetBranch="main"
+      targetBranches={targetBranches}
+    />
   )
 }
 
