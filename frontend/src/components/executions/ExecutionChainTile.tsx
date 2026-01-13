@@ -5,18 +5,17 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { EntityBadge } from '@/components/entities/EntityBadge'
 import { ExecutionMonitor, RunIndicator } from './ExecutionMonitor'
 import { AgentConfigPanel } from './AgentConfigPanel'
-import { TodoTracker } from './TodoTracker'
+import { TodoTracker, type TodoItem } from './TodoTracker'
 import { CodeChangesPanel } from './CodeChangesPanel'
 import { CommitChangesDialog } from './CommitChangesDialog'
 import { CleanupWorktreeDialog } from './CleanupWorktreeDialog'
 import { SyncPreviewDialog } from './SyncPreviewDialog'
-import { buildTodoHistory } from '@/utils/todoExtractor'
 import { executionsApi, type ExecutionChainResponse } from '@/lib/api'
 import { useAgentActions } from '@/hooks/useAgentActions'
 import { useWebSocketContext } from '@/contexts/WebSocketContext'
 import type { Execution, ExecutionConfig } from '@/types/execution'
 import type { WebSocketMessage } from '@/types/api'
-import type { ToolCallTracking } from '@/hooks/useAgUiStream'
+import type { ToolCallTracking } from '@/types/stream'
 import { Loader2, Clock, CheckCircle2, XCircle, AlertCircle, X, PauseCircle } from 'lucide-react'
 
 export interface ExecutionChainTileProps {
@@ -123,11 +122,25 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
   const [hasUncommittedChanges, setHasUncommittedChanges] = useState<boolean | undefined>(undefined)
   const [commitsAhead, setCommitsAhead] = useState<number | undefined>(undefined)
 
-  // Accumulated tool calls from all executions in the chain (for TodoTracker)
-  const [allToolCalls, setAllToolCalls] = useState<Map<string, ToolCallTracking>>(new Map())
+  // Accumulated tool calls from all executions in the chain (legacy, kept for onToolCallsUpdate callback)
+  const [, setAllToolCalls] = useState<Map<string, ToolCallTracking>>(new Map())
 
-  // Extract todos from accumulated tool calls
-  const allTodos = useMemo(() => buildTodoHistory(allToolCalls), [allToolCalls])
+  // Accumulated todos from all executions in the chain (from plan updates)
+  const [todosByExecution, setTodosByExecution] = useState<Map<string, TodoItem[]>>(new Map())
+
+  // Merge todos from all executions - dedupe by content, keep most recent status
+  const allTodos = useMemo(() => {
+    const todoMap = new Map<string, TodoItem>()
+    todosByExecution.forEach((todos) => {
+      todos.forEach((todo) => {
+        const existing = todoMap.get(todo.content)
+        if (!existing || todo.lastSeen > existing.lastSeen) {
+          todoMap.set(todo.content, todo)
+        }
+      })
+    })
+    return Array.from(todoMap.values()).sort((a, b) => a.firstSeen - b.firstSeen)
+  }, [todosByExecution])
 
   // Get the last execution for contextual actions
   const lastExecutionForActions = chainData?.executions[chainData.executions.length - 1] ?? null
@@ -447,6 +460,28 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
     []
   )
 
+  // Handle todos update from ExecutionMonitor (from plan updates)
+  const handleTodosUpdate = useCallback(
+    (execId: string, todos: TodoItem[]) => {
+      setTodosByExecution((prev) => {
+        const existing = prev.get(execId)
+        // Only update if todos changed
+        if (existing && existing.length === todos.length) {
+          const isSame = existing.every((t, i) =>
+            t.content === todos[i].content &&
+            t.status === todos[i].status &&
+            t.wasCompleted === todos[i].wasCompleted
+          )
+          if (isSame) return prev
+        }
+        const next = new Map(prev)
+        next.set(execId, todos)
+        return next
+      })
+    },
+    []
+  )
+
   // Handle close button
   const handleClose = useCallback(() => {
     if (onToggleVisibility) {
@@ -534,6 +569,7 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
                 compact={true}
                 hideTodoTracker={true}
                 onToolCallsUpdate={(toolCalls) => handleToolCallsUpdate(execution.id, toolCalls)}
+                onTodosUpdate={handleTodosUpdate}
               />
               {/* Separator between executions */}
               {index < executions.length - 1 && <div className="mx-4 my-2" />}

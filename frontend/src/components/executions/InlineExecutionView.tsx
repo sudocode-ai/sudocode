@@ -7,12 +7,11 @@ import { ExecutionMonitor, RunIndicator } from './ExecutionMonitor'
 import { DeleteWorktreeDialog } from './DeleteWorktreeDialog'
 import { DeleteExecutionDialog } from './DeleteExecutionDialog'
 import { CodeChangesPanel } from './CodeChangesPanel'
-import { TodoTracker } from './TodoTracker'
+import { TodoTracker, type TodoItem } from './TodoTracker'
 import { CommitChangesDialog } from './CommitChangesDialog'
 import { CleanupWorktreeDialog } from './CleanupWorktreeDialog'
 import { SyncPreviewDialog } from './SyncPreviewDialog'
 import { useAgentActions } from '@/hooks/useAgentActions'
-import { buildTodoHistory } from '@/utils/todoExtractor'
 import { useWebSocketContext } from '@/contexts/WebSocketContext'
 import { useWorktreeMutations } from '@/hooks/useWorktreeMutations'
 import { useExecutionMutations } from '@/hooks/useExecutionMutations'
@@ -25,7 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import type { ToolCallTracking } from '@/hooks/useAgUiStream'
+import type { ToolCallTracking } from '@/types/stream'
 import type { Execution } from '@/types/execution'
 import {
   Loader2,
@@ -90,11 +89,25 @@ export function InlineExecutionView({
   const [commitsAhead, setCommitsAhead] = useState<number | undefined>(undefined)
   const rootExecutionIdRef = useRef<string | null>(null)
 
-  // Accumulated tool calls from all executions in the chain
-  const [allToolCalls, setAllToolCalls] = useState<Map<string, ToolCallTracking>>(new Map())
+  // Accumulated tool calls from all executions in the chain (legacy, kept for onToolCallsUpdate callback)
+  const [, setAllToolCalls] = useState<Map<string, ToolCallTracking>>(new Map())
 
-  // Extract todos from accumulated tool calls
-  const allTodos = useMemo(() => buildTodoHistory(allToolCalls), [allToolCalls])
+  // Accumulated todos from all executions in the chain (from plan updates)
+  const [todosByExecution, setTodosByExecution] = useState<Map<string, TodoItem[]>>(new Map())
+
+  // Merge todos from all executions - dedupe by content, keep most recent status
+  const allTodos = useMemo(() => {
+    const todoMap = new Map<string, TodoItem>()
+    todosByExecution.forEach((todos) => {
+      todos.forEach((todo) => {
+        const existing = todoMap.get(todo.content)
+        if (!existing || todo.lastSeen > existing.lastSeen) {
+          todoMap.set(todo.content, todo)
+        }
+      })
+    })
+    return Array.from(todoMap.values()).sort((a, b) => a.firstSeen - b.firstSeen)
+  }, [todosByExecution])
 
   // Get the last execution for contextual actions (using root for issue context)
   const lastExecutionForActions = chainData?.executions[chainData.executions.length - 1] ?? null
@@ -502,6 +515,28 @@ export function InlineExecutionView({
     []
   )
 
+  // Handle todos update from ExecutionMonitor (from plan updates)
+  const handleTodosUpdate = useCallback(
+    (execId: string, todos: TodoItem[]) => {
+      setTodosByExecution((prev) => {
+        const existing = prev.get(execId)
+        // Only update if todos changed
+        if (existing && existing.length === todos.length) {
+          const isSame = existing.every((t, i) =>
+            t.content === todos[i].content &&
+            t.status === todos[i].status &&
+            t.wasCompleted === todos[i].wasCompleted
+          )
+          if (isSame) return prev
+        }
+        const next = new Map(prev)
+        next.set(execId, todos)
+        return next
+      })
+    },
+    []
+  )
+
   // Memoize the most recent timestamp calculation (must be before early returns)
   const mostRecentTime = useMemo(() => {
     if (!chainData || chainData.executions.length === 0) {
@@ -683,6 +718,7 @@ export function InlineExecutionView({
                     onToolCallsUpdate={(toolCalls) =>
                       handleToolCallsUpdate(execution.id, toolCalls)
                     }
+                    onTodosUpdate={handleTodosUpdate}
                     compact
                     hideTodoTracker
                   />

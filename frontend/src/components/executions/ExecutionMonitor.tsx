@@ -2,23 +2,32 @@
  * ExecutionMonitor Component
  *
  * Displays execution status using either:
- * - Real-time SSE streaming for active executions (running, pending, preparing, paused)
+ * - Real-time WebSocket streaming for active executions (running, pending, preparing, paused)
  * - Historical logs API for completed executions (completed, failed, cancelled, stopped)
  *
  * Shows execution progress, metrics, messages, and tool calls.
+ *
+ * Consumes SessionUpdate events via useSessionUpdateStream hook (ACP-native).
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useAgUiStream } from '@/hooks/useAgUiStream'
+import {
+  useSessionUpdateStream,
+  type AgentMessage,
+  type ToolCall,
+  type ConnectionStatus,
+  type ExecutionState,
+} from '@/hooks/useSessionUpdateStream'
 import { useExecutionLogs } from '@/hooks/useExecutionLogs'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { AgentTrajectory } from './AgentTrajectory'
-import { ClaudeCodeTrajectory } from './ClaudeCodeTrajectory'
 import { TodoTracker } from './TodoTracker'
-import { buildTodoHistory } from '@/utils/todoExtractor'
+import { buildTodoHistoryFromPlanUpdates, planEntriesToTodoItems } from '@/utils/todoExtractor'
 import { AlertCircle, CheckCircle2, Loader2, XCircle } from 'lucide-react'
 import type { Execution } from '@/types/execution'
+import type { ToolCallTracking } from '@/types/stream'
+import api from '@/lib/api'
 
 export interface ExecutionMonitorProps {
   /**
@@ -50,13 +59,35 @@ export interface ExecutionMonitorProps {
    * Callback when tool calls are updated (for aggregating todos across executions)
    */
   onToolCallsUpdate?: (
-    toolCalls: Map<string, import('@/hooks/useAgUiStream').ToolCallTracking>
+    toolCalls: Map<string, ToolCallTracking>
+  ) => void
+
+  /**
+   * Callback when todos are updated (computed from plan updates)
+   * Use this instead of onToolCallsUpdate for Claude Code executions
+   */
+  onTodosUpdate?: (
+    executionId: string,
+    todos: import('./TodoTracker').TodoItem[]
+  ) => void
+
+  /**
+   * Callback when available slash commands are updated from the agent
+   */
+  onAvailableCommandsUpdate?: (
+    commands: import('@/hooks/useSessionUpdateStream').AvailableCommand[]
   ) => void
 
   /**
    * Callback when execution is cancelled (ESC key pressed)
    */
   onCancel?: () => void
+
+  /**
+   * Callback when skip-all-permissions completes successfully
+   * Called with the new execution ID that was created
+   */
+  onSkipAllPermissionsComplete?: (newExecutionId: string) => void
 
   /**
    * Compact mode - removes card wrapper and header for inline display
@@ -98,6 +129,36 @@ export function RunIndicator() {
 }
 
 /**
+ * Convert ToolCall array to ToolCallTracking Map for onToolCallsUpdate callback
+ * Bridge function for backwards compatibility with consumers expecting Map format.
+ * TODO: Migrate consumers to use ToolCall[] and remove this bridge
+ */
+function convertToolCallsToMap(toolCalls: ToolCall[]): Map<string, ToolCallTracking> {
+  const map = new Map<string, ToolCallTracking>()
+  toolCalls.forEach((tc) => {
+    const statusMap: Record<string, 'started' | 'executing' | 'completed' | 'error'> = {
+      success: 'completed',
+      failed: 'error',
+      running: 'executing',
+      pending: 'started',
+    }
+    map.set(tc.id, {
+      toolCallId: tc.id,
+      toolCallName: tc.title,
+      args: tc.rawInput ? (typeof tc.rawInput === 'string' ? tc.rawInput : JSON.stringify(tc.rawInput)) : '',
+      status: statusMap[tc.status] || 'started',
+      result: tc.result !== undefined ? (typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result)) : undefined,
+      error: tc.status === 'failed' && tc.result && typeof tc.result === 'object' ? (tc.result as Record<string, unknown>).error as string : undefined,
+      startTime: tc.timestamp.getTime(),
+      endTime: tc.completedAt?.getTime(),
+      index: tc.index,
+    })
+  })
+  return map
+}
+
+
+/**
  * ExecutionMonitor Component
  *
  * @example
@@ -124,7 +185,10 @@ export function ExecutionMonitor({
   onError,
   onContentChange,
   onToolCallsUpdate,
+  onTodosUpdate,
+  onAvailableCommandsUpdate,
   onCancel,
+  onSkipAllPermissionsComplete,
   compact = false,
   hideTodoTracker = false,
   showRunIndicator = false,
@@ -139,188 +203,137 @@ export function ExecutionMonitor({
     return activeStatuses.includes(executionProp.status)
   }, [executionProp])
 
-  // Use SSE streaming for active executions
-  const sseStream = useAgUiStream({
-    executionId,
-    autoConnect: isActive,
+  // Use WebSocket streaming for real-time SessionUpdate events
+  const wsStream = useSessionUpdateStream({
+    executionId: isActive ? executionId : null, // Only connect for active executions
   })
 
   // Use logs API for completed executions
-  // Also preload logs for active executions as a fallback in case SSE disconnects unexpectedly
+  // Also preload logs for active executions as a fallback in case WebSocket disconnects
   const logsResult = useExecutionLogs(executionId)
 
-  // Process logs events into messages/toolCalls format
+  // Use pre-processed logs from hook (already converted from CoalescedSessionUpdate)
   const processedLogs = useMemo(() => {
-    const messages = new Map()
-    const toolCalls = new Map()
-    const state: any = {}
-
-    // Track sequence indices for stable ordering
-    let messageIndex = 0
-    let toolCallIndex = 0
-
-    // Process events from logs (same logic as useAgUiStream)
-    if (logsResult.events && logsResult.events.length > 0) {
-      logsResult.events.forEach((event: any) => {
-        // Handle TEXT_MESSAGE events
-        if (event.type === 'TEXT_MESSAGE_START') {
-          messages.set(event.messageId, {
-            messageId: event.messageId,
-            role: event.role || 'assistant',
-            content: '',
-            complete: false,
-            timestamp: event.timestamp || Date.now(),
-            index: messageIndex++,
-          })
-        } else if (event.type === 'TEXT_MESSAGE_CONTENT') {
-          const existing = messages.get(event.messageId)
-          if (existing) {
-            messages.set(event.messageId, {
-              ...existing,
-              content: existing.content + (event.delta || ''),
-            })
-          }
-        } else if (event.type === 'TEXT_MESSAGE_END') {
-          const existing = messages.get(event.messageId)
-          if (existing) {
-            messages.set(event.messageId, {
-              ...existing,
-              complete: true,
-            })
-          }
-        }
-        // Handle TOOL_CALL events
-        else if (event.type === 'TOOL_CALL_START') {
-          toolCalls.set(event.toolCallId, {
-            toolCallId: event.toolCallId,
-            toolCallName: event.toolCallName || event.toolName,
-            args: '',
-            status: 'started',
-            startTime: event.timestamp || Date.now(),
-            index: toolCallIndex++,
-          })
-        } else if (event.type === 'TOOL_CALL_ARGS') {
-          const existing = toolCalls.get(event.toolCallId)
-          if (existing) {
-            toolCalls.set(event.toolCallId, {
-              ...existing,
-              args: existing.args + (event.delta || ''),
-            })
-          }
-        } else if (event.type === 'TOOL_CALL_END') {
-          const existing = toolCalls.get(event.toolCallId)
-          if (existing) {
-            toolCalls.set(event.toolCallId, {
-              ...existing,
-              status: 'executing',
-            })
-          }
-        } else if (event.type === 'TOOL_CALL_RESULT') {
-          const existing = toolCalls.get(event.toolCallId)
-          if (existing) {
-            toolCalls.set(event.toolCallId, {
-              ...existing,
-              status: 'completed',
-              result: event.result || event.content,
-              endTime: event.timestamp || Date.now(),
-            })
-          }
-        }
-      })
+    console.log('[ExecutionMonitor] Processing logs:', {
+      messagesCount: logsResult.processed.messages.length,
+      toolCallsCount: logsResult.processed.toolCalls.length,
+      wsToolCallsCount: wsStream.toolCalls.length,
+    })
+    if (logsResult.processed.toolCalls.length > 0) {
+      console.log('[ExecutionMonitor] First 3 processed log tool calls:', logsResult.processed.toolCalls.slice(0, 3).map(tc => ({
+        id: tc.id,
+        title: tc.title,
+        status: tc.status,
+      })))
     }
-
-    return { messages, toolCalls, state }
-  }, [logsResult.events])
+    return {
+      messages: logsResult.processed.messages,
+      toolCalls: logsResult.processed.toolCalls,
+    }
+  }, [logsResult.processed, wsStream.toolCalls.length])
 
   // Select the appropriate data source
-  // Key insight: When transitioning from active to completed, keep showing SSE data
+  // Key insight: When transitioning from active to completed, keep showing WebSocket data
   // until logs are fully loaded to prevent flickering
-  // IMPORTANT: If adapter disconnects unexpectedly, fall back to saved logs
-  const { connectionStatus, execution, messages, toolCalls, state, error, isConnected } =
-    useMemo(() => {
-      const logsLoaded = !logsResult.loading && logsResult.events && logsResult.events.length > 0
-      const hasSSEData = sseStream.messages.size > 0 || sseStream.toolCalls.size > 0
-      const hasLogsData = processedLogs.messages.size > 0 || processedLogs.toolCalls.size > 0
+  // IMPORTANT: If WebSocket disconnects unexpectedly, fall back to saved logs
+  const { connectionStatus, execution, messages, toolCalls, error, isConnected } =
+    useMemo((): {
+      connectionStatus: ConnectionStatus
+      execution: ExecutionState
+      messages: AgentMessage[]
+      toolCalls: ToolCall[]
+      error: Error | null
+      isConnected: boolean
+    } => {
+      const logsLoaded = !logsResult.loading && logsResult.events.length > 0
+      const hasWsData = wsStream.messages.length > 0 || wsStream.toolCalls.length > 0
+      const hasLogsData = processedLogs.messages.length > 0 || processedLogs.toolCalls.length > 0
 
-      // For active executions, use SSE stream if available
-      // BUT: If SSE has disconnected/errored and we have no SSE data, fall back to logs
+      console.log('[ExecutionMonitor] Data source selection:', {
+        isActive,
+        logsLoaded,
+        hasWsData,
+        hasLogsData,
+        wsToolCalls: wsStream.toolCalls.length,
+        logsToolCalls: processedLogs.toolCalls.length,
+        wsConnectionStatus: wsStream.connectionStatus,
+        logsLoading: logsResult.loading,
+        logsEventsCount: logsResult.events.length,
+      })
+
+      // For active executions, use WebSocket stream if available
+      // BUT: If WebSocket has disconnected/errored and we have no data, fall back to logs
       if (isActive) {
-        // If SSE disconnected/errored unexpectedly and we have saved logs, use those
+        // If WebSocket disconnected/errored unexpectedly and we have saved logs, use those
         if (
-          (sseStream.connectionStatus === 'disconnected' ||
-            sseStream.connectionStatus === 'error') &&
-          !hasSSEData &&
+          (wsStream.connectionStatus === 'disconnected' ||
+            wsStream.connectionStatus === 'error') &&
+          !hasWsData &&
           hasLogsData
         ) {
           console.warn(
-            '[ExecutionMonitor] SSE disconnected unexpectedly, falling back to saved logs'
+            '[ExecutionMonitor] WebSocket disconnected unexpectedly, falling back to saved logs'
           )
           return {
             connectionStatus: logsLoaded ? 'connected' : 'connecting',
             execution: {
-              status: executionProp?.status || 'running',
+              status: (executionProp?.status || 'running') as ExecutionState['status'],
               runId: executionId,
-              currentStep: undefined,
-              error: logsResult.error?.message,
-              startTime: undefined,
-              endTime: undefined,
+              error: logsResult.error?.message || null,
+              startTime: null,
+              endTime: null,
             },
             messages: processedLogs.messages,
             toolCalls: processedLogs.toolCalls,
-            state: processedLogs.state,
-            error: logsResult.error,
+            error: logsResult.error || null,
             isConnected: false,
           }
         }
 
-        // Otherwise use SSE stream normally
+        // Otherwise use WebSocket stream normally
         return {
-          connectionStatus: sseStream.connectionStatus,
-          execution: sseStream.execution,
-          messages: sseStream.messages,
-          toolCalls: sseStream.toolCalls,
-          state: sseStream.state,
-          error: sseStream.error,
-          isConnected: sseStream.isConnected,
+          connectionStatus: wsStream.connectionStatus,
+          execution: wsStream.execution,
+          messages: wsStream.messages,
+          toolCalls: wsStream.toolCalls,
+          error: wsStream.error,
+          isConnected: wsStream.isConnected,
         }
       }
 
       // For completed executions, use logs when available
-      // But fall back to SSE data while logs are loading to prevent flicker
-      // Use logs if loaded, otherwise fall back to SSE data if available
+      // But fall back to WebSocket data while logs are loading to prevent flicker
+      // Use logs if loaded, otherwise fall back to WebSocket data if available
       if (logsLoaded) {
         return {
           connectionStatus: logsResult.error ? 'error' : 'connected',
           execution: {
-            status: executionProp?.status || 'completed',
+            status: (executionProp?.status || 'completed') as ExecutionState['status'],
             runId: executionId,
-            currentStep: undefined,
-            error: logsResult.error?.message,
-            startTime: undefined,
-            endTime: undefined,
+            error: logsResult.error?.message || null,
+            startTime: null,
+            endTime: null,
           },
           messages: processedLogs.messages,
           toolCalls: processedLogs.toolCalls,
-          state: processedLogs.state,
-          error: logsResult.error,
+          error: logsResult.error || null,
           isConnected: false,
         }
-      } else if (hasSSEData) {
-        // Logs still loading but we have SSE data - keep showing it
+      } else if (hasWsData) {
+        // Logs still loading but we have WebSocket data - keep showing it
         return {
-          connectionStatus: logsResult.loading ? 'connecting' : sseStream.connectionStatus,
+          connectionStatus: logsResult.loading ? 'connecting' : wsStream.connectionStatus,
           execution: {
-            ...sseStream.execution,
-            status: executionProp?.status || sseStream.execution.status,
+            ...wsStream.execution,
+            status: (executionProp?.status || wsStream.execution.status) as ExecutionState['status'],
           },
-          messages: sseStream.messages,
-          toolCalls: sseStream.toolCalls,
-          state: sseStream.state,
-          error: sseStream.error,
+          messages: wsStream.messages,
+          toolCalls: wsStream.toolCalls,
+          error: wsStream.error,
           isConnected: false, // Not live anymore since execution completed
         }
       } else {
-        // No SSE data and logs not loaded yet - show loading or saved logs
+        // No WebSocket data and logs not loaded yet - show loading or saved logs
         return {
           connectionStatus: logsResult.loading
             ? 'connecting'
@@ -328,21 +341,31 @@ export function ExecutionMonitor({
               ? 'error'
               : 'connected',
           execution: {
-            status: executionProp?.status || 'completed',
+            status: (executionProp?.status || 'completed') as ExecutionState['status'],
             runId: executionId,
-            currentStep: undefined,
-            error: logsResult.error?.message,
-            startTime: undefined,
-            endTime: undefined,
+            error: logsResult.error?.message || null,
+            startTime: null,
+            endTime: null,
           },
           messages: processedLogs.messages,
           toolCalls: processedLogs.toolCalls,
-          state: processedLogs.state,
-          error: logsResult.error,
+          error: logsResult.error || null,
           isConnected: false,
         }
       }
-    }, [isActive, sseStream, logsResult, processedLogs, executionId, executionProp])
+    }, [isActive, wsStream, logsResult, processedLogs, executionId, executionProp])
+
+  // Debug: Log selected toolCalls
+  useEffect(() => {
+    console.log('[ExecutionMonitor] Selected toolCalls:', toolCalls.length, 'isActive:', isActive)
+    if (toolCalls.length > 0) {
+      const todoLikeTools = toolCalls.filter(tc =>
+        tc.title.toLowerCase().includes('todo') ||
+        (tc.rawInput && JSON.stringify(tc.rawInput).includes('todos'))
+      )
+      console.log('[ExecutionMonitor] Todo-like tool calls:', todoLikeTools.length)
+    }
+  }, [toolCalls, isActive])
 
   // Track whether onComplete has already been called to prevent infinite loops
   // When an execution is already 'completed' on mount, we should not call onComplete
@@ -400,7 +423,7 @@ export function ExecutionMonitor({
     if (onContentChange) {
       onContentChange()
     }
-  }, [messages.size, toolCalls.size, onContentChange])
+  }, [messages.length, toolCalls.length, onContentChange])
 
   // Notify parent when tool calls update (for aggregating todos)
   // Create a hash of tool call IDs and statuses to detect actual changes
@@ -408,32 +431,103 @@ export function ExecutionMonitor({
     if (!onToolCallsUpdate) return
 
     // Create a simple hash of tool call IDs and their statuses
-    const toolCallsHash = Array.from(toolCalls.entries())
-      .map(([id, tc]) => `${id}:${tc.status}`)
+    const toolCallsHash = toolCalls
+      .map((tc) => `${tc.id}:${tc.status}`)
       .sort()
       .join('|')
 
     if (toolCallsHash !== lastToolCallsHashRef.current) {
       lastToolCallsHashRef.current = toolCallsHash
-      onToolCallsUpdate(toolCalls)
+      // Convert to Map for backwards compatibility with existing callback consumers
+      onToolCallsUpdate(convertToolCallsToMap(toolCalls))
     }
   }, [toolCalls, onToolCallsUpdate, executionId])
 
   // Calculate metrics
-  const toolCallCount = toolCalls.size
-  const completedToolCalls = Array.from(toolCalls.values()).filter(
-    (tc) => tc.status === 'completed'
-  ).length
-  const messageCount = messages.size
+  const toolCallCount = toolCalls.length
+  const completedToolCalls = toolCalls.filter((tc) => tc.status === 'success').length
+  const messageCount = messages.length
 
-  // Extract todos from tool calls for TodoTracker (only for Claude Code agents)
-  const todos = useMemo(() => {
-    // Only extract todos for Claude Code agents
-    if (executionProp?.agent_type === 'claude-code') {
-      return buildTodoHistory(toolCalls)
+  // Get thoughts from WebSocket stream (logs don't have them yet)
+  const thoughts = wsStream.thoughts
+
+  // Get permission requests from WebSocket stream (only for active executions)
+  const permissionRequests = wsStream.permissionRequests
+  const markPermissionResponded = wsStream.markPermissionResponded
+
+  // Handle permission response - calls API and updates local state
+  const handlePermissionRespond = async (requestId: string, optionId: string) => {
+    try {
+      await api.post(`/executions/${executionId}/permission/${requestId}`, { optionId })
+      // Update local state to mark as responded
+      markPermissionResponded(requestId, optionId)
+    } catch (err) {
+      console.error('[ExecutionMonitor] Error responding to permission:', err)
     }
+  }
+
+  // State for skip-all-permissions action
+  const [isSkippingAllPermissions, setIsSkippingAllPermissions] = useState(false)
+
+  // Handle skip-all-permissions - cancels current execution and creates follow-up with skip enabled
+  const handleSkipAllPermissions = async () => {
+    try {
+      setIsSkippingAllPermissions(true)
+      // API interceptor unwraps response, so we get the data directly (not wrapped in AxiosResponse)
+      const response = (await api.post(
+        `/executions/${executionId}/skip-all-permissions`,
+        { feedback: 'Continue from where you left off.' }
+      )) as { previousExecutionId: string; newExecution: { id: string } }
+      const newExecutionId = response?.newExecution?.id
+      if (newExecutionId && onSkipAllPermissionsComplete) {
+        onSkipAllPermissionsComplete(newExecutionId)
+      }
+    } catch (err) {
+      console.error('[ExecutionMonitor] Error skipping all permissions:', err)
+    } finally {
+      setIsSkippingAllPermissions(false)
+    }
+  }
+
+  // Extract todos from plan updates for TodoTracker
+  // Note: Claude Code's TodoWrite does NOT emit tool_call events - it uses ACP plan session updates
+  const todos = useMemo(() => {
+    // For active executions, prefer WebSocket plan data (real-time)
+    // For completed executions, prefer logs plan data (historical)
+    if (isActive && wsStream.planUpdates.length > 0) {
+      return buildTodoHistoryFromPlanUpdates(wsStream.planUpdates)
+    }
+
+    // Use logs plan data for completed executions or when WebSocket has no plans yet
+    if (logsResult.processed.planUpdates.length > 0) {
+      return buildTodoHistoryFromPlanUpdates(logsResult.processed.planUpdates)
+    }
+
+    // If we have latestPlan directly, convert it to TodoItems
+    if (isActive && wsStream.latestPlan) {
+      return planEntriesToTodoItems(wsStream.latestPlan)
+    }
+
+    if (logsResult.processed.latestPlan) {
+      return planEntriesToTodoItems(logsResult.processed.latestPlan)
+    }
+
     return []
-  }, [toolCalls, executionProp?.agent_type])
+  }, [isActive, wsStream.planUpdates, wsStream.latestPlan, logsResult.processed.planUpdates, logsResult.processed.latestPlan])
+
+  // Notify parent of todos updates (for aggregating across executions)
+  useEffect(() => {
+    if (onTodosUpdate && todos.length > 0) {
+      onTodosUpdate(executionId, todos)
+    }
+  }, [executionId, todos, onTodosUpdate])
+
+  // Notify parent of available commands updates (for slash command autocomplete)
+  useEffect(() => {
+    if (onAvailableCommandsUpdate && wsStream.availableCommands.length > 0) {
+      onAvailableCommandsUpdate(wsStream.availableCommands)
+    }
+  }, [wsStream.availableCommands, onAvailableCommandsUpdate])
 
   // Render status badge
   const renderStatusBadge = () => {
@@ -528,19 +622,18 @@ export function ExecutionMonitor({
         )}
 
         {/* Agent Trajectory */}
-        {(messageCount > 0 || toolCallCount > 0) && (
-          <>
-            {executionProp?.agent_type === 'claude-code' ? (
-              <ClaudeCodeTrajectory
-                messages={messages}
-                toolCalls={toolCalls}
-                renderMarkdown
-                showTodoTracker={false}
-              />
-            ) : (
-              <AgentTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown />
-            )}
-          </>
+        {(messageCount > 0 || toolCallCount > 0 || permissionRequests.length > 0) && (
+          <AgentTrajectory
+            messages={messages}
+            toolCalls={toolCalls}
+            thoughts={thoughts}
+            permissionRequests={permissionRequests}
+            onPermissionRespond={handlePermissionRespond}
+            onSkipAllPermissions={onSkipAllPermissionsComplete ? handleSkipAllPermissions : undefined}
+            isSkippingAllPermissions={isSkippingAllPermissions}
+            renderMarkdown
+            showTodoTracker={false}
+          />
         )}
 
         {/* Empty state */}
@@ -590,32 +683,6 @@ export function ExecutionMonitor({
           </div>
         </div>
 
-        {/* Current activity */}
-        {execution.currentStep && (
-          <div className="mt-3 text-sm text-muted-foreground">
-            <span className="font-medium">Current step:</span> {execution.currentStep}
-          </div>
-        )}
-
-        {/* Progress from state */}
-        {state.progress !== undefined && state.totalSteps && (
-          <div className="mt-3">
-            <div className="mb-1 flex items-center justify-between text-sm text-muted-foreground">
-              <span>Progress</span>
-              <span>
-                {state.progress} / {state.totalSteps}
-              </span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-secondary">
-              <div
-                className="h-full bg-primary transition-all duration-300"
-                style={{
-                  width: `${(state.progress / state.totalSteps) * 100}%`,
-                }}
-              />
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Main: Agent Trajectory */}
@@ -636,20 +703,18 @@ export function ExecutionMonitor({
         )}
 
         {/* Agent Trajectory - unified messages and tool calls */}
-        {/* Use Claude Code-specific rendering for claude-code agent type */}
-        {(messageCount > 0 || toolCallCount > 0) && (
-          <>
-            {executionProp?.agent_type === 'claude-code' ? (
-              <ClaudeCodeTrajectory
-                messages={messages}
-                toolCalls={toolCalls}
-                renderMarkdown
-                showTodoTracker={false}
-              />
-            ) : (
-              <AgentTrajectory messages={messages} toolCalls={toolCalls} renderMarkdown />
-            )}
-          </>
+        {(messageCount > 0 || toolCallCount > 0 || permissionRequests.length > 0) && (
+          <AgentTrajectory
+            messages={messages}
+            toolCalls={toolCalls}
+            thoughts={thoughts}
+            permissionRequests={permissionRequests}
+            onPermissionRespond={handlePermissionRespond}
+            onSkipAllPermissions={onSkipAllPermissionsComplete ? handleSkipAllPermissions : undefined}
+            isSkippingAllPermissions={isSkippingAllPermissions}
+            renderMarkdown
+            showTodoTracker={false}
+          />
         )}
 
         {/* Empty state */}
@@ -690,20 +755,6 @@ export function ExecutionMonitor({
               <span className="font-medium">{messageCount}</span> messages
             </span>
           </div>
-
-          {/* Custom state metrics */}
-          {state.tokenUsage && (
-            <div className="flex items-center gap-4">
-              <span>
-                <span className="font-medium">{state.tokenUsage}</span> tokens
-              </span>
-              {state.cost && (
-                <span>
-                  <span className="font-medium">${state.cost.toFixed(4)}</span>
-                </span>
-              )}
-            </div>
-          )}
 
           {/* Execution time */}
           {execution.startTime && execution.endTime && (

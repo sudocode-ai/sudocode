@@ -23,11 +23,14 @@ import {
 import { randomUUID } from "crypto";
 import { execSync } from "child_process";
 import type { ExecutionTask } from "agent-execution-engine/engine";
-import type { TransportManager } from "../execution/transport/transport-manager.js";
 import { ExecutionLogsStore } from "./execution-logs-store.js";
 import { ExecutionWorkerPool } from "./execution-worker-pool.js";
 import { broadcastExecutionUpdate } from "./websocket.js";
-import { createExecutorForAgent } from "../execution/executors/executor-factory.js";
+import {
+  createExecutorForAgent,
+  type ExecutorWrapper,
+} from "../execution/executors/executor-factory.js";
+import { AcpExecutorWrapper } from "../execution/executors/acp-executor-wrapper.js";
 import type { AgentType } from "@sudocode-ai/types/agents";
 import { PromptResolver } from "./prompt-resolver.js";
 import { execFileNoThrow } from "../utils/execFileNoThrow.js";
@@ -144,10 +147,11 @@ export class ExecutionService {
   private projectId: string;
   private lifecycleService: ExecutionLifecycleService;
   private repoPath: string;
-  private transportManager?: TransportManager;
   private logsStore: ExecutionLogsStore;
   private workerPool?: ExecutionWorkerPool;
   private serverUrl?: string;
+  /** Active executors by execution ID (for permission responses, etc.) */
+  private activeExecutors: Map<string, ExecutorWrapper> = new Map();
 
   /**
    * Create a new ExecutionService
@@ -156,7 +160,6 @@ export class ExecutionService {
    * @param projectId - Project ID for WebSocket broadcasts
    * @param repoPath - Path to the git repository
    * @param lifecycleService - Optional execution lifecycle service (creates one if not provided)
-   * @param transportManager - Optional transport manager for SSE streaming
    * @param logsStore - Optional execution logs store (creates one if not provided)
    * @param workerPool - Optional worker pool for isolated execution processes
    */
@@ -165,7 +168,6 @@ export class ExecutionService {
     projectId: string,
     repoPath: string,
     lifecycleService?: ExecutionLifecycleService,
-    transportManager?: TransportManager,
     logsStore?: ExecutionLogsStore,
     workerPool?: ExecutionWorkerPool
   ) {
@@ -174,7 +176,6 @@ export class ExecutionService {
     this.repoPath = repoPath;
     this.lifecycleService =
       lifecycleService || new ExecutionLifecycleService(db, repoPath);
-    this.transportManager = transportManager;
     this.logsStore = logsStore || new ExecutionLogsStore(db);
     this.workerPool = workerPool;
   }
@@ -473,7 +474,6 @@ export class ExecutionService {
         logsStore: this.logsStore,
         projectId: this.projectId,
         db: this.db,
-        transportManager: this.transportManager,
         // Merge narration config: voiceSettings from config.json, then execution overrides, then enabled flag
         narrationConfig: {
           ...voiceNarrationSettings,
@@ -553,14 +553,23 @@ export class ExecutionService {
         : "none",
     });
 
+    // Store executor for interactive operations (permission responses, etc.)
+    this.activeExecutors.set(execution.id, wrapper);
+
     // Execute with full lifecycle management (non-blocking)
-    wrapper.executeWithLifecycle(execution.id, task, workDir).catch((error) => {
-      console.error(
-        `[ExecutionService] Execution ${execution.id} failed:`,
-        error
-      );
-      // Error is already handled by wrapper (status updated, broadcasts sent)
-    });
+    wrapper
+      .executeWithLifecycle(execution.id, task, workDir)
+      .catch((error) => {
+        console.error(
+          `[ExecutionService] Execution ${execution.id} failed:`,
+          error
+        );
+        // Error is already handled by wrapper (status updated, broadcasts sent)
+      })
+      .finally(() => {
+        // Cleanup executor from active map
+        this.activeExecutors.delete(execution.id);
+      });
 
     // Broadcast execution creation
     broadcastExecutionUpdate(
@@ -591,6 +600,8 @@ export class ExecutionService {
     feedback: string,
     options?: {
       includeOriginalPrompt?: boolean;
+      /** Config overrides to merge with parent execution's config */
+      configOverrides?: Record<string, unknown>;
     }
   ): Promise<Execution> {
     // 1. Get previous execution
@@ -657,6 +668,31 @@ ${feedback}`;
     const workDir = hasWorktree ? prevExecution.worktree_path! : this.repoPath;
 
     const newExecutionId = randomUUID();
+    // Merge config: parent config + any overrides (for features like skip-all-permissions)
+    // Deep merge agentConfig to preserve existing settings while applying overrides
+    let mergedConfigForStorage = prevExecution.config;
+    if (options?.configOverrides) {
+      const parentConfig = prevExecution.config
+        ? JSON.parse(prevExecution.config)
+        : {};
+      const overrides = options.configOverrides;
+
+      // Deep merge agentConfig if both parent and overrides have it
+      const mergedAgentConfig =
+        parentConfig.agentConfig || overrides.agentConfig
+          ? {
+              ...(parentConfig.agentConfig || {}),
+              ...((overrides.agentConfig as Record<string, unknown>) || {}),
+            }
+          : undefined;
+
+      mergedConfigForStorage = JSON.stringify({
+        ...parentConfig,
+        ...overrides,
+        ...(mergedAgentConfig ? { agentConfig: mergedAgentConfig } : {}),
+      });
+    }
+
     const newExecution = createExecution(this.db, {
       id: newExecutionId,
       issue_id: prevExecution.issue_id,
@@ -665,7 +701,7 @@ ${feedback}`;
       target_branch: prevExecution.target_branch,
       branch_name: prevExecution.branch_name,
       worktree_path: prevExecution.worktree_path || undefined, // Reuse same worktree (undefined for local)
-      config: prevExecution.config || undefined, // Preserve config (including cleanupMode) from previous execution
+      config: mergedConfigForStorage || undefined, // Preserve config with any overrides
       parent_execution_id: executionId, // Link to parent execution for follow-up chain
       prompt: followUpPrompt, // Store original (unexpanded) follow-up prompt
     });
@@ -704,9 +740,27 @@ ${feedback}`;
 
     // Parse config to get model and other settings
     // This is done early so we can pass it to the executor
-    const parsedConfig = prevExecution.config
+    // Merge any config overrides provided (e.g., for skip-all-permissions)
+    // Deep merge agentConfig to preserve existing settings
+    const parentConfigForExecutor = prevExecution.config
       ? JSON.parse(prevExecution.config)
       : {};
+    const overridesForExecutor = options?.configOverrides || {};
+    const mergedAgentConfigForExecutor =
+      parentConfigForExecutor.agentConfig || overridesForExecutor.agentConfig
+        ? {
+            ...(parentConfigForExecutor.agentConfig || {}),
+            ...((overridesForExecutor.agentConfig as Record<string, unknown>) ||
+              {}),
+          }
+        : undefined;
+    const parsedConfig = {
+      ...parentConfigForExecutor,
+      ...overridesForExecutor,
+      ...(mergedAgentConfigForExecutor
+        ? { agentConfig: mergedAgentConfigForExecutor }
+        : {}),
+    };
 
     // 4. Use executor wrapper with session resumption
     // IMPORTANT: Pass the full config from parent execution to preserve mcpServers,
@@ -744,7 +798,6 @@ ${feedback}`;
         logsStore: this.logsStore,
         projectId: this.projectId,
         db: this.db,
-        transportManager: this.transportManager,
         // Merge narration config: voiceSettings from config.json, then execution overrides, then enabled flag
         narrationConfig: {
           ...voiceNarrationSettings,
@@ -823,8 +876,15 @@ ${feedback}`;
       model: parsedConfig.model,
     });
 
+    // Store executor for interactive operations (permission responses, etc.)
+    this.activeExecutors.set(newExecution.id, wrapper);
+
     // Execute follow-up (non-blocking)
     // If we have a session ID, resume the session; otherwise start a new one
+    const cleanupExecutor = () => {
+      this.activeExecutors.delete(newExecution.id);
+    };
+
     if (sessionId) {
       wrapper
         .resumeWithLifecycle(newExecution.id, sessionId, task, workDir)
@@ -834,7 +894,8 @@ ${feedback}`;
             error
           );
           // Error is already handled by wrapper (status updated, broadcasts sent)
-        });
+        })
+        .finally(cleanupExecutor);
     } else {
       // No session to resume, start a new execution with the follow-up prompt
       wrapper
@@ -844,7 +905,8 @@ ${feedback}`;
             `[ExecutionService] Follow-up execution ${newExecution.id} failed:`,
             error
           );
-        });
+        })
+        .finally(cleanupExecutor);
     }
 
     // Broadcast execution creation
@@ -894,11 +956,10 @@ ${feedback}`;
       return; // Worker pool handles DB updates and broadcasts
     }
 
-    // For in-process executions using AgentExecutorWrapper:
+    // For in-process executions using AcpExecutorWrapper/LegacyShimExecutorWrapper:
     // The wrapper manages its own lifecycle and cancellation.
     // We update the database status, which the wrapper may check,
     // or we rely on process termination to stop execution.
-    // TODO: Add cancellation registry in AgentExecutorWrapper for direct process control
 
     // Update status in database
     updateExecution(this.db, executionId, {
@@ -916,6 +977,241 @@ ${feedback}`;
         updated,
         updated.issue_id || undefined
       );
+    }
+  }
+
+  /**
+   * Respond to a permission request
+   *
+   * For ACP-based executions running in interactive permission mode,
+   * this forwards the user's response to the agent session.
+   *
+   * @param executionId - ID of the execution
+   * @param requestId - ID of the permission request
+   * @param optionId - Selected option ID (e.g., 'allow_once', 'reject_always')
+   * @returns true if the permission was found and responded to
+   * @throws Error if execution not found or not an ACP execution
+   */
+  respondToPermission(
+    executionId: string,
+    requestId: string,
+    optionId: string
+  ): boolean {
+    const executor = this.activeExecutors.get(executionId);
+    if (!executor) {
+      throw new Error(`Execution ${executionId} not found or not active`);
+    }
+
+    // Only ACP executors support permission responses
+    if (!(executor instanceof AcpExecutorWrapper)) {
+      throw new Error(
+        `Execution ${executionId} is not an ACP execution and does not support permission responses`
+      );
+    }
+
+    return executor.respondToPermission(executionId, requestId, optionId);
+  }
+
+  /**
+   * Check if an execution has pending permissions
+   *
+   * @param executionId - ID of the execution
+   * @returns true if there are pending permission requests
+   */
+  hasPendingPermissions(executionId: string): boolean {
+    const executor = this.activeExecutors.get(executionId);
+    if (!executor || !(executor instanceof AcpExecutorWrapper)) {
+      return false;
+    }
+    return executor.hasPendingPermissions(executionId);
+  }
+
+  /**
+   * Get pending permission request IDs for an execution
+   *
+   * @param executionId - ID of the execution
+   * @returns Array of pending request IDs
+   */
+  getPendingPermissionIds(executionId: string): string[] {
+    const executor = this.activeExecutors.get(executionId);
+    if (!executor || !(executor instanceof AcpExecutorWrapper)) {
+      return [];
+    }
+    return executor.getPendingPermissionIds(executionId);
+  }
+
+  /**
+   * Set the session mode for an active execution
+   *
+   * @param executionId - ID of the execution
+   * @param mode - The mode to set (e.g., "code", "plan", "architect")
+   * @returns true if mode was set successfully
+   * @throws Error if execution not found or not an ACP execution
+   */
+  setMode(executionId: string, mode: string): boolean {
+    const executor = this.activeExecutors.get(executionId);
+    if (!executor) {
+      throw new Error(`Execution ${executionId} not found or not active`);
+    }
+
+    // Only ACP executors support mode switching
+    if (!(executor instanceof AcpExecutorWrapper)) {
+      throw new Error(
+        `Execution ${executionId} is not an ACP execution and does not support mode switching`
+      );
+    }
+
+    return executor.setMode(executionId, mode);
+  }
+
+  /**
+   * Fork an active execution into a new independent execution
+   *
+   * Creates a new execution that inherits the conversation history from the parent
+   * session. The forked execution runs independently but preserves context.
+   *
+   * This is useful for:
+   * - Exploring alternative approaches without losing progress
+   * - Creating checkpoint branches for experimentation
+   * - Parallel exploration of different solutions
+   *
+   * @param executionId - ID of the source execution to fork
+   * @returns The new forked execution record
+   * @throws Error if execution not found, not active, or not an ACP execution
+   * @experimental This relies on the unstable session/fork ACP capability
+   */
+  async forkExecution(executionId: string): Promise<Execution> {
+    // 1. Get the source execution
+    const sourceExecution = getExecution(this.db, executionId);
+    if (!sourceExecution) {
+      throw new Error(`Execution ${executionId} not found`);
+    }
+
+    // 2. Get the active executor
+    const executor = this.activeExecutors.get(executionId);
+    if (!executor) {
+      throw new Error(`Execution ${executionId} not found or not active`);
+    }
+
+    // 3. Only ACP executors support forking
+    if (!(executor instanceof AcpExecutorWrapper)) {
+      throw new Error(
+        `Execution ${executionId} is not an ACP execution and does not support forking`
+      );
+    }
+
+    // 4. Create new execution record linked to the source
+    const newExecutionId = randomUUID();
+    const newExecution = createExecution(this.db, {
+      id: newExecutionId,
+      issue_id: sourceExecution.issue_id, // Can be null for adhoc executions
+      agent_type: (sourceExecution.agent_type || "claude-code") as AgentType,
+      mode: sourceExecution.mode || "worktree",
+      prompt: `[Forked from ${executionId}] ${sourceExecution.prompt || ""}`,
+      config: sourceExecution.config ?? undefined,
+      target_branch: sourceExecution.target_branch || "main",
+      branch_name: sourceExecution.branch_name || "main",
+      worktree_path: sourceExecution.worktree_path ?? undefined,
+      parent_execution_id: executionId,
+    });
+
+    // 5. Initialize logs for the new execution
+    try {
+      this.logsStore.initializeLogs(newExecutionId);
+    } catch (error) {
+      console.error(
+        "[ExecutionService] Failed to initialize logs for forked execution:",
+        {
+          executionId: newExecutionId,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+    }
+
+    // 6. Fork the session in the executor
+    const forkedSession = await executor.forkSession(executionId, newExecutionId);
+    if (!forkedSession) {
+      // Clean up the execution record if fork failed
+      this.db.prepare("DELETE FROM executions WHERE id = ?").run(newExecutionId);
+      throw new Error(`Failed to fork session for execution ${executionId}`);
+    }
+
+    // 7. Store the executor for the forked session
+    this.activeExecutors.set(newExecutionId, executor);
+
+    // 8. Broadcast the new execution
+    broadcastExecutionUpdate(
+      this.projectId,
+      newExecutionId,
+      "created",
+      newExecution,
+      newExecution.issue_id || undefined
+    );
+
+    return newExecution;
+  }
+
+  /**
+   * Interrupt an active execution
+   *
+   * Cancels the current prompt without providing new instructions.
+   * The session remains valid for follow-up prompts.
+   *
+   * @param executionId - ID of the execution to interrupt
+   * @returns true if interrupted successfully
+   * @throws Error if execution not found, not active, or not an ACP execution
+   */
+  async interruptExecution(executionId: string): Promise<boolean> {
+    const executor = this.activeExecutors.get(executionId);
+    if (!executor) {
+      throw new Error(`Execution ${executionId} not found or not active`);
+    }
+
+    // Only ACP executors support interruption
+    if (!(executor instanceof AcpExecutorWrapper)) {
+      throw new Error(
+        `Execution ${executionId} is not an ACP execution and does not support interruption`
+      );
+    }
+
+    return executor.cancelSession(executionId);
+  }
+
+  /**
+   * Interrupt an active execution and continue with new content
+   *
+   * Cancels the current prompt and immediately starts processing the new prompt.
+   * The new prompt's output is streamed to subscribers.
+   *
+   * @param executionId - ID of the execution to interrupt
+   * @param newPrompt - New prompt to continue with
+   * @throws Error if execution not found, not active, or not an ACP execution
+   * @experimental This relies on the interruptWith ACP capability
+   */
+  async interruptWithPrompt(
+    executionId: string,
+    newPrompt: string
+  ): Promise<void> {
+    const executor = this.activeExecutors.get(executionId);
+    if (!executor) {
+      throw new Error(`Execution ${executionId} not found or not active`);
+    }
+
+    // Only ACP executors support interruption
+    if (!(executor instanceof AcpExecutorWrapper)) {
+      throw new Error(
+        `Execution ${executionId} is not an ACP execution and does not support interruption`
+      );
+    }
+
+    // Consume the generator and broadcast updates
+    // The executor will handle broadcasting each update
+    for await (const _update of executor.interruptWithNewPrompt(
+      executionId,
+      newPrompt
+    )) {
+      // Updates are automatically streamed via the executor's broadcast mechanism
+      // We consume the generator to drive the iteration
     }
   }
 
@@ -1190,10 +1486,9 @@ ${feedback}`;
       await this.workerPool.shutdown();
     }
 
-    // For in-process executions using AgentExecutorWrapper:
+    // For in-process executions using AcpExecutorWrapper/LegacyShimExecutorWrapper:
     // The wrapper manages its own lifecycle. Processes will be terminated
     // when the Node.js process exits.
-    // TODO: Add active execution tracking to AgentExecutorWrapper for graceful shutdown
   }
 
   /**
@@ -1447,11 +1742,12 @@ ${feedback}`;
     // 2. Check if agent already has sudocode-mcp configured
     const mcpPresent = await this.detectAgentMcp(agentType);
 
-    // 3. For Cursor, MCP MUST be configured (no CLI injection available)
+    // 3. For Cursor, MCP must be configured via .cursor/mcp.json (no CLI injection available)
+    // If not configured, log a warning and skip MCP injection instead of failing
     if (agentType === "cursor" && !mcpPresent) {
-      throw new Error(
-        "Cursor agent requires sudocode-mcp to be configured in .cursor/mcp.json.\n" +
-          "Please create .cursor/mcp.json in your project root with:\n\n" +
+      console.warn(
+        "[ExecutionService] Cursor agent does not have sudocode-mcp configured.\n" +
+          "To enable MCP tools, create .cursor/mcp.json in your project root with:\n\n" +
           JSON.stringify(
             {
               mcpServers: {
@@ -1465,6 +1761,8 @@ ${feedback}`;
           ) +
           "\n\nVisit: https://github.com/sudocode-ai/sudocode"
       );
+      // Skip MCP injection for Cursor - return config as-is
+      return mergedConfig;
     }
 
     // For Cursor with sudocode-mcp, auto-approve MCP servers in headless mode
@@ -1869,7 +2167,19 @@ ${feedback}`;
       }
     }
 
-    // For other agents, return true (safe default)
+    // For gemini and opencode, MCP is not yet configured
+    // Return false to allow auto-injection
+    if (agentType === "gemini" || agentType === "opencode") {
+      console.info(
+        `[ExecutionService] MCP detection not implemented for ${agentType} - will auto-inject`
+      );
+      return false;
+    }
+
+    // For other/unknown agents, return true (safe default - skip injection)
+    console.warn(
+      `[ExecutionService] Unknown agent type for MCP detection: ${agentType}`
+    );
     return true;
   }
 }

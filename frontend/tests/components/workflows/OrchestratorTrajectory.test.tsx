@@ -3,12 +3,12 @@ import { screen } from '@testing-library/react'
 import { renderWithProviders } from '@/test/test-utils'
 import { OrchestratorTrajectory } from '@/components/workflows/OrchestratorTrajectory'
 import type { EscalationData } from '@/types/workflow'
-import type { MessageBuffer, ToolCallTracking } from '@/hooks/useAgUiStream'
+import type { AgentMessage, ToolCall } from '@/hooks/useSessionUpdateStream'
 
-// Mock the useAgUiStream hook
-const mockUseAgUiStream = vi.fn()
-vi.mock('@/hooks/useAgUiStream', () => ({
-  useAgUiStream: (props: { executionId: string }) => mockUseAgUiStream(props),
+// Mock the useSessionUpdateStream hook
+const mockUseSessionUpdateStream = vi.fn()
+vi.mock('@/hooks/useSessionUpdateStream', () => ({
+  useSessionUpdateStream: (props: { executionId: string }) => mockUseSessionUpdateStream(props),
 }))
 
 describe('OrchestratorTrajectory', () => {
@@ -20,29 +20,28 @@ describe('OrchestratorTrajectory', () => {
     onEscalationResponse: mockOnEscalationResponse,
   }
 
-  const createMessage = (partial: Partial<MessageBuffer>): MessageBuffer => ({
-    messageId: 'msg-1',
-    role: 'assistant',
+  const createMessage = (partial: Partial<AgentMessage>): AgentMessage => ({
+    id: 'msg-1',
     content: 'Test message',
-    timestamp: Date.now(),
-    complete: true,
+    timestamp: new Date(),
+    isStreaming: false,
     index: 0,
     ...partial,
   })
 
-  const createToolCall = (partial: Partial<ToolCallTracking>): ToolCallTracking => ({
-    toolCallId: 'tool-1',
-    toolCallName: 'workflow_status',
-    args: '{}',
-    status: 'completed',
-    startTime: Date.now(),
+  const createToolCall = (partial: Partial<ToolCall>): ToolCall => ({
+    id: 'tool-1',
+    title: 'workflow_status',
+    rawInput: '{}',
+    status: 'success',
+    timestamp: new Date(),
     index: 0,
     ...partial,
   })
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [],
       toolCalls: [],
       isConnected: true,
@@ -51,7 +50,7 @@ describe('OrchestratorTrajectory', () => {
   })
 
   it('should show loading state when not connected and no data', () => {
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [],
       toolCalls: [],
       isConnected: false,
@@ -64,7 +63,7 @@ describe('OrchestratorTrajectory', () => {
   })
 
   it('should show waiting state when connected but no activity', () => {
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [],
       toolCalls: [],
       isConnected: true,
@@ -77,7 +76,7 @@ describe('OrchestratorTrajectory', () => {
   })
 
   it('should show error state when there is an error', () => {
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [],
       toolCalls: [],
       isConnected: false,
@@ -90,12 +89,12 @@ describe('OrchestratorTrajectory', () => {
   })
 
   it('should render messages from orchestrator', () => {
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [
         createMessage({
-          messageId: 'msg-1',
+          id: 'msg-1',
           content: 'Starting to process the workflow',
-          timestamp: Date.now() - 30000,
+          timestamp: new Date(Date.now() - 30000),
         }),
       ],
       toolCalls: [],
@@ -110,17 +109,17 @@ describe('OrchestratorTrajectory', () => {
   })
 
   it('should filter out system messages', () => {
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [
         createMessage({
-          messageId: 'msg-1',
+          id: 'msg-1',
           content: '[System] Internal message',
-          timestamp: Date.now(),
+          timestamp: new Date(),
         }),
         createMessage({
-          messageId: 'msg-2',
+          id: 'msg-2',
           content: 'Regular message',
-          timestamp: Date.now(),
+          timestamp: new Date(),
         }),
       ],
       toolCalls: [],
@@ -135,14 +134,14 @@ describe('OrchestratorTrajectory', () => {
   })
 
   it('should render execute_issue tool call with proper formatting', () => {
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [],
       toolCalls: [
         createToolCall({
-          toolCallId: 'tool-1',
-          toolCallName: 'execute_issue',
-          args: JSON.stringify({ issue_id: 'i-abc123', agent_type: 'claude-code' }),
-          status: 'completed',
+          id: 'tool-1',
+          title: 'execute_issue',
+          rawInput: JSON.stringify({ issue_id: 'i-abc123', agent_type: 'claude-code' }),
+          status: 'success',
         }),
       ],
       isConnected: true,
@@ -156,15 +155,15 @@ describe('OrchestratorTrajectory', () => {
   })
 
   it('should render execution_status tool call with status', () => {
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [],
       toolCalls: [
         createToolCall({
-          toolCallId: 'tool-1',
-          toolCallName: 'execution_status',
-          args: JSON.stringify({ execution_id: 'exec-12345678' }),
+          id: 'tool-1',
+          title: 'execution_status',
+          rawInput: JSON.stringify({ execution_id: 'exec-12345678' }),
           result: JSON.stringify({ data: { status: 'completed' } }),
-          status: 'completed',
+          status: 'success',
         }),
       ],
       isConnected: true,
@@ -179,14 +178,14 @@ describe('OrchestratorTrajectory', () => {
   })
 
   it('should render escalate_to_user tool call with warning styling', () => {
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [],
       toolCalls: [
         createToolCall({
-          toolCallId: 'tool-1',
-          toolCallName: 'escalate_to_user',
-          args: JSON.stringify({ message: 'Need user input for decision' }),
-          status: 'completed',
+          id: 'tool-1',
+          title: 'escalate_to_user',
+          rawInput: JSON.stringify({ message: 'Need user input for decision' }),
+          status: 'success',
         }),
       ],
       isConnected: true,
@@ -205,14 +204,14 @@ describe('OrchestratorTrajectory', () => {
       message: 'Should I proceed with this approach?',
     }
 
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [],
       toolCalls: [
         createToolCall({
-          toolCallId: 'tool-1',
-          toolCallName: 'escalate_to_user',
-          args: JSON.stringify({ message: 'Should I proceed?' }),
-          status: 'completed',
+          id: 'tool-1',
+          title: 'escalate_to_user',
+          rawInput: JSON.stringify({ message: 'Should I proceed?' }),
+          status: 'success',
         }),
       ],
       isConnected: true,
@@ -233,17 +232,17 @@ describe('OrchestratorTrajectory', () => {
   })
 
   it('should render workflow_complete tool call with success styling', () => {
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [],
       toolCalls: [
         createToolCall({
-          toolCallId: 'tool-1',
-          toolCallName: 'workflow_complete',
-          args: JSON.stringify({
+          id: 'tool-1',
+          title: 'workflow_complete',
+          rawInput: JSON.stringify({
             summary: 'All issues completed successfully',
             status: 'completed',
           }),
-          status: 'completed',
+          status: 'success',
         }),
       ],
       isConnected: true,
@@ -257,14 +256,14 @@ describe('OrchestratorTrajectory', () => {
   })
 
   it('should render workflow_complete with failure styling when status is failed', () => {
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [],
       toolCalls: [
         createToolCall({
-          toolCallId: 'tool-1',
-          toolCallName: 'workflow_complete',
-          args: JSON.stringify({ summary: 'Failed due to errors', status: 'failed' }),
-          status: 'completed',
+          id: 'tool-1',
+          title: 'workflow_complete',
+          rawInput: JSON.stringify({ summary: 'Failed due to errors', status: 'failed' }),
+          status: 'success',
         }),
       ],
       isConnected: true,
@@ -278,14 +277,14 @@ describe('OrchestratorTrajectory', () => {
   })
 
   it('should render notify_user tool call', () => {
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [],
       toolCalls: [
         createToolCall({
-          toolCallId: 'tool-1',
-          toolCallName: 'notify_user',
-          args: JSON.stringify({ message: 'Step 1 is complete', level: 'info' }),
-          status: 'completed',
+          id: 'tool-1',
+          title: 'notify_user',
+          rawInput: JSON.stringify({ message: 'Step 1 is complete', level: 'info' }),
+          status: 'success',
         }),
       ],
       isConnected: true,
@@ -299,14 +298,14 @@ describe('OrchestratorTrajectory', () => {
   })
 
   it('should render execution_cancel tool call', () => {
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [],
       toolCalls: [
         createToolCall({
-          toolCallId: 'tool-1',
-          toolCallName: 'execution_cancel',
-          args: JSON.stringify({ execution_id: 'exec-12345678', reason: 'User requested' }),
-          status: 'completed',
+          id: 'tool-1',
+          title: 'execution_cancel',
+          rawInput: JSON.stringify({ execution_id: 'exec-12345678', reason: 'User requested' }),
+          status: 'success',
         }),
       ],
       isConnected: true,
@@ -321,14 +320,14 @@ describe('OrchestratorTrajectory', () => {
   })
 
   it('should show loading spinner for in-progress tool calls', () => {
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [],
       toolCalls: [
         createToolCall({
-          toolCallId: 'tool-1',
-          toolCallName: 'execute_issue',
-          args: JSON.stringify({ issue_id: 'i-abc123' }),
-          status: 'executing',
+          id: 'tool-1',
+          title: 'execute_issue',
+          rawInput: JSON.stringify({ issue_id: 'i-abc123' }),
+          status: 'running',
         }),
       ],
       isConnected: true,
@@ -343,15 +342,15 @@ describe('OrchestratorTrajectory', () => {
   })
 
   it('should show tool call error when present', () => {
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [],
       toolCalls: [
         createToolCall({
-          toolCallId: 'tool-1',
-          toolCallName: 'execute_issue',
-          args: JSON.stringify({ issue_id: 'i-abc123' }),
-          status: 'error',
-          error: 'Issue not found',
+          id: 'tool-1',
+          title: 'execute_issue',
+          rawInput: JSON.stringify({ issue_id: 'i-abc123' }),
+          status: 'failed',
+          result: { error: 'Issue not found' },
         }),
       ],
       isConnected: true,
@@ -364,7 +363,7 @@ describe('OrchestratorTrajectory', () => {
   })
 
   it('should show connection indicator when connected', () => {
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [createMessage({ content: 'Test' })],
       toolCalls: [],
       isConnected: true,
@@ -378,26 +377,26 @@ describe('OrchestratorTrajectory', () => {
 
   it('should order items chronologically', () => {
     const now = Date.now()
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [
         createMessage({
-          messageId: 'msg-1',
+          id: 'msg-1',
           content: 'Second message',
-          timestamp: now - 1000,
+          timestamp: new Date(now - 1000),
           index: 1,
         }),
         createMessage({
-          messageId: 'msg-0',
+          id: 'msg-0',
           content: 'First message',
-          timestamp: now - 2000,
+          timestamp: new Date(now - 2000),
           index: 0,
         }),
       ],
       toolCalls: [
         createToolCall({
-          toolCallId: 'tool-1',
-          toolCallName: 'workflow_status',
-          startTime: now - 1500,
+          id: 'tool-1',
+          title: 'workflow_status',
+          timestamp: new Date(now - 1500),
           index: 0,
         }),
       ],
@@ -419,12 +418,12 @@ describe('OrchestratorTrajectory', () => {
   })
 
   it('should show loading indicator for incomplete messages', () => {
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [
         createMessage({
-          messageId: 'msg-1',
+          id: 'msg-1',
           content: 'Still typing...',
-          complete: false,
+          isStreaming: true,
         }),
       ],
       toolCalls: [],
@@ -440,14 +439,14 @@ describe('OrchestratorTrajectory', () => {
   })
 
   it('should handle unknown tool calls gracefully', () => {
-    mockUseAgUiStream.mockReturnValue({
+    mockUseSessionUpdateStream.mockReturnValue({
       messages: [],
       toolCalls: [
         createToolCall({
-          toolCallId: 'tool-1',
-          toolCallName: 'unknown_tool',
-          args: '{}',
-          status: 'completed',
+          id: 'tool-1',
+          title: 'unknown_tool',
+          rawInput: '{}',
+          status: 'success',
         }),
       ],
       isConnected: true,

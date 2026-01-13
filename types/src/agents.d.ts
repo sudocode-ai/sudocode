@@ -26,8 +26,11 @@
 
 /**
  * Agent types supported for execution
+ *
+ * ACP-native agents: claude-code, codex, gemini, opencode
+ * Legacy agents (via shim): copilot, cursor
  */
-export type AgentType = "claude-code" | "codex" | "copilot" | "cursor";
+export type AgentType = "claude-code" | "codex" | "gemini" | "opencode" | "copilot" | "cursor";
 
 /**
  * Execution modes supported by agents
@@ -269,10 +272,50 @@ export interface CursorConfig extends BaseAgentConfig {
 }
 
 /**
+ * Google Gemini Code Assist configuration
+ */
+export interface GeminiConfig extends BaseAgentConfig {
+  /** Path to gemini CLI executable */
+  geminiPath?: string;
+  /** Model to use (e.g., 'gemini-2.0-flash', 'gemini-2.0-pro') */
+  model?: string;
+  /** Maximum idle time before cleanup */
+  idleTimeout?: number;
+  /** Retry configuration for failed spawns */
+  retry?: {
+    maxAttempts: number;
+    backoffMs: number;
+  };
+  /** Prompt to send to Gemini */
+  prompt?: string;
+}
+
+/**
+ * Opencode configuration
+ */
+export interface OpencodeConfig extends BaseAgentConfig {
+  /** Path to opencode CLI executable */
+  opencodePath?: string;
+  /** Model to use */
+  model?: string;
+  /** Maximum idle time before cleanup */
+  idleTimeout?: number;
+  /** Retry configuration for failed spawns */
+  retry?: {
+    maxAttempts: number;
+    backoffMs: number;
+  };
+  /** Prompt to send to Opencode */
+  prompt?: string;
+}
+
+/**
  * Discriminated union of all agent configurations
  */
 export type AgentConfig =
   | ClaudeCodeConfig
   | CodexConfig
   | CopilotConfig
-  | CursorConfig;
+  | CursorConfig
+  | GeminiConfig
+  | OpencodeConfig;

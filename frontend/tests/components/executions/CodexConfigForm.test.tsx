@@ -3,11 +3,23 @@
  */
 
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import {
   CodexConfigForm,
   type CodexConfig,
 } from '../../../src/components/executions/CodexConfigForm'
+
+// Mock axios
+vi.mock('axios', () => ({
+  default: {
+    get: vi.fn().mockResolvedValue({
+      data: {
+        models: ['default', 'gpt-4o', 'o1-mini'],
+        cached: true,
+      },
+    }),
+  },
+}))
 
 describe('CodexConfigForm', () => {
   const defaultConfig: CodexConfig = {
@@ -60,24 +72,30 @@ describe('CodexConfigForm', () => {
     it('should call onChange when model is changed', async () => {
       render(<CodexConfigForm config={defaultConfig} onChange={mockOnChange} />)
 
+      // Wait for models to load
+      await waitFor(() => {
+        expect(screen.queryByText(/GPT 4O/i)).not.toBeNull
+      })
+
       const modelSelect = screen.getByLabelText(/Model/i)
       fireEvent.click(modelSelect)
 
-      const gpt5Option = screen.getByText('GPT-5')
-      fireEvent.click(gpt5Option)
+      // Select gpt-4o from the dynamically loaded models
+      const gpt4oOption = await screen.findByText('GPT 4O')
+      fireEvent.click(gpt4oOption)
 
       expect(mockOnChange).toHaveBeenCalledWith({
         ...defaultConfig,
-        model: 'gpt-5',
+        model: 'gpt-4o',
       })
     })
 
     it('should display default model when not specified', () => {
       render(<CodexConfigForm config={{}} onChange={mockOnChange} />)
 
-      // Default model should be gpt-5-codex
+      // Default model should show "Default (Agent Decides)" before models load
       const modelSelect = screen.getByLabelText(/Model/i)
-      expect(modelSelect).toHaveTextContent(/GPT-5 Codex/)
+      expect(modelSelect).toHaveTextContent(/Default \(Agent Decides\)/)
     })
   })
 

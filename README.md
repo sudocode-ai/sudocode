@@ -39,7 +39,7 @@ sudocode is a lightweight agent orchestration system that lives in your repo. Ad
 
 ### How it works
 
-sudocode tracks human-specified requirements and objectives (what to do) as specs, and agent runtime context and plans (how to implement) as issues. These are trackable in git as a form of verson-controlled memory for your agents. Specs/issues are both human and agent-editable. This allows agents to manage their own context and leave contextual breadcrumbs as they run for all agents to reference.
+sudocode tracks human-specified requirements and objectives (what to do) as specs, and agent runtime context and plans (how to implement) as issues. These are trackable in git as a form of version-controlled memory for your agents. Specs/issues are both human and agent-editable. This allows agents to manage their own context and leave contextual breadcrumbs as they run for all agents to reference.
 
 Specs and issues form the backbone for advanced agent coordination and automation. Use specs to define high-level requirements and let agents carry out the implementation and manage their own issues.
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { executionsApi, type ExecutionChainResponse } from '@/lib/api'
 import { ExecutionMonitor, RunIndicator } from './ExecutionMonitor'
+import type { AvailableCommand } from '@/hooks/useSessionUpdateStream'
 import { AgentConfigPanel } from './AgentConfigPanel'
 import { DeleteWorktreeDialog } from './DeleteWorktreeDialog'
 import { DeleteExecutionDialog } from './DeleteExecutionDialog'
@@ -8,8 +9,7 @@ import { SyncPreviewDialog } from './SyncPreviewDialog'
 import { CommitChangesDialog } from './CommitChangesDialog'
 import { CleanupWorktreeDialog } from './CleanupWorktreeDialog'
 import { CodeChangesPanel } from './CodeChangesPanel'
-import { TodoTracker } from './TodoTracker'
-import { buildTodoHistory } from '@/utils/todoExtractor'
+import { TodoTracker, type TodoItem } from './TodoTracker'
 import { useExecutionSync } from '@/hooks/useExecutionSync'
 import { useAgentActions } from '@/hooks/useAgentActions'
 import { useWorktreeMutations } from '@/hooks/useWorktreeMutations'
@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Execution, ExecutionConfig, SyncMode } from '@/types/execution'
-import type { ToolCallTracking } from '@/hooks/useAgUiStream'
+import type { ToolCallTracking } from '@/types/stream'
 import {
   Loader2,
   XCircle,
@@ -124,11 +124,28 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
     volume: narration.volume,
   })
 
-  // Accumulated tool calls from all executions in the chain
-  const [allToolCalls, setAllToolCalls] = useState<Map<string, ToolCallTracking>>(new Map())
+  // Accumulated tool calls from all executions in the chain (legacy, kept for onToolCallsUpdate callback)
+  const [, setAllToolCalls] = useState<Map<string, ToolCallTracking>>(new Map())
 
-  // Extract todos from accumulated tool calls
-  const allTodos = useMemo(() => buildTodoHistory(allToolCalls), [allToolCalls])
+  // Accumulated todos from all executions in the chain (from plan updates)
+  const [todosByExecution, setTodosByExecution] = useState<Map<string, TodoItem[]>>(new Map())
+
+  // Available slash commands from the agent (for autocomplete)
+  const [availableCommands, setAvailableCommands] = useState<AvailableCommand[]>([])
+
+  // Merge todos from all executions - dedupe by content, keep most recent status
+  const allTodos = useMemo(() => {
+    const todoMap = new Map<string, TodoItem>()
+    todosByExecution.forEach((todos) => {
+      todos.forEach((todo) => {
+        const existing = todoMap.get(todo.content)
+        if (!existing || todo.lastSeen > existing.lastSeen) {
+          todoMap.set(todo.content, todo)
+        }
+      })
+    })
+    return Array.from(todoMap.values()).sort((a, b) => a.firstSeen - b.firstSeen)
+  }, [todosByExecution])
 
   // Get last execution for contextual actions
   const lastExecutionForActions = chainData?.executions[chainData.executions.length - 1] ?? null
@@ -366,6 +383,25 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
       setCancelling(false)
     }
   }
+
+  // Handle skip-all-permissions - new execution was created, reload chain
+  const handleSkipAllPermissionsComplete = useCallback(
+    async (newExecutionId: string) => {
+      try {
+        // Reload chain to include the new execution
+        const data = await executionsApi.getChain(executionId)
+        setChainData(data)
+
+        // Notify parent if callback provided (for URL updates, etc.)
+        if (onFollowUpCreated) {
+          onFollowUpCreated(newExecutionId)
+        }
+      } catch (err) {
+        console.error('Failed to reload chain after skip-all-permissions:', err)
+      }
+    },
+    [executionId, onFollowUpCreated]
+  )
 
   // Handle follow-up submission - creates new execution and adds to chain
   const handleFollowUpStart = async (
@@ -611,6 +647,33 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
     []
   )
 
+  // Handle todos update from ExecutionMonitor (from plan updates)
+  const handleTodosUpdate = useCallback(
+    (execId: string, todos: TodoItem[]) => {
+      setTodosByExecution((prev) => {
+        const existing = prev.get(execId)
+        // Only update if todos changed
+        if (existing && existing.length === todos.length) {
+          const isSame = existing.every((t, i) =>
+            t.content === todos[i].content &&
+            t.status === todos[i].status &&
+            t.wasCompleted === todos[i].wasCompleted
+          )
+          if (isSame) return prev
+        }
+        const next = new Map(prev)
+        next.set(execId, todos)
+        return next
+      })
+    },
+    []
+  )
+
+  // Handle available commands update from ExecutionMonitor (for slash command autocomplete)
+  const handleAvailableCommandsUpdate = useCallback((commands: AvailableCommand[]) => {
+    setAvailableCommands(commands)
+  }, [])
+
   // Notify parent of status changes
   useEffect(() => {
     if (!chainData || chainData.executions.length === 0) return
@@ -733,12 +796,15 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
                       onToolCallsUpdate={(toolCalls) =>
                         handleToolCallsUpdate(execution.id, toolCalls)
                       }
+                      onTodosUpdate={handleTodosUpdate}
+                      onAvailableCommandsUpdate={isLast ? handleAvailableCommandsUpdate : undefined}
                       onCancel={
                         isLast &&
                         ['preparing', 'pending', 'running', 'paused'].includes(execution.status)
                           ? () => handleCancel(execution.id)
                           : undefined
                       }
+                      onSkipAllPermissionsComplete={handleSkipAllPermissionsComplete}
                       compact
                       hideTodoTracker
                     />
@@ -877,16 +943,18 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
               isRunning={!lastExecutionTerminal}
               onCancel={() => handleCancel(lastExecution.id)}
               isCancelling={cancelling}
+              availableCommands={availableCommands}
               lastExecution={{
                 id: lastExecution.id,
                 mode: rootExecution.mode || undefined,
                 model: rootExecution.model || undefined,
                 target_branch: rootExecution.target_branch || undefined,
                 agent_type: rootExecution.agent_type || undefined,
-                config: rootExecution.config
-                  ? typeof rootExecution.config === 'string'
-                    ? JSON.parse(rootExecution.config)
-                    : rootExecution.config
+                // Use lastExecution.config to reflect any config changes from skip-all-permissions
+                config: lastExecution.config
+                  ? typeof lastExecution.config === 'string'
+                    ? JSON.parse(lastExecution.config)
+                    : lastExecution.config
                   : undefined,
               }}
             />

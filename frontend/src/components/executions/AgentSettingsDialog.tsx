@@ -22,6 +22,8 @@ import { ClaudeCodeConfigForm, type ClaudeCodeConfig } from './ClaudeCodeConfigF
 import { CodexConfigForm, type CodexConfig } from './CodexConfigForm'
 import { CursorConfigForm, type CursorConfig } from './CursorConfigForm'
 import { CopilotConfigForm, type CopilotConfig } from './CopilotConfigForm'
+import { GeminiConfigForm, type GeminiConfig } from './GeminiConfigForm'
+import { OpencodeConfigForm, type OpencodeConfig } from './OpencodeConfigForm'
 import { AgentSelector } from './AgentSelector'
 import { BranchSelector } from './BranchSelector'
 import { Separator } from '@/components/ui/separator'
@@ -176,6 +178,24 @@ export function AgentSettingsDialog({
         return (
           <CopilotConfigForm
             config={(config.agentConfig ?? {}) as CopilotConfig}
+            onChange={(newAgentConfig) => {
+              onConfigChange({ agentConfig: newAgentConfig })
+            }}
+          />
+        )
+      case 'gemini':
+        return (
+          <GeminiConfigForm
+            config={(config.agentConfig ?? {}) as GeminiConfig}
+            onChange={(newAgentConfig) => {
+              onConfigChange({ agentConfig: newAgentConfig })
+            }}
+          />
+        )
+      case 'opencode':
+        return (
+          <OpencodeConfigForm
+            config={(config.agentConfig ?? {}) as OpencodeConfig}
             onChange={(newAgentConfig) => {
               onConfigChange({ agentConfig: newAgentConfig })
             }}

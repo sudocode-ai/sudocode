@@ -271,26 +271,35 @@ describe('ImportDialog', () => {
 
     renderWithProviders(<ImportDialog {...defaultProps} />)
 
+    // Wait for the auto-search to complete first (triggered by canBrowseRepo).
+    // The component auto-loads issues from the current repo after a 50ms delay.
+    // We wait for results to appear before interacting.
     await waitFor(() => {
-      expect(screen.getByPlaceholderText('Paste URL or search...')).toBeInTheDocument()
-    })
+      expect(screen.getByText('First Issue')).toBeInTheDocument()
+    }, { timeout: 3000 })
 
+    // Now perform a manual search which will reset the selection state
     const input = screen.getByPlaceholderText('Paste URL or search...')
+    await user.clear(input)
     await user.type(input, 'test')
 
     const searchButton = screen.getByRole('button', { name: '' })
     await user.click(searchButton)
 
+    // Wait for search results AND selection controls to be fully rendered
     await waitFor(() => {
       expect(screen.getByText('First Issue')).toBeInTheDocument()
+      expect(screen.getByText('Second Issue')).toBeInTheDocument()
+      expect(screen.getByText(/0 of 2 selected/)).toBeInTheDocument()
     })
 
-    // Find checkboxes - there should be one per result plus select-all
-    const checkboxes = screen.getAllByRole('checkbox')
-    expect(checkboxes.length).toBeGreaterThanOrEqual(2)
-
-    // Click on the first result's checkbox (index 1, since index 0 is select-all)
-    await user.click(checkboxes[1])
+    // Click on the first result by clicking within its label container
+    // The checkbox is inside a label that contains "First Issue"
+    const firstResultLabel = screen.getByText('First Issue').closest('label')
+    expect(firstResultLabel).toBeInTheDocument()
+    const firstCheckbox = firstResultLabel!.querySelector('button[role="checkbox"]')
+    expect(firstCheckbox).toBeInTheDocument()
+    await user.click(firstCheckbox!)
 
     // Selection count should update
     await waitFor(() => {

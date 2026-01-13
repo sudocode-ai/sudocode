@@ -58,6 +58,7 @@ import {
   handleInitMergeDriver,
   handleRemoveMergeDriver,
 } from "./cli/merge-commands.js";
+import { handleAuthClearCommand, handleAuthStatusCommand, handleAuthClaudeCommand } from "./cli/auth-commands.js";
 import { getUpdateNotification } from "./update-checker.js";
 import { VERSION } from "./version.js";
 
@@ -637,6 +638,40 @@ plugin
   .description("Show detailed information about a plugin")
   .action(async (name) => {
     await handlePluginInfo(getContext(), name);
+  });
+
+// ============================================================================
+// AUTH COMMANDS
+// ============================================================================
+
+const auth = program
+  .command("auth")
+  .description("Manage authentication for AI services");
+
+auth
+  .command("claude")
+  .description("Configure Claude Code authentication via OAuth")
+  .option("-f, --force", "Overwrite existing token without confirmation")
+  .action(async (options) => {
+    // Auth commands don't need database context, but we need to provide it for consistency
+    await handleAuthClaudeCommand(getContext(), options);
+  });
+
+auth
+  .command("status")
+  .description("Check authentication status for all services")
+  .action(async (options) => {
+    // Auth commands don't need database context, but we need to provide it for consistency
+    await handleAuthStatusCommand(getContext(), options);
+  });
+
+auth
+  .command("clear")
+  .description("Clear all stored authentication credentials")
+  .option("-f, --force", "Skip confirmation prompt")
+  .action(async (options) => {
+    // Auth commands don't need database context, but we need to provide it for consistency
+    await handleAuthClearCommand(getContext(), options);
   });
 
 // Parse arguments

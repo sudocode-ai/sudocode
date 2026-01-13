@@ -8,7 +8,7 @@ import { useEffect, useRef } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Loader2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
-import type { MessageBuffer } from '@/hooks/useAgUiStream'
+import type { MessageBuffer } from '@/types/stream'
 
 export interface MessageStreamProps {
   /**

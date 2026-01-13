@@ -30,6 +30,137 @@ Or install the meta-package that includes the CLI:
 npm install -g sudocode
 ```
 
+## Authentication
+
+### Overview
+
+Sudocode supports multiple AI service credentials for remote deployment. Configure at least one service to enable Codespace deployment.
+
+### Supported Services
+
+1. **Claude Code** (Available now)
+2. **LLM Key** (OpenAI/LiteLLM) - Coming soon
+3. **LiteLLM** (Custom LLM configs) - Coming soon
+
+### Setup Claude Code
+
+#### Interactive Setup (Recommended)
+
+Run the interactive authentication flow:
+
+```bash
+sudocode auth claude
+```
+
+This will:
+1. Check for Claude CLI installation
+2. Launch OAuth flow in your browser
+3. Store the token securely
+4. Verify configuration
+
+#### Non-Interactive Setup
+
+If you already have a token:
+
+```bash
+sudocode auth claude --token sk-ant-api03-xxxxx
+```
+
+### Check Authentication Status
+
+View all configured credentials:
+
+```bash
+sudocode auth status
+```
+
+Output:
+```
+Authentication Status:
+
+Claude Code: ✓ Configured
+  Token: sk-ant-api03-***************************xxx
+
+LLM Key: ✗ Not configured
+  Run: sudocode auth llm --key <key> (coming soon)
+
+LiteLLM: ✗ Not configured
+  Run: sudocode auth litellm (coming soon)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Configured: 1/3 services
+Storage: ~/.config/sudocode/user_credentials.json
+
+✓ Ready for remote deployment
+```
+
+### Clear Credentials
+
+Remove all stored credentials:
+
+```bash
+sudocode auth clear
+```
+
+Or skip confirmation:
+
+```bash
+sudocode auth clear --force
+```
+
+### How It Works
+
+1. Configure one or more services locally
+2. Credentials stored in `~/.config/sudocode/user_credentials.json` (600 permissions)
+3. When deploying to Codespace, all credentials are passed to the deployment system
+4. AI services are configured in the remote environment
+5. Sudocode server can use any configured service for executions
+
+### Security
+
+- Credentials stored in `~/.config/sudocode/` with restrictive permissions (600)
+- File is never committed to git (user-level config)
+- Tokens are masked in command output
+- Atomic file writes prevent corruption
+
+### Troubleshooting
+
+#### Claude CLI Not Found
+
+If you see "claude CLI not found":
+
+```bash
+npm install -g @anthropic-ai/claude-cli
+```
+
+#### Invalid Token Format
+
+Tokens must:
+- Start with `sk-ant-`
+- Be at least 20 characters long
+- Contain only alphanumeric characters, dashes, and underscores
+
+#### Permission Errors
+
+If you get permission errors:
+
+```bash
+# Check permissions
+ls -la ~/.config/sudocode/user_credentials.json
+
+# Fix permissions
+chmod 600 ~/.config/sudocode/user_credentials.json
+```
+
+#### File Corrupted
+
+If credentials file is corrupted, clear and reconfigure:
+
+```bash
+sudocode auth clear --force
+sudocode auth claude
+```
+
 ## Quick Start
 
 ```bash

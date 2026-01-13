@@ -4,7 +4,6 @@ import type Database from "better-sqlite3";
 import { ProjectRegistry } from "./project-registry.js";
 import { ProjectContext } from "./project-context.js";
 import { initDatabase } from "./db.js";
-import { TransportManager } from "../execution/transport/transport-manager.js";
 import { ExecutionService } from "./execution-service.js";
 import { ExecutionLogsStore } from "./execution-logs-store.js";
 import { ExecutionLifecycleService } from "./execution-lifecycle.js";
@@ -100,7 +99,6 @@ export class ProjectManager {
 
       // 5. Initialize all services for this project
       const sudocodeDir = path.join(projectPath, ".sudocode");
-      const transportManager = new TransportManager();
       const logsStore = new ExecutionLogsStore(db);
       const worktreeConfig = getWorktreeConfig(projectPath);
       const worktreeManager = new WorktreeManager(worktreeConfig);
@@ -115,7 +113,6 @@ export class ProjectManager {
         projectId,
         projectPath,
         undefined,
-        transportManager,
         logsStore,
         undefined // No worker pool - use in-process execution
       );
@@ -126,7 +123,6 @@ export class ProjectManager {
         projectPath,
         sudocodeDir,
         db,
-        transportManager,
         executionService,
         logsStore,
         worktreeManager,

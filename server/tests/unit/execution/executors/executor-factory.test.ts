@@ -7,12 +7,14 @@ import {
   createExecutorForAgent,
   validateAgentConfig,
   AgentConfigValidationError,
+  isAcpAgent,
+  listAcpAgents,
+  isLegacyAgent,
+  listLegacyAgents,
+  listAllAgents,
 } from "../../../../src/execution/executors/executor-factory.js";
-import {
-  AgentNotFoundError,
-  AgentNotImplementedError,
-} from "../../../../src/services/agent-registry.js";
-import { AgentExecutorWrapper } from "../../../../src/execution/executors/agent-executor-wrapper.js";
+import { AcpExecutorWrapper } from "../../../../src/execution/executors/acp-executor-wrapper.js";
+import { LegacyShimExecutorWrapper } from "../../../../src/execution/executors/legacy-shim-executor-wrapper.js";
 import type { AgentType, ClaudeCodeConfig } from "@sudocode-ai/types/agents";
 import type { ExecutorFactoryConfig } from "../../../../src/execution/executors/executor-factory.js";
 import Database from "better-sqlite3";
@@ -26,7 +28,6 @@ import { ExecutionLogsStore } from "../../../../src/services/execution-logs-stor
 const mockDb = {} as any;
 const mockLifecycleService = {} as any;
 const mockLogsStore = {} as any;
-const mockTransportManager = {} as any;
 
 const factoryConfig: ExecutorFactoryConfig = {
   workDir: "/tmp/test",
@@ -34,97 +35,67 @@ const factoryConfig: ExecutorFactoryConfig = {
   logsStore: mockLogsStore,
   projectId: "test-project",
   db: mockDb,
-  transportManager: mockTransportManager,
 };
 
 describe("ExecutorFactory", () => {
   describe("createExecutorForAgent", () => {
-    it("should create AgentExecutorWrapper for claude-code agent", () => {
+    it("should create AcpExecutorWrapper for claude-code agent (ACP-native)", () => {
       const executor = createExecutorForAgent(
         "claude-code",
         { workDir: "/tmp/test" },
         factoryConfig
       );
 
-      // All agents now use unified AgentExecutorWrapper
-      expect(executor).toBeInstanceOf(AgentExecutorWrapper);
+      // ACP-native agents use AcpExecutorWrapper
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
     });
 
-    it("should create AgentExecutorWrapper for codex agent", () => {
-      const executor = createExecutorForAgent(
-        "codex",
-        { workDir: "/tmp/test" },
-        factoryConfig
-      );
-
-      // All agents now use unified AgentExecutorWrapper
-      expect(executor).toBeInstanceOf(AgentExecutorWrapper);
-    });
-
-    it("should throw AgentNotFoundError for unknown agent type", () => {
+    it("should throw error for unknown agent type", () => {
       expect(() => {
         createExecutorForAgent(
           "unknown-agent" as AgentType,
           { workDir: "/tmp/test" },
           factoryConfig
         );
-      }).toThrow(AgentNotFoundError);
+      }).toThrow(/Unknown agent type/);
     });
 
-    it("should create AgentExecutorWrapper for copilot", () => {
+    it("should create LegacyShimExecutorWrapper for copilot (legacy agent)", () => {
       const wrapper = createExecutorForAgent(
         "copilot",
-        { workDir: "/tmp/test", allowAllTools: true },
+        { workDir: "/tmp/test" },
         factoryConfig
       );
 
       expect(wrapper).toBeDefined();
-      expect(wrapper.constructor.name).toBe("AgentExecutorWrapper");
+      // Legacy agents now use LegacyShimExecutorWrapper
+      expect(wrapper).toBeInstanceOf(LegacyShimExecutorWrapper);
     });
 
-    it("should create AgentExecutorWrapper for cursor", () => {
+    it("should create LegacyShimExecutorWrapper for cursor (legacy agent)", () => {
       const wrapper = createExecutorForAgent(
         "cursor",
-        { workDir: "/tmp/test", force: true },
+        { workDir: "/tmp/test" },
         factoryConfig
       );
 
       expect(wrapper).toBeDefined();
-      expect(wrapper.constructor.name).toBe("AgentExecutorWrapper");
+      // Legacy agents now use LegacyShimExecutorWrapper
+      expect(wrapper).toBeInstanceOf(LegacyShimExecutorWrapper);
     });
 
-    it("should validate config before creating executor", () => {
-      // Invalid config: missing workDir
-      expect(() => {
-        createExecutorForAgent(
-          "claude-code",
-          { workDir: "" }, // Empty workDir is invalid
-          factoryConfig
-        );
-      }).toThrow(AgentConfigValidationError);
+    it("should create AcpExecutorWrapper for ACP agents without validation (ACP handles config internally)", () => {
+      // ACP agents skip legacy validation since ACP factory handles config
+      const executor = createExecutorForAgent(
+        "claude-code",
+        { workDir: "" }, // ACP doesn't use legacy validation
+        factoryConfig
+      );
+      // Should create AcpExecutorWrapper regardless of legacy config issues
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
     });
 
-    it("should throw AgentConfigValidationError with validation errors", () => {
-      try {
-        createExecutorForAgent(
-          "claude-code",
-          {
-            workDir: "",
-            print: false,
-            outputFormat: "stream-json", // Invalid: stream-json requires print mode
-          },
-          factoryConfig
-        );
-        expect.fail("Should have thrown AgentConfigValidationError");
-      } catch (error) {
-        expect(error).toBeInstanceOf(AgentConfigValidationError);
-        const validationError = error as AgentConfigValidationError;
-        expect(validationError.agentType).toBe("claude-code");
-        expect(validationError.validationErrors.length).toBeGreaterThan(0);
-      }
-    });
-
-    it("should create executor with valid config", () => {
+    it("should create AcpExecutorWrapper with valid config", () => {
       const executor = createExecutorForAgent(
         "claude-code",
         {
@@ -135,8 +106,18 @@ describe("ExecutorFactory", () => {
         factoryConfig
       );
 
-      // All agents now use unified AgentExecutorWrapper
-      expect(executor).toBeInstanceOf(AgentExecutorWrapper);
+      // ACP-native agents use AcpExecutorWrapper
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+    });
+
+    it("should create LegacyShimExecutorWrapper for legacy agents (unified SessionUpdate output)", () => {
+      // Legacy agents now use LegacyShimExecutorWrapper for unified SessionUpdate output
+      const wrapper = createExecutorForAgent(
+        "copilot",
+        { workDir: "/tmp/test" },
+        factoryConfig
+      );
+      expect(wrapper).toBeInstanceOf(LegacyShimExecutorWrapper);
     });
   });
 
@@ -165,12 +146,12 @@ describe("ExecutorFactory", () => {
       );
     });
 
-    it("should throw AgentNotFoundError for unknown agent", () => {
+    it("should throw error for unknown agent", () => {
       expect(() => {
         validateAgentConfig("unknown-agent" as AgentType, {
           workDir: "/tmp/test",
         });
-      }).toThrow(AgentNotFoundError);
+      }).toThrow(/not found|unknown|not registered/i);
     });
 
     it("should validate workDir is required", () => {
@@ -213,7 +194,84 @@ describe("ExecutorFactory", () => {
     });
   });
 
-  describe("adapter defaults", () => {
+  describe("agent type detection functions", () => {
+    // ACP detection
+    it("should identify claude-code as ACP agent", () => {
+      expect(isAcpAgent("claude-code")).toBe(true);
+    });
+
+    it("should identify copilot as non-ACP (legacy) agent", () => {
+      expect(isAcpAgent("copilot")).toBe(false);
+    });
+
+    it("should identify cursor as non-ACP (legacy) agent", () => {
+      expect(isAcpAgent("cursor")).toBe(false);
+    });
+
+    it("should identify unknown agent as non-ACP", () => {
+      expect(isAcpAgent("unknown-agent")).toBe(false);
+    });
+
+    it("should list ACP agents (currently claude-code)", () => {
+      const agents = listAcpAgents();
+      expect(agents).toContain("claude-code");
+      expect(agents).not.toContain("copilot");
+      expect(agents).not.toContain("cursor");
+    });
+
+    // Legacy detection
+    it("should identify copilot as legacy agent", () => {
+      expect(isLegacyAgent("copilot")).toBe(true);
+    });
+
+    it("should identify cursor as legacy agent", () => {
+      expect(isLegacyAgent("cursor")).toBe(true);
+    });
+
+    it("should identify claude-code as non-legacy agent", () => {
+      expect(isLegacyAgent("claude-code")).toBe(false);
+    });
+
+    it("should list legacy agents", () => {
+      const agents = listLegacyAgents();
+      expect(agents).toContain("copilot");
+      expect(agents).toContain("cursor");
+      expect(agents).not.toContain("claude-code");
+    });
+
+    // All agents
+    it("should list all supported agents", () => {
+      const allAgents = listAllAgents();
+      expect(allAgents).toContain("claude-code");
+      expect(allAgents).toContain("copilot");
+      expect(allAgents).toContain("cursor");
+    });
+
+    it("should return consistent results between detection functions and list functions", () => {
+      const acpAgents = listAcpAgents();
+      const legacyAgents = listLegacyAgents();
+      const allAgents = listAllAgents();
+
+      // All ACP agents should be identified as ACP
+      for (const agent of acpAgents) {
+        expect(isAcpAgent(agent)).toBe(true);
+        expect(isLegacyAgent(agent)).toBe(false);
+      }
+
+      // All legacy agents should be identified as legacy
+      for (const agent of legacyAgents) {
+        expect(isLegacyAgent(agent)).toBe(true);
+        expect(isAcpAgent(agent)).toBe(false);
+      }
+
+      // All agents should be in the combined list
+      expect(allAgents.length).toBe(acpAgents.length + legacyAgents.length);
+    });
+  });
+
+  describe("executor wrapper configuration", () => {
+    // Tests verify that each executor type receives the correct configuration
+
     let testDir: string;
     let db: Database.Database;
     let factoryConfigWithDb: ExecutorFactoryConfig;
@@ -225,10 +283,10 @@ describe("ExecutorFactory", () => {
       );
       const dbPath = path.join(testDir, "test.db");
 
-      // Create in-memory database
+      // Create database
       db = new Database(dbPath);
 
-      // Initialize minimal schema for ExecutionLifecycleService
+      // Initialize minimal schema
       db.exec(`
         CREATE TABLE IF NOT EXISTS executions (
           id TEXT PRIMARY KEY,
@@ -282,100 +340,393 @@ describe("ExecutorFactory", () => {
       fs.rmSync(testDir, { recursive: true, force: true });
     });
 
-    it("should apply adapter defaults when config fields are missing", () => {
-      // Arrange: Create config without dangerouslySkipPermissions
-      const agentConfig: ClaudeCodeConfig = {
-        workDir: testDir,
-        // dangerouslySkipPermissions not provided
-      };
-
-      // Act: Create executor
+    it("should create LegacyShimExecutorWrapper for legacy agents with correct config", () => {
+      // Legacy agents (copilot, cursor) now use LegacyShimExecutorWrapper
       const executor = createExecutorForAgent(
-        "claude-code",
-        agentConfig,
+        "copilot",
+        { workDir: testDir },
         factoryConfigWithDb
       );
 
-      // Assert: Adapter's default should be applied
-      // ClaudeCodeAdapter.getDefaultConfig() returns { dangerouslySkipPermissions: true }
-      // Access private field for testing using type assertion
-      const agentConfigInternal = (executor as any)._agentConfig;
-      expect(agentConfigInternal.dangerouslySkipPermissions).toBe(true);
+      expect(executor).toBeInstanceOf(LegacyShimExecutorWrapper);
+      // LegacyShimExecutorWrapper has agentType property
+      expect((executor as any).agentType).toBe("copilot");
     });
 
-    it("should apply adapter defaults when config fields are explicitly undefined", () => {
-      // Arrange: Config with explicit undefined
-      const agentConfig: ClaudeCodeConfig = {
-        workDir: testDir,
-        dangerouslySkipPermissions: undefined,
-      };
-
-      // Act: Create executor
+    it("should create AcpExecutorWrapper for ACP agents", () => {
+      // ACP agents use AcpExecutorWrapper
       const executor = createExecutorForAgent(
         "claude-code",
-        agentConfig,
+        { workDir: testDir },
         factoryConfigWithDb
       );
 
-      // Assert: Adapter's default should win over undefined
-      const agentConfigInternal = (executor as any)._agentConfig;
-      expect(agentConfigInternal.dangerouslySkipPermissions).toBe(true);
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
     });
 
-    it("should allow config to override adapter defaults when explicitly set", () => {
-      // Arrange: Config with explicit value (even if it differs from default)
-      const agentConfig: ClaudeCodeConfig = {
-        workDir: testDir,
-        dangerouslySkipPermissions: false, // Explicit override
-        print: false, // Override another default
-        outputFormat: "text", // Must override outputFormat when setting print: false (stream-json requires print: true)
-      };
-
-      // Act: Create executor
+    it("should pass config to AcpExecutorWrapper for ACP agents", () => {
+      // ACP agents receive config via acpConfig
       const executor = createExecutorForAgent(
         "claude-code",
-        agentConfig,
+        {
+          workDir: testDir,
+          mcpServers: { test: { command: "test" } } as any,
+        },
         factoryConfigWithDb
       );
 
-      // Assert: Explicit values should override defaults
-      const agentConfigInternal = (executor as any)._agentConfig;
-      expect(agentConfigInternal.dangerouslySkipPermissions).toBe(false);
-      expect(agentConfigInternal.print).toBe(false);
-      expect(agentConfigInternal.outputFormat).toBe("text");
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      // AcpExecutorWrapper stores config in acpConfig
+      const acpConfig = (executor as any).acpConfig;
+      expect(acpConfig).toBeDefined();
+      expect(acpConfig.agentType).toBe("claude-code");
     });
 
-    it("should preserve defaults when creating task-specific executor with undefined metadata", () => {
-      // Arrange: Create executor with defaults applied
-      const agentConfig: ClaudeCodeConfig = {
-        workDir: testDir,
-        // dangerouslySkipPermissions not provided - should get default (true)
-      };
-
+    it("should pass model config to LegacyShimExecutorWrapper", () => {
       const executor = createExecutorForAgent(
-        "claude-code",
-        agentConfig,
+        "cursor",
+        { workDir: testDir, model: "gpt-4o" },
         factoryConfigWithDb
       );
 
-      // Verify wrapper has correct default
-      const wrapperConfig = (executor as any)._agentConfig;
-      expect(wrapperConfig.dangerouslySkipPermissions).toBe(true);
+      expect(executor).toBeInstanceOf(LegacyShimExecutorWrapper);
+      expect((executor as any).agentConfig.model).toBe("gpt-4o");
+    });
 
-      // Act: Simulate what happens when executing a task with undefined metadata
-      // This is what agent-executor-wrapper does internally
-      const taskMetadata = {
-        dangerouslySkipPermissions: undefined, // Undefined from API request
+    it("should pass ANTHROPIC_MODEL env var for claude-code agent model selection", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        { workDir: testDir, model: "claude-sonnet-4-20250514" },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      // Model should be mapped to ANTHROPIC_MODEL env var
+      const acpConfig = (executor as any).acpConfig;
+      expect(acpConfig.env).toBeDefined();
+      expect(acpConfig.env.ANTHROPIC_MODEL).toBe("claude-sonnet-4-20250514");
+    });
+
+    it("should merge model env var with existing env config for ACP agents", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        {
+          workDir: testDir,
+          model: "claude-sonnet-4-20250514",
+          env: { CUSTOM_VAR: "custom-value" }
+        },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      expect(acpConfig.env).toBeDefined();
+      // Both model env var and custom env should be present
+      expect(acpConfig.env.ANTHROPIC_MODEL).toBe("claude-sonnet-4-20250514");
+      expect(acpConfig.env.CUSTOM_VAR).toBe("custom-value");
+    });
+
+    it("should not set ANTHROPIC_MODEL if no model specified", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        { workDir: testDir },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      // env might be undefined or not have ANTHROPIC_MODEL
+      expect(acpConfig.env?.ANTHROPIC_MODEL).toBeUndefined();
+    });
+  });
+
+  describe("permission mode mapping", () => {
+    let testDir: string;
+    let db: Database.Database;
+    let factoryConfigWithDb: ExecutorFactoryConfig;
+
+    beforeAll(() => {
+      // Create temporary directory for test database
+      testDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), "sudocode-test-executor-factory-perm-")
+      );
+      const dbPath = path.join(testDir, "test.db");
+
+      // Create database
+      db = new Database(dbPath);
+
+      // Initialize minimal schema
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS executions (
+          id TEXT PRIMARY KEY,
+          issue_id TEXT,
+          agent_type TEXT NOT NULL,
+          status TEXT NOT NULL,
+          mode TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          completed_at TEXT,
+          before_commit TEXT,
+          after_commit TEXT,
+          worktree_path TEXT,
+          session_id TEXT,
+          exit_code INTEGER,
+          error_message TEXT,
+          files_changed TEXT,
+          parent_execution_id TEXT,
+          workflow_execution_id TEXT,
+          step_type TEXT,
+          step_index INTEGER,
+          step_config TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS execution_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          execution_id TEXT NOT NULL,
+          timestamp TEXT NOT NULL,
+          raw_logs TEXT,
+          normalized_entry TEXT,
+          FOREIGN KEY (execution_id) REFERENCES executions(id)
+        );
+      `);
+
+      // Create minimal factory config
+      const lifecycleService = new ExecutionLifecycleService(db, testDir);
+      const logsStore = new ExecutionLogsStore(db);
+
+      factoryConfigWithDb = {
+        workDir: testDir,
+        lifecycleService,
+        logsStore,
+        projectId: "test-project",
+        db,
       };
+    });
 
-      // Build task-specific config (simulating agent-executor-wrapper logic)
-      const taskSpecificConfig: Record<string, any> = { ...wrapperConfig };
-      if (taskMetadata.dangerouslySkipPermissions !== undefined) {
-        taskSpecificConfig.dangerouslySkipPermissions = taskMetadata.dangerouslySkipPermissions;
+    afterAll(() => {
+      // Clean up
+      db.close();
+      fs.rmSync(testDir, { recursive: true, force: true });
+    });
+
+    it("should set session mode from config.mode", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        {
+          workDir: testDir,
+          mode: "plan",
+        },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      expect(acpConfig.mode).toBe("plan");
+      // Should still use interactive for permission handling
+      expect(acpConfig.permissionMode).toBe("interactive");
+    });
+
+    it("should use dangerouslySkipPermissions for auto-approve", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        {
+          workDir: testDir,
+          dangerouslySkipPermissions: true,
+        },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      expect(acpConfig.permissionMode).toBe("auto-approve");
+    });
+
+    it("should use nested agentConfig.mode for session mode", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        {
+          workDir: testDir,
+          agentConfig: {
+            mode: "plan",
+          },
+        },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      expect(acpConfig.mode).toBe("plan");
+    });
+
+    it("should use nested agentConfig.dangerouslySkipPermissions for auto-approve", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        {
+          workDir: testDir,
+          agentConfig: {
+            dangerouslySkipPermissions: true,
+          },
+        },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      expect(acpConfig.permissionMode).toBe("auto-approve");
+    });
+
+    it("should allow both mode and dangerouslySkipPermissions together", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        {
+          workDir: testDir,
+          mode: "plan",
+          dangerouslySkipPermissions: true,
+        },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      expect(acpConfig.mode).toBe("plan");
+      expect(acpConfig.permissionMode).toBe("auto-approve");
+    });
+
+    it("should use interactive permission mode by default", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        {
+          workDir: testDir,
+        },
+        factoryConfigWithDb
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      const acpConfig = (executor as any).acpConfig;
+      expect(acpConfig.permissionMode).toBe("interactive");
+      expect(acpConfig.mode).toBeUndefined();
+    });
+
+    it("should support all session modes", () => {
+      const modes = ["code", "plan", "ask", "architect"];
+      for (const mode of modes) {
+        const executor = createExecutorForAgent(
+          "claude-code",
+          {
+            workDir: testDir,
+            mode,
+          },
+          factoryConfigWithDb
+        );
+
+        expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+        const acpConfig = (executor as any).acpConfig;
+        expect(acpConfig.mode).toBe(mode);
+        // Permission mode is independent
+        expect(acpConfig.permissionMode).toBe("interactive");
       }
+    });
+  });
 
-      // Assert: Default should be preserved (not overridden by undefined)
-      expect(taskSpecificConfig.dangerouslySkipPermissions).toBe(true);
+  describe("session resumption", () => {
+    let testDir: string;
+    let db: Database.Database;
+    let factoryConfigWithDb: ExecutorFactoryConfig;
+
+    beforeAll(() => {
+      // Create temporary directory for test database
+      testDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), "sudocode-test-executor-factory-resume-")
+      );
+      const dbPath = path.join(testDir, "test.db");
+
+      // Create database
+      db = new Database(dbPath);
+
+      // Initialize minimal schema
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS executions (
+          id TEXT PRIMARY KEY,
+          issue_id TEXT,
+          agent_type TEXT NOT NULL,
+          status TEXT NOT NULL,
+          mode TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          completed_at TEXT,
+          before_commit TEXT,
+          after_commit TEXT,
+          worktree_path TEXT,
+          session_id TEXT,
+          exit_code INTEGER,
+          error_message TEXT,
+          files_changed TEXT,
+          parent_execution_id TEXT,
+          workflow_execution_id TEXT,
+          step_type TEXT,
+          step_index INTEGER,
+          step_config TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS execution_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          execution_id TEXT NOT NULL,
+          timestamp TEXT NOT NULL,
+          raw_logs TEXT,
+          normalized_entry TEXT,
+          FOREIGN KEY (execution_id) REFERENCES executions(id)
+        );
+      `);
+
+      // Create minimal factory config
+      const lifecycleService = new ExecutionLifecycleService(db, testDir);
+      const logsStore = new ExecutionLogsStore(db);
+
+      factoryConfigWithDb = {
+        workDir: testDir,
+        lifecycleService,
+        logsStore,
+        projectId: "test-project",
+        db,
+      };
+    });
+
+    afterAll(() => {
+      // Clean up
+      db.close();
+      fs.rmSync(testDir, { recursive: true, force: true });
+    });
+
+    it("should accept isResume option in factory config", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        { workDir: testDir },
+        { ...factoryConfigWithDb, isResume: true }
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+    });
+
+    it("should work without isResume option (defaults to false)", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        { workDir: testDir },
+        factoryConfigWithDb // no isResume specified
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+    });
+
+    it("should create executor for follow-up execution with isResume: true", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        { workDir: testDir },
+        { ...factoryConfigWithDb, isResume: true }
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      // The executor is created successfully with resume flag
+      // Actual session resumption happens in executeWithLifecycle/resumeWithLifecycle
     });
   });
 });

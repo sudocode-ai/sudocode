@@ -2,7 +2,7 @@
  * Execution Logs Routes Tests
  *
  * Tests for the GET /executions/:executionId/logs endpoint
- * Validates NormalizedEntry storage and on-demand conversion to AG-UI events
+ * Validates NormalizedEntry storage and conversion to CoalescedSessionUpdate events
  *
  * @module routes/tests/executions-logs
  */
@@ -169,23 +169,16 @@ describe("Execution Logs Routes", () => {
       expect(response.body.data.executionId).toBe("exec-test-1");
       expect(response.body.data.events).toBeDefined();
       expect(Array.isArray(response.body.data.events)).toBe(true);
+      expect(response.body.data.format).toBe("normalized_entry"); // Legacy format detection
 
-      // Assistant message should create 3 AG-UI events (START, CONTENT, END)
-      const textEvents = response.body.data.events.filter((e: any) =>
-        e.type === "TEXT_MESSAGE_START" ||
-        e.type === "TEXT_MESSAGE_CONTENT" ||
-        e.type === "TEXT_MESSAGE_END"
+      // Assistant message should create agent_message_complete event
+      const messageEvent = response.body.data.events.find((e: any) =>
+        e.sessionUpdate === "agent_message_complete" && e.content?.text === "Hello world"
       );
-      expect(textEvents.length).toBeGreaterThan(0);
-
-      // Find the content event
-      const contentEvent = response.body.data.events.find((e: any) =>
-        e.type === "TEXT_MESSAGE_CONTENT" && e.delta === "Hello world"
-      );
-      expect(contentEvent).toBeDefined();
+      expect(messageEvent).toBeDefined();
     });
 
-    it("should convert tool_use entries to AG-UI tool events", async () => {
+    it("should convert tool_use entries to tool_call_complete events", async () => {
       const project = projectManager.getProject(projectId)!;
       project.logsStore.initializeLogs("exec-test-1");
 
@@ -217,22 +210,13 @@ describe("Execution Logs Routes", () => {
       expect(response.body.success).toBe(true);
       expect(response.body.data.events).toBeDefined();
 
-      // Should have tool-related events
-      const toolStartEvent = response.body.data.events.find((e: any) =>
-        e.type === "TOOL_CALL_START" && e.toolCallName === "Bash"
+      // Should have tool_call_complete event (title is "Run: <command>" for command_run actions)
+      const toolEvent = response.body.data.events.find((e: any) =>
+        e.sessionUpdate === "tool_call_complete" && e.title?.includes("Run: ls")
       );
-      expect(toolStartEvent).toBeDefined();
-
-      const toolEndEvent = response.body.data.events.find((e: any) =>
-        e.type === "TOOL_CALL_END"
-      );
-      expect(toolEndEvent).toBeDefined();
-
-      const toolResultEvent = response.body.data.events.find((e: any) =>
-        e.type === "TOOL_CALL_RESULT"
-      );
-      expect(toolResultEvent).toBeDefined();
-      expect(toolResultEvent.content).toBeDefined();
+      expect(toolEvent).toBeDefined();
+      expect(toolEvent.status).toBe("completed");
+      expect(toolEvent.result).toBeDefined();
     });
 
     it("should return proper metadata structure", async () => {
@@ -279,11 +263,11 @@ describe("Execution Logs Routes", () => {
         .expect(200);
 
       expect(response.body.data.events).toBeDefined();
-      // Each entry creates 3 AG-UI events (START, CONTENT, END)
-      expect(response.body.data.events.length).toBeGreaterThan(50);
+      // Each NormalizedEntry creates 1 CoalescedSessionUpdate event
+      expect(response.body.data.events.length).toBe(50);
     });
 
-    it("should preserve AG-UI event structure", async () => {
+    it("should preserve CoalescedSessionUpdate event structure", async () => {
       const project = projectManager.getProject(projectId)!;
       project.logsStore.initializeLogs("exec-test-1");
 
@@ -300,11 +284,12 @@ describe("Execution Logs Routes", () => {
         .set("X-Project-ID", projectId)
         .expect(200);
 
-      // Verify AG-UI event structure
+      // Verify CoalescedSessionUpdate event structure
       response.body.data.events.forEach((event: any) => {
-        expect(event).toHaveProperty("type");
+        expect(event).toHaveProperty("sessionUpdate");
         expect(event).toHaveProperty("timestamp");
-        expect(typeof event.timestamp).toBe("number");
+        // Timestamp is a Date string in CoalescedSessionUpdate format
+        expect(typeof event.timestamp).toBe("string");
       });
     });
 
@@ -326,10 +311,10 @@ describe("Execution Logs Routes", () => {
         .expect(200);
 
       const contentEvent = response.body.data.events.find((e: any) =>
-        e.type === "TEXT_MESSAGE_CONTENT"
+        e.sessionUpdate === "agent_message_complete"
       );
-      expect(contentEvent.delta).toContain("世界");
-      expect(contentEvent.delta).toContain("🌍");
+      expect(contentEvent.content.text).toContain("世界");
+      expect(contentEvent.content.text).toContain("🌍");
     });
 
     it("should handle execution with metadata but no logs initialized", async () => {
@@ -391,15 +376,15 @@ describe("Execution Logs Routes", () => {
 
       expect(response.body.data.events.length).toBeGreaterThan(0);
 
-      // Should have text messages
-      const hasTextMessage = response.body.data.events.some((e: any) =>
-        e.type === "TEXT_MESSAGE_CONTENT"
+      // Should have agent messages (converted from assistant_message)
+      const hasAgentMessage = response.body.data.events.some((e: any) =>
+        e.sessionUpdate === "agent_message_complete"
       );
-      expect(hasTextMessage).toBe(true);
+      expect(hasAgentMessage).toBe(true);
 
       // Should have tool calls
       const hasToolCall = response.body.data.events.some((e: any) =>
-        e.type === "TOOL_CALL_START"
+        e.sessionUpdate === "tool_call_complete"
       );
       expect(hasToolCall).toBe(true);
     });
@@ -448,15 +433,21 @@ describe("Execution Logs Routes", () => {
         .set("X-Project-ID", projectId)
         .expect(200);
 
+      // Verify events exist
+      expect(response1.body.data.events.length).toBeGreaterThan(0);
+      expect(response2.body.data.events.length).toBeGreaterThan(0);
+
       const content1 = response1.body.data.events.find((e: any) =>
-        e.type === "TEXT_MESSAGE_CONTENT"
+        e.sessionUpdate === "agent_message_complete"
       );
       const content2 = response2.body.data.events.find((e: any) =>
-        e.type === "TEXT_MESSAGE_CONTENT"
+        e.sessionUpdate === "agent_message_complete"
       );
 
-      expect(content1.delta).toContain("Execution 1");
-      expect(content2.delta).toContain("Execution 2");
+      expect(content1).toBeDefined();
+      expect(content2).toBeDefined();
+      expect(content1.content.text).toContain("Execution 1");
+      expect(content2.content.text).toContain("Execution 2");
     });
 
     it("should return 500 for database errors", async () => {
@@ -484,7 +475,7 @@ describe("Execution Logs Routes", () => {
       expect(response.body.success).toBe(false);
     });
 
-    it("should preserve entry order in AG-UI events", async () => {
+    it("should preserve entry order in CoalescedSessionUpdate events", async () => {
       const project = projectManager.getProject(projectId)!;
       project.logsStore.initializeLogs("exec-test-1");
 
@@ -504,14 +495,14 @@ describe("Execution Logs Routes", () => {
         .set("X-Project-ID", projectId)
         .expect(200);
 
-      // Extract content events in order
-      const contentEvents = response.body.data.events.filter((e: any) =>
-        e.type === "TEXT_MESSAGE_CONTENT"
+      // Extract agent message events in order
+      const messageEvents = response.body.data.events.filter((e: any) =>
+        e.sessionUpdate === "agent_message_complete"
       );
 
       // Verify order is preserved
-      contentEvents.forEach((event: any, index: number) => {
-        expect(event.delta).toBe(`Message ${index + 1}`);
+      messageEvents.forEach((event: any, index: number) => {
+        expect(event.content.text).toBe(`Message ${index + 1}`);
       });
     });
   });

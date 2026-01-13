@@ -392,6 +392,19 @@ export const agentsApi = {
     const response = await axios.get<GetAgentsResponse>('/api/agents')
     return response.data.agents
   },
+
+  /**
+   * Discover available slash commands for an agent type
+   * Creates a temporary session to capture commands without creating an execution
+   */
+  discoverCommands: async (
+    agentType: string
+  ): Promise<import('@/hooks/useSessionUpdateStream').AvailableCommand[]> => {
+    const response = await axios.post<{
+      commands: import('@/hooks/useSessionUpdateStream').AvailableCommand[]
+    }>(`/api/agents/${agentType}/discover-commands`)
+    return response.data.commands
+  },
 }
 
 /**

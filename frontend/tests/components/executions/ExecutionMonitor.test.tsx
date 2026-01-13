@@ -1,15 +1,22 @@
 /**
  * ExecutionMonitor Component Tests
  *
- * Tests for the AG-UI execution monitoring component
+ * Tests for the ACP-based execution monitoring component
+ * Updated for ACP migration with useSessionUpdateStream hook
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { ExecutionMonitor } from '@/components/executions/ExecutionMonitor'
-import * as useAgUiStreamModule from '@/hooks/useAgUiStream'
+import * as useSessionUpdateStreamModule from '@/hooks/useSessionUpdateStream'
 import * as useExecutionLogsModule from '@/hooks/useExecutionLogs'
 import { ThemeProvider } from '@/contexts/ThemeContext'
+import type {
+  AgentMessage,
+  ToolCall,
+  ConnectionStatus,
+  ExecutionState,
+} from '@/hooks/useSessionUpdateStream'
 
 // Helper to wrap component with ThemeProvider
 const renderWithTheme = (ui: React.ReactElement) => {
@@ -17,44 +24,99 @@ const renderWithTheme = (ui: React.ReactElement) => {
 }
 
 // Mock the hooks
-const mockUseAgUiStream = vi.spyOn(useAgUiStreamModule, 'useAgUiStream')
+const mockUseSessionUpdateStream = vi.spyOn(
+  useSessionUpdateStreamModule,
+  'useSessionUpdateStream'
+)
 const mockUseExecutionLogs = vi.spyOn(useExecutionLogsModule, 'useExecutionLogs')
+
+// Helper to create default mock result for useSessionUpdateStream
+function createMockStreamResult(overrides: {
+  connectionStatus?: ConnectionStatus
+  execution?: Partial<ExecutionState>
+  messages?: AgentMessage[]
+  toolCalls?: ToolCall[]
+  thoughts?: useSessionUpdateStreamModule.AgentThought[]
+  planUpdates?: useSessionUpdateStreamModule.PlanUpdateEvent[]
+  latestPlan?: useSessionUpdateStreamModule.PlanEntry[] | null
+  permissionRequests?: useSessionUpdateStreamModule.UseSessionUpdateStreamResult['permissionRequests']
+  markPermissionResponded?: useSessionUpdateStreamModule.UseSessionUpdateStreamResult['markPermissionResponded']
+  availableCommands?: useSessionUpdateStreamModule.AvailableCommand[]
+  error?: Error | null
+  isConnected?: boolean
+  isStreaming?: boolean
+}): useSessionUpdateStreamModule.UseSessionUpdateStreamResult {
+  return {
+    connectionStatus: overrides.connectionStatus ?? 'idle',
+    execution: {
+      runId: null,
+      status: 'idle' as const,
+      error: null,
+      startTime: null,
+      endTime: null,
+      ...overrides.execution,
+    },
+    messages: overrides.messages ?? [],
+    toolCalls: overrides.toolCalls ?? [],
+    thoughts: overrides.thoughts ?? [],
+    planUpdates: overrides.planUpdates ?? [],
+    latestPlan: overrides.latestPlan ?? null,
+    permissionRequests: overrides.permissionRequests ?? [],
+    markPermissionResponded: overrides.markPermissionResponded ?? vi.fn(),
+    availableCommands: overrides.availableCommands ?? [],
+    error: overrides.error ?? null,
+    isConnected: overrides.isConnected ?? false,
+    isStreaming: overrides.isStreaming ?? false,
+  }
+}
+
+// Helper to create mock result for useExecutionLogs
+function createMockLogsResult(overrides: {
+  events?: useExecutionLogsModule.CoalescedSessionUpdate[]
+  processed?: Partial<useExecutionLogsModule.ProcessedLogs>
+  loading?: boolean
+  error?: Error | null
+  metadata?: useExecutionLogsModule.ExecutionLogMetadata | null
+  format?: 'acp' | 'normalized_entry' | 'empty' | null
+}): useExecutionLogsModule.UseExecutionLogsResult {
+  const events = overrides.events ?? []
+  const defaultProcessed: useExecutionLogsModule.ProcessedLogs = {
+    messages: [],
+    toolCalls: [],
+    thoughts: [],
+    planUpdates: [],
+    latestPlan: null,
+  }
+  const processed = { ...defaultProcessed, ...overrides.processed }
+  return {
+    events,
+    processed,
+    loading: overrides.loading ?? false,
+    error: overrides.error ?? null,
+    metadata: overrides.metadata ?? null,
+    format: overrides.format ?? (events.length > 0 ? 'acp' : 'empty'),
+  }
+}
 
 describe('ExecutionMonitor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
+    // Default mock for useSessionUpdateStream
+    mockUseSessionUpdateStream.mockReturnValue(createMockStreamResult({}))
+
     // Default mock for useExecutionLogs (prevent actual fetch calls)
-    mockUseExecutionLogs.mockReturnValue({
-      events: [],
-      loading: false,
-      error: null,
-      metadata: null,
-    })
+    mockUseExecutionLogs.mockReturnValue(createMockLogsResult({}))
   })
 
   describe('Loading State', () => {
     it('should display connecting state initially', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connecting',
-        execution: {
-          runId: null,
-          threadId: null,
-          status: 'idle',
-          currentStep: null,
-          error: null,
-          startTime: null,
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: false,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connecting',
+          execution: { status: 'idle' },
+        })
+      )
 
       renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
@@ -64,55 +126,37 @@ describe('ExecutionMonitor', () => {
 
   describe('Status Display', () => {
     it('should display running status', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: 'process-data',
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          isConnected: true,
+        })
+      )
 
       renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
       expect(screen.getByText('Running')).toBeInTheDocument()
-      expect(screen.getByText('process-data')).toBeInTheDocument()
       expect(screen.getByText('Live')).toBeInTheDocument()
     })
 
     it('should display completed status', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'completed',
-          currentStep: null,
-          error: null,
-          startTime: 1000,
-          endTime: 3000,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'completed',
+            startTime: 1000,
+            endTime: 3000,
+          },
+          isConnected: true,
+        })
+      )
 
       renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
@@ -122,26 +166,20 @@ describe('ExecutionMonitor', () => {
     })
 
     it('should display error status', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'error',
-          currentStep: null,
-          error: 'Test error message',
-          startTime: 1000,
-          endTime: 2000,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: new Error('Test error message'),
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'error',
+            error: 'Test error message',
+            startTime: 1000,
+            endTime: 2000,
+          },
+          error: new Error('Test error message'),
+          isConnected: true,
+        })
+      )
 
       renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
@@ -154,109 +192,63 @@ describe('ExecutionMonitor', () => {
     })
   })
 
-  describe('Progress Display', () => {
-    it('should display progress bar when state has progress', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {
-          progress: 50,
-          totalSteps: 100,
-        },
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
-
-      renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
-
-      expect(screen.getByText('Progress')).toBeInTheDocument()
-      expect(screen.getByText('50 / 100')).toBeInTheDocument()
-    })
-  })
-
   describe('Messages Display', () => {
     it('should display messages from stream', () => {
-      const messages = new Map()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        timestamp: Date.now(),
-        role: 'assistant',
-        content: 'Hello, this is a test message!',
-        complete: true,
-      })
-
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
+      const messages: AgentMessage[] = [
+        {
+          id: 'msg-1',
+          content: 'Hello, this is a test message!',
+          timestamp: new Date(),
+          isStreaming: false,
+          index: 0,
         },
-        messages,
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      ]
+
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          messages,
+          isConnected: true,
+        })
+      )
 
       renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
-      // In the unified trajectory view, there's no "Messages" header
-      // Just verify the message content is displayed
-      expect(screen.getByText('assistant')).toBeInTheDocument()
+      // In the unified trajectory view, messages are displayed with colored dots
+      // Verify the message content is displayed
       expect(screen.getByText('Hello, this is a test message!')).toBeInTheDocument()
+      // New terminal-style UI uses colored dots, not text badges
+      expect(screen.getByText('⏺')).toBeInTheDocument()
     })
 
     it('should show spinner for incomplete messages', () => {
-      const messages = new Map()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        timestamp: Date.now(),
-        role: 'assistant',
-        content: 'Streaming message...',
-        complete: false,
-      })
-
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
+      const messages: AgentMessage[] = [
+        {
+          id: 'msg-1',
+          content: 'Streaming message...',
+          timestamp: new Date(),
+          isStreaming: true,
+          index: 0,
         },
-        messages,
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      ]
+
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          messages,
+          isConnected: true,
+        })
+      )
 
       const { container } = renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
@@ -268,140 +260,122 @@ describe('ExecutionMonitor', () => {
 
   describe('Tool Calls Display', () => {
     it('should display tool calls from stream', () => {
-      const toolCalls = new Map()
-      toolCalls.set('tool-1', {
-        toolCallId: 'tool-1',
-        toolCallName: 'Read',
-        args: '{"file": "test.ts"}',
-        status: 'completed',
-        result: 'File contents here',
-        startTime: 1000,
-        endTime: 2000,
-      })
-
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
+      const toolCalls: ToolCall[] = [
+        {
+          id: 'tool-1',
+          title: 'Read',
+          rawInput: { file: 'test.ts' },
+          status: 'success',
+          result: 'File contents here',
+          timestamp: new Date(1000),
+          completedAt: new Date(2000),
+          index: 0,
         },
-        messages: new Map(),
-        toolCalls,
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      ]
+
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          toolCalls,
+          isConnected: true,
+        })
+      )
 
       renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
-      // In the unified trajectory view, there's no "Tool Calls" header
+      // In the unified trajectory view, tool calls are displayed with colored dots
       // Just verify the tool call is displayed
       expect(screen.getByText('Read')).toBeInTheDocument()
-      // Check for completed status badge
-      const completedBadges = screen.getAllByText('completed')
-      expect(completedBadges.length).toBeGreaterThan(0)
+      // New UI uses colored dots instead of text badges
+      expect(screen.getByText('⏺')).toBeInTheDocument()
       expect(screen.getByText('1.00s')).toBeInTheDocument()
     })
 
     it('should display tool call error', () => {
-      const toolCalls = new Map()
-      toolCalls.set('tool-1', {
-        toolCallId: 'tool-1',
-        toolCallName: 'Write',
-        args: '{"file": "test.ts"}',
-        status: 'error',
-        error: 'File not found',
-        startTime: 1000,
-        endTime: 2000,
-      })
-
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
+      const toolCalls: ToolCall[] = [
+        {
+          id: 'tool-1',
+          title: 'Write',
+          rawInput: { file: 'test.ts' },
+          status: 'failed',
+          result: 'File not found',  // Error text as string
+          timestamp: new Date(1000),
+          completedAt: new Date(2000),
+          index: 0,
         },
-        messages: new Map(),
-        toolCalls,
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      ]
+
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          toolCalls,
+          isConnected: true,
+        })
+      )
 
       const { container } = renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
       expect(screen.getByText('Write')).toBeInTheDocument()
-      // Use a more specific selector for the error badge
-      const errorBadges = container.querySelectorAll('.bg-destructive')
-      expect(errorBadges.length).toBeGreaterThan(0)
+      // Error text is displayed in red
+      const errorText = container.querySelectorAll('.text-red-600')
+      expect(errorText.length).toBeGreaterThan(0)
       expect(screen.getByText('File not found')).toBeInTheDocument()
     })
   })
 
   describe('Metrics Display', () => {
     it('should display basic metrics', () => {
-      const toolCalls = new Map()
-      toolCalls.set('tool-1', {
-        toolCallId: 'tool-1',
-        toolCallName: 'Read',
-        args: '',
-        status: 'completed',
-        startTime: 1000,
-        endTime: 2000,
-      })
-      toolCalls.set('tool-2', {
-        toolCallId: 'tool-2',
-        toolCallName: 'Write',
-        args: '',
-        status: 'started',
-        startTime: 2000,
-      })
-
-      const messages = new Map()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        timestamp: Date.now(),
-        role: 'assistant',
-        content: 'Test',
-        complete: true,
-      })
-
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
+      const toolCalls: ToolCall[] = [
+        {
+          id: 'tool-1',
+          title: 'Read',
+          status: 'success',
+          timestamp: new Date(1000),
+          completedAt: new Date(2000),
+          index: 0,
         },
-        messages,
-        toolCalls,
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+        {
+          id: 'tool-2',
+          title: 'Write',
+          status: 'running',
+          timestamp: new Date(2000),
+          index: 1,
+        },
+      ]
+
+      const messages: AgentMessage[] = [
+        {
+          id: 'msg-1',
+          content: 'Test',
+          timestamp: new Date(),
+          isStreaming: false,
+          index: 0,
+        },
+      ]
+
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          messages,
+          toolCalls,
+          isConnected: true,
+        })
+      )
 
       const { container } = renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
@@ -414,41 +388,6 @@ describe('ExecutionMonitor', () => {
       expect(footer?.textContent).toContain('completed')
       expect(footer?.textContent).toContain('messages')
     })
-
-    it('should display token usage and cost when available', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {
-          tokenUsage: 1500,
-          cost: 0.0234,
-        },
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
-
-      const { container } = renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
-
-      // Check metrics footer textContent since text is split across elements
-      const footer = container.querySelector('.border-t.px-6.py-3')
-      expect(footer).toBeInTheDocument()
-      expect(footer?.textContent).toContain('1500')
-      expect(footer?.textContent).toContain('tokens')
-      expect(footer?.textContent).toContain('$0.0234')
-    })
   })
 
   describe('Callbacks', () => {
@@ -460,52 +399,43 @@ describe('ExecutionMonitor', () => {
       )
 
       // Initial state - running
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: 1000,
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: 1000,
+          },
+          isConnected: true,
+        })
+      )
 
-      rerender(<ThemeProvider><ExecutionMonitor executionId="test-exec-1" onComplete={onComplete} /></ThemeProvider>)
+      rerender(
+        <ThemeProvider>
+          <ExecutionMonitor executionId="test-exec-1" onComplete={onComplete} />
+        </ThemeProvider>
+      )
 
       // Change to completed
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'completed',
-          currentStep: null,
-          error: null,
-          startTime: 1000,
-          endTime: 3000,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'completed',
+            startTime: 1000,
+            endTime: 3000,
+          },
+          isConnected: true,
+        })
+      )
 
-      rerender(<ThemeProvider><ExecutionMonitor executionId="test-exec-1" onComplete={onComplete} /></ThemeProvider>)
+      rerender(
+        <ThemeProvider>
+          <ExecutionMonitor executionId="test-exec-1" onComplete={onComplete} />
+        </ThemeProvider>
+      )
 
       await waitFor(() => {
         expect(onComplete).toHaveBeenCalled()
@@ -516,55 +446,50 @@ describe('ExecutionMonitor', () => {
       const onError = vi.fn()
       const testError = new Error('Test error')
 
-      const { rerender } = renderWithTheme(<ExecutionMonitor executionId="test-exec-1" onError={onError} />)
+      const { rerender } = renderWithTheme(
+        <ExecutionMonitor executionId="test-exec-1" onError={onError} />
+      )
 
       // Initial state - running
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: 1000,
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: 1000,
+          },
+          isConnected: true,
+        })
+      )
 
-      rerender(<ThemeProvider><ExecutionMonitor executionId="test-exec-1" onError={onError} /></ThemeProvider>)
+      rerender(
+        <ThemeProvider>
+          <ExecutionMonitor executionId="test-exec-1" onError={onError} />
+        </ThemeProvider>
+      )
 
       // Change to error
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'error',
-          currentStep: null,
-          error: 'Test error',
-          startTime: 1000,
-          endTime: 2000,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: testError,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'error',
+            error: 'Test error',
+            startTime: 1000,
+            endTime: 2000,
+          },
+          error: testError,
+          isConnected: true,
+        })
+      )
 
-      rerender(<ThemeProvider><ExecutionMonitor executionId="test-exec-1" onError={onError} /></ThemeProvider>)
+      rerender(
+        <ThemeProvider>
+          <ExecutionMonitor executionId="test-exec-1" onError={onError} />
+        </ThemeProvider>
+      )
 
       await waitFor(() => {
         expect(onError).toHaveBeenCalledWith(testError)
@@ -574,26 +499,17 @@ describe('ExecutionMonitor', () => {
 
   describe('Empty State', () => {
     it('should display empty state when no activity', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          isConnected: true,
+        })
+      )
 
       renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
 
@@ -606,95 +522,57 @@ describe('ExecutionMonitor', () => {
   describe('Historical Execution Mode', () => {
     beforeEach(() => {
       // Mock useExecutionLogs to return empty initially
-      mockUseExecutionLogs.mockReturnValue({
-        events: [],
-        loading: false,
-        error: null,
-        metadata: null,
-      })
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({}))
     })
 
-    it('should use SSE stream for active execution (running)', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+    it('should use WebSocket stream for active execution (running)', () => {
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          isConnected: true,
+        })
+      )
 
       renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running' } as any} />
       )
 
-      // Verify SSE hook was called with autoConnect=true
-      expect(mockUseAgUiStream).toHaveBeenCalledWith({
+      // Verify WebSocket hook was called with executionId
+      expect(mockUseSessionUpdateStream).toHaveBeenCalledWith({
         executionId: 'test-exec-1',
-        autoConnect: true,
       })
 
       // Verify logs hook was called
       expect(mockUseExecutionLogs).toHaveBeenCalledWith('test-exec-1')
 
-      // Should show "Live" badge for SSE
+      // Should show "Live" badge for WebSocket
       expect(screen.getByText('Live')).toBeInTheDocument()
     })
 
     it('should use logs API for completed execution', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'idle',
-        execution: {
-          runId: null,
-          threadId: null,
-          status: 'idle',
-          currentStep: null,
-          error: null,
-          startTime: null,
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: false,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(createMockStreamResult({}))
 
-      mockUseExecutionLogs.mockReturnValue({
-        events: [],
-        loading: false,
-        error: null,
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
         metadata: {
           lineCount: 10,
           byteSize: 5000,
           createdAt: '2025-01-01T00:00:00Z',
           updatedAt: '2025-01-01T00:10:00Z',
         },
-      })
+      }))
 
       renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
       )
 
-      // Verify SSE hook was called with autoConnect=false
-      expect(mockUseAgUiStream).toHaveBeenCalledWith({
-        executionId: 'test-exec-1',
-        autoConnect: false,
+      // Verify WebSocket hook was called with null executionId (disconnected)
+      expect(mockUseSessionUpdateStream).toHaveBeenCalledWith({
+        executionId: null,
       })
 
       // Verify logs hook was called
@@ -708,33 +586,11 @@ describe('ExecutionMonitor', () => {
     })
 
     it('should display loading state for historical execution', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'idle',
-        execution: {
-          runId: null,
-          threadId: null,
-          status: 'idle',
-          currentStep: null,
-          error: null,
-          startTime: null,
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: false,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(createMockStreamResult({}))
 
-      mockUseExecutionLogs.mockReturnValue({
-        events: [],
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
         loading: true,
-        error: null,
-        metadata: null,
-      })
+      }))
 
       renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
@@ -746,33 +602,11 @@ describe('ExecutionMonitor', () => {
     })
 
     it('should display error state for historical execution', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'idle',
-        execution: {
-          runId: null,
-          threadId: null,
-          status: 'idle',
-          currentStep: null,
-          error: null,
-          startTime: null,
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: false,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(createMockStreamResult({}))
 
-      mockUseExecutionLogs.mockReturnValue({
-        events: [],
-        loading: false,
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
         error: new Error('Failed to load execution logs'),
-        metadata: null,
-      })
+      }))
 
       renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
@@ -791,82 +625,59 @@ describe('ExecutionMonitor', () => {
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running' } as any} />
       )
 
-      // Initially should use SSE (active)
-      expect(mockUseAgUiStream).toHaveBeenCalledWith({
+      // Initially should use WebSocket (active)
+      expect(mockUseSessionUpdateStream).toHaveBeenCalledWith({
         executionId: 'test-exec-1',
-        autoConnect: true,
       })
 
       // Update to completed
       rerender(
-        <ThemeProvider><ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} /></ThemeProvider>
+        <ThemeProvider>
+          <ExecutionMonitor
+            executionId="test-exec-1"
+            execution={{ status: 'completed' } as any}
+          />
+        </ThemeProvider>
       )
 
-      // Should now use logs API (autoConnect=false for SSE)
-      expect(mockUseAgUiStream).toHaveBeenCalledWith({
-        executionId: 'test-exec-1',
-        autoConnect: false,
+      // Should now use logs API (executionId=null for WebSocket)
+      expect(mockUseSessionUpdateStream).toHaveBeenCalledWith({
+        executionId: null,
       })
     })
 
-    it('should process historical TEXT_MESSAGE events correctly', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'idle',
-        execution: {
-          runId: null,
-          threadId: null,
-          status: 'idle',
-          currentStep: null,
-          error: null,
-          startTime: null,
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: false,
-      })
+    it('should display historical messages correctly', () => {
+      mockUseSessionUpdateStream.mockReturnValue(createMockStreamResult({}))
 
-      // Mock AG-UI events in the format returned by /logs API
-      mockUseExecutionLogs.mockReturnValue({
+      // Mock pre-processed logs returned by useExecutionLogs hook
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
         events: [
           {
-            type: 'TEXT_MESSAGE_START',
-            timestamp: 1000,
-            messageId: 'msg-1',
-            role: 'assistant',
-          },
-          {
-            type: 'TEXT_MESSAGE_CONTENT',
-            timestamp: 1001,
-            messageId: 'msg-1',
-            delta: 'Hello ',
-          },
-          {
-            type: 'TEXT_MESSAGE_CONTENT',
-            timestamp: 1002,
-            messageId: 'msg-1',
-            delta: 'world!',
-          },
-          {
-            type: 'TEXT_MESSAGE_END',
-            timestamp: 1003,
-            messageId: 'msg-1',
+            sessionUpdate: 'agent_message_complete',
+            content: { type: 'text', text: 'Hello world!' },
+            timestamp: new Date('2025-01-01T00:00:00Z'),
           },
         ],
-        loading: false,
-        error: null,
+        processed: {
+          messages: [
+            {
+              id: 'msg-0',
+              content: 'Hello world!',
+              timestamp: new Date('2025-01-01T00:00:00Z'),
+              isStreaming: false,
+              index: 0,
+            },
+          ],
+          toolCalls: [],
+          thoughts: [],
+        },
         metadata: {
-          lineCount: 4,
-          byteSize: 200,
+          lineCount: 1,
+          byteSize: 50,
           createdAt: '2025-01-01T00:00:00Z',
           updatedAt: '2025-01-01T00:00:01Z',
         },
-      })
+      }))
 
       renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
@@ -876,69 +687,45 @@ describe('ExecutionMonitor', () => {
       expect(screen.getByText('Hello world!')).toBeInTheDocument()
     })
 
-    it('should process historical TOOL_CALL events correctly', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'idle',
-        execution: {
-          runId: null,
-          threadId: null,
-          status: 'idle',
-          currentStep: null,
-          error: null,
-          startTime: null,
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: false,
-      })
+    it('should display historical tool calls correctly', () => {
+      mockUseSessionUpdateStream.mockReturnValue(createMockStreamResult({}))
 
-      mockUseExecutionLogs.mockReturnValue({
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
         events: [
           {
-            type: 'TOOL_CALL_START',
-            timestamp: 2000,
+            sessionUpdate: 'tool_call_complete',
             toolCallId: 'tool-1',
-            toolCallName: 'Read',
-          },
-          {
-            type: 'TOOL_CALL_ARGS',
-            timestamp: 2001,
-            toolCallId: 'tool-1',
-            delta: '{"file":',
-          },
-          {
-            type: 'TOOL_CALL_ARGS',
-            timestamp: 2002,
-            toolCallId: 'tool-1',
-            delta: '"test.ts"}',
-          },
-          {
-            type: 'TOOL_CALL_END',
-            timestamp: 2003,
-            toolCallId: 'tool-1',
-          },
-          {
-            type: 'TOOL_CALL_RESULT',
-            timestamp: 2004,
-            toolCallId: 'tool-1',
+            title: 'Read',
+            status: 'completed',
             result: 'File contents here',
+            rawInput: { file: 'test.ts' },
+            timestamp: new Date('2025-01-01T00:00:02Z'),
+            completedAt: new Date('2025-01-01T00:00:02Z'),
           },
         ],
-        loading: false,
-        error: null,
+        processed: {
+          messages: [],
+          toolCalls: [
+            {
+              id: 'tool-1',
+              title: 'Read',
+              status: 'success',
+              result: 'File contents here',
+              rawInput: { file: 'test.ts' },
+              timestamp: new Date('2025-01-01T00:00:02Z'),
+              completedAt: new Date('2025-01-01T00:00:02Z'),
+              index: 0,
+            },
+          ],
+          thoughts: [],
+        },
         metadata: {
-          lineCount: 5,
-          byteSize: 300,
+          lineCount: 1,
+          byteSize: 100,
           createdAt: '2025-01-01T00:00:00Z',
           updatedAt: '2025-01-01T00:00:02Z',
         },
-      })
+      }))
 
       renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
@@ -946,74 +733,36 @@ describe('ExecutionMonitor', () => {
 
       // Should display the tool call
       expect(screen.getByText('Read')).toBeInTheDocument()
-
-      // Should show completed status (use getAllByText since "completed" appears multiple times)
-      const completedBadges = screen.getAllByText('completed')
-      expect(completedBadges.length).toBeGreaterThan(0)
+      // New UI uses colored dots instead of text badges
+      expect(screen.getByText('⏺')).toBeInTheDocument()
     })
 
     it('should handle multiple messages and tool calls from historical events', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'idle',
-        execution: {
-          runId: null,
-          threadId: null,
-          status: 'idle',
-          currentStep: null,
-          error: null,
-          startTime: null,
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: false,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(createMockStreamResult({}))
 
-      mockUseExecutionLogs.mockReturnValue({
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
         events: [
-          // First message
-          { type: 'TEXT_MESSAGE_START', timestamp: 1000, messageId: 'msg-1', role: 'assistant' },
-          {
-            type: 'TEXT_MESSAGE_CONTENT',
-            timestamp: 1001,
-            messageId: 'msg-1',
-            delta: 'First message',
-          },
-          { type: 'TEXT_MESSAGE_END', timestamp: 1002, messageId: 'msg-1' },
-          // Tool call
-          { type: 'TOOL_CALL_START', timestamp: 2000, toolCallId: 'tool-1', toolCallName: 'Write' },
-          {
-            type: 'TOOL_CALL_ARGS',
-            timestamp: 2001,
-            toolCallId: 'tool-1',
-            delta: '{"file":"test.txt"}',
-          },
-          { type: 'TOOL_CALL_END', timestamp: 2002, toolCallId: 'tool-1' },
-          { type: 'TOOL_CALL_RESULT', timestamp: 2003, toolCallId: 'tool-1', result: 'Success' },
-          // Second message
-          { type: 'TEXT_MESSAGE_START', timestamp: 3000, messageId: 'msg-2', role: 'assistant' },
-          {
-            type: 'TEXT_MESSAGE_CONTENT',
-            timestamp: 3001,
-            messageId: 'msg-2',
-            delta: 'Second message',
-          },
-          { type: 'TEXT_MESSAGE_END', timestamp: 3002, messageId: 'msg-2' },
+          { sessionUpdate: 'agent_message_complete', content: { type: 'text', text: 'First message' }, timestamp: new Date(1000) },
+          { sessionUpdate: 'tool_call_complete', toolCallId: 'tool-1', title: 'Write', status: 'completed', timestamp: new Date(2000) },
+          { sessionUpdate: 'agent_message_complete', content: { type: 'text', text: 'Second message' }, timestamp: new Date(3000) },
         ],
-        loading: false,
-        error: null,
+        processed: {
+          messages: [
+            { id: 'msg-0', content: 'First message', timestamp: new Date(1000), isStreaming: false, index: 0 },
+            { id: 'msg-1', content: 'Second message', timestamp: new Date(3000), isStreaming: false, index: 1 },
+          ],
+          toolCalls: [
+            { id: 'tool-1', title: 'Write', status: 'success', timestamp: new Date(2000), index: 0 },
+          ],
+          thoughts: [],
+        },
         metadata: {
-          lineCount: 10,
-          byteSize: 500,
+          lineCount: 3,
+          byteSize: 200,
           createdAt: '2025-01-01T00:00:00Z',
           updatedAt: '2025-01-01T00:00:03Z',
         },
-      })
+      }))
 
       const { container } = renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
@@ -1035,54 +784,33 @@ describe('ExecutionMonitor', () => {
     })
 
     it('should preserve ordering with timestamps from historical events', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'idle',
-        execution: {
-          runId: null,
-          threadId: null,
-          status: 'idle',
-          currentStep: null,
-          error: null,
-          startTime: null,
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: false,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(createMockStreamResult({}))
 
-      // Events with proper timestamps for ordering
-      mockUseExecutionLogs.mockReturnValue({
+      // Events with proper timestamps for ordering via processed data
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
         events: [
-          // First message at time 1000
-          { type: 'TEXT_MESSAGE_START', timestamp: 1000, messageId: 'msg-1', role: 'assistant' },
-          { type: 'TEXT_MESSAGE_CONTENT', timestamp: 1000, messageId: 'msg-1', delta: 'First' },
-          { type: 'TEXT_MESSAGE_END', timestamp: 1000, messageId: 'msg-1' },
-          // Tool call at time 2000
-          { type: 'TOOL_CALL_START', timestamp: 2000, toolCallId: 'tool-1', toolCallName: 'Read' },
-          { type: 'TOOL_CALL_END', timestamp: 2500, toolCallId: 'tool-1' },
-          { type: 'TOOL_CALL_RESULT', timestamp: 2500, toolCallId: 'tool-1', result: 'data' },
-          // Second message at time 3000
-          { type: 'TEXT_MESSAGE_START', timestamp: 3000, messageId: 'msg-2', role: 'assistant' },
-          { type: 'TEXT_MESSAGE_CONTENT', timestamp: 3000, messageId: 'msg-2', delta: 'Second' },
-          { type: 'TEXT_MESSAGE_END', timestamp: 3000, messageId: 'msg-2' },
+          { sessionUpdate: 'agent_message_complete', content: { type: 'text', text: 'First' }, timestamp: new Date(1000) },
+          { sessionUpdate: 'tool_call_complete', toolCallId: 'tool-1', title: 'Read', status: 'completed', timestamp: new Date(2000) },
+          { sessionUpdate: 'agent_message_complete', content: { type: 'text', text: 'Second' }, timestamp: new Date(3000) },
         ],
-        loading: false,
-        error: null,
-        metadata: null,
-      })
+        processed: {
+          messages: [
+            { id: 'msg-0', content: 'First', timestamp: new Date(1000), isStreaming: false, index: 0 },
+            { id: 'msg-1', content: 'Second', timestamp: new Date(3000), isStreaming: false, index: 1 },
+          ],
+          toolCalls: [
+            { id: 'tool-1', title: 'Read', status: 'success', timestamp: new Date(2000), index: 0 },
+          ],
+          thoughts: [],
+        },
+      }))
 
       const { container } = renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
       )
 
-      // Verify items are rendered in correct order
-      const items = container.querySelectorAll('.flex.gap-3.items-start')
+      // Verify items are rendered in correct order (each wrapped in .group)
+      const items = container.querySelectorAll('.group')
       expect(items.length).toBe(3)
 
       // First: message "First" (timestamp 1000)
@@ -1094,52 +822,33 @@ describe('ExecutionMonitor', () => {
     })
 
     it('should assign sequential indices for stable ordering when timestamps are equal', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'idle',
-        execution: {
-          runId: null,
-          threadId: null,
-          status: 'idle',
-          currentStep: null,
-          error: null,
-          startTime: null,
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: false,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(createMockStreamResult({}))
 
-      // All events have same timestamp (simulating rapid processing)
-      mockUseExecutionLogs.mockReturnValue({
+      // All events have same timestamp (simulating rapid processing) - order preserved via index
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
         events: [
-          // All at same timestamp - order should be preserved via index
-          { type: 'TEXT_MESSAGE_START', timestamp: 1000, messageId: 'msg-1', role: 'assistant' },
-          { type: 'TEXT_MESSAGE_CONTENT', timestamp: 1000, messageId: 'msg-1', delta: 'Alpha' },
-          { type: 'TEXT_MESSAGE_END', timestamp: 1000, messageId: 'msg-1' },
-          { type: 'TOOL_CALL_START', timestamp: 1000, toolCallId: 'tool-1', toolCallName: 'Bash' },
-          { type: 'TOOL_CALL_END', timestamp: 1000, toolCallId: 'tool-1' },
-          { type: 'TOOL_CALL_RESULT', timestamp: 1000, toolCallId: 'tool-1', result: 'ok' },
-          { type: 'TEXT_MESSAGE_START', timestamp: 1000, messageId: 'msg-2', role: 'assistant' },
-          { type: 'TEXT_MESSAGE_CONTENT', timestamp: 1000, messageId: 'msg-2', delta: 'Beta' },
-          { type: 'TEXT_MESSAGE_END', timestamp: 1000, messageId: 'msg-2' },
+          { sessionUpdate: 'agent_message_complete', content: { type: 'text', text: 'Alpha' }, timestamp: new Date(1000) },
+          { sessionUpdate: 'tool_call_complete', toolCallId: 'tool-1', title: 'Bash', status: 'completed', timestamp: new Date(1000) },
+          { sessionUpdate: 'agent_message_complete', content: { type: 'text', text: 'Beta' }, timestamp: new Date(1000) },
         ],
-        loading: false,
-        error: null,
-        metadata: null,
-      })
+        processed: {
+          messages: [
+            { id: 'msg-0', content: 'Alpha', timestamp: new Date(1000), isStreaming: false, index: 0 },
+            { id: 'msg-1', content: 'Beta', timestamp: new Date(1000), isStreaming: false, index: 1 },
+          ],
+          toolCalls: [
+            { id: 'tool-1', title: 'Bash', status: 'success', timestamp: new Date(1000), index: 0 },
+          ],
+          thoughts: [],
+        },
+      }))
 
       const { container } = renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
       )
 
-      // Verify all items rendered
-      const items = container.querySelectorAll('.flex.gap-3.items-start')
+      // Verify all items rendered (each wrapped in .group)
+      const items = container.querySelectorAll('.group')
       expect(items.length).toBe(3)
 
       // With index-based sorting, order should be:
@@ -1151,62 +860,56 @@ describe('ExecutionMonitor', () => {
       expect(items[2].textContent).toContain('Beta')
     })
 
-    it('should show SSE data while logs are loading during transition (no flicker)', () => {
-      // SSE stream has data from running execution
-      const sseMessages = new Map()
-      sseMessages.set('msg-1', {
-        messageId: 'msg-1',
-        timestamp: 1000,
-        role: 'assistant',
-        content: 'SSE streamed message',
-        complete: true,
-      })
-
-      const sseToolCalls = new Map()
-      sseToolCalls.set('tool-1', {
-        toolCallId: 'tool-1',
-        toolCallName: 'Read',
-        args: '{}',
-        status: 'completed',
-        startTime: 2000,
-        endTime: 2500,
-      })
-
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'disconnected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'completed',
-          currentStep: null,
-          error: null,
-          startTime: 1000,
-          endTime: 3000,
+    it('should show WebSocket data while logs are loading during transition (no flicker)', () => {
+      // WebSocket stream has data from running execution
+      const wsMessages: AgentMessage[] = [
+        {
+          id: 'msg-1',
+          content: 'WebSocket streamed message',
+          timestamp: new Date(1000),
+          isStreaming: false,
+          index: 0,
         },
-        messages: sseMessages,
-        toolCalls: sseToolCalls,
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: false,
-      })
+      ]
+
+      const wsToolCalls: ToolCall[] = [
+        {
+          id: 'tool-1',
+          title: 'Read',
+          rawInput: {},
+          status: 'success',
+          timestamp: new Date(2000),
+          completedAt: new Date(2500),
+          index: 0,
+        },
+      ]
+
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'disconnected',
+          execution: {
+            runId: 'run-123',
+            status: 'completed',
+            startTime: 1000,
+            endTime: 3000,
+          },
+          messages: wsMessages,
+          toolCalls: wsToolCalls,
+          isConnected: false,
+        })
+      )
 
       // Logs are still loading
-      mockUseExecutionLogs.mockReturnValue({
-        events: [],
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
         loading: true,
-        error: null,
-        metadata: null,
-      })
+      }))
 
       renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
       )
 
-      // Should still show SSE data while logs are loading (no flicker)
-      expect(screen.getByText('SSE streamed message')).toBeInTheDocument()
+      // Should still show WebSocket data while logs are loading (no flicker)
+      expect(screen.getByText('WebSocket streamed message')).toBeInTheDocument()
       expect(screen.getByText('Read')).toBeInTheDocument()
 
       // Should NOT show empty state
@@ -1214,96 +917,82 @@ describe('ExecutionMonitor', () => {
     })
 
     it('should switch to logs data once loaded', () => {
-      // SSE stream has data from running execution
-      const sseMessages = new Map()
-      sseMessages.set('msg-1', {
-        messageId: 'msg-1',
-        timestamp: 1000,
-        role: 'assistant',
-        content: 'SSE message',
-        complete: true,
-      })
-
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'disconnected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'completed',
-          currentStep: null,
-          error: null,
-          startTime: 1000,
-          endTime: 3000,
+      // WebSocket stream has data from running execution
+      const wsMessages: AgentMessage[] = [
+        {
+          id: 'msg-1',
+          content: 'WebSocket message',
+          timestamp: new Date(1000),
+          isStreaming: false,
+          index: 0,
         },
-        messages: sseMessages,
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: false,
-      })
+      ]
+
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'disconnected',
+          execution: {
+            runId: 'run-123',
+            status: 'completed',
+            startTime: 1000,
+            endTime: 3000,
+          },
+          messages: wsMessages,
+          isConnected: false,
+        })
+      )
 
       // Logs have finished loading with different content
-      mockUseExecutionLogs.mockReturnValue({
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
         events: [
-          { type: 'TEXT_MESSAGE_START', timestamp: 1000, messageId: 'log-msg-1', role: 'assistant' },
-          { type: 'TEXT_MESSAGE_CONTENT', timestamp: 1000, messageId: 'log-msg-1', delta: 'Logs message' },
-          { type: 'TEXT_MESSAGE_END', timestamp: 1000, messageId: 'log-msg-1' },
+          { sessionUpdate: 'agent_message_complete', content: { type: 'text', text: 'Logs message' }, timestamp: new Date(1000) },
         ],
-        loading: false,
-        error: null,
-        metadata: { lineCount: 3, byteSize: 100, createdAt: '', updatedAt: '' },
-      })
+        processed: {
+          messages: [
+            { id: 'log-msg-1', content: 'Logs message', timestamp: new Date(1000), isStreaming: false, index: 0 },
+          ],
+          toolCalls: [],
+          thoughts: [],
+        },
+        metadata: { lineCount: 1, byteSize: 50, createdAt: '', updatedAt: '' },
+      }))
 
       renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
       )
 
-      // Should show logs data (not SSE data) once logs are loaded
+      // Should show logs data (not WebSocket data) once logs are loaded
       expect(screen.getByText('Logs message')).toBeInTheDocument()
-      expect(screen.queryByText('SSE message')).not.toBeInTheDocument()
+      expect(screen.queryByText('WebSocket message')).not.toBeInTheDocument()
     })
 
-    it('should fall back to saved logs when SSE disconnects unexpectedly during active execution', () => {
-      // Simulate AG-UI adapter disconnect scenario:
-      // SSE connection is disconnected, no SSE data (cleared), but logs are available
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'disconnected',
-        execution: {
-          runId: null,
-          threadId: null,
-          status: 'idle',
-          currentStep: null,
-          error: null,
-          startTime: null,
-          endTime: null,
-        },
-        messages: new Map(), // Empty - data cleared on disconnect
-        toolCalls: new Map(), // Empty - data cleared on disconnect
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: false,
-      })
+    it('should fall back to saved logs when WebSocket disconnects unexpectedly during active execution', () => {
+      // Simulate WebSocket disconnect scenario:
+      // WebSocket connection is disconnected, no WebSocket data (cleared), but logs are available
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'disconnected',
+          isConnected: false,
+        })
+      )
 
       // Saved logs have the execution history
-      mockUseExecutionLogs.mockReturnValue({
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
         events: [
-          { type: 'TEXT_MESSAGE_START', timestamp: 1000, messageId: 'msg-1', role: 'assistant' },
-          { type: 'TEXT_MESSAGE_CONTENT', timestamp: 1001, messageId: 'msg-1', delta: 'Saved message from logs' },
-          { type: 'TEXT_MESSAGE_END', timestamp: 1002, messageId: 'msg-1' },
-          { type: 'TOOL_CALL_START', timestamp: 2000, toolCallId: 'tool-1', toolCallName: 'Read' },
-          { type: 'TOOL_CALL_END', timestamp: 2100, toolCallId: 'tool-1' },
-          { type: 'TOOL_CALL_RESULT', timestamp: 2100, toolCallId: 'tool-1', result: 'File contents' },
+          { sessionUpdate: 'agent_message_complete', content: { type: 'text', text: 'Saved message from logs' }, timestamp: new Date(1000) },
+          { sessionUpdate: 'tool_call_complete', toolCallId: 'tool-1', title: 'Read', status: 'completed', result: 'File contents', timestamp: new Date(2000) },
         ],
-        loading: false,
-        error: null,
-        metadata: { lineCount: 6, byteSize: 300, createdAt: '', updatedAt: '' },
-      })
+        processed: {
+          messages: [
+            { id: 'msg-1', content: 'Saved message from logs', timestamp: new Date(1000), isStreaming: false, index: 0 },
+          ],
+          toolCalls: [
+            { id: 'tool-1', title: 'Read', status: 'success', result: 'File contents', timestamp: new Date(2000), index: 0 },
+          ],
+          thoughts: [],
+        },
+        metadata: { lineCount: 2, byteSize: 100, createdAt: '', updatedAt: '' },
+      }))
 
       renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running' } as any} />
@@ -1321,36 +1010,28 @@ describe('ExecutionMonitor', () => {
 
   describe('Agent-Specific Rendering', () => {
     it('should use ClaudeCodeTrajectory for claude-code agent type', () => {
-      const messages = new Map()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        role: 'assistant',
-        content: 'Let me think about this problem...',
-        complete: true,
-        timestamp: 1000,
-        index: 0,
-      })
-
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
+      const messages: AgentMessage[] = [
+        {
+          id: 'msg-1',
+          content: 'Let me think about this problem...',
+          timestamp: new Date(1000),
+          isStreaming: false,
+          index: 0,
         },
-        messages,
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      ]
+
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          messages,
+          isConnected: true,
+        })
+      )
 
       const { container } = renderWithTheme(
         <ExecutionMonitor
@@ -1364,132 +1045,105 @@ describe('ExecutionMonitor', () => {
       expect(screen.getByText(/Let me think/)).toBeInTheDocument()
     })
 
-    it('should use AgentTrajectory for non-claude-code agent types', () => {
-      const messages = new Map()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        role: 'assistant',
-        content: 'Let me think about this problem...',
-        complete: true,
-        timestamp: 1000,
-        index: 0,
-      })
-
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
+    it('should use unified AgentTrajectory for non-claude-code agent types', () => {
+      const messages: AgentMessage[] = [
+        {
+          id: 'msg-1',
+          content: 'Let me think about this problem...',
+          timestamp: new Date(1000),
+          isStreaming: false,
+          index: 0,
         },
-        messages,
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      ]
 
-      renderWithTheme(
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          messages,
+          isConnected: true,
+        })
+      )
+
+      const { container } = renderWithTheme(
         <ExecutionMonitor
           executionId="test-exec-1"
           execution={{ status: 'running', agent_type: 'codex' } as any}
         />
       )
 
-      // AgentTrajectory should show standard "assistant" badge (not "thinking")
-      expect(screen.getByText('assistant')).toBeInTheDocument()
-      expect(screen.queryByText('thinking')).not.toBeInTheDocument()
+      // Unified AgentTrajectory uses terminal-style dots
+      expect(container.textContent).toContain('⏺')
+      expect(screen.getByText(/Let me think/)).toBeInTheDocument()
     })
 
-    it('should use AgentTrajectory when agent_type is not specified', () => {
-      const messages = new Map()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        role: 'assistant',
-        content: 'Test message',
-        complete: true,
-        timestamp: 1000,
-        index: 0,
-      })
-
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
+    it('should use unified AgentTrajectory when agent_type is not specified', () => {
+      const messages: AgentMessage[] = [
+        {
+          id: 'msg-1',
+          content: 'Test message',
+          timestamp: new Date(1000),
+          isStreaming: false,
+          index: 0,
         },
-        messages,
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      ]
 
-      renderWithTheme(
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          messages,
+          isConnected: true,
+        })
+      )
+
+      const { container } = renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running' } as any} />
       )
 
-      // Should default to AgentTrajectory (standard rendering)
-      expect(screen.getByText('assistant')).toBeInTheDocument()
+      // Should use unified AgentTrajectory with terminal-style rendering
+      expect(container.textContent).toContain('⏺')
       expect(screen.getByText('Test message')).toBeInTheDocument()
     })
   })
 
   describe('TodoTracker Integration', () => {
-    it('should display TodoTracker when there are todo tool calls', () => {
-      const toolCalls = new Map()
-      toolCalls.set('tool-1', {
-        toolCallId: 'tool-1',
-        toolCallName: 'TodoWrite',
-        args: JSON.stringify({
-          todos: [
-            { content: 'Task 1', status: 'pending', activeForm: 'Task 1' },
-            { content: 'Task 2', status: 'in_progress', activeForm: 'Task 2' },
-            { content: 'Task 3', status: 'completed', activeForm: 'Task 3' },
+    it('should display TodoTracker when there are plan updates', () => {
+      // Note: Claude Code's TodoWrite is an internal tool that does NOT emit tool_call events.
+      // Instead, todo state is exposed via ACP "plan" session updates.
+      const planUpdates: useSessionUpdateStreamModule.PlanUpdateEvent[] = [
+        {
+          id: 'plan-1',
+          entries: [
+            { content: 'Task 1', status: 'pending', priority: 'high' },
+            { content: 'Task 2', status: 'in_progress', priority: 'medium' },
+            { content: 'Task 3', status: 'completed', priority: 'low' },
           ],
-        }),
-        status: 'completed',
-        result: 'Updated',
-        startTime: 1000,
-        endTime: 1100,
-        index: 0,
-      })
-
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
+          timestamp: new Date(1000),
+          index: 0,
         },
-        messages: new Map(),
-        toolCalls,
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      ]
+
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          planUpdates,
+          isConnected: true,
+        })
+      )
 
       renderWithTheme(
         <ExecutionMonitor
@@ -1505,39 +1159,34 @@ describe('ExecutionMonitor', () => {
       expect(screen.getByText('Task 3')).toBeInTheDocument()
     })
 
-    it('should not display TodoTracker when there are no todo tool calls', () => {
-      const toolCalls = new Map()
-      toolCalls.set('tool-1', {
-        toolCallId: 'tool-1',
-        toolCallName: 'Bash',
-        args: JSON.stringify({ command: 'npm test' }),
-        status: 'completed',
-        result: 'Tests passed',
-        startTime: 1000,
-        endTime: 2000,
-        index: 0,
-      })
-
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
+    it('should not display TodoTracker when there are no plan updates', () => {
+      // When there are no plan updates, TodoTracker should not display
+      const toolCalls: ToolCall[] = [
+        {
+          id: 'tool-1',
+          title: 'Bash',
+          rawInput: JSON.stringify({ command: 'npm test' }),
+          status: 'success',
+          result: 'Tests passed',
+          timestamp: new Date(1000),
+          completedAt: new Date(2000),
+          index: 0,
         },
-        messages: new Map(),
-        toolCalls,
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      ]
+
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          toolCalls,
+          planUpdates: [], // No plan updates means no todos
+          isConnected: true,
+        })
+      )
 
       renderWithTheme(
         <ExecutionMonitor
@@ -1553,36 +1202,29 @@ describe('ExecutionMonitor', () => {
 
   describe('Compact Mode', () => {
     it('should render without card wrapper in compact mode', () => {
-      const messages = new Map()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        role: 'assistant',
-        content: 'Test message',
-        complete: true,
-        timestamp: 1000,
-        index: 0,
-      })
-
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'completed',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: Date.now() + 1000,
+      const messages: AgentMessage[] = [
+        {
+          id: 'msg-1',
+          content: 'Test message',
+          timestamp: new Date(1000),
+          isStreaming: false,
+          index: 0,
         },
-        messages,
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: false,
-      })
+      ]
+
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'completed',
+            startTime: Date.now(),
+            endTime: Date.now() + 1000,
+          },
+          messages,
+          isConnected: false,
+        })
+      )
 
       renderWithTheme(
         <ExecutionMonitor
@@ -1601,36 +1243,29 @@ describe('ExecutionMonitor', () => {
     })
 
     it('should render with card wrapper when not in compact mode', () => {
-      const messages = new Map()
-      messages.set('msg-1', {
-        messageId: 'msg-1',
-        role: 'assistant',
-        content: 'Test message',
-        complete: true,
-        timestamp: 1000,
-        index: 0,
-      })
-
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'completed',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: Date.now() + 1000,
+      const messages: AgentMessage[] = [
+        {
+          id: 'msg-1',
+          content: 'Test message',
+          timestamp: new Date(1000),
+          isStreaming: false,
+          index: 0,
         },
-        messages,
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: false,
-      })
+      ]
+
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'completed',
+            startTime: Date.now(),
+            endTime: Date.now() + 1000,
+          },
+          messages,
+          isConnected: false,
+        })
+      )
 
       renderWithTheme(
         <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'completed' } as any} />
@@ -1643,26 +1278,17 @@ describe('ExecutionMonitor', () => {
     })
 
     it('should display user prompt in compact mode when prompt is provided', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          isConnected: true,
+        })
+      )
 
       renderWithTheme(
         <ExecutionMonitor
@@ -1680,26 +1306,17 @@ describe('ExecutionMonitor', () => {
     })
 
     it('should display follow-up prompt in compact mode', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          isConnected: true,
+        })
+      )
 
       renderWithTheme(
         <ExecutionMonitor
@@ -1718,26 +1335,17 @@ describe('ExecutionMonitor', () => {
     })
 
     it('should not display user prompt in compact mode when prompt is null', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          isConnected: true,
+        })
+      )
 
       renderWithTheme(
         <ExecutionMonitor
@@ -1756,26 +1364,17 @@ describe('ExecutionMonitor', () => {
     })
 
     it('should preserve whitespace in user prompt', () => {
-      mockUseAgUiStream.mockReturnValue({
-        connectionStatus: 'connected',
-        execution: {
-          runId: 'run-123',
-          threadId: 'thread-456',
-          status: 'running',
-          currentStep: null,
-          error: null,
-          startTime: Date.now(),
-          endTime: null,
-        },
-        messages: new Map(),
-        toolCalls: new Map(),
-        state: {},
-        error: null,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        reconnect: vi.fn(),
-        isConnected: true,
-      })
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          isConnected: true,
+        })
+      )
 
       const multilinePrompt = 'Please:\n1. Add tests\n2. Update docs\n3. Fix bugs'
 
@@ -1794,6 +1393,93 @@ describe('ExecutionMonitor', () => {
       // Use textContent to check the full text with preserved newlines
       const promptElement = container.querySelector('.whitespace-pre-wrap')
       expect(promptElement?.textContent).toBe(multilinePrompt)
+    })
+  })
+
+  describe('Skip All Permissions', () => {
+    it('should pass onSkipAllPermissions prop to AgentTrajectory when permission requests exist', () => {
+      const permissionRequests = [
+        {
+          requestId: 'perm-1',
+          sessionId: 'session-123',
+          toolCall: {
+            toolCallId: 'tool-1',
+            title: 'Bash',
+            status: 'pending',
+            rawInput: { command: 'npm test' },
+          },
+          options: [
+            { optionId: 'allow_once', name: 'Allow', kind: 'allow_once' as const },
+            { optionId: 'deny_once', name: 'Deny', kind: 'deny_once' as const },
+          ],
+          responded: false,
+          timestamp: new Date(),
+        },
+      ]
+
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          permissionRequests,
+          isConnected: true,
+        })
+      )
+
+      renderWithTheme(
+        <ExecutionMonitor
+          executionId="test-exec-1"
+          onSkipAllPermissionsComplete={vi.fn()}
+        />
+      )
+
+      // Should render the permission request with Skip All button
+      expect(screen.getByText('Bash')).toBeInTheDocument()
+      expect(screen.getByText('awaiting permission')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Skip All' })).toBeInTheDocument()
+    })
+
+    it('should not render Skip All button when onSkipAllPermissionsComplete is not provided', () => {
+      const permissionRequests = [
+        {
+          requestId: 'perm-1',
+          sessionId: 'session-123',
+          toolCall: {
+            toolCallId: 'tool-1',
+            title: 'Bash',
+            status: 'pending',
+            rawInput: { command: 'npm test' },
+          },
+          options: [
+            { optionId: 'allow_once', name: 'Allow', kind: 'allow_once' as const },
+          ],
+          responded: false,
+          timestamp: new Date(),
+        },
+      ]
+
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: {
+            runId: 'run-123',
+            status: 'running',
+            startTime: Date.now(),
+          },
+          permissionRequests,
+          isConnected: true,
+        })
+      )
+
+      renderWithTheme(<ExecutionMonitor executionId="test-exec-1" />)
+
+      // Should render permission request but NOT the Skip All button
+      expect(screen.getByText('Bash')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Skip All' })).not.toBeInTheDocument()
     })
   })
 })
