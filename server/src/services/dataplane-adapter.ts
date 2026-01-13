@@ -51,6 +51,8 @@ import type {
   CheckpointOptions,
   CheckpointInfo,
   CheckpointResult,
+  PromoteOptions,
+  PromoteResult,
 } from './dataplane-types.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1247,6 +1249,349 @@ export class DataplaneAdapter {
         },
       };
     }
+  }
+
+  /**
+   * Promote sync - merge issue stream to main branch
+   *
+   * This is the second tier of the two-tier merge model. After checkpoints
+   * are approved, this merges the issue stream into the target branch (main).
+   *
+   * Flow:
+   * 1. Validate issue has checkpoint(s)
+   * 2. Verify checkpoint is approved (unless force)
+   * 3. Check dependencies are merged first
+   * 4. Perform merge to target branch
+   * 5. Update checkpoint status to 'merged'
+   * 6. Trigger cascade rebase for dependents
+   *
+   * @param issueId - Issue ID to promote
+   * @param db - Sudocode database connection
+   * @param options - Promote options
+   * @returns Promote result
+   */
+  async promoteSync(
+    issueId: string,
+    db: Database.Database,
+    options: PromoteOptions = {}
+  ): Promise<PromoteResult> {
+    const tracker = this.ensureInitialized();
+
+    // Set defaults
+    const strategy = options.strategy || 'squash';
+    const force = options.force || false;
+
+    // 1. Get issue stream
+    const issueStream = this.getStreamByIssueId(issueId);
+    if (!issueStream) {
+      return {
+        success: false,
+        error: `Issue stream not found: ${issueId}`,
+        filesChanged: 0,
+        additions: 0,
+        deletions: 0,
+      };
+    }
+
+    const issueStreamBranch = tracker.getStreamBranchName(issueStream.id);
+
+    // 2. Check for checkpoint (must have at least one checkpoint to promote)
+    const checkpoint = db.prepare(`
+      SELECT * FROM checkpoints
+      WHERE issue_id = ?
+      ORDER BY checkpointed_at DESC
+      LIMIT 1
+    `).get(issueId) as {
+      id: string;
+      execution_id: string;
+      review_status: string;
+      commit_sha: string;
+      changed_files: number;
+      additions: number;
+      deletions: number;
+    } | undefined;
+
+    if (!checkpoint) {
+      return {
+        success: false,
+        error: 'No checkpoint found for this issue. Create a checkpoint first.',
+        filesChanged: 0,
+        additions: 0,
+        deletions: 0,
+        issueStream: {
+          id: issueStream.id,
+          branch: issueStreamBranch,
+        },
+      };
+    }
+
+    // 2b. Resolve target branch from execution stream metadata
+    // Priority: explicit option > execution's configured base branch > 'main'
+    let targetBranch = options.targetBranch || 'main';
+    const execStream = this.getStreamByExecutionId(checkpoint.execution_id);
+    if (execStream) {
+      const execMeta = getSudocodeMetadata(execStream.metadata);
+      if (execMeta?.target_branch) {
+        targetBranch = options.targetBranch || execMeta.target_branch;
+      }
+    }
+
+    // 3. Check approval status (unless force)
+    if (!force && checkpoint.review_status !== 'approved') {
+      return {
+        success: false,
+        error: `Checkpoint is not approved (status: ${checkpoint.review_status}). Approve the checkpoint or use force flag.`,
+        requiresApproval: true,
+        filesChanged: 0,
+        additions: 0,
+        deletions: 0,
+        issueStream: {
+          id: issueStream.id,
+          branch: issueStreamBranch,
+        },
+      };
+    }
+
+    // 4. Check for blocking dependencies that haven't been merged
+    const blockedByIssues = this.getUnmergedBlockingIssues(issueId, db);
+    if (blockedByIssues.length > 0) {
+      return {
+        success: false,
+        error: `Cannot promote: blocked by unmerged issues: ${blockedByIssues.join(', ')}`,
+        blockedBy: blockedByIssues,
+        filesChanged: 0,
+        additions: 0,
+        deletions: 0,
+        issueStream: {
+          id: issueStream.id,
+          branch: issueStreamBranch,
+        },
+      };
+    }
+
+    // 5. Get worktree or create temporary one for merge
+    let worktreePath = '';
+    const existingWorktree = tracker.getWorktree(issueStream.agentId);
+
+    if (existingWorktree) {
+      worktreePath = existingWorktree.path;
+    } else {
+      // Try to find any available worktree or use main repo
+      worktreePath = this.repoPath;
+    }
+
+    const { execSync } = await import('child_process');
+
+    try {
+      // 6. Check for conflicts with target branch
+      const mergeBase = execSync(
+        `git merge-base ${targetBranch} ${issueStreamBranch}`,
+        { cwd: worktreePath, encoding: 'utf-8' }
+      ).trim();
+
+      // Check if there would be conflicts using merge-tree
+      try {
+        execSync(`git merge-tree ${mergeBase} ${targetBranch} ${issueStreamBranch}`, {
+          cwd: worktreePath,
+          encoding: 'utf-8',
+        });
+      } catch {
+        // merge-tree returns non-zero if there are conflicts
+        return {
+          success: false,
+          error: 'Merge conflicts detected with target branch',
+          conflicts: [], // TODO: parse conflict files from merge-tree output
+          filesChanged: 0,
+          additions: 0,
+          deletions: 0,
+          issueStream: {
+            id: issueStream.id,
+            branch: issueStreamBranch,
+          },
+        };
+      }
+
+      // 7. Perform merge to target branch
+      // First checkout target branch
+      execSync(`git checkout ${targetBranch}`, {
+        cwd: worktreePath,
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      });
+
+      // Determine commit message
+      const message =
+        options.message ||
+        `Promote: ${issueId} - checkpoint ${checkpoint.id}`;
+
+      let mergeCommit: string;
+
+      if (strategy === 'squash') {
+        // Squash merge - combines all commits into one
+        execSync(`git merge --squash ${issueStreamBranch}`, {
+          cwd: worktreePath,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        });
+        execSync(`git commit -m "${message}"`, {
+          cwd: worktreePath,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        });
+      } else {
+        // Regular merge - preserves commit history
+        execSync(`git merge ${issueStreamBranch} -m "${message}"`, {
+          cwd: worktreePath,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        });
+      }
+
+      // Get the new HEAD
+      mergeCommit = execSync('git rev-parse HEAD', {
+        cwd: worktreePath,
+        encoding: 'utf-8',
+      }).trim();
+
+      // Get diff stats
+      const diffStats = await this.getDiffStats(worktreePath, mergeBase, mergeCommit);
+
+      // 8. Update checkpoint status to 'merged'
+      const updateStmt = db.prepare(`
+        UPDATE checkpoints
+        SET review_status = 'merged', merged_at = ?, merge_commit = ?
+        WHERE id = ?
+      `);
+      updateStmt.run(new Date().toISOString(), mergeCommit, checkpoint.id);
+
+      // Update issue stream review status
+      this.updateIssueStreamReviewStatus(issueId, 'none');
+
+      // 9. Remove from merge queue if present
+      try {
+        const queue = tracker.getMergeQueue({ targetBranch });
+        const queueEntry = queue.find((e) => e.streamId === issueStream.id);
+        if (queueEntry) {
+          tracker.removeFromMergeQueue(queueEntry.id);
+        }
+      } catch {
+        // Queue operations are non-critical
+      }
+
+      // 10. Trigger cascade rebase for dependent streams
+      let cascade: CascadeReport | undefined;
+      if (this.config.cascadeOnMerge) {
+        try {
+          cascade = await this.triggerCascade(issueStream.id);
+        } catch (error) {
+          // Log but don't fail - promote succeeded
+          console.warn(
+            `Cascade rebase warning: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      }
+
+      // 11. Return success result
+      return {
+        success: true,
+        mergeCommit,
+        filesChanged: diffStats.filesChanged,
+        additions: diffStats.additions,
+        deletions: diffStats.deletions,
+        promotedIssues: [issueId],
+        issueStream: {
+          id: issueStream.id,
+          branch: issueStreamBranch,
+        },
+        cascade,
+      };
+    } catch (error) {
+      // Restore original branch on failure
+      try {
+        execSync(`git checkout -`, { cwd: worktreePath, stdio: 'pipe' });
+      } catch {
+        // Best effort cleanup
+      }
+
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        filesChanged: 0,
+        additions: 0,
+        deletions: 0,
+        issueStream: {
+          id: issueStream.id,
+          branch: issueStreamBranch,
+        },
+      };
+    }
+  }
+
+  /**
+   * Get diff statistics between two commits
+   */
+  private async getDiffStats(
+    repoPath: string,
+    fromCommit: string,
+    toCommit: string
+  ): Promise<{ filesChanged: number; additions: number; deletions: number }> {
+    const { execSync } = await import('child_process');
+
+    try {
+      const output = execSync(
+        `git diff --shortstat ${fromCommit}..${toCommit}`,
+        { cwd: repoPath, encoding: 'utf-8' }
+      ).trim();
+
+      // Parse output like: "3 files changed, 10 insertions(+), 5 deletions(-)"
+      const filesMatch = output.match(/(\d+) files? changed/);
+      const insertionsMatch = output.match(/(\d+) insertions?\(\+\)/);
+      const deletionsMatch = output.match(/(\d+) deletions?\(-\)/);
+
+      return {
+        filesChanged: filesMatch ? parseInt(filesMatch[1], 10) : 0,
+        additions: insertionsMatch ? parseInt(insertionsMatch[1], 10) : 0,
+        deletions: deletionsMatch ? parseInt(deletionsMatch[1], 10) : 0,
+      };
+    } catch {
+      return { filesChanged: 0, additions: 0, deletions: 0 };
+    }
+  }
+
+  /**
+   * Get list of blocking issues that haven't been merged yet
+   */
+  private getUnmergedBlockingIssues(issueId: string, db: Database.Database): string[] {
+    const unmergedIssues: string[] = [];
+
+    // Get issues that block this one (incoming "blocks" relationships)
+    const blockedBy = getIncomingRelationships(db, issueId, 'issue', 'blocks');
+
+    // Get issues this depends on (outgoing "depends-on" relationships)
+    const dependsOn = getOutgoingRelationships(db, issueId, 'issue', 'depends-on');
+
+    // Combine all dependencies
+    const allDependencies = [
+      ...blockedBy.map((rel) => rel.from_id),
+      ...dependsOn.map((rel) => rel.to_id),
+    ];
+
+    for (const depIssueId of allDependencies) {
+      // Check if dependency has been merged (latest checkpoint has review_status = 'merged')
+      const checkpoint = db.prepare(`
+        SELECT review_status FROM checkpoints
+        WHERE issue_id = ?
+        ORDER BY checkpointed_at DESC
+        LIMIT 1
+      `).get(depIssueId) as { review_status: string } | undefined;
+
+      // If no checkpoint or not merged, it's a blocker
+      if (!checkpoint || checkpoint.review_status !== 'merged') {
+        unmergedIssues.push(depIssueId);
+      }
+    }
+
+    return unmergedIssues;
   }
 
   // ───────────────────────────────────────────────────────────────────────────

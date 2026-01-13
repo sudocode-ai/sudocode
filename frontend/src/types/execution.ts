@@ -345,3 +345,74 @@ export interface CheckpointResult {
   conflicts?: CheckpointConflict[]
   error?: string
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Promote Types (Issue Stream → Main Branch)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Options for promote operation
+ */
+export interface PromoteOptions {
+  /** Target branch to merge into (default: main) */
+  target_branch?: string
+  /** Merge strategy: squash all into one commit or preserve history */
+  strategy?: 'squash' | 'merge'
+  /** Promote entire stack of dependent issues (default: false) */
+  include_stack?: boolean
+  /** Custom merge commit message */
+  message?: string
+  /** Force promote even if checkpoint is not approved (default: false) */
+  force?: boolean
+  /** Who is performing the promote */
+  promoted_by?: string
+}
+
+/**
+ * Cascade stream result for dependent rebases
+ */
+export interface CascadeStreamResult {
+  stream_id: string
+  issue_id?: string
+  result: 'rebased' | 'conflict' | 'skipped' | 'failed'
+  conflict_files?: string[]
+  new_head?: string
+  error?: string
+}
+
+/**
+ * Cascade report for dependent streams
+ */
+export interface CascadeReport {
+  triggered_by: string
+  affected_streams: CascadeStreamResult[]
+  complete: boolean
+  deferred?: string[]
+}
+
+/**
+ * Result of promote operation
+ */
+export interface PromoteResult {
+  success: boolean
+  /** Merge commit hash on target branch */
+  merge_commit?: string
+  /** Number of files changed */
+  files_changed: number
+  /** Lines added */
+  additions: number
+  /** Lines deleted */
+  deletions: number
+  /** Issue IDs that were promoted (if include_stack: true) */
+  promoted_issues?: string[]
+  /** Error message if failed */
+  error?: string
+  /** Issue IDs that must be promoted first (blocking dependencies) */
+  blocked_by?: string[]
+  /** Whether approval is required before promote */
+  requires_approval?: boolean
+  /** Conflicts if any were detected */
+  conflicts?: CheckpointConflict[]
+  /** Cascade report if dependents were rebased */
+  cascade?: CascadeReport
+}

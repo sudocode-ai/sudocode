@@ -543,3 +543,60 @@ export interface CheckpointResult {
   /** Error message if failed */
   error?: string;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Promote Types (Issue Stream → Main Branch)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Options for promote sync operation
+ */
+export interface PromoteOptions {
+  /** Target branch to merge into (default: main) */
+  targetBranch?: string;
+  /** Merge strategy: squash all into one commit or preserve history */
+  strategy?: 'squash' | 'merge';
+  /** Promote entire stack of dependent issues (default: false) */
+  includeStack?: boolean;
+  /** Custom merge commit message */
+  message?: string;
+  /** Force promote even if checkpoint is not approved (default: false) */
+  force?: boolean;
+  /** Agent performing the promote */
+  promotedBy?: string;
+}
+
+/**
+ * Result of promote sync operation
+ */
+export interface PromoteResult {
+  /** Whether promote succeeded */
+  success: boolean;
+  /** Merge commit hash on target branch */
+  mergeCommit?: string;
+  /** Number of files changed */
+  filesChanged: number;
+  /** Lines added */
+  additions: number;
+  /** Lines deleted */
+  deletions: number;
+  /** Issue IDs that were promoted (if includeStack: true) */
+  promotedIssues?: string[];
+  /** Error message if failed */
+  error?: string;
+  /** Issue IDs that must be promoted first (blocking dependencies) */
+  blockedBy?: string[];
+  /** Whether approval is required before promote */
+  requiresApproval?: boolean;
+  /** Conflicts if any were detected */
+  conflicts?: ConflictInfo[];
+  /** Issue stream info */
+  issueStream?: {
+    /** Stream ID */
+    id: string;
+    /** Branch name */
+    branch: string;
+  };
+  /** Cascade report if dependents were rebased */
+  cascade?: CascadeReport;
+}

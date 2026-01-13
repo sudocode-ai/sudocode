@@ -30,6 +30,9 @@ import type {
   ExecutionChangesResult,
   CheckpointOptions,
   CheckpointResult,
+  Checkpoint,
+  PromoteOptions,
+  PromoteResult,
 } from '@/types/execution'
 import type {
   ProjectInfo,
@@ -152,6 +155,40 @@ const del = (url: string, data?: any) => api.delete(url, data ? { data } : undef
 /**
  * Issues API
  */
+/**
+ * Review action type for checkpoint review
+ */
+export type ReviewAction = 'approve' | 'request_changes' | 'reset'
+
+/**
+ * Review request body
+ */
+export interface ReviewCheckpointRequest {
+  action: ReviewAction
+  notes?: string
+  reviewed_by?: string
+}
+
+/**
+ * Review checkpoint response
+ */
+export interface ReviewCheckpointResponse {
+  issue_id: string
+  checkpoint_id: string
+  review_status: 'approved' | 'changes_requested' | 'pending'
+  reviewed_at: string
+  reviewed_by?: string
+  review_notes?: string
+}
+
+/**
+ * Checkpoints list response
+ */
+export interface CheckpointsListResponse {
+  checkpoints: Checkpoint[]
+  current: Checkpoint | null
+}
+
 export const issuesApi = {
   getAll: (archived?: boolean) => {
     const params = archived !== undefined ? `?archived=${archived}` : ''
@@ -176,6 +213,24 @@ export const issuesApi = {
       return true
     })
   },
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Checkpoint & Promote Operations
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /** Get all checkpoints for an issue */
+  getCheckpoints: (id: string) => get<CheckpointsListResponse>(`/issues/${id}/checkpoints`),
+
+  /** Get the current (latest) checkpoint for an issue */
+  getCurrentCheckpoint: (id: string) => get<Checkpoint | null>(`/issues/${id}/checkpoint/current`),
+
+  /** Review (approve/reject) the current checkpoint */
+  reviewCheckpoint: (id: string, request: ReviewCheckpointRequest) =>
+    post<ReviewCheckpointResponse>(`/issues/${id}/review`, request),
+
+  /** Promote checkpoint to main branch */
+  promote: (id: string, options?: PromoteOptions) =>
+    post<PromoteResult>(`/issues/${id}/promote`, options),
 }
 
 /**

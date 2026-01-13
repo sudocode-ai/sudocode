@@ -17,6 +17,7 @@ import { getIssueFromJsonl } from "@sudocode-ai/cli/dist/operations/external-lin
 import { broadcastIssueUpdate } from "../services/websocket.js";
 import { triggerExport, executeExportNow, syncEntityToMarkdown } from "../services/export.js";
 import { refreshIssue } from "../services/external-refresh-service.js";
+import { getDataplaneAdapterSync } from "../services/dataplane-adapter.js";
 import * as path from "path";
 import * as fs from "fs";
 
@@ -618,6 +619,294 @@ export function createIssuesRouter(): Router {
         data: null,
         error_data: error instanceof Error ? error.message : String(error),
         message: "Failed to get current checkpoint",
+      });
+    }
+  });
+
+  /**
+   * POST /api/issues/:id/review - Review (approve/reject) the current checkpoint
+   *
+   * This endpoint allows approving or requesting changes on an issue's checkpoint.
+   * This is part of the two-tier merge workflow: checkpoint → review → promote.
+   *
+   * Request body:
+   * - action: 'approve' | 'request_changes' | 'reset'
+   * - notes?: string - Review notes/feedback
+   * - reviewed_by?: string - Reviewer identifier
+   *
+   * Response:
+   * - issue_id: string
+   * - checkpoint_id: string
+   * - review_status: 'approved' | 'changes_requested' | 'pending'
+   * - reviewed_at: string
+   * - reviewed_by?: string
+   * - review_notes?: string
+   */
+  router.post("/:id/review", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { action, notes, reviewed_by } = req.body;
+      const db = req.project!.db;
+      const repoPath = req.project!.path;
+
+      // Validate action
+      const validActions = ["approve", "request_changes", "reset"];
+      if (!action || !validActions.includes(action)) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: `Invalid action. Must be one of: ${validActions.join(", ")}`,
+        });
+        return;
+      }
+
+      // Check if issue exists
+      const issue = getIssueById(db, id);
+      if (!issue) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Issue not found: ${id}`,
+        });
+        return;
+      }
+
+      // Get the current checkpoint for this issue
+      const checkpoint = db
+        .prepare(
+          `SELECT id, review_status
+           FROM checkpoints
+           WHERE issue_id = ?
+           ORDER BY checkpointed_at DESC
+           LIMIT 1`
+        )
+        .get(id) as { id: string; review_status: string } | undefined;
+
+      if (!checkpoint) {
+        res.status(400).json({
+          success: false,
+          data: null,
+          message: "No checkpoint found for this issue. Create a checkpoint first.",
+        });
+        return;
+      }
+
+      // Map action to review status
+      let reviewStatus: "approved" | "changes_requested" | "pending";
+      switch (action) {
+        case "approve":
+          reviewStatus = "approved";
+          break;
+        case "request_changes":
+          reviewStatus = "changes_requested";
+          break;
+        case "reset":
+          reviewStatus = "pending";
+          break;
+        default:
+          reviewStatus = "pending";
+      }
+
+      const reviewedAt = new Date().toISOString();
+
+      // Update checkpoint record
+      const updateStmt = db.prepare(`
+        UPDATE checkpoints
+        SET review_status = ?,
+            reviewed_at = ?,
+            reviewed_by = ?,
+            review_notes = ?
+        WHERE id = ?
+      `);
+      updateStmt.run(
+        reviewStatus,
+        reviewedAt,
+        reviewed_by || null,
+        notes || null,
+        checkpoint.id
+      );
+
+      // Update issue stream metadata via DataplaneAdapter
+      const dataplaneAdapter = getDataplaneAdapterSync(repoPath);
+      if (dataplaneAdapter) {
+        try {
+          // Map review status to stream metadata status
+          const streamStatus =
+            reviewStatus === "changes_requested"
+              ? "changes_requested"
+              : reviewStatus === "approved"
+              ? "approved"
+              : "pending";
+          dataplaneAdapter.updateIssueStreamReviewStatus(id, streamStatus);
+        } catch (error) {
+          // Log but don't fail - database update succeeded
+          console.warn(
+            `Failed to update issue stream review status: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        }
+      }
+
+      // Broadcast issue update (review status changed)
+      broadcastIssueUpdate(req.project!.id, id, "updated", issue);
+
+      res.json({
+        success: true,
+        data: {
+          issue_id: id,
+          checkpoint_id: checkpoint.id,
+          review_status: reviewStatus,
+          reviewed_at: reviewedAt,
+          reviewed_by: reviewed_by || null,
+          review_notes: notes || null,
+        },
+      });
+    } catch (error) {
+      console.error("Error reviewing checkpoint:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to review checkpoint",
+      });
+    }
+  });
+
+  /**
+   * POST /api/issues/:id/promote - Promote issue checkpoint to main branch
+   *
+   * This is the second tier of the two-tier merge workflow.
+   * After checkpoints are approved, this merges the issue stream to main.
+   *
+   * Request body:
+   * - target_branch?: string - Target branch (default: main)
+   * - strategy?: 'squash' | 'merge' - Merge strategy (default: squash)
+   * - include_stack?: boolean - Promote entire stack (default: false)
+   * - message?: string - Custom merge commit message
+   * - force?: boolean - Skip approval check (default: false)
+   *
+   * Response codes:
+   * - 200: Success
+   * - 400: Invalid request
+   * - 403: Requires approval
+   * - 404: Issue not found
+   * - 409: Conflicts or blocked by dependencies
+   * - 500: Server error
+   * - 501: Dataplane not initialized
+   */
+  router.post("/:id/promote", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const {
+        target_branch,
+        strategy,
+        include_stack,
+        message,
+        force,
+        promoted_by,
+      } = req.body;
+      const db = req.project!.db;
+      const repoPath = req.project!.path;
+
+      // Check if issue exists
+      const issue = getIssueById(db, id);
+      if (!issue) {
+        res.status(404).json({
+          success: false,
+          data: null,
+          message: `Issue not found: ${id}`,
+        });
+        return;
+      }
+
+      // Get dataplane adapter
+      const dataplaneAdapter = getDataplaneAdapterSync(repoPath);
+      if (!dataplaneAdapter) {
+        res.status(501).json({
+          success: false,
+          data: null,
+          message: "Dataplane not initialized. Enable dataplane in project config.",
+        });
+        return;
+      }
+
+      // Call promoteSync
+      const result = await dataplaneAdapter.promoteSync(id, db, {
+        targetBranch: target_branch,
+        strategy: strategy,
+        includeStack: include_stack,
+        message: message,
+        force: force === true,
+        promotedBy: promoted_by,
+      });
+
+      // Handle different result scenarios
+      if (result.success) {
+        // Success - return merge info
+        res.json({
+          success: true,
+          data: {
+            merge_commit: result.mergeCommit,
+            files_changed: result.filesChanged,
+            additions: result.additions,
+            deletions: result.deletions,
+            promoted_issues: result.promotedIssues,
+            cascade: result.cascade,
+          },
+        });
+        return;
+      }
+
+      // Handle blocked by dependencies
+      if (result.blockedBy && result.blockedBy.length > 0) {
+        res.status(409).json({
+          success: false,
+          data: null,
+          error: "Dependencies not merged",
+          blocked_by: result.blockedBy,
+          message: `Cannot promote: blocked by unmerged issues: ${result.blockedBy.join(", ")}`,
+        });
+        return;
+      }
+
+      // Handle requires approval
+      if (result.requiresApproval) {
+        res.status(403).json({
+          success: false,
+          data: null,
+          error: "Checkpoint requires approval",
+          message: result.error,
+        });
+        return;
+      }
+
+      // Handle conflicts
+      if (result.conflicts && result.conflicts.length > 0) {
+        res.status(409).json({
+          success: false,
+          data: null,
+          error: "Conflicts detected",
+          conflicts: result.conflicts,
+          message: result.error,
+        });
+        return;
+      }
+
+      // Generic error
+      res.status(400).json({
+        success: false,
+        data: null,
+        error: result.error || "Promote failed",
+        message: result.error || "Failed to promote checkpoint",
+      });
+    } catch (error) {
+      console.error("Error promoting checkpoint:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to promote checkpoint",
       });
     }
   });
