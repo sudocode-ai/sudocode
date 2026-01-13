@@ -34,6 +34,7 @@ import { execSync } from "child_process";
 import { ExecutionChangesService } from "../../services/execution-changes-service.js";
 import { notifyExecutionEvent } from "../../services/execution-event-callbacks.js";
 import type { FileChangeStat } from "@sudocode-ai/types";
+import { getSessionPermissionMode } from "./agent-config-handlers.js";
 
 /**
  * Sudocode's MCP server configuration format
@@ -94,8 +95,14 @@ export interface AcpExecutionConfig {
    * Accepts both sudocode format (Record<string, config>) and acp-factory format (McpServer[])
    */
   mcpServers?: SudocodeMcpServersConfig | McpServer[];
-  /** Permission handling mode */
+  /** Permission handling mode at ACP protocol level */
   permissionMode?: PermissionMode;
+  /**
+   * Agent-specific permission mode to set on the session.
+   * Used by agents that support setMode() for internal permission handling.
+   * Common values: "default", "plan", "bypassPermissions", "acceptEdits"
+   */
+  agentPermissionMode?: string;
   /** Environment variables to pass to the agent */
   env?: Record<string, string>;
   /** Session mode to set (e.g., "code", "plan") */
@@ -259,6 +266,26 @@ export class AcpExecutorWrapper {
       });
       this.activeSessions.set(executionId, session);
 
+      // 2b. Set permission mode on the agent session using handler logic
+      const sessionPermissionMode = getSessionPermissionMode(this.agentType, {
+        skipPermissions: permissionMode === "auto-approve",
+        acpPermissionMode: permissionMode,
+        agentPermissionMode: this.acpConfig.agentPermissionMode,
+      });
+
+      if (sessionPermissionMode) {
+        try {
+          await session.setMode(sessionPermissionMode);
+          console.log(
+            `[AcpExecutorWrapper] Set session permission mode to ${sessionPermissionMode} for ${executionId}`
+          );
+        } catch (modeError) {
+          console.warn(
+            `[AcpExecutorWrapper] Failed to set ${sessionPermissionMode} mode (agent may not support it): ${modeError}`
+          );
+        }
+      }
+
       // 3. Update execution status to running and capture session ID
       updateExecution(this.db, executionId, {
         status: "running",
@@ -322,6 +349,12 @@ export class AcpExecutorWrapper {
         // Handle permission requests (for interactive mode)
         if (update.sessionUpdate === "permission_request") {
           const permUpdate = update as PermissionRequestUpdate;
+          console.log(`[AcpExecutorWrapper] Permission request received:`, {
+            executionId,
+            requestId: permUpdate.requestId,
+            toolCall: permUpdate.toolCall?.title,
+            options: permUpdate.options?.map((o) => o.kind),
+          });
           // Register with permission manager (non-blocking)
           permissionManager.addPending({
             requestId: permUpdate.requestId,
@@ -439,12 +472,47 @@ export class AcpExecutorWrapper {
       });
       this.activeAgents.set(executionId, agent);
 
-      // 2. Load existing session
-      console.log(
-        `[AcpExecutorWrapper] Loading session ${sessionId} for ${executionId}`
-      );
-      session = await agent.loadSession(sessionId, workDir);
+      // 2. Load existing session or create new one if agent doesn't support loading
+      if (agent.capabilities?.loadSession) {
+        console.log(
+          `[AcpExecutorWrapper] Loading session ${sessionId} for ${executionId}`
+        );
+        session = await agent.loadSession(sessionId, workDir);
+      } else {
+        // Agent doesn't support session loading (e.g., Gemini)
+        // Create a new session instead - conversation history won't be preserved
+        console.log(
+          `[AcpExecutorWrapper] Agent doesn't support session loading, creating new session for ${executionId}`
+        );
+        const mcpServers = convertMcpServers(
+          task.metadata?.mcpServers ?? this.acpConfig.mcpServers
+        );
+        session = await agent.createSession(workDir, {
+          mcpServers,
+          mode: this.acpConfig.mode,
+        });
+      }
       this.activeSessions.set(executionId, session);
+
+      // 2b. Set permission mode on the agent session using handler logic
+      const sessionPermissionMode = getSessionPermissionMode(this.agentType, {
+        skipPermissions: permissionMode === "auto-approve",
+        acpPermissionMode: permissionMode,
+        agentPermissionMode: this.acpConfig.agentPermissionMode,
+      });
+
+      if (sessionPermissionMode) {
+        try {
+          await session.setMode(sessionPermissionMode);
+          console.log(
+            `[AcpExecutorWrapper] Set session permission mode to ${sessionPermissionMode} for ${executionId}`
+          );
+        } catch (modeError) {
+          console.warn(
+            `[AcpExecutorWrapper] Failed to set ${sessionPermissionMode} mode (agent may not support it): ${modeError}`
+          );
+        }
+      }
 
       // 3. Update execution status
       updateExecution(this.db, executionId, {
@@ -497,6 +565,12 @@ export class AcpExecutorWrapper {
         // Handle permission requests (for interactive mode)
         if (update.sessionUpdate === "permission_request") {
           const permUpdate = update as PermissionRequestUpdate;
+          console.log(`[AcpExecutorWrapper] Permission request received:`, {
+            executionId,
+            requestId: permUpdate.requestId,
+            toolCall: permUpdate.toolCall?.title,
+            options: permUpdate.options?.map((o) => o.kind),
+          });
           // Register with permission manager (non-blocking)
           permissionManager.addPending({
             requestId: permUpdate.requestId,

@@ -107,6 +107,7 @@ vi.mock("acp-factory", () => {
       spawn: vi.fn().mockImplementation(() => Promise.resolve(createMockAgent())),
       listAgents: vi.fn().mockReturnValue(["claude-code", "codex", "gemini", "opencode"]),
       getConfig: vi.fn(),
+      register: vi.fn(),
     },
   };
 });
