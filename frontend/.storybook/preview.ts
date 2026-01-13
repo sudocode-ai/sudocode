@@ -4,6 +4,8 @@ import React from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { ProjectProvider } from '../src/contexts/ProjectContext'
+import { ThemeProvider } from '../src/contexts/ThemeContext'
+import { WebSocketProvider } from '../src/contexts/WebSocketContext'
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -37,15 +39,23 @@ const preview: Preview = {
         QueryClientProvider,
         { client: queryClient },
         React.createElement(
-          ProjectProvider,
-          { defaultProjectId: 'storybook-project', skipValidation: true },
+          ThemeProvider,
+          null,
           React.createElement(
-            MemoryRouter,
-            null,
+            ProjectProvider,
+            { defaultProjectId: 'storybook-project', skipValidation: true },
             React.createElement(
-              'div',
-              { className: 'dark bg-background text-foreground p-4' },
-              React.createElement(Story)
+              WebSocketProvider,
+              { reconnect: false },
+              React.createElement(
+                MemoryRouter,
+                null,
+                React.createElement(
+                  'div',
+                  { className: 'bg-background text-foreground p-4' },
+                  React.createElement(Story)
+                )
+              )
             )
           )
         )
