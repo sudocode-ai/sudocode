@@ -414,6 +414,60 @@ export interface Checkpoint {
 }
 
 /**
+ * Health status of a stack
+ */
+export type StackHealth = "ready" | "blocked" | "conflicts" | "pending";
+
+/**
+ * Represents a stack of related issues for coordinated merging
+ * Stacks can be auto-generated from issue dependencies or manually created
+ */
+export interface Stack {
+  /** Unique stack identifier */
+  id: string;
+  /** Optional human-readable name */
+  name?: string;
+  /** Optional root issue that anchors this stack */
+  root_issue_id?: string;
+  /** Ordered list of issue IDs (depth=0 is first/leaf, following git convention) */
+  issue_order: string[];
+  /** True if auto-generated from dependencies */
+  is_auto: boolean;
+  /** When stack was created (ISO 8601) */
+  created_at: string;
+  /** When stack was last updated (ISO 8601) */
+  updated_at: string;
+}
+
+/**
+ * Represents a single entry in a stack with enriched status info
+ */
+export interface StackEntry {
+  /** Issue ID */
+  issue_id: string;
+  /** Depth in stack (0 = leaf, following git convention) */
+  depth: number;
+  /** Whether this issue has a checkpoint */
+  has_checkpoint: boolean;
+  /** Review status of the checkpoint (if exists) */
+  checkpoint_status?: CheckpointReviewStatus;
+  /** Whether this issue's checkpoint has been promoted to base branch */
+  is_promoted: boolean;
+}
+
+/**
+ * Full stack information including computed entries and health
+ */
+export interface StackInfo {
+  /** Stack metadata */
+  stack: Stack;
+  /** Computed entries with status info */
+  entries: StackEntry[];
+  /** Overall health status of the stack */
+  health: StackHealth;
+}
+
+/**
  * Represents a single agent run on an issue
  * Tracks the full lifecycle of a coding agent execution
  */

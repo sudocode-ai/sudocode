@@ -389,6 +389,27 @@ CREATE INDEX IF NOT EXISTS idx_workflow_events_created_at ON workflow_events(cre
 CREATE INDEX IF NOT EXISTS idx_workflow_events_unprocessed ON workflow_events(workflow_id, processed_at) WHERE processed_at IS NULL;
 `;
 
+// Stacks table - groups issues for coordinated merging (stacked diffs)
+export const STACKS_TABLE = `
+CREATE TABLE IF NOT EXISTS stacks (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    root_issue_id TEXT,
+    issue_order TEXT NOT NULL,
+    is_auto INTEGER NOT NULL DEFAULT 0 CHECK(is_auto IN (0, 1)),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (root_issue_id) REFERENCES issues(id) ON DELETE SET NULL
+);
+`;
+
+export const STACKS_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_stacks_root_issue ON stacks(root_issue_id);
+CREATE INDEX IF NOT EXISTS idx_stacks_is_auto ON stacks(is_auto);
+CREATE INDEX IF NOT EXISTS idx_stacks_created_at ON stacks(created_at);
+CREATE INDEX IF NOT EXISTS idx_stacks_updated_at ON stacks(updated_at);
+`;
+
 /**
  * View definitions
  */
@@ -450,6 +471,7 @@ export const ALL_TABLES = [
   EXECUTION_CONFLICTS_TABLE,
   WORKFLOWS_TABLE,
   WORKFLOW_EVENTS_TABLE,
+  STACKS_TABLE,
 ];
 
 export const ALL_INDEXES = [
@@ -464,6 +486,7 @@ export const ALL_INDEXES = [
   EXECUTION_LOGS_INDEXES,
   WORKFLOWS_INDEXES,
   WORKFLOW_EVENTS_INDEXES,
+  STACKS_INDEXES,
 ];
 
 export const ALL_VIEWS = [READY_ISSUES_VIEW, BLOCKED_ISSUES_VIEW];

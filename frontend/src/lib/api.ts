@@ -234,6 +234,47 @@ export const issuesApi = {
 }
 
 /**
+ * Stacks API
+ */
+import type {
+  StackInfo,
+  Stack,
+  StacksListResponse,
+  CreateStackRequest,
+  UpdateStackRequest,
+} from '@/types/stack'
+
+export const stacksApi = {
+  /** List all stacks (auto + manual) */
+  getAll: (params?: { include_auto?: boolean; include_manual?: boolean }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.include_auto !== undefined) {
+      searchParams.set('include_auto', String(params.include_auto))
+    }
+    if (params?.include_manual !== undefined) {
+      searchParams.set('include_manual', String(params.include_manual))
+    }
+    const queryString = searchParams.toString()
+    return get<StacksListResponse>(`/stacks${queryString ? `?${queryString}` : ''}`)
+  },
+
+  /** Get a specific stack by ID */
+  getById: (id: string) => get<StackInfo>(`/stacks/${id}`),
+
+  /** Create a new manual stack */
+  create: (data: CreateStackRequest) => post<Stack>('/stacks', data),
+
+  /** Update a stack */
+  update: (id: string, data: UpdateStackRequest) => put<Stack>(`/stacks/${id}`, data),
+
+  /** Delete a manual stack */
+  delete: (id: string) => del(`/stacks/${id}`),
+
+  /** Get the stack containing a specific issue */
+  getForIssue: (issueId: string) => get<StackInfo | null>(`/issues/${issueId}/stack`),
+}
+
+/**
  * Specs API
  */
 export const specsApi = {

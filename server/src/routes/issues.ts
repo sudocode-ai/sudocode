@@ -18,6 +18,7 @@ import { broadcastIssueUpdate } from "../services/websocket.js";
 import { triggerExport, executeExportNow, syncEntityToMarkdown } from "../services/export.js";
 import { refreshIssue } from "../services/external-refresh-service.js";
 import { getDataplaneAdapterSync } from "../services/dataplane-adapter.js";
+import { getStackForIssue } from "../services/stack-service.js";
 import * as path from "path";
 import * as fs from "fs";
 
@@ -907,6 +908,34 @@ export function createIssuesRouter(): Router {
         data: null,
         error_data: error instanceof Error ? error.message : String(error),
         message: "Failed to promote checkpoint",
+      });
+    }
+  });
+
+  /**
+   * GET /api/issues/:id/stack - Get the stack containing this issue
+   *
+   * Returns the stack (auto or manual) that contains this issue,
+   * or null if the issue is not part of any stack.
+   *
+   * Response: StackInfo | null
+   */
+  router.get("/:id/stack", (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const stackInfo = getStackForIssue(req.project!.db, id);
+
+      res.json({
+        success: true,
+        data: stackInfo,
+      });
+    } catch (error) {
+      console.error("Error getting stack for issue:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to get stack for issue",
       });
     }
   });

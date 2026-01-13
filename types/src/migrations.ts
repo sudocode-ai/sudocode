@@ -925,6 +925,51 @@ const MIGRATIONS: Migration[] = [
       console.log("  ✓ Dropped checkpoints table");
     },
   },
+  {
+    version: 9,
+    name: "add-stacks-table",
+    up: (db: Database.Database) => {
+      // Check if stacks table already exists
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='stacks'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (tables.length > 0) {
+        // Already migrated
+        return;
+      }
+
+      // Create stacks table for stacked diffs workflow
+      db.exec(`
+        CREATE TABLE stacks (
+          id TEXT PRIMARY KEY,
+          name TEXT,
+          root_issue_id TEXT,
+          issue_order TEXT NOT NULL,
+          is_auto INTEGER NOT NULL DEFAULT 0 CHECK(is_auto IN (0, 1)),
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (root_issue_id) REFERENCES issues(id) ON DELETE SET NULL
+        );
+      `);
+
+      // Create indexes
+      db.exec(`
+        CREATE INDEX idx_stacks_root_issue ON stacks(root_issue_id);
+        CREATE INDEX idx_stacks_is_auto ON stacks(is_auto);
+        CREATE INDEX idx_stacks_created_at ON stacks(created_at);
+        CREATE INDEX idx_stacks_updated_at ON stacks(updated_at);
+      `);
+
+      console.log("  ✓ Created stacks table for stacked diffs workflow");
+    },
+    down: (db: Database.Database) => {
+      db.exec(`DROP TABLE IF EXISTS stacks;`);
+      console.log("  ✓ Dropped stacks table");
+    },
+  },
 ];
 
 /**
