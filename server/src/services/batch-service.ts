@@ -553,6 +553,7 @@ export function getEnrichedBatch(
         c.id as checkpoint_id,
         c.execution_id,
         c.issue_id,
+        c.stream_id,
         c.review_status,
         c.target_branch,
         c.checkpointed_at,
@@ -569,6 +570,7 @@ export function getEnrichedBatch(
     checkpoint_id: string;
     execution_id: string;
     issue_id: string;
+    stream_id: string;
     review_status: string;
     target_branch: string;
     checkpointed_at: string;
@@ -587,7 +589,7 @@ export function getEnrichedBatch(
     const entry: EnrichedQueueEntry = {
       id: row.checkpoint_id,
       executionId: row.execution_id,
-      streamId: "", // Not available from checkpoint data
+      streamId: row.stream_id,
       targetBranch: row.target_branch,
       position: row.queue_position || 0,
       priority: 0, // Default priority

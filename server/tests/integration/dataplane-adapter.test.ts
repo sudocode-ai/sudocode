@@ -479,4 +479,171 @@ describe("DataplaneAdapter Integration", () => {
       expect(followUpResult.streamId).not.toBe(parentResult.streamId);
     });
   });
+
+  describe("shared database integration", () => {
+    let Database: typeof import("better-sqlite3").default;
+    let externalDb: import("better-sqlite3").Database;
+
+    beforeEach(async () => {
+      Database = (await import("better-sqlite3")).default;
+    });
+
+    afterEach(() => {
+      if (externalDb) {
+        try {
+          externalDb.close();
+        } catch {
+          // Ignore errors on close
+        }
+      }
+    });
+
+    it("initializes with external database and tablePrefix", async () => {
+      // Create an in-memory database
+      externalDb = new Database(":memory:");
+
+      // Update config to use tablePrefix
+      const sudocodeDir = path.join(testDir, ".sudocode");
+      fs.writeFileSync(
+        path.join(sudocodeDir, "config.json"),
+        JSON.stringify({
+          dataplane: {
+            enabled: true,
+            tablePrefix: "dp_",
+          },
+        })
+      );
+      clearDataplaneConfigCache();
+
+      // Create adapter with external db
+      adapter = new DataplaneAdapter(testDir, undefined, externalDb);
+      await adapter.initialize();
+
+      expect(adapter.isInitialized).toBe(true);
+
+      // Verify prefixed tables were created by checking for dp_streams
+      const tables = externalDb
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'dp_%'"
+        )
+        .all() as { name: string }[];
+
+      const tableNames = tables.map((t) => t.name);
+      expect(tableNames).toContain("dp_streams");
+    });
+
+    it("creates streams in prefixed tables", async () => {
+      externalDb = new Database(":memory:");
+
+      const sudocodeDir = path.join(testDir, ".sudocode");
+      fs.writeFileSync(
+        path.join(sudocodeDir, "config.json"),
+        JSON.stringify({
+          dataplane: {
+            enabled: true,
+            tablePrefix: "custom_",
+          },
+        })
+      );
+      clearDataplaneConfigCache();
+
+      adapter = new DataplaneAdapter(testDir, undefined, externalDb);
+      await adapter.initialize();
+
+      // Create a stream
+      const result = await adapter.createExecutionStream({
+        executionId: "exec-shared-001",
+        issueId: "i-shared",
+        agentType: "claude-code",
+        targetBranch: "main",
+        mode: "worktree",
+        agentId: "agent-shared",
+      });
+
+      expect(result.streamId).toBeDefined();
+
+      // Verify the stream was created in the prefixed table
+      const streams = externalDb
+        .prepare("SELECT * FROM custom_streams WHERE id = ?")
+        .all(result.streamId);
+
+      expect(streams).toHaveLength(1);
+    });
+
+    it("coexists with sudocode tables in same database", async () => {
+      externalDb = new Database(":memory:");
+
+      // Create a mock sudocode table (simulating sudocode's tables)
+      externalDb.exec(`
+        CREATE TABLE IF NOT EXISTS issues (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        )
+      `);
+      externalDb.exec(`
+        INSERT INTO issues (id, title, created_at) VALUES ('i-test1', 'Test Issue', datetime('now'))
+      `);
+
+      const sudocodeDir = path.join(testDir, ".sudocode");
+      fs.writeFileSync(
+        path.join(sudocodeDir, "config.json"),
+        JSON.stringify({
+          dataplane: {
+            enabled: true,
+            tablePrefix: "dp_",
+          },
+        })
+      );
+      clearDataplaneConfigCache();
+
+      adapter = new DataplaneAdapter(testDir, undefined, externalDb);
+      await adapter.initialize();
+
+      // Verify both sudocode and dataplane tables exist
+      const allTables = externalDb
+        .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+        .all() as { name: string }[];
+
+      const tableNames = allTables.map((t) => t.name);
+
+      // Sudocode table should exist without prefix
+      expect(tableNames).toContain("issues");
+
+      // Dataplane tables should have prefix
+      expect(tableNames).toContain("dp_streams");
+
+      // Verify sudocode data is intact
+      const issues = externalDb.prepare("SELECT * FROM issues").all();
+      expect(issues).toHaveLength(1);
+    });
+
+    it("uses empty prefix when tablePrefix is empty string", async () => {
+      externalDb = new Database(":memory:");
+
+      const sudocodeDir = path.join(testDir, ".sudocode");
+      fs.writeFileSync(
+        path.join(sudocodeDir, "config.json"),
+        JSON.stringify({
+          dataplane: {
+            enabled: true,
+            tablePrefix: "",
+          },
+        })
+      );
+      clearDataplaneConfigCache();
+
+      adapter = new DataplaneAdapter(testDir, undefined, externalDb);
+      await adapter.initialize();
+
+      // Verify tables without prefix were created
+      const tables = externalDb
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name = 'streams'"
+        )
+        .all() as { name: string }[];
+
+      expect(tables).toHaveLength(1);
+    });
+  });
 });

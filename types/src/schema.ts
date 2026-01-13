@@ -410,6 +410,41 @@ CREATE INDEX IF NOT EXISTS idx_stacks_created_at ON stacks(created_at);
 CREATE INDEX IF NOT EXISTS idx_stacks_updated_at ON stacks(updated_at);
 `;
 
+// Checkpoints table - tracks issue stream checkpoints for stacked diffs workflow
+export const CHECKPOINTS_TABLE = `
+CREATE TABLE IF NOT EXISTS checkpoints (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL,
+    execution_id TEXT NOT NULL,
+    stream_id TEXT NOT NULL,
+    commit_sha TEXT NOT NULL,
+    parent_commit TEXT,
+    changed_files INTEGER NOT NULL DEFAULT 0,
+    additions INTEGER NOT NULL DEFAULT 0,
+    deletions INTEGER NOT NULL DEFAULT 0,
+    message TEXT NOT NULL,
+    checkpointed_at TEXT NOT NULL,
+    checkpointed_by TEXT,
+    review_status TEXT NOT NULL DEFAULT 'pending' CHECK(review_status IN ('pending', 'approved', 'rejected', 'merged')),
+    reviewed_at TEXT,
+    reviewed_by TEXT,
+    review_notes TEXT,
+    target_branch TEXT NOT NULL DEFAULT 'main',
+    queue_position INTEGER,
+    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
+    FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE
+);
+`;
+
+export const CHECKPOINTS_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_checkpoints_issue_id ON checkpoints(issue_id);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_execution_id ON checkpoints(execution_id);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_stream_id ON checkpoints(stream_id);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_review_status ON checkpoints(review_status);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_checkpointed_at ON checkpoints(checkpointed_at);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_target_branch ON checkpoints(target_branch);
+`;
+
 // Batches table - groups queue entries into PRs for coordinated review/merge
 export const BATCHES_TABLE = `
 CREATE TABLE IF NOT EXISTS batches (
@@ -498,6 +533,7 @@ export const ALL_TABLES = [
   WORKFLOWS_TABLE,
   WORKFLOW_EVENTS_TABLE,
   STACKS_TABLE,
+  CHECKPOINTS_TABLE,
   BATCHES_TABLE,
 ];
 
@@ -514,6 +550,7 @@ export const ALL_INDEXES = [
   WORKFLOWS_INDEXES,
   WORKFLOW_EVENTS_INDEXES,
   STACKS_INDEXES,
+  CHECKPOINTS_INDEXES,
   BATCHES_INDEXES,
 ];
 

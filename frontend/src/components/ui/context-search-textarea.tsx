@@ -72,6 +72,16 @@ export const ContextSearchTextarea = forwardRef<HTMLTextAreaElement, ContextSear
 
     const internalRef = useRef<HTMLTextAreaElement>(null)
     const textareaRef = (ref as React.RefObject<HTMLTextAreaElement>) || internalRef
+    const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    // Cleanup blur timeout on unmount
+    useEffect(() => {
+      return () => {
+        if (blurTimeoutRef.current) {
+          clearTimeout(blurTimeoutRef.current)
+        }
+      }
+    }, [])
 
     // Use context search hook
     const { results, isLoading, error } = useContextSearch({
@@ -340,8 +350,12 @@ export const ContextSearchTextarea = forwardRef<HTMLTextAreaElement, ContextSear
 
     // Close dropdowns on blur
     const handleBlur = () => {
+      // Clear any existing timeout
+      if (blurTimeoutRef.current) {
+        clearTimeout(blurTimeoutRef.current)
+      }
       // Delay to allow click events on dropdown to fire
-      setTimeout(() => {
+      blurTimeoutRef.current = setTimeout(() => {
         setShowDropdown(false)
         setSearchQuery('')
         setAtSymbolPosition(-1)

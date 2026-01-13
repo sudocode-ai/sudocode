@@ -491,6 +491,8 @@ export interface CheckpointOptions {
   autoEnqueue?: boolean;
   /** Who is performing the checkpoint */
   checkpointedBy?: string;
+  /** Target branch for eventual merge (default: 'main') */
+  targetBranch?: string;
 }
 
 /**

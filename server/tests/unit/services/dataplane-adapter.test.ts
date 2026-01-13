@@ -286,6 +286,183 @@ describe("DataplaneAdapter", () => {
     });
   });
 
+  describe("external database support", () => {
+    it("accepts optional db parameter in constructor", async () => {
+      const { DataplaneAdapter } = await import(
+        "../../../src/services/dataplane-adapter.js"
+      );
+      const Database = (await import("better-sqlite3")).default;
+
+      // Create an in-memory database
+      const externalDb = new Database(":memory:");
+
+      const customConfig = {
+        enabled: true,
+        dbPath: "ignored.db",
+        tablePrefix: "test_",
+        conflictStrategy: {
+          default: "defer" as const,
+          code: "defer" as const,
+          cascade: "skip_conflicting" as const,
+        },
+        autoReconcile: true,
+        cascadeOnMerge: false,
+        mergeQueue: {
+          enabled: false,
+          autoEnqueue: false,
+          requireQueue: false,
+        },
+        streams: {
+          branchPrefix: "sudocode",
+          autoCleanupAbandoned: true,
+          abandonedRetentionDays: 30,
+        },
+        recovery: {
+          runOnStartup: true,
+          enableCheckpoints: true,
+        },
+      };
+
+      // Constructor should accept db as third parameter
+      const adapter = new DataplaneAdapter(testDir, customConfig, externalDb);
+
+      expect(adapter.isEnabled).toBe(true);
+      expect(adapter.isInitialized).toBe(false);
+
+      externalDb.close();
+    });
+
+    it("uses tablePrefix from config when initializing with external db", async () => {
+      // Initialize git repo
+      const { execSync } = await import("child_process");
+      execSync("git init", { cwd: testDir, stdio: "pipe" });
+      execSync("git config user.email test@test.com", {
+        cwd: testDir,
+        stdio: "pipe",
+      });
+      execSync("git config user.name Test", { cwd: testDir, stdio: "pipe" });
+      fs.writeFileSync(path.join(testDir, "README.md"), "# Test");
+      execSync("git add . && git commit -m 'init'", {
+        cwd: testDir,
+        stdio: "pipe",
+      });
+
+      const sudocodeDir = path.join(testDir, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sudocodeDir, "config.json"),
+        JSON.stringify({
+          dataplane: {
+            enabled: true,
+            tablePrefix: "custom_prefix_",
+          },
+        })
+      );
+
+      const { DataplaneAdapter } = await import(
+        "../../../src/services/dataplane-adapter.js"
+      );
+      const Database = (await import("better-sqlite3")).default;
+
+      // Create an in-memory database
+      const externalDb = new Database(":memory:");
+
+      const adapter = new DataplaneAdapter(testDir, undefined, externalDb);
+
+      // Initialize should use the external db with tablePrefix
+      await adapter.initialize();
+      expect(adapter.isInitialized).toBe(true);
+
+      adapter.close();
+      externalDb.close();
+    });
+
+    it("accepts optional db parameter in getDataplaneAdapter factory", async () => {
+      // Initialize git repo
+      const { execSync } = await import("child_process");
+      execSync("git init", { cwd: testDir, stdio: "pipe" });
+      execSync("git config user.email test@test.com", {
+        cwd: testDir,
+        stdio: "pipe",
+      });
+      execSync("git config user.name Test", { cwd: testDir, stdio: "pipe" });
+      fs.writeFileSync(path.join(testDir, "README.md"), "# Test");
+      execSync("git add . && git commit -m 'init'", {
+        cwd: testDir,
+        stdio: "pipe",
+      });
+
+      const sudocodeDir = path.join(testDir, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sudocodeDir, "config.json"),
+        JSON.stringify({
+          dataplane: { enabled: true, tablePrefix: "dp_" },
+        })
+      );
+
+      const { getDataplaneAdapter, closeDataplaneAdapter } = await import(
+        "../../../src/services/dataplane-adapter.js"
+      );
+      const Database = (await import("better-sqlite3")).default;
+
+      const externalDb = new Database(":memory:");
+
+      // Factory should accept db parameter
+      const adapter = await getDataplaneAdapter(testDir, externalDb);
+
+      expect(adapter).not.toBeNull();
+      expect(adapter!.isInitialized).toBe(true);
+
+      closeDataplaneAdapter(testDir);
+      externalDb.close();
+    });
+
+    it("falls back to legacy mode when no external db provided", async () => {
+      // Initialize git repo
+      const { execSync } = await import("child_process");
+      execSync("git init", { cwd: testDir, stdio: "pipe" });
+      execSync("git config user.email test@test.com", {
+        cwd: testDir,
+        stdio: "pipe",
+      });
+      execSync("git config user.name Test", { cwd: testDir, stdio: "pipe" });
+      fs.writeFileSync(path.join(testDir, "README.md"), "# Test");
+      execSync("git add . && git commit -m 'init'", {
+        cwd: testDir,
+        stdio: "pipe",
+      });
+
+      const sudocodeDir = path.join(testDir, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sudocodeDir, "config.json"),
+        JSON.stringify({
+          dataplane: {
+            enabled: true,
+            dbPath: "legacy-dataplane.db",
+          },
+        })
+      );
+
+      const { DataplaneAdapter } = await import(
+        "../../../src/services/dataplane-adapter.js"
+      );
+
+      // Constructor without db parameter - should use legacy mode
+      const adapter = new DataplaneAdapter(testDir);
+
+      await adapter.initialize();
+      expect(adapter.isInitialized).toBe(true);
+
+      // In legacy mode, a separate db file should be created
+      const expectedDbPath = path.join(sudocodeDir, "legacy-dataplane.db");
+      expect(fs.existsSync(expectedDbPath)).toBe(true);
+
+      adapter.close();
+    });
+  });
+
   describe("syncIssueDependencies", () => {
     it("throws when not initialized", async () => {
       const sudocodeDir = path.join(testDir, ".sudocode");

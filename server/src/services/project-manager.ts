@@ -102,11 +102,11 @@ export class ProjectManager {
       const db = await this.getOrCreateDatabase(projectId, projectPath);
 
       // 4.5. Initialize dataplane adapter (if configured)
-      // This makes the adapter available to services via getDataplaneAdapterSync()
-      const dataplaneAdapter = await getDataplaneAdapter(projectPath);
+      // Pass sudocode db so dataplane uses shared database with table prefix
+      const dataplaneAdapter = await getDataplaneAdapter(projectPath, db);
       if (dataplaneAdapter) {
         console.log(
-          `[ProjectManager] Dataplane adapter initialized for ${projectId}`
+          `[ProjectManager] Dataplane adapter initialized for ${projectId} (shared db)`
         );
       }
 

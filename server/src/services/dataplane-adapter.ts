@@ -59,6 +59,22 @@ import type {
 // Dataplane Types (inline definitions until dataplane package is available)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Options for creating a DataplaneTracker instance
+ */
+interface DataplaneTrackerOptions {
+  /** Path to the git repository */
+  repoPath: string;
+  /** Path to SQLite database file (legacy - ignored if db is provided) */
+  dbPath?: string;
+  /** Existing database connection (for shared database) */
+  db?: import('better-sqlite3').Database;
+  /** Table name prefix for dataplane tables (default: no prefix) */
+  tablePrefix?: string;
+  /** Skip startup recovery (default: false) */
+  skipRecovery?: boolean;
+}
+
 interface DataplaneTracker {
   db: import('better-sqlite3').Database;
   repoPath: string;
@@ -227,10 +243,12 @@ export class DataplaneAdapter {
   private config: DataplaneConfig;
   private repoPath: string;
   private initialized = false;
+  private externalDb: Database.Database | null = null;
 
-  constructor(repoPath: string, config?: DataplaneConfig) {
+  constructor(repoPath: string, config?: DataplaneConfig, db?: Database.Database) {
     this.repoPath = repoPath;
     this.config = config || getDataplaneConfig(repoPath);
+    this.externalDb = db || null;
   }
 
   /**
@@ -260,20 +278,38 @@ export class DataplaneAdapter {
     try {
       // Dynamic import of dataplane - may not be installed
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const dataplane = await import('dataplane' as any) as { MultiAgentRepoTracker: new (opts: { repoPath: string; dbPath: string; skipRecovery?: boolean }) => DataplaneTracker };
-      const dbPath = path.join(this.repoPath, '.sudocode', this.config.dbPath);
+      const dataplane = await import('dataplane' as any) as {
+        MultiAgentRepoTracker: new (opts: DataplaneTrackerOptions) => DataplaneTracker
+      };
 
-      // Ensure directory exists
-      const dbDir = path.dirname(dbPath);
-      if (!fs.existsSync(dbDir)) {
-        fs.mkdirSync(dbDir, { recursive: true });
+      if (this.externalDb) {
+        // Use shared database with table prefix (preferred)
+        // Use nullish coalescing (??) to preserve empty string as valid value
+        const tablePrefix = this.config.tablePrefix ?? 'dp_';
+        this.tracker = new dataplane.MultiAgentRepoTracker({
+          repoPath: this.repoPath,
+          db: this.externalDb,
+          tablePrefix,
+          skipRecovery: !this.config.recovery.runOnStartup,
+        });
+        console.log(`[DataplaneAdapter] Initialized with shared database (prefix: ${tablePrefix})`);
+      } else {
+        // Legacy: separate database file (backward compatibility)
+        const dbPath = path.join(this.repoPath, '.sudocode', this.config.dbPath);
+
+        // Ensure directory exists
+        const dbDir = path.dirname(dbPath);
+        if (!fs.existsSync(dbDir)) {
+          fs.mkdirSync(dbDir, { recursive: true });
+        }
+
+        this.tracker = new dataplane.MultiAgentRepoTracker({
+          repoPath: this.repoPath,
+          dbPath,
+          skipRecovery: !this.config.recovery.runOnStartup,
+        });
+        console.log(`[DataplaneAdapter] Initialized with separate database: ${dbPath}`);
       }
-
-      this.tracker = new dataplane.MultiAgentRepoTracker({
-        repoPath: this.repoPath,
-        dbPath,
-        skipRecovery: !this.config.recovery.runOnStartup,
-      });
 
       this.initialized = true;
     } catch (error) {
@@ -1166,13 +1202,15 @@ export class DataplaneAdapter {
       // 8. Create checkpoint record in database
       const checkpointId = `cp-${Date.now().toString(36)}`;
       const checkpointedAt = new Date().toISOString();
+      // Get target branch from options, stream metadata, or default to 'main'
+      const targetBranch = options.targetBranch || execMeta?.target_branch || 'main';
 
       const insertStmt = db.prepare(`
         INSERT INTO checkpoints (
           id, issue_id, execution_id, stream_id, commit_sha, parent_commit,
           changed_files, additions, deletions, message, checkpointed_at,
-          checkpointed_by, review_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+          checkpointed_by, review_status, target_branch
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
       `);
 
       insertStmt.run(
@@ -1187,7 +1225,8 @@ export class DataplaneAdapter {
         changes.totalDeletions,
         message,
         checkpointedAt,
-        options.checkpointedBy || null
+        options.checkpointedBy || null,
+        targetBranch
       );
 
       // 9. Update issue stream metadata
@@ -2219,7 +2258,8 @@ function normalizeRepoPath(repoPath: string): string {
  * Returns null if dataplane is not enabled in config
  */
 export async function getDataplaneAdapter(
-  repoPath: string
+  repoPath: string,
+  db?: Database.Database
 ): Promise<DataplaneAdapter | null> {
   const normalizedPath = normalizeRepoPath(repoPath);
 
@@ -2234,8 +2274,8 @@ export async function getDataplaneAdapter(
     return null;
   }
 
-  // Create and initialize new adapter
-  const adapter = new DataplaneAdapter(repoPath);
+  // Create and initialize new adapter (pass db for shared database mode)
+  const adapter = new DataplaneAdapter(repoPath, undefined, db);
   try {
     await adapter.initialize();
     adapterCache.set(normalizedPath, adapter);

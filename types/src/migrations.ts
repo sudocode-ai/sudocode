@@ -1020,6 +1020,56 @@ const MIGRATIONS: Migration[] = [
       console.log("  ✓ Dropped batches table");
     },
   },
+  {
+    version: 11,
+    name: "add-checkpoint-queue-columns",
+    up: (db: Database.Database) => {
+      // Check if columns already exist
+      const columns = db
+        .prepare("PRAGMA table_info(checkpoints)")
+        .all() as Array<{ name: string }>;
+
+      const columnNames = new Set(columns.map((c) => c.name));
+
+      // Add target_branch column if missing
+      if (!columnNames.has("target_branch")) {
+        db.exec(`
+          ALTER TABLE checkpoints ADD COLUMN target_branch TEXT NOT NULL DEFAULT 'main';
+        `);
+        console.log("  ✓ Added target_branch column to checkpoints");
+      }
+
+      // Add queue_position column if missing
+      if (!columnNames.has("queue_position")) {
+        db.exec(`
+          ALTER TABLE checkpoints ADD COLUMN queue_position INTEGER;
+        `);
+        console.log("  ✓ Added queue_position column to checkpoints");
+      }
+
+      // Add index for target_branch if it doesn't exist
+      const indexes = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_checkpoints_target_branch'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (indexes.length === 0) {
+        db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_checkpoints_target_branch ON checkpoints(target_branch);
+        `);
+        console.log("  ✓ Created idx_checkpoints_target_branch index");
+      }
+    },
+    down: (db: Database.Database) => {
+      // SQLite doesn't support DROP COLUMN directly in older versions
+      // For rollback, we'd need to recreate the table without these columns
+      // This is a complex operation, so we just log a warning
+      console.log(
+        "  ⚠ Warning: Cannot drop columns in SQLite. Manual migration required."
+      );
+    },
+  },
 ];
 
 /**

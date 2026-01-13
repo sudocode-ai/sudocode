@@ -44,6 +44,10 @@ export interface CreateTestRepoOptions {
   dataplaneEnabled?: boolean;
   /** Enable cascade on merge (requires dataplaneEnabled) */
   cascadeOnMerge?: boolean;
+  /** Use unified database model (dataplane tables in cache.db with prefix) */
+  useUnifiedDb?: boolean;
+  /** Table prefix for dataplane tables (default: 'dp_') */
+  tablePrefix?: string;
   /** Additional config options */
   config?: Record<string, any>;
 }
@@ -54,7 +58,13 @@ export interface CreateTestRepoOptions {
 export function createTestRepo(
   options: CreateTestRepoOptions = {}
 ): TestRepo {
-  const { dataplaneEnabled = true, cascadeOnMerge = false, config = {} } = options;
+  const {
+    dataplaneEnabled = true,
+    cascadeOnMerge = false,
+    useUnifiedDb = false,
+    tablePrefix = "dp_",
+    config = {},
+  } = options;
 
   // Create temp directory
   const testDir = fs.mkdtempSync(
@@ -101,6 +111,21 @@ export function createTestRepo(
   fs.mkdirSync(specsPath, { recursive: true });
 
   // Create config.json
+  const dataplaneConfig = dataplaneEnabled
+    ? useUnifiedDb
+      ? {
+          enabled: true,
+          tablePrefix: tablePrefix,
+          cascadeOnMerge: cascadeOnMerge,
+          // Don't set dbPath - unified mode uses the shared database
+        }
+      : {
+          enabled: true,
+          dbPath: "dataplane.db",
+          cascadeOnMerge: cascadeOnMerge,
+        }
+    : { enabled: false };
+
   const configContent = {
     version: "0.1.0",
     id_prefix: {
@@ -114,13 +139,7 @@ export function createTestRepo(
       branchPrefix: "sudocode",
       cleanupOrphanedWorktreesOnStartup: false,
     },
-    dataplane: dataplaneEnabled
-      ? {
-          enabled: true,
-          dbPath: "dataplane.db",
-          cascadeOnMerge: cascadeOnMerge,
-        }
-      : { enabled: false },
+    dataplane: dataplaneConfig,
     ...config,
   };
 

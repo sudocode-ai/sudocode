@@ -37,6 +37,7 @@ describe("Dataplane Configuration", () => {
     it("has expected default values", () => {
       expect(DEFAULT_DATAPLANE_CONFIG.enabled).toBe(false);
       expect(DEFAULT_DATAPLANE_CONFIG.dbPath).toBe("dataplane.db");
+      expect(DEFAULT_DATAPLANE_CONFIG.tablePrefix).toBe("dp_");
       expect(DEFAULT_DATAPLANE_CONFIG.conflictStrategy.default).toBe("defer");
       expect(DEFAULT_DATAPLANE_CONFIG.conflictStrategy.code).toBe("defer");
       expect(DEFAULT_DATAPLANE_CONFIG.conflictStrategy.cascade).toBe(
@@ -47,6 +48,10 @@ describe("Dataplane Configuration", () => {
       expect(DEFAULT_DATAPLANE_CONFIG.mergeQueue.enabled).toBe(false);
       expect(DEFAULT_DATAPLANE_CONFIG.streams.branchPrefix).toBe("sudocode");
       expect(DEFAULT_DATAPLANE_CONFIG.recovery.runOnStartup).toBe(true);
+    });
+
+    it("has tablePrefix for shared database support", () => {
+      expect(DEFAULT_DATAPLANE_CONFIG.tablePrefix).toBe("dp_");
     });
   });
 
@@ -176,6 +181,45 @@ describe("Dataplane Configuration", () => {
       expect(config.dbPath).toBe("dataplane.db"); // Default
       expect(warnings).toHaveLength(1);
       expect(warnings[0]).toContain("dbPath");
+    });
+
+    it("validates tablePrefix with valid alphanumeric and underscore characters", () => {
+      const { config, warnings } = validateDataplaneConfig({
+        tablePrefix: "my_custom_prefix_123",
+      });
+
+      expect(config.tablePrefix).toBe("my_custom_prefix_123");
+      expect(warnings).toHaveLength(0);
+    });
+
+    it("validates tablePrefix allows empty string for no prefix", () => {
+      const { config, warnings } = validateDataplaneConfig({
+        tablePrefix: "",
+      });
+
+      expect(config.tablePrefix).toBe("");
+      expect(warnings).toHaveLength(0);
+    });
+
+    it("validates tablePrefix rejects invalid characters", () => {
+      const { config, warnings } = validateDataplaneConfig({
+        tablePrefix: "invalid-prefix!",
+      });
+
+      expect(config.tablePrefix).toBe("dp_"); // Default
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("tablePrefix");
+      expect(warnings[0]).toContain("alphanumeric");
+    });
+
+    it("validates tablePrefix rejects non-string values", () => {
+      const { config, warnings } = validateDataplaneConfig({
+        tablePrefix: 123 as unknown as string,
+      });
+
+      expect(config.tablePrefix).toBe("dp_"); // Default
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("tablePrefix");
     });
 
     it("validates conflictStrategy.default", () => {

@@ -30,8 +30,11 @@ export interface DataplaneConfig {
   /** Whether dataplane is enabled */
   enabled: boolean;
 
-  /** Database path relative to .sudocode */
+  /** Database path relative to .sudocode (deprecated - use shared db with tablePrefix) */
   dbPath: string;
+
+  /** Table name prefix for dataplane tables in shared database (default: 'dp_') */
+  tablePrefix: string;
 
   /** Conflict resolution strategies */
   conflictStrategy: {
@@ -103,7 +106,8 @@ interface ValidationResult {
  */
 export const DEFAULT_DATAPLANE_CONFIG: DataplaneConfig = {
   enabled: false, // Opt-in feature
-  dbPath: 'dataplane.db',
+  dbPath: 'dataplane.db', // Deprecated - kept for backward compatibility
+  tablePrefix: 'dp_', // Prefix for dataplane tables in shared database
   conflictStrategy: {
     default: 'defer',
     code: 'defer',
@@ -169,6 +173,15 @@ export function validateDataplaneConfig(
       config.dbPath = rawConfig.dbPath;
     } else {
       warnings.push(`Invalid dataplane.dbPath: must be a non-empty string. Using default: ${DEFAULT_DATAPLANE_CONFIG.dbPath}`);
+    }
+  }
+
+  // Validate tablePrefix
+  if (rawConfig.tablePrefix !== undefined) {
+    if (typeof rawConfig.tablePrefix === 'string' && /^[a-zA-Z0-9_]*$/.test(rawConfig.tablePrefix)) {
+      config.tablePrefix = rawConfig.tablePrefix;
+    } else {
+      warnings.push(`Invalid dataplane.tablePrefix: must contain only alphanumeric characters and underscores. Using default: ${DEFAULT_DATAPLANE_CONFIG.tablePrefix}`);
     }
   }
 
