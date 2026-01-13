@@ -20,7 +20,7 @@ import axios from 'axios'
 export interface GeminiConfig {
   model?: string
   sandbox?: boolean
-  yolo?: boolean
+  dangerouslySkipPermissions?: boolean
 }
 
 interface GeminiConfigFormProps {
@@ -156,20 +156,20 @@ export function GeminiConfigForm({ config, onChange }: GeminiConfigFormProps) {
         />
       </div>
 
-      {/* YOLO Mode (Skip Permissions) */}
+      {/* Skip Permissions (YOLO Mode) */}
       <div className="flex items-center justify-between">
         <div className="space-y-0.5">
-          <Label htmlFor="gemini-yolo" className="text-xs font-medium">
-            YOLO Mode
+          <Label htmlFor="gemini-skip-permissions" className="text-xs font-medium">
+            Skip Permissions
           </Label>
           <p className="text-[10px] text-muted-foreground">
             Auto-approve all tool operations (faster but less safe)
           </p>
         </div>
         <Switch
-          id="gemini-yolo"
-          checked={config.yolo ?? false}
-          onCheckedChange={(checked: boolean) => updateConfig({ yolo: checked })}
+          id="gemini-skip-permissions"
+          checked={config.dangerouslySkipPermissions ?? false}
+          onCheckedChange={(checked: boolean) => updateConfig({ dangerouslySkipPermissions: checked })}
         />
       </div>
     </div>

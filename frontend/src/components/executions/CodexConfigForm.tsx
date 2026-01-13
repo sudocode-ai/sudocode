@@ -123,19 +123,25 @@ export function CodexConfigForm({ config, onChange }: CodexConfigFormProps) {
     }
   }, [])
 
-  const validateConfig = (newConfig: CodexConfig): Record<string, string> => {
-    const newErrors: Record<string, string> = {}
-
-    // Validate fullAuto conflicts with sandbox/approval
-    if (newConfig.fullAuto && (newConfig.sandbox || newConfig.askForApproval)) {
-      newErrors.fullAuto = 'Full Auto mode conflicts with custom sandbox or approval settings'
-    }
-
-    return newErrors
+  const validateConfig = (_newConfig: CodexConfig): Record<string, string> => {
+    // No validation errors - fullAuto simply overrides sandbox/approval settings
+    // When fullAuto is enabled, sandbox and approval inputs are disabled in the UI
+    return {}
   }
 
   const updateConfig = (updates: Partial<CodexConfig>) => {
-    const newConfig = { ...config, ...updates }
+    let newConfig = { ...config, ...updates }
+
+    // When fullAuto is enabled, clear sandbox and approval settings
+    // since fullAuto uses its own defaults (workspace-write, on-request)
+    if (updates.fullAuto === true) {
+      newConfig = {
+        ...newConfig,
+        sandbox: undefined,
+        askForApproval: undefined,
+      }
+    }
+
     const validationErrors = validateConfig(newConfig)
     setErrors(validationErrors)
     onChange(newConfig)

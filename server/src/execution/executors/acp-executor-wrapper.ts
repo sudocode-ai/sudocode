@@ -17,10 +17,8 @@ import {
   type McpServer,
   type PermissionMode,
   type PermissionRequestUpdate,
-  type CreateTerminalRequest,
 } from "acp-factory";
 import { PermissionManager } from "./permission-manager.js";
-import { TerminalHandler } from "../handlers/terminal-handler.js";
 import { FileHandler } from "../handlers/file-handler.js";
 import type Database from "better-sqlite3";
 import type { ExecutionLifecycleService } from "../../services/execution-lifecycle.js";
@@ -36,6 +34,7 @@ import { execSync } from "child_process";
 import { ExecutionChangesService } from "../../services/execution-changes-service.js";
 import { notifyExecutionEvent } from "../../services/execution-event-callbacks.js";
 import type { FileChangeStat } from "@sudocode-ai/types";
+import { getSessionPermissionMode } from "./agent-config-handlers.js";
 
 /**
  * Sudocode's MCP server configuration format
@@ -96,8 +95,14 @@ export interface AcpExecutionConfig {
    * Accepts both sudocode format (Record<string, config>) and acp-factory format (McpServer[])
    */
   mcpServers?: SudocodeMcpServersConfig | McpServer[];
-  /** Permission handling mode */
+  /** Permission handling mode at ACP protocol level */
   permissionMode?: PermissionMode;
+  /**
+   * Agent-specific permission mode to set on the session.
+   * Used by agents that support setMode() for internal permission handling.
+   * Common values: "default", "plan", "bypassPermissions", "acceptEdits"
+   */
+  agentPermissionMode?: string;
   /** Environment variables to pass to the agent */
   env?: Record<string, string>;
   /** Session mode to set (e.g., "code", "plan") */
@@ -181,8 +186,6 @@ export class AcpExecutorWrapper {
   private activeSessions: Map<string, Session> = new Map();
   /** Permission managers by execution ID (for interactive mode) */
   private permissionManagers: Map<string, PermissionManager> = new Map();
-  /** Terminal handlers by execution ID */
-  private terminalHandlers: Map<string, TerminalHandler> = new Map();
   /** File handlers by execution ID */
   private fileHandlers: Map<string, FileHandler> = new Map();
 
@@ -225,10 +228,9 @@ export class AcpExecutorWrapper {
     const permissionManager = new PermissionManager();
     this.permissionManagers.set(executionId, permissionManager);
 
-    // Create terminal and file handlers for this execution
-    const terminalHandler = new TerminalHandler(workDir);
+    // Create file handler for this execution
+    // TODO: Set an explicit terminal handler if we need to explicitly manage terminals in the future.
     const fileHandler = new FileHandler(workDir);
-    this.terminalHandlers.set(executionId, terminalHandler);
     this.fileHandlers.set(executionId, fileHandler);
 
     try {
@@ -243,18 +245,7 @@ export class AcpExecutorWrapper {
       agent = await AgentFactory.spawn(this.agentType, {
         env: this.acpConfig.env,
         permissionMode,
-        // Terminal handlers
-        onTerminalCreate: (params: CreateTerminalRequest) =>
-          terminalHandler.onCreate(params),
-        onTerminalOutput: (terminalId: string) =>
-          terminalHandler.onOutput(terminalId),
-        onTerminalKill: (terminalId: string) =>
-          terminalHandler.onKill(terminalId),
-        onTerminalRelease: (terminalId: string) =>
-          terminalHandler.onRelease(terminalId),
-        onTerminalWaitForExit: (terminalId: string) =>
-          terminalHandler.onWaitForExit(terminalId),
-        // File handlers
+        // File handlers only - no terminal handlers means Claude Code uses native Bash
         onFileRead: (path: string) => fileHandler.onRead(path),
         onFileWrite: (path: string, content: string) =>
           fileHandler.onWrite(path, content),
@@ -266,15 +257,34 @@ export class AcpExecutorWrapper {
       const mcpServers = convertMcpServers(
         task.metadata?.mcpServers ?? this.acpConfig.mcpServers
       );
-      console.log(
-        `[AcpExecutorWrapper] Creating session for ${executionId}`,
-        { mcpServers: mcpServers.map((s) => s.name) }
-      );
+      console.log(`[AcpExecutorWrapper] Creating session for ${executionId}`, {
+        mcpServers: mcpServers.map((s) => s.name),
+      });
       session = await agent.createSession(workDir, {
         mcpServers,
         mode: this.acpConfig.mode,
       });
       this.activeSessions.set(executionId, session);
+
+      // 2b. Set permission mode on the agent session using handler logic
+      const sessionPermissionMode = getSessionPermissionMode(this.agentType, {
+        skipPermissions: permissionMode === "auto-approve",
+        acpPermissionMode: permissionMode,
+        agentPermissionMode: this.acpConfig.agentPermissionMode,
+      });
+
+      if (sessionPermissionMode) {
+        try {
+          await session.setMode(sessionPermissionMode);
+          console.log(
+            `[AcpExecutorWrapper] Set session permission mode to ${sessionPermissionMode} for ${executionId}`
+          );
+        } catch (modeError) {
+          console.warn(
+            `[AcpExecutorWrapper] Failed to set ${sessionPermissionMode} mode (agent may not support it): ${modeError}`
+          );
+        }
+      }
 
       // 3. Update execution status to running and capture session ID
       updateExecution(this.db, executionId, {
@@ -295,10 +305,9 @@ export class AcpExecutorWrapper {
       // 4. Stream prompt and process SessionUpdate events
       const coalescer = new SessionUpdateCoalescer();
 
-      console.log(
-        `[AcpExecutorWrapper] Sending prompt for ${executionId}`,
-        { promptLength: task.prompt.length }
-      );
+      console.log(`[AcpExecutorWrapper] Sending prompt for ${executionId}`, {
+        promptLength: task.prompt.length,
+      });
 
       let updateCount = 0;
       for await (const update of session.prompt(task.prompt)) {
@@ -340,6 +349,12 @@ export class AcpExecutorWrapper {
         // Handle permission requests (for interactive mode)
         if (update.sessionUpdate === "permission_request") {
           const permUpdate = update as PermissionRequestUpdate;
+          console.log(`[AcpExecutorWrapper] Permission request received:`, {
+            executionId,
+            requestId: permUpdate.requestId,
+            toolCall: permUpdate.toolCall?.title,
+            options: permUpdate.options?.map((o) => o.kind),
+          });
           // Register with permission manager (non-blocking)
           permissionManager.addPending({
             requestId: permUpdate.requestId,
@@ -371,10 +386,9 @@ export class AcpExecutorWrapper {
         );
       }
 
-      console.log(
-        `[AcpExecutorWrapper] Prompt completed for ${executionId}`,
-        { totalUpdates: updateCount }
-      );
+      console.log(`[AcpExecutorWrapper] Prompt completed for ${executionId}`, {
+        totalUpdates: updateCount,
+      });
 
       // 8. Handle success
       await this.handleSuccess(executionId, workDir);
@@ -395,13 +409,6 @@ export class AcpExecutorWrapper {
       if (pm) {
         pm.cancelAll();
         this.permissionManagers.delete(executionId);
-      }
-
-      // Cleanup terminal handler
-      const th = this.terminalHandlers.get(executionId);
-      if (th) {
-        th.cleanup();
-        this.terminalHandlers.delete(executionId);
       }
 
       // Cleanup file handler
@@ -447,10 +454,8 @@ export class AcpExecutorWrapper {
     const permissionManager = new PermissionManager();
     this.permissionManagers.set(executionId, permissionManager);
 
-    // Create terminal and file handlers for this execution
-    const terminalHandler = new TerminalHandler(workDir);
+    // Create file handler for this execution (no terminal handlers - use native Bash)
     const fileHandler = new FileHandler(workDir);
-    this.terminalHandlers.set(executionId, terminalHandler);
     this.fileHandlers.set(executionId, fileHandler);
 
     try {
@@ -460,30 +465,54 @@ export class AcpExecutorWrapper {
       agent = await AgentFactory.spawn(this.agentType, {
         env: this.acpConfig.env,
         permissionMode,
-        // Terminal handlers
-        onTerminalCreate: (params: CreateTerminalRequest) =>
-          terminalHandler.onCreate(params),
-        onTerminalOutput: (terminalId: string) =>
-          terminalHandler.onOutput(terminalId),
-        onTerminalKill: (terminalId: string) =>
-          terminalHandler.onKill(terminalId),
-        onTerminalRelease: (terminalId: string) =>
-          terminalHandler.onRelease(terminalId),
-        onTerminalWaitForExit: (terminalId: string) =>
-          terminalHandler.onWaitForExit(terminalId),
-        // File handlers
+        // File handlers only - no terminal handlers means Claude Code uses native Bash
         onFileRead: (path: string) => fileHandler.onRead(path),
         onFileWrite: (path: string, content: string) =>
           fileHandler.onWrite(path, content),
       });
       this.activeAgents.set(executionId, agent);
 
-      // 2. Load existing session
-      console.log(
-        `[AcpExecutorWrapper] Loading session ${sessionId} for ${executionId}`
-      );
-      session = await agent.loadSession(sessionId, workDir);
+      // 2. Load existing session or create new one if agent doesn't support loading
+      if (agent.capabilities?.loadSession) {
+        console.log(
+          `[AcpExecutorWrapper] Loading session ${sessionId} for ${executionId}`
+        );
+        session = await agent.loadSession(sessionId, workDir);
+      } else {
+        // Agent doesn't support session loading (e.g., Gemini)
+        // Create a new session instead - conversation history won't be preserved
+        console.log(
+          `[AcpExecutorWrapper] Agent doesn't support session loading, creating new session for ${executionId}`
+        );
+        const mcpServers = convertMcpServers(
+          task.metadata?.mcpServers ?? this.acpConfig.mcpServers
+        );
+        session = await agent.createSession(workDir, {
+          mcpServers,
+          mode: this.acpConfig.mode,
+        });
+      }
       this.activeSessions.set(executionId, session);
+
+      // 2b. Set permission mode on the agent session using handler logic
+      const sessionPermissionMode = getSessionPermissionMode(this.agentType, {
+        skipPermissions: permissionMode === "auto-approve",
+        acpPermissionMode: permissionMode,
+        agentPermissionMode: this.acpConfig.agentPermissionMode,
+      });
+
+      if (sessionPermissionMode) {
+        try {
+          await session.setMode(sessionPermissionMode);
+          console.log(
+            `[AcpExecutorWrapper] Set session permission mode to ${sessionPermissionMode} for ${executionId}`
+          );
+        } catch (modeError) {
+          console.warn(
+            `[AcpExecutorWrapper] Failed to set ${sessionPermissionMode} mode (agent may not support it): ${modeError}`
+          );
+        }
+      }
 
       // 3. Update execution status
       updateExecution(this.db, executionId, {
@@ -536,6 +565,12 @@ export class AcpExecutorWrapper {
         // Handle permission requests (for interactive mode)
         if (update.sessionUpdate === "permission_request") {
           const permUpdate = update as PermissionRequestUpdate;
+          console.log(`[AcpExecutorWrapper] Permission request received:`, {
+            executionId,
+            requestId: permUpdate.requestId,
+            toolCall: permUpdate.toolCall?.title,
+            options: permUpdate.options?.map((o) => o.kind),
+          });
           // Register with permission manager (non-blocking)
           permissionManager.addPending({
             requestId: permUpdate.requestId,
@@ -567,10 +602,9 @@ export class AcpExecutorWrapper {
         );
       }
 
-      console.log(
-        `[AcpExecutorWrapper] Resume completed for ${executionId}`,
-        { totalUpdates: updateCount }
-      );
+      console.log(`[AcpExecutorWrapper] Resume completed for ${executionId}`, {
+        totalUpdates: updateCount,
+      });
 
       // 6. Handle success
       await this.handleSuccess(executionId, workDir);
@@ -590,13 +624,6 @@ export class AcpExecutorWrapper {
       if (pm) {
         pm.cancelAll();
         this.permissionManagers.delete(executionId);
-      }
-
-      // Cleanup terminal handler
-      const th = this.terminalHandlers.get(executionId);
-      if (th) {
-        th.cleanup();
-        this.terminalHandlers.delete(executionId);
       }
 
       // Cleanup file handler
@@ -701,13 +728,6 @@ export class AcpExecutorWrapper {
       this.permissionManagers.delete(executionId);
     }
 
-    // Cleanup terminal handler
-    const th = this.terminalHandlers.get(executionId);
-    if (th) {
-      th.cleanup();
-      this.terminalHandlers.delete(executionId);
-    }
-
     // Cleanup file handler
     this.fileHandlers.delete(executionId);
   }
@@ -734,9 +754,7 @@ export class AcpExecutorWrapper {
     const permissionManager = this.permissionManagers.get(executionId);
 
     if (!session) {
-      console.warn(
-        `[AcpExecutorWrapper] No active session for ${executionId}`
-      );
+      console.warn(`[AcpExecutorWrapper] No active session for ${executionId}`);
       return false;
     }
 
@@ -799,9 +817,7 @@ export class AcpExecutorWrapper {
     const session = this.activeSessions.get(executionId);
 
     if (!session) {
-      console.warn(
-        `[AcpExecutorWrapper] No active session for ${executionId}`
-      );
+      console.warn(`[AcpExecutorWrapper] No active session for ${executionId}`);
       return false;
     }
 
@@ -842,9 +858,7 @@ export class AcpExecutorWrapper {
     const session = this.activeSessions.get(executionId);
 
     if (!session) {
-      console.warn(
-        `[AcpExecutorWrapper] No active session for ${executionId}`
-      );
+      console.warn(`[AcpExecutorWrapper] No active session for ${executionId}`);
       return null;
     }
 
@@ -889,9 +903,7 @@ export class AcpExecutorWrapper {
     const session = this.activeSessions.get(executionId);
 
     if (!session) {
-      console.warn(
-        `[AcpExecutorWrapper] No active session for ${executionId}`
-      );
+      console.warn(`[AcpExecutorWrapper] No active session for ${executionId}`);
       return false;
     }
 
@@ -932,9 +944,7 @@ export class AcpExecutorWrapper {
     const session = this.activeSessions.get(executionId);
 
     if (!session) {
-      console.warn(
-        `[AcpExecutorWrapper] No active session for ${executionId}`
-      );
+      console.warn(`[AcpExecutorWrapper] No active session for ${executionId}`);
       return;
     }
 

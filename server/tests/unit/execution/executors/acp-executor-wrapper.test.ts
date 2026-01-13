@@ -159,13 +159,7 @@ describe("AcpExecutorWrapper", () => {
       expect(AgentFactory.spawn).toHaveBeenCalledWith("claude-code", {
         env: undefined,
         permissionMode: "auto-approve",
-        // Terminal handlers
-        onTerminalCreate: expect.any(Function),
-        onTerminalOutput: expect.any(Function),
-        onTerminalKill: expect.any(Function),
-        onTerminalRelease: expect.any(Function),
-        onTerminalWaitForExit: expect.any(Function),
-        // File handlers
+        // File handlers only - no terminal handlers so Claude Code uses native Bash
         onFileRead: expect.any(Function),
         onFileWrite: expect.any(Function),
       });

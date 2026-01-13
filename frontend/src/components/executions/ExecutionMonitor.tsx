@@ -473,15 +473,18 @@ export function ExecutionMonitor({
   const handleSkipAllPermissions = async () => {
     try {
       setIsSkippingAllPermissions(true)
-      const response = await api.post(`/executions/${executionId}/skip-all-permissions`, {
-        feedback: 'Continue from where you left off.',
-      })
-      const newExecutionId = response.data?.data?.newExecution?.id
+      // API interceptor unwraps response, so we get the data directly (not wrapped in AxiosResponse)
+      const response = (await api.post(
+        `/executions/${executionId}/skip-all-permissions`,
+        { feedback: 'Continue from where you left off.' }
+      )) as { previousExecutionId: string; newExecution: { id: string } }
+      const newExecutionId = response?.newExecution?.id
       if (newExecutionId && onSkipAllPermissionsComplete) {
         onSkipAllPermissionsComplete(newExecutionId)
       }
     } catch (err) {
       console.error('[ExecutionMonitor] Error skipping all permissions:', err)
+    } finally {
       setIsSkippingAllPermissions(false)
     }
   }
