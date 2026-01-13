@@ -410,6 +410,32 @@ CREATE INDEX IF NOT EXISTS idx_stacks_created_at ON stacks(created_at);
 CREATE INDEX IF NOT EXISTS idx_stacks_updated_at ON stacks(updated_at);
 `;
 
+// Batches table - groups queue entries into PRs for coordinated review/merge
+export const BATCHES_TABLE = `
+CREATE TABLE IF NOT EXISTS batches (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    entry_ids TEXT NOT NULL,
+    target_branch TEXT NOT NULL DEFAULT 'main',
+    pr_number INTEGER,
+    pr_url TEXT,
+    pr_status TEXT NOT NULL DEFAULT 'draft' CHECK(pr_status IN ('draft', 'open', 'approved', 'merged', 'closed')),
+    merge_strategy TEXT NOT NULL DEFAULT 'squash' CHECK(merge_strategy IN ('squash', 'preserve')),
+    is_draft_pr INTEGER NOT NULL DEFAULT 1 CHECK(is_draft_pr IN (0, 1)),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by TEXT
+);
+`;
+
+export const BATCHES_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_batches_pr_status ON batches(pr_status);
+CREATE INDEX IF NOT EXISTS idx_batches_target_branch ON batches(target_branch);
+CREATE INDEX IF NOT EXISTS idx_batches_created_at ON batches(created_at);
+CREATE INDEX IF NOT EXISTS idx_batches_updated_at ON batches(updated_at);
+`;
+
 /**
  * View definitions
  */
@@ -472,6 +498,7 @@ export const ALL_TABLES = [
   WORKFLOWS_TABLE,
   WORKFLOW_EVENTS_TABLE,
   STACKS_TABLE,
+  BATCHES_TABLE,
 ];
 
 export const ALL_INDEXES = [
@@ -487,6 +514,7 @@ export const ALL_INDEXES = [
   WORKFLOWS_INDEXES,
   WORKFLOW_EVENTS_INDEXES,
   STACKS_INDEXES,
+  BATCHES_INDEXES,
 ];
 
 export const ALL_VIEWS = [READY_ISSUES_VIEW, BLOCKED_ISSUES_VIEW];

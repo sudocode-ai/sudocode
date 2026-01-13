@@ -970,6 +970,56 @@ const MIGRATIONS: Migration[] = [
       console.log("  ✓ Dropped stacks table");
     },
   },
+  {
+    version: 10,
+    name: "add-batches-table",
+    up: (db: Database.Database) => {
+      // Check if batches table already exists
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='batches'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (tables.length > 0) {
+        // Already migrated
+        return;
+      }
+
+      // Create batches table for PR batch workflow
+      db.exec(`
+        CREATE TABLE batches (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          description TEXT,
+          entry_ids TEXT NOT NULL,
+          target_branch TEXT NOT NULL DEFAULT 'main',
+          pr_number INTEGER,
+          pr_url TEXT,
+          pr_status TEXT NOT NULL DEFAULT 'draft' CHECK(pr_status IN ('draft', 'open', 'approved', 'merged', 'closed')),
+          merge_strategy TEXT NOT NULL DEFAULT 'squash' CHECK(merge_strategy IN ('squash', 'preserve')),
+          is_draft_pr INTEGER NOT NULL DEFAULT 1 CHECK(is_draft_pr IN (0, 1)),
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          created_by TEXT
+        );
+      `);
+
+      // Create indexes
+      db.exec(`
+        CREATE INDEX idx_batches_pr_status ON batches(pr_status);
+        CREATE INDEX idx_batches_target_branch ON batches(target_branch);
+        CREATE INDEX idx_batches_created_at ON batches(created_at);
+        CREATE INDEX idx_batches_updated_at ON batches(updated_at);
+      `);
+
+      console.log("  ✓ Created batches table for PR batch workflow");
+    },
+    down: (db: Database.Database) => {
+      db.exec(`DROP TABLE IF EXISTS batches;`);
+      console.log("  ✓ Dropped batches table");
+    },
+  },
 ];
 
 /**

@@ -467,6 +467,173 @@ export interface StackInfo {
   health: StackHealth;
 }
 
+// =============================================================================
+// PR Batch Types (Phase 5)
+// =============================================================================
+
+/**
+ * PR status for a batch
+ */
+export type BatchPRStatus = "draft" | "open" | "approved" | "merged" | "closed";
+
+/**
+ * Merge strategy for combining commits
+ */
+export type MergeStrategy = "squash" | "preserve";
+
+/**
+ * Represents a batch of queue entries to be merged as a single PR
+ * Enables atomic review and merge of dependent changes
+ */
+export interface PRBatch {
+  /** Unique batch identifier */
+  id: string;
+  /** Human-readable title for the batch/PR */
+  title: string;
+  /** Optional description for the PR body */
+  description?: string;
+  /** JSON array of queue entry IDs included in this batch */
+  entry_ids: string[];
+  /** Target branch for the PR */
+  target_branch: string;
+  /** GitHub PR number (set after PR creation) */
+  pr_number?: number;
+  /** GitHub PR URL (set after PR creation) */
+  pr_url?: string;
+  /** Current status of the PR */
+  pr_status: BatchPRStatus;
+  /** Strategy for merging commits */
+  merge_strategy: MergeStrategy;
+  /** Whether to create as draft PR */
+  is_draft_pr: boolean;
+  /** When batch was created (ISO 8601) */
+  created_at: string;
+  /** When batch was last updated (ISO 8601) */
+  updated_at: string;
+  /** Who created the batch */
+  created_by?: string;
+}
+
+/**
+ * Enriched batch with resolved queue entries and computed stats
+ */
+export interface EnrichedBatch extends PRBatch {
+  /** Resolved queue entries */
+  entries: EnrichedQueueEntry[];
+  /** Total number of files changed */
+  total_files: number;
+  /** Total lines added */
+  total_additions: number;
+  /** Total lines deleted */
+  total_deletions: number;
+  /** Computed dependency order for merging */
+  dependency_order: string[];
+  /** Whether there are dependency violations */
+  has_dependency_violations: boolean;
+}
+
+/**
+ * Request to create a new batch
+ */
+export interface CreateBatchRequest {
+  /** Title for the batch/PR */
+  title: string;
+  /** Optional description */
+  description?: string;
+  /** Queue entry IDs to include */
+  entry_ids: string[];
+  /** Target branch (default: main) */
+  target_branch?: string;
+  /** Merge strategy (default: squash) */
+  merge_strategy?: MergeStrategy;
+  /** Whether to create as draft (default: true) */
+  is_draft_pr?: boolean;
+}
+
+/**
+ * Request to promote a batch (merge to target)
+ */
+export interface BatchPromoteRequest {
+  /** Batch ID to promote */
+  batch_id: string;
+  /** Whether to auto-merge after PR creation */
+  auto_merge?: boolean;
+}
+
+/**
+ * Preview of what a batch will contain
+ */
+export interface BatchPreview {
+  /** Computed dependency order */
+  dependency_order: string[];
+  /** Files that will be changed */
+  files: Array<{
+    path: string;
+    status: string;
+    additions: number;
+    deletions: number;
+  }>;
+  /** Total lines added */
+  total_additions: number;
+  /** Total lines deleted */
+  total_deletions: number;
+  /** Preview of PR body */
+  pr_body_preview: string;
+}
+
+// =============================================================================
+// Queue Types (for batch integration)
+// =============================================================================
+
+/**
+ * Queue entry status
+ */
+export type QueueStatus =
+  | "pending"
+  | "ready"
+  | "merging"
+  | "merged"
+  | "failed"
+  | "cancelled";
+
+/**
+ * Enriched queue entry with issue/stack metadata
+ */
+export interface EnrichedQueueEntry {
+  /** Queue entry ID */
+  id: string;
+  /** Execution ID */
+  executionId: string;
+  /** Dataplane stream ID */
+  streamId: string;
+  /** Target branch for merge */
+  targetBranch: string;
+  /** Position in queue */
+  position: number;
+  /** Priority value */
+  priority: number;
+  /** Current status */
+  status: QueueStatus;
+  /** When added to queue (epoch ms) */
+  addedAt: number;
+  /** Associated issue ID */
+  issueId: string;
+  /** Issue title */
+  issueTitle: string;
+  /** Stack ID (if in a stack) */
+  stackId?: string;
+  /** Stack name (if in a stack) */
+  stackName?: string;
+  /** Depth in stack */
+  stackDepth: number;
+  /** Issue IDs this entry depends on */
+  dependencies: string[];
+  /** Whether this entry can be promoted */
+  canPromote: boolean;
+  /** Error message if failed */
+  error?: string;
+}
+
 /**
  * Represents a single agent run on an issue
  * Tracks the full lifecycle of a coding agent execution

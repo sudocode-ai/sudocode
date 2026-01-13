@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { StackPanel } from '@/components/stacks/StackPanel'
 import { MergeQueuePanel } from '@/components/queue'
+import { BatchesPanel } from '@/components/batches'
 import { Loader2, Layers, ListOrdered, Package, Plus, GitBranch } from 'lucide-react'
 
 /**
@@ -158,20 +159,21 @@ function QueueTabContent() {
 }
 
 /**
- * Batches tab placeholder
+ * Batches tab content - displays PR batches with management UI
  */
 function BatchesTabContent() {
-  return (
-    <div className="flex flex-col items-center justify-center h-64 gap-4">
-      <Package className="h-12 w-12 text-muted-foreground" />
-      <div className="text-center">
-        <h3 className="font-medium">PR Batches</h3>
-        <p className="text-sm text-muted-foreground mt-1">
-          Coming in Phase 5
-        </p>
-      </div>
-    </div>
-  )
+  const { data: repoInfo } = useRepositoryInfo()
+
+  // Get branches from repo info, default to main
+  const targetBranches = useMemo(() => {
+    const branches = ['main']
+    if (repoInfo?.branch && !branches.includes(repoInfo.branch)) {
+      branches.push(repoInfo.branch)
+    }
+    return branches
+  }, [repoInfo?.branch])
+
+  return <BatchesPanel branches={targetBranches} />
 }
 
 /**

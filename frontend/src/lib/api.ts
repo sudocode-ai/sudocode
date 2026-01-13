@@ -249,6 +249,17 @@ import type {
   ReorderResponse,
   GetQueueOptions,
 } from '@/types/queue'
+import type {
+  PRBatch,
+  EnrichedBatch,
+  CreateBatchRequest,
+  UpdateBatchRequest,
+  BatchPreview,
+  BatchListResponse,
+  ListBatchesOptions,
+  BatchPromoteResult,
+  BatchPRStatus,
+} from '@/types/batch'
 
 export const stacksApi = {
   /** List all stacks (auto + manual) */
@@ -309,6 +320,68 @@ export const queueApi = {
     const params = targetBranch ? `?target_branch=${encodeURIComponent(targetBranch)}` : ''
     return get<QueueStats>(`/queue/stats${params}`)
   },
+}
+
+/**
+ * Batches API - PR batch management
+ */
+export const batchApi = {
+  /** List all batches with optional filtering */
+  getAll: (options?: ListBatchesOptions) => {
+    const params = new URLSearchParams()
+    if (options?.targetBranch) params.set('target_branch', options.targetBranch)
+    if (options?.prStatus) params.set('pr_status', options.prStatus)
+    if (options?.includeEntries) params.set('include_entries', 'true')
+    const queryString = params.toString()
+    return get<BatchListResponse>(`/batches${queryString ? `?${queryString}` : ''}`)
+  },
+
+  /** Get a specific batch by ID */
+  getById: (id: string, includeEntries = true) => {
+    const params = includeEntries ? '?include_entries=true' : ''
+    return get<{ batch: EnrichedBatch }>(`/batches/${id}${params}`)
+  },
+
+  /** Create a new batch */
+  create: (data: CreateBatchRequest) => post<{ batch: PRBatch }>('/batches', data),
+
+  /** Update a batch (title/description only, before PR creation) */
+  update: (id: string, data: UpdateBatchRequest) =>
+    put<{ batch: PRBatch }>(`/batches/${id}`, data),
+
+  /** Delete a batch */
+  delete: (id: string) => del(`/batches/${id}`),
+
+  /** Create a GitHub PR for the batch */
+  createPR: (id: string, draft = true) =>
+    post<{ batch: PRBatch; pr_url: string }>(`/batches/${id}/pr`, { draft }),
+
+  /** Promote batch entries to main branch */
+  promote: (id: string, autoMerge = false) =>
+    post<BatchPromoteResult>(`/batches/${id}/promote`, { auto_merge: autoMerge }),
+
+  /** Preview batch contents before creating */
+  preview: (id: string) => get<BatchPreview>(`/batches/${id}/preview`),
+
+  /** Sync PR status from GitHub */
+  syncStatus: (id: string) => post<{ batch: PRBatch; status: BatchPRStatus }>(`/batches/${id}/sync`),
+
+  /** Add entries to an existing batch */
+  addEntries: (id: string, entryIds: string[]) =>
+    post<{ batch: PRBatch }>(`/batches/${id}/entries`, { entry_ids: entryIds }),
+
+  /** Remove entries from a batch */
+  removeEntries: (id: string, entryIds: string[]) =>
+    del(`/batches/${id}/entries`, { entry_ids: entryIds }),
+
+  /** Validate batch entries (check dependencies, existence) */
+  validate: (entryIds: string[]) =>
+    post<{
+      valid: boolean
+      errors: string[]
+      dependency_order: string[]
+      has_dependency_violations: boolean
+    }>('/batches/validate', { entry_ids: entryIds }),
 }
 
 /**
