@@ -60,12 +60,14 @@ vi.mock('codeviz/browser', () => ({
     renderer,
     view,
     codeGraph,
+    nexusOptions,
   }: {
     codeMap: any
     overlayPort?: any
     renderer?: string
     view?: string
     codeGraph?: any
+    nexusOptions?: { includeSymbols?: boolean }
   }) => (
     <div data-testid="code-map-component">
       <span data-testid="file-count">{codeMap?.files?.length ?? 0}</span>
@@ -73,6 +75,9 @@ vi.mock('codeviz/browser', () => ({
       <span data-testid="renderer">{renderer ?? 'react-flow'}</span>
       {view && <span data-testid="view">{view}</span>}
       {codeGraph && <span data-testid="has-code-graph">true</span>}
+      {nexusOptions && (
+        <span data-testid="nexus-options">{JSON.stringify(nexusOptions)}</span>
+      )}
     </div>
   ),
   useLayout: (codeGraph: any) => ({
@@ -804,6 +809,69 @@ describe('CodeMapContainer', () => {
       render(<CodeMapContainer renderer="sigma" />)
 
       expect(screen.getByText('Full analysis')).toBeInTheDocument()
+    })
+  })
+
+  describe('Nexus Options', () => {
+    beforeEach(() => {
+      mockUseCodeGraph.mockReturnValue({
+        codeGraph: mockCodeGraph,
+        fileTree: mockFileTree,
+        isLoading: false,
+        isAnalyzing: false,
+        analysisProgress: null,
+        error: null,
+        triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
+      })
+    })
+
+    it('should pass nexusOptions to CodeMapComponent when provided', () => {
+      render(
+        <CodeMapContainer
+          renderer="sigma"
+          nexusOptions={{ includeSymbols: true }}
+        />
+      )
+
+      expect(screen.getByTestId('nexus-options')).toHaveTextContent(
+        JSON.stringify({ includeSymbols: true })
+      )
+    })
+
+    it('should pass nexusOptions with includeSymbols false', () => {
+      render(
+        <CodeMapContainer
+          renderer="sigma"
+          nexusOptions={{ includeSymbols: false }}
+        />
+      )
+
+      expect(screen.getByTestId('nexus-options')).toHaveTextContent(
+        JSON.stringify({ includeSymbols: false })
+      )
+    })
+
+    it('should not render nexus-options element when not provided', () => {
+      render(<CodeMapContainer renderer="sigma" />)
+
+      expect(screen.queryByTestId('nexus-options')).not.toBeInTheDocument()
+    })
+
+    it('should pass nexusOptions in react-flow mode too', () => {
+      render(
+        <CodeMapContainer
+          renderer="react-flow"
+          nexusOptions={{ includeSymbols: true }}
+        />
+      )
+
+      expect(screen.getByTestId('nexus-options')).toHaveTextContent(
+        JSON.stringify({ includeSymbols: true })
+      )
     })
   })
 })

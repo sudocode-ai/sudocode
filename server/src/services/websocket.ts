@@ -118,10 +118,16 @@ class WebSocketManager {
    * @param path WebSocket path (default: "/ws")
    * @param allowReinit Allow re-initialization after shutdown (default: false)
    */
-  init(server: http.Server, path: string = "/ws", allowReinit: boolean = false): void {
+  init(
+    server: http.Server,
+    path: string = "/ws",
+    allowReinit: boolean = false
+  ): void {
     if (this.wss) {
       if (allowReinit) {
-        console.warn("[websocket] WebSocket server already initialized, but re-initialization is allowed");
+        console.warn(
+          "[websocket] WebSocket server already initialized, but re-initialization is allowed"
+        );
         // Don't return, allow re-initialization
       } else {
         console.warn("[websocket] WebSocket server already initialized");
@@ -148,11 +154,17 @@ class WebSocketManager {
       this.wss.on("connection", this.handleConnection.bind(this));
       this.startHeartbeat();
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`[websocket] Failed to initialize WebSocket server:`, errorMessage);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error(
+        `[websocket] Failed to initialize WebSocket server:`,
+        errorMessage
+      );
       // Clean up on failure
       this.wss = null;
-      throw new Error(`Failed to initialize WebSocket server on path ${path}: ${errorMessage}`);
+      throw new Error(
+        `Failed to initialize WebSocket server on path ${path}: ${errorMessage}`
+      );
     }
   }
 
@@ -475,7 +487,10 @@ class WebSocketManager {
       // Sidecar unavailable - tell client to fallback to browser TTS
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      console.error(`[websocket] TTS request failed for ${clientId}:`, errorMessage);
+      console.error(
+        `[websocket] TTS request failed for ${clientId}:`,
+        errorMessage
+      );
 
       this.sendToClient(clientId, {
         type: "tts_error",
@@ -546,12 +561,6 @@ class WebSocketManager {
         }
       }
     });
-
-    if (sentCount > 0) {
-      console.log(
-        `[websocket] Broadcasted ${message.type} for ${subscription} to ${sentCount} clients`
-      );
-    }
   }
 
   /**
@@ -583,18 +592,16 @@ class WebSocketManager {
         }
       }
     });
-
-    if (sentCount > 0) {
-      console.log(
-        `[websocket] Broadcasted ${message.type} for project ${projectId} to ${sentCount} clients`
-      );
-    }
   }
 
   /**
    * Broadcast project lifecycle events (opened/closed)
    */
-  broadcastProjectEvent(projectId: string, event: "opened" | "closed", data?: any): void {
+  broadcastProjectEvent(
+    projectId: string,
+    event: "opened" | "closed",
+    data?: any
+  ): void {
     const allSubscription = `${projectId}:all`;
     const message: ServerMessage = {
       type: event === "opened" ? "project_opened" : "project_closed",
@@ -622,12 +629,6 @@ class WebSocketManager {
         }
       }
     });
-
-    if (sentCount > 0) {
-      console.log(
-        `[websocket] Broadcasted project_${event} for ${projectId} to ${sentCount} clients`
-      );
-    }
   }
 
   /**
@@ -857,14 +858,6 @@ export function broadcastVoiceNarration(
   },
   issueId?: string
 ): void {
-  console.log(`[websocket] broadcastVoiceNarration called:`, {
-    projectId,
-    executionId,
-    text: narrationData.text.substring(0, 50),
-    category: narrationData.category,
-    issueId,
-  });
-
   // Primary broadcast to execution subscribers
   websocketManager.broadcast(projectId, "execution", executionId, {
     type: "voice_narration",

@@ -4,15 +4,35 @@ import { useProjectById } from '@/hooks/useProjects'
 import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
 import { useCodeGraph } from '@/hooks/useCodeGraph'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { GitBranch, Loader2, Eye } from 'lucide-react'
+import { GitBranch, Loader2, Eye, Settings } from 'lucide-react'
 import { CodeMapContainer, type CodeMapContainerRef } from '@/components/codeviz/CodeMapContainer'
 import { AgentDetailSidebar, SidebarBackdrop } from '@/components/codeviz/AgentDetailSidebar'
+import {
+  NexusSettingsDialog,
+  type NexusSettings,
+  DEFAULT_NEXUS_SETTINGS,
+} from '@/components/codeviz/NexusSettingsDialog'
 
 /** Renderer type for CodeViz visualization */
 export type RendererType = 'react-flow' | 'sigma'
 
 const RENDERER_STORAGE_KEY = 'codeviz-renderer'
+const NEXUS_SETTINGS_KEY = 'codeviz-nexus-settings'
+
+/** Load nexus settings from localStorage */
+function loadNexusSettings(): NexusSettings {
+  try {
+    const saved = localStorage.getItem(NEXUS_SETTINGS_KEY)
+    if (saved) {
+      return { ...DEFAULT_NEXUS_SETTINGS, ...JSON.parse(saved) }
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return DEFAULT_NEXUS_SETTINGS
+}
 
 export default function CodeVizPage() {
   const { currentProjectId } = useProject()
@@ -43,6 +63,19 @@ export default function CodeVizPage() {
     localStorage.setItem(RENDERER_STORAGE_KEY, renderer)
   }, [renderer])
 
+  // Nexus settings state with localStorage persistence
+  const [nexusSettings, setNexusSettings] = useState<NexusSettings>(loadNexusSettings)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  // Persist nexus settings to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(NEXUS_SETTINGS_KEY, JSON.stringify(nexusSettings))
+    } catch {
+      // Ignore storage errors
+    }
+  }, [nexusSettings])
+
   // Code map ref for highlight control
   const codeMapRef = useRef<CodeMapContainerRef>(null)
 
@@ -53,18 +86,21 @@ export default function CodeVizPage() {
   const hoverHighlightRef = useRef<string | null>(null)
 
   // Handle file hover from sidebar - highlight on map
-  const handleFileHover = useCallback((filePath: string) => {
-    if (!codeMapRef.current || !selectedExecutionId) return
+  const handleFileHover = useCallback(
+    (filePath: string) => {
+      if (!codeMapRef.current || !selectedExecutionId) return
 
-    // Remove previous hover highlight if any
-    if (hoverHighlightRef.current) {
-      codeMapRef.current.removeHighlight(hoverHighlightRef.current)
-    }
+      // Remove previous hover highlight if any
+      if (hoverHighlightRef.current) {
+        codeMapRef.current.removeHighlight(hoverHighlightRef.current)
+      }
 
-    // Create new highlight with agent's color
-    const agentColor = codeMapRef.current.getAgentColor(selectedExecutionId)
-    hoverHighlightRef.current = codeMapRef.current.highlightFile(filePath, agentColor)
-  }, [selectedExecutionId])
+      // Create new highlight with agent's color
+      const agentColor = codeMapRef.current.getAgentColor(selectedExecutionId)
+      hoverHighlightRef.current = codeMapRef.current.highlightFile(filePath, agentColor)
+    },
+    [selectedExecutionId]
+  )
 
   // Handle file leave from sidebar - remove highlight from map
   const handleFileLeave = useCallback(() => {
@@ -126,10 +162,10 @@ export default function CodeVizPage() {
           <div className="flex rounded-md border border-input text-sm">
             <button
               className={cn(
-                'px-3 py-1 rounded-l-md transition-colors',
+                'rounded-l-md px-3 py-1 transition-colors',
                 renderer === 'react-flow'
                   ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                  : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
               )}
               onClick={() => setRenderer('react-flow')}
             >
@@ -137,10 +173,10 @@ export default function CodeVizPage() {
             </button>
             <button
               className={cn(
-                'px-3 py-1 rounded-r-md transition-colors border-l border-input',
+                'rounded-r-md border-l border-input px-3 py-1 transition-colors',
                 renderer === 'sigma'
                   ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                  : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
               )}
               onClick={() => setRenderer('sigma')}
             >
@@ -160,6 +196,16 @@ export default function CodeVizPage() {
               )}
             </span>
           )}
+          {/* Settings button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSettingsOpen(true)}
+            className="gap-1"
+            title="Nexus view settings"
+          >
+            <Settings className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
@@ -175,6 +221,7 @@ export default function CodeVizPage() {
             renderer={renderer}
             selectedExecutionId={selectedExecutionId}
             onExecutionSelect={setSelectedExecutionId}
+            nexusOptions={nexusSettings}
           />
         </div>
 
@@ -192,6 +239,14 @@ export default function CodeVizPage() {
           />
         )}
       </div>
+
+      {/* Nexus Settings Dialog */}
+      <NexusSettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        settings={nexusSettings}
+        onSettingsChange={setNexusSettings}
+      />
     </div>
   )
 }

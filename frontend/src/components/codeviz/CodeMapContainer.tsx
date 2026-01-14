@@ -19,6 +19,15 @@ import {
   generateDirectoryId,
   detectLanguage,
 } from 'codeviz/browser'
+
+/**
+ * Options for nexus view graph generation.
+ * Note: This type is defined locally until codeviz library exports it.
+ */
+export interface NexusViewOptions {
+  /** Include symbol nodes (functions, classes, etc.) - default: true */
+  includeSymbols?: boolean
+}
 import { useCodeGraph, type FileTreeResponse } from '@/hooks/useCodeGraph'
 import { useActiveExecutions } from '@/hooks/useActiveExecutions'
 import { useCodeVizOverlays } from '@/hooks/useCodeVizOverlays'
@@ -176,6 +185,8 @@ export interface CodeMapContainerProps {
   selectedExecutionId?: string | null
   /** Callback when an agent/execution is clicked */
   onExecutionSelect?: (executionId: string | null) => void
+  /** Options for nexus view (sigma renderer) */
+  nexusOptions?: NexusViewOptions
 }
 
 /**
@@ -333,7 +344,7 @@ function AnalysisIndicator({
  */
 export const CodeMapContainer = forwardRef<CodeMapContainerRef, CodeMapContainerProps>(
   function CodeMapContainer(
-    { renderer = 'react-flow', selectedExecutionId, onExecutionSelect },
+    { renderer = 'react-flow', selectedExecutionId, onExecutionSelect, nexusOptions },
     ref
   ) {
     const {
@@ -492,6 +503,9 @@ export const CodeMapContainer = forwardRef<CodeMapContainerRef, CodeMapContainer
             continuousLayout={renderer === 'sigma'}
             cachePositions={renderer === 'sigma'}
             cacheKey={currentProjectId ? `codeviz-${currentProjectId}` : undefined}
+            // Pass nexusOptions when codeviz library supports it
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            {...({ nexusOptions } as any)}
             onNodeClick={(nodeId, node) => {
               console.log('Node clicked:', nodeId, node)
             }}

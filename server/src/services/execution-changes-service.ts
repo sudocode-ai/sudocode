@@ -52,13 +52,6 @@ export class ExecutionChangesService {
       };
     }
 
-    console.log(`[ExecutionChangesService] Execution ${executionId}:`, {
-      status: execution.status,
-      before_commit: execution.before_commit,
-      after_commit: execution.after_commit,
-      parent_execution_id: execution.parent_execution_id,
-    });
-
     // 2. Validate status (must have started executing)
     // Allow running, completed, stopped, failed, cancelled - reject pending, preparing, paused
     const validStatuses = [
@@ -81,17 +74,6 @@ export class ExecutionChangesService {
     // 3. Find root execution (for execution chains)
     const rootExecution = this.getRootExecution(execution);
     const beforeCommit = rootExecution.before_commit || execution.before_commit;
-
-    console.log(
-      `[ExecutionChangesService] Root execution ${rootExecution.id}:`,
-      {
-        before_commit: rootExecution.before_commit,
-        after_commit: rootExecution.after_commit,
-      }
-    );
-    console.log(
-      `[ExecutionChangesService] Computed beforeCommit: ${beforeCommit}`
-    );
 
     // 4. Validate before_commit exists (required for calculating any changes)
     if (!beforeCommit) {
