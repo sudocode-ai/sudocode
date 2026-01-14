@@ -9,8 +9,8 @@
 import { Router, Request, Response } from "express";
 import { execSync } from "child_process";
 import { randomUUID } from "crypto";
-import { analyzeCodebase, resetAnalyzer } from "codeviz";
-import type { CodeGraph, AnalysisProgress } from "codeviz";
+import { analyzeCodebase, resetAnalyzer } from "codeviz/node";
+import type { CodeGraph, AnalysisProgress } from "codeviz/node";
 import {
   broadcastCodeGraphReady,
   broadcastCodeGraphProgress,

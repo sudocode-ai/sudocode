@@ -1,16 +1,35 @@
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 import { useProject } from '@/hooks/useProject'
 import { useProjectById } from '@/hooks/useProjects'
 import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
+import { useCodeGraph } from '@/hooks/useCodeGraph'
 import { Badge } from '@/components/ui/badge'
-import { GitBranch } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { GitBranch, Loader2 } from 'lucide-react'
 import { CodeMapContainer, type CodeMapContainerRef } from '@/components/codeviz/CodeMapContainer'
 import { AgentDetailSidebar, SidebarBackdrop } from '@/components/codeviz/AgentDetailSidebar'
+
+/** Renderer type for CodeViz visualization */
+export type RendererType = 'react-flow' | 'sigma'
+
+const RENDERER_STORAGE_KEY = 'codeviz-renderer'
 
 export default function CodeVizPage() {
   const { currentProjectId } = useProject()
   const { data: currentProject } = useProjectById(currentProjectId)
   const { data: repoInfo } = useRepositoryInfo()
+  const { codeGraph, isAnalyzing } = useCodeGraph()
+
+  // Renderer selection state with localStorage persistence
+  const [renderer, setRenderer] = useState<RendererType>(() => {
+    const saved = localStorage.getItem(RENDERER_STORAGE_KEY)
+    return saved === 'sigma' ? 'sigma' : 'react-flow'
+  })
+
+  // Persist renderer selection to localStorage
+  useEffect(() => {
+    localStorage.setItem(RENDERER_STORAGE_KEY, renderer)
+  }, [renderer])
 
   // Code map ref for highlight control
   const codeMapRef = useRef<CodeMapContainerRef>(null)
@@ -74,7 +93,44 @@ export default function CodeVizPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {/* Zoom controls placeholder */}
+          {/* Renderer toggle */}
+          <div className="flex rounded-md border border-input text-sm">
+            <button
+              className={cn(
+                'px-3 py-1 rounded-l-md transition-colors',
+                renderer === 'react-flow'
+                  ? 'bg-accent text-accent-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+              )}
+              onClick={() => setRenderer('react-flow')}
+            >
+              Flow
+            </button>
+            <button
+              className={cn(
+                'px-3 py-1 rounded-r-md transition-colors border-l border-input',
+                renderer === 'sigma'
+                  ? 'bg-accent text-accent-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+              )}
+              onClick={() => setRenderer('sigma')}
+            >
+              Sigma
+            </button>
+          </div>
+          {/* Edge count indicator for Sigma mode */}
+          {renderer === 'sigma' && (
+            <span className="text-xs text-muted-foreground">
+              {isAnalyzing ? (
+                <span className="flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Analyzing...
+                </span>
+              ) : (
+                `(${codeGraph?.imports?.length ?? 0} imports)`
+              )}
+            </span>
+          )}
         </div>
       </div>
 
@@ -87,6 +143,7 @@ export default function CodeVizPage() {
         >
           <CodeMapContainer
             ref={codeMapRef}
+            renderer={renderer}
             selectedExecutionId={selectedExecutionId}
             onExecutionSelect={setSelectedExecutionId}
           />

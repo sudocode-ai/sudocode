@@ -45,10 +45,25 @@ vi.mock('@/contexts/ThemeContext', () => ({
 
 // Mock codeviz/browser
 vi.mock('codeviz/browser', () => ({
-  CodeMapComponent: ({ codeMap, overlayPort }: { codeMap: any; overlayPort?: any }) => (
+  CodeMapComponent: ({
+    codeMap,
+    overlayPort,
+    renderer,
+    view,
+    codeGraph
+  }: {
+    codeMap: any;
+    overlayPort?: any;
+    renderer?: string;
+    view?: string;
+    codeGraph?: any
+  }) => (
     <div data-testid="code-map-component">
       <span data-testid="file-count">{codeMap?.files?.length ?? 0}</span>
       {overlayPort && <span data-testid="has-overlay-port">true</span>}
+      <span data-testid="renderer">{renderer ?? 'react-flow'}</span>
+      {view && <span data-testid="view">{view}</span>}
+      {codeGraph && <span data-testid="has-code-graph">true</span>}
     </div>
   ),
   useLayout: (codeGraph: any) => ({
@@ -538,6 +553,140 @@ describe('CodeMapContainer', () => {
           showChangeBadges: true,
         })
       )
+    })
+  })
+
+  describe('Renderer prop', () => {
+    beforeEach(() => {
+      mockUseCodeGraph.mockReturnValue({
+        codeGraph: mockCodeGraph,
+        fileTree: mockFileTree,
+        isLoading: false,
+        isAnalyzing: false,
+        analysisProgress: null,
+        error: null,
+        triggerAnalysis: mockTriggerAnalysis,
+      })
+    })
+
+    it('should default to react-flow renderer', () => {
+      render(<CodeMapContainer />)
+
+      expect(screen.getByTestId('renderer')).toHaveTextContent('react-flow')
+    })
+
+    it('should pass react-flow renderer when specified', () => {
+      render(<CodeMapContainer renderer="react-flow" />)
+
+      expect(screen.getByTestId('renderer')).toHaveTextContent('react-flow')
+    })
+
+    it('should pass sigma renderer when specified', () => {
+      render(<CodeMapContainer renderer="sigma" />)
+
+      expect(screen.getByTestId('renderer')).toHaveTextContent('sigma')
+    })
+
+    it('should pass view="nexus" when renderer is sigma', () => {
+      render(<CodeMapContainer renderer="sigma" />)
+
+      expect(screen.getByTestId('view')).toHaveTextContent('nexus')
+    })
+
+    it('should not pass view when renderer is react-flow', () => {
+      render(<CodeMapContainer renderer="react-flow" />)
+
+      expect(screen.queryByTestId('view')).not.toBeInTheDocument()
+    })
+
+    it('should pass codeGraph to CodeMapComponent', () => {
+      render(<CodeMapContainer renderer="sigma" />)
+
+      expect(screen.getByTestId('has-code-graph')).toBeInTheDocument()
+    })
+
+    it('should pass overlay port only for react-flow renderer', () => {
+      render(<CodeMapContainer renderer="react-flow" />)
+
+      expect(screen.getByTestId('has-overlay-port')).toBeInTheDocument()
+    })
+
+    it('should not pass overlay port for sigma renderer', () => {
+      render(<CodeMapContainer renderer="sigma" />)
+
+      expect(screen.queryByTestId('has-overlay-port')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('Sigma with file tree only (no full CodeGraph)', () => {
+    it('should work with file tree before analysis', () => {
+      mockUseCodeGraph.mockReturnValue({
+        codeGraph: null, // No full CodeGraph yet
+        fileTree: mockFileTree,
+        isLoading: false,
+        isAnalyzing: false,
+        analysisProgress: null,
+        error: null,
+        triggerAnalysis: mockTriggerAnalysis,
+      })
+
+      render(<CodeMapContainer renderer="sigma" />)
+
+      expect(screen.getByTestId('code-map-component')).toBeInTheDocument()
+      expect(screen.getByTestId('renderer')).toHaveTextContent('sigma')
+      expect(screen.getByTestId('view')).toHaveTextContent('nexus')
+    })
+
+    it('should pass transformed CodeGraph even without full analysis', () => {
+      mockUseCodeGraph.mockReturnValue({
+        codeGraph: null,
+        fileTree: mockFileTree,
+        isLoading: false,
+        isAnalyzing: false,
+        analysisProgress: null,
+        error: null,
+        triggerAnalysis: mockTriggerAnalysis,
+      })
+
+      render(<CodeMapContainer renderer="sigma" />)
+
+      // The transformed CodeGraph should be passed (has-code-graph should exist)
+      expect(screen.getByTestId('has-code-graph')).toBeInTheDocument()
+    })
+  })
+
+  describe('Sigma with full CodeGraph', () => {
+    it('should use full CodeGraph when available', () => {
+      mockUseCodeGraph.mockReturnValue({
+        codeGraph: mockCodeGraph,
+        fileTree: mockFileTree,
+        isLoading: false,
+        isAnalyzing: false,
+        analysisProgress: null,
+        error: null,
+        triggerAnalysis: mockTriggerAnalysis,
+      })
+
+      render(<CodeMapContainer renderer="sigma" />)
+
+      expect(screen.getByTestId('code-map-component')).toBeInTheDocument()
+      expect(screen.getByTestId('has-code-graph')).toBeInTheDocument()
+    })
+
+    it('should show Full analysis badge when CodeGraph available in sigma mode', () => {
+      mockUseCodeGraph.mockReturnValue({
+        codeGraph: mockCodeGraph,
+        fileTree: mockFileTree,
+        isLoading: false,
+        isAnalyzing: false,
+        analysisProgress: null,
+        error: null,
+        triggerAnalysis: mockTriggerAnalysis,
+      })
+
+      render(<CodeMapContainer renderer="sigma" />)
+
+      expect(screen.getByText('Full analysis')).toBeInTheDocument()
     })
   })
 })

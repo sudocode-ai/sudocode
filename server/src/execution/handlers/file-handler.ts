@@ -42,9 +42,7 @@ export class FileHandler {
 
     try {
       const content = await readFile(resolvedPath, "utf-8");
-      console.log(
-        `[FileHandler] Read ${content.length} chars from ${path}`
-      );
+      console.log(`[FileHandler] Read ${content.length} chars from ${path}`);
       return content;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -81,9 +79,7 @@ export class FileHandler {
       await mkdir(dirname(resolvedPath), { recursive: true });
 
       await writeFile(resolvedPath, content, "utf-8");
-      console.log(
-        `[FileHandler] Wrote ${content.length} chars to ${path}`
-      );
+      console.log(`[FileHandler] Wrote ${content.length} chars to ${path}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[FileHandler] Failed to write ${path}:`, message);

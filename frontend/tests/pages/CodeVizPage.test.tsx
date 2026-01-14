@@ -1,9 +1,28 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { forwardRef, useImperativeHandle } from 'react'
 import CodeVizPage from '@/pages/CodeVizPage'
+
+// Mock localStorage
+const localStorageMock = (() => {
+  let store: Record<string, string> = {}
+  return {
+    getItem: vi.fn((key: string) => store[key] ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      store[key] = value
+    }),
+    removeItem: vi.fn((key: string) => {
+      delete store[key]
+    }),
+    clear: vi.fn(() => {
+      store = {}
+    }),
+  }
+})()
+
+Object.defineProperty(window, 'localStorage', { value: localStorageMock })
 
 // Mock the hooks
 vi.mock('@/hooks/useProject', () => ({
@@ -18,6 +37,12 @@ vi.mock('@/hooks/useRepositoryInfo', () => ({
   useRepositoryInfo: () => ({ data: { branch: 'main' } }),
 }))
 
+// Mock useCodeGraph hook
+const mockUseCodeGraph = vi.fn()
+vi.mock('@/hooks/useCodeGraph', () => ({
+  useCodeGraph: () => mockUseCodeGraph(),
+}))
+
 // Mock CodeMapContainer
 const mockHighlightFile = vi.fn().mockReturnValue('highlight-123')
 const mockRemoveHighlight = vi.fn()
@@ -25,7 +50,7 @@ const mockGetAgentColor = vi.fn().mockReturnValue('#ff0000')
 
 vi.mock('@/components/codeviz/CodeMapContainer', () => ({
   CodeMapContainer: forwardRef(function MockCodeMapContainer(
-    { selectedExecutionId, onExecutionSelect }: { selectedExecutionId?: string | null; onExecutionSelect?: (id: string | null) => void },
+    { renderer, selectedExecutionId, onExecutionSelect }: { renderer?: string; selectedExecutionId?: string | null; onExecutionSelect?: (id: string | null) => void },
     ref: React.Ref<any>
   ) {
     // Expose ref methods using useImperativeHandle
@@ -37,6 +62,7 @@ vi.mock('@/components/codeviz/CodeMapContainer', () => ({
 
     return (
       <div data-testid="code-map-container">
+        <div data-testid="renderer-type">{renderer || 'react-flow'}</div>
         <div data-testid="selected-execution">{selectedExecutionId || 'none'}</div>
         <button
           data-testid="select-agent-button"
@@ -93,6 +119,16 @@ function createWrapper() {
 describe('CodeVizPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorageMock.clear()
+    // Default useCodeGraph mock
+    mockUseCodeGraph.mockReturnValue({
+      codeGraph: null,
+      isAnalyzing: false,
+    })
+  })
+
+  afterEach(() => {
+    localStorageMock.clear()
   })
 
   describe('Rendering', () => {
@@ -250,6 +286,160 @@ describe('CodeVizPage', () => {
       await waitFor(() => {
         expect(mapWrapper).toHaveStyle({ marginRight: '350px' })
       })
+    })
+  })
+
+  describe('Renderer Toggle', () => {
+    it('should render renderer toggle buttons', () => {
+      render(<CodeVizPage />, { wrapper: createWrapper() })
+
+      expect(screen.getByRole('button', { name: 'Flow' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Sigma' })).toBeInTheDocument()
+    })
+
+    it('should default to react-flow renderer', () => {
+      render(<CodeVizPage />, { wrapper: createWrapper() })
+
+      expect(screen.getByTestId('renderer-type')).toHaveTextContent('react-flow')
+    })
+
+    it('should switch to sigma renderer when Sigma button clicked', () => {
+      render(<CodeVizPage />, { wrapper: createWrapper() })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Sigma' }))
+
+      expect(screen.getByTestId('renderer-type')).toHaveTextContent('sigma')
+    })
+
+    it('should switch back to react-flow when Flow button clicked', () => {
+      render(<CodeVizPage />, { wrapper: createWrapper() })
+
+      // Switch to sigma
+      fireEvent.click(screen.getByRole('button', { name: 'Sigma' }))
+      expect(screen.getByTestId('renderer-type')).toHaveTextContent('sigma')
+
+      // Switch back to flow
+      fireEvent.click(screen.getByRole('button', { name: 'Flow' }))
+      expect(screen.getByTestId('renderer-type')).toHaveTextContent('react-flow')
+    })
+
+    it('should highlight active renderer button', () => {
+      render(<CodeVizPage />, { wrapper: createWrapper() })
+
+      const flowButton = screen.getByRole('button', { name: 'Flow' })
+      const sigmaButton = screen.getByRole('button', { name: 'Sigma' })
+
+      // Flow should be active by default (check for exact bg-accent class, not hover:bg-accent)
+      expect(flowButton.className).toMatch(/\bbg-accent\b/)
+      expect(sigmaButton.className).toContain('text-muted-foreground')
+
+      // Click Sigma
+      fireEvent.click(sigmaButton)
+
+      expect(flowButton.className).toContain('text-muted-foreground')
+      expect(sigmaButton.className).toMatch(/\bbg-accent\b/)
+    })
+  })
+
+  describe('Renderer Persistence', () => {
+    it('should save renderer selection to localStorage', () => {
+      render(<CodeVizPage />, { wrapper: createWrapper() })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Sigma' }))
+
+      expect(localStorageMock.setItem).toHaveBeenCalledWith('codeviz-renderer', 'sigma')
+    })
+
+    it('should load renderer selection from localStorage', () => {
+      // Set localStorage before rendering
+      localStorageMock.getItem.mockReturnValueOnce('sigma')
+
+      render(<CodeVizPage />, { wrapper: createWrapper() })
+
+      expect(screen.getByTestId('renderer-type')).toHaveTextContent('sigma')
+    })
+
+    it('should default to react-flow if localStorage is empty', () => {
+      localStorageMock.getItem.mockReturnValueOnce(null as unknown as string)
+
+      render(<CodeVizPage />, { wrapper: createWrapper() })
+
+      expect(screen.getByTestId('renderer-type')).toHaveTextContent('react-flow')
+    })
+
+    it('should default to react-flow if localStorage has invalid value', () => {
+      localStorageMock.getItem.mockReturnValueOnce('invalid-renderer')
+
+      render(<CodeVizPage />, { wrapper: createWrapper() })
+
+      expect(screen.getByTestId('renderer-type')).toHaveTextContent('react-flow')
+    })
+  })
+
+  describe('Edge Count Indicator', () => {
+    it('should not show edge count indicator when using react-flow', () => {
+      render(<CodeVizPage />, { wrapper: createWrapper() })
+
+      expect(screen.queryByText(/imports\)/)).not.toBeInTheDocument()
+    })
+
+    it('should show edge count indicator when using sigma', () => {
+      render(<CodeVizPage />, { wrapper: createWrapper() })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Sigma' }))
+
+      expect(screen.getByText('(0 imports)')).toBeInTheDocument()
+    })
+
+    it('should show import count from codeGraph', () => {
+      mockUseCodeGraph.mockReturnValue({
+        codeGraph: {
+          imports: [
+            { sourceId: 'f1', targetId: 'f2' },
+            { sourceId: 'f2', targetId: 'f3' },
+            { sourceId: 'f3', targetId: 'f4' },
+          ],
+        },
+        isAnalyzing: false,
+      })
+
+      render(<CodeVizPage />, { wrapper: createWrapper() })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Sigma' }))
+
+      expect(screen.getByText('(3 imports)')).toBeInTheDocument()
+    })
+
+    it('should show analyzing indicator when analysis in progress', () => {
+      mockUseCodeGraph.mockReturnValue({
+        codeGraph: null,
+        isAnalyzing: true,
+      })
+
+      render(<CodeVizPage />, { wrapper: createWrapper() })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Sigma' }))
+
+      expect(screen.getByText('Analyzing...')).toBeInTheDocument()
+    })
+
+    it('should hide edge count indicator when switching back to react-flow', () => {
+      mockUseCodeGraph.mockReturnValue({
+        codeGraph: {
+          imports: [{ sourceId: 'f1', targetId: 'f2' }],
+        },
+        isAnalyzing: false,
+      })
+
+      render(<CodeVizPage />, { wrapper: createWrapper() })
+
+      // Switch to sigma - should show indicator
+      fireEvent.click(screen.getByRole('button', { name: 'Sigma' }))
+      expect(screen.getByText('(1 imports)')).toBeInTheDocument()
+
+      // Switch back to flow - should hide indicator
+      fireEvent.click(screen.getByRole('button', { name: 'Flow' }))
+      expect(screen.queryByText('(1 imports)')).not.toBeInTheDocument()
     })
   })
 })

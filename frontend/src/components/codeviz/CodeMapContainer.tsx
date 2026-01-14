@@ -1,4 +1,12 @@
-import { useMemo, useState, forwardRef, useImperativeHandle, useCallback } from 'react'
+import {
+  useMemo,
+  useState,
+  forwardRef,
+  useImperativeHandle,
+  useCallback,
+  useEffect,
+  useRef,
+} from 'react'
 import {
   CodeMapComponent,
   useLayout,
@@ -65,7 +73,9 @@ function transformToCodeGraph(fileTree: FileTreeResponse): CodeGraph {
   // Transform files
   const codevizFiles: CodevizFileNode[] = files.map((file) => {
     const fileId = generateFileId(file.path)
-    const dirId = file.directoryPath ? generateDirectoryId(file.directoryPath) : generateDirectoryId('')
+    const dirId = file.directoryPath
+      ? generateDirectoryId(file.directoryPath)
+      : generateDirectoryId('')
 
     // Add file to directory's files list
     const dirFiles = directoryFiles.get(file.directoryPath)
@@ -152,10 +162,15 @@ function transformToCodeGraph(fileTree: FileTreeResponse): CodeGraph {
   }
 }
 
+/** Renderer type for CodeViz visualization */
+export type RendererType = 'react-flow' | 'sigma'
+
 /**
  * Props for CodeMapContainer
  */
 export interface CodeMapContainerProps {
+  /** Renderer to use: 'react-flow' (default) or 'sigma' (WebGL) */
+  renderer?: RendererType
   /** Externally controlled selected execution ID */
   selectedExecutionId?: string | null
   /** Callback when an agent/execution is clicked */
@@ -221,15 +236,18 @@ function AnalysisIndicator({
   hasFullCodeGraph,
   analysisProgress,
   onAnalyze,
+  autoAnalyzing,
 }: {
   isAnalyzing: boolean
   hasFullCodeGraph: boolean
   analysisProgress: { phase: string; current: number; total: number; currentFile?: string } | null
   onAnalyze: () => void
+  autoAnalyzing: boolean
 }) {
-  if (isAnalyzing && analysisProgress) {
+  // Show progress during analysis (whether auto-triggered or manual)
+  if (isAnalyzing) {
     const percentage =
-      analysisProgress.total > 0
+      analysisProgress && analysisProgress.total > 0
         ? Math.round((analysisProgress.current / analysisProgress.total) * 100)
         : 0
 
@@ -239,9 +257,16 @@ function AnalysisIndicator({
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
           <div className="flex flex-col">
             <span className="text-sm font-medium">
-              Analyzing: {analysisProgress.current}/{analysisProgress.total} files ({percentage}%)
+              {analysisProgress && analysisProgress.total > 0 ? (
+                <>
+                  Analyzing: {analysisProgress.current}/{analysisProgress.total} files ({percentage}
+                  %)
+                </>
+              ) : (
+                <>Starting analysis...</>
+              )}
             </span>
-            {analysisProgress.currentFile && (
+            {analysisProgress?.currentFile && (
               <span className="max-w-[300px] truncate text-xs text-muted-foreground">
                 {analysisProgress.currentFile}
               </span>
@@ -263,7 +288,19 @@ function AnalysisIndicator({
     )
   }
 
-  // No CodeGraph cached - show analyze button
+  // Auto-analysis starting - show starting indicator
+  if (autoAnalyzing) {
+    return (
+      <div className="absolute left-1/2 top-4 z-50 -translate-x-1/2">
+        <div className="flex items-center gap-3 rounded-lg border bg-background/95 px-4 py-2 shadow-lg backdrop-blur">
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          <span className="text-sm font-medium">Starting analysis...</span>
+        </div>
+      </div>
+    )
+  }
+
+  // No CodeGraph cached and auto-analysis didn't trigger - show manual button as fallback
   return (
     <div className="absolute right-4 top-4 z-50">
       <Button variant="outline" size="sm" onClick={onAnalyze} className="gap-2">
@@ -283,120 +320,164 @@ function AnalysisIndicator({
  * - Provides "Analyze" button to trigger background analysis
  */
 export const CodeMapContainer = forwardRef<CodeMapContainerRef, CodeMapContainerProps>(
-  function CodeMapContainer({ selectedExecutionId, onExecutionSelect }, ref) {
-  const {
-    codeGraph: fullCodeGraph,
-    fileTree,
-    isLoading,
-    isAnalyzing,
-    analysisProgress,
-    error,
-    triggerAnalysis,
-  } = useCodeGraph()
-  const { theme: appTheme } = useTheme()
+  function CodeMapContainer(
+    { renderer = 'react-flow', selectedExecutionId, onExecutionSelect },
+    ref
+  ) {
+    const {
+      codeGraph: fullCodeGraph,
+      fileTree,
+      isLoading,
+      isAnalyzing,
+      analysisProgress,
+      error,
+      triggerAnalysis,
+    } = useCodeGraph()
+    const { theme: appTheme } = useTheme()
 
-  // Agent overlay integration
-  const { executions } = useActiveExecutions()
+    // Track if we've triggered auto-analysis (for UI state)
+    const [hasTriggeredAutoAnalysis, setHasTriggeredAutoAnalysis] = useState(false)
+    // Use ref to prevent double-triggering in strict mode
+    const autoAnalysisTriggeredRef = useRef(false)
 
-  // Use external selection if provided, otherwise manage internally
-  const [internalSelectedId, setInternalSelectedId] = useState<string | null>(null)
-  const selectedAgentId = selectedExecutionId !== undefined ? selectedExecutionId : internalSelectedId
+    // Auto-trigger analysis when no cached CodeGraph is available
+    useEffect(() => {
+      // Only auto-trigger once, when:
+      // - Not loading (we know the state)
+      // - No full code graph cached
+      // - Not already analyzing
+      // - File tree is available (valid project)
+      // - Haven't already attempted
+      if (
+        !isLoading &&
+        !fullCodeGraph &&
+        !isAnalyzing &&
+        fileTree &&
+        fileTree.files.length > 0 &&
+        !autoAnalysisTriggeredRef.current
+      ) {
+        autoAnalysisTriggeredRef.current = true
+        setHasTriggeredAutoAnalysis(true)
+        triggerAnalysis()
+      }
+    }, [isLoading, fullCodeGraph, isAnalyzing, fileTree, triggerAnalysis])
 
-  // Handle agent selection
-  const handleAgentClick = useCallback((executionId: string) => {
-    if (onExecutionSelect) {
-      // External control: toggle selection
-      onExecutionSelect(selectedAgentId === executionId ? null : executionId)
-    } else {
-      // Internal control
-      setInternalSelectedId((prev) => (prev === executionId ? null : executionId))
+    // Agent overlay integration
+    const { executions } = useActiveExecutions()
+
+    // Use external selection if provided, otherwise manage internally
+    const [internalSelectedId, setInternalSelectedId] = useState<string | null>(null)
+    const selectedAgentId =
+      selectedExecutionId !== undefined ? selectedExecutionId : internalSelectedId
+
+    // Handle agent selection
+    const handleAgentClick = useCallback(
+      (executionId: string) => {
+        if (onExecutionSelect) {
+          // External control: toggle selection
+          onExecutionSelect(selectedAgentId === executionId ? null : executionId)
+        } else {
+          // Internal control
+          setInternalSelectedId((prev) => (prev === executionId ? null : executionId))
+        }
+      },
+      [onExecutionSelect, selectedAgentId]
+    )
+
+    // File entity mapping for highlights and badges
+    const { fileEntityMap } = useFileEntityMap()
+
+    const { overlayPort, highlightFile, removeHighlight } = useCodeVizOverlays({
+      executions,
+      selectedAgentId,
+      onAgentClick: handleAgentClick,
+      fileEntityMap,
+      showFileHighlights: true,
+      showChangeBadges: true,
+    })
+
+    // Expose highlight functions via ref
+    useImperativeHandle(
+      ref,
+      () => ({
+        highlightFile,
+        removeHighlight,
+        getAgentColor,
+      }),
+      [highlightFile, removeHighlight]
+    )
+
+    // Use full CodeGraph if available, otherwise transform file tree
+    const codeGraph = useMemo(() => {
+      if (fullCodeGraph) return fullCodeGraph
+      if (fileTree) return transformToCodeGraph(fileTree)
+      return null
+    }, [fullCodeGraph, fileTree])
+
+    // Compute layout using codeviz hook
+    const { codeMap, isComputing, error: layoutError } = useLayout(codeGraph)
+
+    // Loading states
+    if (isLoading) {
+      return <LoadingState />
     }
-  }, [onExecutionSelect, selectedAgentId])
 
-  // File entity mapping for highlights and badges
-  const { fileEntityMap } = useFileEntityMap()
+    if (error) {
+      return <ErrorState error={error} />
+    }
 
-  const { overlayPort, highlightFile, removeHighlight } = useCodeVizOverlays({
-    executions,
-    selectedAgentId,
-    onAgentClick: handleAgentClick,
-    fileEntityMap,
-    showFileHighlights: true,
-    showChangeBadges: true,
-  })
+    if (!fileTree || fileTree.files.length === 0) {
+      return <EmptyState />
+    }
 
-  // Expose highlight functions via ref
-  useImperativeHandle(ref, () => ({
-    highlightFile,
-    removeHighlight,
-    getAgentColor,
-  }), [highlightFile, removeHighlight])
-
-  // Use full CodeGraph if available, otherwise transform file tree
-  const codeGraph = useMemo(() => {
-    if (fullCodeGraph) return fullCodeGraph
-    if (fileTree) return transformToCodeGraph(fileTree)
-    return null
-  }, [fullCodeGraph, fileTree])
-
-  // Compute layout using codeviz hook
-  const { codeMap, isComputing, error: layoutError } = useLayout(codeGraph)
-
-  // Loading states
-  if (isLoading) {
-    return <LoadingState />
-  }
-
-  if (error) {
-    return <ErrorState error={error} />
-  }
-
-  if (!fileTree || fileTree.files.length === 0) {
-    return <EmptyState />
-  }
-
-  if (isComputing) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="flex flex-col items-center gap-2 text-muted-foreground">
-          <Loader2 className="h-8 w-8 animate-spin" />
-          <span>Computing layout...</span>
+    if (isComputing) {
+      return (
+        <div className="flex h-full items-center justify-center">
+          <div className="flex flex-col items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-8 w-8 animate-spin" />
+            <span>Computing layout...</span>
+          </div>
         </div>
+      )
+    }
+
+    if (layoutError) {
+      return <ErrorState error={layoutError} />
+    }
+
+    if (!codeMap) {
+      return <EmptyState />
+    }
+
+    // Map app theme to codeviz theme
+    const codevizTheme = appTheme === 'dark' ? 'dark' : 'light'
+
+    return (
+      <div className="relative h-full w-full">
+        <AnalysisIndicator
+          isAnalyzing={isAnalyzing}
+          hasFullCodeGraph={!!fullCodeGraph}
+          analysisProgress={analysisProgress}
+          onAnalyze={triggerAnalysis}
+          autoAnalyzing={hasTriggeredAutoAnalysis && !fullCodeGraph && !isAnalyzing}
+        />
+        <CodevizThemeProvider initialTheme={codevizTheme}>
+          <CodeMapComponent
+            codeMap={codeMap}
+            renderer={renderer}
+            view={renderer === 'sigma' ? 'nexus' : undefined}
+            codeGraph={codeGraph ?? undefined}
+            overlayPort={renderer === 'react-flow' ? overlayPort : undefined}
+            settlingSpeed="normal"
+            onNodeClick={(nodeId, node) => {
+              console.log('Node clicked:', nodeId, node)
+            }}
+            onZoomLevelChange={(level) => {
+              console.log('Zoom level:', level)
+            }}
+          />
+        </CodevizThemeProvider>
       </div>
     )
   }
-
-  if (layoutError) {
-    return <ErrorState error={layoutError} />
-  }
-
-  if (!codeMap) {
-    return <EmptyState />
-  }
-
-  // Map app theme to codeviz theme
-  const codevizTheme = appTheme === 'dark' ? 'dark' : 'light'
-
-  return (
-    <div className="relative h-full w-full">
-      <AnalysisIndicator
-        isAnalyzing={isAnalyzing}
-        hasFullCodeGraph={!!fullCodeGraph}
-        analysisProgress={analysisProgress}
-        onAnalyze={triggerAnalysis}
-      />
-      <CodevizThemeProvider initialTheme={codevizTheme}>
-        <CodeMapComponent
-          codeMap={codeMap}
-          overlayPort={overlayPort}
-          onNodeClick={(nodeId, node) => {
-            console.log('Node clicked:', nodeId, node)
-          }}
-          onZoomLevelChange={(level) => {
-            console.log('Zoom level:', level)
-          }}
-        />
-      </CodevizThemeProvider>
-    </div>
-  )
-})
+)

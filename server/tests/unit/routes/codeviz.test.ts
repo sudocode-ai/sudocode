@@ -12,8 +12,8 @@ vi.mock("child_process", () => ({
   execSync: vi.fn(),
 }));
 
-// Mock codeviz library
-vi.mock("codeviz", () => ({
+// Mock codeviz library (node entry point)
+vi.mock("codeviz/node", () => ({
   analyzeCodebase: vi.fn(),
   resetAnalyzer: vi.fn(),
 }));
@@ -25,7 +25,7 @@ vi.mock("../../../src/services/websocket.js", () => ({
 }));
 
 import { execSync } from "child_process";
-import { analyzeCodebase, resetAnalyzer } from "codeviz";
+import { analyzeCodebase, resetAnalyzer } from "codeviz/node";
 import {
   broadcastCodeGraphReady,
   broadcastCodeGraphProgress,
