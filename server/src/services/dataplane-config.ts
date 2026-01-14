@@ -103,10 +103,13 @@ interface ValidationResult {
 
 /**
  * Default dataplane configuration
+ *
+ * Dataplane is enabled by default since it's integrated into the unified SQLite database.
+ * It provides core functionality for stacks, queues, batches, and checkpoints.
  */
 export const DEFAULT_DATAPLANE_CONFIG: DataplaneConfig = {
-  enabled: false, // Opt-in feature
-  dbPath: 'dataplane.db', // Deprecated - kept for backward compatibility
+  enabled: true, // Enabled by default - core functionality
+  dbPath: 'dataplane.db', // Deprecated - kept for backward compatibility only
   tablePrefix: 'dp_', // Prefix for dataplane tables in shared database
   conflictStrategy: {
     default: 'defer',
@@ -114,10 +117,10 @@ export const DEFAULT_DATAPLANE_CONFIG: DataplaneConfig = {
     cascade: 'skip_conflicting',
   },
   autoReconcile: true,
-  cascadeOnMerge: false,
+  cascadeOnMerge: true, // Auto-rebase dependent streams on merge
   mergeQueue: {
-    enabled: false,
-    autoEnqueue: false,
+    enabled: true, // Required for stacks/batches workflow
+    autoEnqueue: true, // Auto-add checkpoints to queue
     requireQueue: false,
   },
   streams: {

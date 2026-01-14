@@ -66,13 +66,14 @@ describe("DataplaneAdapter", () => {
       expect(adapter.isEnabled).toBe(false);
     });
 
-    it("returns false when no config exists (default)", async () => {
+    it("returns true when no config exists (enabled by default)", async () => {
       const { DataplaneAdapter } = await import(
         "../../../src/services/dataplane-adapter.js"
       );
       const adapter = new DataplaneAdapter(testDir);
 
-      expect(adapter.isEnabled).toBe(false);
+      // Dataplane is enabled by default
+      expect(adapter.isEnabled).toBe(true);
     });
   });
 

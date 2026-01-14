@@ -20,6 +20,7 @@ import {
   getExecution,
   updateExecution,
 } from "./executions.js";
+import { getDataplaneAdapterSync } from "./dataplane-adapter.js";
 import { randomUUID } from "crypto";
 import { execSync } from "child_process";
 import type { ExecutionTask } from "agent-execution-engine/engine";
@@ -305,6 +306,34 @@ export class ExecutionService {
 
         // Create execution record with the reused worktree path
         const executionId = randomUUID();
+
+        // Create dataplane stream for this execution (if dataplane is enabled)
+        // This ensures workflow executions are tracked in stacks/queues/batches
+        let streamId: string | undefined;
+        const dataplaneAdapter = getDataplaneAdapterSync(this.repoPath);
+        if (dataplaneAdapter?.isInitialized) {
+          try {
+            const streamResult = await dataplaneAdapter.createExecutionStream({
+              executionId,
+              issueId: issueId || undefined,
+              agentType,
+              targetBranch: mergedConfig.baseBranch || branchName,
+              mode: "worktree",
+              agentId: `exec-${executionId.substring(0, 8)}`,
+            });
+            streamId = streamResult.streamId;
+            console.log(
+              `[ExecutionService] Created dataplane stream for reused worktree: ${streamId}`
+            );
+          } catch (error) {
+            console.warn(
+              `[ExecutionService] Failed to create dataplane stream for reused worktree:`,
+              error instanceof Error ? error.message : String(error)
+            );
+            // Continue without stream - dataplane is optional
+          }
+        }
+
         execution = createExecution(this.db, {
           id: executionId,
           issue_id: issueId,
@@ -317,6 +346,7 @@ export class ExecutionService {
           worktree_path: mergedConfig.reuseWorktreePath,
           parent_execution_id: mergedConfig.parentExecutionId,
           before_commit: beforeCommit,
+          stream_id: streamId,
         });
 
         workDir = mergedConfig.reuseWorktreePath;
@@ -347,6 +377,34 @@ export class ExecutionService {
     } else {
       // Local mode - create execution without worktree
       const executionId = randomUUID();
+
+      // Create dataplane stream for local mode (if dataplane is enabled)
+      // This ensures local executions are also tracked in stacks/queues/batches
+      let streamId: string | undefined;
+      const dataplaneAdapter = getDataplaneAdapterSync(this.repoPath);
+      if (dataplaneAdapter?.isInitialized) {
+        try {
+          const streamResult = await dataplaneAdapter.createExecutionStream({
+            executionId,
+            issueId: issueId || undefined,
+            agentType,
+            targetBranch: mergedConfig.baseBranch || defaultBranch,
+            mode: "local", // Local mode - tracks existing branch
+            agentId: `exec-${executionId.substring(0, 8)}`,
+          });
+          streamId = streamResult.streamId;
+          console.log(
+            `[ExecutionService] Created dataplane stream for local mode: ${streamId}`
+          );
+        } catch (error) {
+          console.warn(
+            `[ExecutionService] Failed to create dataplane stream for local mode:`,
+            error instanceof Error ? error.message : String(error)
+          );
+          // Continue without stream - dataplane is optional
+        }
+      }
+
       execution = createExecution(this.db, {
         id: executionId,
         issue_id: issueId,
@@ -357,6 +415,7 @@ export class ExecutionService {
         target_branch: mergedConfig.baseBranch || defaultBranch,
         branch_name: mergedConfig.baseBranch || defaultBranch,
         parent_execution_id: mergedConfig.parentExecutionId,
+        stream_id: streamId,
       });
       workDir = this.repoPath;
 

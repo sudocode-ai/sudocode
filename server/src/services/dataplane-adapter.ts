@@ -1119,12 +1119,20 @@ export class DataplaneAdapter {
     const issueStreamCreated = issueStream.createdAt > Date.now() - 1000; // Just created
 
     // 5. Get worktree for merge operations
-    const worktree = tracker.getWorktree(execStream.agentId);
-    if (!worktree) {
-      return {
-        success: false,
-        error: 'No worktree available for checkpoint operation',
-      };
+    // Use explicit worktreePath option if provided (for workflow-managed worktrees)
+    // Otherwise, try to get from dataplane's worktree registry
+    let worktreePath: string;
+    if (options.worktreePath) {
+      worktreePath = options.worktreePath;
+    } else {
+      const worktree = tracker.getWorktree(execStream.agentId);
+      if (!worktree) {
+        return {
+          success: false,
+          error: 'No worktree available for checkpoint operation. Provide worktreePath option for workflow executions.',
+        };
+      }
+      worktreePath = worktree.path;
     }
 
     const { execSync } = await import('child_process');
@@ -1134,13 +1142,13 @@ export class DataplaneAdapter {
       // 6. Check for conflicts before merge
       const mergeBase = execSync(
         `git merge-base ${issueStreamBranch} ${execBranch}`,
-        { cwd: worktree.path, encoding: 'utf-8' }
+        { cwd: worktreePath, encoding: 'utf-8' }
       ).trim();
 
       // Check if there would be conflicts
       try {
         execSync(`git merge-tree ${mergeBase} ${issueStreamBranch} ${execBranch}`, {
-          cwd: worktree.path,
+          cwd: worktreePath,
           encoding: 'utf-8',
         });
       } catch {
@@ -1160,7 +1168,7 @@ export class DataplaneAdapter {
       // 7. Perform merge (checkout issue stream, merge exec stream)
       // First, fetch the issue stream branch if it doesn't exist locally
       execSync(`git checkout ${issueStreamBranch}`, {
-        cwd: worktree.path,
+        cwd: worktreePath,
         encoding: 'utf-8',
         stdio: 'pipe',
       });
@@ -1175,19 +1183,19 @@ export class DataplaneAdapter {
       if (squash) {
         // Squash merge
         execSync(`git merge --squash ${execBranch}`, {
-          cwd: worktree.path,
+          cwd: worktreePath,
           encoding: 'utf-8',
           stdio: 'pipe',
         });
         execSync(`git commit -m "${message}"`, {
-          cwd: worktree.path,
+          cwd: worktreePath,
           encoding: 'utf-8',
           stdio: 'pipe',
         });
       } else {
         // Regular merge with commit
         execSync(`git merge ${execBranch} -m "${message}"`, {
-          cwd: worktree.path,
+          cwd: worktreePath,
           encoding: 'utf-8',
           stdio: 'pipe',
         });
@@ -1195,7 +1203,7 @@ export class DataplaneAdapter {
 
       // Get the new HEAD
       mergeCommit = execSync('git rev-parse HEAD', {
-        cwd: worktree.path,
+        cwd: worktreePath,
         encoding: 'utf-8',
       }).trim();
 

@@ -35,8 +35,9 @@ describe("Dataplane Configuration", () => {
 
   describe("DEFAULT_DATAPLANE_CONFIG", () => {
     it("has expected default values", () => {
-      expect(DEFAULT_DATAPLANE_CONFIG.enabled).toBe(false);
-      expect(DEFAULT_DATAPLANE_CONFIG.dbPath).toBe("dataplane.db");
+      // Dataplane is enabled by default since it's core functionality
+      expect(DEFAULT_DATAPLANE_CONFIG.enabled).toBe(true);
+      expect(DEFAULT_DATAPLANE_CONFIG.dbPath).toBe("dataplane.db"); // Deprecated
       expect(DEFAULT_DATAPLANE_CONFIG.tablePrefix).toBe("dp_");
       expect(DEFAULT_DATAPLANE_CONFIG.conflictStrategy.default).toBe("defer");
       expect(DEFAULT_DATAPLANE_CONFIG.conflictStrategy.code).toBe("defer");
@@ -44,8 +45,9 @@ describe("Dataplane Configuration", () => {
         "skip_conflicting"
       );
       expect(DEFAULT_DATAPLANE_CONFIG.autoReconcile).toBe(true);
-      expect(DEFAULT_DATAPLANE_CONFIG.cascadeOnMerge).toBe(false);
-      expect(DEFAULT_DATAPLANE_CONFIG.mergeQueue.enabled).toBe(false);
+      expect(DEFAULT_DATAPLANE_CONFIG.cascadeOnMerge).toBe(true);
+      expect(DEFAULT_DATAPLANE_CONFIG.mergeQueue.enabled).toBe(true);
+      expect(DEFAULT_DATAPLANE_CONFIG.mergeQueue.autoEnqueue).toBe(true);
       expect(DEFAULT_DATAPLANE_CONFIG.streams.branchPrefix).toBe("sudocode");
       expect(DEFAULT_DATAPLANE_CONFIG.recovery.runOnStartup).toBe(true);
     });
@@ -168,7 +170,7 @@ describe("Dataplane Configuration", () => {
         enabled: "true" as unknown as boolean,
       });
 
-      expect(config.enabled).toBe(false); // Default
+      expect(config.enabled).toBe(true); // Default (enabled by default)
       expect(warnings).toHaveLength(1);
       expect(warnings[0]).toContain("enabled");
     });
@@ -259,7 +261,7 @@ describe("Dataplane Configuration", () => {
         },
       });
 
-      expect(config.mergeQueue.enabled).toBe(false); // Default
+      expect(config.mergeQueue.enabled).toBe(true); // Default (enabled by default)
       expect(warnings).toHaveLength(1);
       expect(warnings[0]).toContain("mergeQueue.enabled");
     });
@@ -339,11 +341,12 @@ describe("Dataplane Configuration", () => {
   });
 
   describe("isDataplaneEnabled", () => {
-    it("returns false when dataplane is not configured", () => {
-      expect(isDataplaneEnabled(testDir)).toBe(false);
+    it("returns true by default when dataplane is not configured", () => {
+      // Dataplane is enabled by default
+      expect(isDataplaneEnabled(testDir)).toBe(true);
     });
 
-    it("returns true when dataplane is enabled in config", () => {
+    it("returns true when dataplane is explicitly enabled in config", () => {
       const sudocodeDir = path.join(testDir, ".sudocode");
       fs.mkdirSync(sudocodeDir, { recursive: true });
       fs.writeFileSync(

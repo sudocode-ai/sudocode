@@ -493,6 +493,8 @@ export interface CheckpointOptions {
   checkpointedBy?: string;
   /** Target branch for eventual merge (default: 'main') */
   targetBranch?: string;
+  /** Explicit worktree path (used when worktree not registered in dataplane) */
+  worktreePath?: string;
 }
 
 /**

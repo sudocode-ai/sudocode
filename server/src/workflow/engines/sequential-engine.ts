@@ -40,6 +40,7 @@ import type { ExecutionService } from "../../services/execution-service.js";
 import type { ExecutionConfig } from "../../services/execution-service.js";
 import { getExecution } from "../../services/executions.js";
 import type { ExecutionLifecycleService } from "../../services/execution-lifecycle.js";
+import { getDataplaneAdapterSync } from "../../services/dataplane-adapter.js";
 
 // =============================================================================
 // Types
@@ -1207,6 +1208,40 @@ export class SequentialWorkflowEngine extends BaseWorkflowEngine {
       const newCommitSha = await this.commitStepChanges(workflow, step);
       if (newCommitSha) {
         commitSha = newCommitSha;
+      }
+    }
+
+    // Create dataplane checkpoint for this execution (if dataplane is enabled)
+    // This ensures workflow step completions are tracked in stacks/queues
+    const dataplaneAdapter = getDataplaneAdapterSync(this.repoPath);
+    if (dataplaneAdapter?.isInitialized && execution.stream_id) {
+      try {
+        const checkpointResult = await dataplaneAdapter.checkpointSync(
+          execution.id,
+          this.db,
+          {
+            message: `Workflow checkpoint: ${step.issueId} (step ${step.index + 1}/${workflow.steps.length})`,
+            targetBranch: workflow.baseBranch,
+            autoEnqueue: true, // Auto-add to merge queue
+            worktreePath: workflow.worktreePath, // Pass workflow's worktree since it's not registered in dataplane
+          }
+        );
+
+        if (checkpointResult.success) {
+          console.log(
+            `[SequentialWorkflowEngine] Created checkpoint for execution ${execution.id}: ${checkpointResult.checkpoint?.id}`
+          );
+        } else {
+          console.warn(
+            `[SequentialWorkflowEngine] Failed to create checkpoint for execution ${execution.id}: ${checkpointResult.error}`
+          );
+        }
+      } catch (error) {
+        console.warn(
+          `[SequentialWorkflowEngine] Error creating checkpoint for execution ${execution.id}:`,
+          error instanceof Error ? error.message : String(error)
+        );
+        // Continue - checkpoint creation is non-fatal
       }
     }
 
