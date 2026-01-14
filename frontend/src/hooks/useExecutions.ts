@@ -58,7 +58,11 @@ export function useExecutions(params?: ListExecutionsParams) {
         message.type === 'execution_created' ||
         message.type === 'execution_updated' ||
         message.type === 'execution_deleted' ||
-        message.type === 'execution_status_changed'
+        message.type === 'execution_status_changed' ||
+        // Persistent session events
+        message.type === 'session_waiting' ||
+        message.type === 'session_paused' ||
+        message.type === 'session_ended'
       ) {
         // Invalidate executions query to refetch (uses partial key to match all project-specific queries)
         queryClient.invalidateQueries({ queryKey: ['executions', currentProjectId] })

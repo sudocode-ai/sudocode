@@ -55,6 +55,7 @@
     "commander": "^13.1.0",
     "gray-matter": "^4.0.3",
     "js-yaml": "^4.1.1",
+    "sudopod": "^0.1.1",
     "vite": "^6.4.1"
   },
   "devDependencies": {

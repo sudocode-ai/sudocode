@@ -194,39 +194,36 @@ export function processCoalescedEvents(events: CoalescedSessionUpdate[]): Proces
   const thoughts: AgentThought[] = []
   const planUpdates: PlanUpdateEvent[] = []
 
-  let messageIndex = 0
-  let toolCallIndex = 0
-  let thoughtIndex = 0
-
-  // Debug: Log event types received
-  const eventTypes = events.reduce((acc, e) => {
-    acc[e.sessionUpdate] = (acc[e.sessionUpdate] || 0) + 1
-    return acc
-  }, {} as Record<string, number>)
-  console.log('[useExecutionLogs] Processing events:', events.length, 'by type:', eventTypes)
+  // Use a single global index counter across all event types to preserve ordering
+  // This ensures messages and tool calls sort correctly in AgentTrajectory
+  let globalIndex = 0
+  let messageIdCounter = 0
+  let thoughtIdCounter = 0
 
   for (const event of events) {
     switch (event.sessionUpdate) {
       case 'agent_message_complete':
         messages.push({
-          id: `msg-${messageIndex}`,
+          id: `msg-${messageIdCounter}`,
           content: getTextFromContentBlock(event.content),
           timestamp: parseDate(event.timestamp),
           isStreaming: false,
-          index: messageIndex,
+          index: globalIndex,
         })
-        messageIndex++
+        messageIdCounter++
+        globalIndex++
         break
 
       case 'agent_thought_complete':
         thoughts.push({
-          id: `thought-${thoughtIndex}`,
+          id: `thought-${thoughtIdCounter}`,
           content: getTextFromContentBlock(event.content),
           timestamp: parseDate(event.timestamp),
           isStreaming: false,
-          index: thoughtIndex,
+          index: globalIndex,
         })
-        thoughtIndex++
+        thoughtIdCounter++
+        globalIndex++
         break
 
       case 'tool_call_complete':
@@ -239,19 +236,28 @@ export function processCoalescedEvents(events: CoalescedSessionUpdate[]): Proces
           rawOutput: event.rawOutput,
           timestamp: parseDate(event.timestamp),
           completedAt: event.completedAt ? parseDate(event.completedAt) : undefined,
-          index: toolCallIndex,
+          index: globalIndex,
         })
-        toolCallIndex++
+        globalIndex++
         break
 
       case 'plan':
         // Store plan updates for todo tracking
         planUpdates.push(event)
-        console.log('[useExecutionLogs] Plan update:', event.entries?.length, 'entries')
         break
 
       case 'user_message_complete':
-        // User messages are typically not displayed in trajectory
+        // User messages for persistent sessions - add to messages with role='user'
+        messages.push({
+          id: `user-msg-${messageIdCounter}`,
+          content: getTextFromContentBlock(event.content),
+          timestamp: parseDate(event.timestamp),
+          isStreaming: false,
+          index: globalIndex,
+          role: 'user',
+        })
+        messageIdCounter++
+        globalIndex++
         break
     }
   }
@@ -327,10 +333,6 @@ export function useExecutionLogs(executionId: string): UseExecutionLogsResult {
         )
 
         // Store events and metadata
-        console.log('[useExecutionLogs] Received from API:', {
-          eventsCount: data.events?.length || 0,
-          format: data.format,
-        })
         setEvents(data.events || [])
         setMetadata(data.metadata)
         setFormat(data.format)

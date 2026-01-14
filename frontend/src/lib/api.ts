@@ -28,6 +28,7 @@ import type {
   SyncResult,
   PerformSyncRequest,
   ExecutionChangesResult,
+  SessionStateResponse,
 } from '@/types/execution'
 import type {
   ProjectInfo,
@@ -356,6 +357,32 @@ export const executionsApi = {
   // Open worktree in IDE
   openInIde: (worktreePath: string, request?: { editorType?: string }) =>
     post(`/open-in-ide`, { worktreePath, ...request }),
+
+  // ============================================================================
+  // Persistent Session Operations
+  // ============================================================================
+
+  /**
+   * Send a prompt to a persistent session
+   *
+   * Returns immediately - output streams via WebSocket subscription.
+   */
+  sendPrompt: (executionId: string, prompt: string) =>
+    post<{ success: boolean; message?: string }>(`/executions/${executionId}/prompt`, { prompt }),
+
+  /**
+   * End a persistent session explicitly
+   */
+  endSession: (executionId: string) =>
+    post<{ success: boolean; message?: string }>(`/executions/${executionId}/end-session`),
+
+  /**
+   * Get session state for an execution
+   *
+   * Works for both discrete and persistent sessions.
+   */
+  getSessionState: (executionId: string) =>
+    get<SessionStateResponse>(`/executions/${executionId}/session-state`),
 }
 
 /**

@@ -29,6 +29,7 @@ const statusConfig: Record<
   pending: { icon: Clock, color: 'text-yellow-500', label: 'Pending' },
   running: { icon: PlayCircle, color: 'text-green-500', label: 'Running' },
   paused: { icon: PauseCircle, color: 'text-orange-500', label: 'Paused' },
+  waiting: { icon: Clock, color: 'text-blue-500', label: 'Waiting' },
   completed: { icon: CheckCircle2, color: 'text-blue-500', label: 'Completed' },
   failed: { icon: XCircle, color: 'text-red-500', label: 'Failed' },
   cancelled: { icon: XCircle, color: 'text-muted-foreground', label: 'Cancelled' },
@@ -68,7 +69,7 @@ export function ExecutionSelector({
 }: ExecutionSelectorProps) {
   // Group executions by status
   const grouped = useMemo(() => {
-    const activeStatuses: ExecutionStatus[] = ['running', 'pending', 'preparing', 'paused']
+    const activeStatuses: ExecutionStatus[] = ['running', 'pending', 'preparing', 'paused', 'waiting']
     const active = executions.filter((e) => activeStatuses.includes(e.status))
     const recent = executions
       .filter((e) => !activeStatuses.includes(e.status))

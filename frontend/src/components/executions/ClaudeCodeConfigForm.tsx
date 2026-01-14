@@ -39,7 +39,11 @@ const DEFAULT_MODEL_OPTION = { value: DEFAULT_MODEL_VALUE, label: 'Default (Agen
 const PERMISSION_MODES = [
   { value: 'default', label: 'Default', description: 'Standard permission prompts' },
   { value: 'plan', label: 'Plan Mode', description: 'Read-only planning before execution' },
-  { value: 'bypassPermissions', label: 'Bypass Permissions', description: 'Skip all prompts (YOLO mode)' },
+  {
+    value: 'bypassPermissions',
+    label: 'Bypass Permissions',
+    description: 'Skip all prompts (YOLO mode)',
+  },
 ]
 
 /**
@@ -67,9 +71,7 @@ function formatModelName(modelId: string): string {
   }
 
   // Fallback: capitalize and clean up
-  return modelId
-    .replace(/[-_]/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
+  return modelId.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
 interface ModelOption {
@@ -136,7 +138,7 @@ export function ClaudeCodeConfigForm({ config, onChange }: ClaudeCodeConfigFormP
     <div className="space-y-4">
       {/* Model Selection */}
       <div className="space-y-2">
-        <Label htmlFor="claude-model" className="text-xs flex items-center gap-1">
+        <Label htmlFor="claude-model" className="flex items-center gap-1 text-xs">
           Model
           {modelsLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
         </Label>
@@ -204,13 +206,10 @@ export function ClaudeCodeConfigForm({ config, onChange }: ClaudeCodeConfigFormP
           />
         </CollapsibleTrigger>
         <CollapsibleContent className="space-y-4 pt-4">
-          {/* Permission Mode (disabled when dangerouslySkipPermissions is enabled) */}
+          {/* Session Mode */}
           <div className="space-y-2">
-            <Label
-              htmlFor="claude-permission-mode"
-              className={`text-xs ${config.dangerouslySkipPermissions ? 'text-muted-foreground' : ''}`}
-            >
-              Permission Mode
+            <Label htmlFor="claude-session-mode" className="text-xs">
+              Session Mode
             </Label>
             <Select
               value={config.permissionMode || 'default'}
@@ -219,14 +218,9 @@ export function ClaudeCodeConfigForm({ config, onChange }: ClaudeCodeConfigFormP
                   permissionMode: value as ClaudeCodeConfig['permissionMode'],
                 })
               }
-              disabled={config.dangerouslySkipPermissions}
             >
-              <SelectTrigger
-                id="claude-permission-mode"
-                className="h-8 text-xs"
-                disabled={config.dangerouslySkipPermissions}
-              >
-                <SelectValue placeholder="Select permission mode" />
+              <SelectTrigger id="claude-session-mode" className="h-8 text-xs">
+                <SelectValue placeholder="Select session mode" />
               </SelectTrigger>
               <SelectContent>
                 {PERMISSION_MODES.map((option) => (
@@ -239,11 +233,6 @@ export function ClaudeCodeConfigForm({ config, onChange }: ClaudeCodeConfigFormP
                 ))}
               </SelectContent>
             </Select>
-            {config.dangerouslySkipPermissions && (
-              <p className="text-[10px] text-muted-foreground">
-                Disabled when Skip Permission Prompts is enabled
-              </p>
-            )}
           </div>
         </CollapsibleContent>
       </Collapsible>

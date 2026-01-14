@@ -347,6 +347,200 @@ describe('useSessionUpdateStream', () => {
     })
   })
 
+  describe('User Message Events', () => {
+    it('should handle user_message_chunk streaming', () => {
+      const { result } = renderHook(() => useSessionUpdateStream('exec-123'))
+
+      // First chunk
+      act(() => {
+        simulateMessage(
+          createSessionUpdateMessage('exec-123', {
+            sessionUpdate: 'user_message_chunk',
+            content: { type: 'text', text: 'Can you ' },
+          })
+        )
+      })
+
+      expect(result.current.messages.length).toBe(1)
+      expect(result.current.messages[0].content).toBe('Can you ')
+      expect(result.current.messages[0].isStreaming).toBe(true)
+      expect(result.current.messages[0].role).toBe('user')
+      expect(result.current.isStreaming).toBe(true)
+
+      // Second chunk
+      act(() => {
+        simulateMessage(
+          createSessionUpdateMessage('exec-123', {
+            sessionUpdate: 'user_message_chunk',
+            content: { type: 'text', text: 'help me?' },
+          })
+        )
+      })
+
+      expect(result.current.messages.length).toBe(1)
+      expect(result.current.messages[0].content).toBe('Can you help me?')
+      expect(result.current.messages[0].isStreaming).toBe(true)
+      expect(result.current.messages[0].role).toBe('user')
+    })
+
+    it('should handle user_message_complete (coalesced)', () => {
+      const { result } = renderHook(() => useSessionUpdateStream('exec-123'))
+
+      const timestamp = new Date().toISOString()
+
+      act(() => {
+        simulateMessage(
+          createSessionUpdateMessage('exec-123', {
+            sessionUpdate: 'user_message_complete',
+            content: { type: 'text', text: 'Complete user message' },
+            timestamp,
+          })
+        )
+      })
+
+      expect(result.current.messages.length).toBe(1)
+      expect(result.current.messages[0].content).toBe('Complete user message')
+      expect(result.current.messages[0].isStreaming).toBe(false)
+      expect(result.current.messages[0].role).toBe('user')
+      expect(result.current.isStreaming).toBe(false)
+    })
+
+    it('should finalize streaming user message with user_message_complete', () => {
+      const { result } = renderHook(() => useSessionUpdateStream('exec-123'))
+
+      // Start streaming
+      act(() => {
+        simulateMessage(
+          createSessionUpdateMessage('exec-123', {
+            sessionUpdate: 'user_message_chunk',
+            content: { type: 'text', text: 'Streaming...' },
+          })
+        )
+      })
+
+      expect(result.current.messages[0].isStreaming).toBe(true)
+      expect(result.current.messages[0].role).toBe('user')
+      expect(result.current.isStreaming).toBe(true)
+
+      // Finalize with complete
+      act(() => {
+        simulateMessage(
+          createSessionUpdateMessage('exec-123', {
+            sessionUpdate: 'user_message_complete',
+            content: { type: 'text', text: 'Final user content' },
+            timestamp: new Date().toISOString(),
+          })
+        )
+      })
+
+      expect(result.current.messages.length).toBe(1)
+      expect(result.current.messages[0].content).toBe('Final user content')
+      expect(result.current.messages[0].isStreaming).toBe(false)
+      expect(result.current.messages[0].role).toBe('user')
+      expect(result.current.isStreaming).toBe(false)
+    })
+
+    it('should finalize streaming agent message before processing user_message_complete', () => {
+      const { result } = renderHook(() => useSessionUpdateStream('exec-123'))
+
+      // Start streaming agent message
+      act(() => {
+        simulateMessage(
+          createSessionUpdateMessage('exec-123', {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'Agent is typing...' },
+          })
+        )
+      })
+
+      expect(result.current.messages.length).toBe(1)
+      expect(result.current.messages[0].isStreaming).toBe(true)
+      expect(result.current.messages[0].role).toBeUndefined()
+
+      // User sends a complete message - should finalize agent message first
+      act(() => {
+        simulateMessage(
+          createSessionUpdateMessage('exec-123', {
+            sessionUpdate: 'user_message_complete',
+            content: { type: 'text', text: 'User prompt' },
+            timestamp: new Date().toISOString(),
+          })
+        )
+      })
+
+      // Now should have 2 messages: finalized agent message + user message
+      expect(result.current.messages.length).toBe(2)
+
+      // Agent message should be finalized
+      const agentMsg = result.current.messages.find((m) => !m.role || m.role === 'agent')
+      expect(agentMsg).toBeDefined()
+      expect(agentMsg?.isStreaming).toBe(false)
+
+      // User message should be added with role='user'
+      const userMsg = result.current.messages.find((m) => m.role === 'user')
+      expect(userMsg).toBeDefined()
+      expect(userMsg?.content).toBe('User prompt')
+      expect(userMsg?.isStreaming).toBe(false)
+    })
+
+    it('should handle multiple sequential user messages in persistent session', () => {
+      const { result } = renderHook(() => useSessionUpdateStream('exec-123'))
+
+      // First agent message
+      act(() => {
+        simulateMessage(
+          createSessionUpdateMessage('exec-123', {
+            sessionUpdate: 'agent_message_complete',
+            content: { type: 'text', text: 'Hello!' },
+            timestamp: new Date().toISOString(),
+          })
+        )
+      })
+
+      // First user message
+      act(() => {
+        simulateMessage(
+          createSessionUpdateMessage('exec-123', {
+            sessionUpdate: 'user_message_complete',
+            content: { type: 'text', text: 'Hi, help me with a bug' },
+            timestamp: new Date().toISOString(),
+          })
+        )
+      })
+
+      // Agent response
+      act(() => {
+        simulateMessage(
+          createSessionUpdateMessage('exec-123', {
+            sessionUpdate: 'agent_message_complete',
+            content: { type: 'text', text: 'Sure, tell me more' },
+            timestamp: new Date().toISOString(),
+          })
+        )
+      })
+
+      // Second user message
+      act(() => {
+        simulateMessage(
+          createSessionUpdateMessage('exec-123', {
+            sessionUpdate: 'user_message_complete',
+            content: { type: 'text', text: 'The test is failing' },
+            timestamp: new Date().toISOString(),
+          })
+        )
+      })
+
+      expect(result.current.messages.length).toBe(4)
+
+      // Check order and roles
+      const msgs = result.current.messages
+      expect(msgs[0].role).toBeUndefined() // Agent: Hello!
+      expect(msgs[1].role).toBe('user') // User: Hi, help me with a bug
+      expect(msgs[2].role).toBeUndefined() // Agent: Sure, tell me more
+      expect(msgs[3].role).toBe('user') // User: The test is failing
+    })
+  })
+
   describe('Tool Call Events', () => {
     it('should handle tool_call event (streaming)', () => {
       const { result } = renderHook(() => useSessionUpdateStream('exec-123'))

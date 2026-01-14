@@ -60,8 +60,11 @@ vi.mock('acp-factory', () => {
 vi.mock('../../../src/services/websocket.js', () => ({
   broadcastExecutionUpdate: vi.fn(),
   broadcastVoiceNarration: vi.fn(),
+  broadcastSessionEvent: vi.fn(),
   websocketManager: {
     broadcast: vi.fn(),
+    onDisconnect: vi.fn().mockReturnValue(() => {}),
+    hasSubscribers: vi.fn().mockReturnValue(false),
   },
 }));
 
@@ -642,6 +645,652 @@ describe('ACP Agent Integration Tests - Claude Code Execution', () => {
           mcpServers: expect.any(Array),
         })
       );
+    });
+  });
+});
+
+// =============================================================================
+// Persistent Session Integration Tests
+// =============================================================================
+describe('ACP Persistent Session Integration Tests', () => {
+  let db: Database.Database;
+  let lifecycleService: any;
+  let logsStore: any;
+  let wrapper: AcpExecutorWrapper;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+
+    db = createTestDatabase();
+    const services = createTestServices(db);
+    lifecycleService = services.lifecycleService;
+    logsStore = services.logsStore;
+
+    wrapper = createExecutorForAgent(
+      'claude-code',
+      { workDir: '/tmp/test' },
+      {
+        workDir: '/tmp/test',
+        lifecycleService,
+        logsStore,
+        projectId: 'test-project',
+        db,
+      }
+    ) as AcpExecutorWrapper;
+  });
+
+  afterEach(() => {
+    cleanup(db);
+    vi.clearAllMocks();
+  });
+
+  describe('Basic Persistent Session Flow', () => {
+    it('should complete full persistent session lifecycle: start → waiting → prompt → waiting → end', async () => {
+      const { AgentFactory } = await import('acp-factory');
+      const { broadcastSessionEvent } = await import('../../../src/services/websocket.js');
+
+      createExecution(db, {
+        id: 'exec-persistent-1',
+        agent_type: 'claude-code',
+        mode: 'worktree',
+      });
+
+      let promptCallCount = 0;
+      const mockSession = {
+        id: 'session-persistent',
+        cwd: '/tmp/test',
+        modes: ['code'],
+        models: ['claude-sonnet'],
+        prompt: vi.fn().mockImplementation(async function* () {
+          promptCallCount++;
+          yield { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `Response ${promptCallCount}` } };
+        }),
+        cancel: vi.fn(),
+        setMode: vi.fn(),
+      };
+
+      const mockAgent = {
+        capabilities: { loadSession: true },
+        createSession: vi.fn().mockResolvedValue(mockSession),
+        close: vi.fn().mockResolvedValue(undefined),
+        isRunning: vi.fn().mockReturnValue(true),
+      };
+
+      (AgentFactory.spawn as any).mockResolvedValueOnce(mockAgent);
+
+      // Step 1: Start persistent session
+      await wrapper.executeWithLifecycle(
+        'exec-persistent-1',
+        createTestTask({ prompt: 'First prompt' }),
+        '/tmp/test',
+        { sessionMode: 'persistent' }
+      );
+
+      // Verify waiting state
+      expect(wrapper.isPersistentSession('exec-persistent-1')).toBe(true);
+      let state = wrapper.getSessionState('exec-persistent-1');
+      expect(state?.state).toBe('waiting');
+      expect(state?.promptCount).toBe(1);
+
+      // Verify execution status is waiting (not completed)
+      let execution = getExecution(db, 'exec-persistent-1');
+      expect(execution?.status).toBe('waiting');
+
+      // Verify session_waiting event was broadcast
+      expect(broadcastSessionEvent).toHaveBeenCalledWith(
+        'test-project',
+        'exec-persistent-1',
+        'session_waiting',
+        { promptCount: 1 }
+      );
+
+      // Step 2: Send second prompt
+      (broadcastSessionEvent as any).mockClear();
+      await wrapper.sendPrompt('exec-persistent-1', 'Second prompt');
+
+      // Verify still in waiting state with increased prompt count
+      state = wrapper.getSessionState('exec-persistent-1');
+      expect(state?.state).toBe('waiting');
+      expect(state?.promptCount).toBe(2);
+      expect(promptCallCount).toBe(2);
+
+      // Verify session_waiting event broadcast again
+      expect(broadcastSessionEvent).toHaveBeenCalledWith(
+        'test-project',
+        'exec-persistent-1',
+        'session_waiting',
+        { promptCount: 2 }
+      );
+
+      // Step 3: End session explicitly
+      (broadcastSessionEvent as any).mockClear();
+      await wrapper.endSession('exec-persistent-1');
+
+      // Verify session is ended
+      expect(wrapper.isPersistentSession('exec-persistent-1')).toBe(false);
+
+      // Verify execution status is completed
+      execution = getExecution(db, 'exec-persistent-1');
+      expect(execution?.status).toBe('completed');
+
+      // Verify session_ended event was broadcast
+      expect(broadcastSessionEvent).toHaveBeenCalledWith(
+        'test-project',
+        'exec-persistent-1',
+        'session_ended',
+        { reason: 'explicit' }
+      );
+
+      // Verify agent was closed
+      expect(mockAgent.close).toHaveBeenCalled();
+    });
+
+    it('should track idle time correctly', async () => {
+      const { AgentFactory } = await import('acp-factory');
+
+      createExecution(db, {
+        id: 'exec-idle-time',
+        agent_type: 'claude-code',
+        mode: 'worktree',
+      });
+
+      const mockSession = {
+        id: 'session-idle',
+        cwd: '/tmp/test',
+        modes: ['code'],
+        models: ['claude-sonnet'],
+        prompt: vi.fn().mockImplementation(async function* () {
+          yield { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Done' } };
+        }),
+        cancel: vi.fn(),
+        setMode: vi.fn(),
+      };
+
+      const mockAgent = {
+        capabilities: { loadSession: true },
+        createSession: vi.fn().mockResolvedValue(mockSession),
+        close: vi.fn().mockResolvedValue(undefined),
+        isRunning: vi.fn().mockReturnValue(true),
+      };
+
+      (AgentFactory.spawn as any).mockResolvedValueOnce(mockAgent);
+
+      await wrapper.executeWithLifecycle(
+        'exec-idle-time',
+        createTestTask(),
+        '/tmp/test',
+        { sessionMode: 'persistent' }
+      );
+
+      // Wait some time
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const state = wrapper.getSessionState('exec-idle-time');
+      expect(state?.idleTimeMs).toBeGreaterThanOrEqual(100);
+
+      // Cleanup
+      await wrapper.endSession('exec-idle-time');
+    });
+  });
+
+  describe('Idle Timeout Configuration', () => {
+    // NOTE: Detailed idle timeout behavior is tested in unit tests (acp-executor-wrapper.test.ts)
+    // Integration tests verify that the configuration is properly passed through
+
+    it('should accept idle timeout configuration without error', async () => {
+      const { AgentFactory } = await import('acp-factory');
+
+      createExecution(db, {
+        id: 'exec-timeout-config',
+        agent_type: 'claude-code',
+        mode: 'worktree',
+      });
+
+      const mockSession = {
+        id: 'session-timeout-config',
+        cwd: '/tmp/test',
+        modes: ['code'],
+        models: ['claude-sonnet'],
+        prompt: vi.fn().mockImplementation(async function* () {
+          yield { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Done' } };
+        }),
+        cancel: vi.fn(),
+        setMode: vi.fn(),
+      };
+
+      const mockAgent = {
+        capabilities: { loadSession: true },
+        createSession: vi.fn().mockResolvedValue(mockSession),
+        close: vi.fn().mockResolvedValue(undefined),
+        isRunning: vi.fn().mockReturnValue(true),
+      };
+
+      (AgentFactory.spawn as any).mockResolvedValueOnce(mockAgent);
+
+      // Start with idle timeout configuration - use a long timeout so it won't fire during test
+      await wrapper.executeWithLifecycle(
+        'exec-timeout-config',
+        createTestTask(),
+        '/tmp/test',
+        {
+          sessionMode: 'persistent',
+          sessionEndMode: { idleTimeoutMs: 60000 }, // 60 seconds - won't fire during test
+        }
+      );
+
+      // Session should be in waiting state
+      expect(wrapper.isPersistentSession('exec-timeout-config')).toBe(true);
+      expect(wrapper.getSessionState('exec-timeout-config')?.state).toBe('waiting');
+
+      // Cleanup to prevent timeout from firing after test
+      await wrapper.endSession('exec-timeout-config');
+    });
+  });
+
+  describe('Pause on Completion Mode', () => {
+    it('should transition to paused state instead of waiting', async () => {
+      const { AgentFactory } = await import('acp-factory');
+      const { broadcastSessionEvent } = await import('../../../src/services/websocket.js');
+
+      createExecution(db, {
+        id: 'exec-pause',
+        agent_type: 'claude-code',
+        mode: 'worktree',
+      });
+
+      const mockSession = {
+        id: 'session-pause',
+        cwd: '/tmp/test',
+        modes: ['code'],
+        models: ['claude-sonnet'],
+        prompt: vi.fn().mockImplementation(async function* () {
+          yield { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Done' } };
+        }),
+        cancel: vi.fn(),
+        setMode: vi.fn(),
+      };
+
+      const mockAgent = {
+        capabilities: { loadSession: true },
+        createSession: vi.fn().mockResolvedValue(mockSession),
+        close: vi.fn().mockResolvedValue(undefined),
+        isRunning: vi.fn().mockReturnValue(true),
+      };
+
+      (AgentFactory.spawn as any).mockResolvedValueOnce(mockAgent);
+
+      await wrapper.executeWithLifecycle(
+        'exec-pause',
+        createTestTask(),
+        '/tmp/test',
+        {
+          sessionMode: 'persistent',
+          sessionEndMode: { pauseOnCompletion: true },
+        }
+      );
+
+      // Verify paused state
+      const state = wrapper.getSessionState('exec-pause');
+      expect(state?.state).toBe('paused');
+
+      // Verify execution status is paused
+      const execution = getExecution(db, 'exec-pause');
+      expect(execution?.status).toBe('paused');
+
+      // Verify session_paused event was broadcast
+      expect(broadcastSessionEvent).toHaveBeenCalledWith(
+        'test-project',
+        'exec-pause',
+        'session_paused',
+        { promptCount: 1 }
+      );
+
+      // Cleanup
+      await wrapper.endSession('exec-pause');
+    });
+
+    it('should not trigger idle timeout when paused', async () => {
+      const { AgentFactory } = await import('acp-factory');
+
+      createExecution(db, {
+        id: 'exec-pause-no-timeout',
+        agent_type: 'claude-code',
+        mode: 'worktree',
+      });
+
+      const mockSession = {
+        id: 'session-pause-no-timeout',
+        cwd: '/tmp/test',
+        modes: ['code'],
+        models: ['claude-sonnet'],
+        prompt: vi.fn().mockImplementation(async function* () {
+          yield { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Done' } };
+        }),
+        cancel: vi.fn(),
+        setMode: vi.fn(),
+      };
+
+      const mockAgent = {
+        capabilities: { loadSession: true },
+        createSession: vi.fn().mockResolvedValue(mockSession),
+        close: vi.fn().mockResolvedValue(undefined),
+        isRunning: vi.fn().mockReturnValue(true),
+      };
+
+      (AgentFactory.spawn as any).mockResolvedValueOnce(mockAgent);
+
+      // Start with pauseOnCompletion (idle timeout should not apply when paused)
+      // Note: Not setting idleTimeoutMs since paused state doesn't start idle timer
+      await wrapper.executeWithLifecycle(
+        'exec-pause-no-timeout',
+        createTestTask(),
+        '/tmp/test',
+        {
+          sessionMode: 'persistent',
+          sessionEndMode: { pauseOnCompletion: true },
+        }
+      );
+
+      expect(wrapper.getSessionState('exec-pause-no-timeout')?.state).toBe('paused');
+
+      // Wait a bit
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Session should still be alive (paused state doesn't have idle timeout)
+      expect(wrapper.isPersistentSession('exec-pause-no-timeout')).toBe(true);
+      expect(wrapper.getSessionState('exec-pause-no-timeout')?.state).toBe('paused');
+
+      // Cleanup
+      await wrapper.endSession('exec-pause-no-timeout');
+    });
+
+    it('should allow resuming from paused state', async () => {
+      const { AgentFactory } = await import('acp-factory');
+      const { broadcastSessionEvent } = await import('../../../src/services/websocket.js');
+
+      createExecution(db, {
+        id: 'exec-resume-paused',
+        agent_type: 'claude-code',
+        mode: 'worktree',
+      });
+
+      let promptCount = 0;
+      const mockSession = {
+        id: 'session-resume-paused',
+        cwd: '/tmp/test',
+        modes: ['code'],
+        models: ['claude-sonnet'],
+        prompt: vi.fn().mockImplementation(async function* () {
+          promptCount++;
+          yield { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `Response ${promptCount}` } };
+        }),
+        cancel: vi.fn(),
+        setMode: vi.fn(),
+      };
+
+      const mockAgent = {
+        capabilities: { loadSession: true },
+        createSession: vi.fn().mockResolvedValue(mockSession),
+        close: vi.fn().mockResolvedValue(undefined),
+        isRunning: vi.fn().mockReturnValue(true),
+      };
+
+      (AgentFactory.spawn as any).mockResolvedValueOnce(mockAgent);
+
+      await wrapper.executeWithLifecycle(
+        'exec-resume-paused',
+        createTestTask(),
+        '/tmp/test',
+        {
+          sessionMode: 'persistent',
+          sessionEndMode: { pauseOnCompletion: true },
+        }
+      );
+
+      expect(wrapper.getSessionState('exec-resume-paused')?.state).toBe('paused');
+
+      // Clear mocks to track new calls
+      (broadcastSessionEvent as any).mockClear();
+
+      // Send another prompt to resume
+      await wrapper.sendPrompt('exec-resume-paused', 'Continue please');
+
+      // Should return to paused state after prompt completes
+      const state = wrapper.getSessionState('exec-resume-paused');
+      expect(state?.state).toBe('paused');
+      expect(state?.promptCount).toBe(2);
+
+      // Cleanup
+      await wrapper.endSession('exec-resume-paused');
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('should reject sendPrompt for non-existent session', async () => {
+      await expect(
+        wrapper.sendPrompt('non-existent-exec', 'Test prompt')
+      ).rejects.toThrow('No persistent session found');
+    });
+
+    it('should reject sendPrompt when session is not in waiting/paused state', async () => {
+      const { AgentFactory } = await import('acp-factory');
+
+      createExecution(db, {
+        id: 'exec-running',
+        agent_type: 'claude-code',
+        mode: 'worktree',
+      });
+
+      // Create a session that takes time to complete (simulating running state)
+      let resolvePrompt: () => void;
+      const promptPromise = new Promise<void>(resolve => {
+        resolvePrompt = resolve;
+      });
+
+      const mockSession = {
+        id: 'session-running',
+        cwd: '/tmp/test',
+        modes: ['code'],
+        models: ['claude-sonnet'],
+        prompt: vi.fn().mockImplementation(async function* () {
+          await promptPromise;
+          yield { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Done' } };
+        }),
+        cancel: vi.fn(),
+        setMode: vi.fn(),
+      };
+
+      const mockAgent = {
+        capabilities: { loadSession: true },
+        createSession: vi.fn().mockResolvedValue(mockSession),
+        close: vi.fn().mockResolvedValue(undefined),
+        isRunning: vi.fn().mockReturnValue(true),
+      };
+
+      (AgentFactory.spawn as any).mockResolvedValueOnce(mockAgent);
+
+      // Start execution but don't await completion
+      const execPromise = wrapper.executeWithLifecycle(
+        'exec-running',
+        createTestTask(),
+        '/tmp/test',
+        { sessionMode: 'persistent' }
+      );
+
+      // Wait for execution to start
+      await new Promise(resolve => setTimeout(resolve, 20));
+
+      // Try to send prompt while running
+      await expect(
+        wrapper.sendPrompt('exec-running', 'Another prompt')
+      ).rejects.toThrow('Cannot send prompt to session in state: running');
+
+      // Cleanup
+      resolvePrompt!();
+      await execPromise;
+      await wrapper.endSession('exec-running');
+    });
+  });
+
+  describe('Discrete Mode Still Works', () => {
+    it('should complete normally without persistent session when sessionMode is discrete', async () => {
+      const { AgentFactory } = await import('acp-factory');
+      const { broadcastSessionEvent } = await import('../../../src/services/websocket.js');
+
+      createExecution(db, {
+        id: 'exec-discrete',
+        agent_type: 'claude-code',
+        mode: 'worktree',
+      });
+
+      const mockSession = {
+        id: 'session-discrete',
+        cwd: '/tmp/test',
+        modes: ['code'],
+        models: ['claude-sonnet'],
+        prompt: vi.fn().mockImplementation(async function* () {
+          yield { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Done' } };
+        }),
+        cancel: vi.fn(),
+      };
+
+      const mockAgent = {
+        capabilities: { loadSession: true },
+        createSession: vi.fn().mockResolvedValue(mockSession),
+        close: vi.fn().mockResolvedValue(undefined),
+        isRunning: vi.fn().mockReturnValue(true),
+      };
+
+      (AgentFactory.spawn as any).mockResolvedValueOnce(mockAgent);
+
+      // Execute without persistent mode (default discrete)
+      await wrapper.executeWithLifecycle(
+        'exec-discrete',
+        createTestTask(),
+        '/tmp/test'
+      );
+
+      // Verify NOT a persistent session
+      expect(wrapper.isPersistentSession('exec-discrete')).toBe(false);
+
+      // Verify execution is completed (not waiting)
+      const execution = getExecution(db, 'exec-discrete');
+      expect(execution?.status).toBe('completed');
+
+      // Verify NO session_waiting event was broadcast
+      expect(broadcastSessionEvent).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        'session_waiting',
+        expect.anything()
+      );
+
+      // Verify agent was closed
+      expect(mockAgent.close).toHaveBeenCalled();
+    });
+  });
+
+  describe('End on Disconnect Mode', () => {
+    it('should register disconnect callback when endOnDisconnect is true', async () => {
+      const { AgentFactory } = await import('acp-factory');
+      const { websocketManager } = await import('../../../src/services/websocket.js');
+
+      createExecution(db, {
+        id: 'exec-disconnect',
+        agent_type: 'claude-code',
+        mode: 'worktree',
+      });
+
+      const onDisconnectSpy = vi.spyOn(websocketManager, 'onDisconnect');
+
+      const mockSession = {
+        id: 'session-disconnect',
+        cwd: '/tmp/test',
+        modes: ['code'],
+        models: ['claude-sonnet'],
+        prompt: vi.fn().mockImplementation(async function* () {
+          yield { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Done' } };
+        }),
+        cancel: vi.fn(),
+        setMode: vi.fn(),
+      };
+
+      const mockAgent = {
+        capabilities: { loadSession: true },
+        createSession: vi.fn().mockResolvedValue(mockSession),
+        close: vi.fn().mockResolvedValue(undefined),
+        isRunning: vi.fn().mockReturnValue(true),
+      };
+
+      (AgentFactory.spawn as any).mockResolvedValueOnce(mockAgent);
+
+      await wrapper.executeWithLifecycle(
+        'exec-disconnect',
+        createTestTask(),
+        '/tmp/test',
+        {
+          sessionMode: 'persistent',
+          sessionEndMode: { endOnDisconnect: true },
+        }
+      );
+
+      // Verify onDisconnect was registered
+      expect(onDisconnectSpy).toHaveBeenCalled();
+
+      // Cleanup
+      await wrapper.endSession('exec-disconnect');
+      onDisconnectSpy.mockRestore();
+    });
+
+    it('should NOT register disconnect callback when endOnDisconnect is false', async () => {
+      const { AgentFactory } = await import('acp-factory');
+      const { websocketManager } = await import('../../../src/services/websocket.js');
+
+      createExecution(db, {
+        id: 'exec-no-disconnect',
+        agent_type: 'claude-code',
+        mode: 'worktree',
+      });
+
+      const onDisconnectSpy = vi.spyOn(websocketManager, 'onDisconnect');
+
+      const mockSession = {
+        id: 'session-no-disconnect',
+        cwd: '/tmp/test',
+        modes: ['code'],
+        models: ['claude-sonnet'],
+        prompt: vi.fn().mockImplementation(async function* () {
+          yield { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Done' } };
+        }),
+        cancel: vi.fn(),
+        setMode: vi.fn(),
+      };
+
+      const mockAgent = {
+        capabilities: { loadSession: true },
+        createSession: vi.fn().mockResolvedValue(mockSession),
+        close: vi.fn().mockResolvedValue(undefined),
+        isRunning: vi.fn().mockReturnValue(true),
+      };
+
+      (AgentFactory.spawn as any).mockResolvedValueOnce(mockAgent);
+
+      await wrapper.executeWithLifecycle(
+        'exec-no-disconnect',
+        createTestTask(),
+        '/tmp/test',
+        {
+          sessionMode: 'persistent',
+          sessionEndMode: { endOnDisconnect: false },
+        }
+      );
+
+      // Verify onDisconnect was NOT registered
+      expect(onDisconnectSpy).not.toHaveBeenCalled();
+
+      // Cleanup
+      await wrapper.endSession('exec-no-disconnect');
+      onDisconnectSpy.mockRestore();
     });
   });
 });

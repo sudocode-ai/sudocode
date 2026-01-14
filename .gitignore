@@ -6,5 +6,6 @@ dist/
 .DS_Store
 .env
 .sudocode/merge-driver.log
+.sudocode/deploy-config.json
 .cursor
 __pycache__/
