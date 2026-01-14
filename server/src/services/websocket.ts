@@ -984,6 +984,11 @@ export function broadcastCodeGraphReady(
     fileCount: number;
     symbolCount: number;
     analysisDurationMs: number;
+    incremental?: {
+      extractedFiles: number;
+      cachedFiles: number;
+      fullResolution: boolean;
+    };
   }
 ): void {
   websocketManager.broadcastGeneric(projectId, {
@@ -1001,7 +1006,7 @@ export function broadcastCodeGraphReady(
 export function broadcastCodeGraphProgress(
   projectId: string,
   data: {
-    phase: "scanning" | "parsing" | "resolving";
+    phase: "scanning" | "parsing" | "resolving" | "detecting" | "extracting";
     current: number;
     total: number;
     currentFile?: string;

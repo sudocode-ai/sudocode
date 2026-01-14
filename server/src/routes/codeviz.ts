@@ -9,8 +9,14 @@
 import { Router, Request, Response } from "express";
 import { execSync } from "child_process";
 import { randomUUID } from "crypto";
-import { analyzeCodebase, resetAnalyzer } from "codeviz/node";
-import type { CodeGraph, AnalysisProgress } from "codeviz/node";
+import {
+  analyzeCodebase,
+  resetAnalyzer,
+  analyzeIncrementally,
+  MemoryCache,
+  type IncrementalCacheStorage,
+} from "codeviz/node";
+import type { CodeGraph, AnalysisProgress, IncrementalProgress } from "codeviz/node";
 import {
   broadcastCodeGraphReady,
   broadcastCodeGraphProgress,
@@ -67,7 +73,7 @@ interface AnalysisState {
   id: string;
   status: "running" | "completed" | "failed";
   gitSha: string;
-  phase?: "scanning" | "parsing" | "resolving";
+  phase?: "scanning" | "parsing" | "resolving" | "detecting" | "extracting";
   progress?: { current: number; total: number };
   currentFile?: string;
   error?: string;
@@ -76,6 +82,21 @@ interface AnalysisState {
 
 // Track running analyses per project
 const analysisState = new Map<string, AnalysisState>();
+
+// Incremental analysis cache per project
+const incrementalCaches = new Map<string, IncrementalCacheStorage>();
+
+/**
+ * Get or create incremental cache for a project
+ */
+function getIncrementalCache(projectId: string): IncrementalCacheStorage {
+  let cache = incrementalCaches.get(projectId);
+  if (!cache) {
+    cache = new MemoryCache();
+    incrementalCaches.set(projectId, cache);
+  }
+  return cache;
+}
 
 /**
  * Get current git HEAD SHA
@@ -507,6 +528,217 @@ export function createCodevizRouter(): Router {
         data: null,
         error_data: error instanceof Error ? error.message : String(error),
         message: "Failed to get analysis status",
+      });
+    }
+  });
+
+  /**
+   * POST /api/codeviz/analyze/incremental
+   *
+   * Perform incremental analysis - only re-analyze changed files.
+   * Uses cached extraction data for unchanged files.
+   */
+  router.post("/analyze/incremental", async (req: Request, res: Response) => {
+    try {
+      const projectId = req.project!.id;
+      const workspacePath = req.project!.path;
+      const db = req.project!.db;
+      const gitSha = getGitSha(workspacePath);
+
+      // Check if analysis is already running
+      const existing = analysisState.get(projectId);
+      if (existing && existing.status === "running") {
+        res.json({
+          success: true,
+          data: {
+            analysisId: existing.id,
+            gitSha: existing.gitSha,
+            status: "already_running",
+          },
+        });
+        return;
+      }
+
+      // Get or create incremental cache
+      const cache = getIncrementalCache(projectId);
+
+      // Create new analysis state
+      const analysisId = randomUUID();
+      const state: AnalysisState = {
+        id: analysisId,
+        status: "running",
+        gitSha,
+        phase: "scanning",
+        startedAt: new Date(),
+      };
+      analysisState.set(projectId, state);
+
+      // Start incremental analysis (don't await)
+      const startTime = Date.now();
+      analyzeIncrementally({
+        rootPath: workspacePath,
+        cache,
+        respectGitignore: true,
+        extractCalls: true,
+        maxFiles: 10000,
+        useMtimeHeuristic: true,
+        onProgress: (progress: IncrementalProgress) => {
+          // Update state
+          state.phase = progress.phase;
+          state.progress = { current: progress.current, total: progress.total };
+          state.currentFile = progress.currentFile;
+
+          // Broadcast progress
+          broadcastCodeGraphProgress(projectId, {
+            phase: progress.phase,
+            current: progress.current,
+            total: progress.total,
+            currentFile: progress.currentFile,
+          });
+        },
+      })
+        .then((result) => {
+          const analysisDurationMs = Date.now() - startTime;
+          const fileTree = getCachedFileTree(workspacePath);
+
+          // Store in database
+          storeCodeGraph(db, gitSha, result.graph, fileTree, analysisDurationMs);
+
+          // Update state
+          state.status = "completed";
+          state.phase = undefined;
+          state.progress = undefined;
+          state.currentFile = undefined;
+
+          // Broadcast completion with incremental stats
+          broadcastCodeGraphReady(projectId, {
+            gitSha,
+            fileCount: result.graph.files.length,
+            symbolCount: result.graph.symbols.length,
+            analysisDurationMs,
+            incremental: {
+              extractedFiles: result.stats.extractedFiles,
+              cachedFiles: result.stats.cachedFiles,
+              fullResolution: result.stats.fullResolution,
+            },
+          });
+
+          // Clean up parser caches
+          resetAnalyzer();
+
+          console.log(
+            `[CodeViz] Incremental analysis completed for ${projectId}: ` +
+              `${result.stats.extractedFiles} extracted, ${result.stats.cachedFiles} cached ` +
+              `(${result.graph.files.length} total files, ${result.graph.symbols.length} symbols) ` +
+              `in ${analysisDurationMs}ms`
+          );
+        })
+        .catch((error) => {
+          state.status = "failed";
+          state.error = error instanceof Error ? error.message : String(error);
+          console.error(
+            `[CodeViz] Incremental analysis failed for ${projectId}:`,
+            error
+          );
+        });
+
+      res.json({
+        success: true,
+        data: {
+          analysisId,
+          gitSha,
+          status: "started",
+          incremental: true,
+        },
+      });
+    } catch (error) {
+      console.error("[CodeViz] Failed to start incremental analysis:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to start incremental analysis",
+      });
+    }
+  });
+
+  /**
+   * GET /api/codeviz/cache/stats
+   *
+   * Get incremental cache statistics for this project.
+   */
+  router.get("/cache/stats", async (req: Request, res: Response) => {
+    try {
+      const projectId = req.project!.id;
+      const cache = incrementalCaches.get(projectId);
+
+      if (!cache) {
+        res.json({
+          success: true,
+          data: {
+            initialized: false,
+            stats: null,
+          },
+        });
+        return;
+      }
+
+      const stats = cache.getStats();
+
+      res.json({
+        success: true,
+        data: {
+          initialized: true,
+          stats: {
+            totalEntries: stats.totalEntries,
+            hitCount: stats.hitCount,
+            missCount: stats.missCount,
+            hitRate:
+              stats.hitCount + stats.missCount > 0
+                ? stats.hitCount / (stats.hitCount + stats.missCount)
+                : 0,
+            lastCleared: stats.lastCleared,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("[CodeViz] Failed to get cache stats:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to get cache stats",
+      });
+    }
+  });
+
+  /**
+   * POST /api/codeviz/cache/clear
+   *
+   * Clear incremental cache for this project.
+   */
+  router.post("/cache/clear", async (req: Request, res: Response) => {
+    try {
+      const projectId = req.project!.id;
+      const cache = incrementalCaches.get(projectId);
+
+      if (cache) {
+        cache.clear();
+      }
+
+      res.json({
+        success: true,
+        data: {
+          cleared: true,
+        },
+      });
+    } catch (error) {
+      console.error("[CodeViz] Failed to clear cache:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to clear cache",
       });
     }
   });

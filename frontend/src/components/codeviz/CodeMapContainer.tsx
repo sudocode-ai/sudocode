@@ -24,6 +24,7 @@ import { useActiveExecutions } from '@/hooks/useActiveExecutions'
 import { useCodeVizOverlays } from '@/hooks/useCodeVizOverlays'
 import { useFileEntityMap } from '@/hooks/useFileEntityMap'
 import { useTheme } from '@/contexts/ThemeContext'
+import { useProjectContext } from '@/contexts/ProjectContext'
 import { getAgentColor } from '@/utils/colors'
 import { Loader2, Zap, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -334,6 +335,7 @@ export const CodeMapContainer = forwardRef<CodeMapContainerRef, CodeMapContainer
       triggerAnalysis,
     } = useCodeGraph()
     const { theme: appTheme } = useTheme()
+    const { currentProjectId } = useProjectContext()
 
     // Track if we've triggered auto-analysis (for UI state)
     const [hasTriggeredAutoAnalysis, setHasTriggeredAutoAnalysis] = useState(false)
@@ -469,6 +471,9 @@ export const CodeMapContainer = forwardRef<CodeMapContainerRef, CodeMapContainer
             codeGraph={codeGraph ?? undefined}
             overlayPort={renderer === 'react-flow' ? overlayPort : undefined}
             settlingSpeed="normal"
+            continuousLayout={renderer === 'sigma'}
+            cachePositions={renderer === 'sigma'}
+            cacheKey={currentProjectId ? `codeviz-${currentProjectId}` : undefined}
             onNodeClick={(nodeId, node) => {
               console.log('Node clicked:', nodeId, node)
             }}
