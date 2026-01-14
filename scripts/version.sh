@@ -149,7 +149,7 @@ for pkg in "${PACKAGES[@]}"; do
       if (pkg.dependencies) {
         for (const dep of Object.keys(pkg.dependencies)) {
           if (dep.startsWith('@sudocode-ai/')) {
-            pkg.dependencies[dep] = '^$VERSION';
+            pkg.dependencies[dep] = '$VERSION';
           }
         }
       }
