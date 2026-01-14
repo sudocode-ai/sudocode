@@ -163,7 +163,7 @@ const DEFAULT_AGENT_CONFIGS: Record<string, any> = {
   } as CopilotConfig,
   gemini: {
     sandbox: false,
-    yolo: false,
+    dangerouslySkipPermissions: false,
   } as GeminiConfig,
   opencode: {
     dangerouslySkipPermissions: false,

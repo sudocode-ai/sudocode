@@ -173,6 +173,10 @@ export interface WebSocketMessage {
     | 'execution_status_changed'
     | 'execution_deleted'
     | 'session_update'
+    // Persistent session events
+    | 'session_waiting'
+    | 'session_paused'
+    | 'session_ended'
     | 'project_opened'
     | 'project_closed'
     | 'workflow_created'

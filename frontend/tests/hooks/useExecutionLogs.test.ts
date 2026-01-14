@@ -400,6 +400,249 @@ describe('useExecutionLogs', () => {
     })
   })
 
+  describe('processCoalescedEvents - User Messages', () => {
+    it('should process user_message_complete events', async () => {
+      // Mock ACP format events with user message
+      const mockEvents = [
+        {
+          sessionUpdate: 'agent_message_complete',
+          content: { type: 'text', text: 'Hello, how can I help?' },
+          timestamp: '2025-01-01T00:00:00Z',
+        },
+        {
+          sessionUpdate: 'user_message_complete',
+          content: { type: 'text', text: 'Can you read the file?' },
+          timestamp: '2025-01-01T00:00:01Z',
+        },
+        {
+          sessionUpdate: 'agent_message_complete',
+          content: { type: 'text', text: 'Sure, let me read that file.' },
+          timestamp: '2025-01-01T00:00:02Z',
+        },
+      ]
+
+      mockApiGet.mockResolvedValueOnce({
+        executionId: 'exec-123',
+        events: mockEvents,
+        format: 'acp',
+        metadata: { lineCount: 3, byteSize: 300, createdAt: '', updatedAt: '' },
+      })
+
+      const { result } = renderHook(() => useExecutionLogs('exec-123'))
+
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      // Should have 3 messages total
+      expect(result.current.processed.messages).toHaveLength(3)
+
+      // First message should be agent message (no role or role='agent')
+      expect(result.current.processed.messages[0].content).toBe('Hello, how can I help?')
+      expect(result.current.processed.messages[0].role).toBeUndefined()
+
+      // Second message should be user message with role='user'
+      expect(result.current.processed.messages[1].content).toBe('Can you read the file?')
+      expect(result.current.processed.messages[1].role).toBe('user')
+
+      // Third message should be agent message
+      expect(result.current.processed.messages[2].content).toBe('Sure, let me read that file.')
+      expect(result.current.processed.messages[2].role).toBeUndefined()
+    })
+
+    it('should assign sequential indices to user messages', async () => {
+      const mockEvents = [
+        {
+          sessionUpdate: 'agent_message_complete',
+          content: { type: 'text', text: 'First agent message' },
+          timestamp: '2025-01-01T00:00:00Z',
+        },
+        {
+          sessionUpdate: 'user_message_complete',
+          content: { type: 'text', text: 'User prompt' },
+          timestamp: '2025-01-01T00:00:01Z',
+        },
+      ]
+
+      mockApiGet.mockResolvedValueOnce({
+        executionId: 'exec-123',
+        events: mockEvents,
+        format: 'acp',
+        metadata: { lineCount: 2, byteSize: 200, createdAt: '', updatedAt: '' },
+      })
+
+      const { result } = renderHook(() => useExecutionLogs('exec-123'))
+
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      // Check indices are sequential
+      expect(result.current.processed.messages[0].index).toBe(0)
+      expect(result.current.processed.messages[1].index).toBe(1)
+    })
+
+    it('should generate user-msg ID prefix for user messages', async () => {
+      const mockEvents = [
+        {
+          sessionUpdate: 'user_message_complete',
+          content: { type: 'text', text: 'User message' },
+          timestamp: '2025-01-01T00:00:00Z',
+        },
+      ]
+
+      mockApiGet.mockResolvedValueOnce({
+        executionId: 'exec-123',
+        events: mockEvents,
+        format: 'acp',
+        metadata: { lineCount: 1, byteSize: 100, createdAt: '', updatedAt: '' },
+      })
+
+      const { result } = renderHook(() => useExecutionLogs('exec-123'))
+
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      // User messages should have 'user-msg-' prefix
+      expect(result.current.processed.messages[0].id).toMatch(/^user-msg-/)
+    })
+  })
+
+  describe('Global Index Ordering', () => {
+    it('should assign sequential global indices across messages and tool calls', async () => {
+      // Events interleaved: message, tool call, message, tool call
+      const mockEvents = [
+        {
+          sessionUpdate: 'agent_message_complete',
+          content: { type: 'text', text: 'First message' },
+          timestamp: '2025-01-01T00:00:00Z',
+        },
+        {
+          sessionUpdate: 'tool_call_complete',
+          toolCallId: 'tool-1',
+          title: 'Read file',
+          status: 'completed',
+          timestamp: '2025-01-01T00:00:01Z',
+        },
+        {
+          sessionUpdate: 'agent_message_complete',
+          content: { type: 'text', text: 'Second message' },
+          timestamp: '2025-01-01T00:00:02Z',
+        },
+        {
+          sessionUpdate: 'tool_call_complete',
+          toolCallId: 'tool-2',
+          title: 'Write file',
+          status: 'completed',
+          timestamp: '2025-01-01T00:00:03Z',
+        },
+      ]
+
+      mockApiGet.mockResolvedValueOnce({
+        executionId: 'exec-123',
+        events: mockEvents,
+        format: 'acp',
+        metadata: { lineCount: 4, byteSize: 400, createdAt: '', updatedAt: '' },
+      })
+
+      const { result } = renderHook(() => useExecutionLogs('exec-123'))
+
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      // Messages should have indices 0, 2 (not 0, 1)
+      expect(result.current.processed.messages[0].index).toBe(0)
+      expect(result.current.processed.messages[1].index).toBe(2)
+
+      // Tool calls should have indices 1, 3 (not 0, 1)
+      expect(result.current.processed.toolCalls[0].index).toBe(1)
+      expect(result.current.processed.toolCalls[1].index).toBe(3)
+    })
+
+    it('should maintain correct order when sorted by index', async () => {
+      // Complex interleaving: user message, agent message, tool call, agent message
+      const mockEvents = [
+        {
+          sessionUpdate: 'user_message_complete',
+          content: { type: 'text', text: 'User prompt' },
+          timestamp: '2025-01-01T00:00:00Z',
+        },
+        {
+          sessionUpdate: 'agent_message_complete',
+          content: { type: 'text', text: 'Let me help' },
+          timestamp: '2025-01-01T00:00:01Z',
+        },
+        {
+          sessionUpdate: 'tool_call_complete',
+          toolCallId: 'tool-1',
+          title: 'Bash',
+          status: 'completed',
+          timestamp: '2025-01-01T00:00:02Z',
+        },
+        {
+          sessionUpdate: 'agent_message_complete',
+          content: { type: 'text', text: 'Done!' },
+          timestamp: '2025-01-01T00:00:03Z',
+        },
+      ]
+
+      mockApiGet.mockResolvedValueOnce({
+        executionId: 'exec-123',
+        events: mockEvents,
+        format: 'acp',
+        metadata: { lineCount: 4, byteSize: 400, createdAt: '', updatedAt: '' },
+      })
+
+      const { result } = renderHook(() => useExecutionLogs('exec-123'))
+
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      // Combine all items and sort by index (like AgentTrajectory does)
+      const allItems = [
+        ...result.current.processed.messages.map((m) => ({ type: 'message', index: m.index, content: m.content })),
+        ...result.current.processed.toolCalls.map((tc) => ({ type: 'tool_call', index: tc.index, title: tc.title })),
+      ].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+
+      // Should maintain original chronological order
+      expect(allItems[0]).toMatchObject({ type: 'message', index: 0, content: 'User prompt' })
+      expect(allItems[1]).toMatchObject({ type: 'message', index: 1, content: 'Let me help' })
+      expect(allItems[2]).toMatchObject({ type: 'tool_call', index: 2, title: 'Bash' })
+      expect(allItems[3]).toMatchObject({ type: 'message', index: 3, content: 'Done!' })
+    })
+
+    it('should include thoughts in global index sequence', async () => {
+      const mockEvents = [
+        {
+          sessionUpdate: 'agent_message_complete',
+          content: { type: 'text', text: 'Message' },
+          timestamp: '2025-01-01T00:00:00Z',
+        },
+        {
+          sessionUpdate: 'agent_thought_complete',
+          content: { type: 'text', text: 'Thinking...' },
+          timestamp: '2025-01-01T00:00:01Z',
+        },
+        {
+          sessionUpdate: 'tool_call_complete',
+          toolCallId: 'tool-1',
+          title: 'Read',
+          status: 'completed',
+          timestamp: '2025-01-01T00:00:02Z',
+        },
+      ]
+
+      mockApiGet.mockResolvedValueOnce({
+        executionId: 'exec-123',
+        events: mockEvents,
+        format: 'acp',
+        metadata: { lineCount: 3, byteSize: 300, createdAt: '', updatedAt: '' },
+      })
+
+      const { result } = renderHook(() => useExecutionLogs('exec-123'))
+
+      await waitFor(() => expect(result.current.loading).toBe(false))
+
+      // All should have sequential indices
+      expect(result.current.processed.messages[0].index).toBe(0)
+      expect(result.current.processed.thoughts[0].index).toBe(1)
+      expect(result.current.processed.toolCalls[0].index).toBe(2)
+    })
+  })
+
   describe('Metadata', () => {
     it('should return metadata from response', async () => {
       const mockMetadata = {

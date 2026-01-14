@@ -25,6 +25,7 @@ export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'error' | '
 
 /**
  * Agent message (accumulated from agent_message_chunk or agent_message_complete)
+ * Also used for user messages in persistent sessions
  */
 export interface AgentMessage {
   id: string
@@ -33,6 +34,8 @@ export interface AgentMessage {
   isStreaming?: boolean
   /** Optional index for stable ordering when timestamps are equal */
   index?: number
+  /** Message role - 'agent' for assistant messages, 'user' for user prompts */
+  role?: 'agent' | 'user'
 }
 
 /**
@@ -116,7 +119,7 @@ export interface PlanUpdateEvent {
  */
 export interface ExecutionState {
   runId: string | null
-  status: 'idle' | 'running' | 'completed' | 'error' | 'cancelled' | 'stopped'
+  status: 'idle' | 'running' | 'waiting' | 'paused' | 'completed' | 'error' | 'cancelled' | 'stopped'
   error: string | null
   startTime: number | null
   endTime: number | null
@@ -212,6 +215,16 @@ interface AgentMessageChunk extends ContentChunk {
 
 interface AgentThoughtChunk extends ContentChunk {
   sessionUpdate: 'agent_thought_chunk'
+}
+
+interface UserMessageChunk extends ContentChunk {
+  sessionUpdate: 'user_message_chunk'
+}
+
+interface UserMessageComplete {
+  sessionUpdate: 'user_message_complete'
+  content: ContentBlock
+  timestamp: string | Date
 }
 
 interface ToolCallEvent {
@@ -320,6 +333,8 @@ interface AvailableCommandsUpdateEvent {
 type SessionUpdate =
   | AgentMessageChunk
   | AgentThoughtChunk
+  | UserMessageChunk
+  | UserMessageComplete
   | ToolCallEvent
   | ToolCallUpdateEvent
   | AgentMessageComplete
@@ -403,6 +418,10 @@ function mapExecutionStatus(
       return 'idle'
     case 'running':
       return 'running'
+    case 'waiting':
+      return 'waiting'
+    case 'paused':
+      return 'paused'
     case 'completed':
       return 'completed'
     case 'failed':
@@ -475,6 +494,7 @@ export function useSessionUpdateStream(
   // Refs for tracking streaming state
   const currentMessageIdRef = useRef<string | null>(null)
   const currentThoughtIdRef = useRef<string | null>(null)
+  const currentUserMessageIdRef = useRef<string | null>(null)
   const onEventRef = useRef(onEvent)
 
   // Counter for stable ordering of events during streaming
@@ -530,6 +550,11 @@ export function useSessionUpdateStream(
           assignedIndex = eventIndexRef.current++
           newMessageId = generateStreamId('msg')
           currentMessageIdRef.current = newMessageId
+          console.log('[useSessionUpdateStream] agent_message_chunk (new message):', {
+            messageId: newMessageId,
+            assignedIndex,
+            eventIndexCurrent: eventIndexRef.current,
+          })
         }
 
         setMessages((prev) => {
@@ -682,6 +707,122 @@ export function useSessionUpdateStream(
 
         // Reset current thought tracking
         currentThoughtIdRef.current = null
+        setIsStreaming(false)
+        break
+      }
+
+      // Streaming: user_message_chunk (for persistent sessions)
+      case 'user_message_chunk': {
+        setIsStreaming(true)
+        const text = getTextFromContentBlock(update.content)
+
+        // Check if we need to start a new streaming user message
+        const needsNewMessage = !currentUserMessageIdRef.current
+        let assignedIndex: number | undefined
+        let newMessageId: string | undefined
+
+        if (needsNewMessage) {
+          assignedIndex = eventIndexRef.current++
+          newMessageId = generateStreamId('user-msg')
+          currentUserMessageIdRef.current = newMessageId
+        }
+
+        setMessages((prev) => {
+          const next = new Map(prev)
+          const messageId = currentUserMessageIdRef.current!
+
+          const existing = next.get(messageId)
+          if (!existing || !existing.isStreaming) {
+            next.set(messageId, {
+              id: messageId,
+              content: text,
+              timestamp: new Date(),
+              isStreaming: true,
+              index: assignedIndex,
+              role: 'user',
+            })
+          } else {
+            next.set(messageId, {
+              ...existing,
+              content: existing.content + text,
+            })
+          }
+
+          return next
+        })
+        break
+      }
+
+      // Coalesced: user_message_complete (for persistent sessions)
+      case 'user_message_complete': {
+        // Finalize any current streaming agent message first to ensure proper ordering
+        if (currentMessageIdRef.current) {
+          const messageIdToFinalize = currentMessageIdRef.current
+          setMessages((prev) => {
+            const next = new Map(prev)
+            const existing = next.get(messageIdToFinalize)
+            if (existing && existing.isStreaming) {
+              next.set(messageIdToFinalize, { ...existing, isStreaming: false })
+            }
+            return next
+          })
+          currentMessageIdRef.current = null
+        }
+
+        // Also finalize any current streaming thought
+        if (currentThoughtIdRef.current) {
+          const thoughtIdToFinalize = currentThoughtIdRef.current
+          setThoughts((prev) => {
+            const next = new Map(prev)
+            const existing = next.get(thoughtIdToFinalize)
+            if (existing && existing.isStreaming) {
+              next.set(thoughtIdToFinalize, { ...existing, isStreaming: false })
+            }
+            return next
+          })
+          currentThoughtIdRef.current = null
+        }
+
+        const text = getTextFromContentBlock(update.content)
+        const isNewMessage = !currentUserMessageIdRef.current
+        const messageId = currentUserMessageIdRef.current || generateStreamId('user-msg')
+        const assignedIndex = isNewMessage ? eventIndexRef.current++ : undefined
+
+        console.log('[useSessionUpdateStream] user_message_complete:', {
+          messageId,
+          assignedIndex,
+          eventIndexCurrent: eventIndexRef.current,
+          textPreview: text.substring(0, 50),
+        })
+
+        setMessages((prev) => {
+          const next = new Map(prev)
+          const existing = next.get(messageId)
+
+          if (existing) {
+            // Finalize streaming message
+            next.set(messageId, {
+              ...existing,
+              content: text || existing.content,
+              isStreaming: false,
+              role: 'user',
+            })
+          } else {
+            // Create new completed message
+            next.set(messageId, {
+              id: messageId,
+              content: text,
+              timestamp: parseDate(update.timestamp),
+              isStreaming: false,
+              index: assignedIndex,
+              role: 'user',
+            })
+          }
+
+          return next
+        })
+
+        currentUserMessageIdRef.current = null
         setIsStreaming(false)
         break
       }
@@ -980,6 +1121,7 @@ export function useSessionUpdateStream(
     // Reset streaming state
     currentMessageIdRef.current = null
     currentThoughtIdRef.current = null
+    currentUserMessageIdRef.current = null
     setIsStreaming(false)
   }, [])
 
@@ -1085,6 +1227,7 @@ export function useSessionUpdateStream(
     setExecution(initialExecutionState)
     currentMessageIdRef.current = null
     currentThoughtIdRef.current = null
+    currentUserMessageIdRef.current = null
     eventIndexRef.current = 0
     toolCallIndicesRef.current = new Map()
 

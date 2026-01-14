@@ -261,7 +261,10 @@ export function createExecutionsRouter(): Router {
         data: execution,
       });
     } catch (error) {
-      console.error("[API Route] ERROR: Failed to create adhoc execution:", error);
+      console.error(
+        "[API Route] ERROR: Failed to create adhoc execution:",
+        error
+      );
 
       // Handle agent-specific errors with enhanced error responses
       if (error instanceof AgentNotFoundError) {
@@ -1434,7 +1437,8 @@ export function createExecutionsRouter(): Router {
             code: error.code,
           });
         } else {
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           res.status(500).json({
             success: false,
             data: null,
@@ -1494,7 +1498,8 @@ export function createExecutionsRouter(): Router {
             code: error.code,
           });
         } else {
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           res.status(500).json({
             success: false,
             data: null,
@@ -1546,7 +1551,8 @@ export function createExecutionsRouter(): Router {
             code: error.code,
           });
         } else {
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           res.status(500).json({
             success: false,
             data: null,
@@ -1713,11 +1719,15 @@ export function createExecutionsRouter(): Router {
 
           // Commit using -F - to read message from stdin (safer than shell escaping)
           const { spawnSync } = await import("child_process");
-          const commitResult = spawnSync("git", ["commit", "--no-verify", "-m", message], {
-            cwd: workingDir,
-            encoding: "utf-8",
-            stdio: "pipe",
-          });
+          const commitResult = spawnSync(
+            "git",
+            ["commit", "--no-verify", "-m", message],
+            {
+              cwd: workingDir,
+              encoding: "utf-8",
+              stdio: "pipe",
+            }
+          );
 
           if (commitResult.status !== 0) {
             const errorOutput =
@@ -1780,6 +1790,149 @@ export function createExecutionsRouter(): Router {
     }
   );
 
+  // ============================================================================
+  // Persistent Session Endpoints
+  // ============================================================================
+
+  /**
+   * POST /api/executions/:executionId/prompt
+   *
+   * Send a prompt to a persistent session
+   *
+   * Returns immediately - output streams via WebSocket subscription.
+   * Returns error if not a persistent session or session not in waiting/paused state.
+   *
+   * Request body:
+   * - prompt: string (required) - The prompt to send
+   */
+  router.post(
+    "/executions/:executionId/prompt",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+        const { prompt } = req.body;
+
+        // Validate prompt
+        if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+          res.status(400).json({
+            success: false,
+            error: "prompt is required and must be a non-empty string",
+          });
+          return;
+        }
+
+        await req.project!.executionService!.sendPrompt(executionId, prompt);
+
+        res.json({
+          success: true,
+          message: "Prompt sent to session",
+        });
+      } catch (error) {
+        console.error("Error sending prompt to session:", error);
+
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        let statusCode = 500;
+
+        if (
+          errorMessage.includes("not found") ||
+          errorMessage.includes("No active executor")
+        ) {
+          statusCode = 404;
+        } else if (
+          errorMessage.includes("does not support") ||
+          errorMessage.includes("Cannot send prompt")
+        ) {
+          statusCode = 400;
+        }
+
+        res.status(statusCode).json({
+          success: false,
+          error: errorMessage,
+        });
+      }
+    }
+  );
+
+  /**
+   * POST /api/executions/:executionId/end-session
+   *
+   * End a persistent session explicitly
+   *
+   * Returns error if not a persistent session.
+   */
+  router.post(
+    "/executions/:executionId/end-session",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+
+        await req.project!.executionService!.endSession(executionId);
+
+        res.json({
+          success: true,
+          message: "Session ended",
+        });
+      } catch (error) {
+        console.error("Error ending session:", error);
+
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        let statusCode = 500;
+
+        if (
+          errorMessage.includes("not found") ||
+          errorMessage.includes("No active executor")
+        ) {
+          statusCode = 404;
+        } else if (errorMessage.includes("does not support")) {
+          statusCode = 400;
+        }
+
+        res.status(statusCode).json({
+          success: false,
+          error: errorMessage,
+        });
+      }
+    }
+  );
+
+  /**
+   * GET /api/executions/:executionId/session-state
+   *
+   * Get session state for an execution
+   *
+   * Works for both discrete and persistent sessions.
+   * Returns mode, state, promptCount, and idleTimeMs.
+   */
+  router.get(
+    "/executions/:executionId/session-state",
+    (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+
+        const state =
+          req.project!.executionService!.getSessionState(executionId);
+
+        res.json({
+          success: true,
+          data: state,
+        });
+      } catch (error) {
+        console.error("Error getting session state:", error);
+
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        const statusCode = errorMessage.includes("not found") ? 404 : 500;
+
+        res.status(statusCode).json({
+          success: false,
+          error: errorMessage,
+        });
+      }
+    }
+  );
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Conflict Resolution Endpoints
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1814,7 +1967,9 @@ export function createExecutionsRouter(): Router {
 
         // Get conflicts from execution_conflicts table
         const conflicts = db
-          .prepare("SELECT * FROM execution_conflicts WHERE execution_id = ? ORDER BY detected_at ASC")
+          .prepare(
+            "SELECT * FROM execution_conflicts WHERE execution_id = ? ORDER BY detected_at ASC"
+          )
           .all(executionId) as Array<{ resolved_at: string | null }>;
 
         res.json({
@@ -1869,8 +2024,12 @@ export function createExecutionsRouter(): Router {
 
         // Get conflict
         const conflict = db
-          .prepare("SELECT * FROM execution_conflicts WHERE id = ? AND execution_id = ?")
-          .get(conflictId, executionId) as { path: string; resolved_at: string | null } | undefined;
+          .prepare(
+            "SELECT * FROM execution_conflicts WHERE id = ? AND execution_id = ?"
+          )
+          .get(conflictId, executionId) as
+          | { path: string; resolved_at: string | null }
+          | undefined;
 
         if (!conflict) {
           res.status(404).json({
@@ -1922,7 +2081,10 @@ export function createExecutionsRouter(): Router {
               stdio: "pipe",
             });
           } catch (gitError) {
-            console.error(`Failed to resolve conflict with ${strategy}:`, gitError);
+            console.error(
+              `Failed to resolve conflict with ${strategy}:`,
+              gitError
+            );
             res.status(500).json({
               success: false,
               data: null,
@@ -1940,14 +2102,16 @@ export function createExecutionsRouter(): Router {
 
         // Check if all conflicts are resolved
         const unresolvedCount = db
-          .prepare("SELECT COUNT(*) as count FROM execution_conflicts WHERE execution_id = ? AND resolved_at IS NULL")
+          .prepare(
+            "SELECT COUNT(*) as count FROM execution_conflicts WHERE execution_id = ? AND resolved_at IS NULL"
+          )
           .get(executionId) as { count: number };
 
         // If all conflicts resolved, update execution status
         if (unresolvedCount.count === 0) {
-          db.prepare("UPDATE executions SET status = 'paused', updated_at = datetime('now') WHERE id = ?").run(
-            executionId
-          );
+          db.prepare(
+            "UPDATE executions SET status = 'paused', updated_at = datetime('now') WHERE id = ?"
+          ).run(executionId);
         }
 
         res.json({
@@ -1996,7 +2160,8 @@ export function createExecutionsRouter(): Router {
           res.status(400).json({
             success: false,
             data: null,
-            error: "Invalid strategy. Must be 'ours' or 'theirs' for bulk resolution",
+            error:
+              "Invalid strategy. Must be 'ours' or 'theirs' for bulk resolution",
           });
           return;
         }
@@ -2019,7 +2184,9 @@ export function createExecutionsRouter(): Router {
 
         // Get all unresolved conflicts
         const conflicts = db
-          .prepare("SELECT * FROM execution_conflicts WHERE execution_id = ? AND resolved_at IS NULL")
+          .prepare(
+            "SELECT * FROM execution_conflicts WHERE execution_id = ? AND resolved_at IS NULL"
+          )
           .all(executionId) as Array<{ id: string; path: string }>;
 
         if (conflicts.length === 0) {
@@ -2056,15 +2223,17 @@ export function createExecutionsRouter(): Router {
 
             resolvedCount++;
           } catch (gitError) {
-            errors.push(`${conflict.path}: ${gitError instanceof Error ? gitError.message : String(gitError)}`);
+            errors.push(
+              `${conflict.path}: ${gitError instanceof Error ? gitError.message : String(gitError)}`
+            );
           }
         }
 
         // Update execution status if all resolved
         if (errors.length === 0) {
-          db.prepare("UPDATE executions SET status = 'paused', updated_at = datetime('now') WHERE id = ?").run(
-            executionId
-          );
+          db.prepare(
+            "UPDATE executions SET status = 'paused', updated_at = datetime('now') WHERE id = ?"
+          ).run(executionId);
         }
 
         res.json({
@@ -2109,7 +2278,9 @@ export function createExecutionsRouter(): Router {
         // Get execution
         const execution = db
           .prepare("SELECT * FROM executions WHERE id = ?")
-          .get(executionId) as { status: string; worktree_path: string | null } | undefined;
+          .get(executionId) as
+          | { status: string; worktree_path: string | null }
+          | undefined;
 
         if (!execution) {
           res.status(404).json({
@@ -2122,7 +2293,9 @@ export function createExecutionsRouter(): Router {
 
         // Check for unresolved conflicts
         const unresolvedCount = db
-          .prepare("SELECT COUNT(*) as count FROM execution_conflicts WHERE execution_id = ? AND resolved_at IS NULL")
+          .prepare(
+            "SELECT COUNT(*) as count FROM execution_conflicts WHERE execution_id = ? AND resolved_at IS NULL"
+          )
           .get(executionId) as { count: number };
 
         if (unresolvedCount.count > 0) {
@@ -2153,7 +2326,8 @@ export function createExecutionsRouter(): Router {
         res.json({
           success: true,
           data: {
-            message: "Ready to sync. Use squash, preserve, or stage endpoint to complete.",
+            message:
+              "Ready to sync. Use squash, preserve, or stage endpoint to complete.",
             preview,
           },
         });
@@ -2212,7 +2386,8 @@ export function createExecutionsRouter(): Router {
             success: false,
             data: null,
             error: "Dataplane not initialized",
-            message: "Checkpoint requires dataplane to be enabled. Enable it in config.json.",
+            message:
+              "Checkpoint requires dataplane to be enabled. Enable it in config.json.",
           });
           return;
         }
@@ -2263,7 +2438,8 @@ export function createExecutionsRouter(): Router {
             code: error.code,
           });
         } else {
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           res.status(500).json({
             success: false,
             data: null,

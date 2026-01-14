@@ -287,6 +287,26 @@ export interface EditorConfig {
 }
 
 /**
+ * Deployment configuration for remote development environments
+ */
+export interface DeployConfig {
+  /** Deployment provider (currently only Codespaces supported) */
+  provider: 'codespaces';
+  /** Default branch to deploy from (optional) */
+  defaultBranch?: string;
+  /** Port number for the server (default: 3000) */
+  port: number;
+  /** Idle timeout in minutes before auto-shutdown */
+  idleTimeout: number;
+  /** Keep-alive duration in hours before auto-cleanup */
+  keepAliveHours: number;
+  /** Machine type/size (e.g., 'basicLinux32gb', 'premiumLinux') */
+  machine: string;
+  /** Retention period in days before cleanup */
+  retentionPeriod: number;
+}
+
+/**
  * Config metadata file structure (.sudocode/config.json)
  */
 export interface Config {
@@ -325,6 +345,7 @@ export type ExecutionStatus =
   | "pending" // Created, not yet started
   | "running" // Agent executing
   | "paused" // Execution paused (awaiting follow-up)
+  | "waiting" // Persistent session alive, waiting for next prompt
   | "completed" // Successfully finished
   | "failed" // Execution failed
   | "cancelled" // User cancelled
@@ -632,6 +653,43 @@ export interface EnrichedQueueEntry {
   canPromote: boolean;
   /** Error message if failed */
   error?: string;
+}
+
+/**
+ * Session persistence mode for executions
+ *
+ * - "discrete": Default behavior - one prompt per execution, process terminates after completion
+ * - "persistent": Toad-style - process stays alive, multiple prompts to same session
+ */
+export type SessionMode = "discrete" | "persistent";
+
+/**
+ * Configuration for how a persistent session ends
+ *
+ * Multiple options can be enabled simultaneously. The session ends when any
+ * configured condition is met.
+ */
+export interface SessionEndModeConfig {
+  /** End on explicit user action (default: true) */
+  explicit?: boolean;
+  /** End after idle timeout in milliseconds (0 = disabled, default: 0) */
+  idleTimeoutMs?: number;
+  /** Pause on agent completion signal, resumable (default: false) */
+  pauseOnCompletion?: boolean;
+  /** End when WebSocket connection drops (default: false) */
+  endOnDisconnect?: boolean;
+}
+
+/**
+ * Session configuration for execution
+ *
+ * Controls how the agent session lifecycle is managed during execution.
+ */
+export interface ExecutionSessionConfig {
+  /** Session persistence mode (default: "discrete") */
+  sessionMode?: SessionMode;
+  /** How the persistent session ends (only applies when sessionMode: "persistent") */
+  sessionEndMode?: SessionEndModeConfig;
 }
 
 /**

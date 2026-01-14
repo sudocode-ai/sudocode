@@ -409,8 +409,14 @@ describe.skipIf(SKIP_INTEGRATION_TESTS)('Worker Isolation Integration Tests', ()
   describe('event forwarding', () => {
     it('should forward log events from worker to main process', async () => {
       const logs: string[] = []
+      let logResolve: () => void
+      const logReceived = new Promise<void>((resolve) => {
+        logResolve = resolve
+      })
+
       const onLog = vi.fn((executionId: string, event: any) => {
         logs.push(event.data)
+        logResolve()
       })
 
       // Use mock worker that doesn't require Claude CLI
@@ -442,17 +448,26 @@ describe.skipIf(SKIP_INTEGRATION_TESTS)('Worker Isolation Integration Tests', ()
 
       await pool.startExecution(execution, repoPath, dbPath)
 
-      // Wait for worker to emit logs
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      // Wait for log event to be received (with timeout)
+      await Promise.race([
+        logReceived,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout waiting for log event')), 10000)
+        ),
+      ])
 
       // Should have received log events
       expect(onLog).toHaveBeenCalled()
     }, 15000)
 
     it('should forward completion events from worker to main process', async () => {
-      let completionCalled = false
+      let completionResolve: () => void
+      const completionReceived = new Promise<void>((resolve) => {
+        completionResolve = resolve
+      })
+
       const onComplete = vi.fn(() => {
-        completionCalled = true
+        completionResolve()
       })
 
       // Use mock worker that doesn't require Claude CLI
@@ -484,11 +499,16 @@ describe.skipIf(SKIP_INTEGRATION_TESTS)('Worker Isolation Integration Tests', ()
 
       await pool.startExecution(execution, repoPath, dbPath)
 
-      // Wait for worker to complete
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      // Wait for completion event to be received (with timeout)
+      await Promise.race([
+        completionReceived,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout waiting for completion event')), 10000)
+        ),
+      ])
 
       // Should have received completion event
-      expect(completionCalled).toBe(true)
+      expect(onComplete).toHaveBeenCalled()
     }, 15000)
   })
 

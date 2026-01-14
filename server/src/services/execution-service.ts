@@ -13,7 +13,12 @@ import path from "path";
 import os from "os";
 import * as TOML from "@iarna/toml";
 import type Database from "better-sqlite3";
-import type { Execution, ExecutionStatus } from "@sudocode-ai/types";
+import type {
+  Execution,
+  ExecutionStatus,
+  SessionMode,
+  SessionEndModeConfig,
+} from "@sudocode-ai/types";
 import { ExecutionLifecycleService } from "./execution-lifecycle.js";
 import {
   createExecution,
@@ -86,6 +91,10 @@ export interface ExecutionConfig {
    * Set narrateToolUse: false to disable narrating Read, Write, Bash, etc.
    */
   narrationConfig?: Partial<NarrationConfig>;
+  /** Session persistence mode (default: "discrete") */
+  sessionMode?: SessionMode;
+  /** How the persistent session ends (only when sessionMode: "persistent") */
+  sessionEndMode?: SessionEndModeConfig;
 }
 
 /**
@@ -617,7 +626,10 @@ export class ExecutionService {
 
     // Execute with full lifecycle management (non-blocking)
     wrapper
-      .executeWithLifecycle(execution.id, task, workDir)
+      .executeWithLifecycle(execution.id, task, workDir, {
+        sessionMode: mergedConfig.sessionMode,
+        sessionEndMode: mergedConfig.sessionEndMode,
+      })
       .catch((error) => {
         console.error(
           `[ExecutionService] Execution ${execution.id} failed:`,
@@ -626,7 +638,17 @@ export class ExecutionService {
         // Error is already handled by wrapper (status updated, broadcasts sent)
       })
       .finally(() => {
-        // Cleanup executor from active map
+        // Don't cleanup persistent sessions that are still active
+        if (
+          wrapper instanceof AcpExecutorWrapper &&
+          wrapper.isPersistentSession(execution.id)
+        ) {
+          console.log(
+            `[ExecutionService] Keeping executor for active persistent session ${execution.id}`
+          );
+          return;
+        }
+        // Cleanup executor from active map for discrete sessions or ended persistent sessions
         this.activeExecutors.delete(execution.id);
       });
 
@@ -933,6 +955,7 @@ ${feedback}`;
       dangerouslySkipPermissions: parsedConfig.dangerouslySkipPermissions,
       hasAppendSystemPrompt: !!parsedConfig.appendSystemPrompt,
       model: parsedConfig.model,
+      sessionMode: parsedConfig.sessionMode ?? "discrete",
     });
 
     // Store executor for interactive operations (permission responses, etc.)
@@ -941,12 +964,34 @@ ${feedback}`;
     // Execute follow-up (non-blocking)
     // If we have a session ID, resume the session; otherwise start a new one
     const cleanupExecutor = () => {
+      // Don't cleanup persistent sessions that are still active
+      if (
+        wrapper instanceof AcpExecutorWrapper &&
+        wrapper.isPersistentSession(newExecution.id)
+      ) {
+        console.log(
+          `[ExecutionService] Keeping executor for active persistent session ${newExecution.id}`
+        );
+        return;
+      }
       this.activeExecutors.delete(newExecution.id);
+    };
+
+    // Build session mode options from parent config
+    const sessionModeOptions = {
+      sessionMode: parsedConfig.sessionMode,
+      sessionEndMode: parsedConfig.sessionEndMode,
     };
 
     if (sessionId) {
       wrapper
-        .resumeWithLifecycle(newExecution.id, sessionId, task, workDir)
+        .resumeWithLifecycle(
+          newExecution.id,
+          sessionId,
+          task,
+          workDir,
+          sessionModeOptions
+        )
         .catch((error) => {
           console.error(
             `[ExecutionService] Follow-up execution ${newExecution.id} failed:`,
@@ -958,7 +1003,7 @@ ${feedback}`;
     } else {
       // No session to resume, start a new execution with the follow-up prompt
       wrapper
-        .executeWithLifecycle(newExecution.id, task, workDir)
+        .executeWithLifecycle(newExecution.id, task, workDir, sessionModeOptions)
         .catch((error) => {
           console.error(
             `[ExecutionService] Follow-up execution ${newExecution.id} failed:`,
@@ -2240,5 +2285,152 @@ ${feedback}`;
       `[ExecutionService] Unknown agent type for MCP detection: ${agentType}`
     );
     return true;
+  }
+
+  // ============================================================================
+  // Persistent Session Operations
+  // ============================================================================
+
+  /**
+   * Send a prompt to a persistent session
+   *
+   * Returns immediately - output streams via WebSocket subscription.
+   *
+   * @param executionId - Execution ID with an active persistent session
+   * @param prompt - The prompt to send
+   * @throws Error if execution not found, not a persistent session, or session not in waiting/paused state
+   */
+  async sendPrompt(executionId: string, prompt: string): Promise<void> {
+    const wrapper = this.activeExecutors.get(executionId);
+    if (!wrapper) {
+      throw new Error(
+        `No active executor found for execution ${executionId}. ` +
+          `The execution may have completed or is not a persistent session.`
+      );
+    }
+
+    if (!(wrapper instanceof AcpExecutorWrapper)) {
+      throw new Error(
+        `Execution ${executionId} does not support persistent sessions`
+      );
+    }
+
+    await wrapper.sendPrompt(executionId, prompt);
+  }
+
+  /**
+   * End a persistent session explicitly
+   *
+   * @param executionId - Execution ID with an active persistent session
+   * @throws Error if execution not found or not a persistent session
+   */
+  async endSession(executionId: string): Promise<void> {
+    const wrapper = this.activeExecutors.get(executionId);
+
+    if (!wrapper) {
+      // No active executor - check if execution is stuck in waiting/paused state
+      const execution = getExecution(this.db, executionId);
+      if (!execution) {
+        throw new Error(`Execution ${executionId} not found`);
+      }
+
+      // If execution is stuck in waiting/paused without an active executor,
+      // update it to stopped state
+      if (execution.status === "waiting" || execution.status === "paused") {
+        console.log(
+          `[ExecutionService] No active executor for ${executionId} but status is ${execution.status}. ` +
+            `Updating to stopped.`
+        );
+        updateExecution(this.db, executionId, {
+          status: "stopped",
+          completed_at: new Date().toISOString(),
+        });
+        broadcastExecutionUpdate(
+          this.projectId,
+          executionId,
+          "status_changed",
+          {
+            id: executionId,
+            status: "stopped",
+          }
+        );
+        return;
+      }
+
+      // Execution is already in a terminal state
+      throw new Error(
+        `No active executor found for execution ${executionId}. ` +
+          `The execution may have already completed.`
+      );
+    }
+
+    if (!(wrapper instanceof AcpExecutorWrapper)) {
+      throw new Error(
+        `Execution ${executionId} does not support persistent sessions`
+      );
+    }
+
+    await wrapper.endSession(executionId);
+
+    // Clean up the executor from activeExecutors now that session has ended
+    this.activeExecutors.delete(executionId);
+    console.log(
+      `[ExecutionService] Cleaned up executor for ended session ${executionId}`
+    );
+  }
+
+  /**
+   * Get session state for an execution
+   *
+   * Works for both discrete and persistent sessions.
+   *
+   * @param executionId - Execution ID to get state for
+   * @returns Session state including mode, state, promptCount, and idleTimeMs
+   */
+  getSessionState(executionId: string): {
+    mode: "discrete" | "persistent";
+    state: "running" | "waiting" | "paused" | "ended" | null;
+    promptCount: number;
+    idleTimeMs?: number;
+  } {
+    const wrapper = this.activeExecutors.get(executionId);
+
+    // If no active executor, check if it's a completed discrete execution
+    if (!wrapper) {
+      // Check if execution exists in database
+      const execution = getExecution(this.db, executionId);
+      if (!execution) {
+        throw new Error(`Execution ${executionId} not found`);
+      }
+
+      // Return discrete mode info for completed executions
+      return {
+        mode: "discrete",
+        state: null,
+        promptCount: 1, // Discrete executions have exactly one prompt
+      };
+    }
+
+    // Check if wrapper supports persistent sessions
+    if (!(wrapper instanceof AcpExecutorWrapper)) {
+      return {
+        mode: "discrete",
+        state: null,
+        promptCount: 1,
+      };
+    }
+
+    // Get persistent session state from wrapper
+    const persistentState = wrapper.getSessionState(executionId);
+    if (persistentState) {
+      return persistentState;
+    }
+
+    // Wrapper exists but no persistent state - it's running in discrete mode
+    return {
+      mode: "discrete",
+      state: null,
+      promptCount: 1,
+    };
   }
 }

@@ -24,7 +24,7 @@ import { Badge } from '@/components/ui/badge'
 import { AgentTrajectory } from './AgentTrajectory'
 import { TodoTracker } from './TodoTracker'
 import { buildTodoHistoryFromPlanUpdates, planEntriesToTodoItems } from '@/utils/todoExtractor'
-import { AlertCircle, CheckCircle2, Loader2, XCircle } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Clock, Loader2, Pause, XCircle } from 'lucide-react'
 import type { Execution } from '@/types/execution'
 import type { ToolCallTracking } from '@/types/stream'
 import api from '@/lib/api'
@@ -58,18 +58,13 @@ export interface ExecutionMonitorProps {
   /**
    * Callback when tool calls are updated (for aggregating todos across executions)
    */
-  onToolCallsUpdate?: (
-    toolCalls: Map<string, ToolCallTracking>
-  ) => void
+  onToolCallsUpdate?: (toolCalls: Map<string, ToolCallTracking>) => void
 
   /**
    * Callback when todos are updated (computed from plan updates)
    * Use this instead of onToolCallsUpdate for Claude Code executions
    */
-  onTodosUpdate?: (
-    executionId: string,
-    todos: import('./TodoTracker').TodoItem[]
-  ) => void
+  onTodosUpdate?: (executionId: string, todos: import('./TodoTracker').TodoItem[]) => void
 
   /**
    * Callback when available slash commands are updated from the agent
@@ -145,10 +140,22 @@ function convertToolCallsToMap(toolCalls: ToolCall[]): Map<string, ToolCallTrack
     map.set(tc.id, {
       toolCallId: tc.id,
       toolCallName: tc.title,
-      args: tc.rawInput ? (typeof tc.rawInput === 'string' ? tc.rawInput : JSON.stringify(tc.rawInput)) : '',
+      args: tc.rawInput
+        ? typeof tc.rawInput === 'string'
+          ? tc.rawInput
+          : JSON.stringify(tc.rawInput)
+        : '',
       status: statusMap[tc.status] || 'started',
-      result: tc.result !== undefined ? (typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result)) : undefined,
-      error: tc.status === 'failed' && tc.result && typeof tc.result === 'object' ? (tc.result as Record<string, unknown>).error as string : undefined,
+      result:
+        tc.result !== undefined
+          ? typeof tc.result === 'string'
+            ? tc.result
+            : JSON.stringify(tc.result)
+          : undefined,
+      error:
+        tc.status === 'failed' && tc.result && typeof tc.result === 'object'
+          ? ((tc.result as Record<string, unknown>).error as string)
+          : undefined,
       startTime: tc.timestamp.getTime(),
       endTime: tc.completedAt?.getTime(),
       index: tc.index,
@@ -156,7 +163,6 @@ function convertToolCallsToMap(toolCalls: ToolCall[]): Map<string, ToolCallTrack
   })
   return map
 }
-
 
 /**
  * ExecutionMonitor Component
@@ -195,11 +201,11 @@ export function ExecutionMonitor({
   className = '',
 }: ExecutionMonitorProps) {
   // Determine if execution is active or completed
-  // Active: preparing, pending, running, paused
+  // Active: preparing, pending, running, paused, waiting
   // Completed: completed, failed, cancelled, stopped
   const isActive = useMemo(() => {
     if (!executionProp) return true // Default to active if no execution prop
-    const activeStatuses = ['preparing', 'pending', 'running', 'paused']
+    const activeStatuses = ['preparing', 'pending', 'running', 'paused', 'waiting']
     return activeStatuses.includes(executionProp.status)
   }, [executionProp])
 
@@ -213,159 +219,250 @@ export function ExecutionMonitor({
   const logsResult = useExecutionLogs(executionId)
 
   // Use pre-processed logs from hook (already converted from CoalescedSessionUpdate)
-  const processedLogs = useMemo(() => {
-    console.log('[ExecutionMonitor] Processing logs:', {
-      messagesCount: logsResult.processed.messages.length,
-      toolCallsCount: logsResult.processed.toolCalls.length,
-      wsToolCallsCount: wsStream.toolCalls.length,
-    })
-    if (logsResult.processed.toolCalls.length > 0) {
-      console.log('[ExecutionMonitor] First 3 processed log tool calls:', logsResult.processed.toolCalls.slice(0, 3).map(tc => ({
-        id: tc.id,
-        title: tc.title,
-        status: tc.status,
-      })))
-    }
-    return {
-      messages: logsResult.processed.messages,
-      toolCalls: logsResult.processed.toolCalls,
-    }
-  }, [logsResult.processed, wsStream.toolCalls.length])
+  const processedLogs = useMemo(() => ({
+    messages: logsResult.processed.messages,
+    toolCalls: logsResult.processed.toolCalls,
+  }), [logsResult.processed])
 
   // Select the appropriate data source
   // Key insight: When transitioning from active to completed, keep showing WebSocket data
   // until logs are fully loaded to prevent flickering
   // IMPORTANT: If WebSocket disconnects unexpectedly, fall back to saved logs
-  const { connectionStatus, execution, messages, toolCalls, error, isConnected } =
-    useMemo((): {
-      connectionStatus: ConnectionStatus
-      execution: ExecutionState
-      messages: AgentMessage[]
-      toolCalls: ToolCall[]
-      error: Error | null
-      isConnected: boolean
-    } => {
-      const logsLoaded = !logsResult.loading && logsResult.events.length > 0
-      const hasWsData = wsStream.messages.length > 0 || wsStream.toolCalls.length > 0
-      const hasLogsData = processedLogs.messages.length > 0 || processedLogs.toolCalls.length > 0
+  const { connectionStatus, execution, messages, toolCalls, error, isConnected } = useMemo((): {
+    connectionStatus: ConnectionStatus
+    execution: ExecutionState
+    messages: AgentMessage[]
+    toolCalls: ToolCall[]
+    error: Error | null
+    isConnected: boolean
+  } => {
+    const logsLoaded = !logsResult.loading && logsResult.events.length > 0
+    const hasWsData = wsStream.messages.length > 0 || wsStream.toolCalls.length > 0
+    const hasLogsData = processedLogs.messages.length > 0 || processedLogs.toolCalls.length > 0
 
-      console.log('[ExecutionMonitor] Data source selection:', {
-        isActive,
-        logsLoaded,
-        hasWsData,
-        hasLogsData,
-        wsToolCalls: wsStream.toolCalls.length,
-        logsToolCalls: processedLogs.toolCalls.length,
-        wsConnectionStatus: wsStream.connectionStatus,
-        logsLoading: logsResult.loading,
-        logsEventsCount: logsResult.events.length,
-      })
+    // For active executions, use WebSocket stream if available
+    // BUT: If WebSocket has disconnected/errored and we have no data, fall back to logs
+    if (isActive) {
+      // For waiting/paused executions with no WebSocket data, use logs
+      // This handles page reload where the agent isn't actively streaming
+      const isWaitingOrPaused =
+        executionProp?.status === 'waiting' || executionProp?.status === 'paused'
+      if (isWaitingOrPaused && !hasWsData && hasLogsData) {
+        return {
+          connectionStatus: 'connected',
+          execution: {
+            status: (executionProp?.status || 'waiting') as ExecutionState['status'],
+            runId: executionId,
+            error: logsResult.error?.message || null,
+            startTime: null,
+            endTime: null,
+          },
+          messages: processedLogs.messages,
+          toolCalls: processedLogs.toolCalls,
+          error: logsResult.error || null,
+          isConnected: true,
+        }
+      }
 
-      // For active executions, use WebSocket stream if available
-      // BUT: If WebSocket has disconnected/errored and we have no data, fall back to logs
-      if (isActive) {
-        // If WebSocket disconnected/errored unexpectedly and we have saved logs, use those
-        if (
-          (wsStream.connectionStatus === 'disconnected' ||
-            wsStream.connectionStatus === 'error') &&
-          !hasWsData &&
-          hasLogsData
-        ) {
-          console.warn(
-            '[ExecutionMonitor] WebSocket disconnected unexpectedly, falling back to saved logs'
-          )
-          return {
-            connectionStatus: logsLoaded ? 'connected' : 'connecting',
-            execution: {
-              status: (executionProp?.status || 'running') as ExecutionState['status'],
-              runId: executionId,
-              error: logsResult.error?.message || null,
-              startTime: null,
-              endTime: null,
-            },
-            messages: processedLogs.messages,
-            toolCalls: processedLogs.toolCalls,
-            error: logsResult.error || null,
-            isConnected: false,
+      // If WebSocket disconnected/errored unexpectedly and we have saved logs, use those
+      if (
+        (wsStream.connectionStatus === 'disconnected' || wsStream.connectionStatus === 'error') &&
+        !hasWsData &&
+        hasLogsData
+      ) {
+        console.warn(
+          '[ExecutionMonitor] WebSocket disconnected unexpectedly, falling back to saved logs'
+        )
+        return {
+          connectionStatus: logsLoaded ? 'connected' : 'connecting',
+          execution: {
+            status: (executionProp?.status || 'running') as ExecutionState['status'],
+            runId: executionId,
+            error: logsResult.error?.message || null,
+            startTime: null,
+            endTime: null,
+          },
+          messages: processedLogs.messages,
+          toolCalls: processedLogs.toolCalls,
+          error: logsResult.error || null,
+          isConnected: false,
+        }
+      }
+
+      // Parse config to check session mode (config is a JSON string)
+      let isPersistentSession = false
+      if (executionProp?.config) {
+        try {
+          const config = JSON.parse(executionProp.config)
+          isPersistentSession = config.sessionMode === 'persistent'
+        } catch {
+          // Invalid config JSON, default to non-persistent
+        }
+      }
+
+      // For PERSISTENT sessions with no WebSocket data yet but logs available,
+      // show logs to prevent flash of empty content during transitions
+      // (e.g., when transitioning from 'waiting' to 'running')
+      // Non-persistent sessions skip this - they wait for WebSocket to avoid duplicate content
+      if (isPersistentSession && !hasWsData && hasLogsData) {
+        return {
+          connectionStatus: wsStream.connectionStatus,
+          execution: {
+            status: (executionProp?.status || 'running') as ExecutionState['status'],
+            runId: executionId,
+            error: logsResult.error?.message || null,
+            startTime: null,
+            endTime: null,
+          },
+          messages: processedLogs.messages,
+          toolCalls: processedLogs.toolCalls,
+          error: logsResult.error || null,
+          isConnected: wsStream.isConnected,
+        }
+      }
+
+      // For PERSISTENT sessions with BOTH WebSocket data and logs data,
+      // merge them: logs as historical base + WebSocket as new streaming events
+      // This ensures we show all messages across multiple prompts in a persistent session
+      // Non-persistent sessions should NOT merge - they only use WebSocket data during streaming
+      if (hasWsData && hasLogsData && isPersistentSession) {
+        // Create a Map for deduplication by message ID
+        const mergedMessages = new Map<string, AgentMessage>()
+        const mergedToolCalls = new Map<string, ToolCall>()
+
+        // Find the max index from logs to offset WebSocket indices
+        // This ensures logs messages come before WebSocket messages in sort order
+        let maxLogsMessageIndex = -1
+        let maxLogsToolCallIndex = -1
+        for (const msg of processedLogs.messages) {
+          if (msg.index !== undefined && msg.index > maxLogsMessageIndex) {
+            maxLogsMessageIndex = msg.index
+          }
+        }
+        for (const tc of processedLogs.toolCalls) {
+          if (tc.index !== undefined && tc.index > maxLogsToolCallIndex) {
+            maxLogsToolCallIndex = tc.index
+          }
+        }
+        // Use the overall max for consistent ordering across messages and tool calls
+        const maxLogsIndex = Math.max(maxLogsMessageIndex, maxLogsToolCallIndex)
+        const indexOffset = maxLogsIndex + 1
+
+        // Add logs data first (historical)
+        for (const msg of processedLogs.messages) {
+          mergedMessages.set(msg.id, msg)
+        }
+        for (const tc of processedLogs.toolCalls) {
+          mergedToolCalls.set(tc.id, tc)
+        }
+
+        // Add/update with WebSocket data (new streaming, takes precedence)
+        // Offset indices to ensure WebSocket data sorts after logs data
+        for (const msg of wsStream.messages) {
+          // Only add if not already in logs (avoid duplicates with different indices)
+          if (!mergedMessages.has(msg.id)) {
+            mergedMessages.set(msg.id, {
+              ...msg,
+              index: msg.index !== undefined ? msg.index + indexOffset : undefined,
+            })
+          } else {
+            // Update existing message but preserve logs index for ordering
+            const existing = mergedMessages.get(msg.id)!
+            mergedMessages.set(msg.id, {
+              ...msg,
+              index: existing.index, // Keep original index from logs
+            })
+          }
+        }
+        for (const tc of wsStream.toolCalls) {
+          if (!mergedToolCalls.has(tc.id)) {
+            mergedToolCalls.set(tc.id, {
+              ...tc,
+              index: tc.index !== undefined ? tc.index + indexOffset : undefined,
+            })
+          } else {
+            const existing = mergedToolCalls.get(tc.id)!
+            mergedToolCalls.set(tc.id, {
+              ...tc,
+              index: existing.index,
+            })
           }
         }
 
-        // Otherwise use WebSocket stream normally
         return {
           connectionStatus: wsStream.connectionStatus,
           execution: wsStream.execution,
-          messages: wsStream.messages,
-          toolCalls: wsStream.toolCalls,
+          messages: Array.from(mergedMessages.values()),
+          toolCalls: Array.from(mergedToolCalls.values()),
           error: wsStream.error,
           isConnected: wsStream.isConnected,
         }
       }
 
-      // For completed executions, use logs when available
-      // But fall back to WebSocket data while logs are loading to prevent flicker
-      // Use logs if loaded, otherwise fall back to WebSocket data if available
-      if (logsLoaded) {
-        return {
-          connectionStatus: logsResult.error ? 'error' : 'connected',
-          execution: {
-            status: (executionProp?.status || 'completed') as ExecutionState['status'],
-            runId: executionId,
-            error: logsResult.error?.message || null,
-            startTime: null,
-            endTime: null,
-          },
-          messages: processedLogs.messages,
-          toolCalls: processedLogs.toolCalls,
-          error: logsResult.error || null,
-          isConnected: false,
-        }
-      } else if (hasWsData) {
-        // Logs still loading but we have WebSocket data - keep showing it
-        return {
-          connectionStatus: logsResult.loading ? 'connecting' : wsStream.connectionStatus,
-          execution: {
-            ...wsStream.execution,
-            status: (executionProp?.status || wsStream.execution.status) as ExecutionState['status'],
-          },
-          messages: wsStream.messages,
-          toolCalls: wsStream.toolCalls,
-          error: wsStream.error,
-          isConnected: false, // Not live anymore since execution completed
-        }
-      } else {
-        // No WebSocket data and logs not loaded yet - show loading or saved logs
-        return {
-          connectionStatus: logsResult.loading
-            ? 'connecting'
-            : logsResult.error
-              ? 'error'
-              : 'connected',
-          execution: {
-            status: (executionProp?.status || 'completed') as ExecutionState['status'],
-            runId: executionId,
-            error: logsResult.error?.message || null,
-            startTime: null,
-            endTime: null,
-          },
-          messages: processedLogs.messages,
-          toolCalls: processedLogs.toolCalls,
-          error: logsResult.error || null,
-          isConnected: false,
-        }
+      // Otherwise use WebSocket stream normally (no logs data to merge)
+      return {
+        connectionStatus: wsStream.connectionStatus,
+        execution: wsStream.execution,
+        messages: wsStream.messages,
+        toolCalls: wsStream.toolCalls,
+        error: wsStream.error,
+        isConnected: wsStream.isConnected,
       }
-    }, [isActive, wsStream, logsResult, processedLogs, executionId, executionProp])
-
-  // Debug: Log selected toolCalls
-  useEffect(() => {
-    console.log('[ExecutionMonitor] Selected toolCalls:', toolCalls.length, 'isActive:', isActive)
-    if (toolCalls.length > 0) {
-      const todoLikeTools = toolCalls.filter(tc =>
-        tc.title.toLowerCase().includes('todo') ||
-        (tc.rawInput && JSON.stringify(tc.rawInput).includes('todos'))
-      )
-      console.log('[ExecutionMonitor] Todo-like tool calls:', todoLikeTools.length)
     }
-  }, [toolCalls, isActive])
+
+    // For completed executions, use logs when available
+    // But fall back to WebSocket data while logs are loading to prevent flicker
+    // Use logs if loaded, otherwise fall back to WebSocket data if available
+    if (logsLoaded) {
+      return {
+        connectionStatus: logsResult.error ? 'error' : 'connected',
+        execution: {
+          status: (executionProp?.status || 'completed') as ExecutionState['status'],
+          runId: executionId,
+          error: logsResult.error?.message || null,
+          startTime: null,
+          endTime: null,
+        },
+        messages: processedLogs.messages,
+        toolCalls: processedLogs.toolCalls,
+        error: logsResult.error || null,
+        isConnected: false,
+      }
+    } else if (hasWsData) {
+      // Logs still loading but we have WebSocket data - keep showing it
+      return {
+        connectionStatus: logsResult.loading ? 'connecting' : wsStream.connectionStatus,
+        execution: {
+          ...wsStream.execution,
+          status: (executionProp?.status || wsStream.execution.status) as ExecutionState['status'],
+        },
+        messages: wsStream.messages,
+        toolCalls: wsStream.toolCalls,
+        error: wsStream.error,
+        isConnected: false, // Not live anymore since execution completed
+      }
+    } else {
+      // No WebSocket data and logs not loaded yet - show loading or saved logs
+      return {
+        connectionStatus: logsResult.loading
+          ? 'connecting'
+          : logsResult.error
+            ? 'error'
+            : 'connected',
+        execution: {
+          status: (executionProp?.status || 'completed') as ExecutionState['status'],
+          runId: executionId,
+          error: logsResult.error?.message || null,
+          startTime: null,
+          endTime: null,
+        },
+        messages: processedLogs.messages,
+        toolCalls: processedLogs.toolCalls,
+        error: logsResult.error || null,
+        isConnected: false,
+      }
+    }
+  }, [isActive, wsStream, logsResult, processedLogs, executionId, executionProp])
 
   // Track whether onComplete has already been called to prevent infinite loops
   // When an execution is already 'completed' on mount, we should not call onComplete
@@ -382,7 +479,7 @@ export function ExecutionMonitor({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       // Only cancel if execution is active (not completed/failed/cancelled)
-      const activeStatuses = ['preparing', 'pending', 'running', 'paused']
+      const activeStatuses = ['preparing', 'pending', 'running', 'paused', 'waiting']
       if (event.key === 'Escape' && activeStatuses.includes(execution.status)) {
         event.preventDefault()
         onCancel()
@@ -473,15 +570,17 @@ export function ExecutionMonitor({
   const handleSkipAllPermissions = async () => {
     try {
       setIsSkippingAllPermissions(true)
-      const response = await api.post(`/executions/${executionId}/skip-all-permissions`, {
+      // API interceptor unwraps response, so we get the data directly (not wrapped in AxiosResponse)
+      const response = (await api.post(`/executions/${executionId}/skip-all-permissions`, {
         feedback: 'Continue from where you left off.',
-      })
-      const newExecutionId = response.data?.data?.newExecution?.id
+      })) as { previousExecutionId: string; newExecution: { id: string } }
+      const newExecutionId = response?.newExecution?.id
       if (newExecutionId && onSkipAllPermissionsComplete) {
         onSkipAllPermissionsComplete(newExecutionId)
       }
     } catch (err) {
       console.error('[ExecutionMonitor] Error skipping all permissions:', err)
+    } finally {
       setIsSkippingAllPermissions(false)
     }
   }
@@ -510,7 +609,13 @@ export function ExecutionMonitor({
     }
 
     return []
-  }, [isActive, wsStream.planUpdates, wsStream.latestPlan, logsResult.processed.planUpdates, logsResult.processed.latestPlan])
+  }, [
+    isActive,
+    wsStream.planUpdates,
+    wsStream.latestPlan,
+    logsResult.processed.planUpdates,
+    logsResult.processed.latestPlan,
+  ])
 
   // Notify parent of todos updates (for aggregating across executions)
   useEffect(() => {
@@ -564,6 +669,24 @@ export function ExecutionMonitor({
       )
     }
 
+    if (execution.status === 'waiting') {
+      return (
+        <Badge variant="default" className="flex items-center gap-1 bg-blue-600">
+          <Clock className="h-3 w-3" />
+          Waiting
+        </Badge>
+      )
+    }
+
+    if (execution.status === 'paused') {
+      return (
+        <Badge variant="default" className="flex items-center gap-1 bg-yellow-600">
+          <Pause className="h-3 w-3" />
+          Paused
+        </Badge>
+      )
+    }
+
     return (
       <Badge variant="secondary" className="flex items-center gap-1">
         <AlertCircle className="h-3 w-3" />
@@ -588,24 +711,32 @@ export function ExecutionMonitor({
     return <Card className={`p-6 ${className}`}>{loadingContent}</Card>
   }
 
+  // Check if there's a user message in the stream that matches the prompt content
+  // This prevents showing the same content twice (once from prop, once from stream)
+  const promptContent = executionProp?.prompt?.trim()
+  const hasMatchingUserMessage = promptContent
+    ? messages.some((m) => m.role === 'user' && m.content?.trim() === promptContent)
+    : false
+
+  // Show prompt separately only if:
+  // 1. We have a prompt
+  // 2. There's no matching user message in the stream (prevents duplicates)
+  const shouldShowPromptSeparately = executionProp?.prompt && !hasMatchingUserMessage
+
   // Compact mode: no card wrapper, no header, just content
   if (compact) {
     return (
       <div className={`space-y-4 ${className}`}>
-        {/* User prompt - show what the user asked */}
-        {executionProp?.prompt && (
-          <div className="rounded-md bg-primary/30 p-3">
-            <div className="flex items-start gap-2">
-              <div className="flex-1 whitespace-pre-wrap font-mono text-sm text-foreground">
-                {executionProp.prompt}
-              </div>
-            </div>
+        {/* User prompt - only show for completed executions or persistent sessions without user messages in stream */}
+        {shouldShowPromptSeparately && (
+          <div className="group rounded-md bg-blue-500/50 px-4 py-1.5 font-mono text-sm dark:bg-blue-500/80">
+            <div className="whitespace-pre-wrap text-foreground">{executionProp.prompt}</div>
           </div>
         )}
 
         {/* Error display */}
         {(error || execution.error) && (
-          <div className="rounded-md border border-destructive/20 bg-destructive/10 p-4">
+          <div className="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-1.5">
             <div className="flex items-start gap-2">
               <XCircle className="mt-0.5 h-5 w-5 text-destructive" />
               <div className="flex-1">
@@ -626,7 +757,9 @@ export function ExecutionMonitor({
             thoughts={thoughts}
             permissionRequests={permissionRequests}
             onPermissionRespond={handlePermissionRespond}
-            onSkipAllPermissions={onSkipAllPermissionsComplete ? handleSkipAllPermissions : undefined}
+            onSkipAllPermissions={
+              onSkipAllPermissionsComplete ? handleSkipAllPermissions : undefined
+            }
             isSkippingAllPermissions={isSkippingAllPermissions}
             renderMarkdown
             showTodoTracker={false}
@@ -679,7 +812,6 @@ export function ExecutionMonitor({
             )}
           </div>
         </div>
-
       </div>
 
       {/* Main: Agent Trajectory */}
@@ -707,7 +839,9 @@ export function ExecutionMonitor({
             thoughts={thoughts}
             permissionRequests={permissionRequests}
             onPermissionRespond={handlePermissionRespond}
-            onSkipAllPermissions={onSkipAllPermissionsComplete ? handleSkipAllPermissions : undefined}
+            onSkipAllPermissions={
+              onSkipAllPermissionsComplete ? handleSkipAllPermissions : undefined
+            }
             isSkippingAllPermissions={isSkippingAllPermissions}
             renderMarkdown
             showTodoTracker={false}

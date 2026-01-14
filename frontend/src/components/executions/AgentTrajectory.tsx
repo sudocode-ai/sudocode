@@ -543,6 +543,7 @@ export function AgentTrajectory({
 
 /**
  * MessageItem - Terminal-style message rendering
+ * Supports both agent messages (default) and user messages (role='user')
  */
 function MessageItem({
   message,
@@ -551,11 +552,94 @@ function MessageItem({
   message: AgentMessage
   renderMarkdown: boolean
 }) {
+  const isUserMessage = message.role === 'user'
+
+  // User messages get a background for visibility
+  if (isUserMessage) {
+    return (
+      <div className="group rounded-md bg-blue-500/50 px-4 py-1.5 dark:bg-blue-500/80">
+        <div className="min-w-0 flex-1">
+          {renderMarkdown ? (
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeHighlight]}
+              className="max-w-none text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+              components={{
+                p: ({ children }) => <>{children}</>,
+                code: ({ inline, children, ...props }: any) => {
+                  let codeText = ''
+                  if (typeof children === 'string') {
+                    codeText = children
+                  } else if (Array.isArray(children)) {
+                    codeText = children.map((c) => (typeof c === 'string' ? c : '')).join('')
+                  } else {
+                    codeText = String(children)
+                  }
+                  const isShortInline =
+                    codeText.length < 100 && !codeText.includes('\n') && !codeText.includes('```')
+
+                  if (inline || isShortInline) {
+                    return (
+                      <code
+                        className="!inline rounded bg-muted px-1 py-0.5 font-mono text-xs"
+                        style={{
+                          display: 'inline',
+                          whiteSpace: 'nowrap',
+                          width: 'auto',
+                          maxWidth: 'none',
+                        }}
+                        {...props}
+                      >
+                        {children}
+                      </code>
+                    )
+                  }
+                  return (
+                    <pre className="m-0 my-1 block overflow-x-auto rounded border text-xs">
+                      <code {...props}>{children}</code>
+                    </pre>
+                  )
+                },
+                ul: ({ children }) => <ul className="my-1 list-disc pl-5">{children}</ul>,
+                ol: ({ children }) => <ol className="my-1 list-decimal pl-5">{children}</ol>,
+                li: ({ children }) => <li className="mb-0.5">{children}</li>,
+                a: ({ children, href }) => (
+                  <a
+                    href={href}
+                    className="text-primary underline-offset-2 hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {children}
+                  </a>
+                ),
+                h1: ({ children }) => <h1 className="mb-1 mt-2 text-base font-bold">{children}</h1>,
+                h2: ({ children }) => (
+                  <h2 className="mb-1 mt-2 text-sm font-semibold">{children}</h2>
+                ),
+                h3: ({ children }) => (
+                  <h3 className="mb-1 mt-1 text-sm font-semibold">{children}</h3>
+                ),
+              }}
+            >
+              {message.content}
+            </ReactMarkdown>
+          ) : (
+            <div className="whitespace-pre-wrap text-xs leading-relaxed">{message.content}</div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // Agent messages (default styling)
   return (
     <div className="group">
       <div className="flex items-start gap-2">
         <span
-          className={`mt-0.5 select-none text-foreground ${message.isStreaming ? 'animate-pulse' : ''}`}
+          className={`mt-0.5 select-none ${
+            message.isStreaming ? 'animate-pulse text-foreground' : 'text-foreground'
+          }`}
         >
           ⏺
         </span>

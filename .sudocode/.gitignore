@@ -4,3 +4,4 @@ specs/
 worktrees/
 config.json
 merge-driver.log
+deploy-config.json

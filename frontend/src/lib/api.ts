@@ -28,6 +28,7 @@ import type {
   SyncResult,
   PerformSyncRequest,
   ExecutionChangesResult,
+  SessionStateResponse,
   CheckpointOptions,
   CheckpointResult,
   Checkpoint,
@@ -243,12 +244,7 @@ import type {
   CreateStackRequest,
   UpdateStackRequest,
 } from '@/types/stack'
-import type {
-  QueueListResponse,
-  QueueStats,
-  ReorderResponse,
-  GetQueueOptions,
-} from '@/types/queue'
+import type { QueueListResponse, QueueStats, ReorderResponse, GetQueueOptions } from '@/types/queue'
 import type {
   PRBatch,
   EnrichedBatch,
@@ -346,8 +342,7 @@ export const batchApi = {
   create: (data: CreateBatchRequest) => post<{ batch: PRBatch }>('/batches', data),
 
   /** Update a batch (title/description only, before PR creation) */
-  update: (id: string, data: UpdateBatchRequest) =>
-    put<{ batch: PRBatch }>(`/batches/${id}`, data),
+  update: (id: string, data: UpdateBatchRequest) => put<{ batch: PRBatch }>(`/batches/${id}`, data),
 
   /** Delete a batch */
   delete: (id: string) => del(`/batches/${id}`),
@@ -364,7 +359,8 @@ export const batchApi = {
   preview: (id: string) => get<BatchPreview>(`/batches/${id}/preview`),
 
   /** Sync PR status from GitHub */
-  syncStatus: (id: string) => post<{ batch: PRBatch; status: BatchPRStatus }>(`/batches/${id}/sync`),
+  syncStatus: (id: string) =>
+    post<{ batch: PRBatch; status: BatchPRStatus }>(`/batches/${id}/sync`),
 
   /** Add entries to an existing batch */
   addEntries: (id: string, entryIds: string[]) =>
@@ -466,8 +462,7 @@ export const executionsApi = {
     post<Execution>(`/issues/${issueId}/executions`, request),
 
   // Create and start an adhoc execution (not tied to an issue)
-  createAdhoc: (request: CreateExecutionRequest) =>
-    post<Execution>(`/executions`, request),
+  createAdhoc: (request: CreateExecutionRequest) => post<Execution>(`/executions`, request),
 
   // Get execution by ID
   getById: (executionId: string) => get<Execution>(`/executions/${executionId}`),
@@ -568,6 +563,32 @@ export const executionsApi = {
   // Open worktree in IDE
   openInIde: (worktreePath: string, request?: { editorType?: string }) =>
     post(`/open-in-ide`, { worktreePath, ...request }),
+
+  // ============================================================================
+  // Persistent Session Operations
+  // ============================================================================
+
+  /**
+   * Send a prompt to a persistent session
+   *
+   * Returns immediately - output streams via WebSocket subscription.
+   */
+  sendPrompt: (executionId: string, prompt: string) =>
+    post<{ success: boolean; message?: string }>(`/executions/${executionId}/prompt`, { prompt }),
+
+  /**
+   * End a persistent session explicitly
+   */
+  endSession: (executionId: string) =>
+    post<{ success: boolean; message?: string }>(`/executions/${executionId}/end-session`),
+
+  /**
+   * Get session state for an execution
+   *
+   * Works for both discrete and persistent sessions.
+   */
+  getSessionState: (executionId: string) =>
+    get<SessionStateResponse>(`/executions/${executionId}/session-state`),
 
   // Conflict resolution operations
   getConflicts: (executionId: string) =>
@@ -908,12 +929,10 @@ export const importApi = {
     post<ImportResponse>('/import', { url, options }),
 
   // Search for entities in external systems
-  search: (params: ImportSearchRequest) =>
-    post<ImportSearchResponse>('/import/search', params),
+  search: (params: ImportSearchRequest) => post<ImportSearchResponse>('/import/search', params),
 
   // Batch import entities (creates or updates)
-  batchImport: (params: BatchImportRequest) =>
-    post<BatchImportResponse>('/import/batch', params),
+  batchImport: (params: BatchImportRequest) => post<BatchImportResponse>('/import/batch', params),
 }
 
 /**

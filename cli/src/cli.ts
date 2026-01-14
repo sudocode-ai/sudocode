@@ -58,6 +58,14 @@ import {
   handleInitMergeDriver,
   handleRemoveMergeDriver,
 } from "./cli/merge-commands.js";
+import { handleAuthClearCommand, handleAuthStatusCommand, handleAuthClaudeCommand } from "./cli/auth-commands.js";
+import {
+  handleDeploy,
+  handleDeployConfig,
+  handleDeployList,
+  handleDeployStatus,
+  handleDeployStop,
+} from "./cli/deploy-commands.js";
 import { getUpdateNotification } from "./update-checker.js";
 import { VERSION } from "./version.js";
 
@@ -638,6 +646,111 @@ plugin
   .action(async (name) => {
     await handlePluginInfo(getContext(), name);
   });
+
+// ============================================================================
+// AUTH COMMANDS
+// ============================================================================
+
+const auth = program
+  .command("auth")
+  .description("Manage authentication for AI services");
+
+auth
+  .command("claude")
+  .description("Configure Claude Code authentication via OAuth")
+  .option("-f, --force", "Overwrite existing token without confirmation")
+  .action(async (options) => {
+    // Auth commands don't need database context, but we need to provide it for consistency
+    await handleAuthClaudeCommand(getContext(), options);
+  });
+
+auth
+  .command("status")
+  .description("Check authentication status for all services")
+  .action(async (options) => {
+    // Auth commands don't need database context, but we need to provide it for consistency
+    await handleAuthStatusCommand(getContext(), options);
+  });
+
+auth
+  .command("clear")
+  .description("Clear all stored authentication credentials")
+  .option("-f, --force", "Skip confirmation prompt")
+  .action(async (options) => {
+    // Auth commands don't need database context, but we need to provide it for consistency
+    await handleAuthClearCommand(getContext(), options);
+  });
+
+// ============================================================================
+// DEPLOY COMMANDS
+// ============================================================================
+
+const deploy = program
+  .command("deploy")
+  .description("Deploy sudocode to remote environments");
+
+// deploy config - View or update configuration
+deploy
+  .command("config")
+  .description("View or update deployment configuration")
+  .option("--reset", "Reset to default configuration")
+  .option("--provider <provider>", "Set deployment provider")
+  .option("--default-branch <branch>", "Set default branch")
+  .option("--port <port>", "Set server port (1-65535)")
+  .option("--idle-timeout <minutes>", "Set idle timeout in minutes")
+  .option("--keep-alive-hours <hours>", "Set keep-alive duration in hours")
+  .option("--machine <type>", "Set machine type")
+  .option("--retention-period <days>", "Set retention period in days")
+  .action(async (options) => {
+    await handleDeployConfig(getContext(), options);
+  });
+
+// deploy list - List all deployments
+deploy
+  .command("list")
+  .description("List all active deployments")
+  .action(async () => {
+    await handleDeployList(getContext());
+  });
+
+// deploy status <id> - Get deployment status
+deploy
+  .command("status <id>")
+  .description("Get detailed status of a deployment")
+  .action(async (id) => {
+    await handleDeployStatus(getContext(), id);
+  });
+
+// deploy stop <id> - Stop a deployment
+deploy
+  .command("stop <id>")
+  .description("Stop and delete a deployment")
+  .option("-f, --force", "Skip confirmation prompt")
+  .action(async (id, options) => {
+    await handleDeployStop(getContext(), id, options);
+  });
+
+// Default action (sudocode deploy with no subcommand)
+deploy
+  .action(async (options) => {
+    // If a subcommand was provided, don't run the default action
+    const subcommands = ['config', 'list', 'status', 'stop'];
+    const args = process.argv.slice(2);
+    const hasSubcommand = args.some(arg => subcommands.includes(arg));
+    
+    if (!hasSubcommand) {
+      await handleDeploy(getContext(), options);
+    }
+  })
+  .option("--branch <name>", "Branch to deploy")
+  .option("--repo <owner/repo>", "Repository to deploy")
+  .option("--port <number>", "Server port", parseInt)
+  .option("--machine <type>", "Machine type")
+  .option("--idle-timeout <minutes>", "Idle timeout in minutes", parseInt)
+  .option("--keep-alive-hours <hours>", "Keep-alive hours", parseInt)
+  .option("--retention-period <days>", "Retention period in days", parseInt)
+  .option("--dev", "Deploy in development mode")
+  .option("--no-open", "Don't open browser automatically after deployment");
 
 // Parse arguments
 program.parse();

@@ -509,12 +509,12 @@ describe("ExecutorFactory", () => {
       fs.rmSync(testDir, { recursive: true, force: true });
     });
 
-    it("should map permissionMode 'plan' to session mode 'plan'", () => {
+    it("should set session mode from config.mode", () => {
       const executor = createExecutorForAgent(
         "claude-code",
         {
           workDir: testDir,
-          permissionMode: "plan",
+          mode: "plan",
         },
         factoryConfigWithDb
       );
@@ -524,21 +524,6 @@ describe("ExecutorFactory", () => {
       expect(acpConfig.mode).toBe("plan");
       // Should still use interactive for permission handling
       expect(acpConfig.permissionMode).toBe("interactive");
-    });
-
-    it("should map permissionMode 'bypassPermissions' to auto-approve", () => {
-      const executor = createExecutorForAgent(
-        "claude-code",
-        {
-          workDir: testDir,
-          permissionMode: "bypassPermissions",
-        },
-        factoryConfigWithDb
-      );
-
-      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
-      const acpConfig = (executor as any).acpConfig;
-      expect(acpConfig.permissionMode).toBe("auto-approve");
     });
 
     it("should use dangerouslySkipPermissions for auto-approve", () => {
@@ -556,13 +541,13 @@ describe("ExecutorFactory", () => {
       expect(acpConfig.permissionMode).toBe("auto-approve");
     });
 
-    it("should use nested agentConfig.permissionMode for mode mapping", () => {
+    it("should use nested agentConfig.mode for session mode", () => {
       const executor = createExecutorForAgent(
         "claude-code",
         {
           workDir: testDir,
           agentConfig: {
-            permissionMode: "plan",
+            mode: "plan",
           },
         },
         factoryConfigWithDb
@@ -590,29 +575,28 @@ describe("ExecutorFactory", () => {
       expect(acpConfig.permissionMode).toBe("auto-approve");
     });
 
-    it("should prefer explicit mode over permissionMode-derived mode", () => {
+    it("should allow both mode and dangerouslySkipPermissions together", () => {
       const executor = createExecutorForAgent(
         "claude-code",
         {
           workDir: testDir,
-          mode: "ask",
-          permissionMode: "plan",
+          mode: "plan",
+          dangerouslySkipPermissions: true,
         },
         factoryConfigWithDb
       );
 
       expect(executor).toBeInstanceOf(AcpExecutorWrapper);
       const acpConfig = (executor as any).acpConfig;
-      // Explicit mode takes precedence
-      expect(acpConfig.mode).toBe("ask");
+      expect(acpConfig.mode).toBe("plan");
+      expect(acpConfig.permissionMode).toBe("auto-approve");
     });
 
-    it("should use interactive permission mode for 'default' permissionMode", () => {
+    it("should use interactive permission mode by default", () => {
       const executor = createExecutorForAgent(
         "claude-code",
         {
           workDir: testDir,
-          permissionMode: "default",
         },
         factoryConfigWithDb
       );
@@ -623,21 +607,126 @@ describe("ExecutorFactory", () => {
       expect(acpConfig.mode).toBeUndefined();
     });
 
-    it("should use interactive permission mode for 'acceptEdits' permissionMode", () => {
-      // acceptEdits currently maps to interactive (full implementation TBD)
+    it("should support all session modes", () => {
+      const modes = ["code", "plan", "ask", "architect"];
+      for (const mode of modes) {
+        const executor = createExecutorForAgent(
+          "claude-code",
+          {
+            workDir: testDir,
+            mode,
+          },
+          factoryConfigWithDb
+        );
+
+        expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+        const acpConfig = (executor as any).acpConfig;
+        expect(acpConfig.mode).toBe(mode);
+        // Permission mode is independent
+        expect(acpConfig.permissionMode).toBe("interactive");
+      }
+    });
+  });
+
+  describe("session resumption", () => {
+    let testDir: string;
+    let db: Database.Database;
+    let factoryConfigWithDb: ExecutorFactoryConfig;
+
+    beforeAll(() => {
+      // Create temporary directory for test database
+      testDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), "sudocode-test-executor-factory-resume-")
+      );
+      const dbPath = path.join(testDir, "test.db");
+
+      // Create database
+      db = new Database(dbPath);
+
+      // Initialize minimal schema
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS executions (
+          id TEXT PRIMARY KEY,
+          issue_id TEXT,
+          agent_type TEXT NOT NULL,
+          status TEXT NOT NULL,
+          mode TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          completed_at TEXT,
+          before_commit TEXT,
+          after_commit TEXT,
+          worktree_path TEXT,
+          session_id TEXT,
+          exit_code INTEGER,
+          error_message TEXT,
+          files_changed TEXT,
+          parent_execution_id TEXT,
+          workflow_execution_id TEXT,
+          step_type TEXT,
+          step_index INTEGER,
+          step_config TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS execution_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          execution_id TEXT NOT NULL,
+          timestamp TEXT NOT NULL,
+          raw_logs TEXT,
+          normalized_entry TEXT,
+          FOREIGN KEY (execution_id) REFERENCES executions(id)
+        );
+      `);
+
+      // Create minimal factory config
+      const lifecycleService = new ExecutionLifecycleService(db, testDir);
+      const logsStore = new ExecutionLogsStore(db);
+
+      factoryConfigWithDb = {
+        workDir: testDir,
+        lifecycleService,
+        logsStore,
+        projectId: "test-project",
+        db,
+      };
+    });
+
+    afterAll(() => {
+      // Clean up
+      db.close();
+      fs.rmSync(testDir, { recursive: true, force: true });
+    });
+
+    it("should accept isResume option in factory config", () => {
       const executor = createExecutorForAgent(
         "claude-code",
-        {
-          workDir: testDir,
-          permissionMode: "acceptEdits",
-        },
-        factoryConfigWithDb
+        { workDir: testDir },
+        { ...factoryConfigWithDb, isResume: true }
       );
 
       expect(executor).toBeInstanceOf(AcpExecutorWrapper);
-      const acpConfig = (executor as any).acpConfig;
-      // For now, acceptEdits uses interactive mode
-      expect(acpConfig.permissionMode).toBe("interactive");
+    });
+
+    it("should work without isResume option (defaults to false)", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        { workDir: testDir },
+        factoryConfigWithDb // no isResume specified
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+    });
+
+    it("should create executor for follow-up execution with isResume: true", () => {
+      const executor = createExecutorForAgent(
+        "claude-code",
+        { workDir: testDir },
+        { ...factoryConfigWithDb, isResume: true }
+      );
+
+      expect(executor).toBeInstanceOf(AcpExecutorWrapper);
+      // The executor is created successfully with resume flag
+      // Actual session resumption happens in executeWithLifecycle/resumeWithLifecycle
     });
   });
 });
