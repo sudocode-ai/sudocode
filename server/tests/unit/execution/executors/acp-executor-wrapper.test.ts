@@ -78,7 +78,8 @@ describe("AcpExecutorWrapper", () => {
   let wrapper: AcpExecutorWrapper;
   let mockDb: any;
   let mockLogsStore: any;
-  let mockLifecycleService: any;
+  let mockSessionProvider: any;
+  let mockSession: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -96,8 +97,24 @@ describe("AcpExecutorWrapper", () => {
       appendNormalizedEntry: vi.fn(),
     };
 
-    mockLifecycleService = {
-      setStatus: vi.fn(),
+    // Create mock session that the provider will return
+    mockSession = {
+      id: "test-session-123",
+      prompt: vi.fn().mockImplementation(async function* () {
+        yield { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Hello" } };
+      }),
+      cancel: vi.fn().mockResolvedValue(undefined),
+      setMode: vi.fn().mockResolvedValue(undefined),
+      respondToPermission: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+
+    // Create mock session provider
+    mockSessionProvider = {
+      createSession: vi.fn().mockResolvedValue(mockSession),
+      loadSession: vi.fn().mockResolvedValue(mockSession),
+      supportsSessionLoading: vi.fn().mockReturnValue(true),
+      close: vi.fn().mockResolvedValue(undefined),
     };
 
     wrapper = new AcpExecutorWrapper({
@@ -106,7 +123,7 @@ describe("AcpExecutorWrapper", () => {
         agentType: "claude-code",
         permissionMode: "auto-approve",
       },
-      lifecycleService: mockLifecycleService,
+      sessionProvider: mockSessionProvider,
       logsStore: mockLogsStore,
       projectId: "test-project",
       db: mockDb,
@@ -130,27 +147,17 @@ describe("AcpExecutorWrapper", () => {
   });
 
   describe("executeWithLifecycle", () => {
-    it("should spawn agent and create session", async () => {
-      const { AgentFactory } = await import("acp-factory");
-      const mockAgent = await AgentFactory.spawn("claude-code");
-
+    it("should create session via provider", async () => {
       // Mock the prompt to return an async iterator with updates
       const mockUpdates = [
         { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Hello" } },
         { sessionUpdate: "agent_message_chunk", content: { type: "text", text: " world" } },
       ];
 
-      (mockAgent.createSession as any).mockResolvedValueOnce({
-        id: "session-abc",
-        cwd: "/test/workdir",
-        modes: ["code"],
-        models: ["claude-sonnet"],
-        prompt: vi.fn().mockImplementation(async function* () {
-          for (const update of mockUpdates) {
-            yield update;
-          }
-        }),
-        cancel: vi.fn(),
+      mockSession.prompt = vi.fn().mockImplementation(async function* () {
+        for (const update of mockUpdates) {
+          yield update;
+        }
       });
 
       await wrapper.executeWithLifecycle(
@@ -159,41 +166,24 @@ describe("AcpExecutorWrapper", () => {
         "/test/workdir"
       );
 
-      expect(AgentFactory.spawn).toHaveBeenCalledWith("claude-code", {
-        env: undefined,
-        permissionMode: "auto-approve",
-        // File handlers only - no terminal handlers so Claude Code uses native Bash
-        onFileRead: expect.any(Function),
-        onFileWrite: expect.any(Function),
-      });
-
-      expect(mockAgent.createSession).toHaveBeenCalledWith("/test/workdir", {
+      // Verify session was created via provider
+      expect(mockSessionProvider.createSession).toHaveBeenCalledWith("/test/workdir", {
         mcpServers: [],
         mode: undefined,
       });
     });
 
     it("should coalesce and store session updates", async () => {
-      const { AgentFactory } = await import("acp-factory");
-      const mockAgent = await AgentFactory.spawn("claude-code");
-
       // Mock prompt to yield multiple chunks that should coalesce
       const mockUpdates = [
         { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Part 1 " } },
         { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Part 2" } },
       ];
 
-      (mockAgent.createSession as any).mockResolvedValueOnce({
-        id: "session-abc",
-        cwd: "/test/workdir",
-        modes: ["code"],
-        models: ["claude-sonnet"],
-        prompt: vi.fn().mockImplementation(async function* () {
-          for (const update of mockUpdates) {
-            yield update;
-          }
-        }),
-        cancel: vi.fn(),
+      mockSession.prompt = vi.fn().mockImplementation(async function* () {
+        for (const update of mockUpdates) {
+          yield update;
+        }
       });
 
       await wrapper.executeWithLifecycle(
@@ -213,25 +203,16 @@ describe("AcpExecutorWrapper", () => {
     });
 
     it("should broadcast session updates via WebSocket", async () => {
-      const { AgentFactory } = await import("acp-factory");
       const { websocketManager } = await import("../../../../src/services/websocket.js");
-      const mockAgent = await AgentFactory.spawn("claude-code");
 
       const mockUpdates = [
         { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Hello" } },
       ];
 
-      (mockAgent.createSession as any).mockResolvedValueOnce({
-        id: "session-abc",
-        cwd: "/test/workdir",
-        modes: ["code"],
-        models: ["claude-sonnet"],
-        prompt: vi.fn().mockImplementation(async function* () {
-          for (const update of mockUpdates) {
-            yield update;
-          }
-        }),
-        cancel: vi.fn(),
+      mockSession.prompt = vi.fn().mockImplementation(async function* () {
+        for (const update of mockUpdates) {
+          yield update;
+        }
       });
 
       await wrapper.executeWithLifecycle(
@@ -328,21 +309,20 @@ describe("AcpExecutorWrapper", () => {
 
   describe("cancel", () => {
     it("should cancel active session and close agent", async () => {
-      const { AgentFactory } = await import("acp-factory");
-      const mockAgent = await AgentFactory.spawn("claude-code");
-      const mockSession = {
+      // Create a mock session that's "running"
+      const longRunningSession = {
         id: "session-abc",
-        cwd: "/test/workdir",
-        modes: ["code"],
-        models: ["claude-sonnet"],
         prompt: vi.fn().mockImplementation(async function* () {
           // Simulate a long-running prompt
           await new Promise((resolve) => setTimeout(resolve, 10000));
         }),
         cancel: vi.fn().mockResolvedValue(undefined),
+        setMode: vi.fn().mockResolvedValue(undefined),
+        respondToPermission: vi.fn(),
+        close: vi.fn().mockResolvedValue(undefined),
       };
 
-      (mockAgent.createSession as any).mockResolvedValueOnce(mockSession);
+      mockSessionProvider.createSession.mockResolvedValueOnce(longRunningSession);
 
       // Start execution in background
       const execPromise = wrapper
@@ -355,34 +335,31 @@ describe("AcpExecutorWrapper", () => {
       // Cancel
       await wrapper.cancel("exec-123");
 
-      expect(mockSession.cancel).toHaveBeenCalled();
-      expect(mockAgent.close).toHaveBeenCalled();
+      expect(longRunningSession.cancel).toHaveBeenCalled();
+      expect(longRunningSession.close).toHaveBeenCalled();
     });
   });
 
   describe("resumeWithLifecycle", () => {
     it("should load existing session and resume", async () => {
-      const { AgentFactory } = await import("acp-factory");
-      const mockAgent = await AgentFactory.spawn("claude-code");
-
       const mockUpdates = [
         { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Resumed" } },
       ];
 
-      const mockSession = {
+      const resumedSession = {
         id: "existing-session-123",
-        cwd: "/test/workdir",
-        modes: ["code"],
-        models: ["claude-sonnet"],
         prompt: vi.fn().mockImplementation(async function* () {
           for (const update of mockUpdates) {
             yield update;
           }
         }),
         cancel: vi.fn(),
+        setMode: vi.fn().mockResolvedValue(undefined),
+        respondToPermission: vi.fn(),
+        close: vi.fn().mockResolvedValue(undefined),
       };
 
-      (mockAgent.loadSession as any).mockResolvedValueOnce(mockSession);
+      mockSessionProvider.loadSession.mockResolvedValueOnce(resumedSession);
 
       await wrapper.resumeWithLifecycle(
         "exec-123",
@@ -391,9 +368,10 @@ describe("AcpExecutorWrapper", () => {
         "/test/workdir"
       );
 
-      expect(mockAgent.loadSession).toHaveBeenCalledWith(
+      expect(mockSessionProvider.loadSession).toHaveBeenCalledWith(
         "existing-session-123",
-        "/test/workdir"
+        "/test/workdir",
+        { mcpServers: [], mode: undefined }
       );
 
       // Check that the resumed message was stored
@@ -406,7 +384,8 @@ describe("Persistent Sessions", () => {
   let wrapper: AcpExecutorWrapper;
   let mockDb: any;
   let mockLogsStore: any;
-  let mockLifecycleService: any;
+  let mockSessionProvider: any;
+  let mockSession: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -424,8 +403,24 @@ describe("Persistent Sessions", () => {
       appendNormalizedEntry: vi.fn(),
     };
 
-    mockLifecycleService = {
-      setStatus: vi.fn(),
+    // Create mock session
+    mockSession = {
+      id: "test-session-123",
+      prompt: vi.fn().mockImplementation(async function* () {
+        yield { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Hello" } };
+      }),
+      cancel: vi.fn().mockResolvedValue(undefined),
+      setMode: vi.fn().mockResolvedValue(undefined),
+      respondToPermission: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+
+    // Create mock session provider
+    mockSessionProvider = {
+      createSession: vi.fn().mockResolvedValue(mockSession),
+      loadSession: vi.fn().mockResolvedValue(mockSession),
+      supportsSessionLoading: vi.fn().mockReturnValue(true),
+      close: vi.fn().mockResolvedValue(undefined),
     };
 
     wrapper = new AcpExecutorWrapper({
@@ -434,7 +429,7 @@ describe("Persistent Sessions", () => {
         agentType: "claude-code",
         permissionMode: "auto-approve",
       },
-      lifecycleService: mockLifecycleService,
+      sessionProvider: mockSessionProvider,
       logsStore: mockLogsStore,
       projectId: "test-project",
       db: mockDb,
@@ -579,30 +574,27 @@ describe("Persistent Sessions", () => {
       );
 
       // Agent should NOT be closed
-      expect(mockAgent.close).not.toHaveBeenCalled();
+      expect(mockSession.close).not.toHaveBeenCalled();
     });
   });
 
   describe("sendPrompt", () => {
     it("should send additional prompt to waiting session", async () => {
-      const { AgentFactory } = await import("acp-factory");
-      const mockAgent = await AgentFactory.spawn("claude-code");
-
       let promptCallCount = 0;
-      const mockSession = {
+      const customMockSession = {
         id: "session-abc",
-        cwd: "/test/workdir",
-        modes: ["code"],
-        models: ["claude-sonnet"],
         prompt: vi.fn().mockImplementation(async function* () {
           promptCallCount++;
           yield { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Response ${promptCallCount}` } };
         }),
         cancel: vi.fn(),
         setMode: vi.fn(),
+        respondToPermission: vi.fn(),
+        close: vi.fn(),
       };
 
-      (mockAgent.createSession as any).mockResolvedValueOnce(mockSession);
+      // Override mockSessionProvider.createSession for this test
+      mockSessionProvider.createSession.mockResolvedValueOnce(customMockSession);
 
       // Start persistent session
       await wrapper.executeWithLifecycle(
@@ -618,7 +610,7 @@ describe("Persistent Sessions", () => {
       await wrapper.sendPrompt("exec-123", "Second prompt");
 
       expect(promptCallCount).toBe(2);
-      expect(mockSession.prompt).toHaveBeenCalledTimes(2);
+      expect(customMockSession.prompt).toHaveBeenCalledTimes(2);
 
       // Should still be in waiting state
       const state = wrapper.getSessionState("exec-123");
@@ -633,29 +625,26 @@ describe("Persistent Sessions", () => {
     });
 
     it("should throw error if session is not in waiting state", async () => {
-      const { AgentFactory } = await import("acp-factory");
-      const mockAgent = await AgentFactory.spawn("claude-code");
-
       // Create a mock session that will never resolve (simulating running state)
       let resolvePrompt: () => void;
       const promptPromise = new Promise<void>((resolve) => {
         resolvePrompt = resolve;
       });
 
-      const mockSession = {
+      const customMockSession = {
         id: "session-abc",
-        cwd: "/test/workdir",
-        modes: ["code"],
-        models: ["claude-sonnet"],
         prompt: vi.fn().mockImplementation(async function* () {
           await promptPromise;
           yield { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Done" } };
         }),
         cancel: vi.fn(),
         setMode: vi.fn(),
+        respondToPermission: vi.fn(),
+        close: vi.fn(),
       };
 
-      (mockAgent.createSession as any).mockResolvedValueOnce(mockSession);
+      // Override mockSessionProvider.createSession for this test
+      mockSessionProvider.createSession.mockResolvedValueOnce(customMockSession);
 
       // Start execution but don't await - session should be in "running" state
       const execPromise = wrapper.executeWithLifecycle(
@@ -719,7 +708,7 @@ describe("Persistent Sessions", () => {
       );
 
       // Should close agent
-      expect(mockAgent.close).toHaveBeenCalled();
+      expect(mockSession.close).toHaveBeenCalled();
 
       // Should no longer be a persistent session
       expect(wrapper.isPersistentSession("exec-123")).toBe(false);
@@ -1135,7 +1124,7 @@ describe("Persistent Sessions", () => {
         setMode: vi.fn(),
       };
 
-      (mockAgent.loadSession as any).mockResolvedValueOnce(mockSession);
+      mockSessionProvider.loadSession.mockResolvedValueOnce(mockSession);
 
       await wrapper.resumeWithLifecycle(
         "exec-123",
@@ -1178,7 +1167,7 @@ describe("Persistent Sessions", () => {
         setMode: vi.fn(),
       };
 
-      (mockAgent.loadSession as any).mockResolvedValueOnce(mockSession);
+      mockSessionProvider.loadSession.mockResolvedValueOnce(mockSession);
 
       await wrapper.resumeWithLifecycle(
         "exec-123",
@@ -1220,7 +1209,7 @@ describe("Persistent Sessions", () => {
         setMode: vi.fn(),
       };
 
-      (mockAgent.loadSession as any).mockResolvedValueOnce(mockSession);
+      mockSessionProvider.loadSession.mockResolvedValueOnce(mockSession);
 
       await wrapper.resumeWithLifecycle(
         "exec-123",
@@ -1263,7 +1252,7 @@ describe("Persistent Sessions", () => {
         setMode: vi.fn(),
       };
 
-      (mockAgent.loadSession as any).mockResolvedValueOnce(mockSession);
+      mockSessionProvider.loadSession.mockResolvedValueOnce(mockSession);
 
       await wrapper.resumeWithLifecycle(
         "exec-123",

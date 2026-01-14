@@ -479,10 +479,11 @@ export class ExecutionService {
       },
       {
         workDir: this.repoPath,
-        lifecycleService: this.lifecycleService,
         logsStore: this.logsStore,
         projectId: this.projectId,
         db: this.db,
+        // lifecycleService needed for legacy agents (copilot, cursor)
+        lifecycleService: this.lifecycleService,
         // Merge narration config: voiceSettings from config.json, then execution overrides, then enabled flag
         narrationConfig: {
           ...voiceNarrationSettings,
@@ -816,10 +817,11 @@ ${feedback}`;
       },
       {
         workDir: this.repoPath,
-        lifecycleService: this.lifecycleService,
         logsStore: this.logsStore,
         projectId: this.projectId,
         db: this.db,
+        // lifecycleService needed for legacy agents (copilot, cursor)
+        lifecycleService: this.lifecycleService,
         // Merge narration config: voiceSettings from config.json, then execution overrides, then enabled flag
         narrationConfig: {
           ...voiceNarrationSettings,

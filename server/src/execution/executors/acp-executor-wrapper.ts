@@ -10,22 +10,22 @@
 
 import {
   AgentFactory,
-  type AgentHandle,
-  type Session,
   type SessionUpdate,
-  type ExtendedSessionUpdate,
-  type McpServer,
-  type PermissionMode,
   type PermissionRequestUpdate,
 } from "acp-factory";
+import type {
+  AcpSession,
+  AcpSessionProvider,
+  ExtendedSessionUpdate,
+  McpServer,
+  PermissionMode,
+} from "./session-providers/index.js";
 import type {
   SessionMode,
   SessionEndModeConfig,
 } from "@sudocode-ai/types";
 import { PermissionManager } from "./permission-manager.js";
-import { FileHandler } from "../handlers/file-handler.js";
 import type Database from "better-sqlite3";
-import type { ExecutionLifecycleService } from "../../services/execution-lifecycle.js";
 import type { ExecutionLogsStore } from "../../services/execution-logs-store.js";
 import { SessionUpdateCoalescer } from "../output/session-update-coalescer.js";
 import {
@@ -173,12 +173,12 @@ interface PersistentSessionState {
  * Configuration for AcpExecutorWrapper
  */
 export interface AcpExecutorWrapperConfig {
-  /** Agent type (claude-code, codex, gemini, opencode) */
+  /** Agent type (claude-code, codex, gemini, opencode, macro-agent) */
   agentType: string;
   /** ACP execution configuration */
   acpConfig: AcpExecutionConfig;
-  /** Lifecycle service for status updates */
-  lifecycleService: ExecutionLifecycleService;
+  /** Session provider for creating/loading sessions (transport-agnostic) */
+  sessionProvider: AcpSessionProvider;
   /** Logs store for persisting execution events */
   logsStore: ExecutionLogsStore;
   /** Project ID for broadcasts */
@@ -214,24 +214,22 @@ export interface AcpExecutorWrapperConfig {
 export class AcpExecutorWrapper {
   private readonly agentType: string;
   private readonly acpConfig: AcpExecutionConfig;
+  private readonly sessionProvider: AcpSessionProvider;
   private readonly logsStore: ExecutionLogsStore;
   private readonly projectId: string;
   private readonly db: Database.Database;
 
-  /** Active agent handles by execution ID */
-  private activeAgents: Map<string, AgentHandle> = new Map();
-  /** Active sessions by execution ID */
-  private activeSessions: Map<string, Session> = new Map();
+  /** Active sessions by execution ID (transport-agnostic) */
+  private activeSessions: Map<string, AcpSession> = new Map();
   /** Permission managers by execution ID (for interactive mode) */
   private permissionManagers: Map<string, PermissionManager> = new Map();
-  /** File handlers by execution ID */
-  private fileHandlers: Map<string, FileHandler> = new Map();
   /** Persistent session state by execution ID */
   private persistentSessions: Map<string, PersistentSessionState> = new Map();
 
   constructor(config: AcpExecutorWrapperConfig) {
     this.agentType = config.agentType;
     this.acpConfig = config.acpConfig;
+    this.sessionProvider = config.sessionProvider;
     this.logsStore = config.logsStore;
     this.projectId = config.projectId;
     this.db = config.db;
@@ -284,46 +282,26 @@ export class AcpExecutorWrapper {
       this.persistentSessions.set(executionId, persistentState);
     }
 
-    let agent: AgentHandle | null = null;
-    let session: Session | null = null;
+    let session: AcpSession | null = null;
 
     // Create permission manager for this execution (for interactive mode)
     const permissionManager = new PermissionManager();
     this.permissionManagers.set(executionId, permissionManager);
 
-    // Create file handler for this execution
-    // TODO: Set an explicit terminal handler if we need to explicitly manage terminals in the future.
-    const fileHandler = new FileHandler(workDir);
-    this.fileHandlers.set(executionId, fileHandler);
+    // Determine permission mode for session mode setting
+    const permissionMode = this.acpConfig.permissionMode ?? "interactive";
 
     try {
-      // 1. Spawn agent via ACP factory
-      console.log(
-        `[AcpExecutorWrapper] Spawning ${this.agentType} agent for ${executionId}`
-      );
-
-      // Determine permission mode
-      const permissionMode = this.acpConfig.permissionMode ?? "interactive";
-
-      agent = await AgentFactory.spawn(this.agentType, {
-        env: this.acpConfig.env,
-        permissionMode,
-        // File handlers only - no terminal handlers means Claude Code uses native Bash
-        onFileRead: (path: string) => fileHandler.onRead(path),
-        onFileWrite: (path: string, content: string) =>
-          fileHandler.onWrite(path, content),
-      });
-      this.activeAgents.set(executionId, agent);
-
-      // 2. Create session with MCP servers
+      // 1. Create session via provider (handles agent lifecycle internally)
       // Convert from sudocode format (Record<string, config>) to acp-factory format (McpServer[])
       const mcpServers = convertMcpServers(
         task.metadata?.mcpServers ?? this.acpConfig.mcpServers
       );
       console.log(`[AcpExecutorWrapper] Creating session for ${executionId}`, {
+        agentType: this.agentType,
         mcpServers: mcpServers.map((s) => s.name),
       });
-      session = await agent.createSession(workDir, {
+      session = await this.sessionProvider.createSession(workDir, {
         mcpServers,
         mode: this.acpConfig.mode,
       });
@@ -481,7 +459,6 @@ export class AcpExecutorWrapper {
 
       // Cleanup for discrete sessions or ended persistent sessions
       this.activeSessions.delete(executionId);
-      this.activeAgents.delete(executionId);
       this.persistentSessions.delete(executionId);
 
       // Cancel any pending permissions
@@ -491,20 +468,30 @@ export class AcpExecutorWrapper {
         this.permissionManagers.delete(executionId);
       }
 
-      // Cleanup file handler
-      this.fileHandlers.delete(executionId);
-
-      // Close agent if still running
-      if (agent?.isRunning()) {
+      // Close session if still exists
+      // Note: Provider handles agent lifecycle; session.close() is transport-specific
+      if (session) {
         try {
-          await agent.close();
-          console.log(`[AcpExecutorWrapper] Closed agent for ${executionId}`);
+          await session.close();
+          console.log(`[AcpExecutorWrapper] Closed session for ${executionId}`);
         } catch (closeError) {
           console.warn(
-            `[AcpExecutorWrapper] Error closing agent for ${executionId}:`,
+            `[AcpExecutorWrapper] Error closing session for ${executionId}:`,
             closeError
           );
         }
+      }
+
+      // Close session provider for discrete sessions to release agent subprocess
+      // For persistent sessions, the provider stays alive until explicit end
+      try {
+        await this.sessionProvider.close();
+        console.log(`[AcpExecutorWrapper] Closed provider for ${executionId}`);
+      } catch (providerCloseError) {
+        console.warn(
+          `[AcpExecutorWrapper] Error closing provider for ${executionId}:`,
+          providerCloseError
+        );
       }
     }
   }
@@ -548,51 +535,29 @@ export class AcpExecutorWrapper {
         this.registerDisconnectHandler(executionId);
     }
 
-    let agent: AgentHandle | null = null;
-    let session: Session | null = null;
+    let session: AcpSession | null = null;
 
     // Create permission manager for this execution
     const permissionManager = new PermissionManager();
     this.permissionManagers.set(executionId, permissionManager);
 
-    // Create file handler for this execution (no terminal handlers - use native Bash)
-    const fileHandler = new FileHandler(workDir);
-    this.fileHandlers.set(executionId, fileHandler);
+    // Determine permission mode for session mode setting
+    const permissionMode = this.acpConfig.permissionMode ?? "interactive";
 
     try {
-      // 1. Spawn agent
-      const permissionMode = this.acpConfig.permissionMode ?? "interactive";
+      // 1. Load or create session via provider
+      // Provider handles fallback to createSession if loading is not supported
+      const mcpServers = convertMcpServers(
+        task.metadata?.mcpServers ?? this.acpConfig.mcpServers
+      );
 
-      agent = await AgentFactory.spawn(this.agentType, {
-        env: this.acpConfig.env,
-        permissionMode,
-        // File handlers only - no terminal handlers means Claude Code uses native Bash
-        onFileRead: (path: string) => fileHandler.onRead(path),
-        onFileWrite: (path: string, content: string) =>
-          fileHandler.onWrite(path, content),
+      console.log(
+        `[AcpExecutorWrapper] Loading session ${sessionId} for ${executionId}`
+      );
+      session = await this.sessionProvider.loadSession(sessionId, workDir, {
+        mcpServers,
+        mode: this.acpConfig.mode,
       });
-      this.activeAgents.set(executionId, agent);
-
-      // 2. Load existing session or create new one if agent doesn't support loading
-      if (agent.capabilities?.loadSession) {
-        console.log(
-          `[AcpExecutorWrapper] Loading session ${sessionId} for ${executionId}`
-        );
-        session = await agent.loadSession(sessionId, workDir);
-      } else {
-        // Agent doesn't support session loading (e.g., Gemini)
-        // Create a new session instead - conversation history won't be preserved
-        console.log(
-          `[AcpExecutorWrapper] Agent doesn't support session loading, creating new session for ${executionId}`
-        );
-        const mcpServers = convertMcpServers(
-          task.metadata?.mcpServers ?? this.acpConfig.mcpServers
-        );
-        session = await agent.createSession(workDir, {
-          mcpServers,
-          mode: this.acpConfig.mode,
-        });
-      }
       this.activeSessions.set(executionId, session);
 
       // 2b. Set permission mode on the agent session using handler logic
@@ -735,7 +700,6 @@ export class AcpExecutorWrapper {
 
       // Cleanup for discrete sessions or ended persistent sessions
       this.activeSessions.delete(executionId);
-      this.activeAgents.delete(executionId);
       this.persistentSessions.delete(executionId);
 
       // Cancel any pending permissions
@@ -745,18 +709,28 @@ export class AcpExecutorWrapper {
         this.permissionManagers.delete(executionId);
       }
 
-      // Cleanup file handler
-      this.fileHandlers.delete(executionId);
-
-      if (agent?.isRunning()) {
+      // Close session if still exists
+      if (session) {
         try {
-          await agent.close();
+          await session.close();
+          console.log(`[AcpExecutorWrapper] Closed session for ${executionId}`);
         } catch (closeError) {
           console.warn(
-            `[AcpExecutorWrapper] Error closing agent for ${executionId}:`,
+            `[AcpExecutorWrapper] Error closing session for ${executionId}:`,
             closeError
           );
         }
+      }
+
+      // Close session provider for discrete sessions to release agent subprocess
+      try {
+        await this.sessionProvider.close();
+        console.log(`[AcpExecutorWrapper] Closed provider for ${executionId}`);
+      } catch (providerCloseError) {
+        console.warn(
+          `[AcpExecutorWrapper] Error closing provider for ${executionId}:`,
+          providerCloseError
+        );
       }
     }
   }
@@ -783,17 +757,14 @@ export class AcpExecutorWrapper {
           error
         );
       }
-    }
 
-    // Close agent
-    const agent = this.activeAgents.get(executionId);
-    if (agent?.isRunning()) {
+      // Close the session
       try {
-        await agent.close();
-        console.log(`[AcpExecutorWrapper] Agent closed for ${executionId}`);
+        await session.close();
+        console.log(`[AcpExecutorWrapper] Session closed for ${executionId}`);
       } catch (error) {
         console.warn(
-          `[AcpExecutorWrapper] Error closing agent for ${executionId}:`,
+          `[AcpExecutorWrapper] Error closing session for ${executionId}:`,
           error
         );
       }
@@ -838,7 +809,6 @@ export class AcpExecutorWrapper {
 
     // Cleanup maps
     this.activeSessions.delete(executionId);
-    this.activeAgents.delete(executionId);
 
     // Cancel any pending permissions
     const pm = this.permissionManagers.get(executionId);
@@ -847,8 +817,16 @@ export class AcpExecutorWrapper {
       this.permissionManagers.delete(executionId);
     }
 
-    // Cleanup file handler
-    this.fileHandlers.delete(executionId);
+    // Close session provider to release agent subprocess
+    try {
+      await this.sessionProvider.close();
+      console.log(`[AcpExecutorWrapper] Closed provider for ${executionId}`);
+    } catch (providerCloseError) {
+      console.warn(
+        `[AcpExecutorWrapper] Error closing provider for ${executionId}:`,
+        providerCloseError
+      );
+    }
   }
 
   /**
@@ -963,46 +941,24 @@ export class AcpExecutorWrapper {
    *
    * @param executionId - Source execution ID to fork from
    * @param newExecutionId - ID for the new forked execution
-   * @returns The forked Session, or null if forking failed
-   * @experimental This relies on the unstable session/fork ACP capability
+   * @returns The forked AcpSession, or null if forking failed
+   * @experimental This relies on the unstable session/fork ACP capability.
+   *               Currently not supported with the transport abstraction layer.
    */
   async forkSession(
     executionId: string,
     newExecutionId: string
-  ): Promise<Session | null> {
+  ): Promise<AcpSession | null> {
     console.log(
       `[AcpExecutorWrapper] Forking session from ${executionId} to ${newExecutionId}`
     );
 
-    const session = this.activeSessions.get(executionId);
-
-    if (!session) {
-      console.warn(`[AcpExecutorWrapper] No active session for ${executionId}`);
-      return null;
-    }
-
-    try {
-      // Use forkWithFlush which handles active sessions by flushing first
-      const forkedSession = await session.forkWithFlush();
-
-      // Register the new session
-      this.activeSessions.set(newExecutionId, forkedSession);
-
-      // Create a permission manager for the forked session
-      this.permissionManagers.set(newExecutionId, new PermissionManager());
-
-      console.log(
-        `[AcpExecutorWrapper] Forked session created for ${newExecutionId}`
-      );
-
-      return forkedSession;
-    } catch (error) {
-      console.error(
-        `[AcpExecutorWrapper] Error forking session from ${executionId}:`,
-        error
-      );
-      return null;
-    }
+    // TODO: Add fork() to AcpSession interface when this capability is needed
+    // For now, forking is not supported with the transport abstraction layer
+    console.warn(
+      `[AcpExecutorWrapper] Session forking is not yet supported with the transport abstraction layer`
+    );
+    return null;
   }
 
   /**
@@ -1050,37 +1006,23 @@ export class AcpExecutorWrapper {
    * @param executionId - Execution ID to interrupt
    * @param newPrompt - New prompt to continue with
    * @returns Async iterator of ExtendedSessionUpdate events, or null if no active session
-   * @experimental This relies on the interruptWith ACP capability
+   * @experimental This relies on the interruptWith ACP capability.
+   *               Currently not supported with the transport abstraction layer.
    */
   async *interruptWithNewPrompt(
     executionId: string,
-    newPrompt: string
+    _newPrompt: string
   ): AsyncGenerator<ExtendedSessionUpdate, void, unknown> {
     console.log(
       `[AcpExecutorWrapper] Interrupting session for execution ${executionId} with new prompt`
     );
 
-    const session = this.activeSessions.get(executionId);
-
-    if (!session) {
-      console.warn(`[AcpExecutorWrapper] No active session for ${executionId}`);
-      return;
-    }
-
-    try {
-      for await (const update of session.interruptWith(newPrompt)) {
-        yield update;
-      }
-      console.log(
-        `[AcpExecutorWrapper] Interrupt complete for execution ${executionId}`
-      );
-    } catch (error) {
-      console.error(
-        `[AcpExecutorWrapper] Error during interrupt for ${executionId}:`,
-        error
-      );
-      throw error;
-    }
+    // TODO: Add interruptWith() to AcpSession interface when this capability is needed
+    // For now, interrupting is not supported with the transport abstraction layer
+    console.warn(
+      `[AcpExecutorWrapper] Session interrupting is not yet supported with the transport abstraction layer`
+    );
+    return;
   }
 
   // ============================================================================
@@ -1258,15 +1200,15 @@ export class AcpExecutorWrapper {
     // Complete the execution
     await this.handleSuccess(executionId, persistentState.workDir);
 
-    // Cleanup
-    const agent = this.activeAgents.get(executionId);
-    if (agent?.isRunning()) {
+    // Cleanup - close session
+    const session = this.activeSessions.get(executionId);
+    if (session) {
       try {
-        await agent.close();
-        console.log(`[AcpExecutorWrapper] Closed agent for ${executionId}`);
+        await session.close();
+        console.log(`[AcpExecutorWrapper] Closed session for ${executionId}`);
       } catch (closeError) {
         console.warn(
-          `[AcpExecutorWrapper] Error closing agent for ${executionId}:`,
+          `[AcpExecutorWrapper] Error closing session for ${executionId}:`,
           closeError
         );
       }
@@ -1274,7 +1216,6 @@ export class AcpExecutorWrapper {
 
     // Remove from maps
     this.activeSessions.delete(executionId);
-    this.activeAgents.delete(executionId);
     this.persistentSessions.delete(executionId);
 
     const pm = this.permissionManagers.get(executionId);
@@ -1283,7 +1224,16 @@ export class AcpExecutorWrapper {
       this.permissionManagers.delete(executionId);
     }
 
-    this.fileHandlers.delete(executionId);
+    // Close session provider to release agent subprocess
+    try {
+      await this.sessionProvider.close();
+      console.log(`[AcpExecutorWrapper] Closed provider for ${executionId}`);
+    } catch (providerCloseError) {
+      console.warn(
+        `[AcpExecutorWrapper] Error closing provider for ${executionId}:`,
+        providerCloseError
+      );
+    }
 
     // Broadcast session ended event with the specified reason
     broadcastSessionEvent(this.projectId, executionId, "session_ended", {

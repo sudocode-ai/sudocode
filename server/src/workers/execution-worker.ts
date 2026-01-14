@@ -265,10 +265,11 @@ async function runExecution(): Promise<void> {
       { workDir: REPO_PATH!, ...config },
       {
         workDir: REPO_PATH!,
-        lifecycleService,
         logsStore,
         projectId: PROJECT_ID!,
         db,
+        // lifecycleService needed for legacy agents (copilot, cursor)
+        lifecycleService,
         // Merge narration config: voiceSettings from config.json, then enabled flag
         narrationConfig: { ...voiceNarrationSettings, enabled: voiceEnabled },
       }

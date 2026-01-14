@@ -20,6 +20,10 @@ import {
   type AcpExecutorWrapperConfig,
 } from "./acp-executor-wrapper.js";
 import {
+  StdioSessionProvider,
+  type SessionProviderConfig,
+} from "./session-providers/index.js";
+import {
   LegacyShimExecutorWrapper,
   type LegacyShimExecutorWrapperConfig,
 } from "./legacy-shim-executor-wrapper.js";
@@ -49,7 +53,6 @@ export class AgentConfigValidationError extends Error {
  */
 export interface ExecutorFactoryConfig {
   workDir: string;
-  lifecycleService: ExecutionLifecycleService;
   logsStore: ExecutionLogsStore;
   projectId: string;
   db: Database.Database;
@@ -61,6 +64,11 @@ export interface ExecutorFactoryConfig {
    * this will pass the appropriate CLI flags to resume the session.
    */
   isResume?: boolean;
+  /**
+   * Lifecycle service for legacy agents (copilot, cursor).
+   * Required for legacy agents, not needed for ACP agents which use session providers.
+   */
+  lifecycleService?: ExecutionLifecycleService;
 }
 
 /**
@@ -130,6 +138,14 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
       }
     );
 
+    // Create session provider for stdio-based ACP agents
+    const sessionProviderConfig: SessionProviderConfig = {
+      env: processedConfig.env,
+      permissionMode: processedConfig.acpPermissionMode,
+      // Note: fileHandlers are optional - agent subprocess handles file ops within workDir
+    };
+    const sessionProvider = new StdioSessionProvider(agentType, sessionProviderConfig);
+
     const acpConfig: AcpExecutorWrapperConfig = {
       agentType,
       acpConfig: {
@@ -140,7 +156,7 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
         env: processedConfig.env,
         mode: processedConfig.sessionMode,
       },
-      lifecycleService: factoryConfig.lifecycleService,
+      sessionProvider,
       logsStore: factoryConfig.logsStore,
       projectId: factoryConfig.projectId,
       db: factoryConfig.db,
@@ -154,6 +170,13 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
     console.log(
       `[ExecutorFactory] Using LegacyShimExecutorWrapper for ${agentType}`
     );
+
+    // Legacy agents require lifecycleService
+    if (!factoryConfig.lifecycleService) {
+      throw new Error(
+        `Legacy agent '${agentType}' requires lifecycleService in ExecutorFactoryConfig`
+      );
+    }
 
     const shimConfig: LegacyShimExecutorWrapperConfig = {
       agentType: agentType as "copilot" | "cursor",
