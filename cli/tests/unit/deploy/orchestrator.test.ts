@@ -187,7 +187,7 @@ describe('DeployOrchestrator', () => {
       );
 
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('GitHub CLI is not installed')
+        expect.stringContaining('GitHub CLI is not authenticated')
       );
     });
 

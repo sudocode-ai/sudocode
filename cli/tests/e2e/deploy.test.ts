@@ -383,7 +383,7 @@ describe('Deploy Commands E2E Tests', () => {
       await expect(handleDeploy(ctx, {})).rejects.toThrow();
 
       const output = consoleErrorSpy.mock.calls.map((call: any[]) => call[0]).join('\n');
-      expect(output).toContain('GitHub CLI is not installed');
+      expect(output).toContain('GitHub CLI is not authenticated');
       expect(output).toContain('https://cli.github.com');
     });
 
@@ -441,7 +441,7 @@ describe('Deploy Commands E2E Tests', () => {
       await expect(handleDeploy(ctx, {})).rejects.toThrow();
 
       const output = consoleErrorSpy.mock.calls.map((call: any[]) => call[0]).join('\n');
-      expect(output).toContain('Not in a git repository');
+      expect(output).toContain('Git repository not found');
     });
 
     it('should handle missing GitHub remote', async () => {
@@ -464,7 +464,7 @@ describe('Deploy Commands E2E Tests', () => {
       await expect(handleDeploy(ctx, {})).rejects.toThrow();
 
       const output = consoleErrorSpy.mock.calls.map((call: any[]) => call[0]).join('\n');
-      expect(output).toContain('Failed to detect git context');
+      expect(output).toContain('Git repository not found');
     });
 
     it('should handle non-GitHub remote URL', async () => {
@@ -486,7 +486,7 @@ describe('Deploy Commands E2E Tests', () => {
       await expect(handleDeploy(ctx, {})).rejects.toThrow();
 
       const output = consoleErrorSpy.mock.calls.map((call: any[]) => call[0]).join('\n');
-      expect(output).toContain('Invalid GitHub remote URL');
+      expect(output).toContain('GitHub remote not configured');
     });
   });
 
@@ -623,8 +623,8 @@ describe('Deploy Commands E2E Tests', () => {
       await expect(handleDeployList(ctx)).rejects.toThrow();
 
       const output = consoleErrorSpy.mock.calls.map((call: any[]) => call[0]).join('\n');
-      // Error message includes the error message text
-      expect(output).toContain('Connection refused');
+      // Error message includes network connection failed
+      expect(output).toContain('Network connection failed');
     });
 
     it('should handle DNS resolution failure during status', async () => {
@@ -635,8 +635,8 @@ describe('Deploy Commands E2E Tests', () => {
       await expect(handleDeployStatus(ctx, 'test-deployment')).rejects.toThrow();
 
       const output = consoleErrorSpy.mock.calls.map((call: any[]) => call[0]).join('\n');
-      // Error message includes the error message text
-      expect(output).toContain('DNS resolution failed');
+      // Error message includes network connection failed
+      expect(output).toContain('Network connection failed');
     });
 
     it('should handle quota exceeded error', async () => {

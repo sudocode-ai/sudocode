@@ -143,7 +143,7 @@ async function runClaudeOAuthFlow(): Promise<string> {
 export async function handleClaudeAuth(options: ClaudeAuthOptions = {}): Promise<void> {
   console.log(chalk.blue('\nClaude Code Authentication\n'));
   
-  // Check if already authenticated
+  // Check if already authenticated (before doing any other checks)
   if (!options.force && await hasClaudeToken()) {
     console.log(chalk.yellow('⚠ Claude Code is already configured.\n'));
     const confirmed = await promptConfirmation('Overwrite existing token? (y/N): ');
@@ -155,7 +155,7 @@ export async function handleClaudeAuth(options: ClaudeAuthOptions = {}): Promise
     console.log('');
   }
   
-  // Check if Claude CLI is installed
+  // Check if Claude CLI is installed (only after user confirms or if force flag is set)
   console.log('Checking for Claude CLI...');
   const isInstalled = await checkClaudeCLI();
   

@@ -330,7 +330,7 @@ describe('Deploy Integration Tests', () => {
         await expect(handleDeploy(ctx, {})).rejects.toThrow();
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-          expect.stringContaining('Not in a git repository')
+          expect.stringContaining('Git repository not found')
         );
       });
 
@@ -355,7 +355,7 @@ describe('Deploy Integration Tests', () => {
         await expect(handleDeploy(ctx, {})).rejects.toThrow();
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-          expect.stringContaining('Failed to detect git context')
+          expect.stringContaining('Git repository not found')
         );
       });
 
@@ -380,7 +380,7 @@ describe('Deploy Integration Tests', () => {
         await expect(handleDeploy(ctx, {})).rejects.toThrow();
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-          expect.stringContaining('Invalid GitHub remote URL')
+          expect.stringContaining('GitHub remote not configured')
         );
       });
     });
@@ -400,7 +400,7 @@ describe('Deploy Integration Tests', () => {
         await expect(handleDeploy(ctx, {})).rejects.toThrow();
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-          expect.stringContaining('GitHub CLI is not installed')
+          expect.stringContaining('GitHub CLI is not authenticated')
         );
       });
 

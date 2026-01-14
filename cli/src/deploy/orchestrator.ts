@@ -171,10 +171,20 @@ export class DeployOrchestrator {
         console.log(`  Status: ${deployment.status}`);
         console.log();
 
-        // Step 9: Open browser to workspace URL (unless --no-open flag is set)
-        if (!options.noOpen && deployment.urls?.workspace) {
-          console.log(chalk.gray('Opening codespace in browser...\n'));
-          this.openBrowser(deployment.urls.workspace);
+        // Step 9: Open both URLs in browser (unless --no-open flag is set)
+        if (!options.noOpen) {
+          if (deployment.urls?.workspace) {
+            console.log(chalk.gray('Opening codespace in browser...'));
+            this.openBrowser(deployment.urls.workspace);
+          }
+          
+          // Wait 5 seconds before opening Sudocode UI to give codespace time to initialize
+          if (deployment.urls?.sudocode) {
+            console.log(chalk.gray('Opening Sudocode UI in 5 seconds...\n'));
+            setTimeout(() => {
+              this.openBrowser(deployment.urls.sudocode);
+            }, 5000);
+          }
         } else if (options.noOpen) {
           // Important reminder when --no-open is used
           console.log(chalk.yellow('⚠  Note: Open the codespace URL first before accessing the Sudocode UI.'));

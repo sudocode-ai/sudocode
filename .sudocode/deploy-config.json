@@ -1,8 +1,0 @@
-{
-  "provider": "codespaces",
-  "port": 8080,
-  "idleTimeout": 4320,
-  "keepAliveHours": 72,
-  "retentionPeriod": 14,
-  "machine": "basicLinux32gb"
-}
