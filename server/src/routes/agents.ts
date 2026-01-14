@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { agentRegistryService } from "../services/agent-registry.js";
 import { AgentFactory } from "acp-factory";
 import { CommandDiscoveryService } from "../services/command-discovery-service.js";
+import { getMacroAgentServerManager } from "../services/macro-agent-server-manager.js";
 
 // Cache for agent models (agentType -> models[])
 const modelsCache: Map<string, { models: string[]; timestamp: number }> = new Map();
@@ -199,6 +200,40 @@ export function createAgentsRouter(): Router {
       console.error(`[AgentsRouter] Failed to discover commands for ${agentType}:`, error);
       return res.status(500).json({
         error: `Failed to discover commands for ${agentType}`,
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  /**
+   * GET /api/agents/macro-agent/status
+   * Returns the status of the macro-agent server
+   *
+   * Response: {
+   *   available: boolean,   // Executable found in PATH
+   *   ready: boolean,       // Server running and accepting connections
+   *   state: string,        // stopped | starting | running | stopping | unavailable
+   *   acpUrl?: string,      // WebSocket ACP URL (if ready)
+   *   apiUrl?: string,      // HTTP API URL (if ready)
+   * }
+   */
+  router.get("/macro-agent/status", (_req: Request, res: Response) => {
+    try {
+      const manager = getMacroAgentServerManager();
+
+      const status = {
+        available: manager.isAvailable(),
+        ready: manager.isReady(),
+        state: manager.getState(),
+        acpUrl: manager.isReady() ? manager.getAcpUrl() : undefined,
+        apiUrl: manager.isReady() ? manager.getApiUrl() : undefined,
+      };
+
+      res.status(200).json(status);
+    } catch (error) {
+      console.error("[AgentsRouter] Failed to get macro-agent status:", error);
+      res.status(500).json({
+        error: "Failed to retrieve macro-agent status",
         details: error instanceof Error ? error.message : "Unknown error",
       });
     }

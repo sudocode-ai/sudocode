@@ -34,6 +34,11 @@ import {
   shutdownWebSocketServer,
   getWebSocketServer,
 } from "./services/websocket.js";
+import {
+  getMacroAgentServerManager,
+  type MacroAgentServerManager,
+} from "./services/macro-agent-server-manager.js";
+import { readMacroAgentConfig } from "./utils/macro-agent-config.js";
 
 const app = express();
 const DEFAULT_PORT = 3000;
@@ -42,6 +47,9 @@ const MAX_PORT_ATTEMPTS = 20;
 // Multi-project infrastructure
 let projectRegistry!: ProjectRegistry;
 let projectManager!: ProjectManager;
+
+// Macro-agent server manager (shared across projects)
+let macroAgentServerManager: MacroAgentServerManager | null = null;
 
 // Start file watcher (enabled by default, disable with SUDOCODE_WATCH=false)
 const WATCH_ENABLED = process.env.SUDOCODE_WATCH !== "false";
@@ -118,6 +126,32 @@ async function initialize() {
 
 // Run initialization
 await initialize();
+
+// Start macro-agent server if enabled
+// Note: This uses the current working directory for config, which should be fine
+// since initialize() already opened a project from cwd if it exists
+const macroAgentConfig = readMacroAgentConfig(process.cwd());
+if (macroAgentConfig.enabled) {
+  macroAgentServerManager = getMacroAgentServerManager({
+    serverConfig: macroAgentConfig,
+    cwd: process.cwd(),
+  });
+  try {
+    await macroAgentServerManager.start();
+    if (macroAgentServerManager.isReady()) {
+      console.log(
+        `Macro-agent server running at: ${macroAgentServerManager.getAcpUrl()}`
+      );
+    }
+  } catch (error) {
+    // Non-fatal: log warning but continue
+    console.warn(
+      "[MacroAgent] Failed to start macro-agent server:",
+      error instanceof Error ? error.message : error
+    );
+    console.warn("[MacroAgent] Macro-agent will be unavailable");
+  }
+}
 
 // Middleware
 app.use(cors());
@@ -496,6 +530,12 @@ process.on("unhandledRejection", (reason, promise) => {
 process.on("SIGINT", async () => {
   console.log("\nShutting down server...");
 
+  // Shutdown macro-agent server
+  if (macroAgentServerManager) {
+    console.log("Stopping macro-agent server...");
+    await macroAgentServerManager.stop();
+  }
+
   // Shutdown ProjectManager (closes all projects and their watchers)
   // This will shutdown all per-project ExecutionServices and close all databases
   if (projectManager) {
@@ -520,6 +560,12 @@ process.on("SIGINT", async () => {
 
 process.on("SIGTERM", async () => {
   console.log("\nShutting down server...");
+
+  // Shutdown macro-agent server
+  if (macroAgentServerManager) {
+    console.log("Stopping macro-agent server...");
+    await macroAgentServerManager.stop();
+  }
 
   // Shutdown ProjectManager (closes all projects and their watchers)
   // This will shutdown all per-project ExecutionServices and close all databases

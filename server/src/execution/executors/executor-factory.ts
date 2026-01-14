@@ -21,8 +21,10 @@ import {
 } from "./acp-executor-wrapper.js";
 import {
   StdioSessionProvider,
+  WebSocketSessionProvider,
   type SessionProviderConfig,
 } from "./session-providers/index.js";
+import { getMacroAgentServerManager } from "../../services/macro-agent-server-manager.js";
 import {
   LegacyShimExecutorWrapper,
   type LegacyShimExecutorWrapperConfig,
@@ -120,6 +122,61 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
     workDir: factoryConfig.workDir,
   });
 
+  // Special handling for macro-agent (WebSocket ACP)
+  if (agentType === "macro-agent") {
+    console.log(`[ExecutorFactory] Using WebSocketSessionProvider for macro-agent`);
+
+    // Check if macro-agent server is available
+    const macroAgentManager = getMacroAgentServerManager();
+    if (!macroAgentManager.isReady()) {
+      const state = macroAgentManager.getState();
+      if (state === "unavailable") {
+        throw new Error(
+          "Macro-agent server is not available. Install the multiagent-acp package to enable macro-agent support."
+        );
+      }
+      throw new Error(
+        `Macro-agent server is not ready (state: ${state}). Please wait for the server to start.`
+      );
+    }
+
+    // Process agent configuration
+    const processedConfig = processAgentConfig(
+      agentType,
+      agentConfig as RawAgentConfig,
+      {
+        isResume: factoryConfig.isResume,
+        workDir: factoryConfig.workDir,
+      }
+    );
+
+    // Create WebSocket session provider
+    const wsUrl = macroAgentManager.getAcpUrl();
+    const sessionProvider = new WebSocketSessionProvider({
+      wsUrl,
+      env: processedConfig.env,
+      permissionMode: processedConfig.acpPermissionMode,
+    });
+
+    const acpConfig: AcpExecutorWrapperConfig = {
+      agentType,
+      acpConfig: {
+        agentType,
+        mcpServers: processedConfig.mcpServers,
+        permissionMode: processedConfig.acpPermissionMode,
+        agentPermissionMode: processedConfig.agentPermissionMode,
+        env: processedConfig.env,
+        mode: processedConfig.sessionMode,
+      },
+      sessionProvider,
+      logsStore: factoryConfig.logsStore,
+      projectId: factoryConfig.projectId,
+      db: factoryConfig.db,
+    };
+
+    return new AcpExecutorWrapper(acpConfig);
+  }
+
   // Check if agent is ACP-native (registered in AgentFactory)
   if (AcpExecutorWrapper.isAcpSupported(agentType)) {
     console.log(`[ExecutorFactory] Using AcpExecutorWrapper for ${agentType}`);
@@ -196,10 +253,7 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
 
   // Unknown agent type - throw error
   throw new Error(
-    `Unknown agent type: ${agentType}. Supported agents: ${[
-      ...AcpExecutorWrapper.listAcpAgents(),
-      ...LegacyShimExecutorWrapper.listLegacyAgents(),
-    ].join(", ")}`
+    `Unknown agent type: ${agentType}. Supported agents: ${listAllAgents().join(", ")}`
   );
 }
 
@@ -240,12 +294,25 @@ export function validateAgentConfig<TConfig extends BaseAgentConfig>(
 }
 
 /**
+ * Check if an agent type is macro-agent (WebSocket ACP)
+ *
+ * @param agentType - The type of agent to check
+ * @returns true if the agent is macro-agent
+ */
+export function isMacroAgent(agentType: string): boolean {
+  return agentType === "macro-agent";
+}
+
+/**
  * Check if an agent type uses ACP (Agent Client Protocol)
  *
  * ACP-native agents use the new unified AcpExecutorWrapper which provides:
  * - Direct SessionUpdate streaming
  * - Unified agent lifecycle management
  * - Support for session resume and forking
+ *
+ * This includes both stdio ACP agents (claude-code, codex, etc.) and
+ * WebSocket ACP agents (macro-agent).
  *
  * @param agentType - The type of agent to check
  * @returns true if the agent uses ACP, false for legacy agents
@@ -258,16 +325,18 @@ export function validateAgentConfig<TConfig extends BaseAgentConfig>(
  * ```
  */
 export function isAcpAgent(agentType: string): boolean {
-  return AcpExecutorWrapper.isAcpSupported(agentType);
+  return AcpExecutorWrapper.isAcpSupported(agentType) || isMacroAgent(agentType);
 }
 
 /**
  * List all available ACP-native agents
  *
+ * Includes both stdio ACP agents and WebSocket ACP agents.
+ *
  * @returns Array of agent type names that support ACP
  */
 export function listAcpAgents(): string[] {
-  return AcpExecutorWrapper.listAcpAgents();
+  return [...AcpExecutorWrapper.listAcpAgents(), "macro-agent"];
 }
 
 /**

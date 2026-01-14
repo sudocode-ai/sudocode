@@ -19,3 +19,7 @@ export type {
 } from "./types.js";
 
 export { StdioSessionProvider } from "./stdio-session-provider.js";
+export {
+  WebSocketSessionProvider,
+  type WebSocketSessionProviderConfig,
+} from "./websocket-session-provider.js";

@@ -307,6 +307,19 @@ export interface DeployConfig {
 }
 
 /**
+ * Macro-agent server configuration
+ * Controls the managed macro-agent server process lifecycle
+ */
+export interface MacroAgentServerConfig {
+  /** Whether to enable the macro-agent server (default: true) */
+  enabled?: boolean;
+  /** Port for WebSocket ACP and HTTP API (default: 3100) */
+  port?: number;
+  /** Host to bind to (default: "localhost") */
+  host?: string;
+}
+
+/**
  * Config metadata file structure (.sudocode/config.json)
  */
 export interface Config {
@@ -320,6 +333,8 @@ export interface Config {
   editor?: EditorConfig;
   /** Voice configuration (optional) */
   voice?: VoiceSettingsConfig;
+  /** Macro-agent server configuration (optional) */
+  macroAgent?: MacroAgentServerConfig;
 }
 
 /**

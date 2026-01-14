@@ -347,6 +347,48 @@ export const codexHandler: AgentConfigHandler = {
 };
 
 // =============================================================================
+// Macro-Agent Handler
+// =============================================================================
+
+/**
+ * Configuration handler for Macro-Agent
+ *
+ * Macro-agent connects to a shared server via WebSocket ACP rather than
+ * spawning a subprocess. Most configuration is handled server-side.
+ *
+ * Handles:
+ * - Permission mode mapping to ACP protocol level
+ * - Environment variables passed to sub-agents
+ */
+export const macroAgentHandler: AgentConfigHandler = {
+  processConfig(
+    rawConfig: RawAgentConfig,
+    _context: AgentConfigContext
+  ): ProcessedAgentConfig {
+    const existingEnv = rawConfig.env || rawConfig.agentConfig?.env;
+
+    const dangerouslySkipPermissions =
+      rawConfig.dangerouslySkipPermissions === true ||
+      rawConfig.agentConfig?.dangerouslySkipPermissions === true;
+
+    const sessionMode = rawConfig.mode || rawConfig.agentConfig?.mode;
+
+    return {
+      env: existingEnv,
+      acpPermissionMode: dangerouslySkipPermissions
+        ? "auto-approve"
+        : "interactive",
+      skipPermissions: dangerouslySkipPermissions,
+      sessionMode,
+      mcpServers: rawConfig.mcpServers,
+    };
+  },
+
+  // No applySetup needed - macro-agent server is managed by MacroAgentServerManager
+  // No getSessionPermissionMode needed - macro-agent handles permissions internally
+};
+
+// =============================================================================
 // Default Handler
 // =============================================================================
 
@@ -386,6 +428,7 @@ const handlers: Record<string, AgentConfigHandler> = {
   "claude-code": claudeCodeHandler,
   gemini: geminiHandler,
   codex: codexHandler,
+  "macro-agent": macroAgentHandler,
 };
 
 /**

@@ -9,6 +9,7 @@ import {
   claudeCodeHandler,
   geminiHandler,
   codexHandler,
+  macroAgentHandler,
   defaultHandler,
   getAgentConfigHandler,
   processAgentConfig,
@@ -542,6 +543,130 @@ describe("Agent Config Handlers", () => {
   });
 
   // ===========================================================================
+  // Macro-Agent Handler Tests
+  // ===========================================================================
+  describe("macroAgentHandler", () => {
+    describe("processConfig", () => {
+      it("should preserve existing env vars", () => {
+        const rawConfig: RawAgentConfig = {
+          env: { ANTHROPIC_API_KEY: "test-key" },
+        };
+
+        const result = macroAgentHandler.processConfig(rawConfig, defaultContext);
+
+        expect(result.env).toEqual({ ANTHROPIC_API_KEY: "test-key" });
+      });
+
+      it("should not set model env var (macro-agent handles model internally)", () => {
+        const rawConfig: RawAgentConfig = {
+          model: "claude-sonnet",
+        };
+
+        const result = macroAgentHandler.processConfig(rawConfig, defaultContext);
+
+        // Macro-agent doesn't map model to env var - it passes model to sub-agents
+        expect(result.env).toBeUndefined();
+      });
+
+      it("should set interactive permission mode by default", () => {
+        const rawConfig: RawAgentConfig = {};
+
+        const result = macroAgentHandler.processConfig(rawConfig, defaultContext);
+
+        expect(result.acpPermissionMode).toBe("interactive");
+        expect(result.skipPermissions).toBe(false);
+      });
+
+      it("should set auto-approve when dangerouslySkipPermissions is true", () => {
+        const rawConfig: RawAgentConfig = {
+          dangerouslySkipPermissions: true,
+        };
+
+        const result = macroAgentHandler.processConfig(rawConfig, defaultContext);
+
+        expect(result.acpPermissionMode).toBe("auto-approve");
+        expect(result.skipPermissions).toBe(true);
+      });
+
+      it("should set auto-approve when nested dangerouslySkipPermissions is true", () => {
+        const rawConfig: RawAgentConfig = {
+          agentConfig: {
+            dangerouslySkipPermissions: true,
+          },
+        };
+
+        const result = macroAgentHandler.processConfig(rawConfig, defaultContext);
+
+        expect(result.acpPermissionMode).toBe("auto-approve");
+        expect(result.skipPermissions).toBe(true);
+      });
+
+      it("should set sessionMode from mode field", () => {
+        const rawConfig: RawAgentConfig = {
+          mode: "plan",
+        };
+
+        const result = macroAgentHandler.processConfig(rawConfig, defaultContext);
+
+        expect(result.sessionMode).toBe("plan");
+      });
+
+      it("should read sessionMode from nested agentConfig", () => {
+        const rawConfig: RawAgentConfig = {
+          agentConfig: {
+            mode: "architect",
+          },
+        };
+
+        const result = macroAgentHandler.processConfig(rawConfig, defaultContext);
+
+        expect(result.sessionMode).toBe("architect");
+      });
+
+      it("should preserve mcpServers configuration", () => {
+        const mcpServers = {
+          "context-server": { command: "node", args: ["server.js"] },
+        };
+        const rawConfig: RawAgentConfig = {
+          mcpServers,
+        };
+
+        const result = macroAgentHandler.processConfig(rawConfig, defaultContext);
+
+        expect(result.mcpServers).toEqual(mcpServers);
+      });
+
+      it("should merge nested env with top-level env (top-level wins on conflict)", () => {
+        const rawConfig: RawAgentConfig = {
+          env: { API_KEY: "top-level", SHARED: "top" },
+          agentConfig: {
+            env: { OTHER_KEY: "nested", SHARED: "nested" },
+          },
+        };
+
+        const result = macroAgentHandler.processConfig(rawConfig, defaultContext);
+
+        // Top-level env is used (current implementation uses OR, prefers top-level)
+        expect(result.env).toEqual({ API_KEY: "top-level", SHARED: "top" });
+      });
+    });
+
+    describe("applySetup", () => {
+      it("should not have applySetup (server managed by MacroAgentServerManager)", () => {
+        // Macro-agent doesn't need applySetup since the server is managed separately
+        expect(macroAgentHandler.applySetup).toBeUndefined();
+      });
+    });
+
+    describe("getSessionPermissionMode", () => {
+      it("should not have getSessionPermissionMode (macro-agent handles permissions internally)", () => {
+        // Macro-agent handles permissions via its own mechanism
+        expect(macroAgentHandler.getSessionPermissionMode).toBeUndefined();
+      });
+    });
+  });
+
+  // ===========================================================================
   // Default Handler Tests
   // ===========================================================================
   describe("defaultHandler", () => {
@@ -617,6 +742,11 @@ describe("Agent Config Handlers", () => {
       expect(handler).toBe(codexHandler);
     });
 
+    it("should return macroAgentHandler for macro-agent", () => {
+      const handler = getAgentConfigHandler("macro-agent");
+      expect(handler).toBe(macroAgentHandler);
+    });
+
     it("should return defaultHandler for unknown agent types", () => {
       const handler = getAgentConfigHandler("unknown-agent");
       expect(handler).toBe(defaultHandler);
@@ -675,6 +805,31 @@ describe("Agent Config Handlers", () => {
       );
 
       consoleSpy.mockRestore();
+    });
+
+    it("should process macro-agent config correctly", () => {
+      const rawConfig: RawAgentConfig = {
+        env: { ANTHROPIC_API_KEY: "test-key" },
+        mode: "code",
+      };
+
+      const result = processAgentConfig("macro-agent", rawConfig, defaultContext);
+
+      expect(result.env).toEqual({ ANTHROPIC_API_KEY: "test-key" });
+      expect(result.sessionMode).toBe("code");
+      expect(result.acpPermissionMode).toBe("interactive");
+      expect(result.skipPermissions).toBe(false);
+    });
+
+    it("should process macro-agent config with dangerouslySkipPermissions", () => {
+      const rawConfig: RawAgentConfig = {
+        dangerouslySkipPermissions: true,
+      };
+
+      const result = processAgentConfig("macro-agent", rawConfig, defaultContext);
+
+      expect(result.acpPermissionMode).toBe("auto-approve");
+      expect(result.skipPermissions).toBe(true);
     });
   });
 

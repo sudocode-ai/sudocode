@@ -12,6 +12,7 @@ import {
   isLegacyAgent,
   listLegacyAgents,
   listAllAgents,
+  isMacroAgent,
 } from "../../../../src/execution/executors/executor-factory.js";
 import { AcpExecutorWrapper } from "../../../../src/execution/executors/acp-executor-wrapper.js";
 import { LegacyShimExecutorWrapper } from "../../../../src/execution/executors/legacy-shim-executor-wrapper.js";
@@ -58,6 +59,18 @@ describe("ExecutorFactory", () => {
           factoryConfig
         );
       }).toThrow(/Unknown agent type/);
+    });
+
+    it("should throw error for macro-agent when server is not ready", () => {
+      // Macro-agent requires the server to be running
+      // When the server is not started/ready, it should throw an error
+      expect(() => {
+        createExecutorForAgent(
+          "macro-agent",
+          { workDir: "/tmp/test" },
+          factoryConfig
+        );
+      }).toThrow(/Macro-agent server is not/);
     });
 
     it("should create LegacyShimExecutorWrapper for copilot (legacy agent)", () => {
@@ -195,6 +208,19 @@ describe("ExecutorFactory", () => {
   });
 
   describe("agent type detection functions", () => {
+    // Macro-agent detection
+    it("should identify macro-agent as macro agent", () => {
+      expect(isMacroAgent("macro-agent")).toBe(true);
+    });
+
+    it("should not identify claude-code as macro agent", () => {
+      expect(isMacroAgent("claude-code")).toBe(false);
+    });
+
+    it("should identify macro-agent as ACP agent", () => {
+      expect(isAcpAgent("macro-agent")).toBe(true);
+    });
+
     // ACP detection
     it("should identify claude-code as ACP agent", () => {
       expect(isAcpAgent("claude-code")).toBe(true);
@@ -212,9 +238,10 @@ describe("ExecutorFactory", () => {
       expect(isAcpAgent("unknown-agent")).toBe(false);
     });
 
-    it("should list ACP agents (currently claude-code)", () => {
+    it("should list ACP agents including macro-agent", () => {
       const agents = listAcpAgents();
       expect(agents).toContain("claude-code");
+      expect(agents).toContain("macro-agent");
       expect(agents).not.toContain("copilot");
       expect(agents).not.toContain("cursor");
     });
@@ -245,6 +272,7 @@ describe("ExecutorFactory", () => {
       expect(allAgents).toContain("claude-code");
       expect(allAgents).toContain("copilot");
       expect(allAgents).toContain("cursor");
+      expect(allAgents).toContain("macro-agent");
     });
 
     it("should return consistent results between detection functions and list functions", () => {

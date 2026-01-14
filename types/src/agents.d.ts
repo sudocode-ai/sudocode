@@ -28,9 +28,10 @@
  * Agent types supported for execution
  *
  * ACP-native agents: claude-code, codex, gemini, opencode
+ * WebSocket ACP agents: macro-agent
  * Legacy agents (via shim): copilot, cursor
  */
-export type AgentType = "claude-code" | "codex" | "gemini" | "opencode" | "copilot" | "cursor";
+export type AgentType = "claude-code" | "codex" | "gemini" | "opencode" | "copilot" | "cursor" | "macro-agent";
 
 /**
  * Execution modes supported by agents
@@ -310,6 +311,22 @@ export interface OpencodeConfig extends BaseAgentConfig {
 }
 
 /**
+ * Macro-agent configuration
+ *
+ * Macro-agent connects to a shared server via WebSocket ACP, rather than
+ * spawning a subprocess. The server is managed by MacroAgentServerManager
+ * and started on sudocode server startup.
+ */
+export interface MacroAgentConfig extends BaseAgentConfig {
+  /** Resume an existing session by ID */
+  sessionId?: string;
+  /** Model to use for sub-agents */
+  model?: string;
+  /** Prompt to send to the macro-agent */
+  prompt?: string;
+}
+
+/**
  * Discriminated union of all agent configurations
  */
 export type AgentConfig =
@@ -318,4 +335,5 @@ export type AgentConfig =
   | CopilotConfig
   | CursorConfig
   | GeminiConfig
-  | OpencodeConfig;
+  | OpencodeConfig
+  | MacroAgentConfig;
