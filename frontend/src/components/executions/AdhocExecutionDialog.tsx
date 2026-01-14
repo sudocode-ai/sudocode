@@ -61,7 +61,6 @@ export function AdhocExecutionDialog({
         agentType,
       })
 
-      toast.success('Execution started')
       onClose()
 
       // Navigate to the new execution

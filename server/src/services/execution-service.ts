@@ -579,7 +579,17 @@ export class ExecutionService {
         // Error is already handled by wrapper (status updated, broadcasts sent)
       })
       .finally(() => {
-        // Cleanup executor from active map
+        // Don't cleanup persistent sessions that are still active
+        if (
+          wrapper instanceof AcpExecutorWrapper &&
+          wrapper.isPersistentSession(execution.id)
+        ) {
+          console.log(
+            `[ExecutionService] Keeping executor for active persistent session ${execution.id}`
+          );
+          return;
+        }
+        // Cleanup executor from active map for discrete sessions or ended persistent sessions
         this.activeExecutors.delete(execution.id);
       });
 
@@ -894,6 +904,16 @@ ${feedback}`;
     // Execute follow-up (non-blocking)
     // If we have a session ID, resume the session; otherwise start a new one
     const cleanupExecutor = () => {
+      // Don't cleanup persistent sessions that are still active
+      if (
+        wrapper instanceof AcpExecutorWrapper &&
+        wrapper.isPersistentSession(newExecution.id)
+      ) {
+        console.log(
+          `[ExecutionService] Keeping executor for active persistent session ${newExecution.id}`
+        );
+        return;
+      }
       this.activeExecutors.delete(newExecution.id);
     };
 
@@ -2248,6 +2268,12 @@ ${feedback}`;
     }
 
     await wrapper.endSession(executionId);
+
+    // Clean up the executor from activeExecutors now that session has ended
+    this.activeExecutors.delete(executionId);
+    console.log(
+      `[ExecutionService] Cleaned up executor for ended session ${executionId}`
+    );
   }
 
   /**

@@ -28,7 +28,10 @@ import type Database from "better-sqlite3";
 import type { ExecutionLifecycleService } from "../../services/execution-lifecycle.js";
 import type { ExecutionLogsStore } from "../../services/execution-logs-store.js";
 import { SessionUpdateCoalescer } from "../output/session-update-coalescer.js";
-import { serializeCoalescedUpdate } from "../output/coalesced-types.js";
+import {
+  serializeCoalescedUpdate,
+  type UserMessageComplete,
+} from "../output/coalesced-types.js";
 import { updateExecution, getExecution } from "../../services/executions.js";
 import {
   broadcastExecutionUpdate,
@@ -1103,6 +1106,17 @@ export class AcpExecutorWrapper {
         execution.issue_id || undefined
       );
     }
+
+    // Emit and store user message before streaming agent response
+    const userMessage: UserMessageComplete = {
+      sessionUpdate: "user_message_complete",
+      content: { type: "text", text: prompt },
+      timestamp: new Date(),
+    };
+    // Broadcast to frontend
+    this.broadcastSessionUpdate(executionId, userMessage as unknown as ExtendedSessionUpdate);
+    // Store in logs
+    this.logsStore.appendRawLog(executionId, serializeCoalescedUpdate(userMessage));
 
     // Stream prompt and process updates
     const coalescer = new SessionUpdateCoalescer();

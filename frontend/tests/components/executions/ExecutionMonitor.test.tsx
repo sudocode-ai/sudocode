@@ -1278,15 +1278,16 @@ describe('ExecutionMonitor', () => {
     })
 
     it('should display user prompt in compact mode when prompt is provided', () => {
+      // Use completed status since active non-persistent sessions rely on WebSocket for user messages
       mockUseSessionUpdateStream.mockReturnValue(
         createMockStreamResult({
           connectionStatus: 'connected',
           execution: {
             runId: 'run-123',
-            status: 'running',
+            status: 'completed',
             startTime: Date.now(),
           },
-          isConnected: true,
+          isConnected: false,
         })
       )
 
@@ -1294,7 +1295,7 @@ describe('ExecutionMonitor', () => {
         <ExecutionMonitor
           executionId="test-exec-1"
           execution={{
-            status: 'running',
+            status: 'completed',
             prompt: 'Please implement the login feature',
           } as any}
           compact
@@ -1306,15 +1307,16 @@ describe('ExecutionMonitor', () => {
     })
 
     it('should display follow-up prompt in compact mode', () => {
+      // Use completed status since active non-persistent sessions rely on WebSocket for user messages
       mockUseSessionUpdateStream.mockReturnValue(
         createMockStreamResult({
           connectionStatus: 'connected',
           execution: {
             runId: 'run-123',
-            status: 'running',
+            status: 'completed',
             startTime: Date.now(),
           },
-          isConnected: true,
+          isConnected: false,
         })
       )
 
@@ -1322,7 +1324,7 @@ describe('ExecutionMonitor', () => {
         <ExecutionMonitor
           executionId="test-exec-2"
           execution={{
-            status: 'running',
+            status: 'completed',
             prompt: 'Can you also add error handling?',
             parent_execution_id: 'test-exec-1',
           } as any}
@@ -1364,15 +1366,16 @@ describe('ExecutionMonitor', () => {
     })
 
     it('should preserve whitespace in user prompt', () => {
+      // Use completed status since active non-persistent sessions rely on WebSocket for user messages
       mockUseSessionUpdateStream.mockReturnValue(
         createMockStreamResult({
           connectionStatus: 'connected',
           execution: {
             runId: 'run-123',
-            status: 'running',
+            status: 'completed',
             startTime: Date.now(),
           },
-          isConnected: true,
+          isConnected: false,
         })
       )
 
@@ -1382,7 +1385,7 @@ describe('ExecutionMonitor', () => {
         <ExecutionMonitor
           executionId="test-exec-1"
           execution={{
-            status: 'running',
+            status: 'completed',
             prompt: multilinePrompt,
           } as any}
           compact
@@ -1393,6 +1396,365 @@ describe('ExecutionMonitor', () => {
       // Use textContent to check the full text with preserved newlines
       const promptElement = container.querySelector('.whitespace-pre-wrap')
       expect(promptElement?.textContent).toBe(multilinePrompt)
+    })
+  })
+
+  describe('Persistent Session Data Merging', () => {
+    // These tests verify that when continuing an execution (e.g., in a persistent session),
+    // historical data from logs is properly merged with new streaming data from WebSocket,
+    // maintaining correct chronological order.
+
+    it('should show logs data while WebSocket data is empty', () => {
+      // Logs have historical data
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
+        events: [
+          { sessionUpdate: 'agent_message_complete', content: { type: 'text', text: 'Historical message' }, timestamp: new Date(1000) },
+        ],
+        processed: {
+          messages: [
+            { id: 'msg-0', content: 'Historical message', timestamp: new Date(1000), isStreaming: false, index: 0 },
+          ],
+          toolCalls: [],
+          thoughts: [],
+        },
+        metadata: { lineCount: 1, byteSize: 100, createdAt: '', updatedAt: '' },
+      }))
+
+      // WebSocket has no data yet (transition from waiting to running)
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: { runId: 'run-123', status: 'running', startTime: Date.now() },
+          messages: [],
+          toolCalls: [],
+          isConnected: true,
+        })
+      )
+
+      renderWithTheme(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running', config: JSON.stringify({ sessionMode: 'persistent' }) } as any} />
+      )
+
+      // Should show logs data (only for persistent sessions)
+      expect(screen.getByText('Historical message')).toBeInTheDocument()
+    })
+
+    it('should merge logs and WebSocket messages with correct ordering', () => {
+      // Logs have historical messages with indices 0, 1
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
+        events: [],
+        processed: {
+          messages: [
+            { id: 'msg-0', content: 'First historical message', timestamp: new Date(1000), isStreaming: false, index: 0 },
+            { id: 'msg-1', content: 'Second historical message', timestamp: new Date(2000), isStreaming: false, index: 1 },
+          ],
+          toolCalls: [],
+          thoughts: [],
+        },
+        metadata: { lineCount: 2, byteSize: 100, createdAt: '', updatedAt: '' },
+      }))
+
+      // WebSocket has new messages with indices 0, 1 (reset on mount)
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: { runId: 'run-123', status: 'running', startTime: Date.now() },
+          messages: [
+            { id: 'ws-msg-0', content: 'New WebSocket message 1', timestamp: new Date(3000), isStreaming: false, index: 0 },
+            { id: 'ws-msg-1', content: 'New WebSocket message 2', timestamp: new Date(4000), isStreaming: false, index: 1 },
+          ],
+          toolCalls: [],
+          isConnected: true,
+        })
+      )
+
+      const { container } = renderWithTheme(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running', config: JSON.stringify({ sessionMode: 'persistent' }) } as any} />
+      )
+
+      // Should show all 4 messages
+      expect(screen.getByText('First historical message')).toBeInTheDocument()
+      expect(screen.getByText('Second historical message')).toBeInTheDocument()
+      expect(screen.getByText('New WebSocket message 1')).toBeInTheDocument()
+      expect(screen.getByText('New WebSocket message 2')).toBeInTheDocument()
+
+      // Verify order: historical messages first (indices 0, 1), then WebSocket messages (indices 2, 3 after offset)
+      const items = container.querySelectorAll('.group')
+      expect(items.length).toBe(4)
+      expect(items[0].textContent).toContain('First historical message')
+      expect(items[1].textContent).toContain('Second historical message')
+      expect(items[2].textContent).toContain('New WebSocket message 1')
+      expect(items[3].textContent).toContain('New WebSocket message 2')
+    })
+
+    it('should merge logs and WebSocket tool calls with correct ordering', () => {
+      // Logs have historical tool calls
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
+        events: [],
+        processed: {
+          messages: [],
+          toolCalls: [
+            { id: 'tool-0', title: 'Read', status: 'success', timestamp: new Date(1000), completedAt: new Date(1500), index: 0 },
+            { id: 'tool-1', title: 'Write', status: 'success', timestamp: new Date(2000), completedAt: new Date(2500), index: 1 },
+          ],
+          thoughts: [],
+        },
+        metadata: { lineCount: 2, byteSize: 100, createdAt: '', updatedAt: '' },
+      }))
+
+      // WebSocket has new tool calls
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: { runId: 'run-123', status: 'running', startTime: Date.now() },
+          messages: [],
+          toolCalls: [
+            { id: 'ws-tool-0', title: 'Bash', status: 'success', timestamp: new Date(3000), completedAt: new Date(3500), index: 0 },
+            { id: 'ws-tool-1', title: 'Glob', status: 'running', timestamp: new Date(4000), index: 1 },
+          ],
+          isConnected: true,
+        })
+      )
+
+      const { container } = renderWithTheme(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running', config: JSON.stringify({ sessionMode: 'persistent' }) } as any} />
+      )
+
+      // Should show all 4 tool calls
+      expect(screen.getByText('Read')).toBeInTheDocument()
+      expect(screen.getByText('Write')).toBeInTheDocument()
+      expect(screen.getByText('Bash')).toBeInTheDocument()
+      expect(screen.getByText('Glob')).toBeInTheDocument()
+
+      // Verify order: historical tool calls first, then WebSocket tool calls
+      const items = container.querySelectorAll('.group')
+      expect(items.length).toBe(4)
+      expect(items[0].textContent).toContain('Read')
+      expect(items[1].textContent).toContain('Write')
+      expect(items[2].textContent).toContain('Bash')
+      expect(items[3].textContent).toContain('Glob')
+    })
+
+    it('should maintain correct interleaved order of messages and tool calls', () => {
+      // Logs have interleaved messages and tool calls
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
+        events: [],
+        processed: {
+          messages: [
+            { id: 'msg-0', content: 'Let me read the file', timestamp: new Date(1000), isStreaming: false, index: 0 },
+            { id: 'msg-1', content: 'I found the issue', timestamp: new Date(3000), isStreaming: false, index: 2 },
+          ],
+          toolCalls: [
+            { id: 'tool-0', title: 'Read', status: 'success', timestamp: new Date(2000), completedAt: new Date(2500), index: 1 },
+          ],
+          thoughts: [],
+        },
+        metadata: { lineCount: 3, byteSize: 100, createdAt: '', updatedAt: '' },
+      }))
+
+      // WebSocket has new interleaved messages and tool calls
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: { runId: 'run-123', status: 'running', startTime: Date.now() },
+          messages: [
+            { id: 'ws-msg-0', content: 'Let me fix it', timestamp: new Date(4000), isStreaming: false, index: 0 },
+            { id: 'ws-msg-1', content: 'Done!', timestamp: new Date(6000), isStreaming: false, index: 2 },
+          ],
+          toolCalls: [
+            { id: 'ws-tool-0', title: 'Edit', status: 'success', timestamp: new Date(5000), completedAt: new Date(5500), index: 1 },
+          ],
+          isConnected: true,
+        })
+      )
+
+      const { container } = renderWithTheme(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running', config: JSON.stringify({ sessionMode: 'persistent' }) } as any} />
+      )
+
+      // Verify all items present
+      expect(screen.getByText('Let me read the file')).toBeInTheDocument()
+      expect(screen.getByText('Read')).toBeInTheDocument()
+      expect(screen.getByText('I found the issue')).toBeInTheDocument()
+      expect(screen.getByText('Let me fix it')).toBeInTheDocument()
+      expect(screen.getByText('Edit')).toBeInTheDocument()
+      expect(screen.getByText('Done!')).toBeInTheDocument()
+
+      // Verify order: logs items (indices 0,1,2), then WebSocket items (indices 3,4,5 after offset)
+      const items = container.querySelectorAll('.group')
+      expect(items.length).toBe(6)
+      expect(items[0].textContent).toContain('Let me read the file')
+      expect(items[1].textContent).toContain('Read')
+      expect(items[2].textContent).toContain('I found the issue')
+      expect(items[3].textContent).toContain('Let me fix it')
+      expect(items[4].textContent).toContain('Edit')
+      expect(items[5].textContent).toContain('Done!')
+    })
+
+    it('should handle user messages correctly in merged data', () => {
+      // Logs have agent message + user message (persistent session follow-up)
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
+        events: [],
+        processed: {
+          messages: [
+            { id: 'msg-0', content: 'Hello, how can I help?', timestamp: new Date(1000), isStreaming: false, index: 0 },
+            { id: 'user-msg-0', content: 'Can you read file.ts?', timestamp: new Date(2000), isStreaming: false, index: 1, role: 'user' },
+          ],
+          toolCalls: [],
+          thoughts: [],
+        },
+        metadata: { lineCount: 2, byteSize: 100, createdAt: '', updatedAt: '' },
+      }))
+
+      // WebSocket has new agent response
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: { runId: 'run-123', status: 'running', startTime: Date.now() },
+          messages: [
+            { id: 'ws-msg-0', content: 'Sure, let me read that file.', timestamp: new Date(3000), isStreaming: false, index: 0 },
+          ],
+          toolCalls: [],
+          isConnected: true,
+        })
+      )
+
+      const { container } = renderWithTheme(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running', config: JSON.stringify({ sessionMode: 'persistent' }) } as any} />
+      )
+
+      // Verify order: agent message, user message (with blue bg), new agent message
+      const items = container.querySelectorAll('.group')
+      expect(items.length).toBe(3)
+      expect(items[0].textContent).toContain('Hello, how can I help?')
+      expect(items[1].textContent).toContain('Can you read file.ts?')
+      expect(items[2].textContent).toContain('Sure, let me read that file.')
+
+      // Verify user message has blue background styling
+      const userMessageContainer = container.querySelector('.rounded-md')
+      expect(userMessageContainer).toBeInTheDocument()
+    })
+
+    it('should handle duplicate IDs by preserving logs index', () => {
+      // Logs have a message
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
+        events: [],
+        processed: {
+          messages: [
+            { id: 'shared-msg-id', content: 'Original content from logs', timestamp: new Date(1000), isStreaming: false, index: 0 },
+          ],
+          toolCalls: [],
+          thoughts: [],
+        },
+        metadata: { lineCount: 1, byteSize: 100, createdAt: '', updatedAt: '' },
+      }))
+
+      // WebSocket has same message ID with updated content (e.g., streaming finalized)
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: { runId: 'run-123', status: 'running', startTime: Date.now() },
+          messages: [
+            { id: 'shared-msg-id', content: 'Updated content from WebSocket', timestamp: new Date(1000), isStreaming: false, index: 5 },
+          ],
+          toolCalls: [],
+          isConnected: true,
+        })
+      )
+
+      const { container } = renderWithTheme(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running', config: JSON.stringify({ sessionMode: 'persistent' }) } as any} />
+      )
+
+      // Should show only one message (deduplicated)
+      const items = container.querySelectorAll('.group')
+      expect(items.length).toBe(1)
+
+      // Should show WebSocket content (takes precedence) but maintain logs index for ordering
+      expect(screen.getByText('Updated content from WebSocket')).toBeInTheDocument()
+      expect(screen.queryByText('Original content from logs')).not.toBeInTheDocument()
+    })
+
+    it('should handle empty logs with WebSocket data', () => {
+      // Logs are empty (fresh execution)
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
+        events: [],
+        processed: {
+          messages: [],
+          toolCalls: [],
+          thoughts: [],
+        },
+      }))
+
+      // WebSocket has data
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: { runId: 'run-123', status: 'running', startTime: Date.now() },
+          messages: [
+            { id: 'ws-msg-0', content: 'First message from stream', timestamp: new Date(1000), isStreaming: false, index: 0 },
+          ],
+          toolCalls: [
+            { id: 'ws-tool-0', title: 'Bash', status: 'running', timestamp: new Date(2000), index: 1 },
+          ],
+          isConnected: true,
+        })
+      )
+
+      const { container } = renderWithTheme(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running' } as any} />
+      )
+
+      // Should show WebSocket data normally
+      expect(screen.getByText('First message from stream')).toBeInTheDocument()
+      expect(screen.getByText('Bash')).toBeInTheDocument()
+
+      const items = container.querySelectorAll('.group')
+      expect(items.length).toBe(2)
+    })
+
+    it('should correctly order multiple user prompts in persistent sessions', () => {
+      // Simulate a conversation with multiple user prompts
+      mockUseExecutionLogs.mockReturnValue(createMockLogsResult({
+        events: [],
+        processed: {
+          messages: [
+            { id: 'msg-0', content: 'Hello!', timestamp: new Date(1000), isStreaming: false, index: 0 },
+            { id: 'user-msg-0', content: 'First question', timestamp: new Date(2000), isStreaming: false, index: 1, role: 'user' },
+            { id: 'msg-1', content: 'Answer to first', timestamp: new Date(3000), isStreaming: false, index: 2 },
+            { id: 'user-msg-1', content: 'Second question', timestamp: new Date(4000), isStreaming: false, index: 3, role: 'user' },
+          ],
+          toolCalls: [],
+          thoughts: [],
+        },
+        metadata: { lineCount: 4, byteSize: 200, createdAt: '', updatedAt: '' },
+      }))
+
+      // WebSocket has the response to the second question
+      mockUseSessionUpdateStream.mockReturnValue(
+        createMockStreamResult({
+          connectionStatus: 'connected',
+          execution: { runId: 'run-123', status: 'running', startTime: Date.now() },
+          messages: [
+            { id: 'ws-msg-0', content: 'Answer to second', timestamp: new Date(5000), isStreaming: false, index: 0 },
+          ],
+          toolCalls: [],
+          isConnected: true,
+        })
+      )
+
+      const { container } = renderWithTheme(
+        <ExecutionMonitor executionId="test-exec-1" execution={{ status: 'running', config: JSON.stringify({ sessionMode: 'persistent' }) } as any} />
+      )
+
+      // Verify all 5 messages in correct order
+      const items = container.querySelectorAll('.group')
+      expect(items.length).toBe(5)
+      expect(items[0].textContent).toContain('Hello!')
+      expect(items[1].textContent).toContain('First question')
+      expect(items[2].textContent).toContain('Answer to first')
+      expect(items[3].textContent).toContain('Second question')
+      expect(items[4].textContent).toContain('Answer to second')
     })
   })
 

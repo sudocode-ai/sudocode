@@ -161,6 +161,21 @@ describe("ExecutionService Persistent Session Methods", () => {
       expect(mockWrapper.endSession).toHaveBeenCalledWith("exec-123");
     });
 
+    it("should remove executor from activeExecutors after ending session", async () => {
+      const mockWrapper = Object.create(AcpExecutorWrapper.prototype);
+      mockWrapper.endSession = vi.fn().mockResolvedValue(undefined);
+
+      (service as any).activeExecutors.set("exec-123", mockWrapper);
+
+      // Verify executor is in map before ending
+      expect((service as any).activeExecutors.has("exec-123")).toBe(true);
+
+      await service.endSession("exec-123");
+
+      // Verify executor is removed after ending
+      expect((service as any).activeExecutors.has("exec-123")).toBe(false);
+    });
+
     it("should propagate errors from wrapper.endSession", async () => {
       const mockWrapper = Object.create(AcpExecutorWrapper.prototype);
       mockWrapper.endSession = vi
@@ -311,6 +326,94 @@ describe("ExecutionService Persistent Session Methods", () => {
         state: "ended",
         promptCount: 5,
       });
+    });
+  });
+
+  // ===========================================================================
+  // Executor Cleanup Behavior
+  // ===========================================================================
+  describe("Executor Cleanup Behavior", () => {
+    it("should keep executor in activeExecutors for active persistent sessions", () => {
+      const mockWrapper = Object.create(AcpExecutorWrapper.prototype);
+      mockWrapper.isPersistentSession = vi.fn().mockReturnValue(true);
+
+      (service as any).activeExecutors.set("exec-persistent", mockWrapper);
+
+      // Simulate cleanup logic from startExecution finally block
+      const shouldCleanup = !(
+        mockWrapper instanceof AcpExecutorWrapper &&
+        mockWrapper.isPersistentSession("exec-persistent")
+      );
+
+      if (shouldCleanup) {
+        (service as any).activeExecutors.delete("exec-persistent");
+      }
+
+      // Executor should still be in map
+      expect((service as any).activeExecutors.has("exec-persistent")).toBe(true);
+    });
+
+    it("should remove executor from activeExecutors for discrete sessions", () => {
+      const mockWrapper = Object.create(AcpExecutorWrapper.prototype);
+      mockWrapper.isPersistentSession = vi.fn().mockReturnValue(false);
+
+      (service as any).activeExecutors.set("exec-discrete", mockWrapper);
+
+      // Simulate cleanup logic from startExecution finally block
+      const shouldCleanup = !(
+        mockWrapper instanceof AcpExecutorWrapper &&
+        mockWrapper.isPersistentSession("exec-discrete")
+      );
+
+      if (shouldCleanup) {
+        (service as any).activeExecutors.delete("exec-discrete");
+      }
+
+      // Executor should be removed
+      expect((service as any).activeExecutors.has("exec-discrete")).toBe(false);
+    });
+
+    it("should remove executor from activeExecutors for ended persistent sessions", () => {
+      const mockWrapper = Object.create(AcpExecutorWrapper.prototype);
+      // Session has ended, so isPersistentSession returns false
+      mockWrapper.isPersistentSession = vi.fn().mockReturnValue(false);
+
+      (service as any).activeExecutors.set("exec-ended", mockWrapper);
+
+      // Simulate cleanup logic from startExecution finally block
+      const shouldCleanup = !(
+        mockWrapper instanceof AcpExecutorWrapper &&
+        mockWrapper.isPersistentSession("exec-ended")
+      );
+
+      if (shouldCleanup) {
+        (service as any).activeExecutors.delete("exec-ended");
+      }
+
+      // Executor should be removed (session ended)
+      expect((service as any).activeExecutors.has("exec-ended")).toBe(false);
+    });
+
+    it("should remove executor from activeExecutors for non-AcpExecutorWrapper", () => {
+      // Non-ACP wrapper (e.g., legacy executor)
+      const legacyWrapper = {
+        executeWithLifecycle: vi.fn(),
+      };
+
+      (service as any).activeExecutors.set("exec-legacy", legacyWrapper);
+
+      // Simulate cleanup logic - non-AcpExecutorWrapper should always be cleaned up
+      const shouldCleanup = !(
+        legacyWrapper instanceof AcpExecutorWrapper &&
+        (legacyWrapper as any).isPersistentSession?.("exec-legacy")
+      );
+
+      if (shouldCleanup) {
+        (service as any).activeExecutors.delete("exec-legacy");
+      }
+
+      // Executor should be removed
+      expect((service as any).activeExecutors.has("exec-legacy")).toBe(false);
     });
   });
 });

@@ -69,7 +69,7 @@ export function ExecutionSelector({
 }: ExecutionSelectorProps) {
   // Group executions by status
   const grouped = useMemo(() => {
-    const activeStatuses: ExecutionStatus[] = ['running', 'pending', 'preparing', 'paused']
+    const activeStatuses: ExecutionStatus[] = ['running', 'pending', 'preparing', 'paused', 'waiting']
     const active = executions.filter((e) => activeStatuses.includes(e.status))
     const recent = executions
       .filter((e) => !activeStatuses.includes(e.status))

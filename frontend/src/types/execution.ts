@@ -46,6 +46,14 @@ export interface ExecutionConfig {
   timeout?: number // Overall timeout (ms)
   mode?: ExecutionMode // Execution mode
 
+  // Session mode (persistent sessions)
+  sessionMode?: SessionMode // 'discrete' (default) or 'persistent'
+  sessionEndMode?: {
+    idleTimeoutMs?: number // Auto-end after idle period
+    endOnDisconnect?: boolean // End when browser disconnects
+    pauseOnCompletion?: boolean // Pause instead of wait after prompt
+  }
+
   // Worktree settings (if mode === 'worktree')
   baseBranch?: string // Branch to base worktree on
   createBaseBranch?: boolean // If true, create baseBranch from current HEAD
