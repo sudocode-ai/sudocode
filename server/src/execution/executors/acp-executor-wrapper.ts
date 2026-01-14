@@ -516,16 +516,37 @@ export class AcpExecutorWrapper {
    * @param sessionId - Session ID to resume from
    * @param task - Task to resume
    * @param workDir - Working directory for execution
+   * @param options - Execution lifecycle options (sessionMode, sessionEndMode)
    */
   async resumeWithLifecycle(
     executionId: string,
     sessionId: string,
     task: AcpExecutionTask,
-    workDir: string
+    workDir: string,
+    options?: ExecutionLifecycleOptions
   ): Promise<void> {
+    const isPersistent = options?.sessionMode === "persistent";
+
     console.log(
-      `[AcpExecutorWrapper] Resuming session ${sessionId} for ${executionId}`
+      `[AcpExecutorWrapper] Resuming session ${sessionId} for ${executionId}`,
+      { sessionMode: options?.sessionMode ?? "discrete" }
     );
+
+    // Initialize persistent session state if needed
+    if (isPersistent) {
+      const sessionConfig = options?.sessionEndMode ?? { explicit: true };
+      const persistentState: PersistentSessionState = {
+        config: sessionConfig,
+        promptCount: 0,
+        state: "running",
+        workDir,
+      };
+      this.persistentSessions.set(executionId, persistentState);
+
+      // Register for WebSocket disconnect events to handle cleanup
+      persistentState.unregisterDisconnectCallback =
+        this.registerDisconnectHandler(executionId);
+    }
 
     let agent: AgentHandle | null = null;
     let session: Session | null = null;
@@ -684,10 +705,17 @@ export class AcpExecutorWrapper {
 
       console.log(`[AcpExecutorWrapper] Resume completed for ${executionId}`, {
         totalUpdates: updateCount,
+        isPersistent,
       });
 
-      // 6. Handle success
-      await this.handleSuccess(executionId, workDir);
+      // 6. Handle completion based on session mode
+      if (isPersistent) {
+        // Persistent mode: transition to waiting state
+        await this.transitionToWaiting(executionId);
+      } else {
+        // Discrete mode: complete the execution
+        await this.handleSuccess(executionId, workDir);
+      }
     } catch (error) {
       console.error(
         `[AcpExecutorWrapper] Resume failed for ${executionId}:`,
@@ -696,8 +724,19 @@ export class AcpExecutorWrapper {
       await this.handleError(executionId, error as Error, workDir);
       throw error;
     } finally {
+      // Skip cleanup for persistent sessions that are still alive
+      const persistentState = this.persistentSessions.get(executionId);
+      if (persistentState && persistentState.state !== "ended") {
+        console.log(
+          `[AcpExecutorWrapper] Skipping cleanup for persistent session ${executionId} (state: ${persistentState.state})`
+        );
+        return;
+      }
+
+      // Cleanup for discrete sessions or ended persistent sessions
       this.activeSessions.delete(executionId);
       this.activeAgents.delete(executionId);
+      this.persistentSessions.delete(executionId);
 
       // Cancel any pending permissions
       const pm = this.permissionManagers.get(executionId);

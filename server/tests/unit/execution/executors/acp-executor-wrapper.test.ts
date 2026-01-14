@@ -1111,6 +1111,184 @@ describe("Persistent Sessions", () => {
       expect(unregisterFn).toHaveBeenCalled();
     });
   });
+
+  describe("resumeWithLifecycle with persistent mode", () => {
+    it("should transition to waiting state after resume completes in persistent mode", async () => {
+      const { AgentFactory } = await import("acp-factory");
+      const { updateExecution } = await import(
+        "../../../../src/services/executions.js"
+      );
+      const mockAgent = await AgentFactory.spawn("claude-code");
+
+      const mockSession = {
+        id: "existing-session-123",
+        cwd: "/test/workdir",
+        modes: ["code"],
+        models: ["claude-sonnet"],
+        prompt: vi.fn().mockImplementation(async function* () {
+          yield {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "Resumed" },
+          };
+        }),
+        cancel: vi.fn(),
+        setMode: vi.fn(),
+      };
+
+      (mockAgent.loadSession as any).mockResolvedValueOnce(mockSession);
+
+      await wrapper.resumeWithLifecycle(
+        "exec-123",
+        "existing-session-123",
+        { id: "task-1", prompt: "Continue work" },
+        "/test/workdir",
+        { sessionMode: "persistent" }
+      );
+
+      // Should update to "waiting" status instead of "completed"
+      expect(updateExecution).toHaveBeenCalledWith(
+        mockDb,
+        "exec-123",
+        expect.objectContaining({ status: "waiting" })
+      );
+
+      // Should NOT update to "completed" (discrete mode behavior)
+      const completedCalls = (updateExecution as any).mock.calls.filter(
+        (call: any[]) => call[2]?.status === "completed"
+      );
+      expect(completedCalls).toHaveLength(0);
+    });
+
+    it("should track persistent session state for resumed sessions", async () => {
+      const { AgentFactory } = await import("acp-factory");
+      const mockAgent = await AgentFactory.spawn("claude-code");
+
+      const mockSession = {
+        id: "existing-session-123",
+        cwd: "/test/workdir",
+        modes: ["code"],
+        models: ["claude-sonnet"],
+        prompt: vi.fn().mockImplementation(async function* () {
+          yield {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "Resumed" },
+          };
+        }),
+        cancel: vi.fn(),
+        setMode: vi.fn(),
+      };
+
+      (mockAgent.loadSession as any).mockResolvedValueOnce(mockSession);
+
+      await wrapper.resumeWithLifecycle(
+        "exec-123",
+        "existing-session-123",
+        { id: "task-1", prompt: "Continue work" },
+        "/test/workdir",
+        { sessionMode: "persistent" }
+      );
+
+      // Should have persistent session state
+      expect(wrapper.isPersistentSession("exec-123")).toBe(true);
+
+      const state = wrapper.getSessionState("exec-123");
+      expect(state).not.toBeNull();
+      expect(state?.mode).toBe("persistent");
+      expect(state?.state).toBe("waiting");
+      expect(state?.promptCount).toBe(1);
+    });
+
+    it("should complete execution for resumed sessions without persistent mode", async () => {
+      const { AgentFactory } = await import("acp-factory");
+      const { updateExecution } = await import(
+        "../../../../src/services/executions.js"
+      );
+      const mockAgent = await AgentFactory.spawn("claude-code");
+
+      const mockSession = {
+        id: "existing-session-123",
+        cwd: "/test/workdir",
+        modes: ["code"],
+        models: ["claude-sonnet"],
+        prompt: vi.fn().mockImplementation(async function* () {
+          yield {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "Done" },
+          };
+        }),
+        cancel: vi.fn(),
+        setMode: vi.fn(),
+      };
+
+      (mockAgent.loadSession as any).mockResolvedValueOnce(mockSession);
+
+      await wrapper.resumeWithLifecycle(
+        "exec-123",
+        "existing-session-123",
+        { id: "task-1", prompt: "Continue work" },
+        "/test/workdir"
+        // No sessionMode option - defaults to discrete
+      );
+
+      // Should update to "completed" status (discrete mode)
+      expect(updateExecution).toHaveBeenCalledWith(
+        mockDb,
+        "exec-123",
+        expect.objectContaining({ status: "completed" })
+      );
+
+      // Should NOT be a persistent session
+      expect(wrapper.isPersistentSession("exec-123")).toBe(false);
+    });
+
+    it("should respect pauseOnCompletion for resumed sessions", async () => {
+      const { AgentFactory } = await import("acp-factory");
+      const { updateExecution } = await import(
+        "../../../../src/services/executions.js"
+      );
+      const mockAgent = await AgentFactory.spawn("claude-code");
+
+      const mockSession = {
+        id: "existing-session-123",
+        cwd: "/test/workdir",
+        modes: ["code"],
+        models: ["claude-sonnet"],
+        prompt: vi.fn().mockImplementation(async function* () {
+          yield {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "Done" },
+          };
+        }),
+        cancel: vi.fn(),
+        setMode: vi.fn(),
+      };
+
+      (mockAgent.loadSession as any).mockResolvedValueOnce(mockSession);
+
+      await wrapper.resumeWithLifecycle(
+        "exec-123",
+        "existing-session-123",
+        { id: "task-1", prompt: "Continue work" },
+        "/test/workdir",
+        {
+          sessionMode: "persistent",
+          sessionEndMode: { pauseOnCompletion: true },
+        }
+      );
+
+      // Should be in paused state
+      const state = wrapper.getSessionState("exec-123");
+      expect(state?.state).toBe("paused");
+      expect(wrapper.isPersistentSession("exec-123")).toBe(true);
+
+      // Should have updated execution status to paused
+      expect(updateExecution).toHaveBeenCalledWith(
+        mockDb,
+        "exec-123",
+        expect.objectContaining({ status: "paused" })
+      );
+    });
+  });
 });
 
 describe("convertMcpServers", () => {

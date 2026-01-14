@@ -896,6 +896,7 @@ ${feedback}`;
       dangerouslySkipPermissions: parsedConfig.dangerouslySkipPermissions,
       hasAppendSystemPrompt: !!parsedConfig.appendSystemPrompt,
       model: parsedConfig.model,
+      sessionMode: parsedConfig.sessionMode ?? "discrete",
     });
 
     // Store executor for interactive operations (permission responses, etc.)
@@ -917,9 +918,21 @@ ${feedback}`;
       this.activeExecutors.delete(newExecution.id);
     };
 
+    // Build session mode options from parent config
+    const sessionModeOptions = {
+      sessionMode: parsedConfig.sessionMode,
+      sessionEndMode: parsedConfig.sessionEndMode,
+    };
+
     if (sessionId) {
       wrapper
-        .resumeWithLifecycle(newExecution.id, sessionId, task, workDir)
+        .resumeWithLifecycle(
+          newExecution.id,
+          sessionId,
+          task,
+          workDir,
+          sessionModeOptions
+        )
         .catch((error) => {
           console.error(
             `[ExecutionService] Follow-up execution ${newExecution.id} failed:`,
@@ -931,7 +944,7 @@ ${feedback}`;
     } else {
       // No session to resume, start a new execution with the follow-up prompt
       wrapper
-        .executeWithLifecycle(newExecution.id, task, workDir)
+        .executeWithLifecycle(newExecution.id, task, workDir, sessionModeOptions)
         .catch((error) => {
           console.error(
             `[ExecutionService] Follow-up execution ${newExecution.id} failed:`,
