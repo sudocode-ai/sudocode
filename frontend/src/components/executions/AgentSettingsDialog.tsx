@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { ExecutionConfig, ExecutionMode } from '@/types/execution'
+import { Switch } from '@/components/ui/switch'
 import type { AgentInfo } from '@/types/api'
 import { ClaudeCodeConfigForm, type ClaudeCodeConfig } from './ClaudeCodeConfigForm'
 import { CodexConfigForm, type CodexConfig } from './CodexConfigForm'
@@ -370,6 +371,91 @@ export function AgentSettingsDialog({
                         </div>
                       )}
                     </>
+                  )}
+
+                  {/* Persistent Session Toggle (Claude Code only) */}
+                  {agentType === 'claude-code' && (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between rounded-lg border p-4">
+                        <div className="space-y-0.5">
+                          <Label htmlFor="persistent-session" className="text-base">
+                            Persistent Session
+                          </Label>
+                          <p className="text-sm text-muted-foreground">
+                            Keep the agent session alive for multiple prompts without losing context.
+                          </p>
+                        </div>
+                        <Switch
+                          id="persistent-session"
+                          checked={config.sessionMode === 'persistent'}
+                          onCheckedChange={(checked) =>
+                            onConfigChange({
+                              sessionMode: checked ? 'persistent' : 'discrete',
+                            })
+                          }
+                        />
+                      </div>
+
+                      {/* Additional options when persistent mode is enabled */}
+                      {config.sessionMode === 'persistent' && (
+                        <div className="ml-4 space-y-4 border-l-2 border-muted pl-4">
+                          <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                              <Label htmlFor="pause-on-completion" className="text-sm">
+                                Pause on Completion
+                              </Label>
+                              <p className="text-xs text-muted-foreground">
+                                Pause the session instead of waiting after each prompt.
+                              </p>
+                            </div>
+                            <Switch
+                              id="pause-on-completion"
+                              checked={config.sessionEndMode?.pauseOnCompletion ?? false}
+                              onCheckedChange={(checked) =>
+                                onConfigChange({
+                                  sessionEndMode: {
+                                    ...config.sessionEndMode,
+                                    pauseOnCompletion: checked,
+                                  },
+                                })
+                              }
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="idle-timeout" className="text-sm">
+                              Idle Timeout (minutes)
+                            </Label>
+                            <input
+                              id="idle-timeout"
+                              type="number"
+                              min="1"
+                              max="60"
+                              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                              value={
+                                config.sessionEndMode?.idleTimeoutMs
+                                  ? Math.round(config.sessionEndMode.idleTimeoutMs / 60000)
+                                  : ''
+                              }
+                              onChange={(e) =>
+                                onConfigChange({
+                                  sessionEndMode: {
+                                    ...config.sessionEndMode,
+                                    idleTimeoutMs: e.target.value
+                                      ? parseInt(e.target.value) * 60000
+                                      : undefined,
+                                  },
+                                })
+                              }
+                              placeholder="No timeout"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Auto-end session after being idle. Leave empty to keep alive indefinitely.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   <div className="space-y-2">

@@ -621,6 +621,213 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 6,
+    name: "add-waiting-status-to-executions",
+    up: (db: Database.Database) => {
+      // Check if executions table exists
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='executions'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (tables.length === 0) {
+        console.log(
+          "  [migration-6] executions table does not exist, skipping"
+        );
+        return;
+      }
+
+      // Check if status column already has 'waiting' in its CHECK constraint
+      // We can't directly check constraints in SQLite, so we try to update an execution
+      // to 'waiting' status. If it fails, we need to recreate the table.
+      try {
+        // Try inserting a dummy row with 'waiting' status to test constraint
+        db.exec(`
+          INSERT INTO executions (id, mode, target_branch, branch_name, status)
+          VALUES ('__migration_test__', 'local', 'main', 'test', 'waiting')
+        `);
+        // If it succeeds, the constraint already allows 'waiting', delete the test row
+        db.exec(`DELETE FROM executions WHERE id = '__migration_test__'`);
+        console.log(
+          "  [migration-6] 'waiting' status already supported, skipping"
+        );
+        return;
+      } catch {
+        // Constraint doesn't allow 'waiting', need to recreate table
+        console.log(
+          "  [migration-6] Updating executions table to support 'waiting' status"
+        );
+      }
+
+      // SQLite doesn't support ALTER CONSTRAINT, so we need to recreate the table
+      db.exec(`PRAGMA foreign_keys = OFF;`);
+
+      // Create new table with updated CHECK constraint
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS executions_new (
+          id TEXT PRIMARY KEY,
+          uuid TEXT,
+          issue_id TEXT,
+          issue_uuid TEXT,
+          mode TEXT NOT NULL,
+          prompt TEXT,
+          config TEXT,
+          agent_type TEXT,
+          session_id TEXT,
+          workflow_execution_id TEXT,
+          target_branch TEXT NOT NULL,
+          branch_name TEXT NOT NULL,
+          before_commit TEXT,
+          after_commit TEXT,
+          worktree_path TEXT,
+          status TEXT NOT NULL CHECK(status IN (
+              'preparing', 'pending', 'running', 'paused', 'waiting',
+              'completed', 'failed', 'cancelled', 'stopped'
+          )),
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          started_at DATETIME,
+          completed_at DATETIME,
+          cancelled_at DATETIME,
+          exit_code INTEGER,
+          error_message TEXT,
+          error TEXT,
+          model TEXT,
+          summary TEXT,
+          files_changed TEXT,
+          parent_execution_id TEXT,
+          step_type TEXT,
+          step_index INTEGER,
+          step_config TEXT,
+          external_links TEXT,
+          FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL,
+          FOREIGN KEY (issue_uuid) REFERENCES issues(uuid) ON DELETE SET NULL,
+          FOREIGN KEY (parent_execution_id) REFERENCES executions(id) ON DELETE SET NULL,
+          FOREIGN KEY (workflow_execution_id) REFERENCES executions(id) ON DELETE SET NULL
+        );
+      `);
+
+      // Copy data from old table
+      db.exec(`
+        INSERT INTO executions_new (
+          id, uuid, issue_id, issue_uuid, mode, prompt, config, agent_type, session_id,
+          workflow_execution_id, target_branch, branch_name, before_commit, after_commit,
+          worktree_path, status, created_at, updated_at, started_at, completed_at,
+          cancelled_at, exit_code, error_message, error, model, summary, files_changed,
+          parent_execution_id, step_type, step_index, step_config, external_links
+        )
+        SELECT
+          id, uuid, issue_id, issue_uuid, mode, prompt, config, agent_type, session_id,
+          workflow_execution_id, target_branch, branch_name, before_commit, after_commit,
+          worktree_path, status, created_at, updated_at, started_at, completed_at,
+          cancelled_at, exit_code, error_message, error, model, summary, files_changed,
+          parent_execution_id, step_type, step_index, step_config, external_links
+        FROM executions;
+      `);
+
+      // Drop old table
+      db.exec(`DROP TABLE executions;`);
+
+      // Rename new table
+      db.exec(`ALTER TABLE executions_new RENAME TO executions;`);
+
+      // Recreate indexes
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_executions_issue_id ON executions(issue_id);
+        CREATE INDEX IF NOT EXISTS idx_executions_issue_uuid ON executions(issue_uuid);
+        CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
+        CREATE INDEX IF NOT EXISTS idx_executions_created_at ON executions(created_at);
+        CREATE INDEX IF NOT EXISTS idx_executions_parent_id ON executions(parent_execution_id);
+        CREATE INDEX IF NOT EXISTS idx_executions_workflow ON executions(workflow_execution_id);
+      `);
+
+      db.exec(`PRAGMA foreign_keys = ON;`);
+
+      console.log(
+        "  ✓ Added 'waiting' to executions status CHECK constraint"
+      );
+    },
+    down: (db: Database.Database) => {
+      // Rollback: remove 'waiting' from status CHECK
+      // First, update any 'waiting' status to 'paused'
+      db.exec(`
+        UPDATE executions SET status = 'paused' WHERE status = 'waiting'
+      `);
+
+      db.exec(`PRAGMA foreign_keys = OFF;`);
+
+      // Create table without 'waiting' in CHECK
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS executions_old (
+          id TEXT PRIMARY KEY,
+          uuid TEXT,
+          issue_id TEXT,
+          issue_uuid TEXT,
+          mode TEXT NOT NULL,
+          prompt TEXT,
+          config TEXT,
+          agent_type TEXT,
+          session_id TEXT,
+          workflow_execution_id TEXT,
+          target_branch TEXT NOT NULL,
+          branch_name TEXT NOT NULL,
+          before_commit TEXT,
+          after_commit TEXT,
+          worktree_path TEXT,
+          status TEXT NOT NULL CHECK(status IN (
+              'preparing', 'pending', 'running', 'paused',
+              'completed', 'failed', 'cancelled', 'stopped'
+          )),
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          started_at DATETIME,
+          completed_at DATETIME,
+          cancelled_at DATETIME,
+          exit_code INTEGER,
+          error_message TEXT,
+          error TEXT,
+          model TEXT,
+          summary TEXT,
+          files_changed TEXT,
+          parent_execution_id TEXT,
+          step_type TEXT,
+          step_index INTEGER,
+          step_config TEXT,
+          external_links TEXT,
+          FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL,
+          FOREIGN KEY (issue_uuid) REFERENCES issues(uuid) ON DELETE SET NULL,
+          FOREIGN KEY (parent_execution_id) REFERENCES executions(id) ON DELETE SET NULL,
+          FOREIGN KEY (workflow_execution_id) REFERENCES executions(id) ON DELETE SET NULL
+        );
+      `);
+
+      db.exec(`
+        INSERT INTO executions_old
+        SELECT * FROM executions;
+      `);
+
+      db.exec(`DROP TABLE executions;`);
+      db.exec(`ALTER TABLE executions_old RENAME TO executions;`);
+
+      // Recreate indexes
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_executions_issue_id ON executions(issue_id);
+        CREATE INDEX IF NOT EXISTS idx_executions_issue_uuid ON executions(issue_uuid);
+        CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
+        CREATE INDEX IF NOT EXISTS idx_executions_created_at ON executions(created_at);
+        CREATE INDEX IF NOT EXISTS idx_executions_parent_id ON executions(parent_execution_id);
+        CREATE INDEX IF NOT EXISTS idx_executions_workflow ON executions(workflow_execution_id);
+      `);
+
+      db.exec(`PRAGMA foreign_keys = ON;`);
+
+      console.log(
+        "  Note: 'waiting' status executions were converted to 'paused'"
+      );
+    },
+  },
 ];
 
 /**

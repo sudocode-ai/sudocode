@@ -48,6 +48,10 @@ const executionStatusConfig: Record<ExecutionStatus, { label: string; color: str
     label: 'Paused',
     color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300',
   },
+  waiting: {
+    label: 'Waiting',
+    color: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
+  },
   completed: {
     label: 'Completed',
     color: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',

@@ -3,6 +3,8 @@ import { executionsApi, type ExecutionChainResponse } from '@/lib/api'
 import { ExecutionMonitor, RunIndicator } from './ExecutionMonitor'
 import type { AvailableCommand } from '@/hooks/useSessionUpdateStream'
 import { AgentConfigPanel } from './AgentConfigPanel'
+import { useWebSocketContext } from '@/contexts/WebSocketContext'
+import type { WebSocketMessage } from '@/types/api'
 import { DeleteWorktreeDialog } from './DeleteWorktreeDialog'
 import { DeleteExecutionDialog } from './DeleteExecutionDialog'
 import { SyncPreviewDialog } from './SyncPreviewDialog'
@@ -26,6 +28,7 @@ import {
   XCircle,
   ArrowDown,
   ArrowUp,
+  StopCircle,
 } from 'lucide-react'
 
 /**
@@ -93,6 +96,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
   const [hasUncommittedChanges, setHasUncommittedChanges] = useState<boolean | undefined>(undefined)
   const [commitsAhead, setCommitsAhead] = useState<number | undefined>(undefined)
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
+  const [endingSession, setEndingSession] = useState(false)
 
   // Sync state management
   const {
@@ -157,6 +161,8 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
     try {
       const data = await executionsApi.getChain(executionId)
       setChainData(data)
+      // Update the set of known execution IDs in this chain
+      chainExecutionIdsRef.current = new Set(data.executions.map((e) => e.id))
 
       // Re-check for uncommitted changes
       const rootExecution = data.executions[0]
@@ -229,6 +235,12 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
     onCommitComplete: handleActionComplete,
   })
 
+  // WebSocket context for real-time status updates
+  const { connected, subscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
+
+  // Track known execution IDs in this chain to detect relevant updates
+  const chainExecutionIdsRef = useRef<Set<string>>(new Set())
+
   // Auto-scroll state and refs
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true)
@@ -245,6 +257,8 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
       try {
         const data = await executionsApi.getChain(executionId)
         setChainData(data)
+        // Update the set of known execution IDs in this chain
+        chainExecutionIdsRef.current = new Set(data.executions.map((e) => e.id))
 
         // Check worktree status (for worktree mode) and uncommitted changes (all modes)
         const rootExecution = data.executions[0]
@@ -307,12 +321,86 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
     loadChain()
   }, [executionId])
 
+  // WebSocket subscription for real-time status updates
+  useEffect(() => {
+    const handlerId = `ExecutionView-${executionId}`
+
+    const handleMessage = (message: WebSocketMessage) => {
+      // Only handle execution-related messages
+      if (
+        message.type !== 'execution_created' &&
+        message.type !== 'execution_updated' &&
+        message.type !== 'execution_status_changed'
+      ) {
+        return
+      }
+
+      // Extract execution data from message
+      const executionData = message.data as Execution | undefined
+      if (!executionData?.id) return
+
+      // Check if the message is about an execution in our chain
+      const isInChain = chainExecutionIdsRef.current.has(executionData.id)
+      // Check if it's a new follow-up execution for our chain
+      const isNewFollowUp =
+        message.type === 'execution_created' &&
+        executionData.parent_execution_id &&
+        chainExecutionIdsRef.current.has(executionData.parent_execution_id)
+
+      if (isInChain) {
+        // Update the execution status in chainData without reloading
+        setChainData((prev) => {
+          if (!prev) return prev
+          const updatedExecutions = prev.executions.map((exec) => {
+            if (exec.id === executionData.id) {
+              return {
+                ...exec,
+                status: executionData.status,
+                // Also update other fields that might have changed
+                error: executionData.error,
+                updated_at: executionData.updated_at,
+              }
+            }
+            return exec
+          })
+          return {
+            ...prev,
+            executions: updatedExecutions,
+          }
+        })
+      } else if (isNewFollowUp) {
+        // Add the new follow-up execution to the chain
+        setChainData((prev) => {
+          if (!prev) return prev
+          // Add new execution to the chain and update the ref
+          chainExecutionIdsRef.current.add(executionData.id)
+          return {
+            ...prev,
+            executions: [...prev.executions, executionData],
+          }
+        })
+      }
+    }
+
+    addMessageHandler(handlerId, handleMessage)
+
+    if (connected) {
+      subscribe('execution')
+    }
+
+    return () => {
+      removeMessageHandler(handlerId)
+    }
+  }, [executionId, connected, subscribe, addMessageHandler, removeMessageHandler])
+
   // Reload chain when an execution completes
   const handleExecutionComplete = useCallback(async (completedExecutionId: string) => {
     try {
       // Reload the full chain to get updated status
       const data = await executionsApi.getChain(completedExecutionId)
       setChainData(data)
+      // Update the set of known execution IDs in this chain
+      chainExecutionIdsRef.current = new Set(data.executions.map((e) => e.id))
 
       // Re-check worktree status and uncommitted changes
       const rootExecution = data.executions[0]
@@ -391,6 +479,8 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
         // Reload chain to include the new execution
         const data = await executionsApi.getChain(executionId)
         setChainData(data)
+        // Update the ref to prevent WebSocket handler from adding duplicates
+        chainExecutionIdsRef.current = new Set(data.executions.map((e) => e.id))
 
         // Notify parent if callback provided (for URL updates, etc.)
         if (onFollowUpCreated) {
@@ -403,7 +493,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
     [executionId, onFollowUpCreated]
   )
 
-  // Handle follow-up submission - creates new execution and adds to chain
+  // Handle follow-up submission - either sends prompt to persistent session or creates new execution
   const handleFollowUpStart = async (
     _config: ExecutionConfig,
     prompt: string,
@@ -411,32 +501,122 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
   ) => {
     if (!chainData || chainData.executions.length === 0) return
 
-    // Get the last execution in the chain to create follow-up from
+    // Get the last execution in the chain
     const lastExecution = chainData.executions[chainData.executions.length - 1]
+
+    // Check if this is a persistent session that's ready for another prompt
+    const isPersistentSessionReady =
+      lastExecution.status === 'waiting' || lastExecution.status === 'paused'
 
     setSubmittingFollowUp(true)
     try {
-      const newExecution = await executionsApi.createFollowUp(lastExecution.id, {
-        feedback: prompt,
-      })
+      if (isPersistentSessionReady) {
+        // Optimistically update status to 'running' BEFORE the API call
+        // This ensures the UI reflects the running state immediately
+        setChainData((prev) => {
+          if (!prev) return prev
+          const updatedExecutions = [...prev.executions]
+          const lastIdx = updatedExecutions.length - 1
+          updatedExecutions[lastIdx] = {
+            ...updatedExecutions[lastIdx],
+            status: 'running',
+          }
+          return {
+            ...prev,
+            executions: updatedExecutions,
+          }
+        })
 
-      // Add the new execution to the chain immediately
-      setChainData((prev) => {
-        if (!prev) return prev
-        return {
-          ...prev,
-          executions: [...prev.executions, newExecution],
+        // Send prompt to existing persistent session
+        // WebSocket will update the status back to 'waiting' when complete
+        await executionsApi.sendPrompt(lastExecution.id, prompt)
+      } else {
+        // Create a new follow-up execution
+        const newExecution = await executionsApi.createFollowUp(lastExecution.id, {
+          feedback: prompt,
+        })
+
+        // Add the new execution to the chain if not already added by WebSocket handler.
+        // The WebSocket execution_created message may arrive before the API response,
+        // so we check if the execution is already in the chain to avoid duplicates.
+        if (!chainExecutionIdsRef.current.has(newExecution.id)) {
+          chainExecutionIdsRef.current.add(newExecution.id)
+          setChainData((prev) => {
+            if (!prev) return prev
+            return {
+              ...prev,
+              executions: [...prev.executions, newExecution],
+            }
+          })
         }
-      })
 
-      // Notify parent if callback provided (for URL updates, etc.)
-      if (onFollowUpCreated) {
-        onFollowUpCreated(newExecution.id)
+        // Notify parent if callback provided (for URL updates, etc.)
+        if (onFollowUpCreated) {
+          onFollowUpCreated(newExecution.id)
+        }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create follow-up')
+      setError(
+        err instanceof Error
+          ? err.message
+          : isPersistentSessionReady
+            ? 'Failed to send prompt to session'
+            : 'Failed to create follow-up'
+      )
     } finally {
       setSubmittingFollowUp(false)
+    }
+  }
+
+  // Handle ending a persistent session
+  const handleEndSession = async () => {
+    if (!chainData || chainData.executions.length === 0) return
+
+    const lastExecution = chainData.executions[chainData.executions.length - 1]
+
+    // Only end if the session is in a state that can be ended
+    if (lastExecution.status !== 'waiting' && lastExecution.status !== 'paused') {
+      return
+    }
+
+    setEndingSession(true)
+    try {
+      await executionsApi.endSession(lastExecution.id)
+
+      // Update the execution status locally
+      // The WebSocket will update with the actual completed status
+      setChainData((prev) => {
+        if (!prev) return prev
+        const updatedExecutions = [...prev.executions]
+        const lastIdx = updatedExecutions.length - 1
+        updatedExecutions[lastIdx] = {
+          ...updatedExecutions[lastIdx],
+          status: 'completed',
+        }
+        return {
+          ...prev,
+          executions: updatedExecutions,
+        }
+      })
+    } catch (err) {
+      // If the executor is not found (404), the session has already ended.
+      // Reload the chain to get the actual status instead of showing an error.
+      const errorMessage = err instanceof Error ? err.message : String(err)
+      if (errorMessage.includes('No active executor') || errorMessage.includes('not found')) {
+        // Session already ended - reload chain to get current status
+        try {
+          const data = await executionsApi.getChain(lastExecution.id)
+          setChainData(data)
+          chainExecutionIdsRef.current = new Set(data.executions.map((e) => e.id))
+        } catch (reloadErr) {
+          // If reload also fails, show the original error
+          setError(errorMessage)
+        }
+      } else {
+        setError(errorMessage)
+      }
+    } finally {
+      setEndingSession(false)
     }
   }
 
@@ -686,7 +866,8 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
     if (!chainData || chainData.executions.length === 0) return
     const rootExec = chainData.executions[0]
     const lastExec = chainData.executions[chainData.executions.length - 1]
-    const canCancel = ['preparing', 'pending', 'running', 'paused'].includes(lastExec.status)
+    // Only allow cancel for actively running executions (not waiting/paused persistent sessions)
+    const canCancel = ['preparing', 'pending', 'running'].includes(lastExec.status)
 
     onHeaderDataChange?.(
       {
@@ -750,14 +931,24 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
   const rootExecution = executions[0]
   const lastExecution = executions[executions.length - 1]
 
-  // Determine if we can enable follow-up panel (last execution must be terminal)
-  // Follow-ups work for both issue-based and adhoc executions
+  // Determine if we can enable follow-up/prompt panel
+  // Terminal statuses allow creating a new follow-up execution
+  // Waiting/paused statuses allow sending a prompt to a persistent session
   const lastExecutionTerminal =
     lastExecution.status === 'completed' ||
     lastExecution.status === 'failed' ||
     lastExecution.status === 'stopped' ||
     lastExecution.status === 'cancelled'
-  const canEnableFollowUp = lastExecutionTerminal
+  const isPersistentSessionReady =
+    lastExecution.status === 'waiting' || lastExecution.status === 'paused'
+  const canEnableFollowUp = lastExecutionTerminal || isPersistentSessionReady
+
+  // Determine if the execution is actively running (not waiting/paused)
+  // This controls the "running" indicator in AgentConfigPanel
+  const isActivelyRunning =
+    lastExecution.status === 'preparing' ||
+    lastExecution.status === 'pending' ||
+    lastExecution.status === 'running'
 
   return (
     <TooltipProvider>
@@ -800,7 +991,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
                       onAvailableCommandsUpdate={isLast ? handleAvailableCommandsUpdate : undefined}
                       onCancel={
                         isLast &&
-                        ['preparing', 'pending', 'running', 'paused'].includes(execution.status)
+                        ['preparing', 'pending', 'running'].includes(execution.status)
                           ? () => handleCancel(execution.id)
                           : undefined
                       }
@@ -840,8 +1031,33 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
                 </>
               )}
 
+              {/* Persistent Session Actions - shown when session is waiting/paused */}
+              {isPersistentSessionReady && (
+                <div className="flex flex-wrap items-center gap-2 pt-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleEndSession}
+                    disabled={endingSession}
+                    className="h-8 text-xs"
+                    title="End the persistent session"
+                  >
+                    {endingSession ? (
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <StopCircle className="mr-1.5 h-3.5 w-3.5" />
+                    )}
+                    {endingSession ? 'Ending...' : 'End Session'}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Session {lastExecution.status === 'paused' ? 'paused' : 'waiting'} for input
+                  </span>
+                </div>
+              )}
+
               {/* Contextual Actions - shown after execution completes */}
               {!executions.some((exec) => exec.status === 'running') &&
+                !isPersistentSessionReady &&
                 contextualActions.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2 pt-4">
                     {contextualActions.map((action) => {
@@ -940,7 +1156,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
               isFollowUp
               allowModeToggle={false}
               disabled={!canEnableFollowUp || submittingFollowUp}
-              isRunning={!lastExecutionTerminal}
+              isRunning={isActivelyRunning}
               onCancel={() => handleCancel(lastExecution.id)}
               isCancelling={cancelling}
               availableCommands={availableCommands}

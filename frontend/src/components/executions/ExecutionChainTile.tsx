@@ -61,6 +61,11 @@ function renderStatusIcon(status: Execution['status']) {
           icon: <PauseCircle className="h-4 w-4 text-muted-foreground" />,
           label: 'Paused',
         }
+      case 'waiting':
+        return {
+          icon: <Clock className="h-4 w-4 text-blue-600" />,
+          label: 'Waiting',
+        }
       case 'completed':
         return {
           icon: <CheckCircle2 className="h-4 w-4 text-green-600" />,

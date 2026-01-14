@@ -1771,5 +1771,148 @@ export function createExecutionsRouter(): Router {
     }
   );
 
+  // ============================================================================
+  // Persistent Session Endpoints
+  // ============================================================================
+
+  /**
+   * POST /api/executions/:executionId/prompt
+   *
+   * Send a prompt to a persistent session
+   *
+   * Returns immediately - output streams via WebSocket subscription.
+   * Returns error if not a persistent session or session not in waiting/paused state.
+   *
+   * Request body:
+   * - prompt: string (required) - The prompt to send
+   */
+  router.post(
+    "/executions/:executionId/prompt",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+        const { prompt } = req.body;
+
+        // Validate prompt
+        if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+          res.status(400).json({
+            success: false,
+            error: "prompt is required and must be a non-empty string",
+          });
+          return;
+        }
+
+        await req.project!.executionService!.sendPrompt(executionId, prompt);
+
+        res.json({
+          success: true,
+          message: "Prompt sent to session",
+        });
+      } catch (error) {
+        console.error("Error sending prompt to session:", error);
+
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        let statusCode = 500;
+
+        if (
+          errorMessage.includes("not found") ||
+          errorMessage.includes("No active executor")
+        ) {
+          statusCode = 404;
+        } else if (
+          errorMessage.includes("does not support") ||
+          errorMessage.includes("Cannot send prompt")
+        ) {
+          statusCode = 400;
+        }
+
+        res.status(statusCode).json({
+          success: false,
+          error: errorMessage,
+        });
+      }
+    }
+  );
+
+  /**
+   * POST /api/executions/:executionId/end-session
+   *
+   * End a persistent session explicitly
+   *
+   * Returns error if not a persistent session.
+   */
+  router.post(
+    "/executions/:executionId/end-session",
+    async (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+
+        await req.project!.executionService!.endSession(executionId);
+
+        res.json({
+          success: true,
+          message: "Session ended",
+        });
+      } catch (error) {
+        console.error("Error ending session:", error);
+
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        let statusCode = 500;
+
+        if (
+          errorMessage.includes("not found") ||
+          errorMessage.includes("No active executor")
+        ) {
+          statusCode = 404;
+        } else if (errorMessage.includes("does not support")) {
+          statusCode = 400;
+        }
+
+        res.status(statusCode).json({
+          success: false,
+          error: errorMessage,
+        });
+      }
+    }
+  );
+
+  /**
+   * GET /api/executions/:executionId/session-state
+   *
+   * Get session state for an execution
+   *
+   * Works for both discrete and persistent sessions.
+   * Returns mode, state, promptCount, and idleTimeMs.
+   */
+  router.get(
+    "/executions/:executionId/session-state",
+    (req: Request, res: Response) => {
+      try {
+        const { executionId } = req.params;
+
+        const state =
+          req.project!.executionService!.getSessionState(executionId);
+
+        res.json({
+          success: true,
+          data: state,
+        });
+      } catch (error) {
+        console.error("Error getting session state:", error);
+
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        const statusCode = errorMessage.includes("not found") ? 404 : 500;
+
+        res.status(statusCode).json({
+          success: false,
+          error: errorMessage,
+        });
+      }
+    }
+  );
+
   return router;
 }

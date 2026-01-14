@@ -22,12 +22,14 @@ const createMessage = (
   id: string,
   content: string,
   timestamp: Date | number = new Date(),
-  isStreaming = false
+  isStreaming = false,
+  role?: 'agent' | 'user'
 ): AgentMessage => ({
   id,
   content,
   timestamp: timestamp instanceof Date ? timestamp : new Date(timestamp),
   isStreaming,
+  role,
 })
 
 // Helper to create ToolCall
@@ -143,6 +145,89 @@ describe('AgentTrajectory', () => {
       // Streaming thoughts use animate-pulse on the dot
       const blinkingDots = container.querySelectorAll('.animate-pulse')
       expect(blinkingDots.length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('User Message Display', () => {
+    it('should display user messages with blue background', () => {
+      const messages = [createMessage('user-msg-1', 'Can you help me with this?', new Date(), false, 'user')]
+
+      const { container } = renderWithTheme(<AgentTrajectory messages={messages} toolCalls={[]} />)
+
+      // User messages use rounded-md blue background for visibility
+      const userMessageContainers = container.querySelectorAll('.rounded-md')
+      expect(userMessageContainers.length).toBeGreaterThan(0)
+      expect(screen.getByText('Can you help me with this?')).toBeInTheDocument()
+    })
+
+    it('should display agent messages with dot icon (⏺)', () => {
+      const messages = [createMessage('msg-1', 'Hello, I can help!', new Date(), false)]
+
+      renderWithTheme(<AgentTrajectory messages={messages} toolCalls={[]} />)
+
+      // Agent messages use ⏺ icon
+      expect(screen.getByText('⏺')).toBeInTheDocument()
+      expect(screen.getByText('Hello, I can help!')).toBeInTheDocument()
+    })
+
+    it('should handle mixed user and agent messages with correct styling', () => {
+      const messages = [
+        createMessage('msg-1', 'Hello!', 1000, false),
+        createMessage('user-msg-1', 'Can you read a file?', 2000, false, 'user'),
+        createMessage('msg-2', 'Sure, let me read that.', 3000, false),
+      ]
+
+      const { container } = renderWithTheme(
+        <AgentTrajectory messages={messages} toolCalls={[]} />
+      )
+
+      // Should have all messages displayed
+      expect(screen.getByText('Hello!')).toBeInTheDocument()
+      expect(screen.getByText('Can you read a file?')).toBeInTheDocument()
+      expect(screen.getByText('Sure, let me read that.')).toBeInTheDocument()
+
+      // Agent messages should have ⏺ icons
+      const dots = screen.getAllByText('⏺')
+      expect(dots.length).toBe(2) // Two agent messages
+
+      // User message should have rounded background container
+      const userMessageContainers = container.querySelectorAll('.rounded-md')
+      expect(userMessageContainers.length).toBe(1) // One user message
+    })
+
+    it('should display user messages with blue background styling', () => {
+      const messages = [createMessage('user-msg-1', 'User input', new Date(), false, 'user')]
+
+      const { container } = renderWithTheme(
+        <AgentTrajectory messages={messages} toolCalls={[]} />
+      )
+
+      // User messages should have rounded background container
+      const userMessageContainers = container.querySelectorAll('.rounded-md')
+      expect(userMessageContainers.length).toBeGreaterThan(0)
+    })
+
+    it('should maintain chronological order with user messages interleaved', () => {
+      const messages = [
+        createMessage('msg-1', 'Let me start', 1000, false),
+        createMessage('user-msg-1', 'Please read file.ts', 2000, false, 'user'),
+        createMessage('msg-2', 'I found the issue', 4000, false),
+      ]
+
+      const toolCalls = [createToolCall('tool-1', 'Read', 'success', 3000, 3500)]
+
+      const { container } = renderWithTheme(
+        <AgentTrajectory messages={messages} toolCalls={toolCalls} />
+      )
+
+      const items = container.querySelectorAll('.group')
+      expect(items.length).toBe(4)
+
+      // Verify order: msg-1 (1000), user-msg-1 (2000), tool-1 (3000), msg-2 (4000)
+      expect(items[0].textContent).toContain('Let me start')
+      expect(items[1].textContent).toContain('Please read file.ts')
+      expect(items[2].textContent).toContain('Read')
+      expect(items[3].textContent).toContain('I found the issue')
     })
   })
 
