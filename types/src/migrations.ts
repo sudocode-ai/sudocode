@@ -668,7 +668,6 @@ const MIGRATIONS: Migration[] = [
       db.exec(`
         CREATE TABLE IF NOT EXISTS executions_new (
           id TEXT PRIMARY KEY,
-          uuid TEXT,
           issue_id TEXT,
           issue_uuid TEXT,
           mode TEXT NOT NULL,
@@ -701,7 +700,6 @@ const MIGRATIONS: Migration[] = [
           step_type TEXT,
           step_index INTEGER,
           step_config TEXT,
-          external_links TEXT,
           FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL,
           FOREIGN KEY (issue_uuid) REFERENCES issues(uuid) ON DELETE SET NULL,
           FOREIGN KEY (parent_execution_id) REFERENCES executions(id) ON DELETE SET NULL,
@@ -712,18 +710,18 @@ const MIGRATIONS: Migration[] = [
       // Copy data from old table
       db.exec(`
         INSERT INTO executions_new (
-          id, uuid, issue_id, issue_uuid, mode, prompt, config, agent_type, session_id,
+          id, issue_id, issue_uuid, mode, prompt, config, agent_type, session_id,
           workflow_execution_id, target_branch, branch_name, before_commit, after_commit,
           worktree_path, status, created_at, updated_at, started_at, completed_at,
           cancelled_at, exit_code, error_message, error, model, summary, files_changed,
-          parent_execution_id, step_type, step_index, step_config, external_links
+          parent_execution_id, step_type, step_index, step_config
         )
         SELECT
-          id, uuid, issue_id, issue_uuid, mode, prompt, config, agent_type, session_id,
+          id, issue_id, issue_uuid, mode, prompt, config, agent_type, session_id,
           workflow_execution_id, target_branch, branch_name, before_commit, after_commit,
           worktree_path, status, created_at, updated_at, started_at, completed_at,
           cancelled_at, exit_code, error_message, error, model, summary, files_changed,
-          parent_execution_id, step_type, step_index, step_config, external_links
+          parent_execution_id, step_type, step_index, step_config
         FROM executions;
       `);
 
@@ -762,7 +760,6 @@ const MIGRATIONS: Migration[] = [
       db.exec(`
         CREATE TABLE IF NOT EXISTS executions_old (
           id TEXT PRIMARY KEY,
-          uuid TEXT,
           issue_id TEXT,
           issue_uuid TEXT,
           mode TEXT NOT NULL,
@@ -795,7 +792,6 @@ const MIGRATIONS: Migration[] = [
           step_type TEXT,
           step_index INTEGER,
           step_config TEXT,
-          external_links TEXT,
           FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL,
           FOREIGN KEY (issue_uuid) REFERENCES issues(uuid) ON DELETE SET NULL,
           FOREIGN KEY (parent_execution_id) REFERENCES executions(id) ON DELETE SET NULL,
