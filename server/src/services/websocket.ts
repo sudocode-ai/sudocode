@@ -82,7 +82,11 @@ export interface ServerMessage {
     | "tts_error"
     // CodeViz analysis events
     | "code_graph_ready"
-    | "code_graph_progress";
+    | "code_graph_progress"
+    // CodeViz file watcher events
+    | "file_changes_detected"
+    | "watcher_started"
+    | "watcher_stopped";
   projectId?: string; // Project ID for project-scoped messages
   data?: any;
   message?: string;
@@ -1015,5 +1019,58 @@ export function broadcastCodeGraphProgress(
   websocketManager.broadcastGeneric(projectId, {
     type: "code_graph_progress",
     data,
+  });
+}
+
+/**
+ * Broadcast file changes detected by the watcher
+ *
+ * @param projectId - ID of the project
+ * @param data - File changes data
+ */
+export function broadcastFileChangesDetected(
+  projectId: string,
+  data: {
+    changes: Array<{
+      path: string;
+      fileId: string;
+      changeType: "added" | "modified" | "deleted";
+    }>;
+    timestamp: number;
+  }
+): void {
+  websocketManager.broadcastGeneric(projectId, {
+    type: "file_changes_detected",
+    data,
+  });
+}
+
+/**
+ * Broadcast watcher started event
+ *
+ * @param projectId - ID of the project
+ * @param data - Watcher info
+ */
+export function broadcastWatcherStarted(
+  projectId: string,
+  data: {
+    watchCount: number;
+  }
+): void {
+  websocketManager.broadcastGeneric(projectId, {
+    type: "watcher_started",
+    data,
+  });
+}
+
+/**
+ * Broadcast watcher stopped event
+ *
+ * @param projectId - ID of the project
+ */
+export function broadcastWatcherStopped(projectId: string): void {
+  websocketManager.broadcastGeneric(projectId, {
+    type: "watcher_stopped",
+    data: {},
   });
 }

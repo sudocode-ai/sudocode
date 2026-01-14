@@ -120,10 +120,14 @@ describe('CodeVizPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorageMock.clear()
-    // Default useCodeGraph mock
+    // Default useCodeGraph mock with watcher functions
     mockUseCodeGraph.mockReturnValue({
       codeGraph: null,
       isAnalyzing: false,
+      isWatching: false,
+      startWatcher: vi.fn(),
+      stopWatcher: vi.fn(),
+      recentChanges: [],
     })
   })
 
@@ -401,6 +405,10 @@ describe('CodeVizPage', () => {
           ],
         },
         isAnalyzing: false,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeVizPage />, { wrapper: createWrapper() })
@@ -414,6 +422,10 @@ describe('CodeVizPage', () => {
       mockUseCodeGraph.mockReturnValue({
         codeGraph: null,
         isAnalyzing: true,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeVizPage />, { wrapper: createWrapper() })
@@ -429,6 +441,10 @@ describe('CodeVizPage', () => {
           imports: [{ sourceId: 'f1', targetId: 'f2' }],
         },
         isAnalyzing: false,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeVizPage />, { wrapper: createWrapper() })

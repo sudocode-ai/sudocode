@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { CodeMapContainer } from '@/components/codeviz/CodeMapContainer'
 
 // Mock useCodeGraph hook
@@ -43,6 +43,15 @@ vi.mock('@/contexts/ThemeContext', () => ({
   }),
 }))
 
+// Mock ProjectContext
+vi.mock('@/contexts/ProjectContext', () => ({
+  useProjectContext: () => ({
+    currentProjectId: 'test-project',
+    projectPath: '/test/project',
+    isProjectOpen: true,
+  }),
+}))
+
 // Mock codeviz/browser
 vi.mock('codeviz/browser', () => ({
   CodeMapComponent: ({
@@ -50,12 +59,12 @@ vi.mock('codeviz/browser', () => ({
     overlayPort,
     renderer,
     view,
-    codeGraph
+    codeGraph,
   }: {
-    codeMap: any;
-    overlayPort?: any;
-    renderer?: string;
-    view?: string;
+    codeMap: any
+    overlayPort?: any
+    renderer?: string
+    view?: string
     codeGraph?: any
   }) => (
     <div data-testid="code-map-component">
@@ -79,7 +88,7 @@ vi.mock('codeviz/browser', () => ({
   ThemeProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   generateFileId: (path: string) => `file-${path}`,
   generateDirectoryId: (path: string) => `dir-${path}`,
-  detectLanguage: (ext: string) => ext === 'ts' ? 'typescript' : 'unknown',
+  detectLanguage: (ext: string) => (ext === 'ts' ? 'typescript' : 'unknown'),
 }))
 
 // Mock file tree data
@@ -155,6 +164,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
@@ -173,6 +186,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: new Error('Failed to load'),
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
@@ -192,6 +209,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
@@ -210,6 +231,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
@@ -217,7 +242,8 @@ describe('CodeMapContainer', () => {
       expect(screen.getByTestId('code-map-component')).toBeInTheDocument()
     })
 
-    it('should show "Analyze for symbols" button', () => {
+    it('should auto-trigger analysis when files exist without CodeGraph', () => {
+      // When there are files but no code graph, component auto-triggers analysis
       mockUseCodeGraph.mockReturnValue({
         codeGraph: null,
         fileTree: mockFileTree,
@@ -226,29 +252,44 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
 
-      expect(screen.getByText('Analyze for symbols')).toBeInTheDocument()
+      // Auto-analysis should be triggered, showing "Starting analysis..." state
+      expect(mockTriggerAnalysis).toHaveBeenCalledTimes(1)
+      expect(screen.getByText('Starting analysis...')).toBeInTheDocument()
     })
 
-    it('should call triggerAnalysis when button clicked', () => {
+    it('should show empty state when no files in file tree', () => {
+      // Empty file tree doesn't trigger auto-analysis
+      const emptyFileTree = {
+        files: [],
+        directories: [],
+        metadata: { totalFiles: 0, totalDirectories: 0 },
+      }
       mockUseCodeGraph.mockReturnValue({
         codeGraph: null,
-        fileTree: mockFileTree,
+        fileTree: emptyFileTree,
         isLoading: false,
         isAnalyzing: false,
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
 
-      fireEvent.click(screen.getByText('Analyze for symbols'))
-
-      expect(mockTriggerAnalysis).toHaveBeenCalledTimes(1)
+      // Empty file tree shows "No files found" message
+      expect(screen.getByText('No files found in codebase')).toBeInTheDocument()
     })
   })
 
@@ -262,6 +303,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
@@ -278,6 +323,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
@@ -294,6 +343,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
@@ -317,15 +370,19 @@ describe('CodeMapContainer', () => {
         },
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
 
-      expect(screen.getByText('Analyzing: 50/100 files (50%)')).toBeInTheDocument()
+      expect(screen.getByText('Parsing files: 50/100 files (50%)')).toBeInTheDocument()
       expect(screen.getByText('src/index.ts')).toBeInTheDocument()
     })
 
-    it('should show 0% when total is 0', () => {
+    it('should show phase text when total is 0', () => {
       mockUseCodeGraph.mockReturnValue({
         codeGraph: null,
         fileTree: mockFileTree,
@@ -338,11 +395,15 @@ describe('CodeMapContainer', () => {
         },
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
 
-      expect(screen.getByText('Analyzing: 0/0 files (0%)')).toBeInTheDocument()
+      expect(screen.getByText('Scanning files...')).toBeInTheDocument()
     })
 
     it('should not show analyze button while analyzing', () => {
@@ -358,6 +419,10 @@ describe('CodeMapContainer', () => {
         },
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
@@ -376,6 +441,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       const { container } = render(<CodeMapContainer />)
@@ -394,6 +463,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
@@ -410,6 +483,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
@@ -450,6 +527,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
@@ -470,6 +551,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
@@ -486,6 +571,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
@@ -521,6 +610,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
@@ -543,6 +636,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer />)
@@ -566,6 +663,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
     })
 
@@ -628,6 +729,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer renderer="sigma" />)
@@ -646,6 +751,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer renderer="sigma" />)
@@ -665,6 +774,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer renderer="sigma" />)
@@ -682,6 +795,10 @@ describe('CodeMapContainer', () => {
         analysisProgress: null,
         error: null,
         triggerAnalysis: mockTriggerAnalysis,
+        isWatching: false,
+        startWatcher: vi.fn(),
+        stopWatcher: vi.fn(),
+        recentChanges: [],
       })
 
       render(<CodeMapContainer renderer="sigma" />)

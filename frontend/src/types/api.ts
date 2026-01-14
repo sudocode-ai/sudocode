@@ -196,6 +196,9 @@ export interface WebSocketMessage {
     | 'tts_error'
     | 'code_graph_ready'
     | 'code_graph_progress'
+    | 'file_changes_detected'
+    | 'watcher_started'
+    | 'watcher_stopped'
     | 'error'
   projectId?: string // Project ID for project-scoped messages
   data?: Issue | Spec | Relationship | IssueFeedback | Execution | any

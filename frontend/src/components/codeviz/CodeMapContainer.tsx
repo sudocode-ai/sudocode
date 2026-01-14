@@ -252,6 +252,17 @@ function AnalysisIndicator({
         ? Math.round((analysisProgress.current / analysisProgress.total) * 100)
         : 0
 
+    // Map phase to user-friendly text
+    const phaseText = analysisProgress?.phase
+      ? {
+          scanning: 'Scanning files',
+          detecting: 'Detecting changes',
+          extracting: 'Extracting symbols',
+          parsing: 'Parsing files',
+          resolving: 'Resolving imports',
+        }[analysisProgress.phase] || 'Analyzing'
+      : 'Starting'
+
     return (
       <div className="absolute left-1/2 top-4 z-50 -translate-x-1/2">
         <div className="flex items-center gap-3 rounded-lg border bg-background/95 px-4 py-2 shadow-lg backdrop-blur">
@@ -260,11 +271,11 @@ function AnalysisIndicator({
             <span className="text-sm font-medium">
               {analysisProgress && analysisProgress.total > 0 ? (
                 <>
-                  Analyzing: {analysisProgress.current}/{analysisProgress.total} files ({percentage}
+                  {phaseText}: {analysisProgress.current}/{analysisProgress.total} files ({percentage}
                   %)
                 </>
               ) : (
-                <>Starting analysis...</>
+                <>{phaseText}...</>
               )}
             </span>
             {analysisProgress?.currentFile && (
@@ -363,6 +374,13 @@ export const CodeMapContainer = forwardRef<CodeMapContainerRef, CodeMapContainer
         triggerAnalysis()
       }
     }, [isLoading, fullCodeGraph, isAnalyzing, fileTree, triggerAnalysis])
+
+    // Clear auto-analysis state when we have a full code graph
+    useEffect(() => {
+      if (fullCodeGraph && hasTriggeredAutoAnalysis) {
+        setHasTriggeredAutoAnalysis(false)
+      }
+    }, [fullCodeGraph, hasTriggeredAutoAnalysis])
 
     // Agent overlay integration
     const { executions } = useActiveExecutions()

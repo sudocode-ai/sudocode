@@ -14,12 +14,17 @@ import {
   resetAnalyzer,
   analyzeIncrementally,
   MemoryCache,
+  CodebaseWatcher,
   type IncrementalCacheStorage,
+  type FileChange,
 } from "codeviz/node";
 import type { CodeGraph, AnalysisProgress, IncrementalProgress } from "codeviz/node";
 import {
   broadcastCodeGraphReady,
   broadcastCodeGraphProgress,
+  broadcastFileChangesDetected,
+  broadcastWatcherStarted,
+  broadcastWatcherStopped,
 } from "../services/websocket.js";
 
 /**
@@ -85,6 +90,23 @@ const analysisState = new Map<string, AnalysisState>();
 
 // Incremental analysis cache per project
 const incrementalCaches = new Map<string, IncrementalCacheStorage>();
+
+// File watchers per project
+const projectWatchers = new Map<string, CodebaseWatcher>();
+
+/**
+ * Watcher state info with reference counting
+ */
+interface WatcherState {
+  projectId: string;
+  workspacePath: string;
+  autoAnalyze: boolean;
+  /** Number of subscribers (clients) using this watcher */
+  subscriberCount: number;
+}
+
+// Store watcher metadata
+const watcherStates = new Map<string, WatcherState>();
 
 /**
  * Get or create incremental cache for a project
@@ -743,5 +765,416 @@ export function createCodevizRouter(): Router {
     }
   });
 
+  /**
+   * POST /api/codeviz/watch/start
+   *
+   * Start file watcher for this project.
+   * Broadcasts file change events via WebSocket.
+   * Can optionally auto-trigger incremental analysis on changes.
+   */
+  router.post("/watch/start", async (req: Request, res: Response) => {
+    try {
+      const projectId = req.project!.id;
+      const workspacePath = req.project!.path;
+      const { autoAnalyze = true } = req.body as { autoAnalyze?: boolean };
+
+      // Check if already watching - increment subscriber count
+      const existingWatcher = projectWatchers.get(projectId);
+      const existingState = watcherStates.get(projectId);
+      if (existingWatcher && existingWatcher.isWatching() && existingState) {
+        // Increment subscriber count
+        existingState.subscriberCount++;
+        // Update autoAnalyze if any subscriber wants it
+        if (autoAnalyze) {
+          existingState.autoAnalyze = true;
+        }
+        console.log(
+          `[CodeViz] Watcher subscriber added for ${projectId} (now ${existingState.subscriberCount} subscribers)`
+        );
+        res.json({
+          success: true,
+          data: {
+            status: "already_watching",
+            watchCount: existingWatcher.getWatchCount(),
+            subscriberCount: existingState.subscriberCount,
+          },
+        });
+        return;
+      }
+
+      // Create new watcher
+      const watcher = new CodebaseWatcher({
+        rootPath: workspacePath,
+        debounceMs: 500, // 500ms debounce for batching rapid changes
+      });
+
+      // Store watcher state with initial subscriber count of 1
+      watcherStates.set(projectId, {
+        projectId,
+        workspacePath,
+        autoAnalyze,
+        subscriberCount: 1,
+      });
+
+      // Handle file changes
+      watcher.on("change", (changes: FileChange[]) => {
+        console.log(
+          `[CodeViz] File changes detected for ${projectId}: ${changes.length} files`
+        );
+
+        // Broadcast changes to WebSocket clients
+        broadcastFileChangesDetected(projectId, {
+          changes: changes.map((c) => ({
+            path: c.path,
+            fileId: c.fileId,
+            changeType: c.changeType,
+          })),
+          timestamp: Date.now(),
+        });
+
+        // Auto-trigger incremental analysis if enabled
+        const state = watcherStates.get(projectId);
+        if (state?.autoAnalyze) {
+          // Trigger incremental analysis in background
+          triggerIncrementalAnalysis(projectId, req.project!);
+        }
+      });
+
+      // Handle watcher errors
+      watcher.on("error", (error: Error) => {
+        console.error(`[CodeViz] Watcher error for ${projectId}:`, error.message);
+      });
+
+      // Start watching
+      watcher.start();
+      projectWatchers.set(projectId, watcher);
+
+      // Broadcast watcher started
+      broadcastWatcherStarted(projectId, {
+        watchCount: watcher.getWatchCount(),
+      });
+
+      console.log(
+        `[CodeViz] Started file watcher for ${projectId} (${watcher.getWatchCount()} directories, autoAnalyze: ${autoAnalyze})`
+      );
+
+      res.json({
+        success: true,
+        data: {
+          status: "started",
+          watchCount: watcher.getWatchCount(),
+          autoAnalyze,
+        },
+      });
+    } catch (error) {
+      console.error("[CodeViz] Failed to start watcher:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to start file watcher",
+      });
+    }
+  });
+
+  /**
+   * POST /api/codeviz/watch/stop
+   *
+   * Stop file watcher for this project.
+   * Uses reference counting - only stops when all subscribers have unsubscribed.
+   */
+  router.post("/watch/stop", async (req: Request, res: Response) => {
+    try {
+      const projectId = req.project!.id;
+
+      const watcher = projectWatchers.get(projectId);
+      const state = watcherStates.get(projectId);
+
+      if (!watcher || !state) {
+        res.json({
+          success: true,
+          data: {
+            status: "not_watching",
+          },
+        });
+        return;
+      }
+
+      // Decrement subscriber count
+      state.subscriberCount--;
+
+      // Only stop watcher when no subscribers remain
+      if (state.subscriberCount <= 0) {
+        await watcher.stop();
+        projectWatchers.delete(projectId);
+        watcherStates.delete(projectId);
+
+        // Broadcast watcher stopped
+        broadcastWatcherStopped(projectId);
+
+        console.log(`[CodeViz] Stopped file watcher for ${projectId} (no subscribers remaining)`);
+
+        res.json({
+          success: true,
+          data: {
+            status: "stopped",
+          },
+        });
+      } else {
+        console.log(
+          `[CodeViz] Watcher subscriber removed for ${projectId} (${state.subscriberCount} subscribers remaining)`
+        );
+        res.json({
+          success: true,
+          data: {
+            status: "unsubscribed",
+            subscriberCount: state.subscriberCount,
+          },
+        });
+      }
+    } catch (error) {
+      console.error("[CodeViz] Failed to stop watcher:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to stop file watcher",
+      });
+    }
+  });
+
+  /**
+   * GET /api/codeviz/watch/status
+   *
+   * Get file watcher status for this project.
+   */
+  router.get("/watch/status", async (req: Request, res: Response) => {
+    try {
+      const projectId = req.project!.id;
+
+      const watcher = projectWatchers.get(projectId);
+      const state = watcherStates.get(projectId);
+
+      if (!watcher || !watcher.isWatching()) {
+        res.json({
+          success: true,
+          data: {
+            watching: false,
+          },
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        data: {
+          watching: true,
+          watchCount: watcher.getWatchCount(),
+          autoAnalyze: state?.autoAnalyze ?? false,
+          subscriberCount: state?.subscriberCount ?? 0,
+        },
+      });
+    } catch (error) {
+      console.error("[CodeViz] Failed to get watcher status:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to get watcher status",
+      });
+    }
+  });
+
   return router;
+}
+
+/**
+ * Trigger incremental analysis in the background
+ */
+function triggerIncrementalAnalysis(
+  projectId: string,
+  project: { path: string; db: import("better-sqlite3").Database }
+): void {
+  // Check if analysis is already running
+  const existing = analysisState.get(projectId);
+  if (existing && existing.status === "running") {
+    console.log(
+      `[CodeViz] Skipping auto-analysis for ${projectId} - analysis already running`
+    );
+    return;
+  }
+
+  const workspacePath = project.path;
+  const db = project.db;
+
+  // Get git SHA
+  let gitSha: string;
+  try {
+    gitSha = execSync("git rev-parse HEAD", {
+      cwd: workspacePath,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch {
+    console.error(`[CodeViz] Failed to get git SHA for ${projectId}`);
+    return;
+  }
+
+  // Get or create incremental cache
+  const cache = getIncrementalCache(projectId);
+
+  // Create new analysis state
+  const analysisId = randomUUID();
+  const state: AnalysisState = {
+    id: analysisId,
+    status: "running",
+    gitSha,
+    phase: "detecting",
+    startedAt: new Date(),
+  };
+  analysisState.set(projectId, state);
+
+  // Start incremental analysis
+  const startTime = Date.now();
+  analyzeIncrementally({
+    rootPath: workspacePath,
+    cache,
+    respectGitignore: true,
+    extractCalls: true,
+    maxFiles: 10000,
+    useMtimeHeuristic: true,
+    onProgress: (progress: IncrementalProgress) => {
+      state.phase = progress.phase;
+      state.progress = { current: progress.current, total: progress.total };
+      state.currentFile = progress.currentFile;
+
+      broadcastCodeGraphProgress(projectId, {
+        phase: progress.phase,
+        current: progress.current,
+        total: progress.total,
+        currentFile: progress.currentFile,
+      });
+    },
+  })
+    .then((result) => {
+      const analysisDurationMs = Date.now() - startTime;
+
+      // Build file tree
+      const fileTree = buildFileTreeFromGit(workspacePath);
+
+      // Store in database
+      storeCodeGraphInDb(db, gitSha, result.graph, fileTree, analysisDurationMs);
+
+      // Update state
+      state.status = "completed";
+      state.phase = undefined;
+      state.progress = undefined;
+      state.currentFile = undefined;
+
+      // Broadcast completion
+      broadcastCodeGraphReady(projectId, {
+        gitSha,
+        fileCount: result.graph.files.length,
+        symbolCount: result.graph.symbols.length,
+        analysisDurationMs,
+        incremental: {
+          extractedFiles: result.stats.extractedFiles,
+          cachedFiles: result.stats.cachedFiles,
+          fullResolution: result.stats.fullResolution,
+        },
+      });
+
+      // Clean up parser caches
+      resetAnalyzer();
+
+      console.log(
+        `[CodeViz] Auto-analysis completed for ${projectId}: ` +
+          `${result.stats.extractedFiles} extracted, ${result.stats.cachedFiles} cached ` +
+          `in ${analysisDurationMs}ms`
+      );
+    })
+    .catch((error) => {
+      state.status = "failed";
+      state.error = error instanceof Error ? error.message : String(error);
+      console.error(`[CodeViz] Auto-analysis failed for ${projectId}:`, error);
+    });
+}
+
+/**
+ * Build file tree from git ls-files (helper for auto-analysis)
+ */
+function buildFileTreeFromGit(workspacePath: string): FileTreeResponse {
+  const output = execSync("git ls-files", {
+    cwd: workspacePath,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  const filePaths = output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  const files: FileNode[] = filePaths.map((filePath) => {
+    const parts = filePath.split("/");
+    const name = parts.pop()!;
+    const directoryPath = parts.length > 0 ? parts.join("/") : "";
+    const extensionMatch = name.match(/\.([^.]+)$/);
+    const extension = extensionMatch ? extensionMatch[1] : "";
+
+    return { path: filePath, name, extension, directoryPath };
+  });
+
+  const directorySet = new Set<string>();
+  for (const filePath of filePaths) {
+    const parts = filePath.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      directorySet.add(parts.slice(0, i).join("/"));
+    }
+  }
+
+  const directories: DirectoryNode[] = Array.from(directorySet)
+    .sort()
+    .map((dirPath) => {
+      const parts = dirPath.split("/");
+      const name = parts.pop()!;
+      const parentPath = parts.length > 0 ? parts.join("/") : null;
+      return { path: dirPath, name, parentPath };
+    });
+
+  return {
+    files,
+    directories,
+    metadata: {
+      totalFiles: files.length,
+      totalDirectories: directories.length,
+      generatedAt: new Date().toISOString(),
+    },
+  };
+}
+
+/**
+ * Store CodeGraph in database (helper for auto-analysis)
+ */
+function storeCodeGraphInDb(
+  db: import("better-sqlite3").Database,
+  gitSha: string,
+  codeGraph: CodeGraph,
+  fileTree: FileTreeResponse,
+  analysisDurationMs: number
+): void {
+  const stmt = db.prepare(`
+    INSERT OR REPLACE INTO code_graph_cache
+    (git_sha, code_graph, file_tree, analyzed_at, file_count, symbol_count, analysis_duration_ms)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  stmt.run(
+    gitSha,
+    JSON.stringify(codeGraph),
+    JSON.stringify(fileTree),
+    new Date().toISOString(),
+    codeGraph.files.length,
+    codeGraph.symbols.length,
+    analysisDurationMs
+  );
 }

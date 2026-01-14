@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { useEffect, useCallback, useState } from 'react'
+import { useEffect, useCallback, useState, useRef } from 'react'
 import {
   codevizApi,
   getCurrentProjectId,
@@ -15,10 +15,19 @@ import type { CodeGraph } from 'codeviz/browser'
  * Analysis progress information from WebSocket
  */
 export interface AnalysisProgress {
-  phase: 'scanning' | 'parsing' | 'resolving'
+  phase: 'scanning' | 'parsing' | 'resolving' | 'detecting' | 'extracting'
   current: number
   total: number
   currentFile?: string
+}
+
+/**
+ * File change information from watcher
+ */
+export interface FileChangeInfo {
+  path: string
+  fileId: string
+  changeType: 'added' | 'modified' | 'deleted'
 }
 
 /**
@@ -56,6 +65,14 @@ export interface UseCodeGraphResult {
   stats: CodeGraphStats | null
   /** Refetch the code graph (e.g., after git changes) */
   refetch: () => void
+  /** Whether file watcher is active */
+  isWatching: boolean
+  /** Start file watcher for auto-reindexing */
+  startWatcher: (options?: { autoAnalyze?: boolean }) => Promise<void>
+  /** Stop file watcher */
+  stopWatcher: () => Promise<void>
+  /** Recent file changes detected by watcher */
+  recentChanges: FileChangeInfo[]
 }
 
 /**
@@ -78,6 +95,11 @@ export function useCodeGraph(): UseCodeGraphResult {
   const [analysisProgress, setAnalysisProgress] =
     useState<AnalysisProgress | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+
+  // File watcher state
+  const [isWatching, setIsWatching] = useState(false)
+  const [recentChanges, setRecentChanges] = useState<FileChangeInfo[]>([])
+  const watcherStartedRef = useRef(false)
 
   // Check if context projectId matches API client projectId
   const apiProjectId = getCurrentProjectId()
@@ -141,7 +163,7 @@ export function useCodeGraph(): UseCodeGraphResult {
       } else if (message.type === 'code_graph_progress') {
         // Update progress state
         const data = message.data as {
-          phase: 'scanning' | 'parsing' | 'resolving'
+          phase: 'scanning' | 'parsing' | 'resolving' | 'detecting' | 'extracting'
           current: number
           total: number
           currentFile?: string
@@ -153,6 +175,19 @@ export function useCodeGraph(): UseCodeGraphResult {
           total: data.total,
           currentFile: data.currentFile,
         })
+      } else if (message.type === 'file_changes_detected') {
+        // File changes detected by watcher
+        const data = message.data as {
+          changes: FileChangeInfo[]
+          timestamp: number
+        }
+        setRecentChanges(data.changes)
+        // Clear recent changes after 5 seconds
+        setTimeout(() => setRecentChanges([]), 5000)
+      } else if (message.type === 'watcher_started') {
+        setIsWatching(true)
+      } else if (message.type === 'watcher_stopped') {
+        setIsWatching(false)
       }
     },
     [queryClient, currentProjectId]
@@ -209,6 +244,35 @@ export function useCodeGraph(): UseCodeGraphResult {
     queryClient.invalidateQueries({ queryKey: ['fileTree', currentProjectId] })
   }, [queryClient, currentProjectId])
 
+  // Start file watcher
+  const startWatcher = useCallback(
+    async (options?: { autoAnalyze?: boolean }) => {
+      if (watcherStartedRef.current) return
+      try {
+        const response = await codevizApi.startWatcher(options)
+        if (response.status === 'started' || response.status === 'already_watching') {
+          setIsWatching(true)
+          watcherStartedRef.current = true
+        }
+      } catch (error) {
+        console.error('[useCodeGraph] Failed to start watcher:', error)
+      }
+    },
+    []
+  )
+
+  // Stop file watcher
+  const stopWatcher = useCallback(async () => {
+    if (!watcherStartedRef.current) return
+    try {
+      await codevizApi.stopWatcher()
+      setIsWatching(false)
+      watcherStartedRef.current = false
+    } catch (error) {
+      console.error('[useCodeGraph] Failed to stop watcher:', error)
+    }
+  }, [])
+
   // Extract data from responses
   const codeGraphData = codeGraphQuery.data as CodeGraphResponse | null
   const fileTreeData = fileTreeQuery.data as FileTreeResponse | null
@@ -225,6 +289,10 @@ export function useCodeGraph(): UseCodeGraphResult {
     analyzedAt: codeGraphData?.analyzedAt ?? null,
     stats: codeGraphData?.stats ?? null,
     refetch,
+    isWatching,
+    startWatcher,
+    stopWatcher,
+    recentChanges,
   }
 }
 

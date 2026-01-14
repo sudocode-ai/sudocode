@@ -794,11 +794,45 @@ export interface AnalysisStatusResponse {
   startedAt?: string
 }
 
+/**
+ * Watcher start response
+ */
+export interface WatcherStartResponse {
+  status: 'started' | 'already_watching'
+  watchCount: number
+  autoAnalyze?: boolean
+  subscriberCount?: number
+}
+
+/**
+ * Watcher stop response
+ */
+export interface WatcherStopResponse {
+  status: 'stopped' | 'not_watching' | 'unsubscribed'
+  subscriberCount?: number
+}
+
+/**
+ * Watcher status response
+ */
+export interface WatcherStatusResponse {
+  watching: boolean
+  watchCount?: number
+  autoAnalyze?: boolean
+  subscriberCount?: number
+}
+
 export const codevizApi = {
   getFileTree: () => get<FileTreeResponse>('/codeviz/file-tree'),
   getCodeGraph: () => get<CodeGraphResponse>('/codeviz/code-graph'),
   triggerAnalysis: () => post<AnalyzeResponse>('/codeviz/analyze', {}),
+  triggerIncrementalAnalysis: () => post<AnalyzeResponse>('/codeviz/analyze/incremental', {}),
   getAnalysisStatus: () => get<AnalysisStatusResponse>('/codeviz/analyze/status'),
+  // File watcher endpoints
+  startWatcher: (options?: { autoAnalyze?: boolean }) =>
+    post<WatcherStartResponse>('/codeviz/watch/start', options ?? {}),
+  stopWatcher: () => post<WatcherStopResponse>('/codeviz/watch/stop', {}),
+  getWatcherStatus: () => get<WatcherStatusResponse>('/codeviz/watch/status'),
 }
 
 export default api

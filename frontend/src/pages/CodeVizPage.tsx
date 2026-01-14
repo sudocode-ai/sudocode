@@ -5,7 +5,7 @@ import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
 import { useCodeGraph } from '@/hooks/useCodeGraph'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { GitBranch, Loader2 } from 'lucide-react'
+import { GitBranch, Loader2, Eye } from 'lucide-react'
 import { CodeMapContainer, type CodeMapContainerRef } from '@/components/codeviz/CodeMapContainer'
 import { AgentDetailSidebar, SidebarBackdrop } from '@/components/codeviz/AgentDetailSidebar'
 
@@ -18,7 +18,19 @@ export default function CodeVizPage() {
   const { currentProjectId } = useProject()
   const { data: currentProject } = useProjectById(currentProjectId)
   const { data: repoInfo } = useRepositoryInfo()
-  const { codeGraph, isAnalyzing } = useCodeGraph()
+  const { codeGraph, isAnalyzing, isWatching, startWatcher, stopWatcher, recentChanges } =
+    useCodeGraph()
+
+  // Start file watcher when page mounts, stop when unmounts
+  useEffect(() => {
+    // Start watcher with auto-analyze enabled
+    startWatcher({ autoAnalyze: true })
+
+    // Cleanup: stop watcher when leaving the page
+    return () => {
+      stopWatcher()
+    }
+  }, [startWatcher, stopWatcher])
 
   // Renderer selection state with localStorage persistence
   const [renderer, setRenderer] = useState<RendererType>(() => {
@@ -89,6 +101,23 @@ export default function CodeVizPage() {
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <GitBranch className="h-3 w-3" />
               {repoInfo.branch}
+            </div>
+          )}
+          {/* File watcher indicator */}
+          {isWatching && (
+            <div
+              className={cn(
+                'flex items-center gap-1 text-xs',
+                recentChanges.length > 0 ? 'text-amber-500' : 'text-green-500'
+              )}
+              title={
+                recentChanges.length > 0
+                  ? `${recentChanges.length} file(s) changed`
+                  : 'Watching for changes'
+              }
+            >
+              <Eye className="h-3 w-3" />
+              {recentChanges.length > 0 ? `${recentChanges.length} changes` : 'Watching'}
             </div>
           )}
         </div>
