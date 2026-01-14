@@ -178,6 +178,7 @@ describe("CodeViz Router", () => {
       const { req, res } = createMockReqRes({
         dbRows: [
           {
+            git_sha: "abc123def456",
             code_graph: JSON.stringify(mockCodeGraph),
             file_tree: JSON.stringify(mockFileTree),
             analyzed_at: "2024-01-01T00:00:00Z",
@@ -196,6 +197,8 @@ describe("CodeViz Router", () => {
         data: {
           codeGraph: mockCodeGraph,
           gitSha: "abc123def456",
+          currentSha: "abc123def456",
+          stale: false,
           analyzedAt: "2024-01-01T00:00:00Z",
           stats: {
             fileCount: 1,
@@ -221,7 +224,7 @@ describe("CodeViz Router", () => {
       expect(res.json).toHaveBeenCalledWith({
         success: false,
         data: null,
-        message: "No cached CodeGraph for current SHA",
+        message: "No cached CodeGraph available",
         currentSha: "abc123def456",
       });
     });

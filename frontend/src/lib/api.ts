@@ -763,6 +763,10 @@ export interface FileTreeResponse {
 export interface CodeGraphResponse {
   codeGraph: import('codeviz/browser').CodeGraph
   gitSha: string
+  /** Current HEAD SHA - may differ from gitSha if cache is stale */
+  currentSha?: string
+  /** True if the cached CodeGraph is from a different SHA than current HEAD */
+  stale?: boolean
   analyzedAt: string
   stats: {
     fileCount: number

@@ -18,7 +18,10 @@ vi.mock('@/lib/api', () => ({
     getFileTree: vi.fn(),
     getCodeGraph: vi.fn(),
     triggerAnalysis: vi.fn(),
+    triggerIncrementalAnalysis: vi.fn(),
     getAnalysisStatus: vi.fn(),
+    startWatcher: vi.fn(),
+    stopWatcher: vi.fn(),
   },
   getCurrentProjectId: () => mockProjectId,
 }))
@@ -231,7 +234,7 @@ describe('useCodeGraph', () => {
       vi.mocked(codevizApi.getCodeGraph).mockRejectedValue({
         response: { status: 404 },
       })
-      vi.mocked(codevizApi.triggerAnalysis).mockResolvedValue({
+      vi.mocked(codevizApi.triggerIncrementalAnalysis).mockResolvedValue({
         analysisId: 'analysis-123',
         gitSha: 'abc123',
         status: 'started',
@@ -250,7 +253,7 @@ describe('useCodeGraph', () => {
       })
 
       expect(result.current.isAnalyzing).toBe(true)
-      expect(codevizApi.triggerAnalysis).toHaveBeenCalled()
+      expect(codevizApi.triggerIncrementalAnalysis).toHaveBeenCalled()
     })
 
     it('should handle already_cached status', async () => {
@@ -258,7 +261,7 @@ describe('useCodeGraph', () => {
       vi.mocked(codevizApi.getCodeGraph).mockRejectedValue({
         response: { status: 404 },
       })
-      vi.mocked(codevizApi.triggerAnalysis).mockResolvedValue({
+      vi.mocked(codevizApi.triggerIncrementalAnalysis).mockResolvedValue({
         analysisId: null,
         gitSha: 'abc123',
         status: 'already_cached',
@@ -323,7 +326,7 @@ describe('useCodeGraph', () => {
       vi.mocked(codevizApi.getCodeGraph).mockRejectedValue({
         response: { status: 404 },
       })
-      vi.mocked(codevizApi.triggerAnalysis).mockResolvedValue({
+      vi.mocked(codevizApi.triggerIncrementalAnalysis).mockResolvedValue({
         analysisId: 'analysis-123',
         gitSha: 'abc123',
         status: 'started',

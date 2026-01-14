@@ -43,7 +43,7 @@ export interface CodeGraphStats {
  * Result returned by useCodeGraph hook
  */
 export interface UseCodeGraphResult {
-  /** Full CodeGraph (null if not yet analyzed for current SHA) */
+  /** Full CodeGraph (null if not yet analyzed) */
   codeGraph: CodeGraph | null
   /** File tree (always available, loaded immediately) */
   fileTree: FileTreeResponse | null
@@ -51,6 +51,8 @@ export interface UseCodeGraphResult {
   isLoading: boolean
   /** True while background analysis is running */
   isAnalyzing: boolean
+  /** True if the cached CodeGraph is from a different SHA (being refreshed in background) */
+  isStale: boolean
   /** Progress info during analysis */
   analysisProgress: AnalysisProgress | null
   /** Error if any operation failed */
@@ -134,13 +136,14 @@ export function useCodeGraph(): UseCodeGraphResult {
     retry: false, // Don't retry 404s
   })
 
-  // Mutation for triggering analysis
+  // Mutation for triggering analysis (uses incremental by default)
   const analysisMutation = useMutation({
     mutationFn: async () => {
-      const response = await codevizApi.triggerAnalysis()
+      // Use incremental analysis by default - only re-analyzes changed files
+      const response = await codevizApi.triggerIncrementalAnalysis()
       if (response.status === 'started') {
         setIsAnalyzing(true)
-        setAnalysisProgress({ phase: 'scanning', current: 0, total: 0 })
+        setAnalysisProgress({ phase: 'detecting', current: 0, total: 0 })
       } else if (response.status === 'already_cached') {
         // Already have the result, just refetch
         queryClient.invalidateQueries({ queryKey: ['codeGraph', currentProjectId] })
@@ -277,11 +280,35 @@ export function useCodeGraph(): UseCodeGraphResult {
   const codeGraphData = codeGraphQuery.data as CodeGraphResponse | null
   const fileTreeData = fileTreeQuery.data as FileTreeResponse | null
 
+  // Check if cache is stale (from different SHA than current HEAD)
+  const isStale = codeGraphData?.stale ?? false
+
+  // Auto-trigger incremental analysis when cache is stale
+  // Use a separate ref to track stale refresh to avoid double-triggering
+  const staleRefreshTriggeredRef = useRef(false)
+  useEffect(() => {
+    if (
+      isStale &&
+      !isAnalyzing &&
+      !staleRefreshTriggeredRef.current &&
+      codeGraphData
+    ) {
+      staleRefreshTriggeredRef.current = true
+      // Trigger incremental analysis in background
+      triggerAnalysis().catch(console.error)
+    }
+    // Reset when we get fresh data
+    if (!isStale && staleRefreshTriggeredRef.current) {
+      staleRefreshTriggeredRef.current = false
+    }
+  }, [isStale, isAnalyzing, codeGraphData, triggerAnalysis])
+
   return {
     codeGraph: codeGraphData?.codeGraph ?? null,
     fileTree: fileTreeData ?? null,
     isLoading: fileTreeQuery.isLoading || codeGraphQuery.isLoading,
     isAnalyzing,
+    isStale,
     analysisProgress,
     error: (fileTreeQuery.error ?? codeGraphQuery.error ?? analysisMutation.error) as Error | null,
     triggerAnalysis,

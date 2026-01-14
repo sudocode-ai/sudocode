@@ -133,7 +133,7 @@ function getGitSha(workspacePath: string): string {
 }
 
 /**
- * Get cached CodeGraph from database
+ * Get cached CodeGraph from database for specific SHA
  */
 function getCachedCodeGraph(
   db: import("better-sqlite3").Database,
@@ -145,13 +145,15 @@ function getCachedCodeGraph(
   fileCount: number;
   symbolCount: number;
   analysisDurationMs: number;
+  cachedSha: string;
 } | null {
   const stmt = db.prepare(`
-    SELECT code_graph, file_tree, analyzed_at, file_count, symbol_count, analysis_duration_ms
+    SELECT git_sha, code_graph, file_tree, analyzed_at, file_count, symbol_count, analysis_duration_ms
     FROM code_graph_cache
     WHERE git_sha = ?
   `);
   const row = stmt.get(gitSha) as {
+    git_sha: string;
     code_graph: string;
     file_tree: string;
     analyzed_at: string;
@@ -171,6 +173,52 @@ function getCachedCodeGraph(
     fileCount: row.file_count,
     symbolCount: row.symbol_count,
     analysisDurationMs: row.analysis_duration_ms,
+    cachedSha: row.git_sha,
+  };
+}
+
+/**
+ * Get the most recent cached CodeGraph (regardless of SHA)
+ */
+function getLatestCachedCodeGraph(
+  db: import("better-sqlite3").Database
+): {
+  codeGraph: CodeGraph;
+  fileTree: FileTreeResponse;
+  analyzedAt: string;
+  fileCount: number;
+  symbolCount: number;
+  analysisDurationMs: number;
+  cachedSha: string;
+} | null {
+  const stmt = db.prepare(`
+    SELECT git_sha, code_graph, file_tree, analyzed_at, file_count, symbol_count, analysis_duration_ms
+    FROM code_graph_cache
+    ORDER BY analyzed_at DESC
+    LIMIT 1
+  `);
+  const row = stmt.get() as {
+    git_sha: string;
+    code_graph: string;
+    file_tree: string;
+    analyzed_at: string;
+    file_count: number;
+    symbol_count: number;
+    analysis_duration_ms: number;
+  } | undefined;
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    codeGraph: JSON.parse(row.code_graph),
+    fileTree: JSON.parse(row.file_tree),
+    analyzedAt: row.analyzed_at,
+    fileCount: row.file_count,
+    symbolCount: row.symbol_count,
+    analysisDurationMs: row.analysis_duration_ms,
+    cachedSha: row.git_sha,
   };
 }
 
@@ -334,8 +382,9 @@ export function createCodevizRouter(): Router {
   /**
    * GET /api/codeviz/code-graph
    *
-   * Get the cached CodeGraph for the current git SHA.
-   * Returns 404 if no cached CodeGraph exists for the current SHA.
+   * Get the cached CodeGraph. Returns the most recent cached version.
+   * If the cache is from a different SHA than current HEAD, includes stale: true.
+   * Returns 404 only if no cache exists at all.
    */
   router.get("/code-graph", async (req: Request, res: Response) => {
     try {
@@ -343,13 +392,23 @@ export function createCodevizRouter(): Router {
       const db = req.project!.db;
       const gitSha = getGitSha(workspacePath);
 
-      const cached = getCachedCodeGraph(db, gitSha);
+      // First try exact SHA match
+      let cached = getCachedCodeGraph(db, gitSha);
+      let isStale = false;
+
+      // If no exact match, get the latest cache (stale but usable)
+      if (!cached) {
+        cached = getLatestCachedCodeGraph(db);
+        if (cached) {
+          isStale = true;
+        }
+      }
 
       if (!cached) {
         res.status(404).json({
           success: false,
           data: null,
-          message: "No cached CodeGraph for current SHA",
+          message: "No cached CodeGraph available",
           currentSha: gitSha,
         });
         return;
@@ -359,7 +418,9 @@ export function createCodevizRouter(): Router {
         success: true,
         data: {
           codeGraph: cached.codeGraph,
-          gitSha,
+          gitSha: cached.cachedSha,
+          currentSha: gitSha,
+          stale: isStale,
           analyzedAt: cached.analyzedAt,
           stats: {
             fileCount: cached.fileCount,

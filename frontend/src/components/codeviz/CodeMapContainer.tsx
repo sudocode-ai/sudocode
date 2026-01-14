@@ -245,19 +245,22 @@ function EmptyState() {
  */
 function AnalysisIndicator({
   isAnalyzing,
+  isStale,
   hasFullCodeGraph,
   analysisProgress,
   onAnalyze,
   autoAnalyzing,
 }: {
   isAnalyzing: boolean
+  isStale: boolean
   hasFullCodeGraph: boolean
   analysisProgress: { phase: string; current: number; total: number; currentFile?: string } | null
   onAnalyze: () => void
   autoAnalyzing: boolean
 }) {
   // Show progress during analysis (whether auto-triggered or manual)
-  if (isAnalyzing) {
+  // When stale, show a subtle indicator instead of full progress
+  if (isAnalyzing && !isStale) {
     const percentage =
       analysisProgress && analysisProgress.total > 0
         ? Math.round((analysisProgress.current / analysisProgress.total) * 100)
@@ -300,7 +303,19 @@ function AnalysisIndicator({
     )
   }
 
-  if (hasFullCodeGraph) {
+  // Stale cache being refreshed - subtle indicator (graph is shown, just updating)
+  if (isStale && isAnalyzing) {
+    return (
+      <div className="absolute right-4 top-4 z-50">
+        <div className="flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-1.5 text-sm shadow-sm backdrop-blur">
+          <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+          <span className="text-muted-foreground">Updating...</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (hasFullCodeGraph && !isStale) {
     return (
       <div className="absolute right-4 top-4 z-50">
         <div className="flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-1.5 text-sm shadow-sm backdrop-blur">
@@ -352,6 +367,7 @@ export const CodeMapContainer = forwardRef<CodeMapContainerRef, CodeMapContainer
       fileTree,
       isLoading,
       isAnalyzing,
+      isStale,
       analysisProgress,
       error,
       triggerAnalysis,
@@ -487,6 +503,7 @@ export const CodeMapContainer = forwardRef<CodeMapContainerRef, CodeMapContainer
       <div className="relative h-full w-full">
         <AnalysisIndicator
           isAnalyzing={isAnalyzing}
+          isStale={isStale}
           hasFullCodeGraph={!!fullCodeGraph}
           analysisProgress={analysisProgress}
           onAnalyze={triggerAnalysis}
