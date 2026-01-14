@@ -668,10 +668,9 @@ const MIGRATIONS: Migration[] = [
       db.exec(`
         CREATE TABLE IF NOT EXISTS executions_new (
           id TEXT PRIMARY KEY,
-          uuid TEXT,
           issue_id TEXT,
           issue_uuid TEXT,
-          mode TEXT NOT NULL,
+          mode TEXT CHECK(mode IN ('worktree', 'local')),
           prompt TEXT,
           config TEXT,
           agent_type TEXT,
@@ -701,29 +700,27 @@ const MIGRATIONS: Migration[] = [
           step_type TEXT,
           step_index INTEGER,
           step_config TEXT,
-          external_links TEXT,
           FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL,
           FOREIGN KEY (issue_uuid) REFERENCES issues(uuid) ON DELETE SET NULL,
-          FOREIGN KEY (parent_execution_id) REFERENCES executions(id) ON DELETE SET NULL,
-          FOREIGN KEY (workflow_execution_id) REFERENCES executions(id) ON DELETE SET NULL
+          FOREIGN KEY (parent_execution_id) REFERENCES executions(id) ON DELETE SET NULL
         );
       `);
 
       // Copy data from old table
       db.exec(`
         INSERT INTO executions_new (
-          id, uuid, issue_id, issue_uuid, mode, prompt, config, agent_type, session_id,
+          id, issue_id, issue_uuid, mode, prompt, config, agent_type, session_id,
           workflow_execution_id, target_branch, branch_name, before_commit, after_commit,
           worktree_path, status, created_at, updated_at, started_at, completed_at,
           cancelled_at, exit_code, error_message, error, model, summary, files_changed,
-          parent_execution_id, step_type, step_index, step_config, external_links
+          parent_execution_id, step_type, step_index, step_config
         )
         SELECT
-          id, uuid, issue_id, issue_uuid, mode, prompt, config, agent_type, session_id,
+          id, issue_id, issue_uuid, mode, prompt, config, agent_type, session_id,
           workflow_execution_id, target_branch, branch_name, before_commit, after_commit,
           worktree_path, status, created_at, updated_at, started_at, completed_at,
           cancelled_at, exit_code, error_message, error, model, summary, files_changed,
-          parent_execution_id, step_type, step_index, step_config, external_links
+          parent_execution_id, step_type, step_index, step_config
         FROM executions;
       `);
 
@@ -733,14 +730,17 @@ const MIGRATIONS: Migration[] = [
       // Rename new table
       db.exec(`ALTER TABLE executions_new RENAME TO executions;`);
 
-      // Recreate indexes
+      // Recreate indexes (matching schema.ts EXECUTIONS_INDEXES)
       db.exec(`
         CREATE INDEX IF NOT EXISTS idx_executions_issue_id ON executions(issue_id);
         CREATE INDEX IF NOT EXISTS idx_executions_issue_uuid ON executions(issue_uuid);
         CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
+        CREATE INDEX IF NOT EXISTS idx_executions_session_id ON executions(session_id);
+        CREATE INDEX IF NOT EXISTS idx_executions_parent ON executions(parent_execution_id);
         CREATE INDEX IF NOT EXISTS idx_executions_created_at ON executions(created_at);
-        CREATE INDEX IF NOT EXISTS idx_executions_parent_id ON executions(parent_execution_id);
         CREATE INDEX IF NOT EXISTS idx_executions_workflow ON executions(workflow_execution_id);
+        CREATE INDEX IF NOT EXISTS idx_executions_workflow_step ON executions(workflow_execution_id, step_index);
+        CREATE INDEX IF NOT EXISTS idx_executions_step_type ON executions(step_type);
       `);
 
       db.exec(`PRAGMA foreign_keys = ON;`);
@@ -762,10 +762,9 @@ const MIGRATIONS: Migration[] = [
       db.exec(`
         CREATE TABLE IF NOT EXISTS executions_old (
           id TEXT PRIMARY KEY,
-          uuid TEXT,
           issue_id TEXT,
           issue_uuid TEXT,
-          mode TEXT NOT NULL,
+          mode TEXT CHECK(mode IN ('worktree', 'local')),
           prompt TEXT,
           config TEXT,
           agent_type TEXT,
@@ -795,11 +794,9 @@ const MIGRATIONS: Migration[] = [
           step_type TEXT,
           step_index INTEGER,
           step_config TEXT,
-          external_links TEXT,
           FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL,
           FOREIGN KEY (issue_uuid) REFERENCES issues(uuid) ON DELETE SET NULL,
-          FOREIGN KEY (parent_execution_id) REFERENCES executions(id) ON DELETE SET NULL,
-          FOREIGN KEY (workflow_execution_id) REFERENCES executions(id) ON DELETE SET NULL
+          FOREIGN KEY (parent_execution_id) REFERENCES executions(id) ON DELETE SET NULL
         );
       `);
 
@@ -811,14 +808,17 @@ const MIGRATIONS: Migration[] = [
       db.exec(`DROP TABLE executions;`);
       db.exec(`ALTER TABLE executions_old RENAME TO executions;`);
 
-      // Recreate indexes
+      // Recreate indexes (matching schema.ts EXECUTIONS_INDEXES)
       db.exec(`
         CREATE INDEX IF NOT EXISTS idx_executions_issue_id ON executions(issue_id);
         CREATE INDEX IF NOT EXISTS idx_executions_issue_uuid ON executions(issue_uuid);
         CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
+        CREATE INDEX IF NOT EXISTS idx_executions_session_id ON executions(session_id);
+        CREATE INDEX IF NOT EXISTS idx_executions_parent ON executions(parent_execution_id);
         CREATE INDEX IF NOT EXISTS idx_executions_created_at ON executions(created_at);
-        CREATE INDEX IF NOT EXISTS idx_executions_parent_id ON executions(parent_execution_id);
         CREATE INDEX IF NOT EXISTS idx_executions_workflow ON executions(workflow_execution_id);
+        CREATE INDEX IF NOT EXISTS idx_executions_workflow_step ON executions(workflow_execution_id, step_index);
+        CREATE INDEX IF NOT EXISTS idx_executions_step_type ON executions(step_type);
       `);
 
       db.exec(`PRAGMA foreign_keys = ON;`);
