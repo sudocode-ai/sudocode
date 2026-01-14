@@ -19,6 +19,10 @@ import {
   isConfigurationError,
   isDeploymentNotFoundError,
   isPortConflictError,
+  isSudopodDeploymentFailedError,
+  isSudopodProviderNotFoundError,
+  isSudopodAuthenticationError,
+  isSudopodProviderError,
 } from '../../../src/deploy/errors.js';
 
 describe('Error Type Guards', () => {
@@ -321,5 +325,131 @@ describe('Error Properties', () => {
   it('should preserve PortConflictError properties', () => {
     const error = new PortConflictError(3000);
     expect(error.port).toBe(3000);
+  });
+});
+
+describe('Sudopod Error Handling', () => {
+  describe('Type Guards', () => {
+    it('should identify sudopod DeploymentFailedError by constructor name', () => {
+      // Mock sudopod DeploymentFailedError
+      class DeploymentFailedError extends Error {
+        code: string;
+        details?: any;
+        constructor(message: string, details?: any) {
+          super(message);
+          this.name = 'DeploymentFailedError';
+          Object.setPrototypeOf(this, DeploymentFailedError.prototype);
+          this.code = 'DEPLOYMENT_FAILED';
+          this.details = details;
+        }
+      }
+      
+      const error = new DeploymentFailedError('Deployment failed', { reason: 'timeout' });
+      expect(isSudopodDeploymentFailedError(error)).toBe(true);
+    });
+
+    it('should identify sudopod ProviderNotFoundError by constructor name', () => {
+      class ProviderNotFoundError extends Error {
+        code: string;
+        constructor(type: string) {
+          super(`Provider '${type}' not found`);
+          this.name = 'ProviderNotFoundError';
+          Object.setPrototypeOf(this, ProviderNotFoundError.prototype);
+          this.code = 'PROVIDER_NOT_FOUND';
+        }
+      }
+      
+      const error = new ProviderNotFoundError('coder');
+      expect(isSudopodProviderNotFoundError(error)).toBe(true);
+    });
+
+    it('should identify sudopod AuthenticationError by constructor name and properties', () => {
+      // Create an error that looks like sudopod's AuthenticationError
+      const error = new Error('Authentication failed for codespaces: invalid token');
+      error.name = 'AuthenticationError';
+      (error as any).provider = 'codespaces';
+      
+      expect(isSudopodAuthenticationError(error)).toBe(true);
+    });
+
+    it('should identify sudopod ProviderError by constructor name and properties', () => {
+      // Create an error that looks like sudopod's ProviderError
+      const error = new Error('codespaces list failed: API error');
+      error.name = 'ProviderError';
+      (error as any).provider = 'codespaces';
+      (error as any).operation = 'list';
+      
+      expect(isSudopodProviderError(error)).toBe(true);
+    });
+  });
+
+  describe('Error Message Formatting', () => {
+    it('should format sudopod DeploymentFailedError', () => {
+      class DeploymentFailedError extends Error {
+        code: string;
+        details?: any;
+        constructor(message: string, details?: any) {
+          super(message);
+          this.name = 'DeploymentFailedError';
+          this.code = 'DEPLOYMENT_FAILED';
+          this.details = details;
+        }
+      }
+      
+      const error = new DeploymentFailedError('Codespace creation failed', { reason: 'quota exceeded' });
+      const message = formatErrorMessage(error);
+      
+      expect(message).toContain('✗ Deployment failed');
+      expect(message).toContain('Codespace creation failed');
+      expect(message).toContain('Suggested actions:');
+      expect(message).toContain('• Check GitHub Codespaces service status');
+    });
+
+    it('should format sudopod ProviderNotFoundError', () => {
+      class ProviderNotFoundError extends Error {
+        code: string;
+        constructor(type: string) {
+          super(`Provider '${type}' not found`);
+          this.name = 'ProviderNotFoundError';
+          this.code = 'PROVIDER_NOT_FOUND';
+        }
+      }
+      
+      const error = new ProviderNotFoundError('coder');
+      const message = formatErrorMessage(error);
+      
+      expect(message).toContain("✗ Provider 'coder' not found");
+      expect(message).toContain('The requested deployment provider is not available');
+      expect(message).toContain('Currently supported providers:');
+      expect(message).toContain('codespaces');
+    });
+
+    it('should format sudopod AuthenticationError', () => {
+      // Create an error that looks like sudopod's AuthenticationError
+      const error = new Error('Authentication failed: invalid token');
+      error.name = 'AuthenticationError';
+      (error as any).provider = 'codespaces';
+      
+      const message = formatErrorMessage(error);
+      
+      expect(message).toContain('✗ codespaces authentication failed');
+      expect(message).toContain('To authenticate:');
+      expect(message).toContain('gh auth login');
+    });
+
+    it('should format sudopod ProviderError', () => {
+      // Create an error that looks like sudopod's ProviderError
+      const error = new Error('API rate limit exceeded');
+      error.name = 'ProviderError';
+      (error as any).provider = 'codespaces';
+      (error as any).operation = 'list';
+      
+      const message = formatErrorMessage(error);
+      
+      expect(message).toContain('✗ codespaces operation failed');
+      expect(message).toContain("Operation 'list' failed");
+      expect(message).toContain('API rate limit exceeded');
+      expect(message).toContain('Suggested actions:');
+    });
   });
 });

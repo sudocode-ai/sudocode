@@ -24,7 +24,11 @@ import {
   DeploymentNotFoundError,
   PortConflictError,
   formatErrorMessage,
-  isDeploymentNotFoundError
+  isDeploymentNotFoundError,
+  isSudopodDeploymentFailedError,
+  isSudopodProviderNotFoundError,
+  isSudopodAuthenticationError,
+  isSudopodProviderError
 } from './errors.js';
 
 export interface DeployCommandOptions {
@@ -196,7 +200,15 @@ export class DeployOrchestrator {
         clearInterval(progressInterval);
         process.stdout.write('\n');
         
-        // Wrap provider errors
+        // Handle sudopod-specific errors (pass through for proper formatting)
+        if (isSudopodDeploymentFailedError(error) || 
+            isSudopodProviderNotFoundError(error) || 
+            isSudopodAuthenticationError(error) || 
+            isSudopodProviderError(error)) {
+          throw error;
+        }
+        
+        // Handle network errors
         if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
           throw new NetworkError(
             error.message || 'Network connection failed',
@@ -205,13 +217,41 @@ export class DeployOrchestrator {
           );
         }
         
+        // Handle port conflicts
         if (error.message?.includes('port') && error.message?.includes('in use')) {
           const portMatch = error.message.match(/port (\d+)/i);
           const port = portMatch ? parseInt(portMatch[1], 10) : mergedConfig.port;
           throw new PortConflictError(port, error.message);
         }
         
-        // Wrap as provider error
+        // Handle timeout errors
+        if (error.message?.includes('timeout') || error.code === 'ETIMEDOUT') {
+          throw new NetworkError(
+            'Deployment timed out',
+            'deployment',
+            error
+          );
+        }
+        
+        // Handle permission errors
+        if (error.message?.includes('permission') || error.message?.includes('forbidden') || error.code === 'EACCES') {
+          throw new ProviderError(
+            'Permission denied: Check your GitHub repository and Codespaces permissions',
+            mergedConfig.provider,
+            error
+          );
+        }
+        
+        // Handle quota/limit errors
+        if (error.message?.includes('quota') || error.message?.includes('limit')) {
+          throw new ProviderError(
+            'Resource quota exceeded: Check your GitHub Codespaces usage limits',
+            mergedConfig.provider,
+            error
+          );
+        }
+        
+        // Wrap as generic provider error
         throw new ProviderError(
           error.message || 'Deployment failed',
           mergedConfig.provider,
@@ -281,7 +321,14 @@ export class DeployOrchestrator {
       const deployments = await this.provider.list();
       return deployments;
     } catch (error: any) {
-      // Check for network errors
+      // Handle sudopod-specific errors
+      if (isSudopodProviderError(error) || isSudopodAuthenticationError(error)) {
+        const formattedError = formatErrorMessage(error);
+        console.error(chalk.red(`\n${formattedError}\n`));
+        throw error;
+      }
+      
+      // Handle network errors
       if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
         const networkError = new NetworkError(
           error.message || 'Network connection failed',
@@ -291,6 +338,18 @@ export class DeployOrchestrator {
         const formattedError = formatErrorMessage(networkError);
         console.error(chalk.red(`\n${formattedError}\n`));
         throw networkError;
+      }
+      
+      // Handle authentication errors
+      if (error.message?.includes('auth') || error.message?.includes('unauthorized') || error.code === 'EAUTH') {
+        const authError = new AuthenticationError(
+          'GitHub authentication failed',
+          'github',
+          'Run: gh auth login'
+        );
+        const formattedError = formatErrorMessage(authError);
+        console.error(chalk.red(`\n${formattedError}\n`));
+        throw authError;
       }
       
       // Wrap as provider error
@@ -315,6 +374,11 @@ export class DeployOrchestrator {
    */
   async status(id: string): Promise<Deployment> {
     try {
+      // Validate input
+      if (!id || typeof id !== 'string' || id.trim() === '') {
+        throw new Error('Deployment ID must be a non-empty string');
+      }
+      
       // Get deployment status
       const status = await this.provider.getStatus(id);
       
@@ -343,6 +407,13 @@ export class DeployOrchestrator {
         throw error;
       }
       
+      // Handle sudopod-specific errors
+      if (isSudopodProviderError(error) || isSudopodAuthenticationError(error)) {
+        const formattedError = formatErrorMessage(error);
+        console.error(chalk.red(`\n${formattedError}\n`));
+        throw error;
+      }
+      
       // Check for not found in provider error message
       if (error.message?.includes('not found') || error.message?.includes('does not exist')) {
         const notFoundError = new DeploymentNotFoundError(id);
@@ -351,7 +422,7 @@ export class DeployOrchestrator {
         throw notFoundError;
       }
       
-      // Check for network errors
+      // Handle network errors
       if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
         const networkError = new NetworkError(
           error.message || 'Network connection failed',
@@ -361,6 +432,18 @@ export class DeployOrchestrator {
         const formattedError = formatErrorMessage(networkError);
         console.error(chalk.red(`\n${formattedError}\n`));
         throw networkError;
+      }
+      
+      // Handle authentication errors
+      if (error.message?.includes('auth') || error.message?.includes('unauthorized') || error.code === 'EAUTH') {
+        const authError = new AuthenticationError(
+          'GitHub authentication failed',
+          'github',
+          'Run: gh auth login'
+        );
+        const formattedError = formatErrorMessage(authError);
+        console.error(chalk.red(`\n${formattedError}\n`));
+        throw authError;
       }
       
       // Wrap as provider error
@@ -383,6 +466,11 @@ export class DeployOrchestrator {
    * @throws ProviderError or NetworkError if stop operation fails
    */
   async stop(id: string): Promise<void> {
+    // Validate input
+    if (!id || typeof id !== 'string' || id.trim() === '') {
+      throw new Error('Deployment ID must be a non-empty string');
+    }
+    
     console.log(chalk.blue(`Stopping deployment '${id}'`));
     const progressInterval = setInterval(() => {
       process.stdout.write('.');
@@ -404,6 +492,13 @@ export class DeployOrchestrator {
         throw error;
       }
       
+      // Handle sudopod-specific errors
+      if (isSudopodProviderError(error) || isSudopodAuthenticationError(error)) {
+        const formattedError = formatErrorMessage(error);
+        console.error(chalk.red(`\n${formattedError}\n`));
+        throw error;
+      }
+      
       // Check for not found in provider error message
       if (error.message?.includes('not found') || error.message?.includes('does not exist')) {
         const notFoundError = new DeploymentNotFoundError(id);
@@ -412,7 +507,7 @@ export class DeployOrchestrator {
         throw notFoundError;
       }
       
-      // Check for network errors
+      // Handle network errors
       if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
         const networkError = new NetworkError(
           error.message || 'Network connection failed',
@@ -422,6 +517,30 @@ export class DeployOrchestrator {
         const formattedError = formatErrorMessage(networkError);
         console.error(chalk.red(`\n${formattedError}\n`));
         throw networkError;
+      }
+      
+      // Handle authentication errors
+      if (error.message?.includes('auth') || error.message?.includes('unauthorized') || error.code === 'EAUTH') {
+        const authError = new AuthenticationError(
+          'GitHub authentication failed',
+          'github',
+          'Run: gh auth login'
+        );
+        const formattedError = formatErrorMessage(authError);
+        console.error(chalk.red(`\n${formattedError}\n`));
+        throw authError;
+      }
+      
+      // Handle permission errors
+      if (error.message?.includes('permission') || error.message?.includes('forbidden') || error.code === 'EACCES') {
+        const providerError = new ProviderError(
+          'Permission denied: You may not have permission to stop this deployment',
+          'codespaces',
+          error
+        );
+        const formattedError = formatErrorMessage(providerError);
+        console.error(chalk.red(`\n${formattedError}\n`));
+        throw providerError;
       }
       
       // Wrap as provider error

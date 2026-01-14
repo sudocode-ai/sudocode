@@ -246,10 +246,11 @@ describe('DeployOrchestrator', () => {
     it('should handle deployment failures gracefully', async () => {
       mockProvider.deploy.mockRejectedValue(new Error('Deployment failed: quota exceeded'));
 
-      await expect(orchestrator.deploy()).rejects.toThrow('Deployment failed: quota exceeded');
+      // Our enhanced error handling wraps quota errors with a better message
+      await expect(orchestrator.deploy()).rejects.toThrow('Resource quota exceeded');
 
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Deployment failed: quota exceeded')
+        expect.stringContaining('Resource quota exceeded')
       );
     });
 

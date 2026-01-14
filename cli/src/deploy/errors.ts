@@ -5,6 +5,15 @@
  * for different failure scenarios in deployment workflows.
  */
 
+// Import sudopod error types
+import type {
+  SudopodError,
+  ProviderNotFoundError as SudopodProviderNotFoundError,
+  DeploymentFailedError as SudopodDeploymentFailedError,
+  AuthenticationError as SudopodAuthenticationError,
+  ProviderError as SudopodProviderError,
+} from 'sudopod';
+
 /**
  * Base class for all deployment-related errors
  */
@@ -173,6 +182,49 @@ export function isPortConflictError(error: unknown): error is PortConflictError 
 }
 
 /**
+ * Type guard to check if an error is a sudopod error
+ */
+export function isSudopodError(error: unknown): error is SudopodError {
+  return error instanceof Error && 'code' in error && error.constructor.name.includes('Error');
+}
+
+/**
+ * Type guard to check if an error is a sudopod deployment failed error
+ */
+export function isSudopodDeploymentFailedError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'DeploymentFailedError';
+}
+
+/**
+ * Type guard to check if an error is a sudopod provider not found error
+ */
+export function isSudopodProviderNotFoundError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'ProviderNotFoundError';
+}
+
+/**
+ * Type guard to check if an error is a sudopod authentication error
+ */
+export function isSudopodAuthenticationError(error: unknown): boolean {
+  return error instanceof Error && 
+         error.name === 'AuthenticationError' && 
+         'provider' in error &&
+         typeof (error as any).provider === 'string';
+}
+
+/**
+ * Type guard to check if an error is a sudopod provider error
+ */
+export function isSudopodProviderError(error: unknown): boolean {
+  return error instanceof Error && 
+         error.name === 'ProviderError' && 
+         'operation' in error && 
+         'provider' in error &&
+         typeof (error as any).operation === 'string' &&
+         typeof (error as any).provider === 'string';
+}
+
+/**
  * Format error message with consistent styling
  * 
  * Format:
@@ -195,6 +247,60 @@ export interface FormattedError {
  * Helper to format error messages for CLI output with consistent styling
  */
 export function formatErrorMessage(error: unknown): string {
+  // Handle sudopod-specific errors first
+  if (isSudopodDeploymentFailedError(error)) {
+    const err = error as any;
+    return formatErrorOutput({
+      title: 'Deployment failed',
+      explanation: err.message || 'The deployment operation failed.',
+      context: err.details ? (typeof err.details === 'string' ? err.details : err.details.message) : undefined,
+      action: 'Suggested actions',
+      command: [
+        '• Check GitHub Codespaces service status',
+        '• Verify your repository permissions',
+        '• Try deploying again',
+        '• Check logs for more details'
+      ].join('\n    ')
+    });
+  }
+  
+  if (isSudopodProviderNotFoundError(error)) {
+    const err = error as any;
+    const providerType = err.message?.match(/Provider '(.+?)' not found/)?.[1] || 'unknown';
+    return formatErrorOutput({
+      title: `Provider '${providerType}' not found`,
+      explanation: 'The requested deployment provider is not available.',
+      action: 'Currently supported providers',
+      command: 'codespaces'
+    });
+  }
+  
+  if (isSudopodAuthenticationError(error)) {
+    const err = error as any;
+    return formatErrorOutput({
+      title: `${err.provider || 'Provider'} authentication failed`,
+      explanation: err.message || 'Authentication with the deployment provider failed.',
+      action: 'To authenticate',
+      command: err.provider === 'codespaces' ? 'gh auth login' : 'Check provider documentation'
+    });
+  }
+  
+  if (isSudopodProviderError(error)) {
+    const err = error as any;
+    return formatErrorOutput({
+      title: `${err.provider || 'Provider'} operation failed`,
+      explanation: `Operation '${err.operation || 'unknown'}' failed: ${err.message}`,
+      action: 'Suggested actions',
+      command: [
+        '• Check your network connection',
+        '• Verify provider service status',
+        '• Check provider permissions',
+        '• Try again in a few moments'
+      ].join('\n    ')
+    });
+  }
+  
+  // Handle our custom error types
   if (isAuthenticationError(error)) {
     return formatErrorOutput({
       title: `${error.service === 'github' ? 'GitHub' : 'Claude'} CLI is not authenticated`,

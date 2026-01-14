@@ -434,8 +434,8 @@ export async function handleDeployStop(
     // Skip confirmation if --force flag is provided or in JSON mode
     if (!options.force && !context.jsonOutput) {
       const confirmed = await promptConfirmation(
-        `Stop deployment ${chalk.cyan(id)}?\n` +
-        chalk.yellow('  This will delete the codespace and all uncommitted changes.\n') +
+        `Stop deployment ${id}?\n` +
+        '  This will delete the codespace and all uncommitted changes.\n' +
         '  \n' +
         '  Continue?'
       );
