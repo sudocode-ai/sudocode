@@ -24,6 +24,10 @@ import {
   getMacroAgentAcpUrl,
   getMacroAgentApiUrl,
 } from "../utils/macro-agent-config.js";
+import {
+  MacroAgentObservabilityService,
+  type MacroAgentObservabilityConfig,
+} from "./macro-agent-observability.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -63,6 +67,7 @@ export class MacroAgentServerManager {
   private restartTimer: NodeJS.Timeout | null = null;
   private uptimeTimer: NodeJS.Timeout | null = null;
   private executablePath: string | null = null;
+  private observabilityService: MacroAgentObservabilityService | null = null;
 
   private readonly config: MacroAgentServerManagerConfig;
   private readonly maxRestarts = 3;
@@ -210,6 +215,9 @@ export class MacroAgentServerManager {
       this.state = "running";
       console.log("[MacroAgentServerManager] Server is ready");
 
+      // Start observability service connection
+      await this.startObservability();
+
       // Start uptime timer to reset restart count
       this.startUptimeTimer();
     } catch (error) {
@@ -230,6 +238,9 @@ export class MacroAgentServerManager {
 
     this.state = "stopping";
     console.log("[MacroAgentServerManager] Stopping macro-agent server");
+
+    // Close observability connection first
+    await this.stopObservability();
 
     // Clear timers
     this.clearTimers();
@@ -298,6 +309,75 @@ export class MacroAgentServerManager {
   getState(): ServerState {
     return this.state;
   }
+
+  /**
+   * Get the observability service instance.
+   * Returns null if not initialized or server unavailable.
+   */
+  getObservabilityService(): MacroAgentObservabilityService | null {
+    return this.observabilityService;
+  }
+
+  /**
+   * Check if observability is connected.
+   * Returns false if service not initialized or not connected.
+   */
+  isObservabilityConnected(): boolean {
+    return this.observabilityService?.isConnected() ?? false;
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Observability Lifecycle
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Start the observability service connection.
+   * Called after server is ready. Failure does not fail server startup.
+   */
+  private async startObservability(): Promise<void> {
+    try {
+      const config: MacroAgentObservabilityConfig = {
+        apiBaseUrl: this.getApiUrl(),
+      };
+
+      this.observabilityService = new MacroAgentObservabilityService(config);
+      await this.observabilityService.connect();
+
+      console.log(
+        "[MacroAgentServerManager] Observability service connected"
+      );
+    } catch (error) {
+      console.warn(
+        "[MacroAgentServerManager] Observability service failed to connect. " +
+          "Server will continue without observability.",
+        error
+      );
+      // Don't throw - server can function without observability
+    }
+  }
+
+  /**
+   * Stop the observability service connection.
+   * Called before server stops.
+   */
+  private async stopObservability(): Promise<void> {
+    if (this.observabilityService) {
+      try {
+        await this.observabilityService.close();
+        console.log("[MacroAgentServerManager] Observability service closed");
+      } catch (error) {
+        console.warn(
+          "[MacroAgentServerManager] Error closing observability service:",
+          error
+        );
+      }
+      this.observabilityService = null;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Process Lifecycle
+  // ─────────────────────────────────────────────────────────────────
 
   /**
    * Setup event handlers for the spawned process

@@ -71,6 +71,11 @@ export interface ExecutorFactoryConfig {
    * Required for legacy agents, not needed for ACP agents which use session providers.
    */
   lifecycleService?: ExecutionLifecycleService;
+  /**
+   * Execution ID for this execution.
+   * Used for macro-agent observability connection tracking.
+   */
+  executionId?: string;
 }
 
 /**
@@ -158,6 +163,9 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
       permissionMode: processedConfig.acpPermissionMode,
     });
 
+    // Get observability service for connection tracking
+    const observabilityService = macroAgentManager.getObservabilityService() ?? undefined;
+
     const acpConfig: AcpExecutorWrapperConfig = {
       agentType,
       acpConfig: {
@@ -172,6 +180,7 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
       logsStore: factoryConfig.logsStore,
       projectId: factoryConfig.projectId,
       db: factoryConfig.db,
+      observabilityService,
     };
 
     return new AcpExecutorWrapper(acpConfig);

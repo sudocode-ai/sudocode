@@ -25,6 +25,10 @@ import { createVersionRouter } from "./routes/version.js";
 import { createUpdateRouter, setServerInstance } from "./routes/update.js";
 import { createWorkflowsRouter } from "./routes/workflows.js";
 import { createVoiceRouter } from "./routes/voice.js";
+import {
+  createMacroAgentRouter,
+  createExecutionMacroRouter,
+} from "./routes/macro-agent.js";
 import { ProjectRegistry } from "./services/project-registry.js";
 import { ProjectManager } from "./services/project-manager.js";
 import { requireProject } from "./middleware/project-context.js";
@@ -195,6 +199,9 @@ app.use("/api/files", requireProject(projectManager), createFilesRouter());
 // Agents endpoint - global, not project-specific
 app.use("/api/agents", createAgentsRouter());
 
+// Macro-agent observability endpoint - global, not project-specific
+app.use("/api/macro-agent", createMacroAgentRouter());
+
 // Voice endpoint - requires project context for config
 app.use("/api/voice", requireProject(projectManager), createVoiceRouter());
 
@@ -278,6 +285,13 @@ app.get(
 // Mount execution routes
 // TODO: Make these all relative to /executions
 app.use("/api", requireProject(projectManager), createExecutionsRouter());
+
+// Execution-scoped macro-agent routes
+app.use(
+  "/api/executions/:id/macro",
+  requireProject(projectManager),
+  createExecutionMacroRouter()
+);
 
 // Mount editor routes
 app.use("/api", requireProject(projectManager), createEditorsRouter());

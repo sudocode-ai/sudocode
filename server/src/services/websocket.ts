@@ -83,7 +83,9 @@ export interface ServerMessage {
     // TTS streaming message types
     | "tts_audio"
     | "tts_end"
-    | "tts_error";
+    | "tts_error"
+    // Macro-agent events
+    | "macro_agent_update";
   projectId?: string; // Project ID for project-scoped messages
   data?: any;
   message?: string;
@@ -345,6 +347,8 @@ class WebSocketManager {
     }
 
     let subscription: string;
+
+    // Project-scoped subscriptions require project_id
     const projectId = message.project_id;
 
     if (!projectId) {
@@ -396,6 +400,8 @@ class WebSocketManager {
     }
 
     let subscription: string;
+
+    // Project-scoped unsubscriptions require project_id
     const projectId = message.project_id;
 
     if (!projectId) {

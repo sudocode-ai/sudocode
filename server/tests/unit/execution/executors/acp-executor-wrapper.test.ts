@@ -1343,3 +1343,254 @@ describe("convertMcpServers", () => {
     expect(result).toEqual([]);
   });
 });
+
+describe("Macro-Agent Observability Connection Tracking", () => {
+  let wrapper: AcpExecutorWrapper;
+  let mockDb: any;
+  let mockLogsStore: any;
+  let mockSessionProvider: any;
+  let mockSession: any;
+  let mockObservabilityService: any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockDb = {
+      prepare: vi.fn().mockReturnValue({
+        run: vi.fn(),
+        get: vi.fn(),
+        all: vi.fn(),
+      }),
+    };
+
+    mockLogsStore = {
+      appendRawLog: vi.fn(),
+      appendNormalizedEntry: vi.fn(),
+    };
+
+    // Create mock session
+    mockSession = {
+      id: "macro-session-123",
+      prompt: vi.fn().mockImplementation(async function* () {
+        yield { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Hello" } };
+      }),
+      cancel: vi.fn().mockResolvedValue(undefined),
+      setMode: vi.fn().mockResolvedValue(undefined),
+      respondToPermission: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+
+    // Create mock session provider
+    mockSessionProvider = {
+      createSession: vi.fn().mockResolvedValue(mockSession),
+      loadSession: vi.fn().mockResolvedValue(mockSession),
+      supportsSessionLoading: vi.fn().mockReturnValue(true),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+
+    // Create mock observability service
+    mockObservabilityService = {
+      registerConnection: vi.fn(),
+      unregisterConnection: vi.fn(),
+      isConnected: vi.fn().mockReturnValue(true),
+    };
+  });
+
+  describe("when agentType is macro-agent", () => {
+    beforeEach(() => {
+      wrapper = new AcpExecutorWrapper({
+        agentType: "macro-agent",
+        acpConfig: {
+          agentType: "macro-agent",
+          permissionMode: "auto-approve",
+        },
+        sessionProvider: mockSessionProvider,
+        logsStore: mockLogsStore,
+        projectId: "test-project",
+        db: mockDb,
+        observabilityService: mockObservabilityService,
+      });
+    });
+
+    it("should register connection after session creation", async () => {
+      await wrapper.executeWithLifecycle(
+        "exec-123",
+        { id: "task-1", prompt: "Test prompt" },
+        "/test/workdir"
+      );
+
+      expect(mockObservabilityService.registerConnection).toHaveBeenCalledWith(
+        "exec-123",
+        "test-project",
+        "macro-session-123"
+      );
+    });
+
+    it("should register connection after session load in resumeWithLifecycle", async () => {
+      await wrapper.resumeWithLifecycle(
+        "exec-456",
+        "macro-session-123",
+        { id: "task-1", prompt: "Resume prompt" },
+        "/test/workdir"
+      );
+
+      expect(mockObservabilityService.registerConnection).toHaveBeenCalledWith(
+        "exec-456",
+        "test-project",
+        "macro-session-123"
+      );
+    });
+
+    it("should unregister connection on successful completion", async () => {
+      await wrapper.executeWithLifecycle(
+        "exec-123",
+        { id: "task-1", prompt: "Test prompt" },
+        "/test/workdir"
+      );
+
+      // Should unregister in handleSuccess (and possibly again in finally as safety net)
+      expect(mockObservabilityService.unregisterConnection).toHaveBeenCalledWith("exec-123");
+    });
+
+    it("should unregister connection on error", async () => {
+      // Make the session throw an error
+      mockSession.prompt = vi.fn().mockImplementation(async function* () {
+        throw new Error("Test error");
+      });
+
+      await expect(
+        wrapper.executeWithLifecycle(
+          "exec-123",
+          { id: "task-1", prompt: "Test prompt" },
+          "/test/workdir"
+        )
+      ).rejects.toThrow("Test error");
+
+      // Should unregister in handleError
+      expect(mockObservabilityService.unregisterConnection).toHaveBeenCalledWith("exec-123");
+    });
+
+    it("should unregister connection on cancel", async () => {
+      // Create a long-running session
+      let resolvePrompt: () => void;
+      const promptPromise = new Promise<void>((resolve) => {
+        resolvePrompt = resolve;
+      });
+
+      mockSession.prompt = vi.fn().mockImplementation(async function* () {
+        await promptPromise;
+        yield { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Done" } };
+      });
+
+      // Start execution in background
+      const execPromise = wrapper
+        .executeWithLifecycle("exec-123", { id: "task-1", prompt: "Test" }, "/test/workdir")
+        .catch(() => {});
+
+      // Give it time to start
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Cancel
+      await wrapper.cancel("exec-123");
+
+      expect(mockObservabilityService.unregisterConnection).toHaveBeenCalledWith("exec-123");
+
+      // Clean up
+      resolvePrompt!();
+      await execPromise;
+    });
+  });
+
+  describe("when agentType is NOT macro-agent", () => {
+    beforeEach(() => {
+      wrapper = new AcpExecutorWrapper({
+        agentType: "claude-code",
+        acpConfig: {
+          agentType: "claude-code",
+          permissionMode: "auto-approve",
+        },
+        sessionProvider: mockSessionProvider,
+        logsStore: mockLogsStore,
+        projectId: "test-project",
+        db: mockDb,
+        observabilityService: mockObservabilityService, // Still provide it
+      });
+    });
+
+    it("should NOT register connection for non-macro-agent", async () => {
+      await wrapper.executeWithLifecycle(
+        "exec-123",
+        { id: "task-1", prompt: "Test prompt" },
+        "/test/workdir"
+      );
+
+      expect(mockObservabilityService.registerConnection).not.toHaveBeenCalled();
+    });
+
+    it("should NOT unregister connection for non-macro-agent", async () => {
+      await wrapper.executeWithLifecycle(
+        "exec-123",
+        { id: "task-1", prompt: "Test prompt" },
+        "/test/workdir"
+      );
+
+      expect(mockObservabilityService.unregisterConnection).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("when observabilityService is not provided", () => {
+    beforeEach(() => {
+      wrapper = new AcpExecutorWrapper({
+        agentType: "macro-agent",
+        acpConfig: {
+          agentType: "macro-agent",
+          permissionMode: "auto-approve",
+        },
+        sessionProvider: mockSessionProvider,
+        logsStore: mockLogsStore,
+        projectId: "test-project",
+        db: mockDb,
+        // No observabilityService
+      });
+    });
+
+    it("should execute without errors when observabilityService is undefined", async () => {
+      // Should not throw
+      await expect(
+        wrapper.executeWithLifecycle(
+          "exec-123",
+          { id: "task-1", prompt: "Test prompt" },
+          "/test/workdir"
+        )
+      ).resolves.toBeUndefined();
+    });
+
+    it("should cancel without errors when observabilityService is undefined", async () => {
+      // Create a long-running session
+      let resolvePrompt: () => void;
+      const promptPromise = new Promise<void>((resolve) => {
+        resolvePrompt = resolve;
+      });
+
+      mockSession.prompt = vi.fn().mockImplementation(async function* () {
+        await promptPromise;
+        yield { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Done" } };
+      });
+
+      // Start execution in background
+      const execPromise = wrapper
+        .executeWithLifecycle("exec-123", { id: "task-1", prompt: "Test" }, "/test/workdir")
+        .catch(() => {});
+
+      // Give it time to start
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Cancel should not throw
+      await expect(wrapper.cancel("exec-123")).resolves.toBeUndefined();
+
+      // Clean up
+      resolvePrompt!();
+      await execPromise;
+    });
+  });
+});

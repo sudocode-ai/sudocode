@@ -27,6 +27,7 @@ import type {
 import { PermissionManager } from "./permission-manager.js";
 import type Database from "better-sqlite3";
 import type { ExecutionLogsStore } from "../../services/execution-logs-store.js";
+import type { MacroAgentObservabilityService } from "../../services/macro-agent-observability.js";
 import { SessionUpdateCoalescer } from "../output/session-update-coalescer.js";
 import {
   serializeCoalescedUpdate,
@@ -185,6 +186,11 @@ export interface AcpExecutorWrapperConfig {
   projectId: string;
   /** Database connection */
   db: Database.Database;
+  /**
+   * Observability service for macro-agent connection tracking.
+   * Only used when agentType is "macro-agent".
+   */
+  observabilityService?: MacroAgentObservabilityService;
 }
 
 /**
@@ -218,6 +224,8 @@ export class AcpExecutorWrapper {
   private readonly logsStore: ExecutionLogsStore;
   private readonly projectId: string;
   private readonly db: Database.Database;
+  /** Observability service for macro-agent connection tracking */
+  private readonly observabilityService?: MacroAgentObservabilityService;
 
   /** Active sessions by execution ID (transport-agnostic) */
   private activeSessions: Map<string, AcpSession> = new Map();
@@ -233,11 +241,13 @@ export class AcpExecutorWrapper {
     this.logsStore = config.logsStore;
     this.projectId = config.projectId;
     this.db = config.db;
+    this.observabilityService = config.observabilityService;
 
     console.log("[AcpExecutorWrapper] Initialized", {
       agentType: this.agentType,
       projectId: this.projectId,
       hasLogsStore: !!this.logsStore,
+      hasObservability: !!this.observabilityService,
     });
   }
 
@@ -306,6 +316,18 @@ export class AcpExecutorWrapper {
         mode: this.acpConfig.mode,
       });
       this.activeSessions.set(executionId, session);
+
+      // 2a. Register connection with observability service (macro-agent only)
+      if (this.observabilityService && this.agentType === "macro-agent") {
+        this.observabilityService.registerConnection(
+          executionId,
+          this.projectId,
+          session.id
+        );
+        console.log(
+          `[AcpExecutorWrapper] Registered observability connection for ${executionId} (session: ${session.id})`
+        );
+      }
 
       // 2b. Set permission mode on the agent session using handler logic
       const sessionPermissionMode = getSessionPermissionMode(this.agentType, {
@@ -461,6 +483,12 @@ export class AcpExecutorWrapper {
       this.activeSessions.delete(executionId);
       this.persistentSessions.delete(executionId);
 
+      // Unregister from observability service (macro-agent only)
+      // This is a safety net in case handleSuccess/handleError wasn't called
+      if (this.observabilityService && this.agentType === "macro-agent") {
+        this.observabilityService.unregisterConnection(executionId);
+      }
+
       // Cancel any pending permissions
       const pm = this.permissionManagers.get(executionId);
       if (pm) {
@@ -559,6 +587,18 @@ export class AcpExecutorWrapper {
         mode: this.acpConfig.mode,
       });
       this.activeSessions.set(executionId, session);
+
+      // 2a. Register connection with observability service (macro-agent only)
+      if (this.observabilityService && this.agentType === "macro-agent") {
+        this.observabilityService.registerConnection(
+          executionId,
+          this.projectId,
+          session.id
+        );
+        console.log(
+          `[AcpExecutorWrapper] Registered observability connection for ${executionId} (session: ${session.id})`
+        );
+      }
 
       // 2b. Set permission mode on the agent session using handler logic
       const sessionPermissionMode = getSessionPermissionMode(this.agentType, {
@@ -702,6 +742,12 @@ export class AcpExecutorWrapper {
       this.activeSessions.delete(executionId);
       this.persistentSessions.delete(executionId);
 
+      // Unregister from observability service (macro-agent only)
+      // This is a safety net in case handleSuccess/handleError wasn't called
+      if (this.observabilityService && this.agentType === "macro-agent") {
+        this.observabilityService.unregisterConnection(executionId);
+      }
+
       // Cancel any pending permissions
       const pm = this.permissionManagers.get(executionId);
       if (pm) {
@@ -742,6 +788,14 @@ export class AcpExecutorWrapper {
    */
   async cancel(executionId: string): Promise<void> {
     console.log(`[AcpExecutorWrapper] Cancel execution ${executionId}`);
+
+    // Unregister from observability service (macro-agent only)
+    if (this.observabilityService && this.agentType === "macro-agent") {
+      this.observabilityService.unregisterConnection(executionId);
+      console.log(
+        `[AcpExecutorWrapper] Unregistered observability connection for ${executionId}`
+      );
+    }
 
     // Get active session
     const session = this.activeSessions.get(executionId);
@@ -1450,6 +1504,14 @@ export class AcpExecutorWrapper {
       `[AcpExecutorWrapper] Execution ${executionId} completed successfully`
     );
 
+    // Unregister from observability service (macro-agent only)
+    if (this.observabilityService && this.agentType === "macro-agent") {
+      this.observabilityService.unregisterConnection(executionId);
+      console.log(
+        `[AcpExecutorWrapper] Unregistered observability connection for ${executionId}`
+      );
+    }
+
     // Get execution to find worktree path
     const execution = getExecution(this.db, executionId);
     const repoPath = execution?.worktree_path || workDir;
@@ -1530,6 +1592,14 @@ export class AcpExecutorWrapper {
       `[AcpExecutorWrapper] Execution ${executionId} failed:`,
       error
     );
+
+    // Unregister from observability service (macro-agent only)
+    if (this.observabilityService && this.agentType === "macro-agent") {
+      this.observabilityService.unregisterConnection(executionId);
+      console.log(
+        `[AcpExecutorWrapper] Unregistered observability connection for ${executionId}`
+      );
+    }
 
     // Calculate file changes even for failed executions
     let filesChangedJson: string | null = null;

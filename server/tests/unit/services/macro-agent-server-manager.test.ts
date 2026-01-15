@@ -19,6 +19,17 @@ vi.mock("fs", () => ({
   existsSync: vi.fn(),
 }));
 
+// Mock observability service
+const mockObservabilityService = {
+  connect: vi.fn(),
+  close: vi.fn(),
+  isConnected: vi.fn(),
+};
+
+vi.mock("../../../src/services/macro-agent-observability.js", () => ({
+  MacroAgentObservabilityService: vi.fn(() => mockObservabilityService),
+}));
+
 // Import after mocking
 import { spawn, execSync } from "child_process";
 import { existsSync } from "fs";
@@ -59,6 +70,14 @@ describe("MacroAgentServerManager", () => {
 
     // Mock fetch for health checks
     global.fetch = vi.fn();
+
+    // Reset observability mocks
+    mockObservabilityService.connect.mockReset();
+    mockObservabilityService.close.mockReset();
+    mockObservabilityService.isConnected.mockReset();
+    mockObservabilityService.connect.mockResolvedValue(undefined);
+    mockObservabilityService.close.mockResolvedValue(undefined);
+    mockObservabilityService.isConnected.mockReturnValue(false);
   });
 
   afterEach(async () => {
@@ -559,6 +578,128 @@ describe("MacroAgentServerManager", () => {
 
       expect(instance1).not.toBe(instance2);
       expect(instance2.getAcpUrl()).toBe("ws://second:5000/acp");
+    });
+  });
+
+  // ===========================================================================
+  // Observability Integration Tests
+  // ===========================================================================
+  describe("observability integration", () => {
+    it("should start observability after server is ready", async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true } as Response);
+
+      const manager = new MacroAgentServerManager();
+      await manager.start();
+
+      expect(mockObservabilityService.connect).toHaveBeenCalledTimes(1);
+    });
+
+    it("should not fail server startup if observability fails", async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true } as Response);
+      mockObservabilityService.connect.mockRejectedValue(
+        new Error("Observability connection failed")
+      );
+
+      const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const manager = new MacroAgentServerManager();
+
+      // Should NOT throw
+      await expect(manager.start()).resolves.toBeUndefined();
+
+      // Server should still be running
+      expect(manager.getState()).toBe("running");
+      expect(manager.isReady()).toBe(true);
+
+      // Should log warning about observability failure
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Observability service failed to connect"),
+        expect.any(Error)
+      );
+
+      consoleSpy.mockRestore();
+    });
+
+    it("should close observability before stopping server", async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true } as Response);
+
+      const manager = new MacroAgentServerManager();
+      await manager.start();
+      await manager.stop();
+
+      expect(mockObservabilityService.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("should return observability service via getter", async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true } as Response);
+
+      const manager = new MacroAgentServerManager();
+      await manager.start();
+
+      const service = manager.getObservabilityService();
+      expect(service).toBe(mockObservabilityService);
+    });
+
+    it("should return null observability service when not started", () => {
+      const manager = new MacroAgentServerManager();
+      expect(manager.getObservabilityService()).toBeNull();
+    });
+
+    it("should report observability connected status", async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true } as Response);
+      mockObservabilityService.isConnected.mockReturnValue(true);
+
+      const manager = new MacroAgentServerManager();
+      await manager.start();
+
+      expect(manager.isObservabilityConnected()).toBe(true);
+    });
+
+    it("should report observability not connected when service is null", () => {
+      const manager = new MacroAgentServerManager();
+      expect(manager.isObservabilityConnected()).toBe(false);
+    });
+
+    it("should handle observability close error gracefully", async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true } as Response);
+      mockObservabilityService.close.mockRejectedValue(
+        new Error("Close failed")
+      );
+
+      const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const manager = new MacroAgentServerManager();
+      await manager.start();
+
+      // Should NOT throw
+      await expect(manager.stop()).resolves.toBeUndefined();
+
+      // Should log warning
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Error closing observability service"),
+        expect.any(Error)
+      );
+
+      consoleSpy.mockRestore();
+    });
+
+    it("should not start observability when executable unavailable", async () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+      vi.mocked(execSync).mockImplementation(() => {
+        throw new Error("not found");
+      });
+
+      const manager = new MacroAgentServerManager();
+      await manager.start();
+
+      expect(manager.getState()).toBe("unavailable");
+      expect(mockObservabilityService.connect).not.toHaveBeenCalled();
     });
   });
 });
