@@ -60,12 +60,12 @@ import {
 } from "./cli/merge-commands.js";
 import { handleAuthClearCommand, handleAuthStatusCommand, handleAuthClaudeCommand } from "./cli/auth-commands.js";
 import {
-  handleDeploy,
-  handleDeployConfig,
-  handleDeployList,
-  handleDeployStatus,
-  handleDeployStop,
-} from "./cli/deploy-commands.js";
+  handleRemoteSpawn,
+  handleRemoteConfig,
+  handleRemoteList,
+  handleRemoteStatus,
+  handleRemoteStop,
+} from "./cli/remote-commands.js";
 import { getUpdateNotification } from "./update-checker.js";
 import { VERSION } from "./version.js";
 
@@ -141,7 +141,7 @@ program
   .version(VERSION)
   .option("--db <path>", "Database path (default: auto-discover)")
   .option("--json", "Output in JSON format")
-  .hook("preAction", (thisCommand) => {
+  .hook("preAction", (thisCommand: Command) => {
     // Get global options
     const opts = thisCommand.optsWithGlobals();
     if (opts.db) dbPath = opts.db;
@@ -682,78 +682,120 @@ auth
   });
 
 // ============================================================================
-// DEPLOY COMMANDS
+// REMOTE COMMANDS
 // ============================================================================
 
-const deploy = program
-  .command("deploy")
-  .description("Deploy sudocode to remote environments");
+const remote = program
+  .command('remote')
+  .description('Manage remote sudocode deployments');
 
-// deploy config - View or update configuration
-deploy
-  .command("config")
-  .description("View or update deployment configuration")
-  .option("--reset", "Reset to default configuration")
-  .option("--provider <provider>", "Set deployment provider")
-  .option("--default-branch <branch>", "Set default branch")
-  .option("--port <port>", "Set server port (1-65535)")
-  .option("--idle-timeout <minutes>", "Set idle timeout in minutes")
-  .option("--keep-alive-hours <hours>", "Set keep-alive duration in hours")
-  .option("--machine <type>", "Set machine type")
-  .option("--retention-period <days>", "Set retention period in days")
+// Codespaces provider
+const codespaces = remote
+  .command('codespaces')
+  .description('Manage GitHub Codespaces deployments');
+
+codespaces
+  .command('spawn')
+  .description('Spawn sudocode to GitHub Codespaces')
+  .option('--branch <name>', 'Branch to spawn')
+  .option('--repo <owner/repo>', 'Repository to spawn')
+  .option('--port <number>', 'Server port', parseInt)
+  .option('--machine <type>', 'Machine type')
+  .option('--idle-timeout <minutes>', 'Idle timeout in minutes', parseInt)
+  .option('--keep-alive <hours>', 'Keep-alive hours', parseInt)
+  .option('--retention <days>', 'Retention period in days', parseInt)
+  .option('--dev', 'Spawn in development mode (uses local sudocode packages)')
   .action(async (options) => {
-    await handleDeployConfig(getContext(), options);
+    await handleRemoteSpawn(getContext(), 'codespaces', options);
   });
 
-// deploy list - List all deployments
-deploy
-  .command("list")
-  .description("List all active deployments")
+codespaces
+  .command('config')
+  .description('Configure codespaces settings')
+  .option('--idle-timeout <minutes>', 'Idle timeout in minutes', parseInt)
+  .option('--keep-alive <hours>', 'Keep-alive duration in hours', parseInt)
+  .option('--retention <days>', 'Retention period in days', parseInt)
+  .option('--machine <type>', 'Machine type')
+  .option('--port <number>', 'Server port', parseInt)
+  .option('--reset', 'Reset to defaults')
+  .action(async (options) => {
+    await handleRemoteConfig(getContext(), 'codespaces', options);
+  });
+
+codespaces
+  .command('list')
+  .description('List all codespaces deployments')
   .action(async () => {
-    await handleDeployList(getContext());
+    await handleRemoteList(getContext(), 'codespaces');
   });
 
-// deploy status <id> - Get deployment status
-deploy
-  .command("status <id>")
-  .description("Get detailed status of a deployment")
+codespaces
+  .command('status <id>')
+  .description('Get codespaces deployment status')
   .action(async (id) => {
-    await handleDeployStatus(getContext(), id);
+    await handleRemoteStatus(getContext(), 'codespaces', id);
   });
 
-// deploy stop <id> - Stop a deployment
-deploy
-  .command("stop <id>")
-  .description("Stop and delete a deployment")
-  .option("-f, --force", "Skip confirmation prompt")
+codespaces
+  .command('stop <id>')
+  .description('Stop a codespaces deployment')
+  .option('-f, --force', 'Skip confirmation')
   .action(async (id, options) => {
-    await handleDeployStop(getContext(), id, options);
+    await handleRemoteStop(getContext(), 'codespaces', id, options);
   });
 
-// Default action (sudocode deploy with no subcommand)
-deploy
-  .action(async (options) => {
-    // If a subcommand was provided, don't run the default action
-    const subcommands = ['config', 'list', 'status', 'stop'];
-    const args = process.argv.slice(2);
-    const hasSubcommand = args.some(arg => subcommands.includes(arg));
-    
-    if (!hasSubcommand) {
-      await handleDeploy(getContext(), options);
-    }
-  })
-  .option("--branch <name>", "Branch to deploy")
-  .option("--repo <owner/repo>", "Repository to deploy")
-  .option("--port <number>", "Server port", parseInt)
-  .option("--machine <type>", "Machine type")
-  .option("--idle-timeout <minutes>", "Idle timeout in minutes", parseInt)
-  .option("--keep-alive-hours <hours>", "Keep-alive hours", parseInt)
-  .option("--retention-period <days>", "Retention period in days", parseInt)
-  .option("--dev", "Deploy in development mode")
-  .option("--no-open", "Don't open browser automatically after deployment");
+// Coder provider (not yet supported)
+const coder = remote
+  .command('coder')
+  .description('Manage Coder deployments (not yet supported)');
+
+coder
+  .command('spawn')
+  .description('Spawn sudocode to Coder (not yet supported)')
+  .action(async () => {
+    console.error(chalk.red("✗ Provider 'coder' is not yet supported"));
+    console.error(chalk.gray("  Currently supported: codespaces"));
+    process.exit(1);
+  });
+
+coder
+  .command('config')
+  .description('Configure coder settings (not yet supported)')
+  .action(async () => {
+    console.error(chalk.red("✗ Provider 'coder' is not yet supported"));
+    console.error(chalk.gray("  Currently supported: codespaces"));
+    process.exit(1);
+  });
+
+coder
+  .command('list')
+  .description('List all coder deployments (not yet supported)')
+  .action(async () => {
+    console.error(chalk.red("✗ Provider 'coder' is not yet supported"));
+    console.error(chalk.gray("  Currently supported: codespaces"));
+    process.exit(1);
+  });
+
+coder
+  .command('status <id>')
+  .description('Get coder deployment status (not yet supported)')
+  .action(async () => {
+    console.error(chalk.red("✗ Provider 'coder' is not yet supported"));
+    console.error(chalk.gray("  Currently supported: codespaces"));
+    process.exit(1);
+  });
+
+coder
+  .command('stop <id>')
+  .description('Stop a coder deployment (not yet supported)')
+  .action(async () => {
+    console.error(chalk.red("✗ Provider 'coder' is not yet supported"));
+    console.error(chalk.gray("  Currently supported: codespaces"));
+    process.exit(1);
+  });
 
 // Parse arguments
-program.parse();
+program.parse(process.argv);
 
 // Check for updates (non-blocking)
 // Skip for update and server commands (server handles it explicitly)

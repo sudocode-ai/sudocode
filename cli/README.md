@@ -409,252 +409,6 @@ sudocode import [options]
 --json                        Output in JSON format
 ```
 
-## Deployment Configuration
-
-### Overview
-
-Sudocode supports deploying your project to remote environments (currently GitHub Codespaces) for AI-assisted development. The deployment system uses a configuration file (`.sudocode/deploy-config.json`) to control deployment behavior.
-
-### Configuration File
-
-Location: `.sudocode/deploy-config.json`
-
-The configuration file is automatically created with default values when you first use deployment features. It is git-tracked so your team can share consistent deployment settings.
-
-### Configuration Options
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `provider` | string | `"codespaces"` | Deployment provider (currently only Codespaces supported) |
-| `defaultBranch` | string | (optional) | Default git branch to deploy from |
-| `port` | number | `3000` | Port number for the server (1024-65535) |
-| `idleTimeout` | number | `4320` | Idle timeout in minutes before auto-shutdown (72 hours) |
-| `keepAliveHours` | number | `72` | Keep-alive duration in hours before auto-cleanup |
-| `machine` | string | `"basicLinux32gb"` | Machine type/size for deployment |
-| `retentionPeriod` | number | `14` | Retention period in days before cleanup |
-
-### Validation Rules
-
-- **Port**: Must be between 1024 and 65535 (non-privileged ports)
-- **Idle Timeout**: Minimum 1 minute
-- **Keep-Alive**: Minimum 1 hour
-- **Retention Period**: Minimum 1 day
-- **Machine**: Must be a non-empty string
-- **Provider**: Currently only `"codespaces"` is supported
-
-### CLI Commands
-
-#### View Current Configuration
-
-```bash
-# Display current configuration as JSON
-sudocode deploy config
-```
-
-Output:
-```json
-{
-  "provider": "codespaces",
-  "port": 3000,
-  "idleTimeout": 4320,
-  "keepAliveHours": 72,
-  "machine": "basicLinux32gb",
-  "retentionPeriod": 14
-}
-```
-
-#### Update Configuration
-
-```bash
-# Update individual values
-sudocode deploy config --port 8080
-sudocode deploy config --idle-timeout 60
-sudocode deploy config --keep-alive-hours 24
-
-# Update multiple values at once
-sudocode deploy config \
-  --port 8080 \
-  --idle-timeout 60 \
-  --keep-alive-hours 24 \
-  --machine "premiumLinux"
-```
-
-Output:
-```
-✓ Deploy configuration updated
-  Port: 8080
-  Idle timeout: 60 minutes
-  Keep-alive: 24 hours
-  Machine: premiumLinux
-Updated: .sudocode/deploy-config.json
-```
-
-#### Reset to Defaults
-
-```bash
-# Reset all values to defaults
-sudocode deploy config --reset
-```
-
-Output:
-```
-✓ Deploy configuration reset to defaults
-{
-  "provider": "codespaces",
-  "port": 3000,
-  "idleTimeout": 4320,
-  "keepAliveHours": 72,
-  "machine": "basicLinux32gb",
-  "retentionPeriod": 14
-}
-
-Updated: .sudocode/deploy-config.json
-```
-
-**Note:** The `--reset` flag cannot be combined with other options.
-
-#### Available Options
-
-```bash
---reset                        # Reset to default configuration
---provider <provider>          # Set deployment provider
---default-branch <branch>      # Set default branch
---port <port>                  # Set server port (1024-65535)
---idle-timeout <minutes>       # Set idle timeout in minutes
---keep-alive-hours <hours>     # Set keep-alive duration in hours
---machine <type>               # Set machine type
---retention-period <days>      # Set retention period in days
-```
-
-### Common Usage Patterns
-
-#### Development Environment (Quick Iterations)
-
-For active development with frequent deployments:
-
-```bash
-# Short timeout, aggressive cleanup
-sudocode deploy config \
-  --idle-timeout 30 \
-  --keep-alive-hours 4 \
-  --retention-period 1
-```
-
-#### Production/Long-Running Environment
-
-For longer-running deployments or demos:
-
-```bash
-# Longer timeout, extended retention
-sudocode deploy config \
-  --idle-timeout 1440 \
-  --keep-alive-hours 168 \
-  --retention-period 30 \
-  --machine "premiumLinux"
-```
-
-#### Team Collaboration
-
-For shared team deployments:
-
-```bash
-# Set default branch and standard machine
-sudocode deploy config \
-  --default-branch main \
-  --machine "basicLinux32gb" \
-  --port 3000
-```
-
-#### Cost Optimization
-
-For minimizing cloud resource costs:
-
-```bash
-# Aggressive cleanup, smaller machine
-sudocode deploy config \
-  --idle-timeout 15 \
-  --keep-alive-hours 1 \
-  --retention-period 1 \
-  --machine "basicLinux32gb"
-```
-
-### Troubleshooting
-
-#### Invalid Port Error
-
-```
-Error: Port must be between 1024 and 65535
-```
-
-**Solution:** Use a port in the valid range. Ports below 1024 require root privileges.
-
-```bash
-sudocode deploy config --port 3000
-```
-
-#### Configuration Validation Failed
-
-If you manually edit `deploy-config.json` and introduce invalid values:
-
-```bash
-# Reset to known-good defaults
-sudocode deploy config --reset
-```
-
-#### Configuration Not Found
-
-If the config file doesn't exist, it will be created automatically with defaults when you run:
-
-```bash
-sudocode deploy config
-```
-
-#### Cannot Combine --reset with Other Options
-
-```
-Error: Cannot combine --reset with other options
-```
-
-**Solution:** Use `--reset` alone, then update specific values in a separate command:
-
-```bash
-# First reset
-sudocode deploy config --reset
-
-# Then update
-sudocode deploy config --port 8080
-```
-
-### JSON Output
-
-All deploy config commands support the global `--json` flag for machine-readable output:
-
-```bash
-# View config as JSON
-sudocode deploy config --json
-
-# Update and get JSON response
-sudocode deploy config --port 8080 --json
-```
-
-### File Format
-
-The `deploy-config.json` file uses standard JSON format:
-
-```json
-{
-  "provider": "codespaces",
-  "defaultBranch": "main",
-  "port": 3000,
-  "idleTimeout": 4320,
-  "keepAliveHours": 72,
-  "machine": "basicLinux32gb",
-  "retentionPeriod": 14
-}
-```
-
-You can edit this file directly, but using the CLI is recommended as it provides validation and error checking.
-
 ## Remote Deployment
 
 ### Overview
@@ -675,6 +429,10 @@ Remote deployment creates an isolated cloud environment where:
 - Enable team members to review AI execution progress
 - Execute tasks in a clean, reproducible environment
 - Scale AI assistance across multiple issues simultaneously
+
+**Supported Providers:**
+- **GitHub Codespaces** - Fully supported (requires GitHub CLI)
+- **Coder** - Coming soon
 
 ### Prerequisites
 
@@ -721,7 +479,7 @@ sudocode init  # If not already initialized
 sudocode auth claude
 
 # Deploy to Codespaces
-sudocode deploy
+sudocode remote codespaces spawn
 ```
 
 The deployment process will:
@@ -745,88 +503,122 @@ URLs:
   SSH:       gh cs ssh -c sudocode-myproject-ab12cd
 ```
 
-### Commands
+### Command Reference
 
-#### Deploy Project
-
-Create a new deployment from your current project.
+All remote deployment commands follow the pattern:
 
 ```bash
-sudocode deploy [options]
+sudocode remote <provider> <command> [options]
+```
+
+Where `<provider>` is currently `codespaces` (with `coder` coming soon).
+
+#### Spawn Deployment
+
+Create a new remote deployment from your current project.
+
+```bash
+sudocode remote codespaces spawn [options]
 ```
 
 **Options:**
 - `--repo <owner/repo>` - Override repository (default: auto-detected from git remote)
-- `--branch <name>` - Override branch (default: current branch or config default)
+- `--branch <name>` - Override branch (default: current branch or from config)
 - `--port <number>` - Server port (default: 3000 or from config)
-- `--machine <type>` - Machine type (default: from config)
-- `--idle-timeout <minutes>` - Idle timeout (default: from config)
-- `--keep-alive-hours <hours>` - Keep-alive duration (default: from config)
-- `--retention-period <days>` - Retention period (default: from config)
-- `--dev` - Development mode (uses local sudocode build)
+- `--machine <type>` - Machine type (default: "basicLinux32gb" or from config)
+- `--idle-timeout <minutes>` - Idle timeout in minutes (default: 4320 or from config)
+- `--keep-alive <hours>` - Keep-alive duration in hours (default: 72 or from config)
+- `--retention <days>` - Retention period in days (default: 14 or from config)
 
 **Examples:**
 
 ```bash
 # Deploy with defaults
-sudocode deploy
+sudocode remote codespaces spawn
 
 # Deploy specific branch
-sudocode deploy --branch feature/new-auth
+sudocode remote codespaces spawn --branch feature/new-auth
 
 # Deploy with custom port
-sudocode deploy --port 8080
+sudocode remote codespaces spawn --port 8080
 
 # Deploy with larger machine
-sudocode deploy --machine "premiumLinux"
+sudocode remote codespaces spawn --machine "premiumLinux"
 
 # Deploy with shorter timeout for quick tasks
-sudocode deploy --idle-timeout 30 --keep-alive-hours 2
+sudocode remote codespaces spawn --idle-timeout 30 --keep-alive 2
 
 # Deploy different repository
-sudocode deploy --repo myorg/other-project --branch main
+sudocode remote codespaces spawn --repo myorg/other-project --branch main
+
+# Deploy with all custom options
+sudocode remote codespaces spawn \
+  --branch develop \
+  --port 5000 \
+  --machine "standardLinux32gb" \
+  --idle-timeout 1440 \
+  --keep-alive 48 \
+  --retention 7
 ```
 
 **Auto-Detection:**
 - Repository is detected from git remote `origin`
-- Branch is detected from current HEAD
+- Branch is detected from current git HEAD
+- Configuration defaults from `.sudocode/spawn-config.json` are applied
 - If repository has uncommitted changes, you'll be prompted to commit or stash them
-- Configuration defaults from `.sudocode/deploy-config.json` are applied
 
 #### List Deployments
 
-List all active deployments for your repositories.
+List all active deployments for the specified provider.
 
 ```bash
-sudocode deploy list
+sudocode remote <provider> list
+```
+
+**Examples:**
+
+```bash
+# List Codespaces deployments
+sudocode remote codespaces list
+
+# JSON output
+sudocode remote codespaces list --json
 ```
 
 **Output:**
 ```
-Active Deployments:
+Active Deployments (codespaces):
 
 ┌─────────────────────────┬──────────────────┬─────────────┬──────────┐
 │ ID                      │ Repository       │ Branch      │ Status   │
 ├─────────────────────────┼──────────────────┼─────────────┼──────────┤
-│ sudocode-myproj-ab12cd  │ myorg/myproject  │ main        │ running  │
-│ sudocode-myproj-xy98zf  │ myorg/myproject  │ feature/new │ running  │
-│ sudocode-other-mn34kl   │ myorg/other      │ develop     │ starting │
+│ codespace-ab12cd        │ myorg/myproject  │ main        │ running  │
+│ codespace-xy98zf        │ myorg/myproject  │ feature/new │ running  │
+│ codespace-mn34kl        │ myorg/other      │ develop     │ starting │
 └─────────────────────────┴──────────────────┴─────────────┴──────────┘
 
-To view details: sudocode deploy status <id>
-To stop a deployment: sudocode deploy stop <id>
+To view details: sudocode remote codespaces status <id>
+To stop a deployment: sudocode remote codespaces stop <id>
+```
+
+**Empty State:**
+```
+No active deployments found for codespaces.
+
+Spawn with: sudocode remote codespaces spawn
 ```
 
 **JSON Output:**
 ```bash
-sudocode deploy list --json
+sudocode remote codespaces list --json
 ```
 
 ```json
 [
   {
-    "id": "sudocode-myproj-ab12cd",
-    "name": "sudocode-myproject-ab12cd",
+    "id": "codespace-ab12cd",
+    "name": "deployment-ab12cd",
+    "provider": "codespaces",
     "status": "running",
     "git": {
       "owner": "myorg",
@@ -834,9 +626,13 @@ sudocode deploy list --json
       "branch": "main"
     },
     "urls": {
-      "web": "https://myorg-myproject-ab12cd.github.dev",
-      "sudocode": "https://myorg-myproject-ab12cd-3000.app.github.dev"
-    }
+      "workspace": "https://myorg-myproject-ab12cd.github.dev",
+      "sudocode": "https://myorg-myproject-ab12cd-3000.app.github.dev",
+      "ssh": "gh cs ssh -c codespace-ab12cd"
+    },
+    "createdAt": "2026-01-14T10:30:00Z",
+    "keepAliveHours": 72,
+    "idleTimeout": 4320
   }
 ]
 ```
@@ -846,41 +642,86 @@ sudocode deploy list --json
 Get detailed information about a specific deployment.
 
 ```bash
-sudocode deploy status <id>
+sudocode remote <provider> status <id>
 ```
 
 **Arguments:**
-- `<id>` - Deployment ID (from `deploy list` output)
+- `<id>` - Deployment ID (from list output)
 
-**Example:**
+**Examples:**
+
 ```bash
-sudocode deploy status sudocode-myproj-ab12cd
+# Get status
+sudocode remote codespaces status codespace-ab12cd
+
+# JSON output
+sudocode remote codespaces status codespace-ab12cd --json
 ```
 
 **Output:**
 ```
-Deployment: sudocode-myproject-ab12cd
+Deployment: codespace-ab12cd
+Provider: codespaces
 
 Status: running
 Repository: myorg/myproject
 Branch: main
-Created: 2026-01-12T10:30:00Z
+Created: 2026-01-14T10:30:00Z
 
 URLs:
   Workspace: https://myorg-myproject-ab12cd.github.dev
   Sudocode:  https://myorg-myproject-ab12cd-3000.app.github.dev
-  SSH:       gh cs ssh -c sudocode-myproject-ab12cd
+  SSH:       gh cs ssh -c codespace-ab12cd
 
 Configuration:
+  Port: 3000
+  Machine: basicLinux32gb
   Keep-alive: 72 hours
   Idle timeout: 4320 minutes
-  Machine: basicLinux32gb
   Retention: 14 days
+```
+
+**Status Values:**
+- `running` - Deployment is active and ready
+- `starting` - Deployment is being provisioned
+- `stopped` - Deployment has been stopped
+- `stopping` - Deployment is shutting down
+- `failed` - Deployment failed to start
+
+**Error Handling:**
+
+If deployment is not found:
+```
+✗ Deployment not found: codespace-invalid
+
+List deployments with: sudocode remote codespaces list
 ```
 
 **JSON Output:**
 ```bash
-sudocode deploy status sudocode-myproj-ab12cd --json
+sudocode remote codespaces status codespace-ab12cd --json
+```
+
+```json
+{
+  "id": "codespace-ab12cd",
+  "name": "deployment-ab12cd",
+  "provider": "codespaces",
+  "status": "running",
+  "git": {
+    "owner": "myorg",
+    "repo": "myproject",
+    "branch": "main"
+  },
+  "urls": {
+    "workspace": "https://myorg-myproject-ab12cd.github.dev",
+    "sudocode": "https://myorg-myproject-ab12cd-3000.app.github.dev",
+    "ssh": "gh cs ssh -c codespace-ab12cd"
+  },
+  "createdAt": "2026-01-14T10:30:00Z",
+  "keepAliveHours": 72,
+  "idleTimeout": 4320
+}
 ```
 
 #### Stop Deployment
@@ -888,27 +729,31 @@ sudocode deploy status sudocode-myproj-ab12cd --json
 Stop and delete a running deployment.
 
 ```bash
-sudocode deploy stop <id> [options]
+sudocode remote <provider> stop <id> [options]
 ```
 
 **Arguments:**
-- `<id>` - Deployment ID (from `deploy list` output)
+- `<id>` - Deployment ID (from list output)
 
 **Options:**
 - `-f, --force` - Skip confirmation prompt
 
-**Example:**
+**Examples:**
+
 ```bash
 # With confirmation prompt
-sudocode deploy stop sudocode-myproj-ab12cd
+sudocode remote codespaces stop codespace-ab12cd
 
 # Skip confirmation
-sudocode deploy stop sudocode-myproj-ab12cd --force
+sudocode remote codespaces stop codespace-ab12cd --force
+
+# JSON output
+sudocode remote codespaces stop codespace-ab12cd --force --json
 ```
 
 **Confirmation Prompt:**
 ```
-⚠  Stop deployment sudocode-myproj-ab12cd?
+⚠  Stop deployment codespace-ab12cd?
   This will delete the codespace and all uncommitted changes.
   
   Continue? (y/N):
@@ -916,8 +761,17 @@ sudocode deploy stop sudocode-myproj-ab12cd --force
 
 **Output:**
 ```
-✓ Stopping deployment...
-✓ Deployment stopped: sudocode-myproj-ab12cd
+Stopping deployment...
+
+✓ Deployment stopped: codespace-ab12cd
+```
+
+**JSON Output:**
+```json
+{
+  "success": true,
+  "id": "codespace-ab12cd"
+}
 ```
 
 **Warning:** Stopping a deployment:
@@ -926,22 +780,125 @@ sudocode deploy stop sudocode-myproj-ab12cd --force
 - Cannot be undone
 - Committed changes on git branches are preserved
 
+**Error Handling:**
+
+If deployment is not found:
+```
+✗ Deployment not found: codespace-invalid
+
+List deployments with: sudocode remote codespaces list
+```
+
 #### Configuration Management
 
-See [Deployment Configuration](#deployment-configuration) section above for details on managing deployment configuration.
+Manage deployment configuration for a provider.
+
+```bash
+sudocode remote <provider> config [options]
+```
+
+**Options:**
+- `--port <number>` - Set server port (1024-65535)
+- `--idle-timeout <minutes>` - Set idle timeout in minutes (min: 1)
+- `--keep-alive <hours>` - Set keep-alive duration in hours (min: 1)
+- `--retention <days>` - Set retention period in days (min: 1)
+- `--machine <type>` - Set machine type/size
+- `--reset` - Reset to default configuration (cannot be combined with other options)
+
+**Examples:**
 
 ```bash
 # View current configuration
-sudocode deploy config
+sudocode remote codespaces config
 
-# Update configuration
-sudocode deploy config --port 8080 --machine "premiumLinux"
+# Update individual values
+sudocode remote codespaces config --port 8080
+sudocode remote codespaces config --idle-timeout 60
+sudocode remote codespaces config --keep-alive 24
+
+# Update multiple values at once
+sudocode remote codespaces config \
+  --port 8080 \
+  --idle-timeout 60 \
+  --keep-alive 24 \
+  --machine "premiumLinux"
 
 # Reset to defaults
-sudocode deploy config --reset
+sudocode remote codespaces config --reset
+
+# JSON output
+sudocode remote codespaces config --json
 ```
 
-### Common Usage Patterns
+**View Configuration Output:**
+```json
+{
+  "provider": "codespaces",
+  "port": 3000,
+  "idleTimeout": 4320,
+  "keepAliveHours": 72,
+  "machine": "basicLinux32gb",
+  "retentionPeriod": 14
+}
+```
+
+**Update Output:**
+```
+✓ Spawn configuration updated for codespaces
+  Port: 8080
+  Idle timeout: 60 minutes
+  Keep-alive: 24 hours
+  Machine: premiumLinux
+
+Updated: .sudocode/spawn-config.json
+```
+
+**Reset Output:**
+```
+✓ Spawn configuration reset to defaults for codespaces
+{
+  "provider": "codespaces",
+  "port": 3000,
+  "idleTimeout": 4320,
+  "keepAliveHours": 72,
+  "machine": "basicLinux32gb",
+  "retentionPeriod": 14
+}
+
+Updated: .sudocode/spawn-config.json
+```
+
+**Configuration File Location:**
+- File: `.sudocode/spawn-config.json`
+- Git tracked (shared across team)
+- Created automatically with defaults on first use
+
+**Validation Rules:**
+- Port: 1024-65535 (non-privileged ports only)
+- Idle Timeout: Minimum 1 minute
+- Keep-Alive: Minimum 1 hour
+- Retention Period: Minimum 1 day
+- Machine: Non-empty string
+
+**Error Examples:**
+
+Invalid port:
+```
+✗ Port must be between 1024 and 65535
+```
+
+Cannot combine --reset:
+```
+Error: Cannot combine --reset with other options
+```
+
+Unknown provider:
+```
+✗ Unknown provider 'azure'
+Supported providers: codespaces, coder
+```
+
+### Common Workflows
 
 #### Quick Task Deployment
 
@@ -949,16 +906,19 @@ For short-lived AI tasks (e.g., bug fixes, small features):
 
 ```bash
 # Configure aggressive cleanup
-sudocode deploy config \
+sudocode remote codespaces config \
   --idle-timeout 30 \
-  --keep-alive-hours 2 \
-  --retention-period 1
+  --keep-alive 2 \
+  --retention 1
 
 # Deploy and run task
-sudocode deploy --branch feature/quick-fix
+sudocode remote codespaces spawn --branch feature/quick-fix
+
+# List deployments
+sudocode remote codespaces list
 
 # Stop when done
-sudocode deploy stop <id> --force
+sudocode remote codespaces stop <id> --force
 ```
 
 #### Long-Running Project Deployment
@@ -967,14 +927,17 @@ For extended AI assistance sessions or demos:
 
 ```bash
 # Configure longer retention
-sudocode deploy config \
+sudocode remote codespaces config \
   --idle-timeout 1440 \
-  --keep-alive-hours 168 \
-  --retention-period 30 \
+  --keep-alive 168 \
+  --retention 30 \
   --machine "premiumLinux"
 
 # Deploy
-sudocode deploy --branch main
+sudocode remote codespaces spawn --branch main
+
+# Check status
+sudocode remote codespaces status <id>
 ```
 
 #### Multi-Issue Parallel Execution
@@ -983,15 +946,20 @@ Deploy multiple branches simultaneously:
 
 ```bash
 # Deploy multiple branches for different issues
-sudocode deploy --branch feature/auth-system
-sudocode deploy --branch feature/payment-flow
-sudocode deploy --branch bugfix/memory-leak
+sudocode remote codespaces spawn --branch feature/auth-system
+sudocode remote codespaces spawn --branch feature/payment-flow
+sudocode remote codespaces spawn --branch bugfix/memory-leak
 
 # Monitor all deployments
-sudocode deploy list
+sudocode remote codespaces list
 
 # Check individual progress
-sudocode deploy status <each-id>
+sudocode remote codespaces status <id-1>
+sudocode remote codespaces status <id-2>
+sudocode remote codespaces status <id-3>
+
+# Stop completed ones
+sudocode remote codespaces stop <id-1> --force
 ```
 
 #### Team Collaboration
@@ -1000,15 +968,44 @@ Share deployment URLs with team members:
 
 ```bash
 # Deploy with team-friendly configuration
-sudocode deploy config --default-branch main
+sudocode remote codespaces config --machine "basicLinux32gb"
 
 # Deploy
-sudocode deploy
+sudocode remote codespaces spawn
 
 # Share URLs from output
 # Team members can access:
-# - Web workspace for viewing code
-# - Sudocode UI for monitoring AI execution
+# - Workspace URL for viewing code in browser
+# - Sudocode URL for monitoring AI execution in UI
+# - SSH command for terminal access
+```
+
+#### Configuration for Different Use Cases
+
+Development environment (quick iterations):
+```bash
+sudocode remote codespaces config \
+  --idle-timeout 30 \
+  --keep-alive 4 \
+  --retention 1
+```
+
+Production/long-running environment:
+```bash
+sudocode remote codespaces config \
+  --idle-timeout 1440 \
+  --keep-alive 168 \
+  --retention 30 \
+  --machine "premiumLinux"
+```
+
+Cost optimization (minimal resources):
+```bash
+sudocode remote codespaces config \
+  --idle-timeout 15 \
+  --keep-alive 1 \
+  --retention 1 \
+  --machine "basicLinux32gb"
 ```
 
 ### How It Works
@@ -1070,10 +1067,10 @@ Codespaces are automatically cleaned up based on configuration:
 
 Manual cleanup:
 ```bash
-sudocode deploy stop <id>
+sudocode remote codespaces stop <id>
 ```
 
-### Examples
+### Usage Examples
 
 #### Example 1: Deploy Current Branch
 
@@ -1085,7 +1082,7 @@ git commit -m "WIP: implementing OAuth"
 git push origin feature/user-auth
 
 # Deploy this branch
-sudocode deploy
+sudocode remote codespaces spawn
 ```
 
 **Output:**
@@ -1093,7 +1090,7 @@ sudocode deploy
 ✓ Detected repository: myorg/myproject
 ✓ Detected branch: feature/user-auth
 ✓ Creating Codespace...
-✓ Codespace created: sudocode-myproj-xyz123
+✓ Codespace created: codespace-xyz123
 ✓ Installing dependencies...
 ✓ Starting server...
 ✓ Deployment complete
@@ -1101,23 +1098,24 @@ sudocode deploy
 URLs:
   Workspace: https://myorg-myproject-xyz123.github.dev
   Sudocode:  https://myorg-myproject-xyz123-3000.app.github.dev
+  SSH:       gh cs ssh -c codespace-xyz123
 ```
 
 #### Example 2: Deploy Different Branch
 
 ```bash
 # From any branch, deploy main
-sudocode deploy --branch main
+sudocode remote codespaces spawn --branch main
 ```
 
 #### Example 3: Custom Configuration
 
 ```bash
 # Deploy with custom settings for intensive task
-sudocode deploy \
+sudocode remote codespaces spawn \
   --branch feature/refactor-db \
   --machine "premiumLinux" \
-  --keep-alive-hours 48 \
+  --keep-alive 48 \
   --idle-timeout 480
 ```
 
@@ -1125,31 +1123,31 @@ sudocode deploy \
 
 ```bash
 # Deploy multiple branches
-sudocode deploy --branch feature/api-v2
-sudocode deploy --branch bugfix/cors-issue
-sudocode deploy --branch feature/new-ui
+sudocode remote codespaces spawn --branch feature/api-v2
+sudocode remote codespaces spawn --branch bugfix/cors-issue
+sudocode remote codespaces spawn --branch feature/new-ui
 
 # List all
-sudocode deploy list
+sudocode remote codespaces list
 
 # Check each status
-sudocode deploy status <id-1>
-sudocode deploy status <id-2>
-sudocode deploy status <id-3>
+sudocode remote codespaces status <id-1>
+sudocode remote codespaces status <id-2>
+sudocode remote codespaces status <id-3>
 
 # Stop completed ones
-sudocode deploy stop <id-1> --force
+sudocode remote codespaces stop <id-1> --force
 ```
 
 #### Example 5: JSON Automation
 
 ```bash
 # Deploy and capture ID
-DEPLOY_ID=$(sudocode deploy --json | jq -r '.id')
+DEPLOY_ID=$(sudocode remote codespaces spawn --json | jq -r '.id')
 
 # Monitor status
 while true; do
-  STATUS=$(sudocode deploy status $DEPLOY_ID --json | jq -r '.status')
+  STATUS=$(sudocode remote codespaces status $DEPLOY_ID --json | jq -r '.status')
   echo "Status: $STATUS"
   if [ "$STATUS" = "running" ]; then
     break
@@ -1158,8 +1156,33 @@ while true; do
 done
 
 # Get Sudocode URL
-SUDOCODE_URL=$(sudocode deploy status $DEPLOY_ID --json | jq -r '.urls.sudocode')
+SUDOCODE_URL=$(sudocode remote codespaces status $DEPLOY_ID --json | jq -r '.urls.sudocode')
 echo "Sudocode UI: $SUDOCODE_URL"
+```
+
+#### Example 6: Full Lifecycle
+
+```bash
+# 1. Configure for your needs
+sudocode remote codespaces config \
+  --port 8080 \
+  --machine "standardLinux32gb" \
+  --idle-timeout 120 \
+  --keep-alive 24
+
+# 2. Deploy
+sudocode remote codespaces spawn --branch feature/new-feature
+
+# 3. Monitor
+sudocode remote codespaces list
+sudocode remote codespaces status <id>
+
+# 4. Access via SSH to check logs
+gh cs ssh -c <codespace-name>
+tail -f ~/.sudocode/server.log
+
+# 5. Clean up when done
+sudocode remote codespaces stop <id> --force
 ```
 
 ### Troubleshooting
@@ -1240,11 +1263,11 @@ git push
 
 # Option 2: Stash changes
 git stash
-sudocode deploy
+sudocode remote codespaces spawn
 git stash pop
 
 # Option 3: Deploy different branch
-sudocode deploy --branch main
+sudocode remote codespaces spawn --branch main
 ```
 
 #### No Authentication Configured
@@ -1275,27 +1298,27 @@ Error: Port 3000 is already in use
 **Solution:**
 ```bash
 # Use different port
-sudocode deploy --port 8080
+sudocode remote codespaces spawn --port 8080
 
 # Or update config
-sudocode deploy config --port 8080
-sudocode deploy
+sudocode remote codespaces config --port 8080
+sudocode remote codespaces spawn
 ```
 
 #### Deployment Not Found
 
 **Error:**
 ```
-✗ Deployment not found: sudocode-myproj-abc123
+✗ Deployment not found: codespace-abc123
 ```
 
 **Solution:**
 ```bash
 # List all deployments
-sudocode deploy list
+sudocode remote codespaces list
 
 # Use correct ID from list
-sudocode deploy status <correct-id>
+sudocode remote codespaces status <correct-id>
 ```
 
 #### Codespace Creation Failed
@@ -1323,7 +1346,7 @@ gh repo view myorg/myproject
 gh codespace list
 
 # Try again with specific repo
-sudocode deploy --repo myorg/myproject
+sudocode remote codespaces spawn --repo myorg/myproject
 ```
 
 #### Deployment Stuck in Starting
@@ -1334,11 +1357,11 @@ Deployment shows "starting" status for extended period.
 **Solution:**
 ```bash
 # Check detailed status
-sudocode deploy status <id>
+sudocode remote codespaces status <id>
 
 # If stuck > 5 minutes, stop and retry
-sudocode deploy stop <id> --force
-sudocode deploy
+sudocode remote codespaces stop <id> --force
+sudocode remote codespaces spawn
 ```
 
 #### Cannot Access Sudocode URL
@@ -1349,7 +1372,7 @@ Sudocode URL returns connection error.
 **Solutions:**
 ```bash
 # 1. Check deployment status
-sudocode deploy status <id>
+sudocode remote codespaces status <id>
 # Status should be "running"
 
 # 2. Wait for port forwarding
@@ -1378,15 +1401,15 @@ Deployment status changes to "stopped" without manual intervention.
 **Solution:**
 ```bash
 # Check configuration
-sudocode deploy config
+sudocode remote codespaces config
 
 # Increase timeouts for longer tasks
-sudocode deploy config \
+sudocode remote codespaces config \
   --idle-timeout 1440 \
-  --keep-alive-hours 168
+  --keep-alive 168
 
 # Redeploy
-sudocode deploy --branch <branch>
+sudocode remote codespaces spawn --branch <branch>
 ```
 
 ### Machine Types
@@ -1407,10 +1430,10 @@ GitHub Codespaces offers different machine types with varying resources:
 **Selecting Machine:**
 ```bash
 # Configure default machine
-sudocode deploy config --machine "standardLinux32gb"
+sudocode remote codespaces config --machine "standardLinux32gb"
 
 # Override for specific deployment
-sudocode deploy --machine "premiumLinux"
+sudocode remote codespaces spawn --machine "premiumLinux"
 ```
 
 ### Best Practices
@@ -1420,12 +1443,12 @@ sudocode deploy --machine "premiumLinux"
    - Deployments clone from git, not local working directory
 
 2. **Use Configuration Defaults**
-   - Set project defaults in `.sudocode/deploy-config.json`
+   - Set project defaults in `.sudocode/spawn-config.json`
    - Commit configuration to share with team
    - Override per-deployment as needed
 
 3. **Monitor Active Deployments**
-   - Regularly check `sudocode deploy list`
+   - Regularly check `sudocode remote codespaces list`
    - Stop unused deployments to save quota
    - Use `--force` flag for batch cleanup
 
@@ -1442,7 +1465,7 @@ sudocode deploy --machine "premiumLinux"
 6. **Branch Strategy**
    - Deploy feature branches for isolated work
    - Keep deployments aligned with git workflow
-   - Set `--default-branch` in config for consistency
+   - Use configuration to set consistent defaults
 
 7. **Team Sharing**
    - Share Sudocode URLs with team members for review
@@ -1453,6 +1476,11 @@ sudocode deploy --machine "premiumLinux"
    - Stop deployments when work is complete
    - Don't rely solely on auto-cleanup
    - Check monthly to avoid quota surprises
+
+9. **Provider-Specific Commands**
+   - Always specify provider in commands: `sudocode remote <provider> <command>`
+   - Currently only `codespaces` is fully supported
+   - `coder` support coming soon
 
 ### Error Messages
 
@@ -1500,17 +1528,17 @@ All errors follow this consistent format:
   The requested port is not available on your system.
   
   To use a different port:
-    sudocode deploy --port 3001
+    sudocode remote codespaces spawn --port 3001
 ```
 
 **Deployment Not Found:**
 ```
-✗ Deployment 'sudocode-myproj-xyz' not found
+✗ Deployment 'codespace-xyz' not found
 
   The specified deployment does not exist or has been deleted.
   
   To list all deployments:
-    sudocode deploy list
+    sudocode remote codespaces list
 ```
 
 **Network Connection Failed:**
@@ -1532,7 +1560,7 @@ All errors follow this consistent format:
   Port must be between 1024 and 65535
   
   To view current configuration:
-    sudocode deploy config
+    sudocode remote codespaces config
 ```
 
 #### Error Types
