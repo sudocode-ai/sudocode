@@ -738,7 +738,17 @@ deploy
   });
 
 // Default action (sudocode deploy with no subcommand)
+// Options must be defined BEFORE .action() in Commander.js
 deploy
+  .option("--branch <name>", "Branch to deploy")
+  .option("--repo <owner/repo>", "Repository to deploy")
+  .option("--port <number>", "Server port", parseInt)
+  .option("--machine <type>", "Machine type")
+  .option("--idle-timeout <minutes>", "Idle timeout in minutes", parseInt)
+  .option("--keep-alive-hours <hours>", "Keep-alive hours", parseInt)
+  .option("--retention-period <days>", "Retention period in days", parseInt)
+  .option("--dev", "Deploy in development mode")
+  .option("--no-open", "Don't open browser automatically after deployment")
   .action(async (options) => {
     // If a subcommand was provided, don't run the default action
     const subcommands = ['config', 'list', 'status', 'stop'];
@@ -748,16 +758,7 @@ deploy
     if (!hasSubcommand) {
       await handleDeploy(getContext(), options);
     }
-  })
-  .option("--branch <name>", "Branch to deploy")
-  .option("--repo <owner/repo>", "Repository to deploy")
-  .option("--port <number>", "Server port", parseInt)
-  .option("--machine <type>", "Machine type")
-  .option("--idle-timeout <minutes>", "Idle timeout in minutes", parseInt)
-  .option("--keep-alive-hours <hours>", "Keep-alive hours", parseInt)
-  .option("--retention-period <days>", "Retention period in days", parseInt)
-  .option("--dev", "Deploy in development mode")
-  .option("--no-open", "Don't open browser automatically after deployment");
+  });
 
 // ============================================================================
 // REMOTE COMMANDS
@@ -782,6 +783,7 @@ codespaces
   .option('--idle-timeout <minutes>', 'Idle timeout in minutes', parseInt)
   .option('--keep-alive <hours>', 'Keep-alive hours', parseInt)
   .option('--retention <days>', 'Retention period in days', parseInt)
+  .option('--dev', 'Spawn in development mode (uses local sudocode packages)')
   .action(async (options) => {
     await handleRemoteSpawn(getContext(), 'codespaces', options);
   });

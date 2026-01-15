@@ -24,6 +24,10 @@ export interface SpawnOptions {
   retentionPeriod?: number;
   /** Git remote name (default: 'origin') */
   remote?: string;
+  /** Development mode - use local sudocode packages instead of npm */
+  dev?: boolean;
+  /** Don't open browser automatically after deployment */
+  noOpen?: boolean;
 }
 
 /**

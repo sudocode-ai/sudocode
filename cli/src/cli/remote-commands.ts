@@ -33,6 +33,7 @@ export interface RemoteSpawnOptions {
   idleTimeout?: number;
   keepAlive?: number;
   retention?: number;
+  dev?: boolean;
 }
 
 /**
@@ -67,12 +68,27 @@ export async function handleRemoteSpawn(
       idleTimeout: options.idleTimeout,
       keepAliveHours: options.keepAlive,
       retentionPeriod: options.retention,
+      dev: options.dev,
     });
 
     if (ctx.jsonOutput) {
       console.log(JSON.stringify(deployment, null, 2));
+    } else {
+      // Display deployment information
+      console.log(chalk.bold('\nDeployment Information:'));
+      console.log(`  ID: ${deployment.id}`);
+      console.log(`  Status: ${formatStatus(deployment.status)}`);
+      
+      console.log(chalk.bold('\nURLs:'));
+      console.log(chalk.cyan(`  Workspace: ${deployment.urls.workspace}`));
+      console.log(chalk.cyan(`  Sudocode:  ${deployment.urls.sudocode}`));
+      console.log(chalk.gray(`  SSH:       ${deployment.urls.ssh}`));
+      
+      console.log(chalk.bold('\nConfiguration:'));
+      console.log(`  Keep-alive: ${deployment.keepAliveHours} hours`);
+      console.log(`  Idle timeout: ${deployment.idleTimeout} minutes`);
+      console.log();
     }
-    // Success message and URLs already printed by orchestrator
   } catch (error) {
     if (ctx.jsonOutput) {
       console.error(JSON.stringify({ 

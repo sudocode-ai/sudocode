@@ -10,7 +10,7 @@
  * 6. Execute deployment with progress indicator
  */
 
-import { execSync } from 'child_process';
+import { execSync, exec } from 'child_process';
 import chalk from 'chalk';
 import type { 
   SpawnOptions, 
@@ -43,6 +43,32 @@ export class SpawnOrchestrator {
   }
 
   /**
+   * Open a URL in the default browser (platform-agnostic)
+   * Fire and forget - doesn't block or throw errors
+   */
+  private openBrowser(url: string): void {
+    const platform = process.platform;
+    let command: string;
+
+    if (platform === 'darwin') {
+      command = `open "${url}"`;
+    } else if (platform === 'win32') {
+      command = `start "" "${url}"`;
+    } else {
+      // Linux and other Unix-like systems
+      command = `xdg-open "${url}"`;
+    }
+
+    // Fire and forget - don't block on browser open
+    exec(command, (error) => {
+      if (error) {
+        // Silently fail - browser open is nice-to-have, not critical
+        console.log(chalk.gray(`  (Could not auto-open browser: ${error.message})`));
+      }
+    });
+  }
+
+  /**
    * Spawn to a remote provider (alias for deploy)
    * 
    * @param options Spawn options with optional overrides
@@ -62,18 +88,28 @@ export class SpawnOrchestrator {
    */
   async deploy(options: SpawnOptions): Promise<DeploymentInfo> {
     // 1. Check GitHub CLI authentication
+    console.log(chalk.blue('Checking GitHub authentication...'));
     this.checkGitHubAuth();
+    console.log(chalk.green('✓ GitHub authenticated\n'));
 
     // 2. Detect git context
+    console.log(chalk.blue('Detecting git context...'));
     const gitContext = this.gitDetector.detectContext({
       owner: options.owner,
       repo: options.repo,
       branch: options.branch,
       remote: options.remote,
     });
+    console.log(chalk.green(`✓ Detected: ${gitContext.owner}/${gitContext.repo} (${gitContext.branch})\n`));
 
     // 3. Ensure Claude authentication
+    console.log(chalk.blue('Checking Claude authentication...'));
     const claudeToken = await this.authIntegration.ensureAuthenticated();
+    if (!claudeToken) {
+      throw new Error('Claude authentication failed - no token available');
+    }
+    console.log(chalk.green('✓ Claude authenticated'));
+    console.log(chalk.gray(`  Token length: ${claudeToken.length} characters\n`));
 
     // 4. Load and merge configuration
     const providerConfig = this.configManager.getProviderConfig('codespaces');
@@ -86,7 +122,17 @@ export class SpawnOrchestrator {
       git: GitInfo;
       server: ServerConfig;
       providerOptions: ProviderOptions;
-      env: Record<string, string>;
+      dev?: boolean;
+      agents?: {
+        install: string[];
+      };
+      models?: {
+        claudeLtt: string;
+      };
+      sudocode?: {
+        mode: 'local' | 'npm';
+        version: string;
+      };
     } = {
       git: {
         owner: gitContext.owner,
@@ -102,8 +148,16 @@ export class SpawnOrchestrator {
         machine: options.machine ?? config.machine,
         retentionPeriod: options.retentionPeriod ?? config.retentionPeriod,
       },
-      env: {
-        CLAUDE_TOKEN: claudeToken,
+      dev: options.dev ?? false,
+      agents: {
+        install: ['claude'],
+      },
+      models: {
+        claudeLtt: claudeToken,
+      },
+      sudocode: {
+        mode: options.dev ? 'local' : 'npm',
+        version: 'latest',
       },
     };
 
@@ -125,6 +179,23 @@ export class SpawnOrchestrator {
       clearInterval(progressInterval);
       console.log(); // New line after dots
       console.log(chalk.green('✓ Spawn complete'));
+
+      // Open browsers (unless noOpen option is set)
+      const noOpen = (options as any).noOpen;
+      if (!noOpen) {
+        if (deployment.urls?.workspace) {
+          console.log(chalk.gray('Opening codespace in browser...'));
+          this.openBrowser(deployment.urls.workspace);
+        }
+        
+        // Wait 5 seconds before opening Sudocode UI to give codespace time to initialize
+        if (deployment.urls?.sudocode) {
+          console.log(chalk.gray('Opening Sudocode UI in 5 seconds...\n'));
+          setTimeout(() => {
+            this.openBrowser(deployment.urls.sudocode);
+          }, 5000);
+        }
+      }
 
       return deployment;
     } catch (error) {
