@@ -34,6 +34,9 @@ import { importFromJSONL } from "@sudocode-ai/cli/dist/import.js";
 import { exportToJSONL } from "@sudocode-ai/cli/dist/export.js";
 import { syncMarkdownToJSONL } from "@sudocode-ai/cli/dist/sync.js";
 import { writeMarkdownFile } from "@sudocode-ai/cli/dist/markdown.js";
+// Skip slow tests unless explicitly enabled (this test suite takes ~67s)
+const SKIP_SLOW_TESTS = process.env.RUN_SLOW_TESTS !== "true";
+
 import {
   getOutgoingRelationships,
   getIncomingRelationships,
@@ -61,7 +64,7 @@ function readJSONL(filePath: string): any[] {
     .map((line) => JSON.parse(line));
 }
 
-describe("Server Round-Trip Integration Tests", () => {
+describe.skipIf(SKIP_SLOW_TESTS)("Server Round-Trip Integration Tests", () => {
   let app: express.Application;
   let testDir: string;
   let testProjectPath: string;

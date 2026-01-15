@@ -203,38 +203,134 @@ export class GitSyncCli {
 
   /**
    * Check if merge would conflict WITHOUT modifying working tree
-   * Detects files that changed in both branches since merge base
+   * Uses git merge-tree to perform a virtual merge and detect actual conflicts
    *
    * @param sourceBranch - Source branch to merge from
    * @param targetBranch - Target branch to merge into
-   * @returns Conflict check result
+   * @returns Conflict check result with actual conflicting files
    */
   checkMergeConflicts(
     sourceBranch: string,
     targetBranch: string
   ): ConflictCheckResult {
     try {
-      // Find merge base
-      const mergeBase = this.getMergeBase(sourceBranch, targetBranch);
+      const escapedSource = this.escapeShellArg(sourceBranch);
+      const escapedTarget = this.escapeShellArg(targetBranch);
 
-      // Get files changed in source branch since merge base
-      const sourceFiles = this.getChangedFiles(mergeBase, sourceBranch);
+      // Use git merge-tree to perform virtual merge and detect conflicts
+      // This doesn't modify the working tree
+      // Exit code: 0 = no conflicts, non-zero = conflicts exist
+      try {
+        // Try newer git merge-tree syntax (Git 2.38+)
+        const command = `git merge-tree --write-tree ${escapedTarget} ${escapedSource}`;
+        execSync(command, {
+          cwd: this.repoPath,
+          encoding: "utf8",
+          stdio: "pipe",
+        });
 
-      // Get files changed in target branch since merge base
-      const targetFiles = this.getChangedFiles(mergeBase, targetBranch);
+        // If command succeeds, no conflicts
+        return {
+          hasConflicts: false,
+          conflictingFiles: [],
+        };
+      } catch (mergeTreeError: any) {
+        // Check if it's a conflict or an error
+        const stderr = mergeTreeError.stderr?.toString() || "";
+        const stdout = mergeTreeError.stdout?.toString() || "";
 
-      // Files that changed in both branches are potential conflicts
-      const conflictingFiles = sourceFiles.filter((file) =>
-        targetFiles.includes(file)
-      );
+        // If exit code is 1 and we have output, there are conflicts
+        if (mergeTreeError.status === 1) {
+          // Parse conflict files from merge-tree output
+          // The output format includes "CONFLICT (content): ..." lines
+          const conflictingFiles = this.parseMergeTreeConflicts(stdout + stderr);
 
-      return {
-        hasConflicts: conflictingFiles.length > 0,
-        conflictingFiles,
-      };
+          if (conflictingFiles.length > 0) {
+            return {
+              hasConflicts: true,
+              conflictingFiles,
+            };
+          }
+        }
+
+        // If merge-tree syntax not supported, fall back to heuristic approach
+        if (stderr.includes("unknown option") || stderr.includes("usage:")) {
+          return this.checkMergeConflictsHeuristic(sourceBranch, targetBranch);
+        }
+
+        // For other errors, fall back to heuristic
+        return this.checkMergeConflictsHeuristic(sourceBranch, targetBranch);
+      }
     } catch (error) {
-      throw error;
+      // Fall back to heuristic approach on any error
+      return this.checkMergeConflictsHeuristic(sourceBranch, targetBranch);
     }
+  }
+
+  /**
+   * Parse conflict files from git merge-tree output
+   *
+   * @param output - Combined stdout/stderr from merge-tree
+   * @returns Array of file paths with conflicts
+   */
+  private parseMergeTreeConflicts(output: string): string[] {
+    const conflictingFiles: string[] = [];
+    const lines = output.split("\n");
+
+    for (const line of lines) {
+      // Look for "CONFLICT (type): ..." patterns
+      const conflictMatch = line.match(/CONFLICT \([^)]+\): (?:Merge conflict in |content: |)(.+)/);
+      if (conflictMatch) {
+        const filePath = conflictMatch[1].trim();
+        if (filePath && !conflictingFiles.includes(filePath)) {
+          conflictingFiles.push(filePath);
+        }
+        continue;
+      }
+
+      // Also look for "Auto-merging X" followed by conflict
+      // And file paths in the informational messages section
+      const autoMergeMatch = line.match(/^Auto-merging (.+)/);
+      if (autoMergeMatch) {
+        // Check if next line indicates a conflict for this file
+        // For now, just note the file - actual conflicts will be caught by CONFLICT lines
+        continue;
+      }
+    }
+
+    return conflictingFiles;
+  }
+
+  /**
+   * Heuristic conflict check - files modified in both branches
+   * Fallback for older git versions or when merge-tree fails
+   *
+   * @param sourceBranch - Source branch to merge from
+   * @param targetBranch - Target branch to merge into
+   * @returns Conflict check result (may have false positives)
+   */
+  private checkMergeConflictsHeuristic(
+    sourceBranch: string,
+    targetBranch: string
+  ): ConflictCheckResult {
+    // Find merge base
+    const mergeBase = this.getMergeBase(sourceBranch, targetBranch);
+
+    // Get files changed in source branch since merge base
+    const sourceFiles = this.getChangedFiles(mergeBase, sourceBranch);
+
+    // Get files changed in target branch since merge base
+    const targetFiles = this.getChangedFiles(mergeBase, targetBranch);
+
+    // Files that changed in both branches are potential conflicts
+    const conflictingFiles = sourceFiles.filter((file) =>
+      targetFiles.includes(file)
+    );
+
+    return {
+      hasConflicts: conflictingFiles.length > 0,
+      conflictingFiles,
+    };
   }
 
   /**

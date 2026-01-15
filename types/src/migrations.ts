@@ -828,6 +828,252 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 7,
+    name: "add-stream-id-to-executions",
+    up: (db: Database.Database) => {
+      // Check if executions table exists
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='executions'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (tables.length === 0) {
+        // Table doesn't exist yet, will be created with new schema
+        return;
+      }
+
+      // Check if stream_id column already exists
+      const tableInfo = db.pragma("table_info(executions)") as Array<{
+        name: string;
+      }>;
+      const hasStreamId = tableInfo.some((col) => col.name === "stream_id");
+
+      if (hasStreamId) {
+        // Already migrated
+        return;
+      }
+
+      // Add stream_id column
+      db.exec(`ALTER TABLE executions ADD COLUMN stream_id TEXT;`);
+
+      // Create index for stream_id lookups
+      db.exec(
+        `CREATE INDEX IF NOT EXISTS idx_executions_stream_id ON executions(stream_id);`
+      );
+
+      console.log("  ✓ Added stream_id column to executions table");
+    },
+    down: (db: Database.Database) => {
+      // SQLite doesn't support DROP COLUMN in older versions
+      // For rollback, we'd need to recreate the table without the column
+      console.log(
+        "  Note: stream_id column cannot be removed (SQLite limitation)"
+      );
+    },
+  },
+  {
+    version: 8,
+    name: "add-checkpoints-table",
+    up: (db: Database.Database) => {
+      // Check if checkpoints table already exists
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='checkpoints'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (tables.length > 0) {
+        // Already migrated
+        return;
+      }
+
+      // Create checkpoints table for stacked diffs workflow
+      db.exec(`
+        CREATE TABLE checkpoints (
+          id TEXT PRIMARY KEY,
+          issue_id TEXT NOT NULL,
+          execution_id TEXT NOT NULL,
+          stream_id TEXT NOT NULL,
+          commit_sha TEXT NOT NULL,
+          parent_commit TEXT,
+          changed_files INTEGER NOT NULL DEFAULT 0,
+          additions INTEGER NOT NULL DEFAULT 0,
+          deletions INTEGER NOT NULL DEFAULT 0,
+          message TEXT NOT NULL,
+          checkpointed_at TEXT NOT NULL,
+          checkpointed_by TEXT,
+          review_status TEXT NOT NULL DEFAULT 'pending' CHECK(review_status IN ('pending', 'approved', 'rejected', 'merged')),
+          reviewed_at TEXT,
+          reviewed_by TEXT,
+          review_notes TEXT,
+          FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
+          FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE
+        );
+      `);
+
+      // Create indexes for common queries
+      db.exec(`
+        CREATE INDEX idx_checkpoints_issue_id ON checkpoints(issue_id);
+        CREATE INDEX idx_checkpoints_execution_id ON checkpoints(execution_id);
+        CREATE INDEX idx_checkpoints_stream_id ON checkpoints(stream_id);
+        CREATE INDEX idx_checkpoints_review_status ON checkpoints(review_status);
+        CREATE INDEX idx_checkpoints_checkpointed_at ON checkpoints(checkpointed_at);
+      `);
+
+      console.log("  ✓ Created checkpoints table for stacked diffs workflow");
+    },
+    down: (db: Database.Database) => {
+      db.exec(`DROP TABLE IF EXISTS checkpoints;`);
+      console.log("  ✓ Dropped checkpoints table");
+    },
+  },
+  {
+    version: 9,
+    name: "add-stacks-table",
+    up: (db: Database.Database) => {
+      // Check if stacks table already exists
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='stacks'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (tables.length > 0) {
+        // Already migrated
+        return;
+      }
+
+      // Create stacks table for stacked diffs workflow
+      db.exec(`
+        CREATE TABLE stacks (
+          id TEXT PRIMARY KEY,
+          name TEXT,
+          root_issue_id TEXT,
+          issue_order TEXT NOT NULL,
+          is_auto INTEGER NOT NULL DEFAULT 0 CHECK(is_auto IN (0, 1)),
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (root_issue_id) REFERENCES issues(id) ON DELETE SET NULL
+        );
+      `);
+
+      // Create indexes
+      db.exec(`
+        CREATE INDEX idx_stacks_root_issue ON stacks(root_issue_id);
+        CREATE INDEX idx_stacks_is_auto ON stacks(is_auto);
+        CREATE INDEX idx_stacks_created_at ON stacks(created_at);
+        CREATE INDEX idx_stacks_updated_at ON stacks(updated_at);
+      `);
+
+      console.log("  ✓ Created stacks table for stacked diffs workflow");
+    },
+    down: (db: Database.Database) => {
+      db.exec(`DROP TABLE IF EXISTS stacks;`);
+      console.log("  ✓ Dropped stacks table");
+    },
+  },
+  {
+    version: 10,
+    name: "add-batches-table",
+    up: (db: Database.Database) => {
+      // Check if batches table already exists
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='batches'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (tables.length > 0) {
+        // Already migrated
+        return;
+      }
+
+      // Create batches table for PR batch workflow
+      db.exec(`
+        CREATE TABLE batches (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          description TEXT,
+          entry_ids TEXT NOT NULL,
+          target_branch TEXT NOT NULL DEFAULT 'main',
+          pr_number INTEGER,
+          pr_url TEXT,
+          pr_status TEXT NOT NULL DEFAULT 'draft' CHECK(pr_status IN ('draft', 'open', 'approved', 'merged', 'closed')),
+          merge_strategy TEXT NOT NULL DEFAULT 'squash' CHECK(merge_strategy IN ('squash', 'preserve')),
+          is_draft_pr INTEGER NOT NULL DEFAULT 1 CHECK(is_draft_pr IN (0, 1)),
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          created_by TEXT
+        );
+      `);
+
+      // Create indexes
+      db.exec(`
+        CREATE INDEX idx_batches_pr_status ON batches(pr_status);
+        CREATE INDEX idx_batches_target_branch ON batches(target_branch);
+        CREATE INDEX idx_batches_created_at ON batches(created_at);
+        CREATE INDEX idx_batches_updated_at ON batches(updated_at);
+      `);
+
+      console.log("  ✓ Created batches table for PR batch workflow");
+    },
+    down: (db: Database.Database) => {
+      db.exec(`DROP TABLE IF EXISTS batches;`);
+      console.log("  ✓ Dropped batches table");
+    },
+  },
+  {
+    version: 11,
+    name: "add-checkpoint-queue-columns",
+    up: (db: Database.Database) => {
+      // Check if columns already exist
+      const columns = db
+        .prepare("PRAGMA table_info(checkpoints)")
+        .all() as Array<{ name: string }>;
+
+      const columnNames = new Set(columns.map((c) => c.name));
+
+      // Add target_branch column if missing
+      if (!columnNames.has("target_branch")) {
+        db.exec(`
+          ALTER TABLE checkpoints ADD COLUMN target_branch TEXT NOT NULL DEFAULT 'main';
+        `);
+        console.log("  ✓ Added target_branch column to checkpoints");
+      }
+
+      // Add queue_position column if missing
+      if (!columnNames.has("queue_position")) {
+        db.exec(`
+          ALTER TABLE checkpoints ADD COLUMN queue_position INTEGER;
+        `);
+        console.log("  ✓ Added queue_position column to checkpoints");
+      }
+
+      // Add index for target_branch if it doesn't exist
+      const indexes = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_checkpoints_target_branch'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (indexes.length === 0) {
+        db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_checkpoints_target_branch ON checkpoints(target_branch);
+        `);
+        console.log("  ✓ Created idx_checkpoints_target_branch index");
+      }
+    },
+    down: (db: Database.Database) => {
+      // SQLite doesn't support DROP COLUMN directly in older versions
+      // For rollback, we'd need to recreate the table without these columns
+      // This is a complex operation, so we just log a warning
+      console.log(
+        "  ⚠ Warning: Cannot drop columns in SQLite. Manual migration required."
+      );
+    },
+  },
 ];
 
 /**

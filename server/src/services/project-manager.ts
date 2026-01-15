@@ -26,6 +26,10 @@ import { OrchestratorWorkflowEngine } from "../workflow/engines/orchestrator-eng
 import { WorkflowWakeupService } from "../workflow/services/wakeup-service.js";
 import { WorkflowPromptBuilder } from "../workflow/services/prompt-builder.js";
 import { WorkflowBroadcastService } from "./workflow-broadcast-service.js";
+import {
+  getDataplaneAdapter,
+  closeDataplaneAdapter,
+} from "./dataplane-adapter.js";
 
 interface CachedDatabase {
   db: Database.Database;
@@ -96,6 +100,15 @@ export class ProjectManager {
 
       // 4. Initialize database (check cache first)
       const db = await this.getOrCreateDatabase(projectId, projectPath);
+
+      // 4.5. Initialize dataplane adapter (if configured)
+      // Pass sudocode db so dataplane uses shared database with table prefix
+      const dataplaneAdapter = await getDataplaneAdapter(projectPath, db);
+      if (dataplaneAdapter) {
+        console.log(
+          `[ProjectManager] Dataplane adapter initialized for ${projectId} (shared db)`
+        );
+      }
 
       // 5. Initialize all services for this project
       const sudocodeDir = path.join(projectPath, ".sudocode");
@@ -441,6 +454,9 @@ export class ProjectManager {
     try {
       // Shutdown project context (stops watcher, cancels executions, etc.)
       await context.shutdown();
+
+      // Close dataplane adapter (if enabled)
+      closeDataplaneAdapter(context.path);
 
       // Keep DB in cache for fast reopening (unless explicitly disabled)
       if (keepDbInCache) {

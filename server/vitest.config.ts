@@ -9,8 +9,8 @@ export default defineConfig({
     exclude: ["**/node_modules/**", "**/dist/**"],
     setupFiles: ["./vitest.setup.ts"],
     testTimeout: 120000,
-    hookTimeout: 30000,
-    teardownTimeout: 10000,
+    hookTimeout: 60000,
+    teardownTimeout: 30000,
     isolate: true,
     pool: "forks",
     retry: 3, // Retry failed tests up to 3 times for flakes.

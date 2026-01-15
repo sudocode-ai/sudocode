@@ -180,6 +180,9 @@ CREATE TABLE IF NOT EXISTS executions (
     step_index INTEGER,
     step_config TEXT,
 
+    -- Dataplane integration
+    stream_id TEXT,
+
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL,
     FOREIGN KEY (issue_uuid) REFERENCES issues(uuid) ON DELETE SET NULL,
     FOREIGN KEY (parent_execution_id) REFERENCES executions(id) ON DELETE SET NULL
@@ -218,6 +221,27 @@ CREATE TABLE IF NOT EXISTS execution_logs (
     FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE,
     CHECK (raw_logs IS NOT NULL OR normalized_entry IS NOT NULL)
 );
+`;
+
+// Execution conflicts table - tracks merge/rebase conflicts
+export const EXECUTION_CONFLICTS_TABLE = `
+CREATE TABLE IF NOT EXISTS execution_conflicts (
+    id TEXT PRIMARY KEY,
+    execution_id TEXT NOT NULL,
+    path TEXT NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('code', 'jsonl', 'binary')),
+    auto_resolvable INTEGER NOT NULL DEFAULT 0,
+    conflicting_stream_id TEXT,
+    conflicting_issue_id TEXT,
+    details TEXT,
+    detected_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at DATETIME,
+    resolution_strategy TEXT CHECK(resolution_strategy IN ('ours', 'theirs', 'manual', 'abort')),
+    FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_execution_conflicts_execution ON execution_conflicts(execution_id);
+CREATE INDEX IF NOT EXISTS idx_execution_conflicts_unresolved ON execution_conflicts(execution_id, resolved_at) WHERE resolved_at IS NULL;
 `;
 
 // Workflows table - orchestrates multi-issue execution
@@ -334,6 +358,7 @@ CREATE INDEX IF NOT EXISTS idx_executions_created_at ON executions(created_at);
 CREATE INDEX IF NOT EXISTS idx_executions_workflow ON executions(workflow_execution_id);
 CREATE INDEX IF NOT EXISTS idx_executions_workflow_step ON executions(workflow_execution_id, step_index);
 CREATE INDEX IF NOT EXISTS idx_executions_step_type ON executions(step_type);
+CREATE INDEX IF NOT EXISTS idx_executions_stream_id ON executions(stream_id);
 `;
 
 export const PROMPT_TEMPLATES_INDEXES = `
@@ -362,6 +387,88 @@ CREATE INDEX IF NOT EXISTS idx_workflow_events_execution_id ON workflow_events(e
 CREATE INDEX IF NOT EXISTS idx_workflow_events_processed ON workflow_events(processed_at);
 CREATE INDEX IF NOT EXISTS idx_workflow_events_created_at ON workflow_events(created_at);
 CREATE INDEX IF NOT EXISTS idx_workflow_events_unprocessed ON workflow_events(workflow_id, processed_at) WHERE processed_at IS NULL;
+`;
+
+// Stacks table - groups issues for coordinated merging (stacked diffs)
+export const STACKS_TABLE = `
+CREATE TABLE IF NOT EXISTS stacks (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    root_issue_id TEXT,
+    issue_order TEXT NOT NULL,
+    is_auto INTEGER NOT NULL DEFAULT 0 CHECK(is_auto IN (0, 1)),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (root_issue_id) REFERENCES issues(id) ON DELETE SET NULL
+);
+`;
+
+export const STACKS_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_stacks_root_issue ON stacks(root_issue_id);
+CREATE INDEX IF NOT EXISTS idx_stacks_is_auto ON stacks(is_auto);
+CREATE INDEX IF NOT EXISTS idx_stacks_created_at ON stacks(created_at);
+CREATE INDEX IF NOT EXISTS idx_stacks_updated_at ON stacks(updated_at);
+`;
+
+// Checkpoints table - tracks issue stream checkpoints for stacked diffs workflow
+export const CHECKPOINTS_TABLE = `
+CREATE TABLE IF NOT EXISTS checkpoints (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL,
+    execution_id TEXT NOT NULL,
+    stream_id TEXT NOT NULL,
+    commit_sha TEXT NOT NULL,
+    parent_commit TEXT,
+    changed_files INTEGER NOT NULL DEFAULT 0,
+    additions INTEGER NOT NULL DEFAULT 0,
+    deletions INTEGER NOT NULL DEFAULT 0,
+    message TEXT NOT NULL,
+    checkpointed_at TEXT NOT NULL,
+    checkpointed_by TEXT,
+    review_status TEXT NOT NULL DEFAULT 'pending' CHECK(review_status IN ('pending', 'approved', 'rejected', 'merged')),
+    reviewed_at TEXT,
+    reviewed_by TEXT,
+    review_notes TEXT,
+    target_branch TEXT NOT NULL DEFAULT 'main',
+    queue_position INTEGER,
+    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
+    FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE
+);
+`;
+
+export const CHECKPOINTS_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_checkpoints_issue_id ON checkpoints(issue_id);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_execution_id ON checkpoints(execution_id);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_stream_id ON checkpoints(stream_id);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_review_status ON checkpoints(review_status);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_checkpointed_at ON checkpoints(checkpointed_at);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_target_branch ON checkpoints(target_branch);
+`;
+
+// Batches table - groups queue entries into PRs for coordinated review/merge
+export const BATCHES_TABLE = `
+CREATE TABLE IF NOT EXISTS batches (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    entry_ids TEXT NOT NULL,
+    target_branch TEXT NOT NULL DEFAULT 'main',
+    pr_number INTEGER,
+    pr_url TEXT,
+    pr_status TEXT NOT NULL DEFAULT 'draft' CHECK(pr_status IN ('draft', 'open', 'approved', 'merged', 'closed')),
+    merge_strategy TEXT NOT NULL DEFAULT 'squash' CHECK(merge_strategy IN ('squash', 'preserve')),
+    is_draft_pr INTEGER NOT NULL DEFAULT 1 CHECK(is_draft_pr IN (0, 1)),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by TEXT
+);
+`;
+
+export const BATCHES_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_batches_pr_status ON batches(pr_status);
+CREATE INDEX IF NOT EXISTS idx_batches_target_branch ON batches(target_branch);
+CREATE INDEX IF NOT EXISTS idx_batches_created_at ON batches(created_at);
+CREATE INDEX IF NOT EXISTS idx_batches_updated_at ON batches(updated_at);
 `;
 
 /**
@@ -422,8 +529,12 @@ export const ALL_TABLES = [
   EXECUTIONS_TABLE,
   PROMPT_TEMPLATES_TABLE,
   EXECUTION_LOGS_TABLE,
+  EXECUTION_CONFLICTS_TABLE,
   WORKFLOWS_TABLE,
   WORKFLOW_EVENTS_TABLE,
+  STACKS_TABLE,
+  CHECKPOINTS_TABLE,
+  BATCHES_TABLE,
 ];
 
 export const ALL_INDEXES = [
@@ -438,6 +549,9 @@ export const ALL_INDEXES = [
   EXECUTION_LOGS_INDEXES,
   WORKFLOWS_INDEXES,
   WORKFLOW_EVENTS_INDEXES,
+  STACKS_INDEXES,
+  CHECKPOINTS_INDEXES,
+  BATCHES_INDEXES,
 ];
 
 export const ALL_VIEWS = [READY_ISSUES_VIEW, BLOCKED_ISSUES_VIEW];

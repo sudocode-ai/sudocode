@@ -123,6 +123,7 @@ const createMockExecution = (overrides: Partial<Execution> = {}): Execution => (
   step_type: null,
   step_index: null,
   step_config: null,
+  stream_id: null,
   ...overrides,
 })
 

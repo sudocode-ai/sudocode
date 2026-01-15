@@ -34,6 +34,8 @@ import {
   type JSONLEntity,
 } from "@sudocode-ai/cli/dist/jsonl.js";
 import * as os from "os";
+import type { DataplaneAdapter } from "./dataplane-adapter.js";
+import type { CascadeReport } from "./dataplane-types.js";
 
 /**
  * Worktree sync error codes
@@ -131,21 +133,87 @@ export interface SyncResult {
   uncommittedFilesIncluded?: number;
   error?: string;
   cleanupOffered?: boolean;
+  /** Cascade report when dataplane is enabled (streams that were rebased) */
+  cascade?: CascadeReport;
+  /** Backup tag created for rollback capability */
+  backupTag?: string;
 }
 
 /**
  * WorktreeSyncService
  *
- * Main service class for orchestrating worktree sync operations
+ * Main service class for orchestrating worktree sync operations.
+ * Optionally integrates with DataplaneAdapter for stream-based tracking
+ * and cascade operations when dataplane is enabled.
  */
 export class WorktreeSyncService {
   private gitSync: GitSyncCli;
+  private dataplaneAdapter: DataplaneAdapter | null;
 
   constructor(
     private db: Database.Database,
-    private repoPath: string
+    private repoPath: string,
+    dataplaneAdapter?: DataplaneAdapter | null
   ) {
     this.gitSync = new GitSyncCli(repoPath);
+    this.dataplaneAdapter = dataplaneAdapter ?? null;
+  }
+
+  /**
+   * Check if dataplane integration is enabled
+   */
+  get isDataplaneEnabled(): boolean {
+    return this.dataplaneAdapter !== null && this.dataplaneAdapter.isInitialized;
+  }
+
+  /**
+   * Reconcile stream state with git before operations (dataplane only)
+   *
+   * When dataplane is enabled, this ensures the stream's database state
+   * is synchronized with the actual git state before performing sync operations.
+   *
+   * @param execution - Execution to reconcile
+   */
+  private async _reconcileStreamIfNeeded(execution: Execution): Promise<void> {
+    if (!this.isDataplaneEnabled || !execution.stream_id) {
+      return;
+    }
+
+    try {
+      await this.dataplaneAdapter!.reconcileStream(execution.stream_id);
+    } catch (error) {
+      // Log but don't fail - reconciliation is best-effort
+      console.warn(
+        `Failed to reconcile stream ${execution.stream_id}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  /**
+   * Trigger cascade rebase after successful sync (dataplane only)
+   *
+   * After merging a stream to target, this triggers rebase of any
+   * dependent streams to keep them up to date.
+   *
+   * @param execution - Execution that was synced
+   * @returns Cascade report if dataplane is enabled, undefined otherwise
+   */
+  private async _triggerCascadeIfNeeded(
+    execution: Execution
+  ): Promise<CascadeReport | undefined> {
+    if (!this.isDataplaneEnabled || !execution.stream_id) {
+      return undefined;
+    }
+
+    try {
+      return await this.dataplaneAdapter!.triggerCascade(execution.stream_id);
+    } catch (error) {
+      // Log but don't fail - cascade is best-effort
+      console.warn(
+        `Failed to trigger cascade for stream ${execution.stream_id}: ${error instanceof Error ? error.message : String(error)}`
+      );
+      return undefined;
+    }
   }
 
   /**
@@ -157,6 +225,9 @@ export class WorktreeSyncService {
   async previewSync(executionId: string): Promise<SyncPreviewResult> {
     // 1. Load execution and validate
     const execution = await this._loadAndValidateExecution(executionId);
+
+    // 1.5. Reconcile stream state with git (dataplane only)
+    await this._reconcileStreamIfNeeded(execution);
 
     // 2. Validate critical preconditions (ones that prevent us from getting any info)
     // These are "hard" failures - we can't get diff/commits if these fail
@@ -932,12 +1003,12 @@ export class WorktreeSyncService {
    *
    * @param sourceBranch - Branch to merge from (worktree branch)
    * @param targetBranch - Branch to merge into
-   * @returns Object with filesChanged count and hasConflicts flag
+   * @returns Object with filesChanged count, hasConflicts flag, and conflictFiles list
    */
   private _performSquashMergeAllowConflicts(
     sourceBranch: string,
     targetBranch: string
-  ): { filesChanged: number; hasConflicts: boolean } {
+  ): { filesChanged: number; hasConflicts: boolean; conflictFiles: string[] } {
     // Checkout target branch
     execSync(`git checkout ${this._escapeShellArg(targetBranch)}`, {
       cwd: this.repoPath,
@@ -945,16 +1016,15 @@ export class WorktreeSyncService {
     });
 
     // Perform squash merge - may fail with conflicts
-    let hasConflicts = false;
+    let mergeFailed = false;
     try {
       execSync(`git merge --squash ${this._escapeShellArg(sourceBranch)}`, {
         cwd: this.repoPath,
         stdio: "pipe",
       });
-    } catch (error: any) {
-      // Check if this is a conflict situation (exit code 1) or a real error
+    } catch {
       // git merge --squash returns 1 on conflicts but stages what it can
-      hasConflicts = true;
+      mergeFailed = true;
     }
 
     // Count staged files (including conflicted ones)
@@ -968,19 +1038,48 @@ export class WorktreeSyncService {
       .split("\n")
       .filter((line) => line.trim().length > 0).length;
 
-    // Check for actual conflicts in the working tree
+    // Check for actual conflicts in the working tree using git status
+    let conflictFiles: string[] = [];
     try {
-      const conflictCheck = execSync("git diff --name-only --diff-filter=U", {
+      // Use git status --porcelain to detect unmerged paths (UU, AA, DD, etc.)
+      const statusCheck = execSync("git status --porcelain", {
         cwd: this.repoPath,
         encoding: "utf8",
         stdio: "pipe",
       });
-      hasConflicts = conflictCheck.trim().length > 0;
+
+      // Parse status output for conflict markers (UU, AA, DD, AU, UA, DU, UD)
+      const conflictPrefixes = ["UU", "AA", "DD", "AU", "UA", "DU", "UD"];
+      conflictFiles = statusCheck
+        .split("\n")
+        .filter((line) => {
+          const prefix = line.substring(0, 2);
+          return conflictPrefixes.includes(prefix);
+        })
+        .map((line) => line.substring(3).trim());
     } catch (e) {
-      // If this fails, assume no conflicts
+      // If status check fails, fall back to diff --diff-filter=U
+      try {
+        const diffCheck = execSync("git diff --name-only --diff-filter=U", {
+          cwd: this.repoPath,
+          encoding: "utf8",
+          stdio: "pipe",
+        });
+        conflictFiles = diffCheck
+          .trim()
+          .split("\n")
+          .filter((f) => f.length > 0);
+      } catch {
+        // If both fail, assume no conflicts detected but preserve mergeFailed state
+      }
     }
 
-    return { filesChanged, hasConflicts };
+    // hasConflicts is true if either:
+    // 1. The merge command failed AND we have no staged files (complete failure)
+    // 2. We detected actual conflict files
+    const hasConflicts = conflictFiles.length > 0 || (mergeFailed && filesChanged === 0);
+
+    return { filesChanged, hasConflicts, conflictFiles };
   }
 
   /**
@@ -1589,6 +1688,9 @@ Synced changes from worktree execution.`;
     // 1. Load and validate execution
     const execution = await this._loadAndValidateExecution(executionId);
 
+    // 1.5. Reconcile stream state with git (dataplane only)
+    await this._reconcileStreamIfNeeded(execution);
+
     // 2. Validate preconditions (allow JSONL-only changes, they'll be auto-merged)
     await this._validateSyncPreconditions(execution, { allowJsonlOnlyChanges: true });
 
@@ -1636,31 +1738,12 @@ Synced changes from worktree execution.`;
 
       // 8. Check if there are unresolved conflicts
       if (mergeResult.hasConflicts) {
-        // Get list of files with conflicts
-        let filesWithConflicts: string[] = [];
-        try {
-          const conflictCheck = execSync(
-            "git diff --name-only --diff-filter=U",
-            {
-              cwd: this.repoPath,
-              encoding: "utf8",
-              stdio: "pipe",
-            }
-          );
-          filesWithConflicts = conflictCheck
-            .trim()
-            .split("\n")
-            .filter((f) => f.length > 0);
-        } catch {
-          // If command fails, leave empty
-        }
-
         // Return with conflicts info - user must resolve manually
         return {
           success: false,
           filesChanged: mergeResult.filesChanged,
           hasConflicts: true,
-          filesWithConflicts,
+          filesWithConflicts: mergeResult.conflictFiles,
           error:
             "Merge conflicts detected. Please resolve them manually and commit.",
           cleanupOffered: false,
@@ -1680,12 +1763,17 @@ Synced changes from worktree execution.`;
         await this._restoreUncommittedJsonl();
       }
 
-      // 12. Return success result
+      // 12. Trigger cascade rebase of dependent streams (dataplane only)
+      const cascade = await this._triggerCascadeIfNeeded(execution);
+
+      // 13. Return success result
       return {
         success: true,
         finalCommit,
         filesChanged: mergeResult.filesChanged,
         cleanupOffered: true,
+        cascade,
+        backupTag: safetyTag,
       };
     } catch (error: any) {
       // Restore uncommitted JSONL files even on failure (to avoid losing user changes)
@@ -1778,6 +1866,7 @@ Synced changes from worktree execution.`;
       let hasConflicts = false;
 
       // 6. Perform git merge --squash for committed changes (if any)
+      let filesWithConflicts: string[] = [];
       if (hasCommits) {
         const mergeResult = this._performSquashMergeAllowConflicts(
           execution.branch_name,
@@ -1785,22 +1874,26 @@ Synced changes from worktree execution.`;
         );
         filesChanged = mergeResult.filesChanged;
         hasConflicts = mergeResult.hasConflicts;
+        filesWithConflicts = mergeResult.conflictFiles;
       }
 
       // 7. Copy uncommitted files from worktree if requested (with safe merging)
       let uncommittedFilesCopied = 0;
-      let filesWithConflicts: string[] = [];
       if (includeUncommitted && execution.worktree_path) {
         const copyResult = await this._copyUncommittedFiles(
           execution.worktree_path,
           { overrideLocalChanges }
         );
         uncommittedFilesCopied = copyResult.filesCopied;
-        filesWithConflicts = copyResult.filesWithConflicts;
         filesChanged += uncommittedFilesCopied;
 
-        // If we have conflicts from uncommitted files merge, mark hasConflicts
-        if (filesWithConflicts.length > 0) {
+        // Add any conflicts from uncommitted files merge
+        for (const file of copyResult.filesWithConflicts) {
+          if (!filesWithConflicts.includes(file)) {
+            filesWithConflicts.push(file);
+          }
+        }
+        if (copyResult.filesWithConflicts.length > 0) {
           hasConflicts = true;
         }
       }
@@ -1808,30 +1901,39 @@ Synced changes from worktree execution.`;
       // 8. Auto-resolve JSONL conflicts if any (from git merge --squash)
       const jsonlFilesResolved = await this._resolveJSONLConflicts();
       if (jsonlFilesResolved > 0) {
-        // Re-check for remaining conflicts after JSONL resolution
+        // Re-check for remaining conflicts after JSONL resolution using git status
         try {
-          const conflictCheck = execSync(
-            "git diff --name-only --diff-filter=U",
-            {
-              cwd: this.repoPath,
-              encoding: "utf8",
-              stdio: "pipe",
-            }
-          );
-          const remainingConflictFiles = conflictCheck
-            .trim()
-            .split("\n")
-            .filter((f) => f.length > 0);
-          hasConflicts = remainingConflictFiles.length > 0;
+          const statusCheck = execSync("git status --porcelain", {
+            cwd: this.repoPath,
+            encoding: "utf8",
+            stdio: "pipe",
+          });
 
-          // Add any remaining conflict files not already tracked
-          for (const file of remainingConflictFiles) {
-            if (!filesWithConflicts.includes(file)) {
-              filesWithConflicts.push(file);
+          // Parse status output for conflict markers
+          const conflictPrefixes = ["UU", "AA", "DD", "AU", "UA", "DU", "UD"];
+          const remainingConflictFiles = statusCheck
+            .split("\n")
+            .filter((line) => {
+              const prefix = line.substring(0, 2);
+              return conflictPrefixes.includes(prefix);
+            })
+            .map((line) => line.substring(3).trim());
+
+          // Update conflict state based on remaining conflicts
+          if (remainingConflictFiles.length > 0) {
+            hasConflicts = true;
+            // Add any remaining conflict files not already tracked
+            for (const file of remainingConflictFiles) {
+              if (!filesWithConflicts.includes(file)) {
+                filesWithConflicts.push(file);
+              }
             }
+          } else {
+            // All JSONL conflicts resolved, check if we had other conflicts
+            hasConflicts = filesWithConflicts.length > 0;
           }
         } catch {
-          // If command fails, assume no additional conflicts
+          // If status check fails, preserve current conflict state
         }
       }
 
@@ -1918,6 +2020,9 @@ Synced changes from worktree execution.`;
   async preserveSync(executionId: string): Promise<SyncResult> {
     // 1. Load and validate execution
     const execution = await this._loadAndValidateExecution(executionId);
+
+    // 1.5. Reconcile stream state with git (dataplane only)
+    await this._reconcileStreamIfNeeded(execution);
 
     // 2. Validate preconditions (allow JSONL-only changes, they'll be auto-merged)
     await this._validateSyncPreconditions(execution, { allowJsonlOnlyChanges: true });
@@ -2070,12 +2175,17 @@ Synced changes from worktree execution.`;
         await this._restoreUncommittedJsonl();
       }
 
-      // 14. Return success result
+      // 14. Trigger cascade rebase of dependent streams (dataplane only)
+      const cascade = await this._triggerCascadeIfNeeded(execution);
+
+      // 15. Return success result
       return {
         success: true,
         finalCommit,
         filesChanged,
         cleanupOffered: true,
+        cascade,
+        backupTag: safetyTag,
       };
     } catch (error: any) {
       // Restore uncommitted JSONL files even on failure (to avoid losing user changes)

@@ -47,6 +47,7 @@ export function useProjectRoutes() {
       workflows: () => buildPath('/workflows'),
       workflow: (id: string) => buildPath(`/workflows/${id}`),
       worktrees: () => buildPath('/worktrees'),
+      stacks: () => buildPath('/stacks'),
     }),
     [buildPath]
   )
@@ -86,6 +87,7 @@ export function useProjectRoutes() {
       workflow: (id: string, options?: { replace?: boolean }) =>
         navigate(paths.workflow(id), options),
       worktrees: (options?: { replace?: boolean }) => navigate(paths.worktrees(), options),
+      stacks: (options?: { replace?: boolean }) => navigate(paths.stacks(), options),
     }),
     [navigate, paths]
   )

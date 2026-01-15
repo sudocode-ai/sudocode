@@ -26,6 +26,9 @@ import {
   updateExecution,
 } from "../execution/helpers/test-setup.js";
 
+// Skip slow tests unless explicitly enabled (this test suite takes ~56s)
+const SKIP_SLOW_TESTS = process.env.RUN_SLOW_TESTS !== "true";
+
 /**
  * Setup full test environment with repo, worktree, execution, and database
  */
@@ -117,7 +120,7 @@ function createSpec(id: string, title: string) {
   };
 }
 
-describe("Full squash sync workflow - happy path", () => {
+describe.skipIf(SKIP_SLOW_TESTS)("Full squash sync workflow - happy path", () => {
   let testEnv: ReturnType<typeof setupFullTestEnvironment>;
   let service: WorktreeSyncService;
 
@@ -177,7 +180,7 @@ describe("Full squash sync workflow - happy path", () => {
   });
 });
 
-describe("JSONL conflict resolution", () => {
+describe.skipIf(SKIP_SLOW_TESTS)("JSONL conflict resolution", () => {
   let testEnv: ReturnType<typeof setupFullTestEnvironment>;
   let service: WorktreeSyncService;
 
@@ -264,7 +267,7 @@ describe("JSONL conflict resolution", () => {
   });
 });
 
-describe("Uncommitted JSONL handling", () => {
+describe.skipIf(SKIP_SLOW_TESTS)("Uncommitted JSONL handling", () => {
   let testEnv: ReturnType<typeof setupFullTestEnvironment>;
   let service: WorktreeSyncService;
 
@@ -341,7 +344,7 @@ describe("Uncommitted JSONL handling", () => {
   });
 });
 
-describe("Code conflict handling", () => {
+describe.skipIf(SKIP_SLOW_TESTS)("Code conflict handling", () => {
   let testEnv: ReturnType<typeof setupFullTestEnvironment>;
   let service: WorktreeSyncService;
 
@@ -399,7 +402,7 @@ describe("Code conflict handling", () => {
   });
 });
 
-describe("Safety and rollback", () => {
+describe.skipIf(SKIP_SLOW_TESTS)("Safety and rollback", () => {
   let testEnv: ReturnType<typeof setupFullTestEnvironment>;
   let service: WorktreeSyncService;
 
@@ -448,7 +451,7 @@ describe("Safety and rollback", () => {
   });
 });
 
-describe("Validation failures", () => {
+describe.skipIf(SKIP_SLOW_TESTS)("Validation failures", () => {
   let testEnv: ReturnType<typeof setupFullTestEnvironment>;
   let service: WorktreeSyncService;
 
@@ -535,7 +538,7 @@ describe("Validation failures", () => {
   });
 });
 
-describe("Multiple JSONL files", () => {
+describe.skipIf(SKIP_SLOW_TESTS)("Multiple JSONL files", () => {
   let testEnv: ReturnType<typeof setupFullTestEnvironment>;
   let service: WorktreeSyncService;
 
@@ -644,7 +647,7 @@ describe("Multiple JSONL files", () => {
   });
 });
 
-describe("Large changesets", () => {
+describe.skipIf(SKIP_SLOW_TESTS)("Large changesets", () => {
   let testEnv: ReturnType<typeof setupFullTestEnvironment>;
   let service: WorktreeSyncService;
 

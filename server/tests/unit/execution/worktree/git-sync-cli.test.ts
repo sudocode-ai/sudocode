@@ -10,7 +10,10 @@ import { execSync } from 'child_process';
 import { GitSyncCli } from '../../../../src/execution/worktree/git-sync-cli.js';
 import { WorktreeError } from '../../../../src/execution/worktree/types.js';
 
-describe('GitSyncCli', () => {
+// Skip slow tests unless explicitly enabled (this test suite takes ~35s)
+const SKIP_SLOW_TESTS = process.env.RUN_SLOW_TESTS !== 'true';
+
+describe.skipIf(SKIP_SLOW_TESTS)('GitSyncCli', () => {
   let testRepoPath: string;
   let gitSync: GitSyncCli;
 

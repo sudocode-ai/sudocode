@@ -29,6 +29,11 @@ import type {
   PerformSyncRequest,
   ExecutionChangesResult,
   SessionStateResponse,
+  CheckpointOptions,
+  CheckpointResult,
+  Checkpoint,
+  PromoteOptions,
+  PromoteResult,
 } from '@/types/execution'
 import type {
   ProjectInfo,
@@ -151,6 +156,40 @@ const del = (url: string, data?: any) => api.delete(url, data ? { data } : undef
 /**
  * Issues API
  */
+/**
+ * Review action type for checkpoint review
+ */
+export type ReviewAction = 'approve' | 'request_changes' | 'reset'
+
+/**
+ * Review request body
+ */
+export interface ReviewCheckpointRequest {
+  action: ReviewAction
+  notes?: string
+  reviewed_by?: string
+}
+
+/**
+ * Review checkpoint response
+ */
+export interface ReviewCheckpointResponse {
+  issue_id: string
+  checkpoint_id: string
+  review_status: 'approved' | 'changes_requested' | 'pending'
+  reviewed_at: string
+  reviewed_by?: string
+  review_notes?: string
+}
+
+/**
+ * Checkpoints list response
+ */
+export interface CheckpointsListResponse {
+  checkpoints: Checkpoint[]
+  current: Checkpoint | null
+}
+
 export const issuesApi = {
   getAll: (archived?: boolean) => {
     const params = archived !== undefined ? `?archived=${archived}` : ''
@@ -175,6 +214,170 @@ export const issuesApi = {
       return true
     })
   },
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Checkpoint & Promote Operations
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /** Get all checkpoints for an issue */
+  getCheckpoints: (id: string) => get<CheckpointsListResponse>(`/issues/${id}/checkpoints`),
+
+  /** Get the current (latest) checkpoint for an issue */
+  getCurrentCheckpoint: (id: string) => get<Checkpoint | null>(`/issues/${id}/checkpoint/current`),
+
+  /** Review (approve/reject) the current checkpoint */
+  reviewCheckpoint: (id: string, request: ReviewCheckpointRequest) =>
+    post<ReviewCheckpointResponse>(`/issues/${id}/review`, request),
+
+  /** Promote checkpoint to main branch */
+  promote: (id: string, options?: PromoteOptions) =>
+    post<PromoteResult>(`/issues/${id}/promote`, options),
+}
+
+/**
+ * Stacks API
+ */
+import type {
+  StackInfo,
+  Stack,
+  StacksListResponse,
+  CreateStackRequest,
+  UpdateStackRequest,
+} from '@/types/stack'
+import type { QueueListResponse, QueueStats, ReorderResponse, GetQueueOptions } from '@/types/queue'
+import type {
+  PRBatch,
+  EnrichedBatch,
+  CreateBatchRequest,
+  UpdateBatchRequest,
+  BatchPreview,
+  BatchListResponse,
+  ListBatchesOptions,
+  BatchPromoteResult,
+  BatchPRStatus,
+} from '@/types/batch'
+
+export const stacksApi = {
+  /** List all stacks (auto + manual) */
+  getAll: (params?: { include_auto?: boolean; include_manual?: boolean }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.include_auto !== undefined) {
+      searchParams.set('include_auto', String(params.include_auto))
+    }
+    if (params?.include_manual !== undefined) {
+      searchParams.set('include_manual', String(params.include_manual))
+    }
+    const queryString = searchParams.toString()
+    return get<StacksListResponse>(`/stacks${queryString ? `?${queryString}` : ''}`)
+  },
+
+  /** Get a specific stack by ID */
+  getById: (id: string) => get<StackInfo>(`/stacks/${id}`),
+
+  /** Create a new manual stack */
+  create: (data: CreateStackRequest) => post<Stack>('/stacks', data),
+
+  /** Update a stack */
+  update: (id: string, data: UpdateStackRequest) => put<Stack>(`/stacks/${id}`, data),
+
+  /** Delete a manual stack */
+  delete: (id: string) => del(`/stacks/${id}`),
+
+  /** Get the stack containing a specific issue */
+  getForIssue: (issueId: string) => get<StackInfo | null>(`/issues/${issueId}/stack`),
+}
+
+/**
+ * Queue API - Merge queue management
+ */
+export const queueApi = {
+  /** Get all queue entries with enriched data */
+  getAll: (options?: GetQueueOptions) => {
+    const params = new URLSearchParams()
+    if (options?.targetBranch) params.set('target_branch', options.targetBranch)
+    if (options?.status && options.status.length > 0) {
+      options.status.forEach((s) => params.append('status', s))
+    }
+    if (options?.includeMerged) params.set('include_merged', 'true')
+    const queryString = params.toString()
+    return get<QueueListResponse>(`/queue${queryString ? `?${queryString}` : ''}`)
+  },
+
+  /** Reorder a queue entry to a new position */
+  reorder: (executionId: string, newPosition: number, targetBranch?: string) =>
+    post<ReorderResponse>('/queue/reorder', {
+      execution_id: executionId,
+      new_position: newPosition,
+      target_branch: targetBranch,
+    }),
+
+  /** Get queue statistics */
+  getStats: (targetBranch?: string) => {
+    const params = targetBranch ? `?target_branch=${encodeURIComponent(targetBranch)}` : ''
+    return get<QueueStats>(`/queue/stats${params}`)
+  },
+}
+
+/**
+ * Batches API - PR batch management
+ */
+export const batchApi = {
+  /** List all batches with optional filtering */
+  getAll: (options?: ListBatchesOptions) => {
+    const params = new URLSearchParams()
+    if (options?.targetBranch) params.set('target_branch', options.targetBranch)
+    if (options?.prStatus) params.set('pr_status', options.prStatus)
+    if (options?.includeEntries) params.set('include_entries', 'true')
+    const queryString = params.toString()
+    return get<BatchListResponse>(`/batches${queryString ? `?${queryString}` : ''}`)
+  },
+
+  /** Get a specific batch by ID */
+  getById: (id: string, includeEntries = true) => {
+    const params = includeEntries ? '?include_entries=true' : ''
+    return get<{ batch: EnrichedBatch }>(`/batches/${id}${params}`)
+  },
+
+  /** Create a new batch */
+  create: (data: CreateBatchRequest) => post<{ batch: PRBatch }>('/batches', data),
+
+  /** Update a batch (title/description only, before PR creation) */
+  update: (id: string, data: UpdateBatchRequest) => put<{ batch: PRBatch }>(`/batches/${id}`, data),
+
+  /** Delete a batch */
+  delete: (id: string) => del(`/batches/${id}`),
+
+  /** Create a GitHub PR for the batch */
+  createPR: (id: string, draft = true) =>
+    post<{ batch: PRBatch; pr_url: string }>(`/batches/${id}/pr`, { draft }),
+
+  /** Promote batch entries to main branch */
+  promote: (id: string, autoMerge = false) =>
+    post<BatchPromoteResult>(`/batches/${id}/promote`, { auto_merge: autoMerge }),
+
+  /** Preview batch contents before creating */
+  preview: (id: string) => get<BatchPreview>(`/batches/${id}/preview`),
+
+  /** Sync PR status from GitHub */
+  syncStatus: (id: string) =>
+    post<{ batch: PRBatch; status: BatchPRStatus }>(`/batches/${id}/sync`),
+
+  /** Add entries to an existing batch */
+  addEntries: (id: string, entryIds: string[]) =>
+    post<{ batch: PRBatch }>(`/batches/${id}/entries`, { entry_ids: entryIds }),
+
+  /** Remove entries from a batch */
+  removeEntries: (id: string, entryIds: string[]) =>
+    del(`/batches/${id}/entries`, { entry_ids: entryIds }),
+
+  /** Validate batch entries (check dependencies, existence) */
+  validate: (entryIds: string[]) =>
+    post<{
+      valid: boolean
+      errors: string[]
+      dependency_order: string[]
+      has_dependency_violations: boolean
+    }>('/batches/validate', { entry_ids: entryIds }),
 }
 
 /**
@@ -259,8 +462,7 @@ export const executionsApi = {
     post<Execution>(`/issues/${issueId}/executions`, request),
 
   // Create and start an adhoc execution (not tied to an issue)
-  createAdhoc: (request: CreateExecutionRequest) =>
-    post<Execution>(`/executions`, request),
+  createAdhoc: (request: CreateExecutionRequest) => post<Execution>(`/executions`, request),
 
   // Get execution by ID
   getById: (executionId: string) => get<Execution>(`/executions/${executionId}`),
@@ -337,6 +539,10 @@ export const executionsApi = {
     options?: { includeUncommitted?: boolean; overrideLocalChanges?: boolean }
   ) => post<SyncResult>(`/executions/${executionId}/sync/stage`, options),
 
+  // Checkpoint to issue stream
+  checkpoint: (executionId: string, options?: CheckpointOptions) =>
+    post<CheckpointResult>(`/executions/${executionId}/checkpoint`, options),
+
   // Commit uncommitted changes
   commit: (executionId: string, request: { message: string }) =>
     post<{ commitSha: string; filesCommitted: number; branch: string }>(
@@ -383,6 +589,46 @@ export const executionsApi = {
    */
   getSessionState: (executionId: string) =>
     get<SessionStateResponse>(`/executions/${executionId}/session-state`),
+
+  // Conflict resolution operations
+  getConflicts: (executionId: string) =>
+    get<{
+      conflicts: Array<{
+        id: string
+        execution_id: string
+        path: string
+        type: 'code' | 'jsonl' | 'binary'
+        auto_resolvable: boolean
+        conflicting_stream_id?: string
+        conflicting_issue_id?: string
+        details?: string
+        detected_at: string
+        resolved_at?: string
+        resolution_strategy?: string
+      }>
+      hasUnresolved: boolean
+    }>(`/executions/${executionId}/conflicts`),
+
+  resolveConflict: (
+    executionId: string,
+    conflictId: string,
+    strategy: 'ours' | 'theirs' | 'manual'
+  ) =>
+    post<{ resolved: boolean; allResolved: boolean; remainingConflicts: number }>(
+      `/executions/${executionId}/conflicts/${conflictId}/resolve`,
+      { strategy }
+    ),
+
+  resolveAllConflicts: (executionId: string, strategy: 'ours' | 'theirs') =>
+    post<{
+      resolved: number
+      failed: number
+      errors?: string[]
+      allResolved: boolean
+    }>(`/executions/${executionId}/conflicts/resolve-all`, { strategy }),
+
+  retryAfterConflictResolution: (executionId: string) =>
+    post<{ message: string; preview: SyncPreviewResult }>(`/executions/${executionId}/retry`),
 }
 
 /**
@@ -683,12 +929,10 @@ export const importApi = {
     post<ImportResponse>('/import', { url, options }),
 
   // Search for entities in external systems
-  search: (params: ImportSearchRequest) =>
-    post<ImportSearchResponse>('/import/search', params),
+  search: (params: ImportSearchRequest) => post<ImportSearchResponse>('/import/search', params),
 
   // Batch import entities (creates or updates)
-  batchImport: (params: BatchImportRequest) =>
-    post<BatchImportResponse>('/import/batch', params),
+  batchImport: (params: BatchImportRequest) => post<BatchImportResponse>('/import/batch', params),
 }
 
 /**

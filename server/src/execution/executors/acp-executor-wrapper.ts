@@ -43,6 +43,7 @@ import { ExecutionChangesService } from "../../services/execution-changes-servic
 import { notifyExecutionEvent } from "../../services/execution-event-callbacks.js";
 import type { FileChangeStat } from "@sudocode-ai/types";
 import { getSessionPermissionMode } from "./agent-config-handlers.js";
+import { getDataplaneAdapterSync } from "../../services/dataplane-adapter.js";
 
 /**
  * Sudocode's MCP server configuration format
@@ -1565,6 +1566,47 @@ export class AcpExecutorWrapper {
         workflowId: updatedExecution.workflow_execution_id ?? undefined,
         issueId: updatedExecution.issue_id ?? undefined,
       });
+
+      // Auto-checkpoint for non-workflow worktree executions with dataplane streams
+      // (Workflow executions handle their own checkpoints in sequential-engine)
+      if (
+        !updatedExecution.workflow_execution_id &&
+        updatedExecution.stream_id &&
+        updatedExecution.worktree_path
+      ) {
+        const dataplaneAdapter = getDataplaneAdapterSync(workDir);
+        if (dataplaneAdapter?.isInitialized) {
+          try {
+            const checkpointResult = await dataplaneAdapter.checkpointSync(
+              executionId,
+              this.db,
+              {
+                message: `Execution checkpoint: ${updatedExecution.issue_id || executionId}`,
+                targetBranch: updatedExecution.target_branch || "main",
+                autoEnqueue: true,
+                worktreePath: updatedExecution.worktree_path,
+              }
+            );
+
+            if (checkpointResult.success) {
+              console.log(
+                `[AcpExecutorWrapper] Auto-checkpoint created for execution ${executionId}:`,
+                checkpointResult.checkpoint?.id
+              );
+            } else {
+              console.warn(
+                `[AcpExecutorWrapper] Auto-checkpoint failed for execution ${executionId}:`,
+                checkpointResult.error
+              );
+            }
+          } catch (cpError) {
+            console.warn(
+              `[AcpExecutorWrapper] Failed to create auto-checkpoint for execution ${executionId}:`,
+              cpError instanceof Error ? cpError.message : String(cpError)
+            );
+          }
+        }
+      }
     }
   }
 

@@ -21,6 +21,7 @@ import ProjectsPage from '@/pages/ProjectsPage'
 import ExecutionsPage from '@/pages/ExecutionsPage'
 import WorkflowsPage from '@/pages/WorkflowsPage'
 import WorkflowDetailPage from '@/pages/WorkflowDetailPage'
+import StacksPage from '@/pages/StacksPage'
 
 // Configure TanStack Query
 const queryClient = new QueryClient({
@@ -137,6 +138,14 @@ function App() {
                           </ProtectedRoute>
                         }
                       />
+                      <Route
+                        path="stacks"
+                        element={
+                          <ProtectedRoute>
+                            <StacksPage />
+                          </ProtectedRoute>
+                        }
+                      />
                     </Route>
 
                     {/* Legacy redirects - redirect old URLs to new project-scoped URLs */}
@@ -149,6 +158,7 @@ function App() {
                     <Route path="workflows/*" element={<LegacyRedirect />} />
                     <Route path="workflows" element={<LegacyRedirect />} />
                     <Route path="worktrees" element={<LegacyRedirect />} />
+                    <Route path="stacks" element={<LegacyRedirect />} />
                   </Route>
                 </Routes>
               </BrowserRouter>

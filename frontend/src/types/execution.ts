@@ -272,3 +272,168 @@ export interface SessionStateResponse {
   promptCount: number
   idleTimeMs?: number
 }
+
+/**
+ * Checkpoint types
+ */
+
+/**
+ * Options for checkpoint operation
+ */
+export interface CheckpointOptions {
+  /** Checkpoint message */
+  message?: string
+  /** Whether to squash commits (default: true) */
+  squash?: boolean
+  /** Whether to add to merge queue (default: true) */
+  autoEnqueue?: boolean
+}
+
+/**
+ * Checkpoint review status
+ */
+export type CheckpointReviewStatus = 'pending' | 'approved' | 'rejected' | 'merged'
+
+/**
+ * Checkpoint information
+ */
+export interface Checkpoint {
+  id: string
+  issue_id: string
+  execution_id: string
+  stream_id?: string
+  commit_sha: string
+  parent_commit?: string
+  changed_files: number
+  additions: number
+  deletions: number
+  message: string
+  checkpointed_at: string
+  checkpointed_by?: string
+  review_status: CheckpointReviewStatus
+  reviewed_at?: string
+  reviewed_by?: string
+  review_notes?: string
+}
+
+/**
+ * Issue stream information for checkpoint result
+ */
+export interface IssueStreamInfo {
+  id: string
+  branch: string
+  created: boolean
+}
+
+/**
+ * Queue entry for checkpoint result
+ */
+export interface QueueEntry {
+  id: string
+  executionId: string
+  streamId: string
+  targetBranch: string
+  position: number
+  priority: number
+  status: 'pending' | 'ready' | 'merging' | 'merged' | 'failed' | 'cancelled'
+  addedAt: number
+  error?: string
+  mergeCommit?: string
+}
+
+/**
+ * Conflict information for checkpoint
+ */
+export interface CheckpointConflict {
+  id: string
+  streamId: string
+  path: string
+  ours?: string
+  theirs?: string
+  base?: string
+  markers?: string
+  detectedAt: number
+}
+
+/**
+ * Result of checkpoint operation
+ */
+export interface CheckpointResult {
+  success: boolean
+  checkpoint?: Checkpoint
+  issueStream?: IssueStreamInfo
+  queueEntry?: QueueEntry
+  conflicts?: CheckpointConflict[]
+  error?: string
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Promote Types (Issue Stream → Main Branch)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Options for promote operation
+ */
+export interface PromoteOptions {
+  /** Target branch to merge into (default: main) */
+  target_branch?: string
+  /** Merge strategy: squash all into one commit or preserve history */
+  strategy?: 'squash' | 'merge'
+  /** Promote entire stack of dependent issues (default: false) */
+  include_stack?: boolean
+  /** Custom merge commit message */
+  message?: string
+  /** Force promote even if checkpoint is not approved (default: false) */
+  force?: boolean
+  /** Who is performing the promote */
+  promoted_by?: string
+}
+
+/**
+ * Cascade stream result for dependent rebases
+ */
+export interface CascadeStreamResult {
+  stream_id: string
+  issue_id?: string
+  result: 'rebased' | 'conflict' | 'skipped' | 'failed'
+  conflict_files?: string[]
+  new_head?: string
+  error?: string
+}
+
+/**
+ * Cascade report for dependent streams
+ */
+export interface CascadeReport {
+  triggered_by: string
+  affected_streams: CascadeStreamResult[]
+  complete: boolean
+  deferred?: string[]
+}
+
+/**
+ * Result of promote operation
+ */
+export interface PromoteResult {
+  success: boolean
+  /** Merge commit hash on target branch */
+  merge_commit?: string
+  /** Number of files changed */
+  files_changed: number
+  /** Lines added */
+  additions: number
+  /** Lines deleted */
+  deletions: number
+  /** Issue IDs that were promoted (if include_stack: true) */
+  promoted_issues?: string[]
+  /** Error message if failed */
+  error?: string
+  /** Issue IDs that must be promoted first (blocking dependencies) */
+  blocked_by?: string[]
+  /** Whether approval is required before promote */
+  requires_approval?: boolean
+  /** Conflicts if any were detected */
+  conflicts?: CheckpointConflict[]
+  /** Cascade report if dependents were rebased */
+  cascade?: CascadeReport
+}
