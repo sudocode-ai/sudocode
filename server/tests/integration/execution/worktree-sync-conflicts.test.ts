@@ -22,7 +22,10 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 
-describe("ConflictDetector Integration", () => {
+// Skip slow tests unless explicitly enabled (this test suite takes ~44s)
+const SKIP_SLOW_TESTS = process.env.RUN_SLOW_TESTS !== "true";
+
+describe.skipIf(SKIP_SLOW_TESTS)("ConflictDetector Integration", () => {
   let testRepo: string;
 
   afterEach(() => {

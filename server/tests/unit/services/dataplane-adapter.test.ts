@@ -605,4 +605,203 @@ describe("DataplaneAdapter", () => {
       adapter.close();
     });
   });
+
+  describe("checkpointSync", () => {
+    it("throws when not initialized", async () => {
+      const sudocodeDir = path.join(testDir, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sudocodeDir, "config.json"),
+        JSON.stringify({ dataplane: { enabled: true } })
+      );
+
+      const { DataplaneAdapter } = await import(
+        "../../../src/services/dataplane-adapter.js"
+      );
+      const adapter = new DataplaneAdapter(testDir);
+
+      // Mock db
+      const mockDb = {} as never;
+
+      await expect(adapter.checkpointSync("exec-123", mockDb)).rejects.toThrow(
+        "DataplaneAdapter not initialized"
+      );
+    });
+
+    it("returns error when execution stream not found", async () => {
+      const sudocodeDir = path.join(testDir, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sudocodeDir, "config.json"),
+        JSON.stringify({ dataplane: { enabled: true } })
+      );
+
+      // Initialize git repo
+      const { execSync } = await import("child_process");
+      execSync("git init", { cwd: testDir, stdio: "pipe" });
+      execSync("git config user.email test@test.com", {
+        cwd: testDir,
+        stdio: "pipe",
+      });
+      execSync("git config user.name Test", { cwd: testDir, stdio: "pipe" });
+      fs.writeFileSync(path.join(testDir, "README.md"), "# Test");
+      execSync("git add . && git commit -m 'init'", {
+        cwd: testDir,
+        stdio: "pipe",
+      });
+
+      const { DataplaneAdapter } = await import(
+        "../../../src/services/dataplane-adapter.js"
+      );
+      const adapter = new DataplaneAdapter(testDir);
+      await adapter.initialize();
+
+      const Database = (await import("better-sqlite3")).default;
+      const mockDb = new Database(":memory:");
+
+      const result = await adapter.checkpointSync("nonexistent-exec", mockDb);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Execution stream not found");
+
+      adapter.close();
+      mockDb.close();
+    });
+  });
+
+  describe("createFollowUpStream", () => {
+    it("throws when not initialized", async () => {
+      const sudocodeDir = path.join(testDir, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sudocodeDir, "config.json"),
+        JSON.stringify({ dataplane: { enabled: true } })
+      );
+
+      const { DataplaneAdapter } = await import(
+        "../../../src/services/dataplane-adapter.js"
+      );
+      const adapter = new DataplaneAdapter(testDir);
+
+      await expect(
+        adapter.createFollowUpStream({
+          parentExecutionId: "exec-parent",
+          executionId: "exec-child",
+          agentId: "agent-1",
+        })
+      ).rejects.toThrow("DataplaneAdapter not initialized");
+    });
+
+    it("creates follow-up stream with reuseWorktree=true", async () => {
+      const sudocodeDir = path.join(testDir, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sudocodeDir, "config.json"),
+        JSON.stringify({ dataplane: { enabled: true } })
+      );
+
+      // Initialize git repo
+      const { execSync } = await import("child_process");
+      execSync("git init", { cwd: testDir, stdio: "pipe" });
+      execSync("git config user.email test@test.com", {
+        cwd: testDir,
+        stdio: "pipe",
+      });
+      execSync("git config user.name Test", { cwd: testDir, stdio: "pipe" });
+      fs.writeFileSync(path.join(testDir, "README.md"), "# Test");
+      execSync("git add . && git commit -m 'init'", {
+        cwd: testDir,
+        stdio: "pipe",
+      });
+
+      const { DataplaneAdapter } = await import(
+        "../../../src/services/dataplane-adapter.js"
+      );
+      const adapter = new DataplaneAdapter(testDir);
+      await adapter.initialize();
+
+      // Create parent stream first
+      const parentResult = await adapter.createExecutionStream({
+        executionId: "exec-parent-001",
+        issueId: "i-test",
+        agentType: "claude-code",
+        targetBranch: "main",
+        mode: "worktree",
+        agentId: "agent-parent",
+      });
+
+      // Create follow-up with reuseWorktree=true (inherits stream)
+      const followUpResult = await adapter.createFollowUpStream({
+        parentExecutionId: "exec-parent-001",
+        parentStreamId: parentResult.streamId,
+        executionId: "exec-child-001",
+        agentType: "claude-code",
+        agentId: "agent-child",
+        reuseWorktree: true,
+      });
+
+      expect(followUpResult).toBeDefined();
+      expect(followUpResult.streamId).toBeDefined();
+      // With reuseWorktree=true, should return same stream
+      expect(followUpResult.streamId).toBe(parentResult.streamId);
+
+      adapter.close();
+    });
+
+    it("creates new stream with reuseWorktree=false", async () => {
+      const sudocodeDir = path.join(testDir, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(sudocodeDir, "config.json"),
+        JSON.stringify({ dataplane: { enabled: true } })
+      );
+
+      // Initialize git repo
+      const { execSync } = await import("child_process");
+      execSync("git init", { cwd: testDir, stdio: "pipe" });
+      execSync("git config user.email test@test.com", {
+        cwd: testDir,
+        stdio: "pipe",
+      });
+      execSync("git config user.name Test", { cwd: testDir, stdio: "pipe" });
+      fs.writeFileSync(path.join(testDir, "README.md"), "# Test");
+      execSync("git add . && git commit -m 'init'", {
+        cwd: testDir,
+        stdio: "pipe",
+      });
+
+      const { DataplaneAdapter } = await import(
+        "../../../src/services/dataplane-adapter.js"
+      );
+      const adapter = new DataplaneAdapter(testDir);
+      await adapter.initialize();
+
+      // Create parent stream first
+      const parentResult = await adapter.createExecutionStream({
+        executionId: "exec-parent-002",
+        issueId: "i-test2",
+        agentType: "claude-code",
+        targetBranch: "main",
+        mode: "worktree",
+        agentId: "agent-parent-2",
+      });
+
+      // Create follow-up with reuseWorktree=false (creates new stream)
+      const followUpResult = await adapter.createFollowUpStream({
+        parentExecutionId: "exec-parent-002",
+        parentStreamId: parentResult.streamId,
+        executionId: "exec-child-002",
+        agentType: "claude-code",
+        agentId: "agent-child-2",
+        reuseWorktree: false,
+      });
+
+      expect(followUpResult).toBeDefined();
+      expect(followUpResult.streamId).toBeDefined();
+      // With reuseWorktree=false, should create new stream
+      expect(followUpResult.streamId).not.toBe(parentResult.streamId);
+
+      adapter.close();
+    });
+  });
 });

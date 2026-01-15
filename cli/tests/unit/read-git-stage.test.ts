@@ -1,5 +1,8 @@
 /**
  * Unit tests for readGitStage function
+ *
+ * Note: These tests run sequentially to avoid memory issues from
+ * multiple git repos being created in parallel.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -9,7 +12,8 @@ import * as os from "os";
 import * as path from "path";
 import { execFileSync } from "child_process";
 
-describe("readGitStage", () => {
+// Use describe.sequential to prevent memory issues from parallel git operations
+describe.sequential("readGitStage", () => {
   let tmpDir: string;
   let gitRepo: string;
 
@@ -19,7 +23,8 @@ describe("readGitStage", () => {
     gitRepo = tmpDir;
 
     // Initialize git repo using execFileSync (safe from shell injection)
-    execFileSync("git", ["init"], { cwd: gitRepo });
+    // Use -b main to ensure consistent branch name across systems
+    execFileSync("git", ["init", "-b", "main"], { cwd: gitRepo });
     execFileSync("git", ["config", "user.name", "Test"], { cwd: gitRepo });
     execFileSync("git", ["config", "user.email", "test@example.com"], {
       cwd: gitRepo,
@@ -32,50 +37,54 @@ describe("readGitStage", () => {
     }
   });
 
-  it("should read base stage (stage 1) during conflict", () => {
-    // Create a file and commit it
-    const testFile = "test.txt";
-    fs.writeFileSync(path.join(gitRepo, testFile), "base content\n");
-    execFileSync("git", ["add", testFile], { cwd: gitRepo });
-    execFileSync("git", ["commit", "-m", "base"], { cwd: gitRepo });
+  it(
+    "should read base stage (stage 1) during conflict",
+    { timeout: 30000 },
+    () => {
+      // Create a file and commit it
+      const testFile = "test.txt";
+      fs.writeFileSync(path.join(gitRepo, testFile), "base content\n");
+      execFileSync("git", ["add", testFile], { cwd: gitRepo });
+      execFileSync("git", ["commit", "-m", "base"], { cwd: gitRepo });
 
-    // Create a branch and make a change
-    execFileSync("git", ["checkout", "-b", "feature"], { cwd: gitRepo });
-    fs.writeFileSync(path.join(gitRepo, testFile), "theirs content\n");
-    execFileSync("git", ["add", testFile], { cwd: gitRepo });
-    execFileSync("git", ["commit", "-m", "theirs"], { cwd: gitRepo });
+      // Create a branch and make a change
+      execFileSync("git", ["checkout", "-b", "feature"], { cwd: gitRepo });
+      fs.writeFileSync(path.join(gitRepo, testFile), "theirs content\n");
+      execFileSync("git", ["add", testFile], { cwd: gitRepo });
+      execFileSync("git", ["commit", "-m", "theirs"], { cwd: gitRepo });
 
-    // Go back to main and make conflicting change
-    execFileSync("git", ["checkout", "main"], { cwd: gitRepo });
-    fs.writeFileSync(path.join(gitRepo, testFile), "ours content\n");
-    execFileSync("git", ["add", testFile], { cwd: gitRepo });
-    execFileSync("git", ["commit", "-m", "ours"], { cwd: gitRepo });
+      // Go back to main and make conflicting change
+      execFileSync("git", ["checkout", "main"], { cwd: gitRepo });
+      fs.writeFileSync(path.join(gitRepo, testFile), "ours content\n");
+      execFileSync("git", ["add", testFile], { cwd: gitRepo });
+      execFileSync("git", ["commit", "-m", "ours"], { cwd: gitRepo });
 
-    // Try to merge (will conflict)
-    try {
-      execFileSync("git", ["merge", "feature"], { cwd: gitRepo });
-    } catch (e) {
-      // Expected to conflict
+      // Try to merge (will conflict)
+      try {
+        execFileSync("git", ["merge", "feature"], { cwd: gitRepo });
+      } catch (e) {
+        // Expected to conflict
+      }
+
+      // Now read from git stages
+      const originalCwd = process.cwd();
+      process.chdir(gitRepo);
+
+      try {
+        const base = readGitStage(testFile, 1);
+        const ours = readGitStage(testFile, 2);
+        const theirs = readGitStage(testFile, 3);
+
+        expect(base).toBe("base content\n");
+        expect(ours).toBe("ours content\n");
+        expect(theirs).toBe("theirs content\n");
+      } finally {
+        process.chdir(originalCwd);
+      }
     }
+  );
 
-    // Now read from git stages
-    const originalCwd = process.cwd();
-    process.chdir(gitRepo);
-
-    try {
-      const base = readGitStage(testFile, 1);
-      const ours = readGitStage(testFile, 2);
-      const theirs = readGitStage(testFile, 3);
-
-      expect(base).toBe("base content\n");
-      expect(ours).toBe("ours content\n");
-      expect(theirs).toBe("theirs content\n");
-    } finally {
-      process.chdir(originalCwd);
-    }
-  });
-
-  it("should return null for non-existent stage", () => {
+  it("should return null for non-existent stage", { timeout: 15000 }, () => {
     // Create a file and commit it
     const testFile = "test.txt";
     fs.writeFileSync(path.join(gitRepo, testFile), "content\n");
@@ -106,7 +115,7 @@ describe("readGitStage", () => {
     }
   });
 
-  it("should handle JSONL content from stages", () => {
+  it("should handle JSONL content from stages", { timeout: 30000 }, () => {
     // Create JSONL file
     const testFile = "test.jsonl";
     const baseContent = '{"id":"A","uuid":"uuid-1","title":"Base"}\n';

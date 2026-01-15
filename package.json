@@ -23,6 +23,8 @@
     "test": "vitest run",
     "test:summary": "DEBUG_PRINT_LIMIT=0 vitest run --reporter=dot --silent --hideSkippedTests",
     "test:all": "npm test --workspaces --if-present",
+    "test:slow": "RUN_SLOW_TESTS=true npm test --workspaces --if-present",
+    "test:full": "RUN_SLOW_TESTS=true RUN_E2E_TESTS=true npm test --workspaces --if-present",
     "test:cli": "npm test --workspace=cli",
     "test:mcp": "npm test --workspace=mcp",
     "test:server": "npm test --workspace=server",

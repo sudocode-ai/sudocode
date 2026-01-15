@@ -21,6 +21,8 @@ import {
   SPECS_INDEXES,
   RELATIONSHIPS_TABLE,
   RELATIONSHIPS_INDEXES,
+  CHECKPOINTS_TABLE,
+  CHECKPOINTS_INDEXES,
 } from "@sudocode-ai/types/schema";
 import { runMigrations } from "@sudocode-ai/types/migrations";
 
@@ -161,6 +163,8 @@ export function createTestRepo(
   db.exec(RELATIONSHIPS_INDEXES);
   db.exec(EXECUTIONS_TABLE);
   db.exec(EXECUTIONS_INDEXES);
+  db.exec(CHECKPOINTS_TABLE);
+  db.exec(CHECKPOINTS_INDEXES);
 
   // Run migrations
   runMigrations(db);
@@ -358,4 +362,81 @@ export function createRelationship(
   ).run(data.fromId, fromUuid, fromType, data.toId, toUuid, toType, data.type);
 
   return { fromId: data.fromId, toId: data.toId };
+}
+
+/**
+ * Create a test execution in the database
+ */
+export function createTestExecution(
+  db: Database.Database,
+  data: {
+    id: string;
+    issue_id?: string;
+    agent_type?: string;
+    mode?: string;
+    status?: string;
+    target_branch?: string;
+    branch_name?: string;
+    worktree_path?: string;
+    before_commit?: string;
+    after_commit?: string;
+    stream_id?: string;
+    parent_execution_id?: string;
+    workflow_execution_id?: string;
+  }
+) {
+  const now = new Date().toISOString();
+
+  db.prepare(
+    `
+    INSERT INTO executions (
+      id, issue_id, agent_type, mode, status, target_branch,
+      branch_name, worktree_path, before_commit, after_commit,
+      stream_id, parent_execution_id, workflow_execution_id,
+      created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `
+  ).run(
+    data.id,
+    data.issue_id || null,
+    data.agent_type || "claude-code",
+    data.mode || "worktree",
+    data.status || "pending",
+    data.target_branch || "main",
+    data.branch_name || null,
+    data.worktree_path || null,
+    data.before_commit || null,
+    data.after_commit || null,
+    data.stream_id || null,
+    data.parent_execution_id || null,
+    data.workflow_execution_id || null,
+    now,
+    now
+  );
+
+  return { id: data.id };
+}
+
+/**
+ * Get execution from database
+ */
+export function getTestExecution(
+  db: Database.Database,
+  executionId: string
+): {
+  id: string;
+  issue_id: string | null;
+  stream_id: string | null;
+  status: string;
+  mode: string;
+  worktree_path: string | null;
+  before_commit: string | null;
+  after_commit: string | null;
+  parent_execution_id: string | null;
+  workflow_execution_id: string | null;
+} | null {
+  return db
+    .prepare("SELECT * FROM executions WHERE id = ?")
+    .get(executionId) as any;
 }

@@ -774,6 +774,33 @@ ${feedback}`;
       });
     }
 
+    // Inherit or reuse parent's dataplane stream (if parent has one)
+    let streamId: string | undefined;
+    if (prevExecution.stream_id) {
+      const dataplaneAdapter = getDataplaneAdapterSync(this.repoPath);
+      if (dataplaneAdapter?.isInitialized) {
+        try {
+          // Use createFollowUpStream with reuseWorktree=true to inherit parent's stream
+          const streamResult = await dataplaneAdapter.createFollowUpStream({
+            parentExecutionId: executionId,
+            executionId: newExecutionId,
+            reuseWorktree: true, // Reuse same stream - changes accumulate together
+            agentId: `exec-${newExecutionId.substring(0, 8)}`,
+          });
+          streamId = streamResult.streamId;
+          console.log(
+            `[ExecutionService] Follow-up inherits parent stream: ${streamId}`
+          );
+        } catch (error) {
+          console.warn(
+            `[ExecutionService] Failed to inherit parent stream for follow-up:`,
+            error instanceof Error ? error.message : String(error)
+          );
+          // Continue without stream - non-fatal
+        }
+      }
+    }
+
     const newExecution = createExecution(this.db, {
       id: newExecutionId,
       issue_id: prevExecution.issue_id,
@@ -785,6 +812,7 @@ ${feedback}`;
       config: mergedConfigForStorage || undefined, // Preserve config with any overrides
       parent_execution_id: executionId, // Link to parent execution for follow-up chain
       prompt: followUpPrompt, // Store original (unexpanded) follow-up prompt
+      stream_id: streamId, // Inherit parent's stream for tracking
     });
 
     // Initialize empty logs for this execution

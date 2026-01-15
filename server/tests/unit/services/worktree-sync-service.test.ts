@@ -21,6 +21,9 @@ import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import type Database from "better-sqlite3";
 
+// Skip slow tests unless explicitly enabled (this test suite takes ~77s)
+const SKIP_SLOW_TESTS = process.env.RUN_SLOW_TESTS !== "true";
+
 /**
  * Create a unique worktree path (outside the test repo to avoid polluting working tree)
  */
@@ -28,7 +31,7 @@ function createWorktreePath(): string {
   return mkdtempSync(path.join(tmpdir(), "test-worktree-"));
 }
 
-describe("WorktreeSyncService Foundation", () => {
+describe.skipIf(SKIP_SLOW_TESTS)("WorktreeSyncService Foundation", () => {
   let testRepo: string;
   let db: Database.Database;
   let service: WorktreeSyncService;

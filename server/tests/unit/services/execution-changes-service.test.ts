@@ -15,7 +15,10 @@ import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 
-describe("ExecutionChangesService", () => {
+// Skip slow tests unless explicitly enabled (this test suite takes ~52s)
+const SKIP_SLOW_TESTS = process.env.RUN_SLOW_TESTS !== "true";
+
+describe.skipIf(SKIP_SLOW_TESTS)("ExecutionChangesService", () => {
   let db: Database.Database;
   let testRepo: string;
   let service: ExecutionChangesService;

@@ -65,7 +65,10 @@ vi.mock("../../../src/services/execution-event-callbacks.js", () => ({
   clearAllCallbacks: vi.fn(),
 }));
 
-describe("Unified Database E2E Tests", () => {
+// Skip slow tests unless explicitly enabled (this test suite takes ~33s)
+const SKIP_SLOW_TESTS = process.env.RUN_SLOW_TESTS !== "true";
+
+describe.skipIf(SKIP_SLOW_TESTS)("Unified Database E2E Tests", () => {
   let testRepo: TestRepo;
   let app: express.Application;
   let projectManager: ProjectManager;

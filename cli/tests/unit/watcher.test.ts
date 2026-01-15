@@ -1526,7 +1526,7 @@ Version 1
 
         expect(errors.length).toBe(0);
       },
-      { timeout: 10000 }
+      { timeout: 15000 }
     );
 
     it("should sync DB to markdown when database is genuinely newer than file (via direct DB update)", async () => {

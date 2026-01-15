@@ -38,7 +38,7 @@ import {
 import type { WorkflowEventEmitter } from "../workflow-event-emitter.js";
 import type { ExecutionService } from "../../services/execution-service.js";
 import type { ExecutionConfig } from "../../services/execution-service.js";
-import { getExecution } from "../../services/executions.js";
+import { getExecution, updateExecution } from "../../services/executions.js";
 import type { ExecutionLifecycleService } from "../../services/execution-lifecycle.js";
 import { getDataplaneAdapterSync } from "../../services/dataplane-adapter.js";
 
@@ -1208,6 +1208,10 @@ export class SequentialWorkflowEngine extends BaseWorkflowEngine {
       const newCommitSha = await this.commitStepChanges(workflow, step);
       if (newCommitSha) {
         commitSha = newCommitSha;
+        // Update execution's after_commit since the commit happened after handleSuccess captured it
+        updateExecution(this.db, execution.id, {
+          after_commit: newCommitSha,
+        });
       }
     }
 

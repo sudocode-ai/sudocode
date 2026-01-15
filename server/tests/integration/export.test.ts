@@ -17,6 +17,9 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
+// Skip slow tests unless explicitly enabled (this test suite takes ~37s)
+const SKIP_SLOW_TESTS = process.env.RUN_SLOW_TESTS !== "true";
+
 // Helper to wait for debounced export (2 seconds + buffer)
 const waitForExport = () => new Promise((resolve) => setTimeout(resolve, 2500));
 
@@ -32,7 +35,7 @@ function readJSONL(filePath: string): any[] {
     .map((line) => JSON.parse(line));
 }
 
-describe("JSONL Export Integration", () => {
+describe.skipIf(SKIP_SLOW_TESTS)("JSONL Export Integration", () => {
   let app: express.Application;
   let testDir: string;
   let testProjectPath: string;

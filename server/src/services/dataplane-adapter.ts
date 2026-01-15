@@ -1096,9 +1096,62 @@ export class DataplaneAdapter {
       };
     }
 
-    // 3. Get execution changes
-    const changes = await this.getChanges(executionId);
-    if (changes.totalFiles === 0) {
+    // 3. Get execution changes - first try execution's before/after commits from DB
+    // This handles workflow executions where commits are made outside dataplane's control
+    const execution = db.prepare('SELECT before_commit, after_commit FROM executions WHERE id = ?').get(executionId) as {
+      before_commit: string | null;
+      after_commit: string | null;
+    } | undefined;
+
+    // Determine if we have changes to checkpoint
+    const hasExecutionCommits = execution?.before_commit && execution?.after_commit &&
+      execution.before_commit !== execution.after_commit;
+
+    // Get changes for checkpoint stats - use execution commits if available
+    let changes = await this.getChanges(executionId);
+
+    // If dataplane didn't detect changes but execution has commits, calculate from git
+    if (changes.totalFiles === 0 && hasExecutionCommits) {
+      const { execSync } = await import('child_process');
+      try {
+        const diffOutput = execSync(
+          `git diff --stat ${execution!.before_commit}..${execution!.after_commit}`,
+          { cwd: options.worktreePath || this.repoPath, encoding: 'utf-8' }
+        );
+
+        // Parse diff stat for file count and lines
+        const lines = diffOutput.trim().split('\n');
+        const summaryLine = lines[lines.length - 1];
+        const filesMatch = summaryLine.match(/(\d+) files? changed/);
+        const insertionsMatch = summaryLine.match(/(\d+) insertions?/);
+        const deletionsMatch = summaryLine.match(/(\d+) deletions?/);
+
+        changes = {
+          files: [], // We don't need detailed file list for checkpoint
+          totalFiles: filesMatch ? parseInt(filesMatch[1], 10) : 0,
+          totalAdditions: insertionsMatch ? parseInt(insertionsMatch[1], 10) : 0,
+          totalDeletions: deletionsMatch ? parseInt(deletionsMatch[1], 10) : 0,
+          commitRange: {
+            before: execution!.before_commit!,
+            after: execution!.after_commit!,
+          },
+        };
+      } catch {
+        // If git diff fails, estimate with 1 file changed
+        changes = {
+          files: [],
+          totalFiles: 1,
+          totalAdditions: 0,
+          totalDeletions: 0,
+          commitRange: {
+            before: execution!.before_commit!,
+            after: execution!.after_commit!,
+          },
+        };
+      }
+    }
+
+    if (changes.totalFiles === 0 && !hasExecutionCommits) {
       return {
         success: false,
         error: 'Execution has no changes to checkpoint',

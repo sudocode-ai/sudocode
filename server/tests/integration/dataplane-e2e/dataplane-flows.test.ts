@@ -69,7 +69,10 @@ vi.mock("../../../src/services/execution-event-callbacks.js", () => ({
   clearAllCallbacks: vi.fn(),
 }));
 
-describe("Dataplane E2E Integration Tests", () => {
+// Skip slow tests unless explicitly enabled (this test suite takes ~210s)
+const SKIP_SLOW_TESTS = process.env.RUN_SLOW_TESTS !== "true";
+
+describe.skipIf(SKIP_SLOW_TESTS)("Dataplane E2E Integration Tests", () => {
   let testRepo: TestRepo;
   let app: express.Application;
   let projectManager: ProjectManager;
