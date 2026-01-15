@@ -307,6 +307,47 @@ export interface DeployConfig {
 }
 
 /**
+ * GitHub Codespaces provider configuration
+ */
+export interface CodespacesProviderConfig {
+  /** Default branch to spawn from (optional) */
+  defaultBranch?: string;
+  /** Port number for the server (default: 3000) */
+  port: number;
+  /** Idle timeout in minutes before auto-shutdown */
+  idleTimeout: number;
+  /** Keep-alive duration in hours before auto-cleanup */
+  keepAliveHours: number;
+  /** Machine type/size (e.g., 'basicLinux32gb', 'premiumLinux') */
+  machine: string;
+  /** Retention period in days before cleanup */
+  retentionPeriod: number;
+}
+
+/**
+ * Coder provider configuration (future support)
+ */
+export interface CoderProviderConfig {
+  // Future coder configuration
+}
+
+/**
+ * Spawn configuration for remote development environments
+ * Supports multiple provider configurations
+ */
+export interface SpawnConfig {
+  /** Configuration version */
+  version: string;
+  /** Provider-specific configurations */
+  providers: {
+    /** GitHub Codespaces configuration (optional) */
+    codespaces?: CodespacesProviderConfig;
+    /** Coder configuration (optional, future support) */
+    coder?: CoderProviderConfig;
+  };
+}
+
+/**
  * Config metadata file structure (.sudocode/config.json)
  */
 export interface Config {

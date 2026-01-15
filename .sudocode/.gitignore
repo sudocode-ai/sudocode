@@ -5,3 +5,4 @@ worktrees/
 config.json
 merge-driver.log
 deploy-config.json
+spawn-config.json
