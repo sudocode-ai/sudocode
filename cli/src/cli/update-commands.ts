@@ -65,6 +65,51 @@ function installPackageWithRetry(packageName: string): void {
 }
 
 /**
+ * Check if sudocode was installed via Volta
+ * 
+ * Volta is a Node.js version manager that creates shims for globally installed packages.
+ * When a package is installed via npm while Volta is active, the binary is placed in
+ * Volta's managed directory (typically ~/.volta/bin or $VOLTA_HOME/bin).
+ * 
+ * This function detects if the sudocode binary is managed by Volta by:
+ * 1. Checking if Volta is installed on the system
+ * 2. Getting the actual path of the sudocode executable
+ * 3. Verifying the path is within Volta's managed directories
+ * 
+ * Why this matters:
+ * Volta caches the resolved paths of executables at shell initialization time.
+ * When sudocode is updated via `npm install -g`, the files are updated but the
+ * current shell session continues to use the old cached path until the shell
+ * is restarted. This is Volta's intended behavior for performance.
+ * 
+ * @returns true if sudocode binary is managed by Volta, false otherwise
+ */
+function isUsingVoltaForSudocode(): boolean {
+  try {
+    // First check if Volta exists on the system
+    execSync("volta --version", { stdio: "pipe" });
+
+    // Get the actual path of the sudocode binary
+    const binPath = execSync("which sudocode", {
+      stdio: "pipe",
+      encoding: "utf8",
+    }).trim();
+
+    // Check VOLTA_HOME environment variable if set (user may have custom location)
+    const voltaHome = process.env.VOLTA_HOME;
+    if (voltaHome) {
+      return binPath.startsWith(voltaHome);
+    }
+
+    // Fall back to checking for default /.volta/ directory in path
+    return binPath.includes("/.volta/");
+  } catch {
+    // Volta not installed, which command failed, or other error
+    return false;
+  }
+}
+
+/**
  * Handle update check command
  */
 export async function handleUpdateCheck(): Promise<void> {
@@ -136,7 +181,15 @@ export async function handleUpdate(): Promise<void> {
     console.log();
     console.log(chalk.green("✓ Update completed successfully!"));
     console.log();
-    console.log("Run 'sudocode --version' to verify the new version");
+
+    // Check if sudocode was installed via Volta
+    if (isUsingVoltaForSudocode()) {
+      console.log(chalk.yellow("Note: You're using Volta."));
+      console.log(chalk.yellow("Please restart your terminal to use the updated version."));
+      console.log();
+    } else {
+      console.log("Run 'sudocode --version' to verify the new version");
+    }
   } catch (error) {
     console.log();
     console.error(chalk.red("✗ Update failed"));
