@@ -1067,7 +1067,7 @@ Codespaces are automatically cleaned up based on configuration:
 
 Manual cleanup:
 ```bash
-sudocode deploy stop <id>
+sudocode remote codespaces stop <id>
 ```
 
 ### Usage Examples
@@ -1528,7 +1528,7 @@ All errors follow this consistent format:
   The requested port is not available on your system.
   
   To use a different port:
-    sudocode deploy --port 3001
+    sudocode remote codespaces spawn --port 3001
 ```
 
 **Deployment Not Found:**
