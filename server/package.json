@@ -13,9 +13,9 @@
     "build": "tsc && chmod +x dist/cli.js dist/workflow/mcp/index.js && node scripts/copy-frontend.js",
     "start": "node dist/index.js",
     "test": "NODE_ENV=test vitest",
-    "test:slow": "RUN_SLOW_TESTS=true NODE_ENV=test vitest --run",
-    "test:e2e": "RUN_E2E_TESTS=true NODE_ENV=test vitest --run",
-    "test:full": "RUN_SLOW_TESTS=true RUN_E2E_TESTS=true NODE_ENV=test vitest --run",
+    "test:slow": "RUN_SLOW_TESTS=true NODE_ENV=test vitest --run --testTimeout=300000 --hookTimeout=60000",
+    "test:e2e": "RUN_E2E_TESTS=true NODE_ENV=test vitest --run --testTimeout=300000 --hookTimeout=60000",
+    "test:full": "RUN_SLOW_TESTS=true RUN_E2E_TESTS=true NODE_ENV=test vitest --run --testTimeout=300000 --hookTimeout=60000",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },

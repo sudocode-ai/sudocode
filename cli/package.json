@@ -17,6 +17,7 @@
     "build": "tsc && chmod +x dist/cli.js",
     "dev": "tsc --watch",
     "test": "vitest",
+    "test:slow": "RUN_SLOW_TESTS=true vitest --run --testTimeout=300000 --hookTimeout=60000",
     "test:schema": "tsc && node dist/test-schema.js",
     "clean": "rm -rf dist"
   },
