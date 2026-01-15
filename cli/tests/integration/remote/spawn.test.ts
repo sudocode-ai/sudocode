@@ -12,9 +12,15 @@ import { SpawnOrchestrator } from '../../../src/remote/orchestrator.js';
 import type { DeploymentInfo } from '../../../src/remote/types.js';
 
 // Mock child_process
-vi.mock('child_process', () => ({
-  execSync: vi.fn(),
-}));
+vi.mock('child_process', async () => {
+  return {
+    execSync: vi.fn(),
+    exec: vi.fn((cmd: string, callback: (error: Error | null) => void) => {
+      // Mock exec to call callback immediately (simulating successful browser open)
+      callback(null);
+    }),
+  };
+});
 
 // Mock sudopod
 vi.mock('sudopod', () => ({
@@ -141,9 +147,17 @@ describe('SpawnOrchestrator Integration', () => {
             machine: 'basicLinux32gb',
             retentionPeriod: 14,
           },
-          env: expect.objectContaining({
-            CLAUDE_TOKEN: expect.any(String),
+          agents: {
+            install: ['claude'],
+          },
+          models: expect.objectContaining({
+            claudeLtt: expect.any(String),
           }),
+          sudocode: {
+            mode: 'npm',
+            version: 'latest',
+          },
+          dev: false,
         })
       );
 

@@ -283,7 +283,7 @@ describe('Remote Commands E2E Tests', () => {
       // First, set custom config
       await handleRemoteConfig(ctx, 'codespaces', {
         port: 9000,
-        machine: 'standardLinux',
+        machine: 'standardLinux32gb',
       });
 
       consoleLogSpy.mockClear();
@@ -789,7 +789,7 @@ describe('Remote Commands E2E Tests', () => {
       // Update config
       await handleRemoteConfig(ctx, 'codespaces', {
         port: 7000,
-        machine: 'standardLinux',
+        machine: 'standardLinux32gb',
       });
 
       consoleLogSpy.mockClear();

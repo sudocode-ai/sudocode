@@ -236,7 +236,13 @@ export class SpawnOrchestrator {
     const sudopod = await this.loadSudopod();
     const providerInstance = sudopod.createProvider({ type: provider });
     
-    return await providerInstance.getStatus(id);
+    const deployment = await providerInstance.getStatus(id);
+    
+    if (!deployment) {
+      throw new Error(`Deployment not found: ${id}`);
+    }
+    
+    return deployment;
   }
 
   /**

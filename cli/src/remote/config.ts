@@ -177,6 +177,11 @@ export class SpawnConfigManager {
   loadConfig(): SpawnConfig {
     if (!fs.existsSync(this.configPath)) {
       const defaults = SpawnConfigManager.getDefaults();
+      // Ensure directory exists before saving
+      const dir = path.dirname(this.configPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
       this.saveConfig(defaults);
       return defaults;
     }
@@ -193,6 +198,11 @@ export class SpawnConfigManager {
    */
   saveConfig(config: SpawnConfig): void {
     this.validateConfig(config);
+    // Ensure directory exists before saving
+    const dir = path.dirname(this.configPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
     fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2), "utf8");
   }
 
