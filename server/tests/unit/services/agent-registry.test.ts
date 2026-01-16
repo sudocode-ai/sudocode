@@ -23,9 +23,9 @@ describe("AgentRegistryService", () => {
       expect(service).toBeDefined();
     });
 
-    it("should register all 6 agents", () => {
+    it("should register all 7 agents", () => {
       const agents = service.getAvailableAgents();
-      expect(agents).toHaveLength(6);
+      expect(agents).toHaveLength(7);
     });
 
     it("should register agents with correct names", () => {
@@ -37,6 +37,7 @@ describe("AgentRegistryService", () => {
       expect(names).toContain("opencode");
       expect(names).toContain("copilot");
       expect(names).toContain("cursor");
+      expect(names).toContain("macro-agent");
     });
   });
 
@@ -151,6 +152,10 @@ describe("AgentRegistryService", () => {
     it("should return true for Copilot", () => {
       expect(service.isAgentImplemented("copilot")).toBe(true);
     });
+
+    it("should return true for Macro Agent", () => {
+      expect(service.isAgentImplemented("macro-agent")).toBe(true);
+    });
   });
 
   describe("hasAgent", () => {
@@ -159,6 +164,7 @@ describe("AgentRegistryService", () => {
       expect(service.hasAgent("codex")).toBe(true);
       expect(service.hasAgent("gemini")).toBe(true);
       expect(service.hasAgent("opencode")).toBe(true);
+      expect(service.hasAgent("macro-agent")).toBe(true);
       expect(service.hasAgent("copilot")).toBe(true);
       expect(service.hasAgent("cursor")).toBe(true);
     });

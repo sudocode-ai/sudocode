@@ -20,6 +20,7 @@ import {
   verifyExecutable,
   type VerificationResult,
 } from "../utils/executable-check.js";
+import { getMacroAgentServerManager } from "./macro-agent-server-manager.js";
 
 /**
  * Error thrown when an agent is not found in the registry
@@ -78,6 +79,7 @@ export class AgentRegistryService {
     "opencode",
     "cursor",
     "copilot",
+    "macro-agent",
   ]);
   private initialized = false;
 
@@ -130,9 +132,10 @@ export class AgentRegistryService {
   /**
    * Get all available agents with their metadata and implementation status
    *
-   * Includes both:
+   * Includes:
    * 1. Agents with adapters in agent-execution-engine (claude-code, codex, cursor, copilot)
    * 2. ACP-native agents from acp-factory that don't have adapters (gemini, opencode)
+   * 3. Special agents (macro-agent) that use different transport mechanisms
    *
    * @returns Array of agent information
    */
@@ -161,7 +164,17 @@ export class AgentRegistryService {
         implemented: this.implementedAgents.has(name),
       }));
 
-    return [...registryAgents, ...additionalAcpAgents];
+    // Add macro-agent (uses WebSocket ACP, not stdio)
+    const macroAgent: AgentInfo = {
+      name: "macro-agent",
+      displayName: "Macro Agent",
+      supportedModes: ["structured", "interactive"],
+      supportsStreaming: true,
+      supportsStructuredOutput: true,
+      implemented: true,
+    };
+
+    return [...registryAgents, ...additionalAcpAgents, macroAgent];
   }
 
   /**
@@ -174,6 +187,7 @@ export class AgentRegistryService {
     const displayNames: Record<string, string> = {
       gemini: "Gemini CLI",
       opencode: "Opencode",
+      "macro-agent": "Macro Agent",
     };
     return displayNames[name] || name.charAt(0).toUpperCase() + name.slice(1);
   }
@@ -206,7 +220,7 @@ export class AgentRegistryService {
   }
 
   /**
-   * Check if an agent is registered in the registry or acp-factory
+   * Check if an agent is registered in the registry, acp-factory, or special agents
    *
    * @param agentType - The agent type to check
    * @returns True if the agent is registered or ACP-supported
@@ -215,7 +229,8 @@ export class AgentRegistryService {
     this.initialize();
     return (
       this.registry.has(agentType) ||
-      AgentFactory.listAgents().includes(agentType)
+      AgentFactory.listAgents().includes(agentType) ||
+      agentType === "macro-agent"
     );
   }
 
@@ -323,6 +338,13 @@ export class AgentRegistryService {
       return result;
     }
 
+    // Special handling for macro-agent (uses server readiness, not executable)
+    if (agentType === "macro-agent") {
+      const result = this.verifyMacroAgent();
+      // Don't cache macro-agent results - server state can change
+      return result;
+    }
+
     // Get the default executable name for this agent
     const executableName = this.agentExecutables[agentType];
     if (!executableName) {
@@ -338,6 +360,46 @@ export class AgentRegistryService {
     const result = await verifyExecutable(executableName);
     this.cacheVerification(agentType, result);
     return result;
+  }
+
+  /**
+   * Verify macro-agent availability
+   * Checks if the macro-agent server is available and ready
+   *
+   * @returns VerificationResult for macro-agent
+   */
+  private verifyMacroAgent(): VerificationResult {
+    try {
+      const manager = getMacroAgentServerManager();
+      const isAvailable = manager.isAvailable();
+      const isReady = manager.isReady();
+
+      if (!isAvailable) {
+        return {
+          available: false,
+          error:
+            "Macro-agent CLI (multiagent) not found. Install the multiagent-acp package.",
+        };
+      }
+
+      if (!isReady) {
+        const state = manager.getState();
+        return {
+          available: false,
+          error: `Macro-agent server is ${state}. It will start automatically when needed.`,
+        };
+      }
+
+      return {
+        available: true,
+        path: manager.getAcpUrl() ?? undefined,
+      };
+    } catch (error) {
+      return {
+        available: false,
+        error: `Failed to check macro-agent status: ${error instanceof Error ? error.message : "Unknown error"}`,
+      };
+    }
   }
 
   /**

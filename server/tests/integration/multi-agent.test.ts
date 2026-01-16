@@ -322,7 +322,7 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
 
     it("should provide metadata for all agents", () => {
       const agents = agentRegistryService.getAvailableAgents();
-      expect(agents).toHaveLength(6);
+      expect(agents).toHaveLength(7);
 
       const agentNames = agents.map((a) => a.name);
       expect(agentNames).toContain("claude-code");
@@ -331,6 +331,7 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
       expect(agentNames).toContain("opencode");
       expect(agentNames).toContain("copilot");
       expect(agentNames).toContain("cursor");
+      expect(agentNames).toContain("macro-agent");
     });
 
     it("should identify implemented agents", () => {

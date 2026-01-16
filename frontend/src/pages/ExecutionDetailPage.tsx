@@ -16,7 +16,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ArrowLeft, Info, MoreVertical, Trash2, FolderOpen, X, Loader2 } from 'lucide-react'
+import { ArrowLeft, Info, MoreVertical, Trash2, FolderOpen, X, Loader2, Network } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import { MacroAgentSessionInfo } from '@/components/macro-agent'
 import type { Execution } from '@/types/execution'
 
 const truncateId = (id: string, length = 8) => id.substring(0, length)
@@ -62,6 +65,12 @@ export default function ExecutionDetailPage() {
             Back
           </Button>
           <h1 className="text-lg font-semibold">Execution {truncateId(id)}</h1>
+          {rootExecution?.agent_type === 'macro-agent' && (
+            <Badge variant="outline" className="bg-purple-100/50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400">
+              <Network className="mr-1 h-3 w-3" />
+              macro-agent
+            </Badge>
+          )}
           {status && <ExecutionStatusBadge status={status} />}
         </div>
 
@@ -166,6 +175,17 @@ export default function ExecutionDetailPage() {
                       </div>
                     )}
                   </div>
+
+                  {/* Macro-Agent Session Info */}
+                  {rootExecution.agent_type === 'macro-agent' && (
+                    <>
+                      <Separator />
+                      <MacroAgentSessionInfo
+                        executionId={rootExecution.id}
+                        dashboardPath={paths.macroAgent()}
+                      />
+                    </>
+                  )}
                 </div>
               </PopoverContent>
             </Popover>

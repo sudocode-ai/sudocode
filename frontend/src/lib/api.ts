@@ -46,6 +46,14 @@ import type {
   PendingEscalationResponse,
   EscalationResponseRequest,
 } from '@/types/workflow'
+import type {
+  MacroAgentStatus,
+  MacroAgentAgentsResponse,
+  MacroAgentSessionsResponse,
+  MacroAgentAgentsParams,
+  ExecutionMacroAgentsResponse,
+  ExecutionMacroSessionResponse,
+} from '@/types/macro-agent'
 
 // Create axios instance
 const api: AxiosInstance = axios.create({
@@ -432,6 +440,34 @@ export const agentsApi = {
     }>(`/api/agents/${agentType}/discover-commands`)
     return response.data.commands
   },
+}
+
+/**
+ * Macro-Agent Observability API
+ */
+export const macroAgentApi = {
+  // Get overall status of macro-agent observability
+  getStatus: () => get<MacroAgentStatus>('/macro-agent/status'),
+
+  // Get all agents with optional filtering
+  getAgents: (params?: MacroAgentAgentsParams) => {
+    const queryParams = new URLSearchParams()
+    if (params?.session) queryParams.append('session', params.session)
+    if (params?.state) queryParams.append('state', params.state)
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : ''
+    return get<MacroAgentAgentsResponse>(`/macro-agent/agents${query}`)
+  },
+
+  // Get all sessions
+  getSessions: () => get<MacroAgentSessionsResponse>('/macro-agent/sessions'),
+
+  // Get agents for a specific execution
+  getExecutionAgents: (executionId: string) =>
+    get<ExecutionMacroAgentsResponse>(`/executions/${executionId}/macro/agents`),
+
+  // Get session info for a specific execution
+  getExecutionSession: (executionId: string) =>
+    get<ExecutionMacroSessionResponse>(`/executions/${executionId}/macro/session`),
 }
 
 /**
