@@ -4,6 +4,7 @@ import * as path from "path";
 import * as http from "http";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
+import getPort from "get-port";
 
 // ES Module __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
@@ -143,9 +144,8 @@ if (macroAgentConfig.enabled) {
   try {
     await macroAgentServerManager.start();
     if (macroAgentServerManager.isReady()) {
-      console.log(
-        `Macro-agent server running at: ${macroAgentServerManager.getAcpUrl()}`
-      );
+      const acpUrl = macroAgentServerManager.getAcpUrl();
+      console.log(`Macro-agent server running at: ${acpUrl ?? "unknown"}`);
     }
   } catch (error) {
     // Non-fatal: log warning but continue
@@ -370,22 +370,37 @@ const server = http.createServer(app);
 setServerInstance(server);
 
 /**
- * Attempts to start the server (HTTP + WebSocket) on the given port, incrementing if unavailable.
- * Only scans for ports if no explicit PORT was provided.
+ * Attempts to start the server (HTTP + WebSocket) on an available port.
+ * Uses get-port to find available ports. If an explicit SUDOCODE_PORT is set,
+ * only that port will be used (no scanning).
  * Both HTTP and WebSocket must successfully initialize on the same port.
  */
 async function startServer(
-  initialPort: number,
+  preferredPort: number,
   maxAttempts: number
 ): Promise<number> {
   const explicitPort = process.env.SUDOCODE_PORT;
-  const shouldScan = !explicitPort;
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const port = initialPort + attempt;
+    let port: number;
     let httpStarted = false;
 
     try {
-      // First, try to bind the HTTP server
+      // Find an available port using get-port
+      if (explicitPort) {
+        // Explicit port specified - use it directly (no scanning)
+        port = preferredPort;
+      } else {
+        // Use get-port to find an available port, preferring the initial port
+        port = await getPort({ port: preferredPort });
+        if (port !== preferredPort && attempt === 0) {
+          console.log(
+            `[server] Preferred port ${preferredPort} is in use, using port ${port}`
+          );
+        }
+      }
+
+      // Try to bind the HTTP server
       await new Promise<void>((resolve, reject) => {
         const errorHandler = (err: NodeJS.ErrnoException) => {
           server.removeListener("error", errorHandler);
@@ -429,7 +444,7 @@ async function startServer(
 
       // Clean up if we partially started
       if (httpStarted) {
-        console.log(`[server] Cleaning up HTTP server on port ${port}...`);
+        console.log(`[server] Cleaning up HTTP server...`);
         await new Promise<void>((resolve) => {
           server.close(() => resolve());
         });
@@ -438,7 +453,7 @@ async function startServer(
       // Clean up WebSocket if it was partially initialized
       const wss = getWebSocketServer();
       if (wss) {
-        console.log(`[server] Cleaning up WebSocket server on port ${port}...`);
+        console.log(`[server] Cleaning up WebSocket server...`);
         await shutdownWebSocketServer();
       }
 
@@ -447,35 +462,30 @@ async function startServer(
         error.code === "EADDRINUSE" ||
         (error.message && error.message.includes("address already in use"));
 
-      if (
-        isPortConflict ||
-        (httpStarted && error.message?.includes("WebSocket"))
-      ) {
-        if (!shouldScan) {
-          // Explicit port was specified and it's in use - fail immediately
-          throw new Error(
-            `Port ${port} is already in use or WebSocket initialization failed. Please specify a different SUDOCODE_PORT.`
-          );
-        }
+      if (explicitPort) {
+        // Explicit port was specified - fail immediately on any error
+        throw new Error(
+          `Port ${preferredPort} is already in use or initialization failed. ` +
+            `Please specify a different SUDOCODE_PORT. Error: ${error.message}`
+        );
+      }
 
-        // Port is in use or WebSocket failed, try next one if we have attempts left
+      if (isPortConflict || (httpStarted && error.message?.includes("WebSocket"))) {
+        // Port conflict or WebSocket failed - retry with a new port
         if (attempt < maxAttempts - 1) {
           const reason = httpStarted
             ? "WebSocket initialization failed"
-            : "port is already in use";
-          console.log(`[server] Port ${port} ${reason}, trying ${port + 1}...`);
+            : "port binding failed (race condition)";
+          console.log(`[server] ${reason}, retrying...`);
           continue;
         } else {
           throw new Error(
-            `Could not find an available port after ${maxAttempts} attempts (${initialPort}-${port})`
+            `Could not start server after ${maxAttempts} attempts`
           );
         }
       } else {
         // Some other error - fail immediately
-        console.error(
-          `[server] Unexpected error on port ${port}:`,
-          error.message
-        );
+        console.error(`[server] Unexpected error:`, error.message);
         throw error;
       }
     }

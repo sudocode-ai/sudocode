@@ -34,6 +34,7 @@ const mockConnection = {
   setSessionMode: vi.fn(),
   prompt: vi.fn(),
   cancel: vi.fn(),
+  extMethod: vi.fn(),
 };
 
 vi.mock("ws", () => ({
@@ -77,6 +78,10 @@ describe("WebSocketSessionProvider", () => {
     mockConnection.setSessionMode.mockReset();
     mockConnection.prompt.mockReset();
     mockConnection.cancel.mockReset();
+    mockConnection.extMethod.mockReset();
+
+    // Setup default successful mock for extMethod
+    mockConnection.extMethod.mockResolvedValue({ success: true });
 
     // Setup default successful mock behaviors
     mockWsInstance.once.mockImplementation((event: string, callback: Function) => {
@@ -460,6 +465,77 @@ describe("WebSocketSessionProvider", () => {
 
         // Session close should just end the stream, not throw
         await expect(session.close()).resolves.toBeUndefined();
+      });
+    });
+
+    describe("respondToPermission", () => {
+      it("should call connection extMethod with correct params", async () => {
+        const provider = new WebSocketSessionProvider(defaultConfig);
+        const session = await provider.createSession("/test/workdir");
+
+        await session.respondToPermission("perm-req-123", "allow_once");
+
+        expect(mockConnection.extMethod).toHaveBeenCalledWith(
+          "macro/respondToPermission",
+          {
+            sessionId: "test-session-123",
+            requestId: "perm-req-123",
+            optionId: "allow_once",
+          }
+        );
+      });
+
+      it("should log success on successful response", async () => {
+        const provider = new WebSocketSessionProvider(defaultConfig);
+        const session = await provider.createSession("/test/workdir");
+        const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+        await session.respondToPermission("perm-req-123", "allow_once");
+
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringContaining("[WebSocketSession] Responded to permission perm-req-123 with allow_once")
+        );
+
+        consoleSpy.mockRestore();
+      });
+
+      it("should log error on failure response", async () => {
+        mockConnection.extMethod.mockResolvedValue({ success: false, error: "Permission not found" });
+
+        const provider = new WebSocketSessionProvider(defaultConfig);
+        const session = await provider.createSession("/test/workdir");
+        const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        await session.respondToPermission("invalid-req", "allow_once");
+
+        // Error message combines prefix and error into single string
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringContaining("[WebSocketSession] Failed to respond to permission")
+        );
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringContaining("Permission not found")
+        );
+
+        consoleSpy.mockRestore();
+      });
+
+      it("should throw when extMethod throws", async () => {
+        mockConnection.extMethod.mockRejectedValue(new Error("Connection lost"));
+
+        const provider = new WebSocketSessionProvider(defaultConfig);
+        const session = await provider.createSession("/test/workdir");
+        const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        await expect(
+          session.respondToPermission("perm-req-123", "allow_once")
+        ).rejects.toThrow("Connection lost");
+
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringContaining("[WebSocketSession] Error calling respondToPermission extension"),
+          expect.any(Error)
+        );
+
+        consoleSpy.mockRestore();
       });
     });
   });

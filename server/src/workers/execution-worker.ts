@@ -260,7 +260,7 @@ async function runExecution(): Promise<void> {
     const voiceNarrationSettings = getNarrationConfig(voiceConfig);
 
     // 9. Create executor using factory
-    const wrapper = createExecutorForAgent(
+    const wrapper = await createExecutorForAgent(
       agentType,
       { workDir: REPO_PATH!, ...config },
       {

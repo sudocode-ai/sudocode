@@ -119,7 +119,7 @@ describe("MacroAgentObservabilityService", () => {
 
       await connectPromise;
 
-      expect(WebSocket).toHaveBeenCalledWith("ws://localhost:3100/ws");
+      expect(WebSocket).toHaveBeenCalledWith("ws://localhost:3100/api/ws");
       expect(service.isConnected()).toBe(true);
       expect(service.getConnectionState()).toBe("connected");
     });

@@ -354,8 +354,8 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
   });
 
   describe("Executor Factory", () => {
-    it("should create AcpExecutorWrapper for claude-code (ACP-native agent)", () => {
-      const wrapper = createExecutorForAgent(
+    it("should create AcpExecutorWrapper for claude-code (ACP-native agent)", async () => {
+      const wrapper = await createExecutorForAgent(
         "claude-code",
         { workDir: testDir },
         {
@@ -372,9 +372,9 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
       expect(wrapper.constructor.name).toBe("AcpExecutorWrapper");
     });
 
-    it("should create executor for codex agent (ACP-native)", () => {
+    it("should create executor for codex agent (ACP-native)", async () => {
       // Codex is an ACP-native agent supported via acp-factory
-      const wrapper = createExecutorForAgent(
+      const wrapper = await createExecutorForAgent(
         "codex",
         { workDir: testDir },
         {
@@ -389,9 +389,9 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
       expect(wrapper.constructor.name).toBe("AcpExecutorWrapper");
     });
 
-    it("should throw for unsupported agent types", () => {
+    it("should throw for unsupported agent types", async () => {
       // Unknown agent types should throw
-      expect(() => {
+      await expect(
         createExecutorForAgent(
           "unknown-agent" as any,
           { workDir: testDir },
@@ -402,13 +402,13 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
             projectId: "test-project",
             db,
           }
-        );
-      }).toThrow(/Unknown agent type: unknown-agent/);
+        )
+      ).rejects.toThrow(/Unknown agent type: unknown-agent/);
     });
 
-    it("should create executor for copilot agent", () => {
+    it("should create executor for copilot agent", async () => {
       // Copilot is now implemented
-      const wrapper = createExecutorForAgent(
+      const wrapper = await createExecutorForAgent(
         "copilot",
         { workDir: testDir },
         {
@@ -441,9 +441,9 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
       expect(invalidErrors).toContain("workDir is required");
     });
 
-    it("should create LegacyShimExecutorWrapper for copilot (legacy agent)", () => {
+    it("should create LegacyShimExecutorWrapper for copilot (legacy agent)", async () => {
       // Copilot uses the legacy shim wrapper that converts NormalizedEntry to SessionUpdate
-      const wrapper = createExecutorForAgent(
+      const wrapper = await createExecutorForAgent(
         "copilot",
         { workDir: testDir },
         {

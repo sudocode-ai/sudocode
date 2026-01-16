@@ -117,11 +117,11 @@ export type ExecutorWrapper = AcpExecutorWrapper | LegacyShimExecutorWrapper;
  * await executor.executeWithLifecycle(executionId, task, workDir);
  * ```
  */
-export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
+export async function createExecutorForAgent<TConfig extends BaseAgentConfig>(
   agentType: AgentType,
   agentConfig: TConfig,
   factoryConfig: ExecutorFactoryConfig
-): ExecutorWrapper {
+): Promise<ExecutorWrapper> {
   console.log("[ExecutorFactory] Creating executor", {
     agentType,
     workDir: factoryConfig.workDir,
@@ -131,7 +131,7 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
   if (agentType === "macro-agent") {
     console.log(`[ExecutorFactory] Using WebSocketSessionProvider for macro-agent`);
 
-    // Check if macro-agent server is available
+    // Check if macro-agent server is available, start on-demand if needed
     const macroAgentManager = getMacroAgentServerManager();
     if (!macroAgentManager.isReady()) {
       const state = macroAgentManager.getState();
@@ -140,9 +140,31 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
           "Macro-agent server is not available. Install the multiagent-acp package to enable macro-agent support."
         );
       }
-      throw new Error(
-        `Macro-agent server is not ready (state: ${state}). Please wait for the server to start.`
-      );
+
+      // Try to start the server on-demand if it's stopped
+      if (state === "stopped") {
+        console.log(
+          "[ExecutorFactory] Macro-agent server not running, attempting on-demand start..."
+        );
+        try {
+          await macroAgentManager.start();
+          if (!macroAgentManager.isReady()) {
+            throw new Error("Server started but not ready");
+          }
+          console.log("[ExecutorFactory] Macro-agent server started successfully");
+        } catch (startError) {
+          const errorMessage =
+            startError instanceof Error ? startError.message : String(startError);
+          throw new Error(
+            `Failed to start macro-agent server on-demand: ${errorMessage}`
+          );
+        }
+      } else {
+        // Starting or stopping - wait or fail
+        throw new Error(
+          `Macro-agent server is not ready (state: ${state}). Please wait for the server to start.`
+        );
+      }
     }
 
     // Process agent configuration
@@ -157,6 +179,9 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
 
     // Create WebSocket session provider
     const wsUrl = macroAgentManager.getAcpUrl();
+    if (!wsUrl) {
+      throw new Error("Macro-agent server URL is not available");
+    }
     const sessionProvider = new WebSocketSessionProvider({
       wsUrl,
       env: processedConfig.env,

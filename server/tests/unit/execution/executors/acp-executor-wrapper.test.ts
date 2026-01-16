@@ -1344,6 +1344,301 @@ describe("convertMcpServers", () => {
   });
 });
 
+describe("Permission Handling", () => {
+  let wrapper: AcpExecutorWrapper;
+  let mockDb: any;
+  let mockLogsStore: any;
+  let mockSessionProvider: any;
+  let mockSession: any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockDb = {
+      prepare: vi.fn().mockReturnValue({
+        run: vi.fn(),
+        get: vi.fn(),
+        all: vi.fn(),
+      }),
+    };
+
+    mockLogsStore = {
+      appendRawLog: vi.fn(),
+      appendNormalizedEntry: vi.fn(),
+    };
+
+    // Create mock session
+    mockSession = {
+      id: "test-session-123",
+      prompt: vi.fn().mockImplementation(async function* () {
+        yield { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Hello" } };
+      }),
+      cancel: vi.fn().mockResolvedValue(undefined),
+      setMode: vi.fn().mockResolvedValue(undefined),
+      respondToPermission: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+
+    // Create mock session provider
+    mockSessionProvider = {
+      createSession: vi.fn().mockResolvedValue(mockSession),
+      loadSession: vi.fn().mockResolvedValue(mockSession),
+      supportsSessionLoading: vi.fn().mockReturnValue(true),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+
+    wrapper = new AcpExecutorWrapper({
+      agentType: "claude-code",
+      acpConfig: {
+        agentType: "claude-code",
+        permissionMode: "interactive",
+      },
+      sessionProvider: mockSessionProvider,
+      logsStore: mockLogsStore,
+      projectId: "test-project",
+      db: mockDb,
+    });
+  });
+
+  describe("respondToPermission", () => {
+    it("should call session.respondToPermission with correct params", async () => {
+      // Track when permission request is yielded
+      let permissionYielded = false;
+      let resolveExecution: () => void;
+      const executionBlocker = new Promise<void>((resolve) => {
+        resolveExecution = resolve;
+      });
+
+      // Mock session that yields a permission request, then waits
+      mockSession.prompt = vi.fn().mockImplementation(async function* () {
+        yield {
+          sessionUpdate: "permission_request",
+          requestId: "perm-req-456",
+          sessionId: "test-session-123",
+          toolCall: {
+            toolCallId: "tool-1",
+            title: "Bash: test",
+            status: "permission_required",
+            rawInput: "test",
+          },
+          options: [
+            { id: "allow_once", label: "Allow once" },
+            { id: "reject_once", label: "Reject" },
+          ],
+        };
+        permissionYielded = true;
+
+        // Wait here - this keeps execution running so we can respond to permission
+        await executionBlocker;
+
+        yield { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Done" } };
+      });
+
+      // Start execution in background
+      const execPromise = wrapper.executeWithLifecycle(
+        "exec-123",
+        { id: "task-1", prompt: "Test" },
+        "/test/workdir"
+      ).catch(() => {}); // Ignore cancellation error
+
+      // Wait for permission request to be yielded
+      await vi.waitFor(() => {
+        expect(permissionYielded).toBe(true);
+      }, { timeout: 1000 });
+
+      // Give a small delay for the update to be processed
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Respond to permission
+      const result = await wrapper.respondToPermission(
+        "exec-123",
+        "perm-req-456",
+        "allow_once"
+      );
+
+      expect(result).toBe(true);
+      expect(mockSession.respondToPermission).toHaveBeenCalledWith(
+        "perm-req-456",
+        "allow_once"
+      );
+
+      // Cleanup: finish execution
+      resolveExecution!();
+      await execPromise;
+    });
+
+    it("should return false when no active session exists", async () => {
+      const result = await wrapper.respondToPermission(
+        "non-existent-exec",
+        "perm-req-456",
+        "allow_once"
+      );
+
+      expect(result).toBe(false);
+      expect(mockSession.respondToPermission).not.toHaveBeenCalled();
+    });
+
+    it("should return false when session.respondToPermission throws", async () => {
+      mockSession.respondToPermission = vi.fn().mockRejectedValue(new Error("Permission not found"));
+
+      // Start execution to create session
+      await wrapper.executeWithLifecycle(
+        "exec-123",
+        { id: "task-1", prompt: "Test" },
+        "/test/workdir"
+      );
+
+      const result = await wrapper.respondToPermission(
+        "exec-123",
+        "invalid-req",
+        "allow_once"
+      );
+
+      expect(result).toBe(false);
+    });
+
+    it("should handle async permission response (for WebSocket/macro-agent)", async () => {
+      // Simulate async response like WebSocket session
+      let resolvePermission: () => void;
+      const permissionPromise = new Promise<void>((resolve) => {
+        resolvePermission = resolve;
+      });
+
+      mockSession.respondToPermission = vi.fn().mockImplementation(async () => {
+        await permissionPromise;
+      });
+
+      // Track when permission request is yielded
+      let permissionYielded = false;
+      let resolveExecution: () => void;
+      const executionBlocker = new Promise<void>((resolve) => {
+        resolveExecution = resolve;
+      });
+
+      // Mock session that yields a permission request, then waits
+      mockSession.prompt = vi.fn().mockImplementation(async function* () {
+        yield {
+          sessionUpdate: "permission_request",
+          requestId: "perm-req-456",
+          sessionId: "test-session-123",
+          toolCall: {
+            toolCallId: "tool-1",
+            title: "Bash: test",
+            status: "permission_required",
+            rawInput: "test",
+          },
+          options: [
+            { id: "allow_once", label: "Allow once" },
+            { id: "reject_once", label: "Reject" },
+          ],
+        };
+        permissionYielded = true;
+
+        // Wait here - this keeps execution running
+        await executionBlocker;
+
+        yield { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Done" } };
+      });
+
+      // Start execution in background (don't await - it's still running)
+      const execPromise = wrapper.executeWithLifecycle(
+        "exec-123",
+        { id: "task-1", prompt: "Test" },
+        "/test/workdir"
+      ).catch(() => {}); // Ignore cancellation error
+
+      // Wait for permission request to be yielded
+      await vi.waitFor(() => {
+        expect(permissionYielded).toBe(true);
+      }, { timeout: 1000 });
+
+      // Give a small delay for the update to be processed
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Now call respondToPermission while execution is still running
+      const permissionResponsePromise = wrapper.respondToPermission(
+        "exec-123",
+        "perm-req-456",
+        "allow_once"
+      );
+
+      // Resolve the async permission response (simulating WebSocket transport completing)
+      resolvePermission!();
+
+      // Await the result - should succeed
+      const result = await permissionResponsePromise;
+      expect(result).toBe(true);
+      expect(mockSession.respondToPermission).toHaveBeenCalledWith("perm-req-456", "allow_once");
+
+      // Cleanup: finish execution
+      resolveExecution!();
+      await execPromise;
+    });
+  });
+
+  describe("permission updates tracking", () => {
+    it("should register permission requests with PermissionManager", async () => {
+      // Track when permission request is yielded
+      let permissionYielded = false;
+      let resolveExecution: () => void;
+      const executionBlocker = new Promise<void>((resolve) => {
+        resolveExecution = resolve;
+      });
+
+      // Mock session that yields a permission request, then waits
+      mockSession.prompt = vi.fn().mockImplementation(async function* () {
+        yield {
+          sessionUpdate: "permission_request",
+          requestId: "perm-123",
+          sessionId: "test-session-123",
+          toolCall: {
+            toolCallId: "tool-1",
+            title: "Bash: npm install",
+            status: "permission_required",
+            rawInput: "npm install",
+          },
+          options: [
+            { id: "allow_once", label: "Allow once" },
+            { id: "reject_once", label: "Reject" },
+          ],
+        };
+        permissionYielded = true;
+
+        // Wait here - this keeps execution running so we can check permissions
+        await executionBlocker;
+
+        yield { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Done" } };
+      });
+
+      // Start execution in background
+      const execPromise = wrapper.executeWithLifecycle(
+        "exec-123",
+        { id: "task-1", prompt: "Test" },
+        "/test/workdir"
+      ).catch(() => {}); // Ignore cancellation error
+
+      // Wait for permission request to be yielded
+      await vi.waitFor(() => {
+        expect(permissionYielded).toBe(true);
+      }, { timeout: 1000 });
+
+      // Give a small delay for the update to be processed
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Check that the permission was registered WHILE execution is still running
+      expect(wrapper.hasPendingPermissions("exec-123")).toBe(true);
+      expect(wrapper.getPendingPermissionIds("exec-123")).toContain("perm-123");
+
+      // Respond to the permission to avoid unhandled rejection on cleanup
+      await wrapper.respondToPermission("exec-123", "perm-123", "allow_once");
+
+      // Cleanup: finish execution
+      resolveExecution!();
+      await execPromise;
+    });
+  });
+});
+
 describe("Macro-Agent Observability Connection Tracking", () => {
   let wrapper: AcpExecutorWrapper;
   let mockDb: any;

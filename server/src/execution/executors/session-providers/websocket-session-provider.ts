@@ -524,6 +524,12 @@ class WebSocketClientHandler implements acp.Client {
    * Handle session updates from the agent
    */
   async sessionUpdate(params: acp.SessionNotification): Promise<void> {
+    // Debug: log what we receive
+    console.log(
+      `[WebSocketClientHandler] Received session update:`,
+      JSON.stringify(params.update).substring(0, 300)
+    );
+
     const stream = this.getSessionStream(params.sessionId);
     stream.push(params.update);
   }
@@ -649,8 +655,47 @@ class WebSocketSession implements AcpSession {
     });
   }
 
-  respondToPermission(requestId: string, optionId: string): void {
-    this.clientHandler.respondToPermission(requestId, optionId);
+  /**
+   * Respond to a permission request.
+   *
+   * For macro-agent, this calls the _macro/respondToPermission extension method
+   * since permission requests originate from within macro-agent (via acp-factory)
+   * and need to be routed back through the ACP connection.
+   */
+  async respondToPermission(requestId: string, optionId: string): Promise<void> {
+    // Call the macro-agent extension method to respond to the permission
+    // The method name is "macro/respondToPermission" which gets prefixed with "_"
+    // by the ACP SDK to become "_macro/respondToPermission"
+    try {
+      const result = await (
+        this.connection as unknown as {
+          extMethod: (
+            method: string,
+            params: Record<string, unknown>
+          ) => Promise<{ success: boolean; error?: string }>;
+        }
+      ).extMethod("macro/respondToPermission", {
+        sessionId: this.id,
+        requestId,
+        optionId,
+      });
+
+      if (!result.success) {
+        console.error(
+          `[WebSocketSession] Failed to respond to permission: ${result.error}`
+        );
+      } else {
+        console.log(
+          `[WebSocketSession] Responded to permission ${requestId} with ${optionId}`
+        );
+      }
+    } catch (err) {
+      console.error(
+        `[WebSocketSession] Error calling respondToPermission extension:`,
+        err
+      );
+      throw err;
+    }
   }
 
   async close(): Promise<void> {

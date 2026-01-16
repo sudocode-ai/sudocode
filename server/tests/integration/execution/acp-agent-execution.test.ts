@@ -108,7 +108,7 @@ describe('ACP Agent Integration Tests - Claude Code Execution', () => {
     logsStore = services.logsStore;
 
     // Create wrapper using factory - should return AcpExecutorWrapper for claude-code
-    wrapper = createExecutorForAgent(
+    wrapper = await createExecutorForAgent(
       'claude-code',
       { workDir: '/tmp/test' },
       {
@@ -618,7 +618,7 @@ describe('ACP Agent Integration Tests - Claude Code Execution', () => {
       (AgentFactory.spawn as any).mockResolvedValueOnce(mockAgent);
 
       // Create wrapper with MCP servers configured (array format as expected by ACP)
-      const wrapperWithMcp = createExecutorForAgent(
+      const wrapperWithMcp = await createExecutorForAgent(
         'claude-code',
         {
           workDir: '/tmp/test',
@@ -666,7 +666,7 @@ describe('ACP Persistent Session Integration Tests', () => {
     lifecycleService = services.lifecycleService;
     logsStore = services.logsStore;
 
-    wrapper = createExecutorForAgent(
+    wrapper = await createExecutorForAgent(
       'claude-code',
       { workDir: '/tmp/test' },
       {

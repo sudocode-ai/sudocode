@@ -24,6 +24,7 @@ import * as path from "path";
 import * as os from "os";
 import { ExecutionLifecycleService } from "../../../../src/services/execution-lifecycle.js";
 import { ExecutionLogsStore } from "../../../../src/services/execution-logs-store.js";
+import * as macroAgentServerManager from "../../../../src/services/macro-agent-server-manager.js";
 
 // Mock dependencies
 const mockDb = {} as any;
@@ -40,8 +41,8 @@ const factoryConfig: ExecutorFactoryConfig = {
 
 describe("ExecutorFactory", () => {
   describe("createExecutorForAgent", () => {
-    it("should create AcpExecutorWrapper for claude-code agent (ACP-native)", () => {
-      const executor = createExecutorForAgent(
+    it("should create AcpExecutorWrapper for claude-code agent (ACP-native)", async () => {
+      const executor = await createExecutorForAgent(
         "claude-code",
         { workDir: "/tmp/test" },
         factoryConfig
@@ -51,30 +52,42 @@ describe("ExecutorFactory", () => {
       expect(executor).toBeInstanceOf(AcpExecutorWrapper);
     });
 
-    it("should throw error for unknown agent type", () => {
-      expect(() => {
+    it("should throw error for unknown agent type", async () => {
+      await expect(
         createExecutorForAgent(
           "unknown-agent" as AgentType,
           { workDir: "/tmp/test" },
           factoryConfig
-        );
-      }).toThrow(/Unknown agent type/);
+        )
+      ).rejects.toThrow(/Unknown agent type/);
     });
 
-    it("should throw error for macro-agent when server is not ready", () => {
-      // Macro-agent requires the server to be running
-      // When the server is not started/ready, it should throw an error
-      expect(() => {
+    it("should throw error for macro-agent when server is unavailable", async () => {
+      // Mock the macro-agent server manager to return "unavailable" state
+      const mockManager = {
+        isReady: vi.fn().mockReturnValue(false),
+        getState: vi.fn().mockReturnValue("unavailable"),
+        start: vi.fn(),
+      };
+      vi.spyOn(macroAgentServerManager, "getMacroAgentServerManager").mockReturnValue(
+        mockManager as any
+      );
+
+      // Macro-agent should throw when the server is unavailable (not installed)
+      await expect(
         createExecutorForAgent(
           "macro-agent",
           { workDir: "/tmp/test" },
           factoryConfig
-        );
-      }).toThrow(/Macro-agent server is not/);
+        )
+      ).rejects.toThrow(/macro-agent server is not available/i);
+
+      // Restore mock
+      vi.restoreAllMocks();
     });
 
-    it("should create LegacyShimExecutorWrapper for copilot (legacy agent)", () => {
-      const wrapper = createExecutorForAgent(
+    it("should create LegacyShimExecutorWrapper for copilot (legacy agent)", async () => {
+      const wrapper = await createExecutorForAgent(
         "copilot",
         { workDir: "/tmp/test" },
         factoryConfig
@@ -85,8 +98,8 @@ describe("ExecutorFactory", () => {
       expect(wrapper).toBeInstanceOf(LegacyShimExecutorWrapper);
     });
 
-    it("should create LegacyShimExecutorWrapper for cursor (legacy agent)", () => {
-      const wrapper = createExecutorForAgent(
+    it("should create LegacyShimExecutorWrapper for cursor (legacy agent)", async () => {
+      const wrapper = await createExecutorForAgent(
         "cursor",
         { workDir: "/tmp/test" },
         factoryConfig
@@ -97,9 +110,9 @@ describe("ExecutorFactory", () => {
       expect(wrapper).toBeInstanceOf(LegacyShimExecutorWrapper);
     });
 
-    it("should create AcpExecutorWrapper for ACP agents without validation (ACP handles config internally)", () => {
+    it("should create AcpExecutorWrapper for ACP agents without validation (ACP handles config internally)", async () => {
       // ACP agents skip legacy validation since ACP factory handles config
-      const executor = createExecutorForAgent(
+      const executor = await createExecutorForAgent(
         "claude-code",
         { workDir: "" }, // ACP doesn't use legacy validation
         factoryConfig
@@ -108,8 +121,8 @@ describe("ExecutorFactory", () => {
       expect(executor).toBeInstanceOf(AcpExecutorWrapper);
     });
 
-    it("should create AcpExecutorWrapper with valid config", () => {
-      const executor = createExecutorForAgent(
+    it("should create AcpExecutorWrapper with valid config", async () => {
+      const executor = await createExecutorForAgent(
         "claude-code",
         {
           workDir: "/tmp/test",
@@ -123,9 +136,9 @@ describe("ExecutorFactory", () => {
       expect(executor).toBeInstanceOf(AcpExecutorWrapper);
     });
 
-    it("should create LegacyShimExecutorWrapper for legacy agents (unified SessionUpdate output)", () => {
+    it("should create LegacyShimExecutorWrapper for legacy agents (unified SessionUpdate output)", async () => {
       // Legacy agents now use LegacyShimExecutorWrapper for unified SessionUpdate output
-      const wrapper = createExecutorForAgent(
+      const wrapper = await createExecutorForAgent(
         "copilot",
         { workDir: "/tmp/test" },
         factoryConfig
@@ -368,9 +381,9 @@ describe("ExecutorFactory", () => {
       fs.rmSync(testDir, { recursive: true, force: true });
     });
 
-    it("should create LegacyShimExecutorWrapper for legacy agents with correct config", () => {
+    it("should create LegacyShimExecutorWrapper for legacy agents with correct config", async () => {
       // Legacy agents (copilot, cursor) now use LegacyShimExecutorWrapper
-      const executor = createExecutorForAgent(
+      const executor = await createExecutorForAgent(
         "copilot",
         { workDir: testDir },
         factoryConfigWithDb
@@ -381,9 +394,9 @@ describe("ExecutorFactory", () => {
       expect((executor as any).agentType).toBe("copilot");
     });
 
-    it("should create AcpExecutorWrapper for ACP agents", () => {
+    it("should create AcpExecutorWrapper for ACP agents", async () => {
       // ACP agents use AcpExecutorWrapper
-      const executor = createExecutorForAgent(
+      const executor = await createExecutorForAgent(
         "claude-code",
         { workDir: testDir },
         factoryConfigWithDb
@@ -392,9 +405,9 @@ describe("ExecutorFactory", () => {
       expect(executor).toBeInstanceOf(AcpExecutorWrapper);
     });
 
-    it("should pass config to AcpExecutorWrapper for ACP agents", () => {
+    it("should pass config to AcpExecutorWrapper for ACP agents", async () => {
       // ACP agents receive config via acpConfig
-      const executor = createExecutorForAgent(
+      const executor = await createExecutorForAgent(
         "claude-code",
         {
           workDir: testDir,
@@ -410,8 +423,8 @@ describe("ExecutorFactory", () => {
       expect(acpConfig.agentType).toBe("claude-code");
     });
 
-    it("should pass model config to LegacyShimExecutorWrapper", () => {
-      const executor = createExecutorForAgent(
+    it("should pass model config to LegacyShimExecutorWrapper", async () => {
+      const executor = await createExecutorForAgent(
         "cursor",
         { workDir: testDir, model: "gpt-4o" },
         factoryConfigWithDb
@@ -421,8 +434,8 @@ describe("ExecutorFactory", () => {
       expect((executor as any).agentConfig.model).toBe("gpt-4o");
     });
 
-    it("should pass ANTHROPIC_MODEL env var for claude-code agent model selection", () => {
-      const executor = createExecutorForAgent(
+    it("should pass ANTHROPIC_MODEL env var for claude-code agent model selection", async () => {
+      const executor = await createExecutorForAgent(
         "claude-code",
         { workDir: testDir, model: "claude-sonnet-4-20250514" },
         factoryConfigWithDb
@@ -435,8 +448,8 @@ describe("ExecutorFactory", () => {
       expect(acpConfig.env.ANTHROPIC_MODEL).toBe("claude-sonnet-4-20250514");
     });
 
-    it("should merge model env var with existing env config for ACP agents", () => {
-      const executor = createExecutorForAgent(
+    it("should merge model env var with existing env config for ACP agents", async () => {
+      const executor = await createExecutorForAgent(
         "claude-code",
         {
           workDir: testDir,
@@ -454,8 +467,8 @@ describe("ExecutorFactory", () => {
       expect(acpConfig.env.CUSTOM_VAR).toBe("custom-value");
     });
 
-    it("should not set ANTHROPIC_MODEL if no model specified", () => {
-      const executor = createExecutorForAgent(
+    it("should not set ANTHROPIC_MODEL if no model specified", async () => {
+      const executor = await createExecutorForAgent(
         "claude-code",
         { workDir: testDir },
         factoryConfigWithDb
@@ -537,8 +550,8 @@ describe("ExecutorFactory", () => {
       fs.rmSync(testDir, { recursive: true, force: true });
     });
 
-    it("should set session mode from config.mode", () => {
-      const executor = createExecutorForAgent(
+    it("should set session mode from config.mode", async () => {
+      const executor = await createExecutorForAgent(
         "claude-code",
         {
           workDir: testDir,
@@ -554,8 +567,8 @@ describe("ExecutorFactory", () => {
       expect(acpConfig.permissionMode).toBe("interactive");
     });
 
-    it("should use dangerouslySkipPermissions for auto-approve", () => {
-      const executor = createExecutorForAgent(
+    it("should use dangerouslySkipPermissions for auto-approve", async () => {
+      const executor = await createExecutorForAgent(
         "claude-code",
         {
           workDir: testDir,
@@ -569,8 +582,8 @@ describe("ExecutorFactory", () => {
       expect(acpConfig.permissionMode).toBe("auto-approve");
     });
 
-    it("should use nested agentConfig.mode for session mode", () => {
-      const executor = createExecutorForAgent(
+    it("should use nested agentConfig.mode for session mode", async () => {
+      const executor = await createExecutorForAgent(
         "claude-code",
         {
           workDir: testDir,
@@ -586,8 +599,8 @@ describe("ExecutorFactory", () => {
       expect(acpConfig.mode).toBe("plan");
     });
 
-    it("should use nested agentConfig.dangerouslySkipPermissions for auto-approve", () => {
-      const executor = createExecutorForAgent(
+    it("should use nested agentConfig.dangerouslySkipPermissions for auto-approve", async () => {
+      const executor = await createExecutorForAgent(
         "claude-code",
         {
           workDir: testDir,
@@ -603,8 +616,8 @@ describe("ExecutorFactory", () => {
       expect(acpConfig.permissionMode).toBe("auto-approve");
     });
 
-    it("should allow both mode and dangerouslySkipPermissions together", () => {
-      const executor = createExecutorForAgent(
+    it("should allow both mode and dangerouslySkipPermissions together", async () => {
+      const executor = await createExecutorForAgent(
         "claude-code",
         {
           workDir: testDir,
@@ -620,8 +633,8 @@ describe("ExecutorFactory", () => {
       expect(acpConfig.permissionMode).toBe("auto-approve");
     });
 
-    it("should use interactive permission mode by default", () => {
-      const executor = createExecutorForAgent(
+    it("should use interactive permission mode by default", async () => {
+      const executor = await createExecutorForAgent(
         "claude-code",
         {
           workDir: testDir,
@@ -635,10 +648,10 @@ describe("ExecutorFactory", () => {
       expect(acpConfig.mode).toBeUndefined();
     });
 
-    it("should support all session modes", () => {
+    it("should support all session modes", async () => {
       const modes = ["code", "plan", "ask", "architect"];
       for (const mode of modes) {
-        const executor = createExecutorForAgent(
+        const executor = await createExecutorForAgent(
           "claude-code",
           {
             workDir: testDir,
@@ -725,8 +738,8 @@ describe("ExecutorFactory", () => {
       fs.rmSync(testDir, { recursive: true, force: true });
     });
 
-    it("should accept isResume option in factory config", () => {
-      const executor = createExecutorForAgent(
+    it("should accept isResume option in factory config", async () => {
+      const executor = await createExecutorForAgent(
         "claude-code",
         { workDir: testDir },
         { ...factoryConfigWithDb, isResume: true }
@@ -735,8 +748,8 @@ describe("ExecutorFactory", () => {
       expect(executor).toBeInstanceOf(AcpExecutorWrapper);
     });
 
-    it("should work without isResume option (defaults to false)", () => {
-      const executor = createExecutorForAgent(
+    it("should work without isResume option (defaults to false)", async () => {
+      const executor = await createExecutorForAgent(
         "claude-code",
         { workDir: testDir },
         factoryConfigWithDb // no isResume specified
@@ -745,8 +758,8 @@ describe("ExecutorFactory", () => {
       expect(executor).toBeInstanceOf(AcpExecutorWrapper);
     });
 
-    it("should create executor for follow-up execution with isResume: true", () => {
-      const executor = createExecutorForAgent(
+    it("should create executor for follow-up execution with isResume: true", async () => {
+      const executor = await createExecutorForAgent(
         "claude-code",
         { workDir: testDir },
         { ...factoryConfigWithDb, isResume: true }

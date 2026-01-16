@@ -18,12 +18,9 @@ import { spawn, execSync, type ChildProcess } from "child_process";
 import { existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import getPort from "get-port";
 import type { MacroAgentServerConfig } from "@sudocode-ai/types";
-import {
-  MACRO_AGENT_DEFAULTS,
-  getMacroAgentAcpUrl,
-  getMacroAgentApiUrl,
-} from "../utils/macro-agent-config.js";
+import { MACRO_AGENT_DEFAULTS } from "../utils/macro-agent-config.js";
 import {
   MacroAgentObservabilityService,
   type MacroAgentObservabilityConfig,
@@ -68,6 +65,8 @@ export class MacroAgentServerManager {
   private uptimeTimer: NodeJS.Timeout | null = null;
   private executablePath: string | null = null;
   private observabilityService: MacroAgentObservabilityService | null = null;
+  /** Actual port the server is running on (may differ from config if port was in use) */
+  private actualPort: number | null = null;
 
   private readonly config: MacroAgentServerManagerConfig;
   private readonly maxRestarts = 3;
@@ -96,13 +95,14 @@ export class MacroAgentServerManager {
 
     // Check for locally installed binary in node_modules
     // Look in various possible locations relative to this file
+    // Note: __dirname at runtime is dist/services, so:
+    //   ../../../ = repo root (sudocode/)
+    //   ../../ = server package root (server/)
     const possibleLocalPaths = [
-      // Workspace root node_modules (monorepo structure)
-      resolve(__dirname, "../../../../node_modules/.bin/multiagent-acp"),
-      // Server package node_modules
-      resolve(__dirname, "../../node_modules/.bin/multiagent-acp"),
-      // Direct sibling in node_modules
+      // Workspace root node_modules (monorepo structure - most common)
       resolve(__dirname, "../../../node_modules/.bin/multiagent-acp"),
+      // Server package node_modules (if not hoisted)
+      resolve(__dirname, "../../node_modules/.bin/multiagent-acp"),
     ];
 
     for (const localPath of possibleLocalPaths) {
@@ -150,6 +150,8 @@ export class MacroAgentServerManager {
    * Start the macro-agent server process.
    * Called on sudocode server startup.
    *
+   * Automatically finds an available port if the configured port is in use.
+   *
    * @throws Error if server fails to start (but not if executable missing)
    */
   async start(): Promise<void> {
@@ -173,16 +175,33 @@ export class MacroAgentServerManager {
 
     const { serverConfig, cwd, sessionsPath } = this.config;
 
+    // Find an available port, preferring the configured port
+    let port: number;
+    try {
+      port = await getPort({ port: serverConfig.port });
+      if (port !== serverConfig.port) {
+        console.log(
+          `[MacroAgentServerManager] Configured port ${serverConfig.port} is in use, ` +
+            `using port ${port} instead`
+        );
+      }
+    } catch (error) {
+      this.state = "stopped";
+      throw new Error(
+        `Could not find an available port for macro-agent server: ` +
+          `${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+
+    // Store the actual port we'll use
+    this.actualPort = port;
+
     // Build command arguments
+    // Use --api to enable the combined server (WebSocket ACP + REST API on same port)
     const args = [
-      "--ws",
-      "--ws-port",
-      String(serverConfig.port),
-      "--ws-host",
-      serverConfig.host,
       "--api",
       "--port",
-      String(serverConfig.port),
+      String(port),
       "--host",
       serverConfig.host,
     ];
@@ -196,7 +215,7 @@ export class MacroAgentServerManager {
     }
 
     console.log(
-      `[MacroAgentServerManager] Starting macro-agent server on ${serverConfig.host}:${serverConfig.port}`
+      `[MacroAgentServerManager] Starting macro-agent server on ${serverConfig.host}:${port}`
     );
     console.log(`[MacroAgentServerManager] Using executable: ${execPath}`);
 
@@ -272,21 +291,38 @@ export class MacroAgentServerManager {
     }
 
     this.state = "stopped";
+    this.actualPort = null;
     console.log("[MacroAgentServerManager] Server stopped");
   }
 
   /**
-   * Get the WebSocket ACP URL for client connections
+   * Get the WebSocket ACP URL for client connections.
+   * Uses the actual port the server is running on (may differ from config).
    */
-  getAcpUrl(): string {
-    return getMacroAgentAcpUrl(this.config.serverConfig);
+  getAcpUrl(): string | null {
+    if (this.actualPort === null) {
+      return null;
+    }
+    return `ws://${this.config.serverConfig.host}:${this.actualPort}/acp`;
   }
 
   /**
-   * Get the HTTP API base URL for observability
+   * Get the HTTP API base URL for observability.
+   * Uses the actual port the server is running on (may differ from config).
    */
-  getApiUrl(): string {
-    return getMacroAgentApiUrl(this.config.serverConfig);
+  getApiUrl(): string | null {
+    if (this.actualPort === null) {
+      return null;
+    }
+    return `http://${this.config.serverConfig.host}:${this.actualPort}`;
+  }
+
+  /**
+   * Get the actual port the server is running on.
+   * Returns null if server is not running.
+   */
+  getActualPort(): number | null {
+    return this.actualPort;
   }
 
   /**
@@ -336,8 +372,15 @@ export class MacroAgentServerManager {
    */
   private async startObservability(): Promise<void> {
     try {
+      const apiUrl = this.getApiUrl();
+      if (!apiUrl) {
+        console.warn(
+          "[MacroAgentServerManager] Cannot start observability - server URL unknown"
+        );
+        return;
+      }
       const config: MacroAgentObservabilityConfig = {
-        apiBaseUrl: this.getApiUrl(),
+        apiBaseUrl: apiUrl,
       };
 
       this.observabilityService = new MacroAgentObservabilityService(config);
@@ -429,7 +472,11 @@ export class MacroAgentServerManager {
    * Wait for the server to be ready by polling health endpoint
    */
   private async waitForReady(): Promise<void> {
-    const healthUrl = `${this.getApiUrl()}/health`;
+    const apiUrl = this.getApiUrl();
+    if (!apiUrl) {
+      throw new Error("Cannot wait for ready - server URL unknown");
+    }
+    const healthUrl = `${apiUrl}/health`;
     const startTime = Date.now();
 
     console.log(`[MacroAgentServerManager] Waiting for server health at ${healthUrl}`);

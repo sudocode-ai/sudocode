@@ -45,8 +45,11 @@ export interface AcpSession {
    * Respond to a permission request.
    * @param requestId - The permission request ID
    * @param optionId - The selected option ID (e.g., 'allow_once', 'reject')
+   *
+   * Note: Returns void for sync providers (stdio) or Promise<void> for async
+   * providers (WebSocket/macro-agent). Callers should handle both cases.
    */
-  respondToPermission(requestId: string, optionId: string): void;
+  respondToPermission(requestId: string, optionId: string): void | Promise<void>;
 
   /**
    * Close this session.

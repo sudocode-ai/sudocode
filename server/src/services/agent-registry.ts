@@ -364,35 +364,37 @@ export class AgentRegistryService {
 
   /**
    * Verify macro-agent availability
-   * Checks if the macro-agent server is available and ready
+   * Checks if the macro-agent executable is available.
+   * The server will start on-demand when needed, so we only check for the executable.
    *
    * @returns VerificationResult for macro-agent
    */
   private verifyMacroAgent(): VerificationResult {
     try {
       const manager = getMacroAgentServerManager();
-      const isAvailable = manager.isAvailable();
-      const isReady = manager.isReady();
+      const executableAvailable = manager.isExecutableAvailable();
 
-      if (!isAvailable) {
+      if (!executableAvailable) {
         return {
           available: false,
           error:
-            "Macro-agent CLI (multiagent) not found. Install the multiagent-acp package.",
+            "Macro-agent CLI (multiagent-acp) not found. Install the macro-agent package.",
         };
       }
 
-      if (!isReady) {
-        const state = manager.getState();
+      // Executable found - server will start on-demand when needed
+      const isReady = manager.isReady();
+      if (isReady) {
         return {
-          available: false,
-          error: `Macro-agent server is ${state}. It will start automatically when needed.`,
+          available: true,
+          path: manager.getAcpUrl() ?? undefined,
         };
       }
 
+      // Server not running but executable available - still usable (on-demand start)
       return {
         available: true,
-        path: manager.getAcpUrl() ?? undefined,
+        path: manager.findExecutablePath() ?? undefined,
       };
     } catch (error) {
       return {

@@ -471,7 +471,7 @@ export class ExecutionService {
     const voiceEnabled = isVoiceBroadcastEnabled(voiceConfig);
     const voiceNarrationSettings = getNarrationConfig(voiceConfig);
 
-    const wrapper = createExecutorForAgent(
+    const wrapper = await createExecutorForAgent(
       agentType,
       {
         workDir: this.repoPath,
@@ -809,7 +809,7 @@ ${feedback}`;
     const voiceEnabled = isVoiceBroadcastEnabled(voiceConfig);
     const voiceNarrationSettings = getNarrationConfig(voiceConfig);
 
-    const wrapper = createExecutorForAgent(
+    const wrapper = await createExecutorForAgent(
       agentType,
       {
         workDir: this.repoPath,
@@ -1039,11 +1039,11 @@ ${feedback}`;
    * @returns true if the permission was found and responded to
    * @throws Error if execution not found or not an ACP execution
    */
-  respondToPermission(
+  async respondToPermission(
     executionId: string,
     requestId: string,
     optionId: string
-  ): boolean {
+  ): Promise<boolean> {
     const executor = this.activeExecutors.get(executionId);
     if (!executor) {
       throw new Error(`Execution ${executionId} not found or not active`);

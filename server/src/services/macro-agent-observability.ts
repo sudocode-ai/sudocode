@@ -185,7 +185,7 @@ export class MacroAgentObservabilityService {
     }
 
     this.connectionState = "connecting";
-    const wsUrl = this.apiBaseUrl.replace(/^http/, "ws") + "/ws";
+    const wsUrl = this.apiBaseUrl.replace(/^http/, "ws") + "/api/ws";
 
     console.log(`[MacroAgentObservability] Connecting to ${wsUrl}`);
 

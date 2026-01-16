@@ -883,7 +883,7 @@ export function createExecutionsRouter(): Router {
    */
   router.post(
     "/executions/:executionId/permission/:requestId",
-    (req: Request, res: Response) => {
+    async (req: Request, res: Response) => {
       try {
         const { executionId, requestId } = req.params;
         const { optionId } = req.body;
@@ -899,7 +899,7 @@ export function createExecutionsRouter(): Router {
         }
 
         // Attempt to respond to the permission
-        const success = req.project!.executionService!.respondToPermission(
+        const success = await req.project!.executionService!.respondToPermission(
           executionId,
           requestId,
           optionId

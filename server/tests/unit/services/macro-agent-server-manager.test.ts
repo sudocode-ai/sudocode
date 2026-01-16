@@ -30,6 +30,11 @@ vi.mock("../../../src/services/macro-agent-observability.js", () => ({
   MacroAgentObservabilityService: vi.fn(() => mockObservabilityService),
 }));
 
+// Mock get-port - return the requested port as available
+vi.mock("get-port", () => ({
+  default: vi.fn((options?: { port?: number }) => Promise.resolve(options?.port ?? 3100)),
+}));
+
 // Import after mocking
 import { spawn, execSync } from "child_process";
 import { existsSync } from "fs";
@@ -97,7 +102,10 @@ describe("MacroAgentServerManager", () => {
       expect(manager.isReady()).toBe(false);
     });
 
-    it("should create manager with custom config", () => {
+    it("should create manager with custom config", async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true } as Response);
+
       const manager = new MacroAgentServerManager({
         serverConfig: {
           enabled: true,
@@ -106,6 +114,12 @@ describe("MacroAgentServerManager", () => {
         },
       });
 
+      // URLs are null until server starts
+      expect(manager.getAcpUrl()).toBeNull();
+      expect(manager.getApiUrl()).toBeNull();
+
+      // Start server to verify config is used
+      await manager.start();
       expect(manager.getAcpUrl()).toBe("ws://0.0.0.0:4000/acp");
       expect(manager.getApiUrl()).toBe("http://0.0.0.0:4000");
     });
@@ -227,11 +241,6 @@ describe("MacroAgentServerManager", () => {
       expect(spawn).toHaveBeenCalledWith(
         expect.stringContaining("multiagent-acp"),
         expect.arrayContaining([
-          "--ws",
-          "--ws-port",
-          "3100",
-          "--ws-host",
-          "localhost",
           "--api",
           "--port",
           "3100",
@@ -367,30 +376,80 @@ describe("MacroAgentServerManager", () => {
   // URL Accessor Tests
   // ===========================================================================
   describe("getAcpUrl", () => {
-    it("should return correct WebSocket URL", () => {
+    it("should return null when server not started", () => {
       const manager = new MacroAgentServerManager({
         serverConfig: { enabled: true, port: 3100, host: "localhost" },
       });
 
+      expect(manager.getAcpUrl()).toBeNull();
+    });
+
+    it("should return correct WebSocket URL after server starts", async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true } as Response);
+
+      const manager = new MacroAgentServerManager({
+        serverConfig: { enabled: true, port: 3100, host: "localhost" },
+      });
+      await manager.start();
+
       expect(manager.getAcpUrl()).toBe("ws://localhost:3100/acp");
     });
 
-    it("should use custom host and port", () => {
+    it("should use custom host and port after server starts", async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true } as Response);
+
       const manager = new MacroAgentServerManager({
         serverConfig: { enabled: true, port: 4000, host: "0.0.0.0" },
       });
+      await manager.start();
 
       expect(manager.getAcpUrl()).toBe("ws://0.0.0.0:4000/acp");
     });
   });
 
   describe("getApiUrl", () => {
-    it("should return correct HTTP URL", () => {
+    it("should return null when server not started", () => {
       const manager = new MacroAgentServerManager({
         serverConfig: { enabled: true, port: 3100, host: "localhost" },
       });
 
+      expect(manager.getApiUrl()).toBeNull();
+    });
+
+    it("should return correct HTTP URL after server starts", async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true } as Response);
+
+      const manager = new MacroAgentServerManager({
+        serverConfig: { enabled: true, port: 3100, host: "localhost" },
+      });
+      await manager.start();
+
       expect(manager.getApiUrl()).toBe("http://localhost:3100");
+    });
+  });
+
+  describe("getActualPort", () => {
+    it("should return null when server not started", () => {
+      const manager = new MacroAgentServerManager({
+        serverConfig: { enabled: true, port: 3100, host: "localhost" },
+      });
+
+      expect(manager.getActualPort()).toBeNull();
+    });
+
+    it("should return actual port after server starts", async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true } as Response);
+
+      const manager = new MacroAgentServerManager({
+        serverConfig: { enabled: true, port: 3100, host: "localhost" },
+      });
+      await manager.start();
+
+      expect(manager.getActualPort()).toBe(3100);
     });
   });
 
@@ -552,7 +611,10 @@ describe("MacroAgentServerManager", () => {
       expect(instance1).toBe(instance2);
     });
 
-    it("should use config only on first call", () => {
+    it("should use config only on first call", async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true } as Response);
+
       const instance1 = getMacroAgentServerManager({
         serverConfig: { enabled: true, port: 4000, host: "custom" },
       });
@@ -560,12 +622,18 @@ describe("MacroAgentServerManager", () => {
         serverConfig: { enabled: true, port: 5000, host: "other" },
       });
 
-      // Both should use the first config
+      // Start server to verify config was used
+      await instance1.start();
+
+      // Both should use the first config (port 4000, host "custom")
       expect(instance1.getAcpUrl()).toBe("ws://custom:4000/acp");
       expect(instance2.getAcpUrl()).toBe("ws://custom:4000/acp");
     });
 
-    it("should reset singleton with resetMacroAgentServerManager", () => {
+    it("should reset singleton with resetMacroAgentServerManager", async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(global.fetch).mockResolvedValue({ ok: true } as Response);
+
       const instance1 = getMacroAgentServerManager({
         serverConfig: { enabled: true, port: 4000, host: "first" },
       });
@@ -577,6 +645,9 @@ describe("MacroAgentServerManager", () => {
       });
 
       expect(instance1).not.toBe(instance2);
+
+      // Start second instance to verify its config was used
+      await instance2.start();
       expect(instance2.getAcpUrl()).toBe("ws://second:5000/acp");
     });
   });

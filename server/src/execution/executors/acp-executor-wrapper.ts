@@ -376,11 +376,42 @@ export class AcpExecutorWrapper {
       for await (const update of session.prompt(task.prompt)) {
         updateCount++;
 
-        // Log first 10 updates and every 100th update
-        if (updateCount <= 10 || updateCount % 100 === 0) {
+        // Log all updates for macro-agent (helpful for debugging)
+        // For other agents, only log first 10 and every 100th
+        const isMacroAgent = this.agentType === "macro-agent";
+        const shouldLogUpdate =
+          isMacroAgent || updateCount <= 10 || updateCount % 100 === 0;
+
+        if (shouldLogUpdate) {
+          const updateType = update.sessionUpdate;
+          let logDetails: Record<string, unknown> = { sessionUpdate: updateType };
+
+          // Add more details based on update type
+          if (updateType === "agent_message_chunk") {
+            const content = (update as { content?: { text?: string } }).content;
+            const text = content?.text ?? "";
+            logDetails = {
+              ...logDetails,
+              textLength: text.length,
+              textPreview: text.substring(0, 100) + (text.length > 100 ? "..." : ""),
+            };
+          } else if (updateType === "tool_call" || updateType === "tool_call_update") {
+            const toolUpdate = update as {
+              toolCallId?: string;
+              title?: string;
+              status?: string;
+            };
+            logDetails = {
+              ...logDetails,
+              toolCallId: toolUpdate.toolCallId,
+              title: toolUpdate.title,
+              status: toolUpdate.status,
+            };
+          }
+
           console.log(
             `[AcpExecutorWrapper] Update ${updateCount} for ${executionId}:`,
-            { sessionUpdate: update.sessionUpdate }
+            logDetails
           );
         }
 
@@ -891,11 +922,11 @@ export class AcpExecutorWrapper {
    * @param optionId - Selected option ID (e.g., 'allow_once', 'reject_always')
    * @returns true if the permission was found and responded to
    */
-  respondToPermission(
+  async respondToPermission(
     executionId: string,
     requestId: string,
     optionId: string
-  ): boolean {
+  ): Promise<boolean> {
     console.log(
       `[AcpExecutorWrapper] Responding to permission ${requestId} for ${executionId} with ${optionId}`
     );
@@ -917,8 +948,9 @@ export class AcpExecutorWrapper {
     }
 
     // Respond via the session (this unblocks the ACP session)
+    // Note: May be async for WebSocket/macro-agent transport
     try {
-      session.respondToPermission(requestId, optionId);
+      await session.respondToPermission(requestId, optionId);
     } catch (error) {
       console.error(
         `[AcpExecutorWrapper] Error responding to permission via session:`,
