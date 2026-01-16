@@ -136,16 +136,22 @@ export class SudocodeMCPServer {
       // Check initialization for CLI tools
       const handlerType = getHandlerType(tool);
       if (handlerType === "cli" && !this.isInitialized) {
-        const workingDir = this.client["workingDir"] || process.cwd();
-        return {
-          content: [
-            {
-              type: "text",
-              text: `⚠️  sudocode is not initialized in this directory.\n\nWorking directory: ${workingDir}\n\nPlease run 'sudocode init' in your project root first.`,
-            },
-          ],
-          isError: true,
-        };
+        // Re-check in case project was initialized after server started
+        const initStatus = await this.checkForInit();
+        if (initStatus.initialized) {
+          this.isInitialized = true;
+        } else {
+          const workingDir = this.client["workingDir"] || process.cwd();
+          return {
+            content: [
+              {
+                type: "text",
+                text: `⚠️  sudocode is not initialized in this directory.\n\nWorking directory: ${workingDir}\n\nPlease run 'sudocode init' in your project root first.`,
+              },
+            ],
+            isError: true,
+          };
+        }
       }
 
       try {
