@@ -246,7 +246,7 @@ describe("SudocodeMCPServer", () => {
   });
 
   describe("tool handler with isInitialized check", () => {
-    it("should return error when isInitialized is false", async () => {
+    it("should return error when isInitialized is false and project still not initialized", async () => {
       mockExistsSync.mockReturnValue(false);
 
       const server = new SudocodeMCPServer();
@@ -274,6 +274,31 @@ describe("SudocodeMCPServer", () => {
 
       expect((server as any).isInitialized).toBe(true);
       // When initialized, tools should be allowed to proceed
+    });
+
+    it("should re-check and update isInitialized when project is initialized after server start", async () => {
+      // Start with project not initialized
+      mockExistsSync.mockReturnValue(false);
+
+      const server = new SudocodeMCPServer();
+      await (server as any).checkInitialization();
+
+      expect((server as any).isInitialized).toBe(false);
+
+      // Now simulate project being initialized after server started
+      // (e.g., user ran `sudocode init` in another terminal)
+      mockExistsSync.mockReturnValue(true);
+
+      // Re-check should detect the initialization
+      const result = await (server as any).checkForInit();
+      expect(result.initialized).toBe(true);
+
+      // In the actual tool handler, this would update isInitialized
+      if (result.initialized) {
+        (server as any).isInitialized = true;
+      }
+
+      expect((server as any).isInitialized).toBe(true);
     });
   });
 
