@@ -129,7 +129,9 @@ export async function createExecutorForAgent<TConfig extends BaseAgentConfig>(
 
   // Special handling for macro-agent (WebSocket ACP)
   if (agentType === "macro-agent") {
-    console.log(`[ExecutorFactory] Using WebSocketSessionProvider for macro-agent`);
+    console.log(
+      `[ExecutorFactory] Using WebSocketSessionProvider for macro-agent`
+    );
 
     // Check if macro-agent server is available, start on-demand if needed
     const macroAgentManager = getMacroAgentServerManager();
@@ -151,10 +153,14 @@ export async function createExecutorForAgent<TConfig extends BaseAgentConfig>(
           if (!macroAgentManager.isReady()) {
             throw new Error("Server started but not ready");
           }
-          console.log("[ExecutorFactory] Macro-agent server started successfully");
+          console.log(
+            "[ExecutorFactory] Macro-agent server started successfully"
+          );
         } catch (startError) {
           const errorMessage =
-            startError instanceof Error ? startError.message : String(startError);
+            startError instanceof Error
+              ? startError.message
+              : String(startError);
           throw new Error(
             `Failed to start macro-agent server on-demand: ${errorMessage}`
           );
@@ -189,7 +195,8 @@ export async function createExecutorForAgent<TConfig extends BaseAgentConfig>(
     });
 
     // Get observability service for connection tracking
-    const observabilityService = macroAgentManager.getObservabilityService() ?? undefined;
+    const observabilityService =
+      macroAgentManager.getObservabilityService() ?? undefined;
 
     const acpConfig: AcpExecutorWrapperConfig = {
       agentType,
@@ -235,7 +242,10 @@ export async function createExecutorForAgent<TConfig extends BaseAgentConfig>(
       permissionMode: processedConfig.acpPermissionMode,
       // Note: fileHandlers are optional - agent subprocess handles file ops within workDir
     };
-    const sessionProvider = new StdioSessionProvider(agentType, sessionProviderConfig);
+    const sessionProvider = new StdioSessionProvider(
+      agentType,
+      sessionProviderConfig
+    );
 
     const acpConfig: AcpExecutorWrapperConfig = {
       agentType,
@@ -359,7 +369,9 @@ export function isMacroAgent(agentType: string): boolean {
  * ```
  */
 export function isAcpAgent(agentType: string): boolean {
-  return AcpExecutorWrapper.isAcpSupported(agentType) || isMacroAgent(agentType);
+  return (
+    AcpExecutorWrapper.isAcpSupported(agentType) || isMacroAgent(agentType)
+  );
 }
 
 /**

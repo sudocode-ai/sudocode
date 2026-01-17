@@ -40,11 +40,7 @@ export interface WebSocketSessionProviderConfig extends SessionProviderConfig {
 /**
  * Connection state for the WebSocket
  */
-type ConnectionState =
-  | "disconnected"
-  | "connecting"
-  | "connected"
-  | "closed";
+type ConnectionState = "disconnected" | "connecting" | "connected" | "closed";
 
 /**
  * WebSocket-based ACP session provider.
@@ -212,7 +208,10 @@ export class WebSocketSessionProvider implements AcpSessionProvider {
         stream
       );
 
-      // Initialize connection
+      // Initialize connection with macro-agent config
+      // Pass permission mode to macro-agent so it configures its sub-agents correctly
+      const permissionModeToSend = this.config.permissionMode ?? "auto-approve";
+
       const initResult = await this.connection.initialize({
         protocolVersion: acp.PROTOCOL_VERSION,
         clientCapabilities: {
@@ -222,7 +221,14 @@ export class WebSocketSessionProvider implements AcpSessionProvider {
           },
           terminal: false,
         },
-      });
+        _meta: {
+          macroConfig: {
+            defaultSubAgentConfig: {
+              permissionMode: permissionModeToSend,
+            },
+          },
+        },
+      } as acp.InitializeRequest);
 
       this.capabilities = initResult.agentCapabilities ?? {};
       this.state = "connected";
@@ -253,7 +259,9 @@ export class WebSocketSessionProvider implements AcpSessionProvider {
       }
 
       const timeout = setTimeout(() => {
-        reject(new Error(`Connection timeout after ${this.connectionTimeout}ms`));
+        reject(
+          new Error(`Connection timeout after ${this.connectionTimeout}ms`)
+        );
       }, this.connectionTimeout);
 
       this.ws.once("open", () => {
@@ -541,7 +549,9 @@ class WebSocketClientHandler implements acp.Client {
     _params: acp.ReadTextFileRequest
   ): Promise<acp.ReadTextFileResponse> {
     // Macro-agent handles file I/O internally
-    throw new Error("File read not supported via WebSocket - agent handles internally");
+    throw new Error(
+      "File read not supported via WebSocket - agent handles internally"
+    );
   }
 
   /**
@@ -551,7 +561,9 @@ class WebSocketClientHandler implements acp.Client {
     _params: acp.WriteTextFileRequest
   ): Promise<acp.WriteTextFileResponse> {
     // Macro-agent handles file I/O internally
-    throw new Error("File write not supported via WebSocket - agent handles internally");
+    throw new Error(
+      "File write not supported via WebSocket - agent handles internally"
+    );
   }
 
   /**
@@ -658,42 +670,23 @@ class WebSocketSession implements AcpSession {
   /**
    * Respond to a permission request.
    *
-   * For macro-agent, this calls the _macro/respondToPermission extension method
-   * since permission requests originate from within macro-agent (via acp-factory)
-   * and need to be routed back through the ACP connection.
+   * When macro-agent calls requestPermission(), the WebSocketClientHandler creates
+   * a pending promise waiting for the response. This method resolves that promise
+   * by calling clientHandler.respondToPermission(), which completes the RPC.
    */
-  async respondToPermission(requestId: string, optionId: string): Promise<void> {
-    // Call the macro-agent extension method to respond to the permission
-    // The method name is "macro/respondToPermission" which gets prefixed with "_"
-    // by the ACP SDK to become "_macro/respondToPermission"
+  async respondToPermission(
+    requestId: string,
+    optionId: string
+  ): Promise<void> {
     try {
-      const result = await (
-        this.connection as unknown as {
-          extMethod: (
-            method: string,
-            params: Record<string, unknown>
-          ) => Promise<{ success: boolean; error?: string }>;
-        }
-      ).extMethod("macro/respondToPermission", {
-        sessionId: this.id,
-        requestId,
-        optionId,
-      });
-
-      if (!result.success) {
-        console.error(
-          `[WebSocketSession] Failed to respond to permission: ${result.error}`
-        );
-      } else {
-        console.log(
-          `[WebSocketSession] Responded to permission ${requestId} with ${optionId}`
-        );
-      }
-    } catch (err) {
-      console.error(
-        `[WebSocketSession] Error calling respondToPermission extension:`,
-        err
+      // Resolve the pending permission request in the client handler
+      // This completes the requestPermission() RPC back to macro-agent
+      this.clientHandler.respondToPermission(requestId, optionId);
+      console.log(
+        `[WebSocketSession] Responded to permission ${requestId} with ${optionId}`
       );
+    } catch (err) {
+      console.error(`[WebSocketSession] Error responding to permission:`, err);
       throw err;
     }
   }

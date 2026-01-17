@@ -44,7 +44,7 @@
     "@agentclientprotocol/sdk": "^0.12.0",
     "@iarna/toml": "^2.2.5",
     "@modelcontextprotocol/sdk": "^1.24.1",
-    "@sudocode-ai/claude-code-acp": "^0.12.10",
+    "@sudocode-ai/claude-code-acp": "^0.13.1",
     "@sudocode-ai/cli": "^0.1.18",
     "@sudocode-ai/types": "^0.1.18",
     "@types/ws": "^8.18.1",

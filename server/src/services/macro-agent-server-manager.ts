@@ -223,6 +223,11 @@ export class MacroAgentServerManager {
       this.process = spawn(execPath, args, {
         stdio: ["ignore", "pipe", "pipe"],
         detached: false,
+        env: {
+          ...process.env,
+          // Signal to macro-agent that it should run in server-only mode (no stdio ACP)
+          MACRO_AGENT_SERVER_ONLY: "1",
+        },
       });
 
       // Handle process events

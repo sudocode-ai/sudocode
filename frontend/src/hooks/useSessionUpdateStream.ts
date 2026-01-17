@@ -42,7 +42,10 @@ export interface AgentMessage {
  * Content produced by a tool call (from ACP)
  */
 export type ToolCallContentItem =
-  | { type: 'content'; content: { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string } }
+  | {
+      type: 'content'
+      content: { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
+    }
   | { type: 'diff'; path: string; oldText?: string | null; newText: string }
   | { type: 'terminal'; terminalId: string }
 
@@ -119,7 +122,15 @@ export interface PlanUpdateEvent {
  */
 export interface ExecutionState {
   runId: string | null
-  status: 'idle' | 'running' | 'waiting' | 'paused' | 'completed' | 'error' | 'cancelled' | 'stopped'
+  status:
+    | 'idle'
+    | 'running'
+    | 'waiting'
+    | 'paused'
+    | 'completed'
+    | 'error'
+    | 'cancelled'
+    | 'stopped'
   error: string | null
   startTime: number | null
   endTime: number | null
@@ -409,9 +420,7 @@ function parseDate(value: string | Date | undefined): Date {
 /**
  * Map execution status to our ExecutionState status
  */
-function mapExecutionStatus(
-  status: string
-): ExecutionState['status'] {
+function mapExecutionStatus(status: string): ExecutionState['status'] {
   switch (status) {
     case 'preparing':
     case 'pending':
@@ -472,9 +481,7 @@ export function useSessionUpdateStream(
 ): UseSessionUpdateStreamResult {
   // Normalize options (support both string and options object for backwards compatibility)
   const normalizedOptions: UseSessionUpdateStreamOptions =
-    typeof options === 'string' || options === null
-      ? { executionId: options }
-      : options
+    typeof options === 'string' || options === null ? { executionId: options } : options
 
   const { executionId, onEvent } = normalizedOptions
 
@@ -508,7 +515,8 @@ export function useSessionUpdateStream(
   }, [onEvent])
 
   // WebSocket context
-  const { connected, subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
+  const { connected, subscribe, unsubscribe, addMessageHandler, removeMessageHandler } =
+    useWebSocketContext()
 
   // Derive connection status from WebSocket connected state
   const connectionStatus: ConnectionStatus = useMemo(() => {
@@ -526,7 +534,11 @@ export function useSessionUpdateStream(
   const processUpdate = useCallback((update: SessionUpdate) => {
     // Debug: Log received events (but throttle to avoid spam)
     const eventType = update.sessionUpdate
-    if (eventType === 'tool_call' || eventType === 'tool_call_update' || eventType === 'tool_call_complete') {
+    if (
+      eventType === 'tool_call' ||
+      eventType === 'tool_call_update' ||
+      eventType === 'tool_call_complete'
+    ) {
       console.log('[useSessionUpdateStream] Received tool call event:', eventType, {
         toolCallId: (update as { toolCallId?: string }).toolCallId,
         title: (update as { title?: string }).title,
@@ -899,7 +911,9 @@ export function useSessionUpdateStream(
               status: update.status ? mapToolCallStatus(update.status) : existing.status,
               rawInput: update.rawInput ?? existing.rawInput,
               rawOutput: update.rawOutput ?? existing.rawOutput,
-              content: update.content ? (update.content as ToolCallContentItem[]) : existing.content,
+              content: update.content
+                ? (update.content as ToolCallContentItem[])
+                : existing.content,
               completedAt:
                 update.status === 'completed' || update.status === 'failed'
                   ? new Date()
@@ -979,12 +993,12 @@ export function useSessionUpdateStream(
           requestId: update.requestId,
           sessionId: update.sessionId,
           toolCall: {
-            toolCallId: update.toolCall.toolCallId,
-            title: update.toolCall.title,
-            status: update.toolCall.status,
-            rawInput: update.toolCall.rawInput,
+            toolCallId: update.toolCall?.toolCallId ?? 'unknown',
+            title: update.toolCall?.title ?? 'Unknown Tool',
+            status: update.toolCall?.status ?? 'pending',
+            rawInput: update.toolCall?.rawInput,
           },
-          options: update.options,
+          options: update.options ?? [],
           responded: false,
           timestamp: new Date(),
           index: assignedIndex,
@@ -1007,12 +1021,15 @@ export function useSessionUpdateStream(
       // ACP plan structure: { sessionUpdate: "plan", entries: [...] } - entries are directly on update
       case 'plan': {
         // Parse plan entries from ACP format - entries are directly on the update object
-        const planData = update as { entries?: Array<{ content: string; status: string; priority: string }> }
-        const entries = planData.entries?.map((e) => ({
-          content: e.content,
-          status: e.status as 'pending' | 'in_progress' | 'completed',
-          priority: e.priority as 'high' | 'medium' | 'low',
-        })) || []
+        const planData = update as {
+          entries?: Array<{ content: string; status: string; priority: string }>
+        }
+        const entries =
+          planData.entries?.map((e) => ({
+            content: e.content,
+            status: e.status as 'pending' | 'in_progress' | 'completed',
+            priority: e.priority as 'high' | 'medium' | 'low',
+          })) || []
 
         if (entries.length > 0) {
           // Assign index synchronously for stable ordering
@@ -1173,10 +1190,7 @@ export function useSessionUpdateStream(
   const handleMessage = useCallback(
     (message: WebSocketMessage) => {
       // Handle execution lifecycle events
-      if (
-        message.type === 'execution_status_changed' ||
-        message.type === 'execution_updated'
-      ) {
+      if (message.type === 'execution_status_changed' || message.type === 'execution_updated') {
         const exec = message.data as Execution | undefined
         if (exec) {
           handleExecutionEvent(exec)
