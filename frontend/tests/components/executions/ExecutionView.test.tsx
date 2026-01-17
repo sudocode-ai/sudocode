@@ -165,6 +165,8 @@ describe('ExecutionView', () => {
     step_index: null,
     step_config: null,
     stream_id: null,
+    deleted_at: null,
+    deletion_reason: null,
   }
 
   // Helper to create a chain response with a single execution

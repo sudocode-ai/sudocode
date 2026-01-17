@@ -108,6 +108,8 @@ const createMockExecution = (overrides: Partial<Execution> = {}): Execution => (
   step_index: null,
   step_config: null,
   stream_id: null,
+  deleted_at: null,
+  deletion_reason: null,
   ...overrides,
 })
 

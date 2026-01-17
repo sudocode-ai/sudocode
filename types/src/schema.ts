@@ -183,6 +183,10 @@ CREATE TABLE IF NOT EXISTS executions (
     -- Dataplane integration
     stream_id TEXT,
 
+    -- Soft delete support
+    deleted_at DATETIME,
+    deletion_reason TEXT,
+
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL,
     FOREIGN KEY (issue_uuid) REFERENCES issues(uuid) ON DELETE SET NULL,
     FOREIGN KEY (parent_execution_id) REFERENCES executions(id) ON DELETE SET NULL
@@ -359,6 +363,7 @@ CREATE INDEX IF NOT EXISTS idx_executions_workflow ON executions(workflow_execut
 CREATE INDEX IF NOT EXISTS idx_executions_workflow_step ON executions(workflow_execution_id, step_index);
 CREATE INDEX IF NOT EXISTS idx_executions_step_type ON executions(step_type);
 CREATE INDEX IF NOT EXISTS idx_executions_stream_id ON executions(stream_id);
+CREATE INDEX IF NOT EXISTS idx_executions_deleted_at ON executions(deleted_at);
 `;
 
 export const PROMPT_TEMPLATES_INDEXES = `
@@ -431,6 +436,8 @@ CREATE TABLE IF NOT EXISTS checkpoints (
     review_notes TEXT,
     target_branch TEXT NOT NULL DEFAULT 'main',
     queue_position INTEGER,
+    issue_snapshot TEXT,
+    spec_snapshot TEXT,
     FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
     FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE
 );

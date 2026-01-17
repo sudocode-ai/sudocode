@@ -37,6 +37,8 @@ describe('CommitChangesDialog', () => {
     step_index: null,
     step_config: null,
     stream_id: null,
+    deleted_at: null,
+    deletion_reason: null,
   }
 
   const mockOnClose = vi.fn()

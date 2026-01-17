@@ -173,6 +173,23 @@ export function useQueueMutations() {
 }
 
 /**
+ * Hook to fetch unique target branches with queue entries
+ */
+export function useQueueBranches() {
+  const { currentProjectId } = useProject()
+  const apiProjectId = getCurrentProjectId()
+  const isProjectSynced = currentProjectId === apiProjectId
+
+  return useQuery({
+    queryKey: ['queue-branches', currentProjectId],
+    queryFn: () => queueApi.getBranches(),
+    enabled: !!currentProjectId && isProjectSynced,
+    // Refetch periodically to pick up new branches
+    staleTime: 30000,
+  })
+}
+
+/**
  * Group queue entries by stack for display
  */
 export interface QueueStackGroup {

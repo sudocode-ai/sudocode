@@ -53,7 +53,8 @@ function generateStackId(): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Build dependency graph for all open/in_progress issues with blocks/depends-on relationships
+ * Build dependency graph for all active issues with blocks/depends-on relationships
+ * Includes open, in_progress, and blocked statuses (blocked issues are waiting on dependencies)
  */
 function buildDependencyGraph(
   db: Database.Database
@@ -63,10 +64,10 @@ function buildDependencyGraph(
     { blockedBy: Set<string>; blocks: Set<string> }
   >();
 
-  // Get all active issues
+  // Get all active issues (including blocked - they're waiting on dependencies)
   const issues = db
     .prepare(
-      `SELECT id FROM issues WHERE status IN ('open', 'in_progress') AND archived = 0`
+      `SELECT id FROM issues WHERE status IN ('open', 'in_progress', 'blocked') AND archived = 0`
     )
     .all() as Array<{ id: string }>;
 

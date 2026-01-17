@@ -210,6 +210,41 @@ export function createQueueRouter(): Router {
   });
 
   /**
+   * GET /api/queue/branches - Get unique target branches with queue entries
+   *
+   * Response: { branches: string[] }
+   */
+  router.get("/branches", async (req: Request, res: Response) => {
+    try {
+      const repoPath = req.project!.path;
+      const dataplaneAdapter = getDataplaneAdapterSync(repoPath);
+
+      if (!dataplaneAdapter) {
+        res.json({
+          success: true,
+          data: { branches: ["main"] },
+        });
+        return;
+      }
+
+      const branches = dataplaneAdapter.getQueueTargetBranches();
+
+      res.json({
+        success: true,
+        data: { branches },
+      });
+    } catch (error) {
+      console.error("Error getting queue branches:", error);
+      res.status(500).json({
+        success: false,
+        data: null,
+        error_data: error instanceof Error ? error.message : String(error),
+        message: "Failed to get queue branches",
+      });
+    }
+  });
+
+  /**
    * GET /api/queue/stats - Get queue statistics
    *
    * Query params:

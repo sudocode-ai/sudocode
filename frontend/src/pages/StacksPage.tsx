@@ -9,6 +9,7 @@
 import { useState, useMemo } from 'react'
 import { useStacks, useStackMutations } from '@/hooks/useStacks'
 import { useRepositoryInfo } from '@/hooks/useRepositoryInfo'
+import { useQueueBranches } from '@/hooks/useQueue'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { StackPanel } from '@/components/stacks/StackPanel'
@@ -140,19 +141,35 @@ function StacksTabContent() {
  */
 function QueueTabContent() {
   const { data: repoInfo } = useRepositoryInfo()
+  const { data: branchesData } = useQueueBranches()
 
-  // Get branches from repo info, default to main
+  // Get branches from queue entries, repo info, and always include 'main'
   const targetBranches = useMemo(() => {
-    const branches = ['main']
-    if (repoInfo?.branch && !branches.includes(repoInfo.branch)) {
-      branches.push(repoInfo.branch)
+    const branchSet = new Set<string>(['main'])
+
+    // Add branches from queue entries (primary source - these have actual data)
+    if (branchesData?.branches) {
+      branchesData.branches.forEach((b) => branchSet.add(b))
     }
-    return branches
-  }, [repoInfo?.branch])
+
+    // Add current repo branch if available
+    if (repoInfo?.branch) {
+      branchSet.add(repoInfo.branch)
+    }
+
+    return Array.from(branchSet).sort()
+  }, [branchesData?.branches, repoInfo?.branch])
+
+  // Default to first non-main branch with queue entries if available
+  const defaultBranch = useMemo(() => {
+    const queueBranches = branchesData?.branches || []
+    // Prefer the first branch that has queue entries (most relevant)
+    return queueBranches[0] || 'main'
+  }, [branchesData?.branches])
 
   return (
     <MergeQueuePanel
-      defaultTargetBranch="main"
+      defaultTargetBranch={defaultBranch}
       targetBranches={targetBranches}
     />
   )

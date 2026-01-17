@@ -591,6 +591,8 @@ describe('IssuesPage', () => {
       step_index: overrides.step_index ?? null,
       step_config: overrides.step_config ?? null,
       stream_id: overrides.stream_id ?? null,
+      deleted_at: overrides.deleted_at ?? null,
+      deletion_reason: overrides.deletion_reason ?? null,
     })
 
     const mockExecutions: Execution[] = [

@@ -473,6 +473,14 @@ export interface Checkpoint {
   reviewed_by?: string;
   /** Review notes or comments */
   review_notes?: string;
+  /** Target branch for the checkpoint (default: main) */
+  target_branch?: string;
+  /** Queue position (if queued for merge) */
+  queue_position?: number;
+  /** JSON snapshot of changed issues at this checkpoint */
+  issue_snapshot?: string;
+  /** JSON snapshot of changed specs at this checkpoint */
+  spec_snapshot?: string;
 }
 
 /**
@@ -786,6 +794,10 @@ export interface Execution {
 
   // Dataplane integration
   stream_id: string | null;
+
+  // Soft delete support
+  deleted_at: string | null;
+  deletion_reason: string | null;
 }
 
 // Re-export execution artifact types

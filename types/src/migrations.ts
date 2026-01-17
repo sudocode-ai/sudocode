@@ -1074,6 +1074,102 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 12,
+    name: "add-checkpoint-snapshot-columns",
+    up: (db: Database.Database) => {
+      // Check if checkpoints table exists
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='checkpoints'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (tables.length === 0) {
+        // Table doesn't exist yet, will be created with new schema
+        return;
+      }
+
+      // Check if columns already exist
+      const columns = db.pragma("table_info(checkpoints)") as Array<{
+        name: string;
+      }>;
+      const columnNames = new Set(columns.map((c) => c.name));
+
+      // Add issue_snapshot column if missing
+      if (!columnNames.has("issue_snapshot")) {
+        db.exec(`ALTER TABLE checkpoints ADD COLUMN issue_snapshot TEXT;`);
+        console.log("  ✓ Added issue_snapshot column to checkpoints");
+      }
+
+      // Add spec_snapshot column if missing
+      if (!columnNames.has("spec_snapshot")) {
+        db.exec(`ALTER TABLE checkpoints ADD COLUMN spec_snapshot TEXT;`);
+        console.log("  ✓ Added spec_snapshot column to checkpoints");
+      }
+    },
+    down: (db: Database.Database) => {
+      // SQLite doesn't support DROP COLUMN directly in older versions
+      console.log(
+        "  Note: snapshot columns cannot be removed (SQLite limitation)"
+      );
+    },
+  },
+  {
+    version: 13,
+    name: "add-execution-soft-delete-columns",
+    up: (db: Database.Database) => {
+      // Check if executions table exists
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='executions'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (tables.length === 0) {
+        // Table doesn't exist yet, will be created with new schema
+        return;
+      }
+
+      // Check if columns already exist
+      const columns = db.pragma("table_info(executions)") as Array<{
+        name: string;
+      }>;
+      const columnNames = new Set(columns.map((c) => c.name));
+
+      // Add deleted_at column if missing
+      if (!columnNames.has("deleted_at")) {
+        db.exec(`ALTER TABLE executions ADD COLUMN deleted_at DATETIME;`);
+        console.log("  ✓ Added deleted_at column to executions");
+      }
+
+      // Add deletion_reason column if missing
+      if (!columnNames.has("deletion_reason")) {
+        db.exec(`ALTER TABLE executions ADD COLUMN deletion_reason TEXT;`);
+        console.log("  ✓ Added deletion_reason column to executions");
+      }
+
+      // Add index for soft delete queries (finding non-deleted executions)
+      const indexes = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_executions_deleted_at'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (indexes.length === 0) {
+        db.exec(`
+          CREATE INDEX IF NOT EXISTS idx_executions_deleted_at ON executions(deleted_at);
+        `);
+        console.log("  ✓ Created idx_executions_deleted_at index");
+      }
+    },
+    down: (db: Database.Database) => {
+      // SQLite doesn't support DROP COLUMN directly in older versions
+      console.log(
+        "  Note: soft delete columns cannot be removed (SQLite limitation)"
+      );
+    },
+  },
 ];
 
 /**
@@ -1134,5 +1230,37 @@ export function runMigrations(db: Database.Database): void {
       console.error(`  ✗ Migration ${migration.version} failed:`, error);
       throw error;
     }
+  }
+}
+
+/**
+ * Run dataplane migrations if the dataplane package is available.
+ *
+ * This allows sudocode to run dataplane migrations when using a shared database.
+ * If dataplane is not installed, this function does nothing.
+ *
+ * @param db - Database connection
+ * @param tablePrefix - Table prefix for dataplane tables (default: 'dp_')
+ */
+export async function runDataplaneMigrationsIfAvailable(
+  db: Database.Database,
+  tablePrefix: string = "dp_"
+): Promise<void> {
+  try {
+    // Dynamic import - dataplane may not be installed
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const dataplane = (await import("dataplane" as any)) as {
+      runDataplaneMigrations?: (
+        db: Database.Database,
+        prefix: string
+      ) => number;
+    };
+
+    if (dataplane.runDataplaneMigrations) {
+      dataplane.runDataplaneMigrations(db, tablePrefix);
+    }
+  } catch {
+    // Dataplane not installed - this is expected in some environments
+    // No action needed
   }
 }

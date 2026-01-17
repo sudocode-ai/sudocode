@@ -129,6 +129,8 @@ const mockRunningExecution: Execution = {
   step_index: null,
   step_config: null,
   stream_id: null,
+    deleted_at: null,
+    deletion_reason: null,
 }
 
 describe('IssuePanel - ESC Modal Propagation', () => {

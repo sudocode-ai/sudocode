@@ -316,6 +316,9 @@ export const queueApi = {
     const params = targetBranch ? `?target_branch=${encodeURIComponent(targetBranch)}` : ''
     return get<QueueStats>(`/queue/stats${params}`)
   },
+
+  /** Get unique target branches with queue entries */
+  getBranches: () => get<{ branches: string[] }>('/queue/branches'),
 }
 
 /**

@@ -329,6 +329,7 @@ export class ExecutionService {
               targetBranch: mergedConfig.baseBranch || branchName,
               mode: "worktree",
               agentId: `exec-${executionId.substring(0, 8)}`,
+              existingBranch: branchName, // Track existing worktree branch, don't create new stream branch
             });
             streamId = streamResult.streamId;
             console.log(

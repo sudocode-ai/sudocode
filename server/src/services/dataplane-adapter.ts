@@ -19,6 +19,11 @@ import {
   getOutgoingRelationships,
 } from '@sudocode-ai/cli/dist/operations/relationships.js';
 import {
+  computeSnapshotDiffFromCommits,
+  serializeSnapshot,
+  type SnapshotDiff,
+} from '../utils/jsonl-diff.js';
+import {
   type DataplaneConfig,
   getDataplaneConfig,
   isDataplaneEnabled,
@@ -81,6 +86,8 @@ interface DataplaneTracker {
   createStream(options: {
     name: string;
     agentId: string;
+    parentStream?: string;
+    branchPointCommit?: string;
     metadata?: Record<string, unknown>;
     existingBranch?: string;
     createBranch?: boolean;
@@ -414,22 +421,27 @@ export class DataplaneAdapter {
     };
 
     // Create new stream for issue
-    // If parent stream exists, this creates a fork from that stream
+    // If parent stream exists, pass it directly for proper DAG tracking
     const streamId = tracker.createStream({
       name: `issue-${issueId}`,
       agentId,
+      parentStream: parentStreamId,
       metadata: metadata as unknown as Record<string, unknown>,
     });
 
-    // Add dependency to parent stream if exists
+    // Also add explicit dependency for streams that were created without parentStream
+    // This ensures backward compatibility and handles edge cases where parentStream
+    // wasn't properly set during creation
     if (parentStreamId) {
       try {
         tracker.addDependency(streamId, parentStreamId);
       } catch (error) {
-        // Log but don't fail - dependency may already exist or would create cycle
-        console.warn(
-          `Failed to add dependency ${streamId} → ${parentStreamId}: ${error instanceof Error ? error.message : String(error)}`
-        );
+        // Ignore if dependency already exists (expected when parentStream was passed)
+        // or would create cycle
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.includes('already exists')) {
+          console.warn(`Failed to add dependency ${streamId} → ${parentStreamId}: ${message}`);
+        }
       }
     }
 
@@ -531,8 +543,9 @@ export class DataplaneAdapter {
 
     // Update stream metadata in database
     // Note: This updates the metadata field in the dataplane streams table
+    const streamsTable = `${this.config.tablePrefix}streams`;
     const updateStmt = tracker.db.prepare(`
-      UPDATE streams SET metadata = json_set(metadata, '$.sudocode.checkpoint', json(?))
+      UPDATE ${streamsTable} SET metadata = json_set(metadata, '$.sudocode.checkpoint', json(?))
       WHERE id = ?
     `);
     updateStmt.run(JSON.stringify(newCheckpointMeta), stream.id);
@@ -556,8 +569,9 @@ export class DataplaneAdapter {
     }
 
     // Update review status in metadata
+    const streamsTable = `${this.config.tablePrefix}streams`;
     const updateStmt = tracker.db.prepare(`
-      UPDATE streams SET metadata = json_set(metadata, '$.sudocode.checkpoint.review_status', ?)
+      UPDATE ${streamsTable} SET metadata = json_set(metadata, '$.sudocode.checkpoint.review_status', ?)
       WHERE id = ?
     `);
     updateStmt.run(JSON.stringify(status), stream.id);
@@ -573,6 +587,8 @@ export class DataplaneAdapter {
     targetBranch: string;
     mode: 'worktree' | 'local';
     agentId: string;
+    /** If provided, track this existing branch instead of creating a new stream branch */
+    existingBranch?: string;
   }): Promise<ExecutionStreamResult> {
     const tracker = this.ensureInitialized();
 
@@ -599,6 +615,16 @@ export class DataplaneAdapter {
         createBranch: false,
       });
       isLocalMode = true;
+    } else if (params.existingBranch) {
+      // Worktree mode with existing branch - track without creating new stream branch
+      // Used when worktree already exists (e.g., workflow executions)
+      streamId = tracker.createStream({
+        name: `exec-${params.executionId}`,
+        agentId: params.agentId,
+        metadata,
+        existingBranch: params.existingBranch,
+        createBranch: false,
+      });
     } else {
       // Worktree mode - create new stream branch
       streamId = tracker.createStream({
@@ -1191,16 +1217,29 @@ export class DataplaneAdapter {
     const { execSync } = await import('child_process');
     const execBranch = tracker.getStreamBranchName(execStream.id);
 
+    // Determine merge source: use execution's after_commit if the stream branch
+    // doesn't have the commits (common for workflow executions where commits are
+    // made on a separate workflow branch, not the stream branch)
+    let mergeSource = execBranch;
+    if (execution?.after_commit) {
+      const streamHead = tracker.getStreamHead(execStream.id);
+      // If stream branch is still at base commit or doesn't have the execution commits,
+      // use the execution's after_commit directly as the merge source
+      if (!streamHead || streamHead === execStream.baseCommit) {
+        mergeSource = execution.after_commit;
+      }
+    }
+
     try {
       // 6. Check for conflicts before merge
       const mergeBase = execSync(
-        `git merge-base ${issueStreamBranch} ${execBranch}`,
+        `git merge-base ${issueStreamBranch} ${mergeSource}`,
         { cwd: worktreePath, encoding: 'utf-8' }
       ).trim();
 
       // Check if there would be conflicts
       try {
-        execSync(`git merge-tree ${mergeBase} ${issueStreamBranch} ${execBranch}`, {
+        execSync(`git merge-tree ${mergeBase} ${issueStreamBranch} ${mergeSource}`, {
           cwd: worktreePath,
           encoding: 'utf-8',
         });
@@ -1235,7 +1274,7 @@ export class DataplaneAdapter {
 
       if (squash) {
         // Squash merge
-        execSync(`git merge --squash ${execBranch}`, {
+        execSync(`git merge --squash ${mergeSource}`, {
           cwd: worktreePath,
           encoding: 'utf-8',
           stdio: 'pipe',
@@ -1247,7 +1286,7 @@ export class DataplaneAdapter {
         });
       } else {
         // Regular merge with commit
-        execSync(`git merge ${execBranch} -m "${message}"`, {
+        execSync(`git merge ${mergeSource} -m "${message}"`, {
           cwd: worktreePath,
           encoding: 'utf-8',
           stdio: 'pipe',
@@ -1260,7 +1299,33 @@ export class DataplaneAdapter {
         encoding: 'utf-8',
       }).trim();
 
-      // 8. Create checkpoint record in database
+      // 8. Compute snapshot diff for issue/spec state changes
+      // Uses baseline commit (before) and current worktree state (after merge)
+      let issueSnapshot: string | null = null;
+      let specSnapshot: string | null = null;
+      try {
+        const snapshotDiff: SnapshotDiff = computeSnapshotDiffFromCommits(
+          this.repoPath,
+          changes.commitRange.before,
+          null, // Read current state from worktree
+          worktreePath
+        );
+
+        // Only store non-empty snapshots
+        if (snapshotDiff.issues.length > 0) {
+          issueSnapshot = serializeSnapshot(snapshotDiff.issues);
+        }
+        if (snapshotDiff.specs.length > 0) {
+          specSnapshot = serializeSnapshot(snapshotDiff.specs);
+        }
+      } catch (snapshotError) {
+        // Log but don't fail - snapshots are supplementary data
+        console.warn(
+          `[checkpointSync] Failed to compute snapshot: ${snapshotError instanceof Error ? snapshotError.message : String(snapshotError)}`
+        );
+      }
+
+      // 9. Create checkpoint record in database
       const checkpointId = `cp-${Date.now().toString(36)}`;
       const checkpointedAt = new Date().toISOString();
       // Get target branch from options, stream metadata, or default to 'main'
@@ -1270,8 +1335,8 @@ export class DataplaneAdapter {
         INSERT INTO checkpoints (
           id, issue_id, execution_id, stream_id, commit_sha, parent_commit,
           changed_files, additions, deletions, message, checkpointed_at,
-          checkpointed_by, review_status, target_branch
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+          checkpointed_by, review_status, target_branch, issue_snapshot, spec_snapshot
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
       `);
 
       insertStmt.run(
@@ -1287,17 +1352,19 @@ export class DataplaneAdapter {
         message,
         checkpointedAt,
         options.checkpointedBy || null,
-        targetBranch
+        targetBranch,
+        issueSnapshot,
+        specSnapshot
       );
 
-      // 9. Update issue stream metadata
+      // 10. Update issue stream metadata
       this.updateIssueStreamCheckpoint(issueId, {
         executionId,
         commit: mergeCommit,
         checkpointedAt,
       });
 
-      // 10. Auto-enqueue to merge queue if enabled
+      // 11. Auto-enqueue to merge queue if enabled
       let queueEntry: QueueEntry | undefined;
       if (autoEnqueue && this.config.mergeQueue.enabled) {
         try {
@@ -1314,7 +1381,7 @@ export class DataplaneAdapter {
         }
       }
 
-      // 11. Return result
+      // 12. Return result
       const checkpoint: CheckpointInfo = {
         id: checkpointId,
         issueId,
@@ -2196,9 +2263,10 @@ export class DataplaneAdapter {
     }
 
     // 5. Update the entry's priority in the database
+    const mergeQueueTable = `${this.config.tablePrefix}merge_queue`;
     try {
       tracker.db
-        .prepare('UPDATE merge_queue SET priority = ?, updated_at = ? WHERE id = ?')
+        .prepare(`UPDATE ${mergeQueueTable} SET priority = ?, updated_at = ? WHERE id = ?`)
         .run(newPriority, Date.now(), entry.id);
     } catch (error) {
       return {
@@ -2269,6 +2337,39 @@ export class DataplaneAdapter {
     _worktree: string
   ): Promise<MergeResult[]> {
     return [];
+  }
+
+  /**
+   * Get unique target branches from the merge queue
+   * Returns all branches that have entries in the queue
+   */
+  getQueueTargetBranches(): string[] {
+    if (!this.externalDb) {
+      return ['main'];
+    }
+
+    const tablePrefix = this.config?.tablePrefix ?? 'dp_';
+    const tableName = `${tablePrefix}merge_queue`;
+
+    try {
+      const stmt = this.externalDb.prepare(`
+        SELECT DISTINCT target_branch FROM ${tableName}
+        WHERE status != 'merged'
+        ORDER BY target_branch
+      `);
+      const rows = stmt.all() as { target_branch: string }[];
+      const branches = rows.map((r) => r.target_branch);
+
+      // Always include 'main' as a fallback
+      if (!branches.includes('main')) {
+        branches.unshift('main');
+      }
+
+      return branches;
+    } catch (error) {
+      console.warn('[DataplaneAdapter] Failed to get queue target branches:', error);
+      return ['main'];
+    }
   }
 
   // ───────────────────────────────────────────────────────────────────────────
