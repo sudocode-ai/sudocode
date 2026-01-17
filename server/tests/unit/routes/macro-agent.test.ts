@@ -92,7 +92,8 @@ describe("Macro-Agent Routes", () => {
       const response = await request(app).get("/api/macro-agent/status");
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual({
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toEqual({
         serverReady: true,
         observabilityConnected: true,
         agents: { total: 5, running: 3, stopped: 2 },
@@ -107,7 +108,8 @@ describe("Macro-Agent Routes", () => {
       const response = await request(app).get("/api/macro-agent/status");
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual({
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toEqual({
         serverReady: true,
         observabilityConnected: false,
         agents: { total: 0, running: 0, stopped: 0 },
@@ -123,7 +125,8 @@ describe("Macro-Agent Routes", () => {
       const response = await request(app).get("/api/macro-agent/status");
 
       expect(response.status).toBe(200);
-      expect(response.body.serverReady).toBe(false);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.serverReady).toBe(false);
     });
   });
 
@@ -141,8 +144,9 @@ describe("Macro-Agent Routes", () => {
       const response = await request(app).get("/api/macro-agent/agents");
 
       expect(response.status).toBe(200);
-      expect(response.body.agents).toHaveLength(2);
-      expect(response.body.total).toBe(2);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.agents).toHaveLength(2);
+      expect(response.body.data.total).toBe(2);
     });
 
     it("should filter agents by session", async () => {
@@ -157,7 +161,7 @@ describe("Macro-Agent Routes", () => {
       expect(mockObservabilityService.getAgentsBySession).toHaveBeenCalledWith(
         "sess-1"
       );
-      expect(response.body.agents).toHaveLength(1);
+      expect(response.body.data.agents).toHaveLength(1);
     });
 
     it("should filter agents by state", async () => {
@@ -172,7 +176,7 @@ describe("Macro-Agent Routes", () => {
       expect(mockObservabilityService.getAgentsByState).toHaveBeenCalledWith(
         "running"
       );
-      expect(response.body.agents).toHaveLength(1);
+      expect(response.body.data.agents).toHaveLength(1);
     });
 
     it("should return 503 when observability unavailable", async () => {
@@ -181,7 +185,8 @@ describe("Macro-Agent Routes", () => {
       const response = await request(app).get("/api/macro-agent/agents");
 
       expect(response.status).toBe(503);
-      expect(response.body.error).toContain("not available");
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toContain("not available");
     });
   });
 
@@ -210,10 +215,11 @@ describe("Macro-Agent Routes", () => {
       const response = await request(app).get("/api/macro-agent/sessions");
 
       expect(response.status).toBe(200);
-      expect(response.body.sessions).toHaveLength(2);
-      expect(response.body.total).toBe(2);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.sessions).toHaveLength(2);
+      expect(response.body.data.total).toBe(2);
 
-      const session1 = response.body.sessions.find(
+      const session1 = response.body.data.sessions.find(
         (s: any) => s.id === "session-1"
       );
       expect(session1.agentCount).toBe(2);
@@ -246,9 +252,10 @@ describe("Macro-Agent Routes", () => {
       );
 
       expect(response.status).toBe(200);
-      expect(response.body.sessionId).toBe("session-1");
-      expect(response.body.agents).toHaveLength(1);
-      expect(response.body.total).toBe(1);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.sessionId).toBe("session-1");
+      expect(response.body.data.agents).toHaveLength(1);
+      expect(response.body.data.total).toBe(1);
     });
 
     it("should return empty agents when execution has no session", async () => {
@@ -261,9 +268,10 @@ describe("Macro-Agent Routes", () => {
       );
 
       expect(response.status).toBe(200);
-      expect(response.body.sessionId).toBeNull();
-      expect(response.body.agents).toHaveLength(0);
-      expect(response.body.total).toBe(0);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.sessionId).toBeNull();
+      expect(response.body.data.agents).toHaveLength(0);
+      expect(response.body.data.total).toBe(0);
     });
 
     it("should return 503 when observability unavailable", async () => {
@@ -299,10 +307,11 @@ describe("Macro-Agent Routes", () => {
       );
 
       expect(response.status).toBe(200);
-      expect(response.body.sessionId).toBe("session-1");
-      expect(response.body.connectedAt).toBe(1700000000000);
-      expect(response.body.agentCount).toBe(2);
-      expect(response.body.runningCount).toBe(1);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.sessionId).toBe("session-1");
+      expect(response.body.data.connectedAt).toBe(1700000000000);
+      expect(response.body.data.agentCount).toBe(2);
+      expect(response.body.data.runningCount).toBe(1);
     });
 
     it("should return null session for unconnected execution", async () => {
@@ -315,10 +324,11 @@ describe("Macro-Agent Routes", () => {
       );
 
       expect(response.status).toBe(200);
-      expect(response.body.sessionId).toBeNull();
-      expect(response.body.connectedAt).toBeNull();
-      expect(response.body.agentCount).toBe(0);
-      expect(response.body.runningCount).toBe(0);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.sessionId).toBeNull();
+      expect(response.body.data.connectedAt).toBeNull();
+      expect(response.body.data.agentCount).toBe(0);
+      expect(response.body.data.runningCount).toBe(0);
     });
 
     it("should return 503 when observability unavailable", async () => {

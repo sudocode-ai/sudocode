@@ -83,8 +83,9 @@ function getObservabilityService(): MacroAgentObservabilityService | null {
  */
 function sendServiceUnavailable(res: Response): void {
   res.status(503).json({
-    error: "Macro-agent observability service is not available",
-    details: "The macro-agent server may not be running or is starting up",
+    success: false,
+    message: "Macro-agent observability service is not available",
+    error_data: { details: "The macro-agent server may not be running or is starting up" },
   });
 }
 
@@ -122,7 +123,7 @@ export function createMacroAgentRouter(): Router {
           sessions: { total: 0 },
           executions: { connected: 0 },
         };
-        return res.status(200).json(response);
+        return res.status(200).json({ success: true, data: response });
       }
 
       const stats = observability.getStats();
@@ -142,12 +143,13 @@ export function createMacroAgentRouter(): Router {
         },
       };
 
-      return res.status(200).json(response);
+      return res.status(200).json({ success: true, data: response });
     } catch (error) {
       console.error("[MacroAgentRoutes] Failed to get status:", error);
       return res.status(500).json({
-        error: "Failed to retrieve macro-agent status",
-        details: error instanceof Error ? error.message : "Unknown error",
+        success: false,
+        message: "Failed to retrieve macro-agent status",
+        error_data: { details: error instanceof Error ? error.message : "Unknown error" },
       });
     }
   });
@@ -187,12 +189,13 @@ export function createMacroAgentRouter(): Router {
         total: agents.length,
       };
 
-      res.status(200).json(response);
+      res.status(200).json({ success: true, data: response });
     } catch (error) {
       console.error("[MacroAgentRoutes] Failed to get agents:", error);
       res.status(500).json({
-        error: "Failed to retrieve agents",
-        details: error instanceof Error ? error.message : "Unknown error",
+        success: false,
+        message: "Failed to retrieve agents",
+        error_data: { details: error instanceof Error ? error.message : "Unknown error" },
       });
     }
   });
@@ -232,12 +235,13 @@ export function createMacroAgentRouter(): Router {
         total: sessions.length,
       };
 
-      res.status(200).json(response);
+      res.status(200).json({ success: true, data: response });
     } catch (error) {
       console.error("[MacroAgentRoutes] Failed to get sessions:", error);
       res.status(500).json({
-        error: "Failed to retrieve sessions",
-        details: error instanceof Error ? error.message : "Unknown error",
+        success: false,
+        message: "Failed to retrieve sessions",
+        error_data: { details: error instanceof Error ? error.message : "Unknown error" },
       });
     }
   });
@@ -280,15 +284,16 @@ export function createExecutionMacroRouter(): Router {
         total: agents.length,
       };
 
-      res.status(200).json(response);
+      res.status(200).json({ success: true, data: response });
     } catch (error) {
       console.error(
         "[MacroAgentRoutes] Failed to get execution agents:",
         error
       );
       res.status(500).json({
-        error: "Failed to retrieve execution agents",
-        details: error instanceof Error ? error.message : "Unknown error",
+        success: false,
+        message: "Failed to retrieve execution agents",
+        error_data: { details: error instanceof Error ? error.message : "Unknown error" },
       });
     }
   });
@@ -315,7 +320,7 @@ export function createExecutionMacroRouter(): Router {
           agentCount: 0,
           runningCount: 0,
         };
-        return res.status(200).json(response);
+        return res.status(200).json({ success: true, data: response });
       }
 
       const agents = observability.getAgentsBySession(
@@ -330,15 +335,16 @@ export function createExecutionMacroRouter(): Router {
         runningCount: runningAgents.length,
       };
 
-      res.status(200).json(response);
+      res.status(200).json({ success: true, data: response });
     } catch (error) {
       console.error(
         "[MacroAgentRoutes] Failed to get execution session:",
         error
       );
       res.status(500).json({
-        error: "Failed to retrieve execution session",
-        details: error instanceof Error ? error.message : "Unknown error",
+        success: false,
+        message: "Failed to retrieve execution session",
+        error_data: { details: error instanceof Error ? error.message : "Unknown error" },
       });
     }
   });
