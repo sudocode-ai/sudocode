@@ -391,8 +391,13 @@ async function startServer(
         // Explicit port specified - use it directly (no scanning)
         port = preferredPort;
       } else {
-        // Use get-port to find an available port, preferring the initial port
-        port = await getPort({ port: preferredPort });
+        // Generate sequential port list starting from preferredPort
+        // This ensures deterministic port selection (3000, 3001, 3002, ...)
+        const portRange = Array.from(
+          { length: maxAttempts },
+          (_, i) => preferredPort + i
+        );
+        port = await getPort({ port: portRange });
         if (port !== preferredPort && attempt === 0) {
           console.log(
             `[server] Preferred port ${preferredPort} is in use, using port ${port}`
