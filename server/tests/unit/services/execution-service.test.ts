@@ -179,8 +179,8 @@ describe("ExecutionService", () => {
 
     // Mock MCP detection methods to always return true
     // This allows tests to run without requiring actual MCP configuration
-    vi.spyOn(service as any, 'detectSudocodeMcp').mockResolvedValue(true);
-    vi.spyOn(service as any, 'detectAgentMcp').mockResolvedValue(true);
+    vi.spyOn(service as any, "detectSudocodeMcp").mockResolvedValue(true);
+    vi.spyOn(service as any, "detectAgentMcp").mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -1313,6 +1313,41 @@ describe("ExecutionService", () => {
       await expect(service.cancelExecution(execution.id)).rejects.toThrow(
         /Cannot cancel execution in stopped state/
       );
+    });
+
+    it("should call executor.cancel() for in-process executions", async () => {
+      const { createExecutorForAgent } = await import(
+        "../../../src/execution/executors/executor-factory.js"
+      );
+
+      // Track if cancel was called
+      const cancelMock = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(createExecutorForAgent).mockImplementation(() => ({
+        executeWithLifecycle: vi.fn(async () => {
+          // Return a promise that never resolves to keep execution "running"
+          return new Promise(() => {});
+        }),
+        resumeWithLifecycle: vi.fn(async () => Promise.resolve()),
+        cancel: cancelMock,
+        cleanup: vi.fn(async () => {}),
+      }));
+
+      // Create execution
+      const issueContent = "Add OAuth2 authentication with JWT tokens";
+      const execution = await service.createExecution(
+        testIssueId,
+        { mode: "worktree" as const },
+        issueContent
+      );
+
+      // Wait for execution to start
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Cancel it
+      await service.cancelExecution(execution.id);
+
+      // Verify executor.cancel() was called
+      expect(cancelMock).toHaveBeenCalledWith(execution.id);
     });
   });
 

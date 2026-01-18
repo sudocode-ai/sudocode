@@ -1003,12 +1003,24 @@ ${feedback}`;
       return; // Worker pool handles DB updates and broadcasts
     }
 
-    // For in-process executions using AcpExecutorWrapper/LegacyShimExecutorWrapper:
-    // The wrapper manages its own lifecycle and cancellation.
-    // We update the database status, which the wrapper may check,
-    // or we rely on process termination to stop execution.
+    // For in-process executions, call the executor's cancel method
+    const executor = this.activeExecutors.get(executionId);
+    if (executor) {
+      try {
+        // Both AcpExecutorWrapper and LegacyShimExecutorWrapper have cancel()
+        await executor.cancel(executionId);
+        this.activeExecutors.delete(executionId);
+        // Continue to DB update below for safety (executor may have already done it)
+      } catch (error) {
+        console.warn(
+          `[ExecutionService] Error calling executor.cancel for ${executionId}:`,
+          error instanceof Error ? error.message : String(error)
+        );
+        // Fall through to manual cleanup
+      }
+    }
 
-    // Update status in database
+    // Update status in database (idempotent - may already be set by executor)
     updateExecution(this.db, executionId, {
       status: "stopped",
       completed_at: new Date().toISOString(),
