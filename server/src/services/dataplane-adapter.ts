@@ -298,12 +298,195 @@ function getSudocodeMetadata(
 /**
  * Adapter for dataplane operations in sudocode
  */
+// Type for dataplane checkpoint module (matches dataplane/src/checkpoints.ts)
+interface DataplaneCheckpointsModule {
+  createCheckpoint(
+    db: Database.Database,
+    options: {
+      streamId: string;
+      commitSha: string;
+      parentCommit?: string;
+      originalCommit?: string;
+      changeId?: string;
+      message?: string;
+      createdBy?: string;
+    }
+  ): {
+    id: string;
+    streamId: string;
+    commitSha: string;
+    parentCommit: string | null;
+    originalCommit: string | null;
+    changeId: string | null;
+    message: string | null;
+    createdAt: number;
+    createdBy: string | null;
+  };
+  getCheckpoint(
+    db: Database.Database,
+    id: string
+  ): {
+    id: string;
+    streamId: string;
+    commitSha: string;
+    parentCommit: string | null;
+    originalCommit: string | null;
+    changeId: string | null;
+    message: string | null;
+    createdAt: number;
+    createdBy: string | null;
+  } | null;
+  getCheckpointsForStream(
+    db: Database.Database,
+    streamId: string
+  ): Array<{
+    id: string;
+    streamId: string;
+    commitSha: string;
+    parentCommit: string | null;
+    originalCommit: string | null;
+    changeId: string | null;
+    message: string | null;
+    createdAt: number;
+    createdBy: string | null;
+  }>;
+  listCheckpoints(
+    db: Database.Database,
+    options?: {
+      streamId?: string;
+      changeId?: string;
+      unstackedOnly?: boolean;
+    }
+  ): Array<{
+    id: string;
+    streamId: string;
+    commitSha: string;
+    parentCommit: string | null;
+    originalCommit: string | null;
+    changeId: string | null;
+    message: string | null;
+    createdAt: number;
+    createdBy: string | null;
+  }>;
+}
+
+// Type for dataplane diff_stacks module (matches dataplane/src/diff-stacks.ts)
+interface DataplaneDiffStacksModule {
+  createDiffStack(
+    db: Database.Database,
+    options?: {
+      name?: string;
+      description?: string;
+      targetBranch?: string;
+      checkpointIds?: string[];
+      createdBy?: string;
+    }
+  ): {
+    id: string;
+    name: string | null;
+    description: string | null;
+    targetBranch: string;
+    reviewStatus: string;
+    reviewedBy: string | null;
+    reviewedAt: number | null;
+    reviewNotes: string | null;
+    queuePosition: number | null;
+    createdAt: number;
+    createdBy: string | null;
+  };
+  getDiffStack(
+    db: Database.Database,
+    id: string
+  ): {
+    id: string;
+    name: string | null;
+    description: string | null;
+    targetBranch: string;
+    reviewStatus: string;
+    reviewedBy: string | null;
+    reviewedAt: number | null;
+    reviewNotes: string | null;
+    queuePosition: number | null;
+    createdAt: number;
+    createdBy: string | null;
+  } | null;
+  addCheckpointToStack(
+    db: Database.Database,
+    options: {
+      stackId: string;
+      checkpointId: string;
+      position?: number;
+    }
+  ): {
+    id: string;
+    stackId: string;
+    checkpointId: string;
+    position: number;
+  };
+  setStackReviewStatus(
+    db: Database.Database,
+    options: {
+      stackId: string;
+      status: string;
+      reviewedBy?: string;
+      notes?: string;
+    }
+  ): {
+    id: string;
+    name: string | null;
+    description: string | null;
+    targetBranch: string;
+    reviewStatus: string;
+    reviewedBy: string | null;
+    reviewedAt: number | null;
+    reviewNotes: string | null;
+    queuePosition: number | null;
+    createdAt: number;
+    createdBy: string | null;
+  } | null;
+  enqueueStack(
+    db: Database.Database,
+    stackId: string
+  ): {
+    id: string;
+    name: string | null;
+    description: string | null;
+    targetBranch: string;
+    reviewStatus: string;
+    reviewedBy: string | null;
+    reviewedAt: number | null;
+    reviewNotes: string | null;
+    queuePosition: number | null;
+    createdAt: number;
+    createdBy: string | null;
+  } | null;
+  getStacksForCheckpoint(
+    db: Database.Database,
+    checkpointId: string
+  ): Array<{
+    id: string;
+    name: string | null;
+    description: string | null;
+    targetBranch: string;
+    reviewStatus: string;
+    reviewedBy: string | null;
+    reviewedAt: number | null;
+    reviewNotes: string | null;
+    queuePosition: number | null;
+    createdAt: number;
+    createdBy: string | null;
+  }>;
+}
+
 export class DataplaneAdapter {
   private tracker: DataplaneTracker | null = null;
   private config: DataplaneConfig;
   private repoPath: string;
   private initialized = false;
   private externalDb: Database.Database | null = null;
+  // Checkpoint and diff stack modules (loaded dynamically)
+  private checkpointsModule: DataplaneCheckpointsModule | null = null;
+  private diffStacksModule: DataplaneDiffStacksModule | null = null;
 
   constructor(repoPath: string, config?: DataplaneConfig, db?: Database.Database) {
     this.repoPath = repoPath;
@@ -339,8 +522,14 @@ export class DataplaneAdapter {
       // Dynamic import of dataplane - may not be installed
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const dataplane = await import('dataplane' as any) as {
-        MultiAgentRepoTracker: new (opts: DataplaneTrackerOptions) => DataplaneTracker
+        MultiAgentRepoTracker: new (opts: DataplaneTrackerOptions) => DataplaneTracker;
+        checkpoints: DataplaneCheckpointsModule;
+        diffStacks: DataplaneDiffStacksModule;
       };
+
+      // Store references to modules for later use
+      this.checkpointsModule = dataplane.checkpoints;
+      this.diffStacksModule = dataplane.diffStacks;
 
       if (this.externalDb) {
         // Use shared database with table prefix (preferred)
@@ -1243,6 +1432,360 @@ export class DataplaneAdapter {
     return result;
   }
 
+  /**
+   * Get a checkpoint from dataplane with app_data joined.
+   *
+   * This is the new unified checkpoint access pattern:
+   * - Core checkpoint data comes from dataplane
+   * - App-specific data (issue_id, execution_id, snapshots) comes from checkpoint_app_data
+   *
+   * @param checkpointId - Checkpoint ID
+   * @param db - Sudocode database connection
+   * @returns Checkpoint with app_data or null if not found
+   */
+  getCheckpointWithAppData(
+    checkpointId: string,
+    db: Database.Database
+  ): {
+    // Core dataplane checkpoint fields
+    id: string;
+    streamId: string;
+    commitSha: string;
+    parentCommit: string | null;
+    originalCommit: string | null;
+    changeId: string | null;
+    message: string | null;
+    createdAt: number;
+    createdBy: string | null;
+    // App-specific fields
+    issueId: string | null;
+    executionId: string | null;
+    issueSnapshot: string | null;
+    specSnapshot: string | null;
+    // Diff stack info (if in a stack)
+    diffStack: {
+      id: string;
+      name: string | null;
+      reviewStatus: string;
+      queuePosition: number | null;
+      targetBranch: string;
+    } | null;
+  } | null {
+    const tracker = this.ensureInitialized();
+
+    // Get dataplane checkpoint
+    if (!this.checkpointsModule) {
+      console.warn('[getCheckpointWithAppData] Checkpoints module not available');
+      return null;
+    }
+
+    const dpCheckpoint = this.checkpointsModule.getCheckpoint(tracker.db, checkpointId);
+    if (!dpCheckpoint) {
+      return null;
+    }
+
+    // Get app_data from local table
+    const appData = db.prepare(`
+      SELECT issue_id, execution_id, issue_snapshot, spec_snapshot
+      FROM checkpoint_app_data
+      WHERE checkpoint_id = ?
+    `).get(checkpointId) as {
+      issue_id: string | null;
+      execution_id: string | null;
+      issue_snapshot: string | null;
+      spec_snapshot: string | null;
+    } | undefined;
+
+    // Get diff_stack info if available
+    let diffStack = null;
+    if (this.diffStacksModule) {
+      const stacks = this.diffStacksModule.getStacksForCheckpoint(tracker.db, checkpointId);
+      if (stacks.length > 0) {
+        const stack = stacks[0]; // Use first stack (most recent)
+        diffStack = {
+          id: stack.id,
+          name: stack.name,
+          reviewStatus: stack.reviewStatus,
+          queuePosition: stack.queuePosition,
+          targetBranch: stack.targetBranch,
+        };
+      }
+    }
+
+    return {
+      id: dpCheckpoint.id,
+      streamId: dpCheckpoint.streamId,
+      commitSha: dpCheckpoint.commitSha,
+      parentCommit: dpCheckpoint.parentCommit,
+      originalCommit: dpCheckpoint.originalCommit,
+      changeId: dpCheckpoint.changeId,
+      message: dpCheckpoint.message,
+      createdAt: dpCheckpoint.createdAt,
+      createdBy: dpCheckpoint.createdBy,
+      issueId: appData?.issue_id ?? null,
+      executionId: appData?.execution_id ?? null,
+      issueSnapshot: appData?.issue_snapshot ?? null,
+      specSnapshot: appData?.spec_snapshot ?? null,
+      diffStack,
+    };
+  }
+
+  /**
+   * List checkpoints from dataplane with app_data joined.
+   *
+   * @param db - Sudocode database connection
+   * @param options - Query options
+   * @returns Checkpoints with app_data
+   */
+  listCheckpointsWithAppData(
+    db: Database.Database,
+    options?: {
+      streamId?: string;
+      issueId?: string;
+    }
+  ): Array<{
+    id: string;
+    streamId: string;
+    commitSha: string;
+    parentCommit: string | null;
+    message: string | null;
+    createdAt: number;
+    createdBy: string | null;
+    issueId: string | null;
+    executionId: string | null;
+    diffStack: {
+      id: string;
+      reviewStatus: string;
+      queuePosition: number | null;
+    } | null;
+  }> {
+    const tracker = this.ensureInitialized();
+
+    if (!this.checkpointsModule) {
+      console.warn('[listCheckpointsWithAppData] Checkpoints module not available');
+      return [];
+    }
+
+    // Get checkpoints from dataplane
+    const dpCheckpoints = this.checkpointsModule.listCheckpoints(tracker.db, {
+      streamId: options?.streamId,
+    });
+
+    // Batch get app_data
+    const checkpointIds = dpCheckpoints.map((cp) => cp.id);
+    if (checkpointIds.length === 0) {
+      return [];
+    }
+
+    const placeholders = checkpointIds.map(() => '?').join(', ');
+    const appDataRows = db.prepare(`
+      SELECT checkpoint_id, issue_id, execution_id
+      FROM checkpoint_app_data
+      WHERE checkpoint_id IN (${placeholders})
+    `).all(...checkpointIds) as Array<{
+      checkpoint_id: string;
+      issue_id: string | null;
+      execution_id: string | null;
+    }>;
+
+    // Create lookup map
+    const appDataMap = new Map(
+      appDataRows.map((row) => [row.checkpoint_id, row])
+    );
+
+    // Get diff_stack info for all checkpoints
+    const stackMap = new Map<string, { id: string; reviewStatus: string; queuePosition: number | null }>();
+    if (this.diffStacksModule) {
+      for (const cp of dpCheckpoints) {
+        const stacks = this.diffStacksModule.getStacksForCheckpoint(tracker.db, cp.id);
+        if (stacks.length > 0) {
+          stackMap.set(cp.id, {
+            id: stacks[0].id,
+            reviewStatus: stacks[0].reviewStatus,
+            queuePosition: stacks[0].queuePosition,
+          });
+        }
+      }
+    }
+
+    // Filter by issueId if specified
+    let result = dpCheckpoints.map((cp) => {
+      const appData = appDataMap.get(cp.id);
+      return {
+        id: cp.id,
+        streamId: cp.streamId,
+        commitSha: cp.commitSha,
+        parentCommit: cp.parentCommit,
+        message: cp.message,
+        createdAt: cp.createdAt,
+        createdBy: cp.createdBy,
+        issueId: appData?.issue_id ?? null,
+        executionId: appData?.execution_id ?? null,
+        diffStack: stackMap.get(cp.id) ?? null,
+      };
+    });
+
+    // Filter by issueId if specified
+    if (options?.issueId) {
+      result = result.filter((cp) => cp.issueId === options.issueId);
+    }
+
+    return result;
+  }
+
+  /**
+   * Get checkpoints from dataplane with stream data for overlay computation.
+   *
+   * This method fetches checkpoints from both sources:
+   * - Core checkpoint data from dataplane (if available)
+   * - App data (snapshots) from checkpoint_app_data table
+   * - Falls back to legacy checkpoints table if dataplane not available
+   *
+   * Returns data in CheckpointWithStreamData format for compatibility with
+   * existing overlay service.
+   *
+   * @param db - Sudocode database connection
+   * @param options - Query options
+   * @returns Checkpoints with stream data for overlay computation
+   */
+  getCheckpointsForOverlay(
+    db: Database.Database,
+    options?: { status?: ('pending' | 'approved')[] }
+  ): CheckpointWithStreamData[] {
+    const tracker = this.ensureInitialized();
+    const status = options?.status || ['pending', 'approved'];
+
+    // If dataplane checkpoints module is available, use new architecture
+    if (this.checkpointsModule && this.diffStacksModule) {
+      // Get all checkpoints from dataplane
+      const dpCheckpoints = this.checkpointsModule.listCheckpoints(tracker.db, {});
+
+      // Get app_data for all checkpoints
+      const checkpointIds = dpCheckpoints.map((cp) => cp.id);
+      if (checkpointIds.length === 0) {
+        return [];
+      }
+
+      const placeholders = checkpointIds.map(() => '?').join(', ');
+      const appDataRows = db.prepare(`
+        SELECT
+          checkpoint_id,
+          issue_id,
+          execution_id,
+          issue_snapshot,
+          spec_snapshot
+        FROM checkpoint_app_data
+        WHERE checkpoint_id IN (${placeholders})
+      `).all(...checkpointIds) as Array<{
+        checkpoint_id: string;
+        issue_id: string | null;
+        execution_id: string | null;
+        issue_snapshot: string | null;
+        spec_snapshot: string | null;
+      }>;
+
+      const appDataMap = new Map(
+        appDataRows.map((row) => [row.checkpoint_id, row])
+      );
+
+      // Get diff_stack info for status filtering
+      const stackInfoMap = new Map<string, { reviewStatus: string; queuePosition: number | null; targetBranch: string }>();
+      for (const cp of dpCheckpoints) {
+        const stacks = this.diffStacksModule.getStacksForCheckpoint(tracker.db, cp.id);
+        if (stacks.length > 0) {
+          const stack = stacks[0];
+          stackInfoMap.set(cp.id, {
+            reviewStatus: stack.reviewStatus,
+            queuePosition: stack.queuePosition,
+            targetBranch: stack.targetBranch,
+          });
+        }
+      }
+
+      // Get execution info for each checkpoint
+      const execIds = new Set(
+        appDataRows.filter((r) => r.execution_id).map((r) => r.execution_id!)
+      );
+      const execPlaceholders = Array.from(execIds).map(() => '?').join(', ');
+      const execRows = execIds.size > 0 ? db.prepare(`
+        SELECT id, worktree_path, branch_name
+        FROM executions
+        WHERE id IN (${execPlaceholders})
+      `).all(...Array.from(execIds)) as Array<{
+        id: string;
+        worktree_path: string | null;
+        branch_name: string | null;
+      }> : [];
+
+      const execMap = new Map(execRows.map((e) => [e.id, e]));
+
+      // Build result, filtering by status
+      const result: CheckpointWithStreamData[] = [];
+      for (const cp of dpCheckpoints) {
+        const appData = appDataMap.get(cp.id);
+        const stackInfo = stackInfoMap.get(cp.id);
+        const reviewStatus = stackInfo?.reviewStatus || 'pending';
+
+        // Filter by status (map diff_stack status to legacy status)
+        if (!status.includes(reviewStatus as 'pending' | 'approved')) {
+          continue;
+        }
+
+        // Must have snapshots for overlay computation
+        if (!appData?.issue_snapshot && !appData?.spec_snapshot) {
+          continue;
+        }
+
+        const stream = tracker.getStream(cp.streamId);
+        if (!stream) {
+          continue;
+        }
+
+        const exec = appData?.execution_id ? execMap.get(appData.execution_id) : null;
+
+        result.push({
+          checkpoint: {
+            id: cp.id,
+            issue_id: appData?.issue_id || '',
+            execution_id: appData?.execution_id || '',
+            stream_id: cp.streamId,
+            commit_sha: cp.commitSha,
+            parent_commit: cp.parentCommit,
+            changed_files: 0, // Not tracked in dataplane
+            additions: 0,
+            deletions: 0,
+            message: cp.message || '',
+            checkpointed_at: new Date(cp.createdAt).toISOString(),
+            checkpointed_by: cp.createdBy,
+            review_status: reviewStatus,
+            reviewed_at: null,
+            reviewed_by: null,
+            review_notes: stackInfo ? null : null,
+            target_branch: stackInfo?.targetBranch || 'main',
+            queue_position: stackInfo?.queuePosition || null,
+            issue_snapshot: appData?.issue_snapshot || null,
+            spec_snapshot: appData?.spec_snapshot || null,
+          },
+          stream: {
+            id: stream.id,
+            parentStream: stream.parentStream,
+            createdAt: stream.createdAt,
+          },
+          execution: {
+            id: appData?.execution_id || '',
+            worktree_path: exec?.worktree_path || null,
+            branch_name: exec?.branch_name || null,
+          },
+        });
+      }
+
+      return result;
+    }
+
+    // Fall back to legacy getCheckpointsWithSnapshots
+    return this.getCheckpointsWithSnapshots(db, options);
+  }
+
   // ───────────────────────────────────────────────────────────────────────────
   // Sync Operations
   // ───────────────────────────────────────────────────────────────────────────
@@ -1628,11 +2171,68 @@ export class DataplaneAdapter {
       }
 
       // 9. Create checkpoint record in database
-      const checkpointId = `cp-${Date.now().toString(36)}`;
       const checkpointedAt = new Date().toISOString();
       // Get target branch from options, stream metadata, or default to 'main'
       const targetBranch = options.targetBranch || execMeta?.target_branch || 'main';
 
+      // 9a. Create dataplane checkpoint (if modules are available)
+      let dataplaneCheckpointId: string | null = null;
+      if (this.checkpointsModule && this.diffStacksModule) {
+        try {
+          // Create dataplane checkpoint with minimal data
+          const dpCheckpoint = this.checkpointsModule.createCheckpoint(tracker.db, {
+            streamId: issueStreamId,
+            commitSha: mergeCommit,
+            parentCommit: changes.commitRange.before,
+            message,
+            createdBy: options.checkpointedBy,
+          });
+          dataplaneCheckpointId = dpCheckpoint.id;
+
+          // Create diff_stack for the checkpoint (enables review workflow)
+          const dpStack = this.diffStacksModule.createDiffStack(tracker.db, {
+            name: `${issueId}: ${message.substring(0, 50)}`,
+            targetBranch,
+            checkpointIds: [dpCheckpoint.id],
+            createdBy: options.checkpointedBy,
+          });
+
+          console.log(
+            `[checkpointSync] Created dataplane checkpoint ${dpCheckpoint.id} and diff_stack ${dpStack.id}`
+          );
+        } catch (dpError) {
+          // Log but don't fail - we'll fall back to local checkpoint table
+          console.warn(
+            `[checkpointSync] Failed to create dataplane checkpoint: ${dpError instanceof Error ? dpError.message : String(dpError)}`
+          );
+        }
+      }
+
+      // 9b. Store app_data in checkpoint_app_data table (if dataplane checkpoint was created)
+      const checkpointId = dataplaneCheckpointId || `cp-${Date.now().toString(36)}`;
+      if (dataplaneCheckpointId) {
+        try {
+          const appDataStmt = db.prepare(`
+            INSERT INTO checkpoint_app_data (
+              checkpoint_id, issue_id, execution_id, issue_snapshot, spec_snapshot
+            ) VALUES (?, ?, ?, ?, ?)
+          `);
+          appDataStmt.run(
+            dataplaneCheckpointId,
+            issueId,
+            executionId,
+            issueSnapshot,
+            specSnapshot
+          );
+          console.log(`[checkpointSync] Stored app_data for checkpoint ${dataplaneCheckpointId}`);
+        } catch (appDataError) {
+          console.warn(
+            `[checkpointSync] Failed to store checkpoint app_data: ${appDataError instanceof Error ? appDataError.message : String(appDataError)}`
+          );
+        }
+      }
+
+      // 9c. Also insert into legacy checkpoints table for backward compatibility
       const insertStmt = db.prepare(`
         INSERT INTO checkpoints (
           id, issue_id, execution_id, stream_id, commit_sha, parent_commit,

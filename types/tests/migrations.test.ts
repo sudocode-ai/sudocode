@@ -1893,15 +1893,15 @@ describe("Database Migrations", () => {
 
       runMigrations(db);
 
-      // Should have run all eleven migrations
-      expect(getCurrentMigrationVersion(db)).toBe(11);
+      // Should have run all fifteen migrations
+      expect(getCurrentMigrationVersion(db)).toBe(15);
 
       // Verify all migrations were applied
       const migrations = db
         .prepare("SELECT * FROM migrations ORDER BY version")
         .all() as Array<{ version: number; name: string }>;
 
-      expect(migrations).toHaveLength(11);
+      expect(migrations).toHaveLength(15);
       expect(migrations[0].version).toBe(1);
       expect(migrations[0].name).toBe("generalize-feedback-table");
       expect(migrations[1].version).toBe(2);
@@ -1924,6 +1924,14 @@ describe("Database Migrations", () => {
       expect(migrations[9].name).toBe("add-batches-table");
       expect(migrations[10].version).toBe(11);
       expect(migrations[10].name).toBe("add-checkpoint-queue-columns");
+      expect(migrations[11].version).toBe(12);
+      expect(migrations[11].name).toBe("add-checkpoint-snapshot-columns");
+      expect(migrations[12].version).toBe(13);
+      expect(migrations[12].name).toBe("add-execution-soft-delete-columns");
+      expect(migrations[13].version).toBe(14);
+      expect(migrations[13].name).toBe("add-checkpoint-app-data-table");
+      expect(migrations[14].version).toBe(15);
+      expect(migrations[14].name).toBe("migrate-checkpoint-data-to-app-data");
     });
 
     it("should skip already-applied migrations", () => {
@@ -2032,14 +2040,14 @@ describe("Database Migrations", () => {
 
       runMigrations(db);
 
-      // Should run migrations 2-11
-      expect(getCurrentMigrationVersion(db)).toBe(11);
+      // Should run migrations 2-15
+      expect(getCurrentMigrationVersion(db)).toBe(15);
 
       const migrations = db
         .prepare("SELECT * FROM migrations ORDER BY version")
         .all() as Array<{ version: number; name: string }>;
 
-      expect(migrations).toHaveLength(11);
+      expect(migrations).toHaveLength(15);
       expect(migrations[1].version).toBe(2);
       expect(migrations[2].version).toBe(3);
       expect(migrations[3].version).toBe(4);
@@ -2050,6 +2058,10 @@ describe("Database Migrations", () => {
       expect(migrations[8].version).toBe(9);
       expect(migrations[9].version).toBe(10);
       expect(migrations[10].version).toBe(11);
+      expect(migrations[11].version).toBe(12);
+      expect(migrations[12].version).toBe(13);
+      expect(migrations[13].version).toBe(14);
+      expect(migrations[14].version).toBe(15);
     });
 
     it("should not run if no pending migrations", () => {
@@ -2106,13 +2118,29 @@ describe("Database Migrations", () => {
         11,
         "add-checkpoint-queue-columns"
       );
+      db.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        12,
+        "add-checkpoint-snapshot-columns"
+      );
+      db.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        13,
+        "add-execution-soft-delete-columns"
+      );
+      db.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        14,
+        "add-checkpoint-app-data-table"
+      );
+      db.prepare("INSERT INTO migrations (version, name) VALUES (?, ?)").run(
+        15,
+        "migrate-checkpoint-data-to-app-data"
+      );
 
-      expect(getCurrentMigrationVersion(db)).toBe(11);
+      expect(getCurrentMigrationVersion(db)).toBe(15);
 
       // Should not throw, just skip
       expect(() => runMigrations(db)).not.toThrow();
 
-      expect(getCurrentMigrationVersion(db)).toBe(11);
+      expect(getCurrentMigrationVersion(db)).toBe(15);
     });
   });
 });

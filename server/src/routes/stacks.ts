@@ -64,7 +64,8 @@ export function createStacksRouter(): Router {
           .all() as Spec[];
 
         // Get checkpoints with snapshots (pending + approved only)
-        const checkpoints = dataplaneAdapter.getCheckpointsWithSnapshots(
+        // Uses new dataplane + checkpoint_app_data architecture with fallback to legacy
+        const checkpoints = dataplaneAdapter.getCheckpointsForOverlay(
           req.project!.db,
           { status: ['pending', 'approved'] }
         );

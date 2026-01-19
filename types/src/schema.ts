@@ -478,6 +478,26 @@ CREATE INDEX IF NOT EXISTS idx_batches_created_at ON batches(created_at);
 CREATE INDEX IF NOT EXISTS idx_batches_updated_at ON batches(updated_at);
 `;
 
+// Checkpoint App Data table - stores Sudocode-specific metadata for dataplane checkpoints
+// Part of unified checkpoint/diff stack architecture (s-366r)
+// Links to dataplane checkpoints via checkpoint_id
+export const CHECKPOINT_APP_DATA_TABLE = `
+CREATE TABLE IF NOT EXISTS checkpoint_app_data (
+    checkpoint_id TEXT PRIMARY KEY,
+    issue_id TEXT REFERENCES issues(id),
+    execution_id TEXT REFERENCES executions(id),
+    issue_snapshot TEXT,
+    spec_snapshot TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+`;
+
+export const CHECKPOINT_APP_DATA_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_checkpoint_app_data_issue ON checkpoint_app_data(issue_id);
+CREATE INDEX IF NOT EXISTS idx_checkpoint_app_data_execution ON checkpoint_app_data(execution_id);
+`;
+
 /**
  * View definitions
  */
@@ -542,6 +562,7 @@ export const ALL_TABLES = [
   STACKS_TABLE,
   CHECKPOINTS_TABLE,
   BATCHES_TABLE,
+  CHECKPOINT_APP_DATA_TABLE,
 ];
 
 export const ALL_INDEXES = [
@@ -559,6 +580,7 @@ export const ALL_INDEXES = [
   STACKS_INDEXES,
   CHECKPOINTS_INDEXES,
   BATCHES_INDEXES,
+  CHECKPOINT_APP_DATA_INDEXES,
 ];
 
 export const ALL_VIEWS = [READY_ISSUES_VIEW, BLOCKED_ISSUES_VIEW];

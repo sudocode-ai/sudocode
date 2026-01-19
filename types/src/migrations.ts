@@ -1170,6 +1170,160 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 14,
+    name: "add-checkpoint-app-data-table",
+    up: (db: Database.Database) => {
+      // Check if checkpoint_app_data table already exists
+      const tables = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='checkpoint_app_data'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (tables.length > 0) {
+        // Already migrated
+        return;
+      }
+
+      // Create checkpoint_app_data table for Sudocode-specific checkpoint metadata
+      // Part of unified checkpoint/diff stack architecture (s-366r)
+      // Links to dataplane checkpoints via checkpoint_id
+      db.exec(`
+        CREATE TABLE checkpoint_app_data (
+          checkpoint_id TEXT PRIMARY KEY,
+          issue_id TEXT REFERENCES issues(id),
+          execution_id TEXT REFERENCES executions(id),
+          issue_snapshot TEXT,
+          spec_snapshot TEXT,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+      // Create indexes for common queries
+      db.exec(`
+        CREATE INDEX idx_checkpoint_app_data_issue ON checkpoint_app_data(issue_id);
+        CREATE INDEX idx_checkpoint_app_data_execution ON checkpoint_app_data(execution_id);
+      `);
+
+      console.log("  ✓ Created checkpoint_app_data table for dataplane integration");
+    },
+    down: (db: Database.Database) => {
+      db.exec(`DROP TABLE IF EXISTS checkpoint_app_data;`);
+      console.log("  ✓ Dropped checkpoint_app_data table");
+    },
+  },
+  {
+    version: 15,
+    name: "migrate-checkpoint-data-to-app-data",
+    up: (db: Database.Database) => {
+      // Migration: Copy existing checkpoint app data to checkpoint_app_data table
+      // Part of unified checkpoint/diff stack architecture (s-366r)
+      //
+      // This migration copies the Sudocode-specific fields from the checkpoints table
+      // to the new checkpoint_app_data table. The actual dataplane checkpoint creation
+      // happens at runtime through the dual-write pattern in checkpointSync().
+
+      // Check if checkpoints table exists
+      const checkpointsTable = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='checkpoints'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (checkpointsTable.length === 0) {
+        console.log("  ℹ No checkpoints table found - skipping migration");
+        return;
+      }
+
+      // Check if checkpoint_app_data table exists
+      const appDataTable = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='checkpoint_app_data'"
+        )
+        .all() as Array<{ name: string }>;
+
+      if (appDataTable.length === 0) {
+        console.log(
+          "  ⚠ checkpoint_app_data table not found - run migration 14 first"
+        );
+        return;
+      }
+
+      // Count existing checkpoints
+      const countResult = db
+        .prepare("SELECT COUNT(*) as count FROM checkpoints")
+        .get() as { count: number };
+      const totalCheckpoints = countResult.count;
+
+      if (totalCheckpoints === 0) {
+        console.log("  ℹ No checkpoints to migrate");
+        return;
+      }
+
+      console.log(`  Migrating ${totalCheckpoints} checkpoint(s) to checkpoint_app_data...`);
+
+      // Get checkpoints that haven't been migrated yet (not in checkpoint_app_data)
+      const checkpointsToMigrate = db
+        .prepare(`
+          SELECT c.id, c.issue_id, c.execution_id, c.issue_snapshot, c.spec_snapshot
+          FROM checkpoints c
+          LEFT JOIN checkpoint_app_data cad ON c.id = cad.checkpoint_id
+          WHERE cad.checkpoint_id IS NULL
+        `)
+        .all() as Array<{
+        id: string;
+        issue_id: string;
+        execution_id: string;
+        issue_snapshot: string | null;
+        spec_snapshot: string | null;
+      }>;
+
+      if (checkpointsToMigrate.length === 0) {
+        console.log("  ℹ All checkpoints already migrated");
+        return;
+      }
+
+      // Insert checkpoint app data
+      const insertStmt = db.prepare(`
+        INSERT INTO checkpoint_app_data (
+          checkpoint_id, issue_id, execution_id, issue_snapshot, spec_snapshot
+        ) VALUES (?, ?, ?, ?, ?)
+      `);
+
+      let migratedCount = 0;
+      for (const cp of checkpointsToMigrate) {
+        try {
+          insertStmt.run(
+            cp.id,
+            cp.issue_id,
+            cp.execution_id,
+            cp.issue_snapshot,
+            cp.spec_snapshot
+          );
+          migratedCount++;
+        } catch (error) {
+          console.warn(
+            `  ⚠ Failed to migrate checkpoint ${cp.id}: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      }
+
+      console.log(
+        `  ✓ Migrated ${migratedCount}/${checkpointsToMigrate.length} checkpoint(s) to checkpoint_app_data`
+      );
+    },
+    down: (db: Database.Database) => {
+      // Remove migrated data from checkpoint_app_data
+      // Only remove records that also exist in checkpoints (to avoid removing manually created entries)
+      db.exec(`
+        DELETE FROM checkpoint_app_data
+        WHERE checkpoint_id IN (SELECT id FROM checkpoints)
+      `);
+      console.log("  ✓ Removed migrated checkpoint data from checkpoint_app_data");
+    },
+  },
 ];
 
 /**
