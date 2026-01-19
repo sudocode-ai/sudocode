@@ -12,6 +12,7 @@ import type {
   StackInfo,
   StackHealth,
   CheckpointReviewStatus,
+  ProjectedIssue,
 } from "@sudocode-ai/types";
 import { v4 as uuidv4 } from "uuid";
 // Relationships are queried directly from DB for efficiency
@@ -85,6 +86,84 @@ function buildDependencyGraph(
        AND relationship_type IN ('blocks', 'depends-on')`
     )
     .all() as Array<{
+    from_id: string;
+    to_id: string;
+    relationship_type: string;
+  }>;
+
+  for (const rel of relationships) {
+    // For 'blocks': from_id blocks to_id (to_id is blocked by from_id)
+    // For 'depends-on': from_id depends on to_id (from_id is blocked by to_id)
+    if (rel.relationship_type === "blocks") {
+      const toNode = graph.get(rel.to_id);
+      const fromNode = graph.get(rel.from_id);
+      if (toNode && fromNode) {
+        toNode.blockedBy.add(rel.from_id);
+        fromNode.blocks.add(rel.to_id);
+      }
+    } else if (rel.relationship_type === "depends-on") {
+      const fromNode = graph.get(rel.from_id);
+      const toNode = graph.get(rel.to_id);
+      if (fromNode && toNode) {
+        fromNode.blockedBy.add(rel.to_id);
+        toNode.blocks.add(rel.from_id);
+      }
+    }
+  }
+
+  return graph;
+}
+
+/**
+ * Dependency graph type for external use
+ */
+export type DependencyGraph = Map<string, { blockedBy: Set<string>; blocks: Set<string> }>;
+
+/**
+ * Build dependency graph from projected issues (for overlay support)
+ *
+ * This function builds the graph from pre-computed projected issues rather than
+ * querying the database. Useful when applying checkpoint overlays.
+ *
+ * @param projectedIssues - Issues with optional projection attributes
+ * @param db - Database for relationship queries
+ * @returns Dependency graph with blockedBy/blocks relationships
+ */
+export function buildDependencyGraphFromProjectedIssues(
+  projectedIssues: ProjectedIssue[],
+  db: Database.Database
+): DependencyGraph {
+  const graph: DependencyGraph = new Map();
+
+  // Filter to active issues (open, in_progress, blocked) that are not archived
+  const activeIssues = projectedIssues.filter(
+    (issue) =>
+      ['open', 'in_progress', 'blocked'].includes(issue.status) &&
+      !issue.archived
+  );
+
+  // Initialize graph nodes
+  for (const issue of activeIssues) {
+    graph.set(issue.id, { blockedBy: new Set(), blocks: new Set() });
+  }
+
+  // Get all blocks/depends-on relationships between issues from DB
+  // Note: In future iterations, we could also overlay relationship changes
+  const issueIds = activeIssues.map(i => i.id);
+  if (issueIds.length === 0) {
+    return graph;
+  }
+
+  const placeholders = issueIds.map(() => "?").join(",");
+  const relationships = db
+    .prepare(
+      `SELECT from_id, to_id, relationship_type
+       FROM relationships
+       WHERE from_type = 'issue' AND to_type = 'issue'
+       AND relationship_type IN ('blocks', 'depends-on')
+       AND (from_id IN (${placeholders}) OR to_id IN (${placeholders}))`
+    )
+    .all(...issueIds, ...issueIds) as Array<{
     from_id: string;
     to_id: string;
     relationship_type: string;
@@ -378,6 +457,77 @@ export function computeAutoStacks(db: Database.Database): StackInfo[] {
         has_checkpoint: !!cpInfo,
         checkpoint_status: cpInfo?.status,
         is_promoted: cpInfo?.isMerged || false,
+      };
+    });
+
+    // Compute health
+    const health = computeStackHealth(entries, graph);
+
+    // Create virtual stack (not persisted)
+    const stack: Stack = {
+      id: `auto-${sortedIds[0]}`, // Use first issue ID as part of ID
+      name: undefined,
+      root_issue_id: sortedIds[sortedIds.length - 1], // Last issue is root
+      issue_order: sortedIds,
+      is_auto: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    stacks.push({ stack, entries, health });
+  }
+
+  return stacks;
+}
+
+/**
+ * Compute auto-generated stacks from projected issues (with overlays applied)
+ *
+ * This function uses projected issues instead of querying the database,
+ * allowing stacks to reflect pending checkpoint changes.
+ *
+ * @param projectedIssues - Issues with projection attributes from overlay computation
+ * @param db - Database for relationship queries and checkpoint info
+ * @returns Stack info with projected state and attribution preserved
+ */
+export function computeAutoStacksFromProjectedIssues(
+  projectedIssues: ProjectedIssue[],
+  db: Database.Database
+): StackInfo[] {
+  const graph = buildDependencyGraphFromProjectedIssues(projectedIssues, db);
+  const components = findConnectedComponents(graph);
+  const inManualStacks = getIssuesInManualStacks(db);
+
+  const stacks: StackInfo[] = [];
+
+  for (const component of components) {
+    // Filter out issues already in manual stacks
+    const filteredComponent = component.filter((id) => !inManualStacks.has(id));
+    if (filteredComponent.length < 2) {
+      continue;
+    }
+
+    // Sort topologically (leaf first)
+    const sortedIds = topologicalSort(filteredComponent, graph);
+
+    // Get checkpoint info
+    const checkpointInfo = getCheckpointInfo(db, sortedIds);
+
+    // Build entries, preserving attribution from projected issues
+    const entries: StackEntry[] = sortedIds.map((issueId, index) => {
+      const cpInfo = checkpointInfo.get(issueId);
+      const projectedIssue = projectedIssues.find((i) => i.id === issueId);
+
+      return {
+        issue_id: issueId,
+        depth: index,
+        has_checkpoint: !!cpInfo,
+        checkpoint_status: cpInfo?.status,
+        is_promoted: cpInfo?.isMerged || false,
+        // Include projection metadata if present
+        _isProjected: projectedIssue?._isProjected,
+        _attribution: projectedIssue?._attribution,
+        _changeType: projectedIssue?._changeType,
       };
     });
 

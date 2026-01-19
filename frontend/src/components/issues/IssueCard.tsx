@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useProjectRoutes } from '@/hooks/useProjectRoutes'
 import { KanbanCard } from '@/components/ui/kanban'
-import type { Issue, IssueStatus } from '@sudocode-ai/types'
+import type { Issue, IssueStatus, ProjectedIssue } from '@sudocode-ai/types'
 import type { Execution } from '@/types/execution'
 import type { WorkflowStepStatus } from '@/types/workflow'
-import { Copy, Check, Play, CheckCircle2 } from 'lucide-react'
+import { Copy, Check, Play, CheckCircle2, GitBranch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { ExecutionPreview } from '@/components/executions/ExecutionPreview'
@@ -39,10 +40,10 @@ interface WorkflowInfo {
 }
 
 interface IssueCardProps {
-  issue: Issue
+  issue: Issue | ProjectedIssue
   index: number
   status: string
-  onViewDetails?: (issue: Issue) => void
+  onViewDetails?: (issue: Issue | ProjectedIssue) => void
   isOpen?: boolean
   showExecutionPreview?: boolean // Whether to show execution preview for running executions
   latestExecution?: Execution | null // Pre-fetched execution from parent
@@ -168,6 +169,48 @@ export function IssueCard({
               {/* Sync Indicator for external integrations */}
               {issue.external_links && issue.external_links.length > 0 && (
                 <SyncIndicator externalLinks={issue.external_links} />
+              )}
+              {/* Projected Badge for overlay changes */}
+              {'_isProjected' in issue && issue._isProjected && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Badge
+                        variant="outline"
+                        className="gap-1 border-purple-500 bg-purple-50 px-1.5 py-0 text-[10px] text-purple-700 dark:border-purple-400 dark:bg-purple-950 dark:text-purple-300"
+                      >
+                        <GitBranch className="h-2.5 w-2.5" />
+                        {issue._changeType === 'created'
+                          ? 'new'
+                          : issue._changeType === 'deleted'
+                            ? 'del'
+                            : 'mod'}
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <div className="space-y-1">
+                        <p className="font-medium">
+                          Projected {issue._changeType === 'created' ? 'new issue' : issue._changeType === 'deleted' ? 'deletion' : 'modification'}
+                        </p>
+                        {'_attribution' in issue && issue._attribution && (
+                          <>
+                            <p className="text-xs text-muted-foreground">
+                              From: {issue._attribution.branchName || issue._attribution.worktreePath || 'worktree'}
+                            </p>
+                            {issue._attribution.checkpointId && (
+                              <p className="text-xs text-muted-foreground">
+                                Checkpoint: {issue._attribution.checkpointId.slice(0, 8)}...
+                              </p>
+                            )}
+                          </>
+                        )}
+                        <p className="text-xs italic text-muted-foreground">
+                          Changes pending in worktree
+                        </p>
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               )}
               {/* Visual indicator for execution-based column placement */}
               {displayStatusOverride && (

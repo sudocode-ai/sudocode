@@ -10,6 +10,7 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
 import type Database from 'better-sqlite3';
 import type { AgentType } from '@sudocode-ai/types';
 import { mergeThreeWay, type JSONLEntity } from '@sudocode-ai/cli/dist/merge-resolver.js';
@@ -175,6 +176,20 @@ interface DataplaneStream {
   updatedAt: number;
 }
 
+/**
+ * Record of a merge event between two streams.
+ * Used for DAG tracking to capture when streams are merged.
+ */
+interface DataplaneStreamMerge {
+  id: string;
+  sourceStreamId: string;
+  sourceCommit: string;
+  targetStreamId: string;
+  mergeCommit: string;
+  createdAt: number;
+  metadata: Record<string, unknown>;
+}
+
 interface DataplaneWorktree {
   agentId: string;
   path: string;
@@ -225,6 +240,44 @@ interface ProcessQueueResult {
   merged: Array<{ entryId: string; streamId: string; mergeCommit: string }>;
   failed: Array<{ entryId: string; streamId: string; error: string }>;
   skipped: string[];
+}
+
+/**
+ * Checkpoint with stream and execution data for overlay computation
+ */
+export interface CheckpointWithStreamData {
+  checkpoint: {
+    id: string;
+    issue_id: string;
+    execution_id: string;
+    stream_id: string;
+    commit_sha: string;
+    parent_commit: string | null;
+    changed_files: number;
+    additions: number;
+    deletions: number;
+    message: string;
+    checkpointed_at: string;
+    checkpointed_by: string | null;
+    review_status: string;
+    reviewed_at: string | null;
+    reviewed_by: string | null;
+    review_notes: string | null;
+    target_branch: string | null;
+    queue_position: number | null;
+    issue_snapshot: string | null;
+    spec_snapshot: string | null;
+  };
+  stream: {
+    id: string;
+    parentStream: string | null;
+    createdAt: number;
+  };
+  execution: {
+    id: string;
+    worktree_path: string | null;
+    branch_name: string | null;
+  };
 }
 
 // Helper to safely cast metadata
@@ -720,6 +773,125 @@ export class DataplaneAdapter {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
+  // Stream DAG Operations
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Get the full lineage of a stream (all ancestors from root to this stream).
+   *
+   * Returns an array of streams starting from the root (oldest ancestor) and
+   * ending with the specified stream.
+   *
+   * @param streamId - The stream ID to get lineage for
+   * @returns Array of streams from root to this stream
+   */
+  getStreamLineage(streamId: string): DataplaneStream[] {
+    const tracker = this.ensureInitialized();
+    const lineage: DataplaneStream[] = [];
+    let current = tracker.getStream(streamId);
+
+    while (current) {
+      lineage.push(current);
+      if (current.parentStream) {
+        current = tracker.getStream(current.parentStream);
+      } else {
+        break;
+      }
+    }
+
+    // Return root-first order
+    return lineage.reverse();
+  }
+
+  /**
+   * Get child streams (streams that have this stream as their parent).
+   *
+   * @param streamId - The parent stream ID
+   * @returns Array of child streams
+   */
+  getChildStreams(streamId: string): DataplaneStream[] {
+    const tracker = this.ensureInitialized();
+    const allStreams = tracker.listStreams();
+    return allStreams.filter(s => s.parentStream === streamId);
+  }
+
+  /**
+   * Get all merge events involving a stream (as source or target).
+   *
+   * @param streamId - The stream ID to get merges for
+   * @returns Array of StreamMerge records, ordered by creation time
+   */
+  getStreamMerges(streamId: string): DataplaneStreamMerge[] {
+    const tracker = this.ensureInitialized();
+    const mergesTable = `${this.config.tablePrefix}stream_merges`;
+
+    try {
+      const rows = tracker.db.prepare(`
+        SELECT * FROM ${mergesTable}
+        WHERE source_stream_id = ? OR target_stream_id = ?
+        ORDER BY created_at ASC
+      `).all(streamId, streamId) as Array<{
+        id: string;
+        source_stream_id: string;
+        source_commit: string;
+        target_stream_id: string;
+        merge_commit: string;
+        created_at: number;
+        metadata: string;
+      }>;
+
+      return rows.map(row => ({
+        id: row.id,
+        sourceStreamId: row.source_stream_id,
+        sourceCommit: row.source_commit,
+        targetStreamId: row.target_stream_id,
+        mergeCommit: row.merge_commit,
+        createdAt: row.created_at,
+        metadata: JSON.parse(row.metadata || '{}'),
+      }));
+    } catch {
+      // Table may not exist if no merges have been recorded
+      return [];
+    }
+  }
+
+  /**
+   * Record a merge event between two streams.
+   *
+   * @param options - Merge recording options
+   * @returns The ID of the created merge record
+   */
+  recordStreamMerge(options: {
+    sourceStreamId: string;
+    sourceCommit: string;
+    targetStreamId: string;
+    mergeCommit: string;
+    metadata?: Record<string, unknown>;
+  }): string {
+    const tracker = this.ensureInitialized();
+    const mergesTable = `${this.config.tablePrefix}stream_merges`;
+    const id = crypto.randomUUID().slice(0, 8);
+    const now = Date.now();
+
+    tracker.db.prepare(`
+      INSERT INTO ${mergesTable} (
+        id, source_stream_id, source_commit, target_stream_id, merge_commit,
+        created_at, metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      options.sourceStreamId,
+      options.sourceCommit,
+      options.targetStreamId,
+      options.mergeCommit,
+      now,
+      JSON.stringify(options.metadata ?? {})
+    );
+
+    return id;
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
   // Worktree Management
   // ───────────────────────────────────────────────────────────────────────────
 
@@ -939,6 +1111,136 @@ export class DataplaneAdapter {
         filesChanged: 0,
       };
     }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Checkpoint Snapshot Queries
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Get checkpoints that have issue/spec snapshots, joined with stream and execution data.
+   *
+   * Used for computing overlays in stack/queue views.
+   *
+   * @param options - Query options
+   * @param options.status - Filter by review status (default: ['pending', 'approved'])
+   * @param db - Sudocode database connection for checkpoint queries
+   * @returns Checkpoints with non-null snapshots and their stream/execution info
+   */
+  getCheckpointsWithSnapshots(
+    db: Database.Database,
+    options?: { status?: ('pending' | 'approved')[] }
+  ): CheckpointWithStreamData[] {
+    const tracker = this.ensureInitialized();
+    const status = options?.status || ['pending', 'approved'];
+
+    // Build status filter
+    const statusPlaceholders = status.map(() => '?').join(', ');
+
+    // Query checkpoints with snapshots
+    const checkpointRows = db.prepare(`
+      SELECT
+        c.id,
+        c.issue_id,
+        c.execution_id,
+        c.stream_id,
+        c.commit_sha,
+        c.parent_commit,
+        c.changed_files,
+        c.additions,
+        c.deletions,
+        c.message,
+        c.checkpointed_at,
+        c.checkpointed_by,
+        c.review_status,
+        c.reviewed_at,
+        c.reviewed_by,
+        c.review_notes,
+        c.target_branch,
+        c.queue_position,
+        c.issue_snapshot,
+        c.spec_snapshot,
+        e.worktree_path,
+        e.branch_name
+      FROM checkpoints c
+      JOIN executions e ON c.execution_id = e.id
+      WHERE c.review_status IN (${statusPlaceholders})
+        AND (c.issue_snapshot IS NOT NULL OR c.spec_snapshot IS NOT NULL)
+      ORDER BY c.checkpointed_at ASC
+    `).all(...status) as Array<{
+      id: string;
+      issue_id: string;
+      execution_id: string;
+      stream_id: string;
+      commit_sha: string;
+      parent_commit: string | null;
+      changed_files: number;
+      additions: number;
+      deletions: number;
+      message: string;
+      checkpointed_at: string;
+      checkpointed_by: string | null;
+      review_status: string;
+      reviewed_at: string | null;
+      reviewed_by: string | null;
+      review_notes: string | null;
+      target_branch: string | null;
+      queue_position: number | null;
+      issue_snapshot: string | null;
+      spec_snapshot: string | null;
+      worktree_path: string | null;
+      branch_name: string | null;
+    }>;
+
+    // Get stream info for each checkpoint
+    const result: CheckpointWithStreamData[] = [];
+    for (const row of checkpointRows) {
+      if (!row.stream_id) {
+        continue;
+      }
+
+      const stream = tracker.getStream(row.stream_id);
+      if (!stream) {
+        continue;
+      }
+
+      result.push({
+        checkpoint: {
+          id: row.id,
+          issue_id: row.issue_id,
+          execution_id: row.execution_id,
+          stream_id: row.stream_id,
+          commit_sha: row.commit_sha,
+          parent_commit: row.parent_commit,
+          changed_files: row.changed_files,
+          additions: row.additions,
+          deletions: row.deletions,
+          message: row.message,
+          checkpointed_at: row.checkpointed_at,
+          checkpointed_by: row.checkpointed_by,
+          review_status: row.review_status,
+          reviewed_at: row.reviewed_at,
+          reviewed_by: row.reviewed_by,
+          review_notes: row.review_notes,
+          target_branch: row.target_branch,
+          queue_position: row.queue_position,
+          issue_snapshot: row.issue_snapshot,
+          spec_snapshot: row.spec_snapshot,
+        },
+        stream: {
+          id: stream.id,
+          parentStream: stream.parentStream,
+          createdAt: stream.createdAt,
+        },
+        execution: {
+          id: row.execution_id,
+          worktree_path: row.worktree_path,
+          branch_name: row.branch_name,
+        },
+      });
+    }
+
+    return result;
   }
 
   // ───────────────────────────────────────────────────────────────────────────

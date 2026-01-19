@@ -523,6 +523,12 @@ export interface StackEntry {
   checkpoint_status?: CheckpointReviewStatus;
   /** Whether this issue's checkpoint has been promoted to base branch */
   is_promoted: boolean;
+  /** Attribution for projected changes (Phase 2 overlay support) */
+  _attribution?: Attribution;
+  /** Whether this entry reflects projected state */
+  _isProjected?: boolean;
+  /** Type of change if projected */
+  _changeType?: 'created' | 'modified' | 'deleted';
 }
 
 /**
@@ -535,6 +541,53 @@ export interface StackInfo {
   entries: StackEntry[];
   /** Overall health status of the stack */
   health: StackHealth;
+}
+
+// =============================================================================
+// Projected State Types (Checkpoint Overlay)
+// =============================================================================
+
+/**
+ * Attribution information for a projected change.
+ * Tracks the source of changes that come from pending checkpoints.
+ */
+export interface Attribution {
+  /** Dataplane stream ID where the change originated */
+  streamId: string;
+  /** Execution ID that created the change */
+  executionId: string;
+  /** Checkpoint ID containing the snapshot */
+  checkpointId: string;
+  /** Worktree path where the change was made (if available) */
+  worktreePath: string | null;
+  /** Branch name of the worktree (if available) */
+  branchName: string | null;
+}
+
+/**
+ * Issue with projected changes from checkpoint overlays.
+ * Extends Issue with optional attribution for changes that haven't been merged yet.
+ */
+export interface ProjectedIssue extends Issue {
+  /** Attribution for the source of projected changes */
+  _attribution?: Attribution;
+  /** True if this issue has been modified or created from a checkpoint overlay */
+  _isProjected?: boolean;
+  /** Change type for new/modified issues in overlay */
+  _changeType?: "created" | "modified" | "deleted";
+}
+
+/**
+ * Spec with projected changes from checkpoint overlays.
+ * Extends Spec with optional attribution for changes that haven't been merged yet.
+ */
+export interface ProjectedSpec extends Spec {
+  /** Attribution for the source of projected changes */
+  _attribution?: Attribution;
+  /** True if this spec has been modified or created from a checkpoint overlay */
+  _isProjected?: boolean;
+  /** Change type for new/modified specs in overlay */
+  _changeType?: "created" | "modified" | "deleted";
 }
 
 // =============================================================================

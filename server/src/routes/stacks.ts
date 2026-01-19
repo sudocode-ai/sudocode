@@ -6,6 +6,7 @@
  */
 
 import { Router, Request, Response } from "express";
+import type { Issue, Spec, StackInfo } from "@sudocode-ai/types";
 import {
   listStacks,
   getStack,
@@ -14,7 +15,10 @@ import {
   deleteStack,
   addToStack,
   removeFromStack,
+  computeAutoStacksFromProjectedIssues,
 } from "../services/stack-service.js";
+import { computeOverlay } from "../services/overlay-service.js";
+import { getDataplaneAdapterSync } from "../services/dataplane-adapter.js";
 
 export function createStacksRouter(): Router {
   const router = Router();
@@ -25,19 +29,72 @@ export function createStacksRouter(): Router {
    * Query params:
    * - include_auto: Include auto-detected stacks (default: true)
    * - include_manual: Include manual stacks (default: true)
+   * - include_overlay: Apply checkpoint overlays to show projected state (default: true)
    *
    * Response: {
    *   stacks: StackInfo[];
    *   auto_count: number;
    *   manual_count: number;
+   *   projected_issue_count?: number;  // When overlays enabled
+   *   projected_spec_count?: number;   // When overlays enabled
    * }
    */
-  router.get("/", (req: Request, res: Response) => {
+  router.get("/", async (req: Request, res: Response) => {
     try {
       const includeAuto = req.query.include_auto !== "false";
       const includeManual = req.query.include_manual !== "false";
+      const includeOverlay = req.query.include_overlay !== "false";
 
-      const allStacks = listStacks(req.project!.db);
+      let allStacks: StackInfo[];
+      let projectedIssueCount = 0;
+      let projectedSpecCount = 0;
+
+      // Get dataplane adapter for overlay computation
+      const dataplaneAdapter = getDataplaneAdapterSync(req.project!.path);
+
+      if (includeOverlay && dataplaneAdapter?.isInitialized) {
+        // Get base issues from database
+        const baseIssues = req.project!.db
+          .prepare(`SELECT * FROM issues WHERE archived = 0`)
+          .all() as Issue[];
+
+        // Get base specs from database
+        const baseSpecs = req.project!.db
+          .prepare(`SELECT * FROM specs WHERE archived = 0`)
+          .all() as Spec[];
+
+        // Get checkpoints with snapshots (pending + approved only)
+        const checkpoints = dataplaneAdapter.getCheckpointsWithSnapshots(
+          req.project!.db,
+          { status: ['pending', 'approved'] }
+        );
+
+        if (checkpoints.length > 0) {
+          // Compute overlay
+          const overlayResult = computeOverlay(baseIssues, baseSpecs, checkpoints);
+          projectedIssueCount = overlayResult.projectedIssueCount;
+          projectedSpecCount = overlayResult.projectedSpecCount;
+
+          // Compute auto stacks from projected issues
+          const autoStacks = computeAutoStacksFromProjectedIssues(
+            overlayResult.issues,
+            req.project!.db
+          );
+
+          // Get manual stacks (these don't use overlays for now)
+          const manualStacks = listStacks(req.project!.db).filter(
+            (s) => !s.stack.is_auto
+          );
+
+          allStacks = [...manualStacks, ...autoStacks];
+        } else {
+          // No checkpoints with snapshots, use regular stacks
+          allStacks = listStacks(req.project!.db);
+        }
+      } else {
+        // No overlay, use regular stack computation
+        allStacks = listStacks(req.project!.db);
+      }
 
       // Filter based on query params
       const filteredStacks = allStacks.filter((stackInfo) => {
@@ -55,6 +112,10 @@ export function createStacksRouter(): Router {
           stacks: filteredStacks,
           auto_count: autoCount,
           manual_count: manualCount,
+          ...(includeOverlay && {
+            projected_issue_count: projectedIssueCount,
+            projected_spec_count: projectedSpecCount,
+          }),
         },
       });
     } catch (error) {
