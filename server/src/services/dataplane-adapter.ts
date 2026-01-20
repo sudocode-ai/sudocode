@@ -476,6 +476,116 @@ interface DataplaneDiffStacksModule {
     createdAt: number;
     createdBy: string | null;
   }>;
+  getDiffStackWithCheckpoints(
+    db: Database.Database,
+    id: string
+  ): {
+    id: string;
+    name: string | null;
+    description: string | null;
+    targetBranch: string;
+    reviewStatus: string;
+    reviewedBy: string | null;
+    reviewedAt: number | null;
+    reviewNotes: string | null;
+    queuePosition: number | null;
+    createdAt: number;
+    createdBy: string | null;
+    checkpoints: Array<{
+      id: string;
+      streamId: string;
+      commitSha: string;
+      parentCommit: string | null;
+      originalCommit: string | null;
+      changeId: string | null;
+      message: string | null;
+      createdAt: number;
+      createdBy: string | null;
+      position: number;
+    }>;
+  } | null;
+  getCheckpointsInStack(
+    db: Database.Database,
+    stackId: string
+  ): Array<{
+    id: string;
+    streamId: string;
+    commitSha: string;
+    parentCommit: string | null;
+    originalCommit: string | null;
+    changeId: string | null;
+    message: string | null;
+    createdAt: number;
+    createdBy: string | null;
+    position: number;
+  }>;
+  listDiffStacks(
+    db: Database.Database,
+    options?: {
+      reviewStatus?: string;
+      targetBranch?: string;
+      queuedOnly?: boolean;
+    }
+  ): Array<{
+    id: string;
+    name: string | null;
+    description: string | null;
+    targetBranch: string;
+    reviewStatus: string;
+    reviewedBy: string | null;
+    reviewedAt: number | null;
+    reviewNotes: string | null;
+    queuePosition: number | null;
+    createdAt: number;
+    createdBy: string | null;
+  }>;
+  getQueuedStacks(
+    db: Database.Database,
+    targetBranch: string
+  ): Array<{
+    id: string;
+    name: string | null;
+    description: string | null;
+    targetBranch: string;
+    reviewStatus: string;
+    reviewedBy: string | null;
+    reviewedAt: number | null;
+    reviewNotes: string | null;
+    queuePosition: number | null;
+    createdAt: number;
+    createdBy: string | null;
+  }>;
+  deleteDiffStack(db: Database.Database, id: string): boolean;
+  removeCheckpointFromStack(
+    db: Database.Database,
+    stackId: string,
+    checkpointId: string
+  ): boolean;
+  reorderStackCheckpoints(
+    db: Database.Database,
+    stackId: string,
+    checkpointIds: string[]
+  ): void;
+  isValidStatusTransition(
+    currentStatus: string,
+    newStatus: string
+  ): boolean;
+  dequeueStack(
+    db: Database.Database,
+    stackId: string
+  ): {
+    id: string;
+    name: string | null;
+    description: string | null;
+    targetBranch: string;
+    reviewStatus: string;
+    reviewedBy: string | null;
+    reviewedAt: number | null;
+    reviewNotes: string | null;
+    queuePosition: number | null;
+    createdAt: number;
+    createdBy: string | null;
+  } | null;
 }
 
 export class DataplaneAdapter {
@@ -485,8 +595,8 @@ export class DataplaneAdapter {
   private initialized = false;
   private externalDb: Database.Database | null = null;
   // Checkpoint and diff stack modules (loaded dynamically)
-  private checkpointsModule: DataplaneCheckpointsModule | null = null;
-  private diffStacksModule: DataplaneDiffStacksModule | null = null;
+  private _checkpointsModule: DataplaneCheckpointsModule | null = null;
+  private _diffStacksModule: DataplaneDiffStacksModule | null = null;
 
   constructor(repoPath: string, config?: DataplaneConfig, db?: Database.Database) {
     this.repoPath = repoPath;
@@ -509,6 +619,31 @@ export class DataplaneAdapter {
   }
 
   /**
+   * Get the dataplane database connection
+   * Used by routes to access diff_stacks and checkpoints modules
+   */
+  get db(): Database.Database {
+    if (!this.tracker) {
+      throw new Error('DataplaneAdapter not initialized');
+    }
+    return this.tracker.db;
+  }
+
+  /**
+   * Get the diff stacks module for direct access to diff stack operations
+   */
+  get diffStacksModule(): DataplaneDiffStacksModule | null {
+    return this._diffStacksModule;
+  }
+
+  /**
+   * Get the checkpoints module for direct access to checkpoint operations
+   */
+  get checkpointsModule(): DataplaneCheckpointsModule | null {
+    return this._checkpointsModule;
+  }
+
+  /**
    * Initialize the dataplane tracker
    */
   async initialize(): Promise<void> {
@@ -528,8 +663,8 @@ export class DataplaneAdapter {
       };
 
       // Store references to modules for later use
-      this.checkpointsModule = dataplane.checkpoints;
-      this.diffStacksModule = dataplane.diffStacks;
+      this._checkpointsModule = dataplane.checkpoints;
+      this._diffStacksModule = dataplane.diffStacks;
 
       if (this.externalDb) {
         // Use shared database with table prefix (preferred)
@@ -1474,12 +1609,12 @@ export class DataplaneAdapter {
     const tracker = this.ensureInitialized();
 
     // Get dataplane checkpoint
-    if (!this.checkpointsModule) {
+    if (!this._checkpointsModule) {
       console.warn('[getCheckpointWithAppData] Checkpoints module not available');
       return null;
     }
 
-    const dpCheckpoint = this.checkpointsModule.getCheckpoint(tracker.db, checkpointId);
+    const dpCheckpoint = this._checkpointsModule.getCheckpoint(tracker.db, checkpointId);
     if (!dpCheckpoint) {
       return null;
     }
@@ -1498,8 +1633,8 @@ export class DataplaneAdapter {
 
     // Get diff_stack info if available
     let diffStack = null;
-    if (this.diffStacksModule) {
-      const stacks = this.diffStacksModule.getStacksForCheckpoint(tracker.db, checkpointId);
+    if (this._diffStacksModule) {
+      const stacks = this._diffStacksModule.getStacksForCheckpoint(tracker.db, checkpointId);
       if (stacks.length > 0) {
         const stack = stacks[0]; // Use first stack (most recent)
         diffStack = {
@@ -1561,13 +1696,13 @@ export class DataplaneAdapter {
   }> {
     const tracker = this.ensureInitialized();
 
-    if (!this.checkpointsModule) {
+    if (!this._checkpointsModule) {
       console.warn('[listCheckpointsWithAppData] Checkpoints module not available');
       return [];
     }
 
     // Get checkpoints from dataplane
-    const dpCheckpoints = this.checkpointsModule.listCheckpoints(tracker.db, {
+    const dpCheckpoints = this._checkpointsModule.listCheckpoints(tracker.db, {
       streamId: options?.streamId,
     });
 
@@ -1595,9 +1730,9 @@ export class DataplaneAdapter {
 
     // Get diff_stack info for all checkpoints
     const stackMap = new Map<string, { id: string; reviewStatus: string; queuePosition: number | null }>();
-    if (this.diffStacksModule) {
+    if (this._diffStacksModule) {
       for (const cp of dpCheckpoints) {
-        const stacks = this.diffStacksModule.getStacksForCheckpoint(tracker.db, cp.id);
+        const stacks = this._diffStacksModule.getStacksForCheckpoint(tracker.db, cp.id);
         if (stacks.length > 0) {
           stackMap.set(cp.id, {
             id: stacks[0].id,
@@ -1656,9 +1791,9 @@ export class DataplaneAdapter {
     const status = options?.status || ['pending', 'approved'];
 
     // If dataplane checkpoints module is available, use new architecture
-    if (this.checkpointsModule && this.diffStacksModule) {
+    if (this._checkpointsModule && this._diffStacksModule) {
       // Get all checkpoints from dataplane
-      const dpCheckpoints = this.checkpointsModule.listCheckpoints(tracker.db, {});
+      const dpCheckpoints = this._checkpointsModule.listCheckpoints(tracker.db, {});
 
       // Get app_data for all checkpoints
       const checkpointIds = dpCheckpoints.map((cp) => cp.id);
@@ -1691,7 +1826,7 @@ export class DataplaneAdapter {
       // Get diff_stack info for status filtering
       const stackInfoMap = new Map<string, { reviewStatus: string; queuePosition: number | null; targetBranch: string }>();
       for (const cp of dpCheckpoints) {
-        const stacks = this.diffStacksModule.getStacksForCheckpoint(tracker.db, cp.id);
+        const stacks = this._diffStacksModule.getStacksForCheckpoint(tracker.db, cp.id);
         if (stacks.length > 0) {
           const stack = stacks[0];
           stackInfoMap.set(cp.id, {
@@ -2042,6 +2177,34 @@ export class DataplaneAdapter {
     const issueStreamBranch = tracker.getStreamBranchName(issueStreamId);
     const issueStreamCreated = issueStream.createdAt > Date.now() - 1000; // Just created
 
+    // 4b. Determine snapshot baseline - prefer previous checkpoint over before_commit
+    // This gives incremental snapshots when checkpoints exist
+    let snapshotBaseline = changes.commitRange.before;
+    if (this._checkpointsModule) {
+      try {
+        const previousCheckpoints = this._checkpointsModule.getCheckpointsForStream(
+          tracker.db,
+          issueStreamId
+        );
+        if (previousCheckpoints.length > 0) {
+          // Use the most recent checkpoint's commit as baseline
+          const mostRecentCheckpoint = previousCheckpoints[previousCheckpoints.length - 1];
+          snapshotBaseline = mostRecentCheckpoint.commitSha;
+          console.log(
+            `[checkpointSync] Using previous checkpoint ${mostRecentCheckpoint.id} (${snapshotBaseline.substring(0, 8)}) as baseline`
+          );
+        } else {
+          console.log(
+            `[checkpointSync] No previous checkpoints, using before_commit (${snapshotBaseline?.substring(0, 8) || 'null'}) as baseline`
+          );
+        }
+      } catch (error) {
+        console.warn(
+          `[checkpointSync] Failed to query previous checkpoints, using before_commit: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+
     // 5. Get worktree for merge operations
     // Use explicit worktreePath option if provided (for workflow-managed worktrees)
     // Otherwise, try to get from dataplane's worktree registry
@@ -2145,13 +2308,13 @@ export class DataplaneAdapter {
       }).trim();
 
       // 8. Compute snapshot diff for issue/spec state changes
-      // Uses baseline commit (before) and current worktree state (after merge)
+      // Uses baseline commit (previous checkpoint or before_commit) and current worktree state
       let issueSnapshot: string | null = null;
       let specSnapshot: string | null = null;
       try {
         const snapshotDiff: SnapshotDiff = computeSnapshotDiffFromCommits(
           this.repoPath,
-          changes.commitRange.before,
+          snapshotBaseline,
           null, // Read current state from worktree
           worktreePath
         );
@@ -2177,20 +2340,21 @@ export class DataplaneAdapter {
 
       // 9a. Create dataplane checkpoint (if modules are available)
       let dataplaneCheckpointId: string | null = null;
-      if (this.checkpointsModule && this.diffStacksModule) {
+      if (this._checkpointsModule && this._diffStacksModule) {
         try {
           // Create dataplane checkpoint with minimal data
-          const dpCheckpoint = this.checkpointsModule.createCheckpoint(tracker.db, {
+          // parentCommit uses snapshotBaseline (previous checkpoint or before_commit)
+          const dpCheckpoint = this._checkpointsModule.createCheckpoint(tracker.db, {
             streamId: issueStreamId,
             commitSha: mergeCommit,
-            parentCommit: changes.commitRange.before,
+            parentCommit: snapshotBaseline,
             message,
             createdBy: options.checkpointedBy,
           });
           dataplaneCheckpointId = dpCheckpoint.id;
 
           // Create diff_stack for the checkpoint (enables review workflow)
-          const dpStack = this.diffStacksModule.createDiffStack(tracker.db, {
+          const dpStack = this._diffStacksModule.createDiffStack(tracker.db, {
             name: `${issueId}: ${message.substring(0, 50)}`,
             targetBranch,
             checkpointIds: [dpCheckpoint.id],
@@ -2247,7 +2411,7 @@ export class DataplaneAdapter {
         executionId,
         issueStreamId,
         mergeCommit,
-        changes.commitRange.before,
+        snapshotBaseline, // Use previous checkpoint or before_commit as parent
         changes.totalFiles,
         changes.totalAdditions,
         changes.totalDeletions,
