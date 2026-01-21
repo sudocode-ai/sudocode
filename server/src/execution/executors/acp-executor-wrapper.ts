@@ -115,6 +115,12 @@ export interface AcpExecutionConfig {
   env?: Record<string, string>;
   /** Session mode to set (e.g., "code", "plan") */
   mode?: string;
+  /** Compaction configuration for automatic context management */
+  compaction?: {
+    enabled: boolean;
+    contextTokenThreshold?: number;
+    customInstructions?: string;
+  };
 }
 
 /**
@@ -322,10 +328,24 @@ export class AcpExecutorWrapper {
       );
       console.log(`[AcpExecutorWrapper] Creating session for ${executionId}`, {
         mcpServers: mcpServers.map((s) => s.name),
+        compactionEnabled: this.acpConfig.compaction?.enabled ?? false,
       });
+
+      // Build agentMeta for compaction settings (Claude Code specific)
+      const agentMeta = this.acpConfig.compaction?.enabled ? {
+        claudeCode: {
+          compaction: {
+            enabled: true,
+            contextTokenThreshold: this.acpConfig.compaction.contextTokenThreshold,
+            customInstructions: this.acpConfig.compaction.customInstructions,
+          }
+        }
+      } : undefined;
+
       session = await agent.createSession(workDir, {
         mcpServers,
         mode: this.acpConfig.mode,
+        agentMeta,
       });
       this.activeSessions.set(executionId, session);
 
@@ -588,9 +608,22 @@ export class AcpExecutorWrapper {
         const mcpServers = convertMcpServers(
           task.metadata?.mcpServers ?? this.acpConfig.mcpServers
         );
+
+        // Build agentMeta for compaction settings (Claude Code specific)
+        const agentMeta = this.acpConfig.compaction?.enabled ? {
+          claudeCode: {
+            compaction: {
+              enabled: true,
+              contextTokenThreshold: this.acpConfig.compaction.contextTokenThreshold,
+              customInstructions: this.acpConfig.compaction.customInstructions,
+            }
+          }
+        } : undefined;
+
         session = await agent.createSession(workDir, {
           mcpServers,
           mode: this.acpConfig.mode,
+          agentMeta,
         });
       }
       this.activeSessions.set(executionId, session);

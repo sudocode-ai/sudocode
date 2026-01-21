@@ -184,6 +184,87 @@ describe("Agent Config Handlers", () => {
 
         expect(result.mcpServers).toEqual(mcpServers);
       });
+
+      // Compaction configuration tests
+      describe("compaction configuration", () => {
+        it("should not include compaction when not configured", () => {
+          const rawConfig: RawAgentConfig = {};
+
+          const result = claudeCodeHandler.processConfig(rawConfig, defaultContext);
+
+          expect(result.compaction).toBeUndefined();
+        });
+
+        it("should not include compaction when disabled", () => {
+          const rawConfig: RawAgentConfig = {
+            agentConfig: {
+              compaction: {
+                enabled: false,
+              },
+            },
+          };
+
+          const result = claudeCodeHandler.processConfig(rawConfig, defaultContext);
+
+          expect(result.compaction).toBeUndefined();
+        });
+
+        it("should extract compaction config when enabled", () => {
+          const rawConfig: RawAgentConfig = {
+            agentConfig: {
+              compaction: {
+                enabled: true,
+                contextTokenThreshold: 50000,
+              },
+            },
+          };
+
+          const result = claudeCodeHandler.processConfig(rawConfig, defaultContext);
+
+          expect(result.compaction).toEqual({
+            enabled: true,
+            contextTokenThreshold: 50000,
+            customInstructions: undefined,
+          });
+        });
+
+        it("should include customInstructions when provided", () => {
+          const rawConfig: RawAgentConfig = {
+            agentConfig: {
+              compaction: {
+                enabled: true,
+                contextTokenThreshold: 100000,
+                customInstructions: "Focus on code changes",
+              },
+            },
+          };
+
+          const result = claudeCodeHandler.processConfig(rawConfig, defaultContext);
+
+          expect(result.compaction).toEqual({
+            enabled: true,
+            contextTokenThreshold: 100000,
+            customInstructions: "Focus on code changes",
+          });
+        });
+
+        it("should extract compaction from top-level config", () => {
+          const rawConfig: RawAgentConfig = {
+            compaction: {
+              enabled: true,
+              contextTokenThreshold: 75000,
+            },
+          } as RawAgentConfig;
+
+          const result = claudeCodeHandler.processConfig(rawConfig, defaultContext);
+
+          expect(result.compaction).toEqual({
+            enabled: true,
+            contextTokenThreshold: 75000,
+            customInstructions: undefined,
+          });
+        });
+      });
     });
 
     describe("getSessionPermissionMode", () => {

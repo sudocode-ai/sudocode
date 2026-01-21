@@ -8,7 +8,13 @@
  * @module execution/output/session-update-coalescer
  */
 
-import type { SessionUpdate, ContentBlock, ToolCallStatus, ToolCallContent } from "acp-factory";
+import type {
+  SessionUpdate,
+  ExtendedSessionUpdate,
+  ContentBlock,
+  ToolCallStatus,
+  ToolCallContent,
+} from "acp-factory";
 import type {
   CoalescedSessionUpdate,
   AgentMessageComplete,
@@ -16,6 +22,7 @@ import type {
   ToolCallComplete,
   UserMessageComplete,
   PlanUpdate,
+  SessionNotification,
 } from "./coalesced-types.js";
 
 /**
@@ -84,19 +91,42 @@ export class SessionUpdateCoalescer {
    * May return a coalesced event if the incoming event completes
    * a pending accumulation (e.g., tool call finished, message interrupted).
    *
-   * @param update - The streaming SessionUpdate event
+   * Accepts ExtendedSessionUpdate to support compaction events from acp-factory 0.1.2+.
+   *
+   * @param update - The streaming SessionUpdate or ExtendedSessionUpdate event
    * @returns Coalesced event(s) if any are ready, otherwise empty array
    */
-  process(update: SessionUpdate): CoalescedSessionUpdate[] {
+  process(update: SessionUpdate | ExtendedSessionUpdate): CoalescedSessionUpdate[] {
     const results: CoalescedSessionUpdate[] = [];
 
-    switch (update.sessionUpdate) {
+    // Handle extended session update types (compaction, etc.) that aren't part of base SessionUpdate
+    const updateType = (update as { sessionUpdate: string }).sessionUpdate;
+
+    // Check for notification-style events from ExtendedSessionUpdate
+    // These are events that should be stored as generic session notifications
+    if (this.isNotificationEvent(updateType)) {
+      // Flush pending text if any (notifications interrupt text accumulation)
+      if (this.pendingText) {
+        results.push(this.flushPendingText()!);
+      }
+
+      // Convert to generic SessionNotification
+      const notification = this.createSessionNotification(updateType, update);
+      if (notification) {
+        results.push(notification);
+      }
+      return results;
+    }
+
+    // Handle standard SessionUpdate types
+    const sessionUpdate = update as SessionUpdate;
+    switch (sessionUpdate.sessionUpdate) {
       case "agent_message_chunk":
         // Flush pending text if switching types
         if (this.pendingText && this.pendingText.type !== "agent_message") {
           results.push(this.flushPendingText()!);
         }
-        this.accumulateText("agent_message", update.content);
+        this.accumulateText("agent_message", sessionUpdate.content);
         break;
 
       case "agent_thought_chunk":
@@ -104,7 +134,7 @@ export class SessionUpdateCoalescer {
         if (this.pendingText && this.pendingText.type !== "agent_thought") {
           results.push(this.flushPendingText()!);
         }
-        this.accumulateText("agent_thought", update.content);
+        this.accumulateText("agent_thought", sessionUpdate.content);
         break;
 
       case "user_message_chunk":
@@ -112,7 +142,7 @@ export class SessionUpdateCoalescer {
         if (this.pendingText && this.pendingText.type !== "user_message") {
           results.push(this.flushPendingText()!);
         }
-        this.accumulateText("user_message", update.content);
+        this.accumulateText("user_message", sessionUpdate.content);
         break;
 
       case "tool_call":
@@ -122,40 +152,40 @@ export class SessionUpdateCoalescer {
         }
         // Start tracking this tool call
         // Capture rawInput, rawOutput, and content - some tools complete immediately
-        this.pendingToolCalls.set(update.toolCallId, {
-          toolCallId: update.toolCallId,
-          title: update.title,
-          status: update.status ?? "in_progress",
-          rawInput: update.rawInput,
-          rawOutput: update.rawOutput,
-          content: update.content,
+        this.pendingToolCalls.set(sessionUpdate.toolCallId, {
+          toolCallId: sessionUpdate.toolCallId,
+          title: sessionUpdate.title,
+          status: sessionUpdate.status ?? "in_progress",
+          rawInput: sessionUpdate.rawInput,
+          rawOutput: sessionUpdate.rawOutput,
+          content: sessionUpdate.content,
           timestamp: new Date(),
         });
         break;
 
       case "tool_call_update":
         // Update existing tool call
-        const pending = this.pendingToolCalls.get(update.toolCallId);
+        const pending = this.pendingToolCalls.get(sessionUpdate.toolCallId);
         if (pending) {
-          if (update.status) {
-            pending.status = update.status;
+          if (sessionUpdate.status) {
+            pending.status = sessionUpdate.status;
           }
-          if (update.rawInput !== undefined) {
-            pending.rawInput = update.rawInput;
+          if (sessionUpdate.rawInput !== undefined) {
+            pending.rawInput = sessionUpdate.rawInput;
           }
-          if (update.rawOutput !== undefined) {
-            pending.rawOutput = update.rawOutput;
+          if (sessionUpdate.rawOutput !== undefined) {
+            pending.rawOutput = sessionUpdate.rawOutput;
           }
-          if (update.content !== undefined && update.content !== null) {
-            pending.content = update.content;
+          if (sessionUpdate.content !== undefined && sessionUpdate.content !== null) {
+            pending.content = sessionUpdate.content;
           }
-          if (update.title) {
-            pending.title = update.title;
+          if (sessionUpdate.title) {
+            pending.title = sessionUpdate.title;
           }
 
           // Check if tool call is complete (terminal status)
           if (this.isTerminalStatus(pending.status)) {
-            this.pendingToolCalls.delete(update.toolCallId);
+            this.pendingToolCalls.delete(sessionUpdate.toolCallId);
             results.push(this.createToolCallComplete(pending));
           }
         }
@@ -170,7 +200,7 @@ export class SessionUpdateCoalescer {
           results.push(this.flushPendingText()!);
         }
         // Store plan update with entries - entries are directly on the update object
-        const planUpdate = update as {
+        const planUpdate = sessionUpdate as {
           sessionUpdate: "plan";
           entries?: Array<{ content: string; status: string; priority: string }>;
         };
@@ -194,6 +224,9 @@ export class SessionUpdateCoalescer {
         // Metadata updates - no coalescing needed
         // They could be stored separately or ignored for content storage
         break;
+
+      // Note: compaction_started and compaction_completed are handled at the top
+      // of this method before the switch statement
 
       default:
         // Handle any other session update types (future-proofing)
@@ -336,5 +369,56 @@ export class SessionUpdateCoalescer {
 
   private isTerminalStatus(status: ToolCallStatus): boolean {
     return status === "completed" || status === "failed";
+  }
+
+  /**
+   * Check if an update type is a notification-style event that should be
+   * stored as a generic SessionNotification.
+   *
+   * This includes compaction events and other extended session updates
+   * that don't require coalescing.
+   */
+  private isNotificationEvent(updateType: string): boolean {
+    return (
+      updateType === "compaction_started" ||
+      updateType === "compaction_completed"
+      // Add other notification types here as needed:
+      // updateType === "session_info_update" ||
+      // updateType === "config_option_update" ||
+    );
+  }
+
+  /**
+   * Create a generic SessionNotification from an extended session update.
+   *
+   * Extracts the notification type and relevant data from the update,
+   * normalizing it into a consistent format for storage.
+   */
+  private createSessionNotification(
+    notificationType: string,
+    update: unknown
+  ): SessionNotification | null {
+    const u = update as Record<string, unknown>;
+
+    // Extract common fields
+    const sessionId = u.sessionId as string | undefined;
+
+    // Build the data payload by excluding known metadata fields
+    const data: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(u)) {
+      // Skip metadata fields that are captured separately
+      if (key === "sessionUpdate" || key === "sessionId") {
+        continue;
+      }
+      data[key] = value;
+    }
+
+    return {
+      sessionUpdate: "session_notification",
+      notificationType,
+      sessionId,
+      data,
+      timestamp: new Date(),
+    };
   }
 }

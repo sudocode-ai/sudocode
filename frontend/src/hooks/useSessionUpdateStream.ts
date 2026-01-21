@@ -115,6 +115,30 @@ export interface PlanUpdateEvent {
 }
 
 /**
+ * Generic session notification from ACP (acp-factory 0.1.2+)
+ *
+ * Represents various agent lifecycle events like compaction, mode changes, etc.
+ * The notificationType field indicates the specific event kind, and data contains
+ * the event-specific payload.
+ *
+ * Common notification types:
+ * - "compaction_started": { trigger: "auto"|"manual", preTokens: number, threshold?: number }
+ * - "compaction_completed": { trigger: "auto"|"manual", preTokens: number }
+ */
+export interface SessionNotification {
+  id: string
+  /** The specific notification type (e.g., "compaction_started", "compaction_completed") */
+  notificationType: string
+  /** Session where the notification occurred */
+  sessionId?: string
+  /** Notification-specific data payload */
+  data: Record<string, unknown>
+  timestamp: Date
+  /** Optional index for stable ordering when timestamps are equal */
+  index?: number
+}
+
+/**
  * Execution lifecycle tracking (compatible with useAgUiStream's WorkflowExecution)
  */
 export interface ExecutionState {
@@ -146,6 +170,7 @@ export interface UseSessionUpdateStreamOptions {
     onThought?: (thought: AgentThought) => void
     onPermissionRequest?: (request: PermissionRequest) => void
     onPlanUpdate?: (planUpdate: PlanUpdateEvent) => void
+    onSessionNotification?: (notification: SessionNotification) => void
   }
 }
 
@@ -173,6 +198,8 @@ export interface UseSessionUpdateStreamResult {
   markPermissionResponded: (requestId: string, selectedOptionId: string) => void
   /** Available slash commands advertised by the agent */
   availableCommands: AvailableCommand[]
+  /** Session notifications (compaction, mode changes, etc.) */
+  sessionNotifications: SessionNotification[]
   /** Whether currently receiving streaming updates */
   isStreaming: boolean
   /** Error if any */
@@ -328,7 +355,21 @@ interface AvailableCommandsUpdateEvent {
 }
 
 /**
- * Union of all SessionUpdate types we handle
+ * Check if a sessionUpdate type is a notification event
+ * These are handled separately from the typed SessionUpdate union
+ */
+function isNotificationEvent(sessionUpdate: string): boolean {
+  return (
+    sessionUpdate === 'compaction_started' ||
+    sessionUpdate === 'compaction_completed'
+    // Add other notification types here as needed
+  )
+}
+
+/**
+ * Union of all typed SessionUpdate events we handle
+ * Note: Notification events (compaction, etc.) are handled separately
+ * to avoid index signature breaking type narrowing
  */
 type SessionUpdate =
   | AgentMessageChunk
@@ -486,6 +527,7 @@ export function useSessionUpdateStream(
     new Map()
   )
   const [planUpdates, setPlanUpdates] = useState<Map<string, PlanUpdateEvent>>(new Map())
+  const [sessionNotifications, setSessionNotifications] = useState<Map<string, SessionNotification>>(new Map())
   const [availableCommands, setAvailableCommands] = useState<AvailableCommand[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<Error | null>(null)
@@ -522,8 +564,10 @@ export function useSessionUpdateStream(
 
   /**
    * Process a SessionUpdate event
+   * Accepts a broad type to handle both typed SessionUpdate events and
+   * notification events (compaction, etc.) which are not in the typed union.
    */
-  const processUpdate = useCallback((update: SessionUpdate) => {
+  const processUpdate = useCallback((update: SessionUpdate | { sessionUpdate: string; sessionId?: string; [key: string]: unknown }) => {
     // Debug: Log received events (but throttle to avoid spam)
     const eventType = update.sessionUpdate
     if (eventType === 'tool_call' || eventType === 'tool_call_update' || eventType === 'tool_call_complete') {
@@ -534,11 +578,51 @@ export function useSessionUpdateStream(
       })
     }
 
-    switch (update.sessionUpdate) {
+    // Handle notification events (compaction, etc.) before the typed switch
+    // These use a generic record type to avoid breaking type narrowing
+    if (isNotificationEvent(eventType)) {
+      const notificationData = update as { sessionUpdate: string; sessionId?: string; [key: string]: unknown }
+      const assignedIndex = eventIndexRef.current++
+      const notificationId = generateStreamId('notification')
+
+      // Build the data payload by extracting all fields except sessionUpdate/sessionId
+      const data: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(notificationData)) {
+        if (key !== 'sessionUpdate' && key !== 'sessionId') {
+          data[key] = value
+        }
+      }
+
+      const notification: SessionNotification = {
+        id: notificationId,
+        notificationType: eventType,
+        sessionId: notificationData.sessionId,
+        data,
+        timestamp: new Date(),
+        index: assignedIndex,
+      }
+
+      setSessionNotifications((prev) => {
+        const next = new Map(prev)
+        next.set(notificationId, notification)
+        return next
+      })
+
+      // Trigger callback
+      if (onEventRef.current?.onSessionNotification) {
+        onEventRef.current.onSessionNotification(notification)
+      }
+      return
+    }
+
+    // Cast to typed SessionUpdate for switch statement type narrowing
+    const typedUpdate = update as SessionUpdate
+
+    switch (typedUpdate.sessionUpdate) {
       // Streaming: agent_message_chunk
       case 'agent_message_chunk': {
         setIsStreaming(true)
-        const text = getTextFromContentBlock(update.content)
+        const text = getTextFromContentBlock(typedUpdate.content)
 
         // Check if we need to start a new streaming message (sync check via ref)
         const needsNewMessage = !currentMessageIdRef.current
@@ -587,10 +671,10 @@ export function useSessionUpdateStream(
 
       // Coalesced: agent_message_complete
       case 'agent_message_complete': {
-        const text = getTextFromContentBlock(update.content)
+        const text = getTextFromContentBlock(typedUpdate.content)
         // Use provided messageId (from legacy agents) or current streaming ID or generate new
-        const isNewMessage = !update.messageId && !currentMessageIdRef.current
-        const messageId = update.messageId || currentMessageIdRef.current || generateStreamId('msg')
+        const isNewMessage = !typedUpdate.messageId && !currentMessageIdRef.current
+        const messageId = typedUpdate.messageId || currentMessageIdRef.current || generateStreamId('msg')
         // Assign index only for brand new messages (existing streaming messages already have an index)
         const assignedIndex = isNewMessage ? eventIndexRef.current++ : undefined
 
@@ -611,7 +695,7 @@ export function useSessionUpdateStream(
             next.set(messageId, {
               id: messageId,
               content: text,
-              timestamp: parseDate(update.timestamp),
+              timestamp: parseDate(typedUpdate.timestamp),
               isStreaming: false,
               index: assignedIndex,
             })
@@ -622,7 +706,7 @@ export function useSessionUpdateStream(
 
         // Only reset current message tracking if this wasn't a legacy agent update
         // (legacy agents provide their own messageId and may send more updates)
-        if (!update.messageId) {
+        if (!typedUpdate.messageId) {
           currentMessageIdRef.current = null
         }
         setIsStreaming(false)
@@ -632,7 +716,7 @@ export function useSessionUpdateStream(
       // Streaming: agent_thought_chunk
       case 'agent_thought_chunk': {
         setIsStreaming(true)
-        const text = getTextFromContentBlock(update.content)
+        const text = getTextFromContentBlock(typedUpdate.content)
 
         // Check if we need to start a new streaming thought (sync check via ref)
         const needsNewThought = !currentThoughtIdRef.current
@@ -674,7 +758,7 @@ export function useSessionUpdateStream(
 
       // Coalesced: agent_thought_complete
       case 'agent_thought_complete': {
-        const text = getTextFromContentBlock(update.content)
+        const text = getTextFromContentBlock(typedUpdate.content)
         const isNewThought = !currentThoughtIdRef.current
         const thoughtId = currentThoughtIdRef.current || generateStreamId('thought')
         // Assign index only for brand new thoughts (existing streaming thoughts already have an index)
@@ -696,7 +780,7 @@ export function useSessionUpdateStream(
             next.set(thoughtId, {
               id: thoughtId,
               content: text,
-              timestamp: parseDate(update.timestamp),
+              timestamp: parseDate(typedUpdate.timestamp),
               isStreaming: false,
               index: assignedIndex,
             })
@@ -714,7 +798,7 @@ export function useSessionUpdateStream(
       // Streaming: user_message_chunk (for persistent sessions)
       case 'user_message_chunk': {
         setIsStreaming(true)
-        const text = getTextFromContentBlock(update.content)
+        const text = getTextFromContentBlock(typedUpdate.content)
 
         // Check if we need to start a new streaming user message
         const needsNewMessage = !currentUserMessageIdRef.current
@@ -783,7 +867,7 @@ export function useSessionUpdateStream(
           currentThoughtIdRef.current = null
         }
 
-        const text = getTextFromContentBlock(update.content)
+        const text = getTextFromContentBlock(typedUpdate.content)
         const isNewMessage = !currentUserMessageIdRef.current
         const messageId = currentUserMessageIdRef.current || generateStreamId('user-msg')
         const assignedIndex = isNewMessage ? eventIndexRef.current++ : undefined
@@ -812,7 +896,7 @@ export function useSessionUpdateStream(
             next.set(messageId, {
               id: messageId,
               content: text,
-              timestamp: parseDate(update.timestamp),
+              timestamp: parseDate(typedUpdate.timestamp),
               isStreaming: false,
               index: assignedIndex,
               role: 'user',
@@ -858,7 +942,7 @@ export function useSessionUpdateStream(
           currentThoughtIdRef.current = null
         }
 
-        const toolId = update.toolCallId
+        const toolId = typedUpdate.toolCallId
         // Assign index synchronously and track it for this tool call
         let assignedIndex = toolCallIndicesRef.current.get(toolId)
         if (assignedIndex === undefined) {
@@ -870,11 +954,11 @@ export function useSessionUpdateStream(
           const next = new Map(prev)
           next.set(toolId, {
             id: toolId,
-            title: update.title,
-            status: mapToolCallStatus(update.status),
-            rawInput: update.rawInput,
-            rawOutput: update.rawOutput,
-            content: update.content as ToolCallContentItem[] | undefined,
+            title: typedUpdate.title,
+            status: mapToolCallStatus(typedUpdate.status),
+            rawInput: typedUpdate.rawInput,
+            rawOutput: typedUpdate.rawOutput,
+            content: typedUpdate.content as ToolCallContentItem[] | undefined,
             timestamp: new Date(),
             index: assignedIndex,
           })
@@ -885,7 +969,7 @@ export function useSessionUpdateStream(
 
       // Streaming: tool_call_update (status/content update)
       case 'tool_call_update': {
-        const toolId = update.toolCallId
+        const toolId = typedUpdate.toolCallId
 
         setToolCalls((prev) => {
           const next = new Map(prev)
@@ -895,13 +979,13 @@ export function useSessionUpdateStream(
             // Preserve existing index
             next.set(toolId, {
               ...existing,
-              title: update.title ?? existing.title,
-              status: update.status ? mapToolCallStatus(update.status) : existing.status,
-              rawInput: update.rawInput ?? existing.rawInput,
-              rawOutput: update.rawOutput ?? existing.rawOutput,
-              content: update.content ? (update.content as ToolCallContentItem[]) : existing.content,
+              title: typedUpdate.title ?? existing.title,
+              status: typedUpdate.status ? mapToolCallStatus(typedUpdate.status) : existing.status,
+              rawInput: typedUpdate.rawInput ?? existing.rawInput,
+              rawOutput: typedUpdate.rawOutput ?? existing.rawOutput,
+              content: typedUpdate.content ? (typedUpdate.content as ToolCallContentItem[]) : existing.content,
               completedAt:
-                update.status === 'completed' || update.status === 'failed'
+                typedUpdate.status === 'completed' || typedUpdate.status === 'failed'
                   ? new Date()
                   : existing.completedAt,
             })
@@ -943,7 +1027,7 @@ export function useSessionUpdateStream(
           currentThoughtIdRef.current = null
         }
 
-        const toolId = update.toolCallId
+        const toolId = typedUpdate.toolCallId
         // Get existing index from tracking map or assign new one
         let assignedIndex = toolCallIndicesRef.current.get(toolId)
         if (assignedIndex === undefined) {
@@ -955,14 +1039,14 @@ export function useSessionUpdateStream(
           const next = new Map(prev)
           next.set(toolId, {
             id: toolId,
-            title: update.title,
-            status: mapToolCallStatus(update.status),
-            result: update.result,
-            rawInput: update.rawInput,
-            rawOutput: update.rawOutput,
-            content: update.content as ToolCallContentItem[] | undefined,
-            timestamp: parseDate(update.timestamp),
-            completedAt: update.completedAt ? parseDate(update.completedAt) : undefined,
+            title: typedUpdate.title,
+            status: mapToolCallStatus(typedUpdate.status),
+            result: typedUpdate.result,
+            rawInput: typedUpdate.rawInput,
+            rawOutput: typedUpdate.rawOutput,
+            content: typedUpdate.content as ToolCallContentItem[] | undefined,
+            timestamp: parseDate(typedUpdate.timestamp),
+            completedAt: typedUpdate.completedAt ? parseDate(typedUpdate.completedAt) : undefined,
             index: assignedIndex,
           })
           return next
@@ -976,15 +1060,15 @@ export function useSessionUpdateStream(
         const assignedIndex = eventIndexRef.current++
 
         const request: PermissionRequest = {
-          requestId: update.requestId,
-          sessionId: update.sessionId,
+          requestId: typedUpdate.requestId,
+          sessionId: typedUpdate.sessionId,
           toolCall: {
-            toolCallId: update.toolCall.toolCallId,
-            title: update.toolCall.title,
-            status: update.toolCall.status,
-            rawInput: update.toolCall.rawInput,
+            toolCallId: typedUpdate.toolCall.toolCallId,
+            title: typedUpdate.toolCall.title,
+            status: typedUpdate.toolCall.status,
+            rawInput: typedUpdate.toolCall.rawInput,
           },
-          options: update.options,
+          options: typedUpdate.options,
           responded: false,
           timestamp: new Date(),
           index: assignedIndex,
@@ -992,7 +1076,7 @@ export function useSessionUpdateStream(
 
         setPermissionRequests((prev) => {
           const next = new Map(prev)
-          next.set(update.requestId, request)
+          next.set(typedUpdate.requestId, request)
           return next
         })
 
@@ -1007,7 +1091,7 @@ export function useSessionUpdateStream(
       // ACP plan structure: { sessionUpdate: "plan", entries: [...] } - entries are directly on update
       case 'plan': {
         // Parse plan entries from ACP format - entries are directly on the update object
-        const planData = update as { entries?: Array<{ content: string; status: string; priority: string }> }
+        const planData = typedUpdate as { entries?: Array<{ content: string; status: string; priority: string }> }
         const entries = planData.entries?.map((e) => ({
           content: e.content,
           status: e.status as 'pending' | 'in_progress' | 'completed',
@@ -1043,7 +1127,7 @@ export function useSessionUpdateStream(
       // Available commands update from agent
       // Agents advertise slash commands via this session notification
       case 'available_commands_update': {
-        const commandsData = update as AvailableCommandsUpdateEvent
+        const commandsData = typedUpdate as AvailableCommandsUpdateEvent
         if (commandsData.commands && Array.isArray(commandsData.commands)) {
           const commands: AvailableCommand[] = commandsData.commands.map((cmd) => ({
             name: cmd.name,
@@ -1052,6 +1136,14 @@ export function useSessionUpdateStream(
           }))
           setAvailableCommands(commands)
         }
+        break
+      }
+
+      // Unknown event types - should never happen with typed union
+      default: {
+        // Exhaustive check - if we get here, we've missed a case
+        const _exhaustiveCheck: never = typedUpdate
+        console.debug('[useSessionUpdateStream] Unhandled sessionUpdate type:', _exhaustiveCheck)
         break
       }
     }
@@ -1221,6 +1313,7 @@ export function useSessionUpdateStream(
     setThoughts(new Map())
     setPermissionRequests(new Map())
     setPlanUpdates(new Map())
+    setSessionNotifications(new Map())
     setAvailableCommands([])
     setIsStreaming(false)
     setError(null)
@@ -1254,6 +1347,10 @@ export function useSessionUpdateStream(
     [permissionRequests]
   )
   const planUpdatesArray = useMemo(() => Array.from(planUpdates.values()), [planUpdates])
+  const sessionNotificationsArray = useMemo(
+    () => Array.from(sessionNotifications.values()),
+    [sessionNotifications]
+  )
 
   // Compute latest plan (from most recent plan update)
   const latestPlan = useMemo(() => {
@@ -1276,6 +1373,7 @@ export function useSessionUpdateStream(
     permissionRequests: permissionRequestsArray,
     markPermissionResponded,
     availableCommands,
+    sessionNotifications: sessionNotificationsArray,
     isStreaming,
     error,
     isConnected: connected,

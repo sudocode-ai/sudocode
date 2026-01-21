@@ -139,6 +139,7 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
         agentPermissionMode: processedConfig.agentPermissionMode,
         env: processedConfig.env,
         mode: processedConfig.sessionMode,
+        compaction: processedConfig.compaction,
       },
       lifecycleService: factoryConfig.lifecycleService,
       logsStore: factoryConfig.logsStore,
