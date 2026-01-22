@@ -201,29 +201,40 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
    * and array element ordering. This ensures consistent hashes regardless of:
    * - Object key order: {"id":"x","title":"y"} vs {"title":"y","id":"x"}
    * - Array element order: [{to:"A"},{to:"B"}] vs [{to:"B"},{to:"A"}]
+   *
+   * IMPORTANT: Excludes timestamp fields (updated_at, created_at) from the hash
+   * because these change as a side effect of syncing and shouldn't trigger
+   * change detection. We only want to detect actual content changes.
    */
   function computeCanonicalHash(entity: any): string {
+    // Fields to exclude from hash comparison (timestamps change on every sync)
+    const excludeFields = new Set(["updated_at", "created_at"]);
+
     // Recursively sort keys and array elements for consistent ordering
-    const canonicalize = (obj: any): any => {
+    const canonicalize = (obj: any, isTopLevel: boolean = false): any => {
       if (obj === null || typeof obj !== "object") {
         return obj;
       }
       if (Array.isArray(obj)) {
         // Sort array elements by their JSON representation for deterministic ordering
         return obj
-          .map(canonicalize)
+          .map((item) => canonicalize(item, false))
           .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
       }
       const sorted: any = {};
       Object.keys(obj)
         .sort()
         .forEach((key) => {
-          sorted[key] = canonicalize(obj[key]);
+          // Only exclude timestamp fields at the top level of the entity
+          if (isTopLevel && excludeFields.has(key)) {
+            return; // Skip this field
+          }
+          sorted[key] = canonicalize(obj[key], false);
         });
       return sorted;
     };
 
-    const canonical = canonicalize(entity);
+    const canonical = canonicalize(entity, true);
     return crypto
       .createHash("sha256")
       .update(JSON.stringify(canonical))
@@ -484,10 +495,12 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
             if (!entityId || !dbEntity) {
               // No entity ID in frontmatter or entity doesn't exist in DB = orphaned file
               syncDirection = "orphaned";
+              onLog(`[watch:debug] MD sync decision: orphaned (entityId=${entityId}, dbEntity=${!!dbEntity})`);
             }
             // Skip if content already matches DB (prevents oscillation)
             else if (contentMatches(filePath, entityId, entityType)) {
               syncDirection = "skip";
+              onLog(`[watch:debug] MD sync decision: skip (contentMatches=true for ${entityId})`);
             }
             // Skip if file content hasn't changed since last sync (hash-based detection)
             // This prevents oscillation from our own writes
@@ -495,6 +508,7 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
               onLog(
                 `[watch] Skipping sync for ${entityType} ${entityId} (file content unchanged)`
               );
+              onLog(`[watch:debug] MD sync decision: skip (hasContentChanged=false for ${entityId})`);
               syncDirection = "skip";
             }
             // Content differs - determine sync direction based on timestamps
@@ -502,6 +516,8 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
               const fileStat = fs.statSync(filePath);
               const fileTime = fileStat.mtimeMs;
               const dbTime = parseTimestampAsUTC(dbEntity.updated_at);
+
+              onLog(`[watch:debug] MD sync timestamps for ${entityId}: fileTime=${fileTime} (${new Date(fileTime).toISOString()}), dbTime=${dbTime} (${dbEntity.updated_at}), diff=${fileTime - dbTime}ms`);
 
               if (dbTime > fileTime) {
                 // DB is newer than file - sync DB → markdown
@@ -512,6 +528,7 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
               } else {
                 // File is newer than DB - sync markdown → DB (content update only)
                 syncDirection = "markdown-to-db";
+                onLog(`[watch:debug] MD sync decision: markdown-to-db (file is newer for ${entityId})`);
               }
             }
           } catch (error) {
@@ -580,6 +597,17 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
             return;
           }
 
+          // DEBUG: Log what we're about to sync from markdown
+          try {
+            const parsedForDebug = parseMarkdownFile(filePath, db, baseDir);
+            const mdContentMatch = parsedForDebug.content.match(/managed directories:([\s\S]{0,50})/);
+            if (mdContentMatch) {
+              onLog(`[watch:oscillation] MD file content snippet before sync: ${JSON.stringify(mdContentMatch[1])}`);
+            }
+          } catch (e) {
+            // ignore
+          }
+
           // Sync markdown → DB (file is newer or new file)
           const result = await syncMarkdownToJSONL(db, filePath, {
             outputDir: baseDir,
@@ -592,6 +620,17 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
             onLog(
               `[watch] Synced ${result.entityType} ${result.entityId} (${result.action})`
             );
+            
+            // DEBUG: Log what's now in DB after markdown sync
+            const dbEntityAfterSync = result.entityType === "spec" 
+              ? getSpec(db, result.entityId) 
+              : getIssue(db, result.entityId);
+            if (dbEntityAfterSync && dbEntityAfterSync.content) {
+              const match = dbEntityAfterSync.content.match(/managed directories:([\s\S]{0,50})/);
+              if (match) {
+                onLog(`[watch:oscillation] DB after MD sync ${result.entityId} content snippet: ${JSON.stringify(match[1])}`);
+              }
+            }
 
             // Emit typed callback event for markdown sync
             if (onEntitySync) {
@@ -659,9 +698,15 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
             if (!cachedHash) {
               // Entity not in cache = created
               changedEntities.push({ entityId, action: "created" });
+              onLog(`[watch:debug] JSONL entity ${entityId}: created (not in cache)`);
             } else if (newHash !== cachedHash) {
               // Content hash differs = entity changed
               changedEntities.push({ entityId, action: "updated" });
+              onLog(`[watch:debug] JSONL entity ${entityId}: hash changed (cached=${cachedHash?.slice(0,8)}, new=${newHash?.slice(0,8)})`);
+              onLog(`[watch:debug] JSONL entity ${entityId} updated_at: ${jsonlEntity.updated_at}`);
+              // Log the keys being hashed to debug what's different
+              const keys = Object.keys(jsonlEntity).filter(k => k !== 'updated_at' && k !== 'created_at').sort();
+              onLog(`[watch:debug] JSONL entity ${entityId} keys (excl timestamps): ${keys.join(', ')}`);
             }
           }
 
@@ -673,6 +718,17 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
               `[watch] Detected ${changedEntities.length} changed ${entityType}(s) in JSONL`
             );
 
+            // DEBUG: Log content snippet for changed entities to track oscillation
+            for (const { entityId } of changedEntities) {
+              const jsonlEntity = jsonlEntities.find((e: any) => e.id === entityId);
+              if (jsonlEntity && jsonlEntity.content) {
+                const match = jsonlEntity.content.match(/managed directories:([\s\S]{0,50})/);
+                if (match) {
+                  onLog(`[watch:oscillation] JSONL ${entityId} content snippet: ${JSON.stringify(match[1])}`);
+                }
+              }
+            }
+
             // Import from JSONL to sync database
             // Pass changed entity IDs to force update even if timestamp hasn't changed
             // (user may have manually edited JSONL content without updating timestamp)
@@ -682,6 +738,17 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
               forceUpdateIds: changedIds,
             });
             onLog(`[watch] Imported JSONL changes to database`);
+            
+            // DEBUG: Log what's now in DB after import
+            for (const { entityId } of changedEntities) {
+              const dbEntity = entityType === "spec" ? getSpec(db, entityId) : getIssue(db, entityId);
+              if (dbEntity && dbEntity.content) {
+                const match = dbEntity.content.match(/managed directories:([\s\S]{0,50})/);
+                if (match) {
+                  onLog(`[watch:oscillation] DB after import ${entityId} content snippet: ${JSON.stringify(match[1])}`);
+                }
+              }
+            }
 
             // Emit events for changed entities (after import, so we have fresh data)
             for (const { entityId, action } of changedEntities) {
@@ -749,6 +816,17 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
                 if (contentMatches(mdPath, spec.id, "spec")) {
                   continue;
                 }
+                
+                // DEBUG: Log why we're syncing this spec to markdown
+                onLog(`[watch:oscillation] contentMatches=false for ${spec.id}, will sync DB→MD`);
+                
+                // DEBUG: Log DB content before sync
+                if (spec.content) {
+                  const match = spec.content.match(/managed directories:([\s\S]{0,50})/);
+                  if (match) {
+                    onLog(`[watch:oscillation] DB content for ${spec.id} before syncJSONLToMarkdown: ${JSON.stringify(match[1])}`);
+                  }
+                }
 
                 const result = await syncJSONLToMarkdown(
                   db,
@@ -762,6 +840,17 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
                   onLog(
                     `[watch] Synced spec ${spec.id} to ${spec.file_path} (${result.action})`
                   );
+                  
+                  // DEBUG: Log what's in the MD file after sync
+                  try {
+                    const mdAfterSync = parseMarkdownFile(mdPath, db, baseDir);
+                    const mdMatch = mdAfterSync.content.match(/managed directories:([\s\S]{0,50})/);
+                    if (mdMatch) {
+                      onLog(`[watch:oscillation] MD content for ${spec.id} after syncJSONLToMarkdown: ${JSON.stringify(mdMatch[1])}`);
+                    }
+                  } catch (e) {
+                    // ignore
+                  }
                 } else if (result.error) {
                   onError(
                     new Error(`Failed to sync spec ${spec.id}: ${result.error}`)
