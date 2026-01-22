@@ -86,6 +86,10 @@ sudocode init
 
 # Run the local sudocode server from anywhere
 sudocode server
+
+# [Optional] If you want to connect your agent directly to sudocode, install our plugin
+claude plugin marketplace add sudocode-ai/sudocode
+claude plugin install sudocode
 ```
 
 Check out our [Quick Start Guide](https://docs.sudocode.ai/quickstart#step-4%3A-set-up-your-agent) for tutorials and walkthroughs.
