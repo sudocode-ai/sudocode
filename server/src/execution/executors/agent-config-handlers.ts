@@ -50,6 +50,12 @@ export interface ProcessedAgentConfig {
   sessionMode?: string;
   /** MCP servers configuration */
   mcpServers?: SudocodeMcpServersConfig | McpServer[];
+  /** Compaction configuration for automatic context management */
+  compaction?: {
+    enabled: boolean;
+    contextTokenThreshold?: number;
+    customInstructions?: string;
+  };
 }
 
 /**
@@ -140,6 +146,10 @@ export const claudeCodeHandler: AgentConfigHandler = {
     // Session mode (code, plan, ask, architect)
     const sessionMode = rawConfig.mode || rawConfig.agentConfig?.mode;
 
+    // Extract compaction configuration
+    const agentConfig = rawConfig.agentConfig || rawConfig;
+    const compaction = (agentConfig as { compaction?: { enabled?: boolean; contextTokenThreshold?: number; customInstructions?: string } }).compaction;
+
     return {
       env,
       acpPermissionMode: skipPermissions ? "auto-approve" : "interactive",
@@ -147,6 +157,11 @@ export const claudeCodeHandler: AgentConfigHandler = {
       agentPermissionMode: permissionMode,
       sessionMode,
       mcpServers: rawConfig.mcpServers,
+      compaction: compaction?.enabled ? {
+        enabled: true,
+        contextTokenThreshold: compaction.contextTokenThreshold,
+        customInstructions: compaction.customInstructions,
+      } : undefined,
     };
   },
 

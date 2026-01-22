@@ -39,6 +39,21 @@ export type AgentType = "claude-code" | "codex" | "gemini" | "opencode" | "copil
 export type ExecutionMode = "structured" | "interactive" | "hybrid";
 
 /**
+ * Configuration for automatic context compaction
+ *
+ * When enabled, the agent will automatically compact context when
+ * the token count exceeds the specified threshold.
+ */
+export interface CompactionConfig {
+  /** Whether auto-compaction is enabled */
+  enabled: boolean;
+  /** Token threshold to trigger compaction (default: 100000) */
+  contextTokenThreshold?: number;
+  /** Custom instructions for the compaction summary */
+  customInstructions?: string;
+}
+
+/**
  * Base configuration options that all agents should support
  * Aligns with BaseAgentConfig from agent-execution-engine
  */
@@ -159,6 +174,18 @@ export interface ClaudeCodeConfig extends BaseAgentConfig {
    * the executor will use the bundled hook script from agent-execution-engine.
    */
   directoryGuardHookPath?: string;
+
+  // === Compaction Configuration ===
+  /**
+   * Auto-compaction configuration for managing context tokens
+   *
+   * When enabled, the agent will automatically compact context when
+   * the token count exceeds the specified threshold. This helps prevent
+   * errors in long conversations.
+   *
+   * @default { enabled: false }
+   */
+  compaction?: CompactionConfig;
 }
 
 /**

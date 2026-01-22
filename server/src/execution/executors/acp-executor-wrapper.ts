@@ -18,10 +18,7 @@ import {
   type PermissionMode,
   type PermissionRequestUpdate,
 } from "acp-factory";
-import type {
-  SessionMode,
-  SessionEndModeConfig,
-} from "@sudocode-ai/types";
+import type { SessionMode, SessionEndModeConfig } from "@sudocode-ai/types";
 import { PermissionManager } from "./permission-manager.js";
 import { FileHandler } from "../handlers/file-handler.js";
 import type Database from "better-sqlite3";
@@ -115,6 +112,12 @@ export interface AcpExecutionConfig {
   env?: Record<string, string>;
   /** Session mode to set (e.g., "code", "plan") */
   mode?: string;
+  /** Compaction configuration for automatic context management */
+  compaction?: {
+    enabled: boolean;
+    contextTokenThreshold?: number;
+    customInstructions?: string;
+  };
 }
 
 /**
@@ -278,7 +281,8 @@ export class AcpExecutorWrapper {
 
       // Register disconnect callback if endOnDisconnect is enabled
       if (sessionConfig.endOnDisconnect) {
-        persistentState.unregisterDisconnectCallback = this.registerDisconnectHandler(executionId);
+        persistentState.unregisterDisconnectCallback =
+          this.registerDisconnectHandler(executionId);
       }
 
       this.persistentSessions.set(executionId, persistentState);
@@ -320,12 +324,31 @@ export class AcpExecutorWrapper {
       const mcpServers = convertMcpServers(
         task.metadata?.mcpServers ?? this.acpConfig.mcpServers
       );
+      // Build agentMeta for compaction settings (Claude Code specific)
+      const agentMeta = this.acpConfig.compaction?.enabled
+        ? {
+            claudeCode: {
+              compaction: {
+                enabled: true,
+                contextTokenThreshold:
+                  this.acpConfig.compaction.contextTokenThreshold,
+                customInstructions:
+                  this.acpConfig.compaction.customInstructions,
+              },
+            },
+          }
+        : undefined;
+
       console.log(`[AcpExecutorWrapper] Creating session for ${executionId}`, {
         mcpServers: mcpServers.map((s) => s.name),
+        compactionEnabled: this.acpConfig.compaction?.enabled ?? false,
+        agentMeta: agentMeta ? JSON.stringify(agentMeta) : undefined,
       });
+
       session = await agent.createSession(workDir, {
         mcpServers,
         mode: this.acpConfig.mode,
+        agentMeta,
       });
       this.activeSessions.set(executionId, session);
 
@@ -573,12 +596,31 @@ export class AcpExecutorWrapper {
       });
       this.activeAgents.set(executionId, agent);
 
+      // Build agentMeta for compaction settings (Claude Code specific)
+      // This is needed for both loadSession and createSession to ensure compaction works on follow-ups
+      const agentMeta = this.acpConfig.compaction?.enabled
+        ? {
+            claudeCode: {
+              compaction: {
+                enabled: true,
+                contextTokenThreshold:
+                  this.acpConfig.compaction.contextTokenThreshold,
+                customInstructions:
+                  this.acpConfig.compaction.customInstructions,
+              },
+            },
+          }
+        : undefined;
+
       // 2. Load existing session or create new one if agent doesn't support loading
       if (agent.capabilities?.loadSession) {
         console.log(
           `[AcpExecutorWrapper] Loading session ${sessionId} for ${executionId}`
         );
-        session = await agent.loadSession(sessionId, workDir);
+        // Pass agentMeta to loadSession so compaction config is re-applied on session resume
+        session = await agent.loadSession(sessionId, workDir, [], {
+          agentMeta,
+        });
       } else {
         // Agent doesn't support session loading (e.g., Gemini)
         // Create a new session instead - conversation history won't be preserved
@@ -588,9 +630,11 @@ export class AcpExecutorWrapper {
         const mcpServers = convertMcpServers(
           task.metadata?.mcpServers ?? this.acpConfig.mcpServers
         );
+
         session = await agent.createSession(workDir, {
           mcpServers,
           mode: this.acpConfig.mode,
+          agentMeta,
         });
       }
       this.activeSessions.set(executionId, session);
@@ -1101,10 +1145,15 @@ export class AcpExecutorWrapper {
   async sendPrompt(executionId: string, prompt: string): Promise<void> {
     const persistentState = this.persistentSessions.get(executionId);
     if (!persistentState) {
-      throw new Error(`No persistent session found for execution ${executionId}`);
+      throw new Error(
+        `No persistent session found for execution ${executionId}`
+      );
     }
 
-    if (persistentState.state !== "waiting" && persistentState.state !== "paused") {
+    if (
+      persistentState.state !== "waiting" &&
+      persistentState.state !== "paused"
+    ) {
       throw new Error(
         `Cannot send prompt to session in state: ${persistentState.state}`
       );
@@ -1153,9 +1202,15 @@ export class AcpExecutorWrapper {
       timestamp: new Date(),
     };
     // Broadcast to frontend
-    this.broadcastSessionUpdate(executionId, userMessage as unknown as ExtendedSessionUpdate);
+    this.broadcastSessionUpdate(
+      executionId,
+      userMessage as unknown as ExtendedSessionUpdate
+    );
     // Store in logs
-    this.logsStore.appendRawLog(executionId, serializeCoalescedUpdate(userMessage));
+    this.logsStore.appendRawLog(
+      executionId,
+      serializeCoalescedUpdate(userMessage)
+    );
 
     // Stream prompt and process updates
     const coalescer = new SessionUpdateCoalescer();
@@ -1167,7 +1222,10 @@ export class AcpExecutorWrapper {
         updateCount++;
 
         // Handle permission requests
-        if (update.sessionUpdate === "permission_request" && permissionManager) {
+        if (
+          update.sessionUpdate === "permission_request" &&
+          permissionManager
+        ) {
           const permUpdate = update as PermissionRequestUpdate;
           permissionManager.addPending({
             requestId: permUpdate.requestId,
@@ -1213,7 +1271,11 @@ export class AcpExecutorWrapper {
       );
       // Mark session as ended on error
       persistentState.state = "ended";
-      await this.handleError(executionId, error as Error, persistentState.workDir);
+      await this.handleError(
+        executionId,
+        error as Error,
+        persistentState.workDir
+      );
       throw error;
     }
   }
@@ -1388,7 +1450,9 @@ export class AcpExecutorWrapper {
     }
 
     // Update state - use "paused" if pauseOnCompletion is enabled
-    const targetState = persistentState.config.pauseOnCompletion ? "paused" : "waiting";
+    const targetState = persistentState.config.pauseOnCompletion
+      ? "paused"
+      : "waiting";
     persistentState.state = targetState;
     persistentState.promptCount++;
     persistentState.lastPromptCompletedAt = new Date();
@@ -1426,7 +1490,8 @@ export class AcpExecutorWrapper {
     }
 
     // Broadcast session state change event
-    const eventType = targetState === "paused" ? "session_paused" : "session_waiting";
+    const eventType =
+      targetState === "paused" ? "session_paused" : "session_waiting";
     broadcastSessionEvent(this.projectId, executionId, eventType, {
       promptCount: persistentState.promptCount,
     });

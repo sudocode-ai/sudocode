@@ -19,6 +19,7 @@ import type {
   ToolCall,
   AgentThought,
   ToolCallContentItem,
+  SessionNotification,
 } from '@/hooks/useSessionUpdateStream'
 import type { PermissionRequest as PermissionRequestType } from '@/types/permissions'
 import { TodoTracker } from './TodoTracker'
@@ -68,6 +69,11 @@ export interface AgentTrajectoryProps {
   permissionRequests?: PermissionRequestType[]
 
   /**
+   * Array of session notifications (compaction events, etc.)
+   */
+  sessionNotifications?: SessionNotification[]
+
+  /**
    * Callback when user responds to a permission request
    */
   onPermissionRespond?: (requestId: string, optionId: string) => void
@@ -115,6 +121,12 @@ type TrajectoryItem =
       timestamp: number
       index?: number
       data: PermissionRequestType
+    }
+  | {
+      type: 'notification'
+      timestamp: number
+      index?: number
+      data: SessionNotification
     }
 
 /**
@@ -412,6 +424,7 @@ export function AgentTrajectory({
   toolCalls,
   thoughts = [],
   permissionRequests = [],
+  sessionNotifications = [],
   onPermissionRespond,
   onSkipAllPermissions,
   isSkippingAllPermissions = false,
@@ -481,6 +494,16 @@ export function AgentTrajectory({
       })
     })
 
+    // Add session notifications (compaction events, etc.)
+    sessionNotifications.forEach((notification) => {
+      items.push({
+        type: 'notification',
+        timestamp: notification.timestamp.getTime(),
+        index: notification.index,
+        data: notification,
+      })
+    })
+
     // Sort by index (primary) for stable ordering during streaming,
     // falling back to timestamp for items without indices
     return items.sort((a, b) => {
@@ -496,7 +519,7 @@ export function AgentTrajectory({
       // Fallback to timestamp for items without indices
       return a.timestamp - b.timestamp
     })
-  }, [messages, toolCalls, thoughts, permissionRequests, hideSystemMessages])
+  }, [messages, toolCalls, thoughts, permissionRequests, sessionNotifications, hideSystemMessages])
 
   if (trajectory.length === 0) {
     return null
@@ -526,6 +549,8 @@ export function AgentTrajectory({
               autoFocus={false}
             />
           )
+        } else if (item.type === 'notification') {
+          return <NotificationItem key={`notif-${item.data.id}-${idx}`} notification={item.data} />
         } else {
           return <ToolCallItem key={`tool-${item.data.id}-${idx}`} toolCall={item.data} />
         }
@@ -734,6 +759,41 @@ function ThoughtItem({ thought }: { thought: AgentThought }) {
           <div className="whitespace-pre-wrap text-xs italic leading-relaxed text-muted-foreground">
             {thought.content}
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * NotificationItem - Terminal-style notification rendering (compaction, etc.)
+ */
+function NotificationItem({ notification }: { notification: SessionNotification }) {
+  const { notificationType, data } = notification
+
+  // Convert snake_case to Title Case for display
+  let label = notificationType
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+
+  return (
+    <div className="group">
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1 py-0.5">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground">{label}</span>
+          </div>
+          {/* Show data payload for unknown notification types */}
+          {Object.keys(data).length > 0 && (
+            <div className="mt-0.5 text-xs text-muted-foreground/60">
+              {Object.entries(data).map(([key, value]) => (
+                <span key={key} className="mr-2">
+                  {key}: {typeof value === 'number' ? value.toLocaleString() : String(value)}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

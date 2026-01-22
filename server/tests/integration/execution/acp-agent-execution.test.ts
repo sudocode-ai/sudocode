@@ -580,7 +580,12 @@ describe('ACP Agent Integration Tests - Claude Code Execution', () => {
       );
 
       // Verify loadSession was called instead of createSession
-      expect(mockAgent.loadSession).toHaveBeenCalledWith('existing-session-456', '/tmp/test');
+      expect(mockAgent.loadSession).toHaveBeenCalledWith(
+        'existing-session-456',
+        '/tmp/test',
+        [],
+        { agentMeta: undefined }
+      );
       expect(mockAgent.createSession).not.toHaveBeenCalled();
 
       // Verify execution completed

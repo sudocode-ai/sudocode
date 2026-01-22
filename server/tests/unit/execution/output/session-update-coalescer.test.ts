@@ -218,4 +218,84 @@ describe("SessionUpdateCoalescer", () => {
       expect(coalescer.hasPendingState()).toBe(false);
     });
   });
+
+  describe("session notifications (compaction, etc.)", () => {
+    it("should emit compaction_started as generic session notification", () => {
+      const results = coalescer.process({
+        sessionUpdate: "compaction_started",
+        sessionId: "session-123",
+        trigger: "auto",
+        preTokens: 150000,
+        threshold: 100000,
+      } as unknown as SessionUpdate);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].sessionUpdate).toBe("session_notification");
+      if (results[0].sessionUpdate === "session_notification") {
+        expect(results[0].notificationType).toBe("compaction_started");
+        expect(results[0].sessionId).toBe("session-123");
+        expect(results[0].data.trigger).toBe("auto");
+        expect(results[0].data.preTokens).toBe(150000);
+        expect(results[0].data.threshold).toBe(100000);
+        expect(results[0].timestamp).toBeInstanceOf(Date);
+      }
+    });
+
+    it("should emit compaction_completed as generic session notification", () => {
+      const results = coalescer.process({
+        sessionUpdate: "compaction_completed",
+        sessionId: "session-456",
+        trigger: "manual",
+        preTokens: 120000,
+      } as unknown as SessionUpdate);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].sessionUpdate).toBe("session_notification");
+      if (results[0].sessionUpdate === "session_notification") {
+        expect(results[0].notificationType).toBe("compaction_completed");
+        expect(results[0].sessionId).toBe("session-456");
+        expect(results[0].data.trigger).toBe("manual");
+        expect(results[0].data.preTokens).toBe(120000);
+        expect(results[0].timestamp).toBeInstanceOf(Date);
+      }
+    });
+
+    it("should flush pending text when notification arrives", () => {
+      // Start accumulating a message
+      coalescer.process({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Some pending text" },
+      } as SessionUpdate);
+
+      // Compaction starts - should flush pending message first
+      const results = coalescer.process({
+        sessionUpdate: "compaction_started",
+        sessionId: "session-789",
+        trigger: "auto",
+        preTokens: 100000,
+      } as unknown as SessionUpdate);
+
+      // Should have both the flushed message AND the notification
+      expect(results).toHaveLength(2);
+      expect(results[0].sessionUpdate).toBe("agent_message_complete");
+      expect(results[1].sessionUpdate).toBe("session_notification");
+    });
+
+    it("should preserve all notification data fields", () => {
+      const results = coalescer.process({
+        sessionUpdate: "compaction_started",
+        sessionId: "session-manual",
+        trigger: "manual",
+        preTokens: 80000,
+        // No threshold - manual compaction doesn't have one
+      } as unknown as SessionUpdate);
+
+      expect(results).toHaveLength(1);
+      if (results[0].sessionUpdate === "session_notification") {
+        // threshold should not be in data since it wasn't provided
+        expect(results[0].data.threshold).toBeUndefined();
+        expect(results[0].data.trigger).toBe("manual");
+      }
+    });
+  });
 });

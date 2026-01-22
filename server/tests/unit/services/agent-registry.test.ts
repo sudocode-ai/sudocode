@@ -23,9 +23,9 @@ describe("AgentRegistryService", () => {
       expect(service).toBeDefined();
     });
 
-    it("should register all 6 agents", () => {
+    it("should register all 7 agents", () => {
       const agents = service.getAvailableAgents();
-      expect(agents).toHaveLength(6);
+      expect(agents).toHaveLength(7);
     });
 
     it("should register agents with correct names", () => {
@@ -36,6 +36,7 @@ describe("AgentRegistryService", () => {
       expect(names).toContain("gemini");
       expect(names).toContain("opencode");
       expect(names).toContain("copilot");
+      expect(names).toContain("copilot-cli");
       expect(names).toContain("cursor");
     });
   });

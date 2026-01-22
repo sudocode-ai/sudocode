@@ -552,6 +552,9 @@ export function ExecutionMonitor({
   const permissionRequests = wsStream.permissionRequests
   const markPermissionResponded = wsStream.markPermissionResponded
 
+  // Get session notifications from WebSocket stream (compaction events, etc.)
+  const sessionNotifications = wsStream.sessionNotifications
+
   // Handle permission response - calls API and updates local state
   const handlePermissionRespond = async (requestId: string, optionId: string) => {
     try {
@@ -750,12 +753,13 @@ export function ExecutionMonitor({
         )}
 
         {/* Agent Trajectory */}
-        {(messageCount > 0 || toolCallCount > 0 || permissionRequests.length > 0) && (
+        {(messageCount > 0 || toolCallCount > 0 || permissionRequests.length > 0 || sessionNotifications.length > 0) && (
           <AgentTrajectory
             messages={messages}
             toolCalls={toolCalls}
             thoughts={thoughts}
             permissionRequests={permissionRequests}
+            sessionNotifications={sessionNotifications}
             onPermissionRespond={handlePermissionRespond}
             onSkipAllPermissions={
               onSkipAllPermissionsComplete ? handleSkipAllPermissions : undefined
@@ -832,12 +836,13 @@ export function ExecutionMonitor({
         )}
 
         {/* Agent Trajectory - unified messages and tool calls */}
-        {(messageCount > 0 || toolCallCount > 0 || permissionRequests.length > 0) && (
+        {(messageCount > 0 || toolCallCount > 0 || permissionRequests.length > 0 || sessionNotifications.length > 0) && (
           <AgentTrajectory
             messages={messages}
             toolCalls={toolCalls}
             thoughts={thoughts}
             permissionRequests={permissionRequests}
+            sessionNotifications={sessionNotifications}
             onPermissionRespond={handlePermissionRespond}
             onSkipAllPermissions={
               onSkipAllPermissionsComplete ? handleSkipAllPermissions : undefined

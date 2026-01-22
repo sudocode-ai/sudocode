@@ -98,6 +98,30 @@ export interface PlanUpdate {
 }
 
 /**
+ * Generic session notification for various agent lifecycle events.
+ *
+ * This is a flexible type that can represent any session notification
+ * (compaction events, mode changes, status updates, etc.) without
+ * requiring specific types for each notification kind.
+ *
+ * Common notification types:
+ * - "compaction_started": { trigger: "auto"|"manual", preTokens: number, threshold?: number }
+ * - "compaction_completed": { trigger: "auto"|"manual", preTokens: number }
+ * - "session_info_update": { tokenCount: number, ... }
+ */
+export interface SessionNotification {
+  sessionUpdate: "session_notification";
+  /** The specific notification type (e.g., "compaction_started", "compaction_completed") */
+  notificationType: string;
+  /** Session where the notification occurred (if applicable) */
+  sessionId?: string;
+  /** Notification-specific data payload */
+  data: Record<string, unknown>;
+  /** Timestamp of the event */
+  timestamp: Date;
+}
+
+/**
  * Union of all coalesced event types for storage
  */
 export type CoalescedSessionUpdate =
@@ -105,7 +129,8 @@ export type CoalescedSessionUpdate =
   | AgentThoughtComplete
   | ToolCallComplete
   | UserMessageComplete
-  | PlanUpdate;
+  | PlanUpdate
+  | SessionNotification;
 
 /**
  * Type guard for checking if an event is a coalesced type
@@ -120,7 +145,8 @@ export function isCoalescedUpdate(
     u.sessionUpdate === "agent_thought_complete" ||
     u.sessionUpdate === "tool_call_complete" ||
     u.sessionUpdate === "user_message_complete" ||
-    u.sessionUpdate === "plan"
+    u.sessionUpdate === "plan" ||
+    u.sessionUpdate === "session_notification"
   );
 }
 

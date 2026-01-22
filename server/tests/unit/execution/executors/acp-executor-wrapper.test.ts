@@ -393,7 +393,9 @@ describe("AcpExecutorWrapper", () => {
 
       expect(mockAgent.loadSession).toHaveBeenCalledWith(
         "existing-session-123",
-        "/test/workdir"
+        "/test/workdir",
+        [],
+        { agentMeta: undefined }
       );
 
       // Check that the resumed message was stored
@@ -1288,6 +1290,273 @@ describe("Persistent Sessions", () => {
         expect.objectContaining({ status: "paused" })
       );
     });
+  });
+});
+
+describe("Compaction Events", () => {
+  let wrapper: AcpExecutorWrapper;
+  let mockDb: any;
+  let mockLogsStore: any;
+  let mockLifecycleService: any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockDb = {
+      prepare: vi.fn().mockReturnValue({
+        run: vi.fn(),
+        get: vi.fn(),
+        all: vi.fn(),
+      }),
+    };
+
+    mockLogsStore = {
+      appendRawLog: vi.fn(),
+      appendNormalizedEntry: vi.fn(),
+    };
+
+    mockLifecycleService = {
+      setStatus: vi.fn(),
+    };
+
+    wrapper = new AcpExecutorWrapper({
+      agentType: "claude-code",
+      acpConfig: {
+        agentType: "claude-code",
+        permissionMode: "auto-approve",
+        compaction: {
+          enabled: true,
+          contextTokenThreshold: 10000,
+        },
+      },
+      lifecycleService: mockLifecycleService,
+      logsStore: mockLogsStore,
+      projectId: "test-project",
+      db: mockDb,
+    });
+  });
+
+  it("should pass compaction config via agentMeta to createSession", async () => {
+    const { AgentFactory } = await import("acp-factory");
+    const mockAgent = await AgentFactory.spawn("claude-code");
+
+    (mockAgent.createSession as any).mockResolvedValueOnce({
+      id: "session-abc",
+      cwd: "/test/workdir",
+      modes: ["code"],
+      models: ["claude-sonnet"],
+      prompt: vi.fn().mockImplementation(async function* () {
+        yield { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Hi" } };
+      }),
+      cancel: vi.fn(),
+    });
+
+    await wrapper.executeWithLifecycle(
+      "exec-123",
+      { id: "task-1", prompt: "Test prompt" },
+      "/test/workdir"
+    );
+
+    // Verify agentMeta was passed with compaction config
+    expect(mockAgent.createSession).toHaveBeenCalledWith(
+      "/test/workdir",
+      expect.objectContaining({
+        agentMeta: {
+          claudeCode: {
+            compaction: {
+              enabled: true,
+              contextTokenThreshold: 10000,
+              customInstructions: undefined,
+            },
+          },
+        },
+      })
+    );
+  });
+
+  it("should broadcast compaction_started events via WebSocket", async () => {
+    const { AgentFactory } = await import("acp-factory");
+    const { websocketManager } = await import("../../../../src/services/websocket.js");
+    const mockAgent = await AgentFactory.spawn("claude-code");
+
+    // Mock prompt to yield compaction events
+    const mockUpdates = [
+      { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Working..." } },
+      {
+        sessionUpdate: "compaction_started",
+        sessionId: "session-abc",
+        trigger: "auto",
+        preTokens: 15000,
+        threshold: 10000,
+      },
+      {
+        sessionUpdate: "compaction_completed",
+        sessionId: "session-abc",
+        trigger: "auto",
+        preTokens: 15000,
+        postTokens: 5000,
+      },
+      { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Done!" } },
+    ];
+
+    (mockAgent.createSession as any).mockResolvedValueOnce({
+      id: "session-abc",
+      cwd: "/test/workdir",
+      modes: ["code"],
+      models: ["claude-sonnet"],
+      prompt: vi.fn().mockImplementation(async function* () {
+        for (const update of mockUpdates) {
+          yield update;
+        }
+      }),
+      cancel: vi.fn(),
+    });
+
+    await wrapper.executeWithLifecycle(
+      "exec-123",
+      { id: "task-1", prompt: "Test prompt" },
+      "/test/workdir"
+    );
+
+    // Verify compaction events were broadcast
+    const broadcastCalls = (websocketManager.broadcast as any).mock.calls;
+    const compactionStartedCalls = broadcastCalls.filter(
+      (call: any[]) =>
+        call[3]?.type === "session_update" &&
+        call[3]?.data?.update?.sessionUpdate === "compaction_started"
+    );
+    const compactionCompletedCalls = broadcastCalls.filter(
+      (call: any[]) =>
+        call[3]?.type === "session_update" &&
+        call[3]?.data?.update?.sessionUpdate === "compaction_completed"
+    );
+
+    expect(compactionStartedCalls).toHaveLength(1);
+    expect(compactionCompletedCalls).toHaveLength(1);
+
+    // Verify the compaction_started event data
+    expect(compactionStartedCalls[0][3].data.update).toMatchObject({
+      sessionUpdate: "compaction_started",
+      sessionId: "session-abc",
+      trigger: "auto",
+      preTokens: 15000,
+      threshold: 10000,
+    });
+  });
+
+  it("should coalesce compaction events into session_notification for storage", async () => {
+    const { AgentFactory } = await import("acp-factory");
+    const mockAgent = await AgentFactory.spawn("claude-code");
+
+    const mockUpdates = [
+      {
+        sessionUpdate: "compaction_started",
+        sessionId: "session-abc",
+        trigger: "auto",
+        preTokens: 15000,
+        threshold: 10000,
+      },
+      {
+        sessionUpdate: "compaction_completed",
+        sessionId: "session-abc",
+        trigger: "auto",
+        preTokens: 15000,
+        postTokens: 5000,
+      },
+    ];
+
+    (mockAgent.createSession as any).mockResolvedValueOnce({
+      id: "session-abc",
+      cwd: "/test/workdir",
+      modes: ["code"],
+      models: ["claude-sonnet"],
+      prompt: vi.fn().mockImplementation(async function* () {
+        for (const update of mockUpdates) {
+          yield update;
+        }
+      }),
+      cancel: vi.fn(),
+    });
+
+    await wrapper.executeWithLifecycle(
+      "exec-123",
+      { id: "task-1", prompt: "Test prompt" },
+      "/test/workdir"
+    );
+
+    // Check stored logs for session_notification events
+    const storedLogs = mockLogsStore.appendRawLog.mock.calls.map(
+      (call: any[]) => JSON.parse(call[1])
+    );
+
+    const sessionNotifications = storedLogs.filter(
+      (log: any) => log.sessionUpdate === "session_notification"
+    );
+
+    expect(sessionNotifications).toHaveLength(2);
+
+    // Verify compaction_started notification
+    const startedNotification = sessionNotifications.find(
+      (n: any) => n.notificationType === "compaction_started"
+    );
+    expect(startedNotification).toBeDefined();
+    expect(startedNotification.sessionId).toBe("session-abc");
+    expect(startedNotification.data.trigger).toBe("auto");
+    expect(startedNotification.data.preTokens).toBe(15000);
+    expect(startedNotification.data.threshold).toBe(10000);
+
+    // Verify compaction_completed notification
+    const completedNotification = sessionNotifications.find(
+      (n: any) => n.notificationType === "compaction_completed"
+    );
+    expect(completedNotification).toBeDefined();
+    expect(completedNotification.sessionId).toBe("session-abc");
+    expect(completedNotification.data.trigger).toBe("auto");
+    expect(completedNotification.data.postTokens).toBe(5000);
+  });
+
+  it("should not pass agentMeta when compaction is disabled", async () => {
+    // Create wrapper without compaction
+    const wrapperNoCompaction = new AcpExecutorWrapper({
+      agentType: "claude-code",
+      acpConfig: {
+        agentType: "claude-code",
+        permissionMode: "auto-approve",
+        // No compaction config
+      },
+      lifecycleService: mockLifecycleService,
+      logsStore: mockLogsStore,
+      projectId: "test-project",
+      db: mockDb,
+    });
+
+    const { AgentFactory } = await import("acp-factory");
+    const mockAgent = await AgentFactory.spawn("claude-code");
+
+    (mockAgent.createSession as any).mockResolvedValueOnce({
+      id: "session-abc",
+      cwd: "/test/workdir",
+      modes: ["code"],
+      models: ["claude-sonnet"],
+      prompt: vi.fn().mockImplementation(async function* () {
+        yield { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Hi" } };
+      }),
+      cancel: vi.fn(),
+    });
+
+    await wrapperNoCompaction.executeWithLifecycle(
+      "exec-123",
+      { id: "task-1", prompt: "Test prompt" },
+      "/test/workdir"
+    );
+
+    // Verify agentMeta was NOT passed (or is undefined)
+    expect(mockAgent.createSession).toHaveBeenCalledWith(
+      "/test/workdir",
+      expect.objectContaining({
+        agentMeta: undefined,
+      })
+    );
   });
 });
 

@@ -23,11 +23,11 @@ describe("Agents API Routes", () => {
       expect(response.body.agents.length).toBeGreaterThan(0);
     });
 
-    it("should return all 6 agents (claude-code, codex, gemini, opencode, copilot, cursor)", async () => {
+    it("should return all 7 agents (claude-code, codex, gemini, opencode, copilot, copilot-cli, cursor)", async () => {
       const response = await request(app).get("/api/agents");
 
       expect(response.status).toBe(200);
-      expect(response.body.agents).toHaveLength(6);
+      expect(response.body.agents).toHaveLength(7);
 
       const agentTypes = response.body.agents.map((a: any) => a.type);
       expect(agentTypes).toContain("claude-code");
@@ -35,6 +35,7 @@ describe("Agents API Routes", () => {
       expect(agentTypes).toContain("gemini");
       expect(agentTypes).toContain("opencode");
       expect(agentTypes).toContain("copilot");
+      expect(agentTypes).toContain("copilot-cli");
       expect(agentTypes).toContain("cursor");
     });
 

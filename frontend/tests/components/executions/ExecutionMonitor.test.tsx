@@ -42,6 +42,7 @@ function createMockStreamResult(overrides: {
   permissionRequests?: useSessionUpdateStreamModule.UseSessionUpdateStreamResult['permissionRequests']
   markPermissionResponded?: useSessionUpdateStreamModule.UseSessionUpdateStreamResult['markPermissionResponded']
   availableCommands?: useSessionUpdateStreamModule.AvailableCommand[]
+  sessionNotifications?: useSessionUpdateStreamModule.SessionNotification[]
   error?: Error | null
   isConnected?: boolean
   isStreaming?: boolean
@@ -64,6 +65,7 @@ function createMockStreamResult(overrides: {
     permissionRequests: overrides.permissionRequests ?? [],
     markPermissionResponded: overrides.markPermissionResponded ?? vi.fn(),
     availableCommands: overrides.availableCommands ?? [],
+    sessionNotifications: overrides.sessionNotifications ?? [],
     error: overrides.error ?? null,
     isConnected: overrides.isConnected ?? false,
     isStreaming: overrides.isStreaming ?? false,

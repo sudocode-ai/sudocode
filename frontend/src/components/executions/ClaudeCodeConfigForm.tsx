@@ -23,6 +23,10 @@ export interface ClaudeCodeConfig {
   dangerouslySkipPermissions?: boolean
   restrictToWorkDir?: boolean
   permissionMode?: 'default' | 'plan' | 'bypassPermissions'
+  compaction?: {
+    enabled: boolean
+    contextTokenThreshold?: number
+  }
 }
 
 interface ClaudeCodeConfigFormProps {
@@ -233,6 +237,58 @@ export function ClaudeCodeConfigForm({ config, onChange }: ClaudeCodeConfigFormP
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Auto-Compaction */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="claude-compaction" className="text-xs font-medium">
+                  Auto-Compaction
+                </Label>
+                <p className="text-[10px] text-muted-foreground">
+                  Automatically compact context when token limit is reached
+                </p>
+              </div>
+              <Switch
+                id="claude-compaction"
+                checked={config.compaction?.enabled ?? false}
+                onCheckedChange={(checked: boolean) =>
+                  updateConfig({
+                    compaction: { ...config.compaction, enabled: checked },
+                  })
+                }
+              />
+            </div>
+
+            {config.compaction?.enabled && (
+              <div className="space-y-2 pl-4 border-l-2 border-muted">
+                <Label htmlFor="claude-compaction-threshold" className="text-xs">
+                  Token Threshold
+                </Label>
+                <input
+                  id="claude-compaction-threshold"
+                  type="number"
+                  min="10000"
+                  max="500000"
+                  step="10000"
+                  className="flex h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-xs"
+                  value={config.compaction?.contextTokenThreshold ?? 100000}
+                  onChange={(e) =>
+                    updateConfig({
+                      compaction: {
+                        enabled: true,
+                        contextTokenThreshold: e.target.value ? parseInt(e.target.value) : undefined,
+                      },
+                    })
+                  }
+                  placeholder="100000"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Compact when tokens exceed this threshold (default: 100,000)
+                </p>
+              </div>
+            )}
           </div>
         </CollapsibleContent>
       </Collapsible>

@@ -42,7 +42,10 @@ export interface AgentMessage {
  * Content produced by a tool call (from ACP)
  */
 export type ToolCallContentItem =
-  | { type: 'content'; content: { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string } }
+  | {
+      type: 'content'
+      content: { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
+    }
   | { type: 'diff'; path: string; oldText?: string | null; newText: string }
   | { type: 'terminal'; terminalId: string }
 
@@ -115,11 +118,43 @@ export interface PlanUpdateEvent {
 }
 
 /**
+ * Generic session notification from ACP (acp-factory 0.1.2+)
+ *
+ * Represents various agent lifecycle events like compaction, mode changes, etc.
+ * The notificationType field indicates the specific event kind, and data contains
+ * the event-specific payload.
+ *
+ * Common notification types:
+ * - "compaction_started": { trigger: "auto"|"manual", preTokens: number, threshold?: number }
+ * - "compaction_completed": { trigger: "auto"|"manual", preTokens: number }
+ */
+export interface SessionNotification {
+  id: string
+  /** The specific notification type (e.g., "compaction_started", "compaction_completed") */
+  notificationType: string
+  /** Session where the notification occurred */
+  sessionId?: string
+  /** Notification-specific data payload */
+  data: Record<string, unknown>
+  timestamp: Date
+  /** Optional index for stable ordering when timestamps are equal */
+  index?: number
+}
+
+/**
  * Execution lifecycle tracking (compatible with useAgUiStream's WorkflowExecution)
  */
 export interface ExecutionState {
   runId: string | null
-  status: 'idle' | 'running' | 'waiting' | 'paused' | 'completed' | 'error' | 'cancelled' | 'stopped'
+  status:
+    | 'idle'
+    | 'running'
+    | 'waiting'
+    | 'paused'
+    | 'completed'
+    | 'error'
+    | 'cancelled'
+    | 'stopped'
   error: string | null
   startTime: number | null
   endTime: number | null
@@ -146,6 +181,7 @@ export interface UseSessionUpdateStreamOptions {
     onThought?: (thought: AgentThought) => void
     onPermissionRequest?: (request: PermissionRequest) => void
     onPlanUpdate?: (planUpdate: PlanUpdateEvent) => void
+    onSessionNotification?: (notification: SessionNotification) => void
   }
 }
 
@@ -173,6 +209,8 @@ export interface UseSessionUpdateStreamResult {
   markPermissionResponded: (requestId: string, selectedOptionId: string) => void
   /** Available slash commands advertised by the agent */
   availableCommands: AvailableCommand[]
+  /** Session notifications (compaction, mode changes, etc.) */
+  sessionNotifications: SessionNotification[]
   /** Whether currently receiving streaming updates */
   isStreaming: boolean
   /** Error if any */
@@ -328,7 +366,20 @@ interface AvailableCommandsUpdateEvent {
 }
 
 /**
- * Union of all SessionUpdate types we handle
+ * Check if a sessionUpdate type is a notification event
+ * These are handled separately from the typed SessionUpdate union
+ */
+function isNotificationEvent(sessionUpdate: string): boolean {
+  return (
+    sessionUpdate === 'compaction_started' || sessionUpdate === 'compaction_completed'
+    // Add other notification types here as needed
+  )
+}
+
+/**
+ * Union of all typed SessionUpdate events we handle
+ * Note: Notification events (compaction, etc.) are handled separately
+ * to avoid index signature breaking type narrowing
  */
 type SessionUpdate =
   | AgentMessageChunk
@@ -409,9 +460,7 @@ function parseDate(value: string | Date | undefined): Date {
 /**
  * Map execution status to our ExecutionState status
  */
-function mapExecutionStatus(
-  status: string
-): ExecutionState['status'] {
+function mapExecutionStatus(status: string): ExecutionState['status'] {
   switch (status) {
     case 'preparing':
     case 'pending':
@@ -472,9 +521,7 @@ export function useSessionUpdateStream(
 ): UseSessionUpdateStreamResult {
   // Normalize options (support both string and options object for backwards compatibility)
   const normalizedOptions: UseSessionUpdateStreamOptions =
-    typeof options === 'string' || options === null
-      ? { executionId: options }
-      : options
+    typeof options === 'string' || options === null ? { executionId: options } : options
 
   const { executionId, onEvent } = normalizedOptions
 
@@ -486,6 +533,9 @@ export function useSessionUpdateStream(
     new Map()
   )
   const [planUpdates, setPlanUpdates] = useState<Map<string, PlanUpdateEvent>>(new Map())
+  const [sessionNotifications, setSessionNotifications] = useState<
+    Map<string, SessionNotification>
+  >(new Map())
   const [availableCommands, setAvailableCommands] = useState<AvailableCommand[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<Error | null>(null)
@@ -508,7 +558,8 @@ export function useSessionUpdateStream(
   }, [onEvent])
 
   // WebSocket context
-  const { connected, subscribe, unsubscribe, addMessageHandler, removeMessageHandler } = useWebSocketContext()
+  const { connected, subscribe, unsubscribe, addMessageHandler, removeMessageHandler } =
+    useWebSocketContext()
 
   // Derive connection status from WebSocket connected state
   const connectionStatus: ConnectionStatus = useMemo(() => {
@@ -522,540 +573,611 @@ export function useSessionUpdateStream(
 
   /**
    * Process a SessionUpdate event
+   * Accepts a broad type to handle both typed SessionUpdate events and
+   * notification events (compaction, etc.) which are not in the typed union.
    */
-  const processUpdate = useCallback((update: SessionUpdate) => {
-    // Debug: Log received events (but throttle to avoid spam)
-    const eventType = update.sessionUpdate
-    if (eventType === 'tool_call' || eventType === 'tool_call_update' || eventType === 'tool_call_complete') {
-      console.log('[useSessionUpdateStream] Received tool call event:', eventType, {
-        toolCallId: (update as { toolCallId?: string }).toolCallId,
-        title: (update as { title?: string }).title,
-        status: (update as { status?: string }).status,
-      })
-    }
-
-    switch (update.sessionUpdate) {
-      // Streaming: agent_message_chunk
-      case 'agent_message_chunk': {
-        setIsStreaming(true)
-        const text = getTextFromContentBlock(update.content)
-
-        // Check if we need to start a new streaming message (sync check via ref)
-        const needsNewMessage = !currentMessageIdRef.current
-        let assignedIndex: number | undefined
-        let newMessageId: string | undefined
-
-        if (needsNewMessage) {
-          // Assign index synchronously before setState to ensure correct ordering
-          assignedIndex = eventIndexRef.current++
-          newMessageId = generateStreamId('msg')
-          currentMessageIdRef.current = newMessageId
-          console.log('[useSessionUpdateStream] agent_message_chunk (new message):', {
-            messageId: newMessageId,
-            assignedIndex,
-            eventIndexCurrent: eventIndexRef.current,
-          })
-        }
-
-        setMessages((prev) => {
-          const next = new Map(prev)
-          const messageId = currentMessageIdRef.current!
-
-          // Check if message exists and is streaming (may have been finalized)
-          const existing = next.get(messageId)
-          if (!existing || !existing.isStreaming) {
-            // Create new streaming message with pre-assigned index
-            next.set(messageId, {
-              id: messageId,
-              content: text,
-              timestamp: new Date(),
-              isStreaming: true,
-              index: assignedIndex,
-            })
-          } else {
-            // Append text to current message
-            next.set(messageId, {
-              ...existing,
-              content: existing.content + text,
-            })
-          }
-
-          return next
+  const processUpdate = useCallback(
+    (
+      update: SessionUpdate | { sessionUpdate: string; sessionId?: string; [key: string]: unknown }
+    ) => {
+      // Debug: Log received events (but throttle to avoid spam)
+      const eventType = update.sessionUpdate
+      if (
+        eventType === 'tool_call' ||
+        eventType === 'tool_call_update' ||
+        eventType === 'tool_call_complete'
+      ) {
+        console.log('[useSessionUpdateStream] Received tool call event:', eventType, {
+          toolCallId: (update as { toolCallId?: string }).toolCallId,
+          title: (update as { title?: string }).title,
+          status: (update as { status?: string }).status,
         })
-        break
       }
 
-      // Coalesced: agent_message_complete
-      case 'agent_message_complete': {
-        const text = getTextFromContentBlock(update.content)
-        // Use provided messageId (from legacy agents) or current streaming ID or generate new
-        const isNewMessage = !update.messageId && !currentMessageIdRef.current
-        const messageId = update.messageId || currentMessageIdRef.current || generateStreamId('msg')
-        // Assign index only for brand new messages (existing streaming messages already have an index)
-        const assignedIndex = isNewMessage ? eventIndexRef.current++ : undefined
-
-        setMessages((prev) => {
-          const next = new Map(prev)
-          const existing = next.get(messageId)
-
-          if (existing) {
-            // Update existing message (for legacy agent cumulative updates)
-            // Preserve existing index
-            next.set(messageId, {
-              ...existing,
-              content: text || existing.content,
-              isStreaming: false,
-            })
-          } else {
-            // Add complete message directly with new index
-            next.set(messageId, {
-              id: messageId,
-              content: text,
-              timestamp: parseDate(update.timestamp),
-              isStreaming: false,
-              index: assignedIndex,
-            })
-          }
-
-          return next
-        })
-
-        // Only reset current message tracking if this wasn't a legacy agent update
-        // (legacy agents provide their own messageId and may send more updates)
-        if (!update.messageId) {
-          currentMessageIdRef.current = null
+      // Handle notification events (compaction, etc.) before the typed switch
+      // These use a generic record type to avoid breaking type narrowing
+      if (isNotificationEvent(eventType)) {
+        const notificationData = update as {
+          sessionUpdate: string
+          sessionId?: string
+          [key: string]: unknown
         }
-        setIsStreaming(false)
-        break
-      }
-
-      // Streaming: agent_thought_chunk
-      case 'agent_thought_chunk': {
-        setIsStreaming(true)
-        const text = getTextFromContentBlock(update.content)
-
-        // Check if we need to start a new streaming thought (sync check via ref)
-        const needsNewThought = !currentThoughtIdRef.current
-        let assignedIndex: number | undefined
-
-        if (needsNewThought) {
-          // Assign index synchronously before setState to ensure correct ordering
-          assignedIndex = eventIndexRef.current++
-          currentThoughtIdRef.current = generateStreamId('thought')
-        }
-
-        setThoughts((prev) => {
-          const next = new Map(prev)
-          const thoughtId = currentThoughtIdRef.current!
-
-          // Check if thought exists and is streaming (may have been finalized)
-          const existing = next.get(thoughtId)
-          if (!existing || !existing.isStreaming) {
-            // Create new streaming thought with pre-assigned index
-            next.set(thoughtId, {
-              id: thoughtId,
-              content: text,
-              timestamp: new Date(),
-              isStreaming: true,
-              index: assignedIndex,
-            })
-          } else {
-            // Append text to current thought
-            next.set(thoughtId, {
-              ...existing,
-              content: existing.content + text,
-            })
-          }
-
-          return next
-        })
-        break
-      }
-
-      // Coalesced: agent_thought_complete
-      case 'agent_thought_complete': {
-        const text = getTextFromContentBlock(update.content)
-        const isNewThought = !currentThoughtIdRef.current
-        const thoughtId = currentThoughtIdRef.current || generateStreamId('thought')
-        // Assign index only for brand new thoughts (existing streaming thoughts already have an index)
-        const assignedIndex = isNewThought ? eventIndexRef.current++ : undefined
-
-        setThoughts((prev) => {
-          const next = new Map(prev)
-          const existing = next.get(thoughtId)
-
-          if (existing) {
-            // Finalize streaming thought - preserve existing index
-            next.set(thoughtId, {
-              ...existing,
-              content: text || existing.content,
-              isStreaming: false,
-            })
-          } else {
-            // Add complete thought directly with new index
-            next.set(thoughtId, {
-              id: thoughtId,
-              content: text,
-              timestamp: parseDate(update.timestamp),
-              isStreaming: false,
-              index: assignedIndex,
-            })
-          }
-
-          return next
-        })
-
-        // Reset current thought tracking
-        currentThoughtIdRef.current = null
-        setIsStreaming(false)
-        break
-      }
-
-      // Streaming: user_message_chunk (for persistent sessions)
-      case 'user_message_chunk': {
-        setIsStreaming(true)
-        const text = getTextFromContentBlock(update.content)
-
-        // Check if we need to start a new streaming user message
-        const needsNewMessage = !currentUserMessageIdRef.current
-        let assignedIndex: number | undefined
-        let newMessageId: string | undefined
-
-        if (needsNewMessage) {
-          assignedIndex = eventIndexRef.current++
-          newMessageId = generateStreamId('user-msg')
-          currentUserMessageIdRef.current = newMessageId
-        }
-
-        setMessages((prev) => {
-          const next = new Map(prev)
-          const messageId = currentUserMessageIdRef.current!
-
-          const existing = next.get(messageId)
-          if (!existing || !existing.isStreaming) {
-            next.set(messageId, {
-              id: messageId,
-              content: text,
-              timestamp: new Date(),
-              isStreaming: true,
-              index: assignedIndex,
-              role: 'user',
-            })
-          } else {
-            next.set(messageId, {
-              ...existing,
-              content: existing.content + text,
-            })
-          }
-
-          return next
-        })
-        break
-      }
-
-      // Coalesced: user_message_complete (for persistent sessions)
-      case 'user_message_complete': {
-        // Finalize any current streaming agent message first to ensure proper ordering
-        if (currentMessageIdRef.current) {
-          const messageIdToFinalize = currentMessageIdRef.current
-          setMessages((prev) => {
-            const next = new Map(prev)
-            const existing = next.get(messageIdToFinalize)
-            if (existing && existing.isStreaming) {
-              next.set(messageIdToFinalize, { ...existing, isStreaming: false })
-            }
-            return next
-          })
-          currentMessageIdRef.current = null
-        }
-
-        // Also finalize any current streaming thought
-        if (currentThoughtIdRef.current) {
-          const thoughtIdToFinalize = currentThoughtIdRef.current
-          setThoughts((prev) => {
-            const next = new Map(prev)
-            const existing = next.get(thoughtIdToFinalize)
-            if (existing && existing.isStreaming) {
-              next.set(thoughtIdToFinalize, { ...existing, isStreaming: false })
-            }
-            return next
-          })
-          currentThoughtIdRef.current = null
-        }
-
-        const text = getTextFromContentBlock(update.content)
-        const isNewMessage = !currentUserMessageIdRef.current
-        const messageId = currentUserMessageIdRef.current || generateStreamId('user-msg')
-        const assignedIndex = isNewMessage ? eventIndexRef.current++ : undefined
-
-        console.log('[useSessionUpdateStream] user_message_complete:', {
-          messageId,
-          assignedIndex,
-          eventIndexCurrent: eventIndexRef.current,
-          textPreview: text.substring(0, 50),
-        })
-
-        setMessages((prev) => {
-          const next = new Map(prev)
-          const existing = next.get(messageId)
-
-          if (existing) {
-            // Finalize streaming message
-            next.set(messageId, {
-              ...existing,
-              content: text || existing.content,
-              isStreaming: false,
-              role: 'user',
-            })
-          } else {
-            // Create new completed message
-            next.set(messageId, {
-              id: messageId,
-              content: text,
-              timestamp: parseDate(update.timestamp),
-              isStreaming: false,
-              index: assignedIndex,
-              role: 'user',
-            })
-          }
-
-          return next
-        })
-
-        currentUserMessageIdRef.current = null
-        setIsStreaming(false)
-        break
-      }
-
-      // Streaming: tool_call (new tool call started)
-      case 'tool_call': {
-        // Finalize any current streaming message - a tool call starting means
-        // the previous message is complete. This ensures proper message boundaries.
-        if (currentMessageIdRef.current) {
-          const messageIdToFinalize = currentMessageIdRef.current
-          setMessages((prev) => {
-            const next = new Map(prev)
-            const existing = next.get(messageIdToFinalize)
-            if (existing && existing.isStreaming) {
-              next.set(messageIdToFinalize, { ...existing, isStreaming: false })
-            }
-            return next
-          })
-          currentMessageIdRef.current = null
-        }
-
-        // Also finalize any current streaming thought
-        if (currentThoughtIdRef.current) {
-          const thoughtIdToFinalize = currentThoughtIdRef.current
-          setThoughts((prev) => {
-            const next = new Map(prev)
-            const existing = next.get(thoughtIdToFinalize)
-            if (existing && existing.isStreaming) {
-              next.set(thoughtIdToFinalize, { ...existing, isStreaming: false })
-            }
-            return next
-          })
-          currentThoughtIdRef.current = null
-        }
-
-        const toolId = update.toolCallId
-        // Assign index synchronously and track it for this tool call
-        let assignedIndex = toolCallIndicesRef.current.get(toolId)
-        if (assignedIndex === undefined) {
-          assignedIndex = eventIndexRef.current++
-          toolCallIndicesRef.current.set(toolId, assignedIndex)
-        }
-
-        setToolCalls((prev) => {
-          const next = new Map(prev)
-          next.set(toolId, {
-            id: toolId,
-            title: update.title,
-            status: mapToolCallStatus(update.status),
-            rawInput: update.rawInput,
-            rawOutput: update.rawOutput,
-            content: update.content as ToolCallContentItem[] | undefined,
-            timestamp: new Date(),
-            index: assignedIndex,
-          })
-          return next
-        })
-        break
-      }
-
-      // Streaming: tool_call_update (status/content update)
-      case 'tool_call_update': {
-        const toolId = update.toolCallId
-
-        setToolCalls((prev) => {
-          const next = new Map(prev)
-          const existing = next.get(toolId)
-
-          if (existing) {
-            // Preserve existing index
-            next.set(toolId, {
-              ...existing,
-              title: update.title ?? existing.title,
-              status: update.status ? mapToolCallStatus(update.status) : existing.status,
-              rawInput: update.rawInput ?? existing.rawInput,
-              rawOutput: update.rawOutput ?? existing.rawOutput,
-              content: update.content ? (update.content as ToolCallContentItem[]) : existing.content,
-              completedAt:
-                update.status === 'completed' || update.status === 'failed'
-                  ? new Date()
-                  : existing.completedAt,
-            })
-          }
-
-          return next
-        })
-        break
-      }
-
-      // Coalesced: tool_call_complete (final tool call state)
-      case 'tool_call_complete': {
-        // Finalize any current streaming message - ensures proper message boundaries
-        // even when tool_call_complete arrives directly (e.g., from stored logs)
-        if (currentMessageIdRef.current) {
-          const messageIdToFinalize = currentMessageIdRef.current
-          setMessages((prev) => {
-            const next = new Map(prev)
-            const existing = next.get(messageIdToFinalize)
-            if (existing && existing.isStreaming) {
-              next.set(messageIdToFinalize, { ...existing, isStreaming: false })
-            }
-            return next
-          })
-          currentMessageIdRef.current = null
-        }
-
-        // Also finalize any current streaming thought
-        if (currentThoughtIdRef.current) {
-          const thoughtIdToFinalize = currentThoughtIdRef.current
-          setThoughts((prev) => {
-            const next = new Map(prev)
-            const existing = next.get(thoughtIdToFinalize)
-            if (existing && existing.isStreaming) {
-              next.set(thoughtIdToFinalize, { ...existing, isStreaming: false })
-            }
-            return next
-          })
-          currentThoughtIdRef.current = null
-        }
-
-        const toolId = update.toolCallId
-        // Get existing index from tracking map or assign new one
-        let assignedIndex = toolCallIndicesRef.current.get(toolId)
-        if (assignedIndex === undefined) {
-          assignedIndex = eventIndexRef.current++
-          toolCallIndicesRef.current.set(toolId, assignedIndex)
-        }
-
-        setToolCalls((prev) => {
-          const next = new Map(prev)
-          next.set(toolId, {
-            id: toolId,
-            title: update.title,
-            status: mapToolCallStatus(update.status),
-            result: update.result,
-            rawInput: update.rawInput,
-            rawOutput: update.rawOutput,
-            content: update.content as ToolCallContentItem[] | undefined,
-            timestamp: parseDate(update.timestamp),
-            completedAt: update.completedAt ? parseDate(update.completedAt) : undefined,
-            index: assignedIndex,
-          })
-          return next
-        })
-        break
-      }
-
-      // Interactive mode: permission_request
-      case 'permission_request': {
-        // Assign index synchronously for stable ordering
         const assignedIndex = eventIndexRef.current++
+        const notificationId = generateStreamId('notification')
 
-        const request: PermissionRequest = {
-          requestId: update.requestId,
-          sessionId: update.sessionId,
-          toolCall: {
-            toolCallId: update.toolCall.toolCallId,
-            title: update.toolCall.title,
-            status: update.toolCall.status,
-            rawInput: update.toolCall.rawInput,
-          },
-          options: update.options,
-          responded: false,
+        // Build the data payload by extracting all fields except sessionUpdate/sessionId
+        const data: Record<string, unknown> = {}
+        for (const [key, value] of Object.entries(notificationData)) {
+          if (key !== 'sessionUpdate' && key !== 'sessionId') {
+            data[key] = value
+          }
+        }
+
+        const notification: SessionNotification = {
+          id: notificationId,
+          notificationType: eventType,
+          sessionId: notificationData.sessionId,
+          data,
           timestamp: new Date(),
           index: assignedIndex,
         }
 
-        setPermissionRequests((prev) => {
+        setSessionNotifications((prev) => {
           const next = new Map(prev)
-          next.set(update.requestId, request)
+          next.set(notificationId, notification)
           return next
         })
 
         // Trigger callback
-        if (onEventRef.current?.onPermissionRequest) {
-          onEventRef.current.onPermissionRequest(request)
+        if (onEventRef.current?.onSessionNotification) {
+          onEventRef.current.onSessionNotification(notification)
         }
-        break
+        return
       }
 
-      // Plan updates from Claude Code's TodoWrite tool
-      // ACP plan structure: { sessionUpdate: "plan", entries: [...] } - entries are directly on update
-      case 'plan': {
-        // Parse plan entries from ACP format - entries are directly on the update object
-        const planData = update as { entries?: Array<{ content: string; status: string; priority: string }> }
-        const entries = planData.entries?.map((e) => ({
-          content: e.content,
-          status: e.status as 'pending' | 'in_progress' | 'completed',
-          priority: e.priority as 'high' | 'medium' | 'low',
-        })) || []
+      // Cast to typed SessionUpdate for switch statement type narrowing
+      const typedUpdate = update as SessionUpdate
 
-        if (entries.length > 0) {
+      switch (typedUpdate.sessionUpdate) {
+        // Streaming: agent_message_chunk
+        case 'agent_message_chunk': {
+          setIsStreaming(true)
+          const text = getTextFromContentBlock(typedUpdate.content)
+
+          // Check if we need to start a new streaming message (sync check via ref)
+          const needsNewMessage = !currentMessageIdRef.current
+          let assignedIndex: number | undefined
+          let newMessageId: string | undefined
+
+          if (needsNewMessage) {
+            // Assign index synchronously before setState to ensure correct ordering
+            assignedIndex = eventIndexRef.current++
+            newMessageId = generateStreamId('msg')
+            currentMessageIdRef.current = newMessageId
+            console.log('[useSessionUpdateStream] agent_message_chunk (new message):', {
+              messageId: newMessageId,
+              assignedIndex,
+              eventIndexCurrent: eventIndexRef.current,
+            })
+          }
+
+          setMessages((prev) => {
+            const next = new Map(prev)
+            const messageId = currentMessageIdRef.current!
+
+            // Check if message exists and is streaming (may have been finalized)
+            const existing = next.get(messageId)
+            if (!existing || !existing.isStreaming) {
+              // Create new streaming message with pre-assigned index
+              next.set(messageId, {
+                id: messageId,
+                content: text,
+                timestamp: new Date(),
+                isStreaming: true,
+                index: assignedIndex,
+              })
+            } else {
+              // Append text to current message
+              next.set(messageId, {
+                ...existing,
+                content: existing.content + text,
+              })
+            }
+
+            return next
+          })
+          break
+        }
+
+        // Coalesced: agent_message_complete
+        case 'agent_message_complete': {
+          const text = getTextFromContentBlock(typedUpdate.content)
+          // Use provided messageId (from legacy agents) or current streaming ID or generate new
+          const isNewMessage = !typedUpdate.messageId && !currentMessageIdRef.current
+          const messageId =
+            typedUpdate.messageId || currentMessageIdRef.current || generateStreamId('msg')
+          // Assign index only for brand new messages (existing streaming messages already have an index)
+          const assignedIndex = isNewMessage ? eventIndexRef.current++ : undefined
+
+          setMessages((prev) => {
+            const next = new Map(prev)
+            const existing = next.get(messageId)
+
+            if (existing) {
+              // Update existing message (for legacy agent cumulative updates)
+              // Preserve existing index
+              next.set(messageId, {
+                ...existing,
+                content: text || existing.content,
+                isStreaming: false,
+              })
+            } else {
+              // Add complete message directly with new index
+              next.set(messageId, {
+                id: messageId,
+                content: text,
+                timestamp: parseDate(typedUpdate.timestamp),
+                isStreaming: false,
+                index: assignedIndex,
+              })
+            }
+
+            return next
+          })
+
+          // Only reset current message tracking if this wasn't a legacy agent update
+          // (legacy agents provide their own messageId and may send more updates)
+          if (!typedUpdate.messageId) {
+            currentMessageIdRef.current = null
+          }
+          setIsStreaming(false)
+          break
+        }
+
+        // Streaming: agent_thought_chunk
+        case 'agent_thought_chunk': {
+          setIsStreaming(true)
+          const text = getTextFromContentBlock(typedUpdate.content)
+
+          // Check if we need to start a new streaming thought (sync check via ref)
+          const needsNewThought = !currentThoughtIdRef.current
+          let assignedIndex: number | undefined
+
+          if (needsNewThought) {
+            // Assign index synchronously before setState to ensure correct ordering
+            assignedIndex = eventIndexRef.current++
+            currentThoughtIdRef.current = generateStreamId('thought')
+          }
+
+          setThoughts((prev) => {
+            const next = new Map(prev)
+            const thoughtId = currentThoughtIdRef.current!
+
+            // Check if thought exists and is streaming (may have been finalized)
+            const existing = next.get(thoughtId)
+            if (!existing || !existing.isStreaming) {
+              // Create new streaming thought with pre-assigned index
+              next.set(thoughtId, {
+                id: thoughtId,
+                content: text,
+                timestamp: new Date(),
+                isStreaming: true,
+                index: assignedIndex,
+              })
+            } else {
+              // Append text to current thought
+              next.set(thoughtId, {
+                ...existing,
+                content: existing.content + text,
+              })
+            }
+
+            return next
+          })
+          break
+        }
+
+        // Coalesced: agent_thought_complete
+        case 'agent_thought_complete': {
+          const text = getTextFromContentBlock(typedUpdate.content)
+          const isNewThought = !currentThoughtIdRef.current
+          const thoughtId = currentThoughtIdRef.current || generateStreamId('thought')
+          // Assign index only for brand new thoughts (existing streaming thoughts already have an index)
+          const assignedIndex = isNewThought ? eventIndexRef.current++ : undefined
+
+          setThoughts((prev) => {
+            const next = new Map(prev)
+            const existing = next.get(thoughtId)
+
+            if (existing) {
+              // Finalize streaming thought - preserve existing index
+              next.set(thoughtId, {
+                ...existing,
+                content: text || existing.content,
+                isStreaming: false,
+              })
+            } else {
+              // Add complete thought directly with new index
+              next.set(thoughtId, {
+                id: thoughtId,
+                content: text,
+                timestamp: parseDate(typedUpdate.timestamp),
+                isStreaming: false,
+                index: assignedIndex,
+              })
+            }
+
+            return next
+          })
+
+          // Reset current thought tracking
+          currentThoughtIdRef.current = null
+          setIsStreaming(false)
+          break
+        }
+
+        // Streaming: user_message_chunk (for persistent sessions)
+        case 'user_message_chunk': {
+          setIsStreaming(true)
+          const text = getTextFromContentBlock(typedUpdate.content)
+
+          // Check if we need to start a new streaming user message
+          const needsNewMessage = !currentUserMessageIdRef.current
+          let assignedIndex: number | undefined
+          let newMessageId: string | undefined
+
+          if (needsNewMessage) {
+            assignedIndex = eventIndexRef.current++
+            newMessageId = generateStreamId('user-msg')
+            currentUserMessageIdRef.current = newMessageId
+          }
+
+          setMessages((prev) => {
+            const next = new Map(prev)
+            const messageId = currentUserMessageIdRef.current!
+
+            const existing = next.get(messageId)
+            if (!existing || !existing.isStreaming) {
+              next.set(messageId, {
+                id: messageId,
+                content: text,
+                timestamp: new Date(),
+                isStreaming: true,
+                index: assignedIndex,
+                role: 'user',
+              })
+            } else {
+              next.set(messageId, {
+                ...existing,
+                content: existing.content + text,
+              })
+            }
+
+            return next
+          })
+          break
+        }
+
+        // Coalesced: user_message_complete (for persistent sessions)
+        case 'user_message_complete': {
+          // Finalize any current streaming agent message first to ensure proper ordering
+          if (currentMessageIdRef.current) {
+            const messageIdToFinalize = currentMessageIdRef.current
+            setMessages((prev) => {
+              const next = new Map(prev)
+              const existing = next.get(messageIdToFinalize)
+              if (existing && existing.isStreaming) {
+                next.set(messageIdToFinalize, { ...existing, isStreaming: false })
+              }
+              return next
+            })
+            currentMessageIdRef.current = null
+          }
+
+          // Also finalize any current streaming thought
+          if (currentThoughtIdRef.current) {
+            const thoughtIdToFinalize = currentThoughtIdRef.current
+            setThoughts((prev) => {
+              const next = new Map(prev)
+              const existing = next.get(thoughtIdToFinalize)
+              if (existing && existing.isStreaming) {
+                next.set(thoughtIdToFinalize, { ...existing, isStreaming: false })
+              }
+              return next
+            })
+            currentThoughtIdRef.current = null
+          }
+
+          const text = getTextFromContentBlock(typedUpdate.content)
+          const isNewMessage = !currentUserMessageIdRef.current
+          const messageId = currentUserMessageIdRef.current || generateStreamId('user-msg')
+          const assignedIndex = isNewMessage ? eventIndexRef.current++ : undefined
+
+          console.log('[useSessionUpdateStream] user_message_complete:', {
+            messageId,
+            assignedIndex,
+            eventIndexCurrent: eventIndexRef.current,
+            textPreview: text.substring(0, 50),
+          })
+
+          setMessages((prev) => {
+            const next = new Map(prev)
+            const existing = next.get(messageId)
+
+            if (existing) {
+              // Finalize streaming message
+              next.set(messageId, {
+                ...existing,
+                content: text || existing.content,
+                isStreaming: false,
+                role: 'user',
+              })
+            } else {
+              // Create new completed message
+              next.set(messageId, {
+                id: messageId,
+                content: text,
+                timestamp: parseDate(typedUpdate.timestamp),
+                isStreaming: false,
+                index: assignedIndex,
+                role: 'user',
+              })
+            }
+
+            return next
+          })
+
+          currentUserMessageIdRef.current = null
+          setIsStreaming(false)
+          break
+        }
+
+        // Streaming: tool_call (new tool call started)
+        case 'tool_call': {
+          // Finalize any current streaming message - a tool call starting means
+          // the previous message is complete. This ensures proper message boundaries.
+          if (currentMessageIdRef.current) {
+            const messageIdToFinalize = currentMessageIdRef.current
+            setMessages((prev) => {
+              const next = new Map(prev)
+              const existing = next.get(messageIdToFinalize)
+              if (existing && existing.isStreaming) {
+                next.set(messageIdToFinalize, { ...existing, isStreaming: false })
+              }
+              return next
+            })
+            currentMessageIdRef.current = null
+          }
+
+          // Also finalize any current streaming thought
+          if (currentThoughtIdRef.current) {
+            const thoughtIdToFinalize = currentThoughtIdRef.current
+            setThoughts((prev) => {
+              const next = new Map(prev)
+              const existing = next.get(thoughtIdToFinalize)
+              if (existing && existing.isStreaming) {
+                next.set(thoughtIdToFinalize, { ...existing, isStreaming: false })
+              }
+              return next
+            })
+            currentThoughtIdRef.current = null
+          }
+
+          const toolId = typedUpdate.toolCallId
+          // Assign index synchronously and track it for this tool call
+          let assignedIndex = toolCallIndicesRef.current.get(toolId)
+          if (assignedIndex === undefined) {
+            assignedIndex = eventIndexRef.current++
+            toolCallIndicesRef.current.set(toolId, assignedIndex)
+          }
+
+          setToolCalls((prev) => {
+            const next = new Map(prev)
+            next.set(toolId, {
+              id: toolId,
+              title: typedUpdate.title,
+              status: mapToolCallStatus(typedUpdate.status),
+              rawInput: typedUpdate.rawInput,
+              rawOutput: typedUpdate.rawOutput,
+              content: typedUpdate.content as ToolCallContentItem[] | undefined,
+              timestamp: new Date(),
+              index: assignedIndex,
+            })
+            return next
+          })
+          break
+        }
+
+        // Streaming: tool_call_update (status/content update)
+        case 'tool_call_update': {
+          const toolId = typedUpdate.toolCallId
+
+          setToolCalls((prev) => {
+            const next = new Map(prev)
+            const existing = next.get(toolId)
+
+            if (existing) {
+              // Preserve existing index
+              next.set(toolId, {
+                ...existing,
+                title: typedUpdate.title ?? existing.title,
+                status: typedUpdate.status
+                  ? mapToolCallStatus(typedUpdate.status)
+                  : existing.status,
+                rawInput: typedUpdate.rawInput ?? existing.rawInput,
+                rawOutput: typedUpdate.rawOutput ?? existing.rawOutput,
+                content: typedUpdate.content
+                  ? (typedUpdate.content as ToolCallContentItem[])
+                  : existing.content,
+                completedAt:
+                  typedUpdate.status === 'completed' || typedUpdate.status === 'failed'
+                    ? new Date()
+                    : existing.completedAt,
+              })
+            }
+
+            return next
+          })
+          break
+        }
+
+        // Coalesced: tool_call_complete (final tool call state)
+        case 'tool_call_complete': {
+          // Finalize any current streaming message - ensures proper message boundaries
+          // even when tool_call_complete arrives directly (e.g., from stored logs)
+          if (currentMessageIdRef.current) {
+            const messageIdToFinalize = currentMessageIdRef.current
+            setMessages((prev) => {
+              const next = new Map(prev)
+              const existing = next.get(messageIdToFinalize)
+              if (existing && existing.isStreaming) {
+                next.set(messageIdToFinalize, { ...existing, isStreaming: false })
+              }
+              return next
+            })
+            currentMessageIdRef.current = null
+          }
+
+          // Also finalize any current streaming thought
+          if (currentThoughtIdRef.current) {
+            const thoughtIdToFinalize = currentThoughtIdRef.current
+            setThoughts((prev) => {
+              const next = new Map(prev)
+              const existing = next.get(thoughtIdToFinalize)
+              if (existing && existing.isStreaming) {
+                next.set(thoughtIdToFinalize, { ...existing, isStreaming: false })
+              }
+              return next
+            })
+            currentThoughtIdRef.current = null
+          }
+
+          const toolId = typedUpdate.toolCallId
+          // Get existing index from tracking map or assign new one
+          let assignedIndex = toolCallIndicesRef.current.get(toolId)
+          if (assignedIndex === undefined) {
+            assignedIndex = eventIndexRef.current++
+            toolCallIndicesRef.current.set(toolId, assignedIndex)
+          }
+
+          setToolCalls((prev) => {
+            const next = new Map(prev)
+            next.set(toolId, {
+              id: toolId,
+              title: typedUpdate.title,
+              status: mapToolCallStatus(typedUpdate.status),
+              result: typedUpdate.result,
+              rawInput: typedUpdate.rawInput,
+              rawOutput: typedUpdate.rawOutput,
+              content: typedUpdate.content as ToolCallContentItem[] | undefined,
+              timestamp: parseDate(typedUpdate.timestamp),
+              completedAt: typedUpdate.completedAt ? parseDate(typedUpdate.completedAt) : undefined,
+              index: assignedIndex,
+            })
+            return next
+          })
+          break
+        }
+
+        // Interactive mode: permission_request
+        case 'permission_request': {
           // Assign index synchronously for stable ordering
           const assignedIndex = eventIndexRef.current++
-          const planId = generateStreamId('plan')
 
-          const planUpdate: PlanUpdateEvent = {
-            id: planId,
-            entries,
+          const request: PermissionRequest = {
+            requestId: typedUpdate.requestId,
+            sessionId: typedUpdate.sessionId,
+            toolCall: {
+              toolCallId: typedUpdate.toolCall.toolCallId,
+              title: typedUpdate.toolCall.title,
+              status: typedUpdate.toolCall.status,
+              rawInput: typedUpdate.toolCall.rawInput,
+            },
+            options: typedUpdate.options,
+            responded: false,
             timestamp: new Date(),
             index: assignedIndex,
           }
 
-          setPlanUpdates((prev) => {
+          setPermissionRequests((prev) => {
             const next = new Map(prev)
-            next.set(planId, planUpdate)
+            next.set(typedUpdate.requestId, request)
             return next
           })
 
           // Trigger callback
-          if (onEventRef.current?.onPlanUpdate) {
-            onEventRef.current.onPlanUpdate(planUpdate)
+          if (onEventRef.current?.onPermissionRequest) {
+            onEventRef.current.onPermissionRequest(request)
           }
+          break
         }
-        break
-      }
 
-      // Available commands update from agent
-      // Agents advertise slash commands via this session notification
-      case 'available_commands_update': {
-        const commandsData = update as AvailableCommandsUpdateEvent
-        if (commandsData.commands && Array.isArray(commandsData.commands)) {
-          const commands: AvailableCommand[] = commandsData.commands.map((cmd) => ({
-            name: cmd.name,
-            description: cmd.description,
-            input: cmd.input,
-          }))
-          setAvailableCommands(commands)
+        // Plan updates from Claude Code's TodoWrite tool
+        // ACP plan structure: { sessionUpdate: "plan", entries: [...] } - entries are directly on update
+        case 'plan': {
+          // Parse plan entries from ACP format - entries are directly on the update object
+          const planData = typedUpdate as {
+            entries?: Array<{ content: string; status: string; priority: string }>
+          }
+          const entries =
+            planData.entries?.map((e) => ({
+              content: e.content,
+              status: e.status as 'pending' | 'in_progress' | 'completed',
+              priority: e.priority as 'high' | 'medium' | 'low',
+            })) || []
+
+          if (entries.length > 0) {
+            // Assign index synchronously for stable ordering
+            const assignedIndex = eventIndexRef.current++
+            const planId = generateStreamId('plan')
+
+            const planUpdate: PlanUpdateEvent = {
+              id: planId,
+              entries,
+              timestamp: new Date(),
+              index: assignedIndex,
+            }
+
+            setPlanUpdates((prev) => {
+              const next = new Map(prev)
+              next.set(planId, planUpdate)
+              return next
+            })
+
+            // Trigger callback
+            if (onEventRef.current?.onPlanUpdate) {
+              onEventRef.current.onPlanUpdate(planUpdate)
+            }
+          }
+          break
         }
-        break
+
+        // Available commands update from agent
+        // Agents advertise slash commands via this session notification
+        case 'available_commands_update': {
+          const commandsData = typedUpdate as AvailableCommandsUpdateEvent
+          if (commandsData.commands && Array.isArray(commandsData.commands)) {
+            const commands: AvailableCommand[] = commandsData.commands.map((cmd) => ({
+              name: cmd.name,
+              description: cmd.description,
+              input: cmd.input,
+            }))
+            setAvailableCommands(commands)
+          }
+          break
+        }
+
+        // Unknown event types - should never happen with typed union
+        default: {
+          // Exhaustive check - if we get here, we've missed a case
+          const _exhaustiveCheck: never = typedUpdate
+          console.debug('[useSessionUpdateStream] Unhandled sessionUpdate type:', _exhaustiveCheck)
+          break
+        }
       }
-    }
-  }, [])
+    },
+    []
+  )
 
   /**
    * Mark a permission request as responded
@@ -1173,10 +1295,7 @@ export function useSessionUpdateStream(
   const handleMessage = useCallback(
     (message: WebSocketMessage) => {
       // Handle execution lifecycle events
-      if (
-        message.type === 'execution_status_changed' ||
-        message.type === 'execution_updated'
-      ) {
+      if (message.type === 'execution_status_changed' || message.type === 'execution_updated') {
         const exec = message.data as Execution | undefined
         if (exec) {
           handleExecutionEvent(exec)
@@ -1197,6 +1316,19 @@ export function useSessionUpdateStream(
       // Only process updates for our execution
       if (executionId && data.executionId !== executionId) {
         return
+      }
+
+      // Debug: Log all session_update events to see what's coming through
+      const updateType = (data.update as { sessionUpdate?: string })?.sessionUpdate
+      if (
+        updateType &&
+        (updateType.includes('compaction') || updateType.includes('notification'))
+      ) {
+        console.log(
+          '[useSessionUpdateStream] Received WebSocket session_update:',
+          updateType,
+          data.update
+        )
       }
 
       try {
@@ -1221,6 +1353,7 @@ export function useSessionUpdateStream(
     setThoughts(new Map())
     setPermissionRequests(new Map())
     setPlanUpdates(new Map())
+    setSessionNotifications(new Map())
     setAvailableCommands([])
     setIsStreaming(false)
     setError(null)
@@ -1254,6 +1387,10 @@ export function useSessionUpdateStream(
     [permissionRequests]
   )
   const planUpdatesArray = useMemo(() => Array.from(planUpdates.values()), [planUpdates])
+  const sessionNotificationsArray = useMemo(
+    () => Array.from(sessionNotifications.values()),
+    [sessionNotifications]
+  )
 
   // Compute latest plan (from most recent plan update)
   const latestPlan = useMemo(() => {
@@ -1276,6 +1413,7 @@ export function useSessionUpdateStream(
     permissionRequests: permissionRequestsArray,
     markPermissionResponded,
     availableCommands,
+    sessionNotifications: sessionNotificationsArray,
     isStreaming,
     error,
     isConnected: connected,
