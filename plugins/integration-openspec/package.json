@@ -1,6 +1,6 @@
 {
   "name": "@sudocode-ai/integration-openspec",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "description": "OpenSpec integration plugin for sudocode",
   "type": "module",
   "main": "dist/index.js",
@@ -31,11 +31,11 @@
     "chokidar": "^4.0.3"
   },
   "peerDependencies": {
-    "@sudocode-ai/types": "^0.1.18"
+    "@sudocode-ai/types": "^0.1.19"
   },
   "devDependencies": {
     "@fission-ai/openspec": "^0.16.0",
-    "@sudocode-ai/types": "^0.1.18",
+    "@sudocode-ai/types": "^0.1.19",
     "@types/node": "^22.10.2",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
