@@ -253,6 +253,7 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
     try {
       // Check if file exists
       if (!fs.existsSync(mdPath)) {
+        onLog(`[contentMatches:debug] ${entityId}: file doesn't exist`);
         return false; // File doesn't exist, needs to be created
       }
 
@@ -265,30 +266,61 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
         entityType === "spec" ? getSpec(db, entityId) : getIssue(db, entityId);
 
       if (!dbEntity) {
+        onLog(`[contentMatches:debug] ${entityId}: entity not in DB`);
         return false; // Entity not in DB, shouldn't happen
       }
 
       // Compare title
       if (frontmatter.title !== dbEntity.title) {
+        onLog(`[contentMatches:debug] ${entityId}: title mismatch - md="${frontmatter.title}" db="${dbEntity.title}"`);
         return false;
       }
 
       // Compare content (trim to ignore whitespace differences)
-      if (mdContent.trim() !== (dbEntity.content || "").trim()) {
+      const mdTrimmed = mdContent.trim();
+      const dbTrimmed = (dbEntity.content || "").trim();
+      if (mdTrimmed !== dbTrimmed) {
+        // Find where they differ
+        const minLen = Math.min(mdTrimmed.length, dbTrimmed.length);
+        let diffPos = -1;
+        for (let i = 0; i < minLen; i++) {
+          if (mdTrimmed[i] !== dbTrimmed[i]) {
+            diffPos = i;
+            break;
+          }
+        }
+        if (diffPos === -1 && mdTrimmed.length !== dbTrimmed.length) {
+          diffPos = minLen; // Length difference
+        }
+        const contextStart = Math.max(0, diffPos - 20);
+        const contextEnd = Math.min(Math.max(mdTrimmed.length, dbTrimmed.length), diffPos + 30);
+        onLog(`[contentMatches:debug] ${entityId}: content mismatch at char ${diffPos}`);
+        onLog(`[contentMatches:debug]   md[${contextStart}:${contextEnd}]=${JSON.stringify(mdTrimmed.slice(contextStart, contextEnd))}`);
+        onLog(`[contentMatches:debug]   db[${contextStart}:${contextEnd}]=${JSON.stringify(dbTrimmed.slice(contextStart, contextEnd))}`);
         return false;
       }
 
       // Compare other key fields
       if (entityType === "spec") {
-        if (frontmatter.priority !== dbEntity.priority) return false;
+        if (frontmatter.priority !== dbEntity.priority) {
+          onLog(`[contentMatches:debug] ${entityId}: priority mismatch - md=${frontmatter.priority} db=${dbEntity.priority}`);
+          return false;
+        }
       } else {
         const issue = dbEntity as any;
-        if (frontmatter.status !== issue.status) return false;
-        if (frontmatter.priority !== issue.priority) return false;
+        if (frontmatter.status !== issue.status) {
+          onLog(`[contentMatches:debug] ${entityId}: status mismatch`);
+          return false;
+        }
+        if (frontmatter.priority !== issue.priority) {
+          onLog(`[contentMatches:debug] ${entityId}: priority mismatch`);
+          return false;
+        }
       }
 
       return true; // Content matches
     } catch (error) {
+      onLog(`[contentMatches:debug] ${entityId}: error - ${error}`);
       // If there's an error parsing, assume they don't match
       return false;
     }
