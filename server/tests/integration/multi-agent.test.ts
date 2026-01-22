@@ -96,16 +96,30 @@ vi.mock("acp-factory", () => {
 
   const createMockAgent = () => ({
     capabilities: { loadSession: true },
-    createSession: vi.fn().mockImplementation(() => Promise.resolve(createMockSession())),
-    loadSession: vi.fn().mockImplementation(() => Promise.resolve(createMockSession())),
+    createSession: vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(createMockSession())),
+    loadSession: vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(createMockSession())),
     close: vi.fn().mockResolvedValue(undefined),
     isRunning: vi.fn().mockReturnValue(true),
   });
 
   return {
     AgentFactory: {
-      spawn: vi.fn().mockImplementation(() => Promise.resolve(createMockAgent())),
-      listAgents: vi.fn().mockReturnValue(["claude-code", "codex", "gemini", "opencode"]),
+      spawn: vi
+        .fn()
+        .mockImplementation(() => Promise.resolve(createMockAgent())),
+      listAgents: vi
+        .fn()
+        .mockReturnValue([
+          "claude-code",
+          "codex",
+          "copilot",
+          "gemini",
+          "opencode",
+        ]),
       getConfig: vi.fn(),
       register: vi.fn(),
     },
@@ -302,7 +316,7 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
   });
 
   describe("Agent Registry", () => {
-    it("should initialize with all 4 agents registered", () => {
+    it("should initialize with agents that have adapters (claude-code, codex, cursor)", () => {
       const claudeAdapter = agentRegistryService.getAdapter("claude-code");
       expect(claudeAdapter).toBeDefined();
       expect(claudeAdapter.metadata.name).toBe("claude-code");
@@ -310,10 +324,6 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
       const codexAdapter = agentRegistryService.getAdapter("codex");
       expect(codexAdapter).toBeDefined();
       expect(codexAdapter.metadata.name).toBe("codex");
-
-      const copilotAdapter = agentRegistryService.getAdapter("copilot");
-      expect(copilotAdapter).toBeDefined();
-      expect(copilotAdapter.metadata.name).toBe("copilot");
 
       const cursorAdapter = agentRegistryService.getAdapter("cursor");
       expect(cursorAdapter).toBeDefined();
@@ -440,8 +450,8 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
       expect(invalidErrors).toContain("workDir is required");
     });
 
-    it("should create LegacyShimExecutorWrapper for copilot (legacy agent)", () => {
-      // Copilot uses the legacy shim wrapper that converts NormalizedEntry to SessionUpdate
+    it("should create AcpExecutorWrapper for copilot (ACP agent via copilot-cli)", () => {
+      // Copilot now uses ACP via copilot-cli
       const wrapper = createExecutorForAgent(
         "copilot",
         { workDir: testDir },
@@ -455,13 +465,12 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
       );
 
       expect(wrapper).toBeDefined();
-      expect(wrapper.constructor.name).toBe("LegacyShimExecutorWrapper");
+      expect(wrapper.constructor.name).toBe("AcpExecutorWrapper");
     });
   });
 
   describe("ExecutionService Multi-Agent Integration", () => {
     it("should create execution with default claude-code agent", async () => {
-
       // Create without specifying agentType
       const execution = await executionService.createExecution(
         testIssueId,
@@ -475,7 +484,6 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
     });
 
     it("should create execution with explicit agent type", async () => {
-
       const execution = await executionService.createExecution(
         testIssueId,
         { mode: "worktree" as const },
@@ -513,7 +521,6 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
     });
 
     it("should create execution for copilot agent", async () => {
-
       const execution = await executionService.createExecution(
         testIssueId,
         { mode: "worktree" as const },
@@ -527,7 +534,6 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
     });
 
     it("should persist agent_type to database", async () => {
-
       const execution = await executionService.createExecution(
         testIssueId,
         { mode: "worktree" as const },
@@ -544,7 +550,6 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
     });
 
     it("should handle NULL agent_type in database gracefully", async () => {
-
       // Create execution
       const execution = await executionService.createExecution(
         testIssueId,
@@ -630,7 +635,6 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
 
   describe("Regression Testing - Claude Code Functionality", () => {
     it("should create Claude Code execution without breaking changes", async () => {
-
       const execution = await executionService.createExecution(
         testIssueId,
         { mode: "worktree" as const },
@@ -830,8 +834,12 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
       expect(exec2After).toBeDefined();
 
       // Both should have completed (or be in a terminal state) with mocked execution
-      expect(["running", "completed", "stopped", "cancelled"]).toContain(exec1After?.status);
-      expect(["running", "completed", "stopped", "cancelled"]).toContain(exec2After?.status);
+      expect(["running", "completed", "stopped", "cancelled"]).toContain(
+        exec1After?.status
+      );
+      expect(["running", "completed", "stopped", "cancelled"]).toContain(
+        exec2After?.status
+      );
     });
 
     it("should track agent type correctly across follow-up executions", async () => {

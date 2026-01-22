@@ -622,10 +622,11 @@ export class AcpExecutorWrapper {
           agentMeta,
         });
       } else {
-        // Agent doesn't support session loading (e.g., Gemini)
-        // Create a new session instead - conversation history won't be preserved
+        // Agent doesn't support session loading via ACP
+        // For agents like Copilot that use --resume <sessionId> CLI flag,
+        // the session ID is already passed to the CLI via agent-config-handlers
         console.log(
-          `[AcpExecutorWrapper] Agent doesn't support session loading, creating new session for ${executionId}`
+          `[AcpExecutorWrapper] Agent doesn't support session loading via ACP, creating new session for ${executionId}`
         );
         const mcpServers = convertMcpServers(
           task.metadata?.mcpServers ?? this.acpConfig.mcpServers

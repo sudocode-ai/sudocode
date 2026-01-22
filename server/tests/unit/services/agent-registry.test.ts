@@ -23,9 +23,9 @@ describe("AgentRegistryService", () => {
       expect(service).toBeDefined();
     });
 
-    it("should register all 7 agents", () => {
+    it("should register all 6 agents", () => {
       const agents = service.getAvailableAgents();
-      expect(agents).toHaveLength(7);
+      expect(agents).toHaveLength(6);
     });
 
     it("should register agents with correct names", () => {
@@ -36,7 +36,6 @@ describe("AgentRegistryService", () => {
       expect(names).toContain("gemini");
       expect(names).toContain("opencode");
       expect(names).toContain("copilot");
-      expect(names).toContain("copilot-cli");
       expect(names).toContain("cursor");
     });
   });
@@ -105,14 +104,20 @@ describe("AgentRegistryService", () => {
       expect(adapter.metadata.name).toBe("claude-code");
     });
 
-    it("should retrieve stub adapters successfully", () => {
+    it("should retrieve adapters successfully", () => {
       const codexAdapter = service.getAdapter("codex");
-      const copilotAdapter = service.getAdapter("copilot");
       const cursorAdapter = service.getAdapter("cursor");
 
       expect(codexAdapter.metadata.name).toBe("codex");
-      expect(copilotAdapter.metadata.name).toBe("copilot");
       expect(cursorAdapter.metadata.name).toBe("cursor");
+      // Note: copilot no longer has an adapter - it uses ACP via copilot-cli
+    });
+
+    it("should throw AgentNotFoundError for copilot (uses ACP, no adapter)", () => {
+      // copilot now uses ACP via copilot-cli and doesn't have an adapter
+      expect(() => {
+        service.getAdapter("copilot");
+      }).toThrow(AgentNotFoundError);
     });
 
     it("should throw AgentNotFoundError for unknown agent", () => {
@@ -180,15 +185,7 @@ describe("AgentRegistryService", () => {
       expect(processConfig.executablePath).toBe("codex");
     });
 
-    it("should work correctly with Copilot adapter", () => {
-      const adapter = service.getAdapter("copilot");
-      const processConfig = adapter.buildProcessConfig({
-        workDir: "/tmp",
-      });
-      expect(processConfig).toBeDefined();
-      expect(processConfig.workDir).toBe("/tmp");
-      expect(processConfig.executablePath).toBe("copilot");
-    });
+    // Note: Copilot no longer has an adapter - it uses ACP via copilot-cli
 
     it("should have working Cursor adapter", () => {
       const adapter = service.getAdapter("cursor");

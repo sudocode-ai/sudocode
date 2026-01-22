@@ -60,7 +60,7 @@ describe("ExecutorFactory", () => {
       }).toThrow(/Unknown agent type/);
     });
 
-    it("should create LegacyShimExecutorWrapper for copilot (legacy agent)", () => {
+    it("should create AcpExecutorWrapper for copilot (ACP agent via copilot-cli)", () => {
       const wrapper = createExecutorForAgent(
         "copilot",
         { workDir: "/tmp/test" },
@@ -68,8 +68,8 @@ describe("ExecutorFactory", () => {
       );
 
       expect(wrapper).toBeDefined();
-      // Legacy agents now use LegacyShimExecutorWrapper
-      expect(wrapper).toBeInstanceOf(LegacyShimExecutorWrapper);
+      // copilot now uses ACP via copilot-cli
+      expect(wrapper).toBeInstanceOf(AcpExecutorWrapper);
     });
 
     it("should create LegacyShimExecutorWrapper for cursor (legacy agent)", () => {
@@ -111,9 +111,9 @@ describe("ExecutorFactory", () => {
     });
 
     it("should create LegacyShimExecutorWrapper for legacy agents (unified SessionUpdate output)", () => {
-      // Legacy agents now use LegacyShimExecutorWrapper for unified SessionUpdate output
+      // Legacy agents (only cursor now) use LegacyShimExecutorWrapper for unified SessionUpdate output
       const wrapper = createExecutorForAgent(
-        "copilot",
+        "cursor",
         { workDir: "/tmp/test" },
         factoryConfig
       );
@@ -200,8 +200,8 @@ describe("ExecutorFactory", () => {
       expect(isAcpAgent("claude-code")).toBe(true);
     });
 
-    it("should identify copilot as non-ACP (legacy) agent", () => {
-      expect(isAcpAgent("copilot")).toBe(false);
+    it("should identify copilot as ACP agent (via copilot-cli)", () => {
+      expect(isAcpAgent("copilot")).toBe(true);
     });
 
     it("should identify cursor as non-ACP (legacy) agent", () => {
@@ -212,16 +212,16 @@ describe("ExecutorFactory", () => {
       expect(isAcpAgent("unknown-agent")).toBe(false);
     });
 
-    it("should list ACP agents (currently claude-code)", () => {
+    it("should list ACP agents (claude-code, copilot, etc)", () => {
       const agents = listAcpAgents();
       expect(agents).toContain("claude-code");
-      expect(agents).not.toContain("copilot");
-      expect(agents).not.toContain("cursor");
+      expect(agents).toContain("copilot"); // copilot uses ACP via copilot-cli
+      expect(agents).not.toContain("cursor"); // cursor is still legacy
     });
 
     // Legacy detection
-    it("should identify copilot as legacy agent", () => {
-      expect(isLegacyAgent("copilot")).toBe(true);
+    it("should identify copilot as non-legacy (it uses ACP now)", () => {
+      expect(isLegacyAgent("copilot")).toBe(false);
     });
 
     it("should identify cursor as legacy agent", () => {
@@ -232,9 +232,9 @@ describe("ExecutorFactory", () => {
       expect(isLegacyAgent("claude-code")).toBe(false);
     });
 
-    it("should list legacy agents", () => {
+    it("should list legacy agents (only cursor now)", () => {
       const agents = listLegacyAgents();
-      expect(agents).toContain("copilot");
+      expect(agents).not.toContain("copilot"); // copilot now uses ACP
       expect(agents).toContain("cursor");
       expect(agents).not.toContain("claude-code");
     });
@@ -341,16 +341,16 @@ describe("ExecutorFactory", () => {
     });
 
     it("should create LegacyShimExecutorWrapper for legacy agents with correct config", () => {
-      // Legacy agents (copilot, cursor) now use LegacyShimExecutorWrapper
+      // Legacy agents (only cursor now) use LegacyShimExecutorWrapper
       const executor = createExecutorForAgent(
-        "copilot",
+        "cursor",
         { workDir: testDir },
         factoryConfigWithDb
       );
 
       expect(executor).toBeInstanceOf(LegacyShimExecutorWrapper);
       // LegacyShimExecutorWrapper has agentType property
-      expect((executor as any).agentType).toBe("copilot");
+      expect((executor as any).agentType).toBe("cursor");
     });
 
     it("should create AcpExecutorWrapper for ACP agents", () => {

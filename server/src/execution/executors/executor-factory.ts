@@ -61,6 +61,11 @@ export interface ExecutorFactoryConfig {
    * this will pass the appropriate CLI flags to resume the session.
    */
   isResume?: boolean;
+  /**
+   * Session ID to resume for agents that support --resume <sessionId>.
+   * Used by Copilot CLI to resume a specific session instead of most recent.
+   */
+  sessionId?: string;
 }
 
 /**
@@ -127,6 +132,7 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
       {
         isResume: factoryConfig.isResume,
         workDir: factoryConfig.workDir,
+        sessionId: factoryConfig.sessionId,
       }
     );
 
@@ -150,14 +156,14 @@ export function createExecutorForAgent<TConfig extends BaseAgentConfig>(
     return new AcpExecutorWrapper(acpConfig);
   }
 
-  // Check if this is a legacy agent (copilot, cursor)
+  // Check if this is a legacy agent (cursor only - copilot now uses ACP)
   if (LegacyShimExecutorWrapper.isLegacyAgent(agentType)) {
     console.log(
       `[ExecutorFactory] Using LegacyShimExecutorWrapper for ${agentType}`
     );
 
     const shimConfig: LegacyShimExecutorWrapperConfig = {
-      agentType: agentType as "copilot" | "cursor",
+      agentType: agentType as "cursor",
       agentConfig: {
         workDir: factoryConfig.workDir,
         model: (agentConfig as any).model,
@@ -233,6 +239,9 @@ export function validateAgentConfig<TConfig extends BaseAgentConfig>(
  * if (isAcpAgent('claude-code')) {
  *   // Agent uses ACP protocol
  * }
+ * if (isAcpAgent('copilot')) {
+ *   // Also true - copilot uses ACP
+ * }
  * ```
  */
 export function isAcpAgent(agentType: string): boolean {
@@ -255,11 +264,11 @@ export function listAcpAgents(): string[] {
  * SessionUpdate events via the shim for unified frontend consumption.
  *
  * @param agentType - The type of agent to check
- * @returns true if the agent is a legacy type (copilot, cursor)
+ * @returns true if the agent is a legacy type (cursor)
  *
  * @example
  * ```typescript
- * if (isLegacyAgent('copilot')) {
+ * if (isLegacyAgent('cursor')) {
  *   // Agent uses LegacyShimExecutorWrapper
  * }
  * ```

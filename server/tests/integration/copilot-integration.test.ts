@@ -119,11 +119,12 @@ describe("Copilot Agent Integration", () => {
   });
 
   describe("Copilot Adapter", () => {
-    it("should be registered in agent registry", () => {
-      const adapter = agentRegistryService.getAdapter("copilot");
-      expect(adapter).toBeDefined();
-      expect(adapter.metadata.name).toBe("copilot");
-      expect(adapter.metadata.displayName).toBe("GitHub Copilot");
+    // Note: Copilot now uses ACP via copilot-cli, so it's no longer registered
+    // in the agent registry. The adapter file exists for the CopilotAdapter class
+    // but is not registered.
+    it("should NOT be registered in agent registry (uses ACP now)", () => {
+      // copilot uses ACP via copilot-cli and doesn't have an adapter
+      expect(() => agentRegistryService.getAdapter("copilot")).toThrow();
     });
 
     it("should provide correct metadata", () => {
@@ -328,16 +329,15 @@ describe("Copilot Agent Integration", () => {
       const copilot = agents.find((a) => a.name === "copilot");
 
       expect(copilot).toBeDefined();
-      expect(copilot?.displayName).toBe("GitHub Copilot");
+      expect(copilot?.displayName).toBe("Copilot"); // Updated from "GitHub Copilot" since using ACP now
       expect(copilot?.implemented).toBe(true);
       expect(copilot?.supportsStreaming).toBe(true);
       expect(copilot?.supportsStructuredOutput).toBe(true);
     });
 
-    it("should retrieve adapter from registry", () => {
-      const adapter = agentRegistryService.getAdapter("copilot");
-      expect(adapter).toBeDefined();
-      expect(adapter.metadata.name).toBe("copilot");
+    it("should NOT have an adapter in registry (uses ACP now)", () => {
+      // copilot uses ACP via copilot-cli and doesn't have an adapter
+      expect(() => agentRegistryService.getAdapter("copilot")).toThrow();
     });
   });
 

@@ -135,7 +135,7 @@ describe("LegacyShimExecutorWrapper", () => {
     };
 
     wrapper = new LegacyShimExecutorWrapper({
-      agentType: "copilot",
+      agentType: "cursor",
       agentConfig: {
         workDir: "/test/workdir",
         model: "gpt-4o",
@@ -149,7 +149,8 @@ describe("LegacyShimExecutorWrapper", () => {
 
   describe("static methods", () => {
     it("should check if agent type is a legacy agent", () => {
-      expect(LegacyShimExecutorWrapper.isLegacyAgent("copilot")).toBe(true);
+      // copilot is no longer a legacy agent - it uses ACP via copilot-cli
+      expect(LegacyShimExecutorWrapper.isLegacyAgent("copilot")).toBe(false);
       expect(LegacyShimExecutorWrapper.isLegacyAgent("cursor")).toBe(true);
       expect(LegacyShimExecutorWrapper.isLegacyAgent("claude-code")).toBe(
         false
@@ -159,15 +160,16 @@ describe("LegacyShimExecutorWrapper", () => {
 
     it("should list all legacy agents", () => {
       const agents = LegacyShimExecutorWrapper.listLegacyAgents();
-      expect(agents).toContain("copilot");
+      // copilot is no longer a legacy agent - it uses ACP via copilot-cli
+      expect(agents).not.toContain("copilot");
       expect(agents).toContain("cursor");
-      expect(agents).toHaveLength(2);
+      expect(agents).toHaveLength(1);
     });
   });
 
   describe("executeWithLifecycle", () => {
     it("should spawn agent and process output", async () => {
-      const { CopilotExecutor } = await import("agent-execution-engine/agents");
+      const { CursorExecutor } = await import("agent-execution-engine/agents");
 
       await wrapper.executeWithLifecycle(
         "exec-123",
@@ -175,9 +177,10 @@ describe("LegacyShimExecutorWrapper", () => {
         "/test/workdir"
       );
 
-      expect(CopilotExecutor).toHaveBeenCalledWith({
-        workDir: "/test/workdir",
+      expect(CursorExecutor).toHaveBeenCalledWith({
+        workspace: "/test/workdir",
         model: "gpt-4o",
+        force: true,
       });
     });
 
@@ -330,7 +333,7 @@ describe("LegacyShimExecutorWrapper", () => {
 
   describe("error entry mapping", () => {
     it("should map error to tool_call_complete with failed status", async () => {
-      const { CopilotExecutor } = await import("agent-execution-engine/agents");
+      const { CursorExecutor } = await import("agent-execution-engine/agents");
 
       const mockExecutorWithError = {
         executeTask: vi.fn().mockResolvedValue({
@@ -374,7 +377,7 @@ describe("LegacyShimExecutorWrapper", () => {
         }),
       };
 
-      (CopilotExecutor as any).mockImplementation(() => mockExecutorWithError);
+      (CursorExecutor as any).mockImplementation(() => mockExecutorWithError);
 
       // Create fresh mock logs store
       const errorLogsStore = {
@@ -383,7 +386,7 @@ describe("LegacyShimExecutorWrapper", () => {
       };
 
       const errorWrapper = new LegacyShimExecutorWrapper({
-        agentType: "copilot",
+        agentType: "cursor",
         agentConfig: {
           workDir: "/test/workdir",
           model: "gpt-4o",
@@ -412,7 +415,7 @@ describe("LegacyShimExecutorWrapper", () => {
 
   describe("thinking entry mapping", () => {
     it("should map thinking to agent_thought_complete", async () => {
-      const { CopilotExecutor } = await import("agent-execution-engine/agents");
+      const { CursorExecutor } = await import("agent-execution-engine/agents");
       const mockExecutorWithThinking = {
         executeTask: vi.fn().mockResolvedValue({
           process: {
@@ -451,7 +454,7 @@ describe("LegacyShimExecutorWrapper", () => {
         }),
       };
 
-      (CopilotExecutor as any).mockImplementation(
+      (CursorExecutor as any).mockImplementation(
         () => mockExecutorWithThinking
       );
 
@@ -462,7 +465,7 @@ describe("LegacyShimExecutorWrapper", () => {
       };
 
       const thinkingWrapper = new LegacyShimExecutorWrapper({
-        agentType: "copilot",
+        agentType: "cursor",
         agentConfig: {
           workDir: "/test/workdir",
         },
@@ -488,7 +491,7 @@ describe("LegacyShimExecutorWrapper", () => {
 
   describe("system_message entry mapping", () => {
     it("should map system_message to agent_message_complete with [System] prefix", async () => {
-      const { CopilotExecutor } = await import("agent-execution-engine/agents");
+      const { CursorExecutor } = await import("agent-execution-engine/agents");
       const mockExecutorWithSystem = {
         executeTask: vi.fn().mockResolvedValue({
           process: {
@@ -524,7 +527,7 @@ describe("LegacyShimExecutorWrapper", () => {
         }),
       };
 
-      (CopilotExecutor as any).mockImplementation(() => mockExecutorWithSystem);
+      (CursorExecutor as any).mockImplementation(() => mockExecutorWithSystem);
 
       // Create fresh mock logs store
       const systemLogsStore = {
@@ -533,7 +536,7 @@ describe("LegacyShimExecutorWrapper", () => {
       };
 
       const systemWrapper = new LegacyShimExecutorWrapper({
-        agentType: "copilot",
+        agentType: "cursor",
         agentConfig: {
           workDir: "/test/workdir",
         },
@@ -648,7 +651,7 @@ describe("LegacyShimExecutorWrapper", () => {
 
   describe("tool status mapping", () => {
     it("should skip non-terminal statuses and only emit completed tools", async () => {
-      const { CopilotExecutor } = await import("agent-execution-engine/agents");
+      const { CursorExecutor } = await import("agent-execution-engine/agents");
       const mockExecutorWithCreated = {
         executeTask: vi.fn().mockResolvedValue({
           process: {
@@ -707,7 +710,7 @@ describe("LegacyShimExecutorWrapper", () => {
         }),
       };
 
-      (CopilotExecutor as any).mockImplementation(
+      (CursorExecutor as any).mockImplementation(
         () => mockExecutorWithCreated
       );
 
@@ -718,7 +721,7 @@ describe("LegacyShimExecutorWrapper", () => {
       };
 
       const createdWrapper = new LegacyShimExecutorWrapper({
-        agentType: "copilot",
+        agentType: "cursor",
         agentConfig: {
           workDir: "/test/workdir",
         },
@@ -743,7 +746,7 @@ describe("LegacyShimExecutorWrapper", () => {
     });
 
     it("should map failed status to failed", async () => {
-      const { CopilotExecutor } = await import("agent-execution-engine/agents");
+      const { CursorExecutor } = await import("agent-execution-engine/agents");
       const mockExecutorWithFailed = {
         executeTask: vi.fn().mockResolvedValue({
           process: {
@@ -787,7 +790,7 @@ describe("LegacyShimExecutorWrapper", () => {
         }),
       };
 
-      (CopilotExecutor as any).mockImplementation(() => mockExecutorWithFailed);
+      (CursorExecutor as any).mockImplementation(() => mockExecutorWithFailed);
 
       // Create fresh mock logs store
       const failedLogsStore = {
@@ -796,7 +799,7 @@ describe("LegacyShimExecutorWrapper", () => {
       };
 
       const failedWrapper = new LegacyShimExecutorWrapper({
-        agentType: "copilot",
+        agentType: "cursor",
         agentConfig: {
           workDir: "/test/workdir",
         },
@@ -821,7 +824,7 @@ describe("LegacyShimExecutorWrapper", () => {
 
   describe("message deduplication", () => {
     it("should skip exact duplicate messages", async () => {
-      const { CopilotExecutor } = await import("agent-execution-engine/agents");
+      const { CursorExecutor } = await import("agent-execution-engine/agents");
       const mockExecutorWithDuplicates = {
         executeTask: vi.fn().mockResolvedValue({
           process: {
@@ -866,7 +869,7 @@ describe("LegacyShimExecutorWrapper", () => {
         getCapabilities: vi.fn().mockReturnValue({ supportsSessionResume: false }),
       };
 
-      (CopilotExecutor as any).mockImplementation(() => mockExecutorWithDuplicates);
+      (CursorExecutor as any).mockImplementation(() => mockExecutorWithDuplicates);
 
       const dedupeLogsStore = {
         appendRawLog: vi.fn(),
@@ -874,7 +877,7 @@ describe("LegacyShimExecutorWrapper", () => {
       };
 
       const dedupeWrapper = new LegacyShimExecutorWrapper({
-        agentType: "copilot",
+        agentType: "cursor",
         agentConfig: { workDir: "/test/workdir" },
         lifecycleService: mockLifecycleService,
         logsStore: dedupeLogsStore,
@@ -899,7 +902,7 @@ describe("LegacyShimExecutorWrapper", () => {
     });
 
     it("should skip streaming 'replace' patches with cumulative content", async () => {
-      const { CopilotExecutor } = await import("agent-execution-engine/agents");
+      const { CursorExecutor } = await import("agent-execution-engine/agents");
 
       // Long content to trigger emission (needs to exceed 50-char threshold for short messages)
       const longAddition =
@@ -950,7 +953,7 @@ describe("LegacyShimExecutorWrapper", () => {
         getCapabilities: vi.fn().mockReturnValue({ supportsSessionResume: false }),
       };
 
-      (CopilotExecutor as any).mockImplementation(() => mockExecutorWithStreaming);
+      (CursorExecutor as any).mockImplementation(() => mockExecutorWithStreaming);
 
       const streamLogsStore = {
         appendRawLog: vi.fn(),
@@ -958,7 +961,7 @@ describe("LegacyShimExecutorWrapper", () => {
       };
 
       const streamWrapper = new LegacyShimExecutorWrapper({
-        agentType: "copilot",
+        agentType: "cursor",
         agentConfig: { workDir: "/test/workdir" },
         lifecycleService: mockLifecycleService,
         logsStore: streamLogsStore,
@@ -983,7 +986,7 @@ describe("LegacyShimExecutorWrapper", () => {
     });
 
     it("should only emit tool_use entries with terminal status (success/failed)", async () => {
-      const { CopilotExecutor } = await import("agent-execution-engine/agents");
+      const { CursorExecutor } = await import("agent-execution-engine/agents");
       const mockExecutorWithToolDupes = {
         executeTask: vi.fn().mockResolvedValue({
           process: {
@@ -1052,7 +1055,7 @@ describe("LegacyShimExecutorWrapper", () => {
         getCapabilities: vi.fn().mockReturnValue({ supportsSessionResume: false }),
       };
 
-      (CopilotExecutor as any).mockImplementation(() => mockExecutorWithToolDupes);
+      (CursorExecutor as any).mockImplementation(() => mockExecutorWithToolDupes);
 
       const toolDedupeLogsStore = {
         appendRawLog: vi.fn(),
@@ -1060,7 +1063,7 @@ describe("LegacyShimExecutorWrapper", () => {
       };
 
       const toolDedupeWrapper = new LegacyShimExecutorWrapper({
-        agentType: "copilot",
+        agentType: "cursor",
         agentConfig: { workDir: "/test/workdir" },
         lifecycleService: mockLifecycleService,
         logsStore: toolDedupeLogsStore,
@@ -1082,7 +1085,7 @@ describe("LegacyShimExecutorWrapper", () => {
     });
 
     it("should not deduplicate different message indices", async () => {
-      const { CopilotExecutor } = await import("agent-execution-engine/agents");
+      const { CursorExecutor } = await import("agent-execution-engine/agents");
       const mockExecutorWithDiffIndices = {
         executeTask: vi.fn().mockResolvedValue({
           process: {
@@ -1125,7 +1128,7 @@ describe("LegacyShimExecutorWrapper", () => {
         getCapabilities: vi.fn().mockReturnValue({ supportsSessionResume: false }),
       };
 
-      (CopilotExecutor as any).mockImplementation(() => mockExecutorWithDiffIndices);
+      (CursorExecutor as any).mockImplementation(() => mockExecutorWithDiffIndices);
 
       const diffIndexLogsStore = {
         appendRawLog: vi.fn(),
@@ -1133,7 +1136,7 @@ describe("LegacyShimExecutorWrapper", () => {
       };
 
       const diffIndexWrapper = new LegacyShimExecutorWrapper({
-        agentType: "copilot",
+        agentType: "cursor",
         agentConfig: { workDir: "/test/workdir" },
         lifecycleService: mockLifecycleService,
         logsStore: diffIndexLogsStore,

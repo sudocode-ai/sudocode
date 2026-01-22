@@ -807,6 +807,7 @@ ${feedback}`;
     const voiceConfig = readVoiceConfig(this.repoPath);
     const voiceEnabled = isVoiceBroadcastEnabled(voiceConfig);
     const voiceNarrationSettings = getNarrationConfig(voiceConfig);
+    const sessionId = prevExecution.session_id;
 
     const wrapper = createExecutorForAgent(
       agentType,
@@ -826,13 +827,10 @@ ${feedback}`;
           ...parentNarrationConfig,
           enabled: voiceEnabled,
         },
+        isResume: true,
+        sessionId: sessionId ?? undefined,
       }
     );
-
-    // Use previous execution's session_id (the actual Claude UUID) if available
-    // This enables proper session resumption with Claude Code's --resume-session flag
-    // If no session_id was captured, we can't resume - this would start a new session
-    const sessionId = prevExecution.session_id;
     if (!sessionId) {
       console.warn(
         `[ExecutionService] No session_id found for execution ${executionId}, follow-up will start a new session`
@@ -944,7 +942,12 @@ ${feedback}`;
     } else {
       // No session to resume, start a new execution with the follow-up prompt
       wrapper
-        .executeWithLifecycle(newExecution.id, task, workDir, sessionModeOptions)
+        .executeWithLifecycle(
+          newExecution.id,
+          task,
+          workDir,
+          sessionModeOptions
+        )
         .catch((error) => {
           console.error(
             `[ExecutionService] Follow-up execution ${newExecution.id} failed:`,
@@ -1174,10 +1177,15 @@ ${feedback}`;
     }
 
     // 6. Fork the session in the executor
-    const forkedSession = await executor.forkSession(executionId, newExecutionId);
+    const forkedSession = await executor.forkSession(
+      executionId,
+      newExecutionId
+    );
     if (!forkedSession) {
       // Clean up the execution record if fork failed
-      this.db.prepare("DELETE FROM executions WHERE id = ?").run(newExecutionId);
+      this.db
+        .prepare("DELETE FROM executions WHERE id = ?")
+        .run(newExecutionId);
       throw new Error(`Failed to fork session for execution ${executionId}`);
     }
 

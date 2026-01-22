@@ -4,17 +4,14 @@
  * Uses agent-execution-engine adapters internally but emits coalesced
  * SessionUpdate events for a unified ACP-compatible interface.
  *
- * This enables legacy agents (Copilot, Cursor) to integrate with
+ * This enables legacy agents (Cursor) to integrate with
  * the same streaming infrastructure as native ACP agents.
  *
  * @module execution/executors/legacy-shim-executor-wrapper
  */
 
 import type { NormalizedEntry } from "agent-execution-engine/agents";
-import {
-  CopilotExecutor,
-  CursorExecutor,
-} from "agent-execution-engine/agents";
+import { CursorExecutor } from "agent-execution-engine/agents";
 import type { ExecutionTask } from "agent-execution-engine/engine";
 import type Database from "better-sqlite3";
 import type { ExecutionLifecycleService } from "../../services/execution-lifecycle.js";
@@ -40,7 +37,7 @@ import type { FileChangeStat } from "@sudocode-ai/types";
 /**
  * Supported legacy agent types
  */
-export type LegacyAgentType = "copilot" | "cursor";
+export type LegacyAgentType = "cursor";
 
 /**
  * Configuration for legacy agent execution
@@ -73,7 +70,7 @@ export interface LegacyExecutionTask {
  * Configuration for LegacyShimExecutorWrapper
  */
 export interface LegacyShimExecutorWrapperConfig {
-  /** Agent type (copilot, cursor) */
+  /** Agent type (cursor) */
   agentType: LegacyAgentType;
   /** Agent configuration */
   agentConfig: LegacyAgentConfig;
@@ -188,12 +185,6 @@ export class LegacyShimExecutorWrapper {
     agentConfig: LegacyAgentConfig
   ): ILegacyExecutor {
     switch (agentType) {
-      case "copilot":
-        return new CopilotExecutor({
-          workDir: agentConfig.workDir,
-          model: agentConfig.model,
-        }) as unknown as ILegacyExecutor;
-
       case "cursor":
         return new CursorExecutor({
           workspace: agentConfig.workDir,
@@ -275,7 +266,10 @@ export class LegacyShimExecutorWrapper {
       });
 
       // 4. Create output stream and normalize
-      const outputStream = this.createOutputChunks(spawned.process, executionId);
+      const outputStream = this.createOutputChunks(
+        spawned.process,
+        executionId
+      );
       const normalized = this.executor.normalizeOutput(outputStream, workDir);
 
       // 5. Process normalized output and convert to SessionUpdate
@@ -423,7 +417,7 @@ export class LegacyShimExecutorWrapper {
    * @returns true if the agent is a legacy type
    */
   static isLegacyAgent(agentType: string): boolean {
-    return agentType === "copilot" || agentType === "cursor";
+    return agentType === "cursor";
   }
 
   /**
@@ -432,7 +426,7 @@ export class LegacyShimExecutorWrapper {
    * @returns Array of legacy agent type names
    */
   static listLegacyAgents(): LegacyAgentType[] {
-    return ["copilot", "cursor"];
+    return ["cursor"];
   }
 
   // ============================================================================

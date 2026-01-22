@@ -23,19 +23,18 @@ describe("Agents API Routes", () => {
       expect(response.body.agents.length).toBeGreaterThan(0);
     });
 
-    it("should return all 7 agents (claude-code, codex, gemini, opencode, copilot, copilot-cli, cursor)", async () => {
+    it("should return all 6 agents (claude-code, codex, gemini, opencode, copilot, cursor)", async () => {
       const response = await request(app).get("/api/agents");
 
       expect(response.status).toBe(200);
-      expect(response.body.agents).toHaveLength(7);
+      expect(response.body.agents).toHaveLength(6);
 
       const agentTypes = response.body.agents.map((a: any) => a.type);
       expect(agentTypes).toContain("claude-code");
       expect(agentTypes).toContain("codex");
       expect(agentTypes).toContain("gemini");
       expect(agentTypes).toContain("opencode");
-      expect(agentTypes).toContain("copilot");
-      expect(agentTypes).toContain("copilot-cli");
+      expect(agentTypes).toContain("copilot"); // copilot is now the name for copilot-cli
       expect(agentTypes).toContain("cursor");
     });
 

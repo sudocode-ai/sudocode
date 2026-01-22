@@ -66,6 +66,8 @@ export interface AgentConfigContext {
   isResume?: boolean;
   /** Working directory for the execution */
   workDir: string;
+  /** Session ID to resume (for agents that support --resume <sessionId>) */
+  sessionId?: string;
 }
 
 /**
@@ -148,7 +150,15 @@ export const claudeCodeHandler: AgentConfigHandler = {
 
     // Extract compaction configuration
     const agentConfig = rawConfig.agentConfig || rawConfig;
-    const compaction = (agentConfig as { compaction?: { enabled?: boolean; contextTokenThreshold?: number; customInstructions?: string } }).compaction;
+    const compaction = (
+      agentConfig as {
+        compaction?: {
+          enabled?: boolean;
+          contextTokenThreshold?: number;
+          customInstructions?: string;
+        };
+      }
+    ).compaction;
 
     return {
       env,
@@ -157,11 +167,13 @@ export const claudeCodeHandler: AgentConfigHandler = {
       agentPermissionMode: permissionMode,
       sessionMode,
       mcpServers: rawConfig.mcpServers,
-      compaction: compaction?.enabled ? {
-        enabled: true,
-        contextTokenThreshold: compaction.contextTokenThreshold,
-        customInstructions: compaction.customInstructions,
-      } : undefined,
+      compaction: compaction?.enabled
+        ? {
+            enabled: true,
+            contextTokenThreshold: compaction.contextTokenThreshold,
+            customInstructions: compaction.customInstructions,
+          }
+        : undefined,
     };
   },
 
@@ -248,7 +260,9 @@ export const geminiHandler: AgentConfigHandler = {
       env: {},
     });
 
-    console.log(`[GeminiHandler] Registered with approval mode: ${approvalMode}`);
+    console.log(
+      `[GeminiHandler] Registered with approval mode: ${approvalMode}`
+    );
   },
 };
 
@@ -340,7 +354,9 @@ export const codexHandler: AgentConfigHandler = {
       // Use explicit settings or defaults
       approvalPolicy = codexConfig.askForApproval || "untrusted";
       sandbox = codexConfig.sandbox;
-      console.log(`[CodexHandler] Using custom settings: approval=${approvalPolicy}, sandbox=${sandbox || "default"}`);
+      console.log(
+        `[CodexHandler] Using custom settings: approval=${approvalPolicy}, sandbox=${sandbox || "default"}`
+      );
     }
 
     // Add approval policy
@@ -358,6 +374,88 @@ export const codexHandler: AgentConfigHandler = {
     });
 
     console.log(`[CodexHandler] Registered with args:`, args.slice(1));
+  },
+};
+
+// =============================================================================
+// Copilot Handler
+// =============================================================================
+
+/**
+ * Configuration handler for GitHub Copilot CLI agent
+ *
+ * Handles:
+ * - Dynamic CLI registration with --continue flag for session resume
+ * - Model selection via --model flag
+ * - Permission handling
+ *
+ * Note: Copilot CLI supports session persistence via:
+ * - `--continue`: Resume the most recently closed local session
+ * - `--resume`: Cycle through and resume local/remote sessions
+ */
+export const copilotHandler: AgentConfigHandler = {
+  processConfig(
+    rawConfig: RawAgentConfig,
+    _context: AgentConfigContext
+  ): ProcessedAgentConfig {
+    const existingEnv = rawConfig.env || rawConfig.agentConfig?.env;
+
+    // Check for dangerouslySkipPermissions toggle
+    const dangerouslySkipPermissions =
+      rawConfig.dangerouslySkipPermissions === true ||
+      rawConfig.agentConfig?.dangerouslySkipPermissions === true;
+
+    // Session mode
+    const sessionMode = rawConfig.mode || rawConfig.agentConfig?.mode;
+
+    return {
+      env: existingEnv,
+      acpPermissionMode: dangerouslySkipPermissions
+        ? "auto-approve"
+        : "interactive",
+      skipPermissions: dangerouslySkipPermissions,
+      sessionMode,
+      mcpServers: rawConfig.mcpServers,
+    };
+  },
+
+  applySetup(
+    rawConfig: RawAgentConfig,
+    _processedConfig: ProcessedAgentConfig,
+    context: AgentConfigContext
+  ): void {
+    // Build CLI arguments for Copilot
+    const args = ["@github/copilot", "--acp"];
+
+    // Add model flag if specified
+    const model = rawConfig.model || rawConfig.agentConfig?.model;
+    if (model) {
+      args.push("--model", model);
+    }
+
+    // TODO: Note that Copilot doesn't actually support both --acp and --resume simultaneously and this is a no-op.
+    // Add session resume flag for follow-up executions
+    // Prefer --resume <sessionId> if we have a specific session ID,
+    // fall back to --continue (most recent) otherwise
+    if (context.isResume) {
+      if (context.sessionId) {
+        args.push("--resume", context.sessionId);
+        console.log(
+          `[CopilotHandler] Will resume session: ${context.sessionId}`
+        );
+      } else {
+        args.push("--continue");
+        console.log(`[CopilotHandler] Will continue from most recent session`);
+      }
+    }
+
+    AgentFactory.register("copilot", {
+      command: "npx",
+      args,
+      env: {},
+    });
+
+    console.log(`[CopilotHandler] Registered with args:`, args.slice(1));
   },
 };
 
@@ -401,6 +499,7 @@ const handlers: Record<string, AgentConfigHandler> = {
   "claude-code": claudeCodeHandler,
   gemini: geminiHandler,
   codex: codexHandler,
+  copilot: copilotHandler,
 };
 
 /**

@@ -15,7 +15,6 @@ import type { AgentType } from "@sudocode-ai/types/agents";
 import { ClaudeCodeAdapter } from "../execution/adapters/claude-adapter.js";
 import { CodexAdapter } from "../execution/adapters/codex-adapter.js";
 import { CursorAdapter } from "../execution/adapters/cursor-adapter.js";
-import { copilotAdapter } from "../execution/adapters/copilot-adapter.js";
 import {
   verifyExecutable,
   type VerificationResult,
@@ -122,7 +121,6 @@ export class AgentRegistryService {
     this.registry.register(new ClaudeCodeAdapter());
     this.registry.register(new CodexAdapter());
     this.registry.register(new CursorAdapter());
-    this.registry.register(copilotAdapter);
 
     this.initialized = true;
   }
@@ -131,8 +129,8 @@ export class AgentRegistryService {
    * Get all available agents with their metadata and implementation status
    *
    * Includes both:
-   * 1. Agents with adapters in agent-execution-engine (claude-code, codex, cursor, copilot)
-   * 2. ACP-native agents from acp-factory that don't have adapters (gemini, opencode)
+   * 1. Agents with adapters in agent-execution-engine (claude-code, codex, cursor)
+   * 2. ACP-native agents from acp-factory (gemini, opencode, copilot)
    *
    * @returns Array of agent information
    */
@@ -140,10 +138,12 @@ export class AgentRegistryService {
     this.initialize();
 
     // Get agents from the registry (have adapters)
-    const registryAgents = this.registry.getAll().map((adapter: IAgentAdapter) => ({
-      ...adapter.metadata,
-      implemented: this.implementedAgents.has(adapter.metadata.name),
-    }));
+    const registryAgents = this.registry
+      .getAll()
+      .map((adapter: IAgentAdapter) => ({
+        ...adapter.metadata,
+        implemented: this.implementedAgents.has(adapter.metadata.name),
+      }));
 
     // Get set of already-included agent names
     const registryAgentNames = new Set(registryAgents.map((a) => a.name));
@@ -174,6 +174,7 @@ export class AgentRegistryService {
     const displayNames: Record<string, string> = {
       gemini: "Gemini CLI",
       opencode: "Opencode",
+      copilot: "Copilot",
     };
     return displayNames[name] || name.charAt(0).toUpperCase() + name.slice(1);
   }
@@ -239,7 +240,9 @@ export class AgentRegistryService {
    * @param agentType - The agent type to check
    * @returns Cached result if valid, undefined otherwise
    */
-  private getCachedVerification(agentType: string): VerificationResult | undefined {
+  private getCachedVerification(
+    agentType: string
+  ): VerificationResult | undefined {
     const cached = this.verificationCache.get(agentType);
     if (!cached) {
       return undefined;
@@ -261,7 +264,10 @@ export class AgentRegistryService {
    * @param agentType - The agent type
    * @param result - The verification result to cache
    */
-  private cacheVerification(agentType: string, result: VerificationResult): void {
+  private cacheVerification(
+    agentType: string,
+    result: VerificationResult
+  ): void {
     this.verificationCache.set(agentType, {
       result,
       timestamp: Date.now(),
