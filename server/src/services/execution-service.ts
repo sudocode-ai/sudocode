@@ -2247,7 +2247,7 @@ ${feedback}`;
    *
    * @param executionId - Execution ID with an active persistent session
    * @param prompt - The prompt to send
-   * @throws Error if execution not found, not a persistent session, or session not in waiting/paused state
+   * @throws Error if execution not found, not a persistent session, or session not in pending/paused state
    */
   async sendPrompt(executionId: string, prompt: string): Promise<void> {
     const wrapper = this.activeExecutors.get(executionId);
@@ -2277,15 +2277,15 @@ ${feedback}`;
     const wrapper = this.activeExecutors.get(executionId);
 
     if (!wrapper) {
-      // No active executor - check if execution is stuck in waiting/paused state
+      // No active executor - check if execution is stuck in pending/paused state
       const execution = getExecution(this.db, executionId);
       if (!execution) {
         throw new Error(`Execution ${executionId} not found`);
       }
 
-      // If execution is stuck in waiting/paused without an active executor,
+      // If execution is stuck in pending/paused without an active executor,
       // update it to stopped state
-      if (execution.status === "waiting" || execution.status === "paused") {
+      if (execution.status === "pending" || execution.status === "paused") {
         console.log(
           `[ExecutionService] No active executor for ${executionId} but status is ${execution.status}. ` +
             `Updating to stopped.`
@@ -2338,7 +2338,7 @@ ${feedback}`;
    */
   getSessionState(executionId: string): {
     mode: "discrete" | "persistent";
-    state: "running" | "waiting" | "paused" | "ended" | null;
+    state: "running" | "pending" | "paused" | "ended" | null;
     promptCount: number;
     idleTimeMs?: number;
   } {

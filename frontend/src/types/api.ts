@@ -174,7 +174,7 @@ export interface WebSocketMessage {
     | 'execution_deleted'
     | 'session_update'
     // Persistent session events
-    | 'session_waiting'
+    | 'session_pending'
     | 'session_paused'
     | 'session_ended'
     | 'project_opened'

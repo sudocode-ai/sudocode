@@ -303,6 +303,10 @@ export const executionsApi = {
   // Cancel execution
   cancel: (executionId: string) => post(`/executions/${executionId}/cancel`),
 
+  // Interrupt execution (stops current work but keeps persistent session alive)
+  interrupt: (executionId: string) =>
+    post<{ success: boolean; interrupted: boolean }>(`/executions/${executionId}/interrupt`),
+
   // Delete execution and its entire chain
   delete: (executionId: string, deleteBranch?: boolean, deleteWorktree?: boolean) => {
     const params = new URLSearchParams()

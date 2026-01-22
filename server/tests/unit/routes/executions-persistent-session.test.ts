@@ -120,7 +120,7 @@ describe("Persistent Session Endpoints", () => {
       expect(response.body.error).toContain("does not support");
     });
 
-    it("should return 400 if session is not in waiting/paused state", async () => {
+    it("should return 400 if session is not in pending/paused state", async () => {
       mockExecutionService.sendPrompt.mockRejectedValue(
         new Error("Cannot send prompt to session in state: running")
       );
@@ -263,10 +263,10 @@ describe("Persistent Session Endpoints", () => {
       });
     });
 
-    it("should return persistent mode state when session is waiting", async () => {
+    it("should return persistent mode state when session is pending", async () => {
       mockExecutionService.getSessionState.mockReturnValue({
         mode: "persistent",
-        state: "waiting",
+        state: "pending",
         promptCount: 3,
         idleTimeMs: 5000,
       });
@@ -279,7 +279,7 @@ describe("Persistent Session Endpoints", () => {
       expect(response.body.success).toBe(true);
       expect(response.body.data).toEqual({
         mode: "persistent",
-        state: "waiting",
+        state: "pending",
         promptCount: 3,
         idleTimeMs: 5000,
       });

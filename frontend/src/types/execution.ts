@@ -47,7 +47,7 @@ export interface ExecutionConfig {
   mode?: ExecutionMode // Execution mode
 
   // Session mode (persistent sessions)
-  sessionMode?: SessionMode // 'discrete' (default) or 'persistent'
+  sessionMode?: SessionMode // 'discrete' or 'persistent' (default)
   sessionEndMode?: {
     idleTimeoutMs?: number // Auto-end after idle period
     endOnDisconnect?: boolean // End when browser disconnects
@@ -264,7 +264,7 @@ export interface PerformSyncRequest {
  * Persistent session state response
  */
 export type SessionMode = 'discrete' | 'persistent'
-export type SessionState = 'running' | 'waiting' | 'paused' | 'ended'
+export type SessionState = 'running' | 'pending' | 'paused' | 'ended'
 
 export interface SessionStateResponse {
   mode: SessionMode

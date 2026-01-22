@@ -690,7 +690,7 @@ describe('ACP Persistent Session Integration Tests', () => {
   });
 
   describe('Basic Persistent Session Flow', () => {
-    it('should complete full persistent session lifecycle: start → waiting → prompt → waiting → end', async () => {
+    it('should complete full persistent session lifecycle: start → pending → prompt → pending → end', async () => {
       const { AgentFactory } = await import('acp-factory');
       const { broadcastSessionEvent } = await import('../../../src/services/websocket.js');
 
@@ -731,21 +731,21 @@ describe('ACP Persistent Session Integration Tests', () => {
         { sessionMode: 'persistent' }
       );
 
-      // Verify waiting state
+      // Verify pending state
       expect(wrapper.isPersistentSession('exec-persistent-1')).toBe(true);
       let state = wrapper.getSessionState('exec-persistent-1');
-      expect(state?.state).toBe('waiting');
+      expect(state?.state).toBe('pending');
       expect(state?.promptCount).toBe(1);
 
-      // Verify execution status is waiting (not completed)
+      // Verify execution status is pending (not completed)
       let execution = getExecution(db, 'exec-persistent-1');
-      expect(execution?.status).toBe('waiting');
+      expect(execution?.status).toBe('pending');
 
-      // Verify session_waiting event was broadcast
+      // Verify session_pending event was broadcast
       expect(broadcastSessionEvent).toHaveBeenCalledWith(
         'test-project',
         'exec-persistent-1',
-        'session_waiting',
+        'session_pending',
         { promptCount: 1 }
       );
 
@@ -753,17 +753,17 @@ describe('ACP Persistent Session Integration Tests', () => {
       (broadcastSessionEvent as any).mockClear();
       await wrapper.sendPrompt('exec-persistent-1', 'Second prompt');
 
-      // Verify still in waiting state with increased prompt count
+      // Verify still in pending state with increased prompt count
       state = wrapper.getSessionState('exec-persistent-1');
-      expect(state?.state).toBe('waiting');
+      expect(state?.state).toBe('pending');
       expect(state?.promptCount).toBe(2);
       expect(promptCallCount).toBe(2);
 
-      // Verify session_waiting event broadcast again
+      // Verify session_pending event broadcast again
       expect(broadcastSessionEvent).toHaveBeenCalledWith(
         'test-project',
         'exec-persistent-1',
-        'session_waiting',
+        'session_pending',
         { promptCount: 2 }
       );
 
@@ -883,9 +883,9 @@ describe('ACP Persistent Session Integration Tests', () => {
         }
       );
 
-      // Session should be in waiting state
+      // Session should be in pending state
       expect(wrapper.isPersistentSession('exec-timeout-config')).toBe(true);
-      expect(wrapper.getSessionState('exec-timeout-config')?.state).toBe('waiting');
+      expect(wrapper.getSessionState('exec-timeout-config')?.state).toBe('pending');
 
       // Cleanup to prevent timeout from firing after test
       await wrapper.endSession('exec-timeout-config');
@@ -893,7 +893,7 @@ describe('ACP Persistent Session Integration Tests', () => {
   });
 
   describe('Pause on Completion Mode', () => {
-    it('should transition to paused state instead of waiting', async () => {
+    it('should transition to paused state instead of pending', async () => {
       const { AgentFactory } = await import('acp-factory');
       const { broadcastSessionEvent } = await import('../../../src/services/websocket.js');
 
@@ -1077,7 +1077,7 @@ describe('ACP Persistent Session Integration Tests', () => {
       ).rejects.toThrow('No persistent session found');
     });
 
-    it('should reject sendPrompt when session is not in waiting/paused state', async () => {
+    it('should reject sendPrompt when session is not in pending/paused state', async () => {
       const { AgentFactory } = await import('acp-factory');
 
       createExecution(db, {
@@ -1178,15 +1178,15 @@ describe('ACP Persistent Session Integration Tests', () => {
       // Verify NOT a persistent session
       expect(wrapper.isPersistentSession('exec-discrete')).toBe(false);
 
-      // Verify execution is completed (not waiting)
+      // Verify execution is completed (not pending)
       const execution = getExecution(db, 'exec-discrete');
       expect(execution?.status).toBe('completed');
 
-      // Verify NO session_waiting event was broadcast
+      // Verify NO session_pending event was broadcast
       expect(broadcastSessionEvent).not.toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
-        'session_waiting',
+        'session_pending',
         expect.anything()
       );
 

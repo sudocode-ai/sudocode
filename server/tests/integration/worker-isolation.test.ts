@@ -395,8 +395,13 @@ describe.skipIf(SKIP_INTEGRATION_TESTS)('Worker Isolation Integration Tests', ()
       const worker = pool.getWorker(execution.id)
       expect(worker?.status).toMatch(/starting|running/)
 
-      // Wait for worker to complete (mock worker completes in ~200ms)
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      // Wait for worker to be removed (process exit removes it from pool)
+      // Poll instead of fixed timeout to avoid flakiness
+      const startTime = Date.now()
+      const timeout = 5000
+      while (pool.hasWorker(execution.id) && Date.now() - startTime < timeout) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
 
       // Worker should be removed after completion
       expect(pool.hasWorker(execution.id)).toBe(false)

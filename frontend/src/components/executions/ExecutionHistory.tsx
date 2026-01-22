@@ -39,11 +39,6 @@ const STATUS_CONFIG: Record<
     variant: 'outline',
     icon: <PauseCircle className="h-3 w-3" />,
   },
-  waiting: {
-    label: 'Waiting',
-    variant: 'default',
-    icon: <Clock className="h-3 w-3" />,
-  },
   completed: {
     label: 'Completed',
     variant: 'default',

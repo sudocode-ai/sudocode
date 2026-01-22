@@ -205,7 +205,7 @@ export function ExecutionMonitor({
   // Completed: completed, failed, cancelled, stopped
   const isActive = useMemo(() => {
     if (!executionProp) return true // Default to active if no execution prop
-    const activeStatuses = ['preparing', 'pending', 'running', 'paused', 'waiting']
+    const activeStatuses = ['preparing', 'pending', 'running', 'paused']
     return activeStatuses.includes(executionProp.status)
   }, [executionProp])
 
@@ -246,12 +246,12 @@ export function ExecutionMonitor({
       // For waiting/paused executions with no WebSocket data, use logs
       // This handles page reload where the agent isn't actively streaming
       const isWaitingOrPaused =
-        executionProp?.status === 'waiting' || executionProp?.status === 'paused'
+        executionProp?.status === 'pending' || executionProp?.status === 'paused'
       if (isWaitingOrPaused && !hasWsData && hasLogsData) {
         return {
           connectionStatus: 'connected',
           execution: {
-            status: (executionProp?.status || 'waiting') as ExecutionState['status'],
+            status: (executionProp?.status || 'pending') as ExecutionState['status'],
             runId: executionId,
             error: logsResult.error?.message || null,
             startTime: null,
@@ -302,7 +302,7 @@ export function ExecutionMonitor({
 
       // For PERSISTENT sessions with no WebSocket data yet but logs available,
       // show logs to prevent flash of empty content during transitions
-      // (e.g., when transitioning from 'waiting' to 'running')
+      // (e.g., when transitioning from 'pending' to 'running')
       // Non-persistent sessions skip this - they wait for WebSocket to avoid duplicate content
       if (isPersistentSession && !hasWsData && hasLogsData) {
         return {
@@ -478,9 +478,8 @@ export function ExecutionMonitor({
     if (!onCancel) return
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Only cancel if execution is active (not completed/failed/cancelled)
-      const activeStatuses = ['preparing', 'pending', 'running', 'paused', 'waiting']
-      if (event.key === 'Escape' && activeStatuses.includes(execution.status)) {
+      // Only cancel if execution is actively running
+      if (event.key === 'Escape' && execution.status === 'running') {
         event.preventDefault()
         onCancel()
       }
@@ -672,7 +671,7 @@ export function ExecutionMonitor({
       )
     }
 
-    if (execution.status === 'waiting') {
+    if (execution.status === 'pending') {
       return (
         <Badge variant="default" className="flex items-center gap-1 bg-blue-600">
           <Clock className="h-3 w-3" />

@@ -14,7 +14,7 @@
  * 4. Run: RUN_E2E_TESTS=true npm --prefix server test -- --run persistent-session.test.ts
  *
  * Test coverage:
- * - Persistent session lifecycle (start → waiting → prompt → waiting → end)
+ * - Persistent session lifecycle (start → pending → prompt → pending → end)
  * - Multiple prompts in same session
  * - Session state tracking
  * - Explicit session termination
@@ -210,7 +210,7 @@ describe.skipIf(SKIP_E2E)("Persistent Session E2E Tests", () => {
 
   describe("Basic Persistent Session Flow", () => {
     it(
-      "should start a persistent session and transition to waiting state",
+      "should start a persistent session and transition to pending state",
       { timeout: 120000 },
       async () => {
         const execId = "e2e-persistent-1";
@@ -236,18 +236,18 @@ describe.skipIf(SKIP_E2E)("Persistent Session E2E Tests", () => {
           sessionMode: "persistent",
         });
 
-        // Verify session is in waiting state
+        // Verify session is in pending state
         expect(wrapper.isPersistentSession(execId)).toBe(true);
 
         const state = wrapper.getSessionState(execId);
         expect(state).toBeDefined();
         expect(state?.mode).toBe("persistent");
-        expect(state?.state).toBe("waiting");
+        expect(state?.state).toBe("pending");
         expect(state?.promptCount).toBe(1);
 
         // Verify DB status
         const execution = getExecution(db, execId);
-        expect(execution?.status).toBe("waiting");
+        expect(execution?.status).toBe("pending");
 
         // End session
         await wrapper.endSession(execId);
@@ -287,17 +287,17 @@ describe.skipIf(SKIP_E2E)("Persistent Session E2E Tests", () => {
         });
 
         expect(wrapper.getSessionState(execId)?.promptCount).toBe(1);
-        expect(wrapper.getSessionState(execId)?.state).toBe("waiting");
+        expect(wrapper.getSessionState(execId)?.state).toBe("pending");
 
         // Send second prompt
         await wrapper.sendPrompt(execId, "What is 10 + 10? Reply with just the number.");
         expect(wrapper.getSessionState(execId)?.promptCount).toBe(2);
-        expect(wrapper.getSessionState(execId)?.state).toBe("waiting");
+        expect(wrapper.getSessionState(execId)?.state).toBe("pending");
 
         // Send third prompt
         await wrapper.sendPrompt(execId, "What is 20 + 20? Reply with just the number.");
         expect(wrapper.getSessionState(execId)?.promptCount).toBe(3);
-        expect(wrapper.getSessionState(execId)?.state).toBe("waiting");
+        expect(wrapper.getSessionState(execId)?.state).toBe("pending");
 
         // End session
         await wrapper.endSession(execId);
@@ -352,7 +352,7 @@ describe.skipIf(SKIP_E2E)("Persistent Session E2E Tests", () => {
 
   describe("Pause on Completion Mode", () => {
     it(
-      "should transition to paused state instead of waiting when pauseOnCompletion is true",
+      "should transition to paused state instead of pending when pauseOnCompletion is true",
       { timeout: 120000 },
       async () => {
         const execId = "e2e-pause-on-completion";
@@ -486,7 +486,7 @@ describe.skipIf(SKIP_E2E)("Persistent Session E2E Tests", () => {
         // Should NOT be a persistent session
         expect(wrapper.isPersistentSession(execId)).toBe(false);
 
-        // DB should show completed (not waiting)
+        // DB should show completed (not pending)
         const execution = getExecution(db, execId);
         expect(execution?.status).toBe("completed");
       }

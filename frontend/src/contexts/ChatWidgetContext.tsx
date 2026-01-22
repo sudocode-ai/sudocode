@@ -122,7 +122,7 @@ export function ChatWidgetProvider({ children }: ChatWidgetProviderProps) {
 
   // Find the latest active execution (running, pending, or preparing)
   const latestActiveExecution = useMemo(() => {
-    const activeStatuses = ['running', 'pending', 'preparing', 'paused', 'waiting']
+    const activeStatuses = ['running', 'pending', 'preparing', 'paused']
     const activeExecutions = executions.filter((e) => activeStatuses.includes(e.status))
     if (activeExecutions.length === 0) return null
     // Sort by created_at descending

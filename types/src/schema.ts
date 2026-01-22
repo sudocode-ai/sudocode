@@ -153,7 +153,7 @@ CREATE TABLE IF NOT EXISTS executions (
 
     -- Status (unified - supports both old and new statuses)
     status TEXT NOT NULL CHECK(status IN (
-        'preparing', 'pending', 'running', 'paused', 'waiting',
+        'preparing', 'pending', 'running', 'paused',
         'completed', 'failed', 'cancelled', 'stopped'
     )),
 

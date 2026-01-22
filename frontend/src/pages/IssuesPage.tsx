@@ -256,7 +256,7 @@ export default function IssuesPage() {
       if (issue.status === 'closed') continue
 
       // Active execution statuses should show in "in_progress" column
-      if (['preparing', 'pending', 'running', 'paused', 'waiting'].includes(execution.status)) {
+      if (['preparing', 'pending', 'running', 'paused'].includes(execution.status)) {
         if (issue.status !== 'in_progress') {
           overrides[issueId] = 'in_progress'
         }

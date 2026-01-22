@@ -149,7 +149,7 @@ export interface ExecutionState {
   status:
     | 'idle'
     | 'running'
-    | 'waiting'
+    | 'pending'
     | 'paused'
     | 'completed'
     | 'error'
@@ -464,11 +464,9 @@ function mapExecutionStatus(status: string): ExecutionState['status'] {
   switch (status) {
     case 'preparing':
     case 'pending':
-      return 'idle'
+      return 'pending'
     case 'running':
       return 'running'
-    case 'waiting':
-      return 'waiting'
     case 'paused':
       return 'paused'
     case 'completed':

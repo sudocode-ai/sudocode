@@ -395,6 +395,7 @@ export function AgentConfigPanel({
     const defaults: ExecutionConfig = {
       mode: 'worktree',
       cleanupMode: 'manual',
+      sessionMode: 'persistent',
     }
 
     // Try to load from localStorage

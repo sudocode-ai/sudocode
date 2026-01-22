@@ -60,7 +60,7 @@ export function useExecutions(params?: ListExecutionsParams) {
         message.type === 'execution_deleted' ||
         message.type === 'execution_status_changed' ||
         // Persistent session events
-        message.type === 'session_waiting' ||
+        message.type === 'session_pending' ||
         message.type === 'session_paused' ||
         message.type === 'session_ended'
       ) {

@@ -58,7 +58,7 @@ export interface ServerMessage {
     | "execution_deleted"
     | "voice_narration"
     // Persistent session events
-    | "session_waiting"
+    | "session_pending"
     | "session_paused"
     | "session_ended"
     | "workflow_created"
@@ -911,12 +911,12 @@ export function broadcastExecutionUpdate(
  * @param projectId - ID of the project
  * @param executionId - ID of the execution with the persistent session
  * @param event - The session event type
- * @param data - Event-specific data (promptCount for waiting/paused, reason for ended)
+ * @param data - Event-specific data (promptCount for pending/paused, reason for ended)
  */
 export function broadcastSessionEvent(
   projectId: string,
   executionId: string,
-  event: "session_waiting" | "session_paused" | "session_ended",
+  event: "session_pending" | "session_paused" | "session_ended",
   data: { promptCount: number } | { reason: "explicit" | "timeout" | "disconnect" }
 ): void {
   websocketManager.broadcast(projectId, "execution", executionId, {

@@ -444,7 +444,7 @@ describe("Persistent Sessions", () => {
   });
 
   describe("executeWithLifecycle with persistent mode", () => {
-    it("should transition to waiting state after prompt completes in persistent mode", async () => {
+    it("should transition to pending state after prompt completes in persistent mode", async () => {
       const { AgentFactory } = await import("acp-factory");
       const { updateExecution } = await import("../../../../src/services/executions.js");
       const mockAgent = await AgentFactory.spawn("claude-code");
@@ -474,11 +474,11 @@ describe("Persistent Sessions", () => {
         { sessionMode: "persistent" }
       );
 
-      // Should update to "waiting" status instead of "completed"
+      // Should update to "pending" status instead of "completed"
       expect(updateExecution).toHaveBeenCalledWith(
         mockDb,
         "exec-123",
-        expect.objectContaining({ status: "waiting" })
+        expect.objectContaining({ status: "pending" })
       );
 
       // Should NOT update to "completed" (discrete mode behavior)
@@ -517,11 +517,11 @@ describe("Persistent Sessions", () => {
       const state = wrapper.getSessionState("exec-123");
       expect(state).not.toBeNull();
       expect(state?.mode).toBe("persistent");
-      expect(state?.state).toBe("waiting");
+      expect(state?.state).toBe("pending");
       expect(state?.promptCount).toBe(1);
     });
 
-    it("should broadcast session_waiting event in persistent mode", async () => {
+    it("should broadcast session_pending event in persistent mode", async () => {
       const { AgentFactory } = await import("acp-factory");
       const { websocketManager } = await import("../../../../src/services/websocket.js");
       const mockAgent = await AgentFactory.spawn("claude-code");
@@ -545,14 +545,14 @@ describe("Persistent Sessions", () => {
         { sessionMode: "persistent" }
       );
 
-      // Should broadcast session_waiting event via broadcastSessionEvent
+      // Should broadcast session_pending event via broadcastSessionEvent
       const { broadcastSessionEvent } = await import(
         "../../../../src/services/websocket.js"
       );
       expect(broadcastSessionEvent).toHaveBeenCalledWith(
         "test-project",
         "exec-123",
-        "session_waiting",
+        "session_pending",
         { promptCount: 1 }
       );
     });
@@ -586,7 +586,7 @@ describe("Persistent Sessions", () => {
   });
 
   describe("sendPrompt", () => {
-    it("should send additional prompt to waiting session", async () => {
+    it("should send additional prompt to pending session", async () => {
       const { AgentFactory } = await import("acp-factory");
       const mockAgent = await AgentFactory.spawn("claude-code");
 
@@ -622,9 +622,9 @@ describe("Persistent Sessions", () => {
       expect(promptCallCount).toBe(2);
       expect(mockSession.prompt).toHaveBeenCalledTimes(2);
 
-      // Should still be in waiting state
+      // Should still be in pending state
       const state = wrapper.getSessionState("exec-123");
-      expect(state?.state).toBe("waiting");
+      expect(state?.state).toBe("pending");
       expect(state?.promptCount).toBe(2);
     });
 
@@ -634,7 +634,7 @@ describe("Persistent Sessions", () => {
       ).rejects.toThrow("No persistent session found");
     });
 
-    it("should throw error if session is not in waiting state", async () => {
+    it("should throw error if session is not in pending state", async () => {
       const { AgentFactory } = await import("acp-factory");
       const mockAgent = await AgentFactory.spawn("claude-code");
 
@@ -1115,7 +1115,7 @@ describe("Persistent Sessions", () => {
   });
 
   describe("resumeWithLifecycle with persistent mode", () => {
-    it("should transition to waiting state after resume completes in persistent mode", async () => {
+    it("should transition to pending state after resume completes in persistent mode", async () => {
       const { AgentFactory } = await import("acp-factory");
       const { updateExecution } = await import(
         "../../../../src/services/executions.js"
@@ -1147,11 +1147,11 @@ describe("Persistent Sessions", () => {
         { sessionMode: "persistent" }
       );
 
-      // Should update to "waiting" status instead of "completed"
+      // Should update to "pending" status instead of "completed"
       expect(updateExecution).toHaveBeenCalledWith(
         mockDb,
         "exec-123",
-        expect.objectContaining({ status: "waiting" })
+        expect.objectContaining({ status: "pending" })
       );
 
       // Should NOT update to "completed" (discrete mode behavior)
@@ -1196,7 +1196,7 @@ describe("Persistent Sessions", () => {
       const state = wrapper.getSessionState("exec-123");
       expect(state).not.toBeNull();
       expect(state?.mode).toBe("persistent");
-      expect(state?.state).toBe("waiting");
+      expect(state?.state).toBe("pending");
       expect(state?.promptCount).toBe(1);
     });
 

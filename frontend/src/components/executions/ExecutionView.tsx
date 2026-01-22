@@ -458,15 +458,35 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
   }, [])
 
   // Handle cancel action for a specific execution
+  // For persistent sessions, this interrupts (stops current work, keeps session alive)
+  // For non-persistent sessions, this cancels (terminates execution)
   const handleCancel = async (execId: string) => {
     setCancelling(true)
     try {
-      await executionsApi.cancel(execId)
+      // Find the execution to check if it's a persistent session
+      const execution = chainData?.executions.find((e) => e.id === execId)
+      let isPersistentSession = false
+      if (execution?.config) {
+        try {
+          const config = JSON.parse(execution.config)
+          isPersistentSession = config.sessionMode === 'persistent'
+        } catch {
+          // Invalid config JSON, default to non-persistent
+        }
+      }
+
+      if (isPersistentSession) {
+        // Interrupt: stops current work but keeps session alive
+        await executionsApi.interrupt(execId)
+      } else {
+        // Cancel: fully terminates the execution
+        await executionsApi.cancel(execId)
+      }
       // Reload chain to get updated status
       const data = await executionsApi.getChain(executionId)
       setChainData(data)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to cancel execution')
+      setError(err instanceof Error ? err.message : 'Failed to stop execution')
     } finally {
       setCancelling(false)
     }
@@ -506,7 +526,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
 
     // Check if this is a persistent session that's ready for another prompt
     const isPersistentSessionReady =
-      lastExecution.status === 'waiting' || lastExecution.status === 'paused'
+      lastExecution.status === 'pending' || lastExecution.status === 'paused'
 
     setSubmittingFollowUp(true)
     try {
@@ -528,7 +548,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
         })
 
         // Send prompt to existing persistent session
-        // WebSocket will update the status back to 'waiting' when complete
+        // WebSocket will update the status back to 'pending' when complete
         await executionsApi.sendPrompt(lastExecution.id, prompt)
       } else {
         // Create a new follow-up execution
@@ -575,7 +595,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
     const lastExecution = chainData.executions[chainData.executions.length - 1]
 
     // Only end if the session is in a state that can be ended
-    if (lastExecution.status !== 'waiting' && lastExecution.status !== 'paused') {
+    if (lastExecution.status !== 'pending' && lastExecution.status !== 'paused') {
       return
     }
 
@@ -866,8 +886,8 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
     if (!chainData || chainData.executions.length === 0) return
     const rootExec = chainData.executions[0]
     const lastExec = chainData.executions[chainData.executions.length - 1]
-    // Only allow cancel for actively running executions (not waiting/paused persistent sessions)
-    const canCancel = ['preparing', 'pending', 'running'].includes(lastExec.status)
+    // Only allow cancel for actively running executions
+    const canCancel = lastExec.status === 'running'
 
     onHeaderDataChange?.(
       {
@@ -940,7 +960,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
     lastExecution.status === 'stopped' ||
     lastExecution.status === 'cancelled'
   const isPersistentSessionReady =
-    lastExecution.status === 'waiting' || lastExecution.status === 'paused'
+    lastExecution.status === 'pending' || lastExecution.status === 'paused'
   const canEnableFollowUp = lastExecutionTerminal || isPersistentSessionReady
 
   // Determine if the execution is actively running (not waiting/paused)
@@ -990,8 +1010,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
                       onTodosUpdate={handleTodosUpdate}
                       onAvailableCommandsUpdate={isLast ? handleAvailableCommandsUpdate : undefined}
                       onCancel={
-                        isLast &&
-                        ['preparing', 'pending', 'running'].includes(execution.status)
+                        isLast && execution.status === 'running'
                           ? () => handleCancel(execution.id)
                           : undefined
                       }
@@ -1050,7 +1069,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
                     {endingSession ? 'Ending...' : 'End Session'}
                   </Button>
                   <span className="text-xs text-muted-foreground">
-                    Session {lastExecution.status === 'paused' ? 'paused' : 'waiting'} for input
+                    Session {lastExecution.status === 'paused' ? 'paused' : 'pending'} for input
                   </span>
                 </div>
               )}

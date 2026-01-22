@@ -383,10 +383,9 @@ export type {
  */
 export type ExecutionStatus =
   | "preparing" // Template being prepared
-  | "pending" // Created, not yet started
+  | "pending" // Created, not yet started / Persistent session waiting for next prompt
   | "running" // Agent executing
   | "paused" // Execution paused (awaiting follow-up)
-  | "waiting" // Persistent session alive, waiting for next prompt
   | "completed" // Successfully finished
   | "failed" // Execution failed
   | "cancelled" // User cancelled

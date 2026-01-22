@@ -144,10 +144,10 @@ describe("ExecutionService Persistent Session Methods", () => {
       );
     });
 
-    it("should update stuck 'waiting' execution to 'stopped' when no active executor", async () => {
+    it("should update stuck 'pending' execution to 'stopped' when no active executor", async () => {
       mockGetExecution.mockReturnValue({
         id: "exec-123",
-        status: "waiting",
+        status: "pending",
       } as any);
 
       await service.endSession("exec-123");
@@ -321,7 +321,7 @@ describe("ExecutionService Persistent Session Methods", () => {
       const mockWrapper = Object.create(AcpExecutorWrapper.prototype);
       mockWrapper.getSessionState = vi.fn().mockReturnValue({
         mode: "persistent",
-        state: "waiting",
+        state: "pending",
         promptCount: 3,
         idleTimeMs: 5000,
       });
@@ -332,7 +332,7 @@ describe("ExecutionService Persistent Session Methods", () => {
 
       expect(state).toEqual({
         mode: "persistent",
-        state: "waiting",
+        state: "pending",
         promptCount: 3,
         idleTimeMs: 5000,
       });

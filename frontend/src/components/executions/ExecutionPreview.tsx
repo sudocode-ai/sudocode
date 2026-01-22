@@ -169,7 +169,7 @@ export function ExecutionPreview({
   // Determine if execution is active or completed
   const isActive = useMemo(() => {
     if (!executionProp) return true
-    const activeStatuses = ['preparing', 'pending', 'running', 'paused', 'waiting']
+    const activeStatuses = ['preparing', 'pending', 'running', 'paused']
     return activeStatuses.includes(executionProp.status)
   }, [executionProp])
 
