@@ -21,16 +21,17 @@ Spec-driven development and issue management system. Work persists across sessio
 
 ### Two Ways to Modify Specs/Issues
 
-**Option 1: MCP Tools** (Recommended for structured operations)
-- Use `upsert_issue`, `upsert_spec`, `link`, `add_feedback` tools
-- Automatically syncs to markdown/sqlite/jsonl
-- Validates relationships and IDs
-
-**Option 2: Direct Markdown Editing** (For content-heavy edits)
+**Option 1: Direct Markdown Editing** (For content-heavy edits)
 - Edit markdown files in `.sudocode/specs/` or `.sudocode/issues/`
 - Frontmatter contains metadata (id, title, status, relationships, tags)
 - Content after frontmatter is the body
-- System auto-syncs bidirectionally
+- System syncs bidirectionally
+- Use direct markdown editing when possible to maintain file structure and reduce content churn
+
+**Option 2: MCP Tools** (Recommended for structured operations)
+- Use `upsert_issue`, `upsert_spec`, `link`, `add_feedback` tools
+- Automatically syncs to markdown/sqlite/jsonl
+- Validates relationships and IDs
 
 **When to use each:**
 - **MCP tools:** Status changes, creating entities, adding relationships, adding feedback
