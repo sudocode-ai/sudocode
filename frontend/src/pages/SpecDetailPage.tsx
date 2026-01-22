@@ -272,6 +272,13 @@ Create actionable issues that implement its requirements. Each issue should be s
   // Update form values when spec changes
   useEffect(() => {
     if (spec) {
+      // DEBUG: Log spec update from server
+      console.log('[SpecDetail:debug] Received spec update from server:', {
+        id: spec.id,
+        contentLength: spec.content?.length || 0,
+        contentPreview: spec.content?.slice(0, 100) + (spec.content && spec.content.length > 100 ? '...' : ''),
+      })
+      
       setTitle(spec.title)
       setContent(spec.content || '')
       setPriority(spec.priority ?? 2)
@@ -283,6 +290,13 @@ Create actionable issues that implement its requirements. Each issue should be s
   useEffect(() => {
     if (!hasChanges || !id) return
 
+    // DEBUG: Log auto-save trigger
+    console.log('[SpecDetail:debug] Auto-save triggered, waiting 1s...', {
+      id,
+      contentLength: content?.length || 0,
+      contentPreview: content?.slice(0, 100) + (content && content.length > 100 ? '...' : ''),
+    })
+
     // Clear existing timer
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current)
@@ -290,6 +304,12 @@ Create actionable issues that implement its requirements. Each issue should be s
 
     // Set new timer for auto-save after 1 second of inactivity
     autoSaveTimerRef.current = setTimeout(() => {
+      // DEBUG: Log actual save
+      console.log('[SpecDetail:debug] Auto-saving now:', {
+        id,
+        contentLength: content?.length || 0,
+      })
+      
       updateSpecRef.current({
         id,
         data: {
@@ -470,6 +490,12 @@ Create actionable issues that implement its requirements. Each issue should be s
   }
 
   const handleContentChange = (markdown: string) => {
+    // DEBUG: Log content change from TipTap
+    console.log('[SpecDetail:debug] handleContentChange called:', {
+      newContentLength: markdown?.length || 0,
+      newContentPreview: markdown?.slice(0, 100) + (markdown && markdown.length > 100 ? '...' : ''),
+    })
+    
     setContent(markdown)
     setHasChanges(true)
   }
