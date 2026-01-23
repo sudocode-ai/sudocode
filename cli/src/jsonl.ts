@@ -186,26 +186,6 @@ export async function writeJSONL<T extends JSONLEntity = JSONLEntity>(
       // Content unchanged, skip write
       return;
     }
-    // DEBUG: Log what's different
-    const existingLines = existingContent.split('\n');
-    const newLines = content.split('\n');
-    for (let i = 0; i < Math.max(existingLines.length, newLines.length); i++) {
-      if (existingLines[i] !== newLines[i]) {
-        console.log(`[jsonl:debug] Line ${i} differs:`);
-        console.log(`[jsonl:debug]   OLD: ${existingLines[i]?.slice(0, 200)}`);
-        console.log(`[jsonl:debug]   NEW: ${newLines[i]?.slice(0, 200)}`);
-        // Find the specific character difference
-        const oldLine = existingLines[i] || '';
-        const newLine = newLines[i] || '';
-        for (let j = 0; j < Math.max(oldLine.length, newLine.length); j++) {
-          if (oldLine[j] !== newLine[j]) {
-            console.log(`[jsonl:debug]   First diff at char ${j}: old=${JSON.stringify(oldLine.slice(Math.max(0,j-20), j+20))} new=${JSON.stringify(newLine.slice(Math.max(0,j-20), j+20))}`);
-            break;
-          }
-        }
-        break; // Only log first difference
-      }
-    }
   }
 
   fs.writeFileSync(targetPath, content, "utf8");
