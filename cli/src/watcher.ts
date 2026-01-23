@@ -274,21 +274,7 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
       }
 
       // Compare content (trim to ignore whitespace differences)
-      const mdTrimmed = mdContent.trim();
-      const dbTrimmed = (dbEntity.content || "").trim();
-      if (mdTrimmed !== dbTrimmed) {
-        // Find where they differ
-        const minLen = Math.min(mdTrimmed.length, dbTrimmed.length);
-        let diffPos = -1;
-        for (let i = 0; i < minLen; i++) {
-          if (mdTrimmed[i] !== dbTrimmed[i]) {
-            diffPos = i;
-            break;
-          }
-        }
-        if (diffPos === -1 && mdTrimmed.length !== dbTrimmed.length) {
-          diffPos = minLen; // Length difference
-        }
+      if (mdContent.trim() !== (dbEntity.content || "").trim()) {
         return false;
       }
 
