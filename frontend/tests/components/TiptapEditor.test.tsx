@@ -171,6 +171,249 @@ describe('TiptapEditor', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
+  describe('Round-Trip Stability (Oscillation Prevention)', () => {
+    /**
+     * These tests validate the fix for the sync oscillation bug documented in spec s-7cua.
+     * 
+     * The bug: TipTap's markdown conversion is lossy (MD → HTML → MD produces different output).
+     * Before the fix, the editor stored the ORIGINAL markdown as reference, but compared
+     * against the ROUND-TRIPPED markdown. Since they always differed, auto-save triggered
+     * even without user edits, causing sync oscillation.
+     * 
+     * The fix: Store the round-tripped markdown as reference, so comparison is apples-to-apples.
+     */
+
+    it('should not trigger onChange for content with lossy list transformations', async () => {
+      const onChange = vi.fn()
+      
+      // Content that transforms through round-trip:
+      // "  - continuation" (indented list continuation) becomes separate list items
+      // This was the exact pattern that caused sync oscillation
+      const originalContent = `# Test Spec
+
+This is a paragraph.
+  - continuation item under previous context
+
+More text after the list.`
+
+      render(<TiptapEditor content={originalContent} editable={true} onChange={onChange} />)
+
+      // Wait for content to load and render
+      await waitFor(() => {
+        expect(screen.getByText('Test Spec')).toBeInTheDocument()
+      })
+
+      // Wait for guard to release (100ms) + additional buffer for any delayed events
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      // CRITICAL: onChange should NOT have been called
+      // If the old bug exists, onChange would fire with transformed content
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('should not trigger onChange for content with nested lists', async () => {
+      const onChange = vi.fn()
+      
+      // Nested lists can transform through round-trip
+      const originalContent = `# Spec with Nested Lists
+
+- Item 1
+  - Nested item A
+  - Nested item B
+- Item 2
+  - Nested item C
+
+End of content.`
+
+      render(<TiptapEditor content={originalContent} editable={true} onChange={onChange} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Spec with Nested Lists')).toBeInTheDocument()
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('should not trigger onChange for content with code blocks', async () => {
+      const onChange = vi.fn()
+      
+      // Code blocks with various formatting
+      const originalContent = `# Code Example
+
+\`\`\`typescript
+const x = 1;
+const y = 2;
+\`\`\`
+
+\`\`\`javascript
+function test() {
+  return true;
+}
+\`\`\`
+
+End.`
+
+      render(<TiptapEditor content={originalContent} editable={true} onChange={onChange} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Code Example')).toBeInTheDocument()
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('should not trigger onChange when reloading same content multiple times', async () => {
+      const onChange = vi.fn()
+      const content = `# Test Content
+
+- List item 1
+- List item 2
+
+Paragraph text.`
+
+      const { rerender } = render(
+        <TiptapEditor content={content} editable={true} onChange={onChange} />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Content')).toBeInTheDocument()
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 200))
+
+      // Simulate server update - re-render with same content
+      rerender(<TiptapEditor content={content} editable={true} onChange={onChange} />)
+      await new Promise((resolve) => setTimeout(resolve, 200))
+
+      // Another update
+      rerender(<TiptapEditor content={content} editable={true} onChange={onChange} />)
+      await new Promise((resolve) => setTimeout(resolve, 200))
+
+      // onChange should never have been called
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('should not trigger onChange for content with blockquotes', async () => {
+      const onChange = vi.fn()
+      
+      const originalContent = `# Quoted Content
+
+> This is a blockquote
+> with multiple lines
+
+Normal paragraph.
+
+> Another quote`
+
+      render(<TiptapEditor content={originalContent} editable={true} onChange={onChange} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Quoted Content')).toBeInTheDocument()
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('should not trigger onChange for content with mixed formatting', async () => {
+      const onChange = vi.fn()
+      
+      // Complex content with multiple formatting types
+      const originalContent = `# Mixed Formatting Test
+
+This paragraph has **bold** and _italic_ text.
+
+## Subheading
+
+1. Ordered item 1
+2. Ordered item 2
+   - Nested unordered
+   - Another nested
+
+\`inline code\` in a paragraph.
+
+> Quote with **bold** inside
+
+---
+
+Final paragraph.`
+
+      render(<TiptapEditor content={originalContent} editable={true} onChange={onChange} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Mixed Formatting Test')).toBeInTheDocument()
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('should not trigger onChange for content with entity mentions', async () => {
+      const onChange = vi.fn()
+      
+      // Content with entity mentions that get converted to spans
+      const originalContent = `# Spec with References
+
+See [[s-abc123]] for context.
+
+Related issues:
+- [[i-def456]]
+- [[i-ghi789|Display Text]]
+
+End.`
+
+      renderWithProviders(<TiptapEditor content={originalContent} editable={true} onChange={onChange} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Spec with References')).toBeInTheDocument()
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('should handle content updates from server without triggering onChange', async () => {
+      const onChange = vi.fn()
+      
+      const content1 = `# Version 1
+
+Initial content.`
+
+      const content2 = `# Version 2
+
+Updated content from server.`
+
+      const { rerender } = render(
+        <TiptapEditor content={content1} editable={true} onChange={onChange} />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('Version 1')).toBeInTheDocument()
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 200))
+
+      // Simulate server pushing new content (like after git checkout)
+      rerender(<TiptapEditor content={content2} editable={true} onChange={onChange} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Version 2')).toBeInTheDocument()
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 200))
+
+      // onChange should not be called for external updates
+      expect(onChange).not.toHaveBeenCalled()
+    })
+  })
+
   describe('Line Numbers', () => {
     it('should display line numbers matching markdown source lines', async () => {
       // Markdown with known line numbers
