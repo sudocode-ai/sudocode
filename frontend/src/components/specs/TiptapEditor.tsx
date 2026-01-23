@@ -57,8 +57,10 @@ const lowlight = createLowlight(common)
 /**
  * Create a configured TurndownService instance with all custom rules
  * Used by getMarkdownFromEditor to ensure consistent markdown output
+ *
+ * @remarks Exported for testing purposes
  */
-function createConfiguredTurndownService(): TurndownService {
+export function createConfiguredTurndownService(): TurndownService {
   const turndownService = new TurndownService({
     headingStyle: 'atx',
     codeBlockStyle: 'fenced',
@@ -164,7 +166,7 @@ function createConfiguredTurndownService(): TurndownService {
  * Convert editor HTML content to markdown using configured TurndownService.
  * This is the single source of truth for HTML→MD conversion, ensuring consistent
  * output across all use cases (autosave, explicit save, reference comparison).
- * 
+ *
  * IMPORTANT: This function produces "round-tripped" markdown - the result of
  * MD→HTML→MD conversion. Due to lossy transformations (e.g., list formatting),
  * the output may differ from the original markdown input.
@@ -174,6 +176,43 @@ function getMarkdownFromEditor(editor: ReturnType<typeof useEditor>): string {
   const html = editor.getHTML()
   const turndownService = createConfiguredTurndownService()
   return turndownService.turndown(html)
+}
+
+/**
+ * Convert HTML to markdown using the configured TurndownService.
+ * This is the HTML→MD portion of the round-trip conversion.
+ *
+ * @remarks Exported for testing purposes - allows unit testing the HTML→MD conversion
+ * without needing a full TipTap editor instance.
+ */
+export function htmlToMarkdown(html: string): string {
+  const turndownService = createConfiguredTurndownService()
+  return turndownService.turndown(html)
+}
+
+/**
+ * Perform a full round-trip conversion: Markdown → HTML → Markdown.
+ * This simulates what TipTap does internally when content is loaded and then
+ * converted back to markdown.
+ *
+ * @remarks Exported for testing purposes - allows unit testing the round-trip
+ * conversion without needing a full TipTap editor instance.
+ *
+ * @param markdown - Original markdown content
+ * @returns Promise resolving to the round-tripped markdown
+ */
+export async function roundTripMarkdown(markdown: string): Promise<string> {
+  // MD → HTML (same pipeline as TiptapEditor useEffect)
+  const html = await unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .use(remarkRehype, { allowDangerousHtml: true })
+    .use(rehypeStringify, { allowDangerousHtml: true })
+    .process(markdown)
+    .then((file) => String(file))
+
+  // HTML → MD (same as getMarkdownFromEditor)
+  return htmlToMarkdown(html)
 }
 
 // Custom extension to handle Tab key for indentation
@@ -427,7 +466,7 @@ export function TiptapEditor({
   useEffect(() => {
     // DEBUG: Log markdown-to-HTML conversion trigger
     console.log('[TipTap:debug] Markdown-to-HTML conversion triggered, content length:', content?.length || 0)
-    
+
     if (!content) {
       setHtmlContent('')
       return
@@ -460,23 +499,20 @@ export function TiptapEditor({
       if (!editor.isFocused) {
         // DEBUG: Log external content load
         console.log('[TipTap:debug] External content load triggered')
-        
+
         isLoadingContentRef.current = true
         // Set emitUpdate to true to trigger TOC update
         editor.commands.setContent(htmlContent, { emitUpdate: true })
         // Reset hasChanges since we're loading external content
         setHasChanges(false)
-        
+
         // CRITICAL FIX: Store the round-tripped markdown, not the original.
         // TipTap's HTML conversion is lossy (e.g., "\n  - " becomes "\n\n- ").
         // If we store the original, subsequent onUpdate comparisons will always
         // show a diff, triggering false-positive auto-saves and sync oscillation.
         const roundTrippedMarkdown = getMarkdownFromEditor(editor)
         lastContentRef.current = roundTrippedMarkdown
-        
-        console.log('[TipTap:debug] Setting lastContentRef from external load (round-tripped):', 
-          roundTrippedMarkdown.slice(0, 100) + (roundTrippedMarkdown.length > 100 ? '...' : ''))
-        
+
         // Keep the guard up for a bit longer to catch any delayed events
         setTimeout(() => {
           console.log('[TipTap:debug] Guard released after 100ms timeout')
