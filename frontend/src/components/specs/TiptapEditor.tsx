@@ -56,7 +56,7 @@ const lowlight = createLowlight(common)
 
 /**
  * Create a configured TurndownService instance with all custom rules
- * Used by both onChange (autosave) and handleSave to ensure consistent markdown output
+ * Used by getMarkdownFromEditor to ensure consistent markdown output
  */
 function createConfiguredTurndownService(): TurndownService {
   const turndownService = new TurndownService({
@@ -158,6 +158,22 @@ function createConfiguredTurndownService(): TurndownService {
   })
 
   return turndownService
+}
+
+/**
+ * Convert editor HTML content to markdown using configured TurndownService.
+ * This is the single source of truth for HTML→MD conversion, ensuring consistent
+ * output across all use cases (autosave, explicit save, reference comparison).
+ * 
+ * IMPORTANT: This function produces "round-tripped" markdown - the result of
+ * MD→HTML→MD conversion. Due to lossy transformations (e.g., list formatting),
+ * the output may differ from the original markdown input.
+ */
+function getMarkdownFromEditor(editor: ReturnType<typeof useEditor>): string {
+  if (!editor) return ''
+  const html = editor.getHTML()
+  const turndownService = createConfiguredTurndownService()
+  return turndownService.turndown(html)
 }
 
 // Custom extension to handle Tab key for indentation
@@ -366,9 +382,7 @@ export function TiptapEditor({
 
       // Call onChange callback if provided (for autosave)
       if (onChange) {
-        const html = editor.getHTML()
-        const turndownService = createConfiguredTurndownService()
-        const markdown = turndownService.turndown(html)
+        const markdown = getMarkdownFromEditor(editor)
 
         // DEBUG: Log comparison details
         const match = markdown === lastContentRef.current
@@ -446,16 +460,23 @@ export function TiptapEditor({
       if (!editor.isFocused) {
         // DEBUG: Log external content load
         console.log('[TipTap:debug] External content load triggered')
-        console.log('[TipTap:debug] Setting lastContentRef from external load:', 
-          content.slice(0, 100) + (content.length > 100 ? '...' : ''))
         
         isLoadingContentRef.current = true
         // Set emitUpdate to true to trigger TOC update
         editor.commands.setContent(htmlContent, { emitUpdate: true })
         // Reset hasChanges since we're loading external content
         setHasChanges(false)
-        // Update lastContentRef to the externally loaded content to prevent false positives
-        lastContentRef.current = content
+        
+        // CRITICAL FIX: Store the round-tripped markdown, not the original.
+        // TipTap's HTML conversion is lossy (e.g., "\n  - " becomes "\n\n- ").
+        // If we store the original, subsequent onUpdate comparisons will always
+        // show a diff, triggering false-positive auto-saves and sync oscillation.
+        const roundTrippedMarkdown = getMarkdownFromEditor(editor)
+        lastContentRef.current = roundTrippedMarkdown
+        
+        console.log('[TipTap:debug] Setting lastContentRef from external load (round-tripped):', 
+          roundTrippedMarkdown.slice(0, 100) + (roundTrippedMarkdown.length > 100 ? '...' : ''))
+        
         // Keep the guard up for a bit longer to catch any delayed events
         setTimeout(() => {
           console.log('[TipTap:debug] Guard released after 100ms timeout')
@@ -596,10 +617,8 @@ export function TiptapEditor({
   const handleSave = () => {
     if (!editor || !onSave) return
 
-    // Convert HTML back to markdown
-    const html = editor.getHTML()
-    const turndownService = createConfiguredTurndownService()
-    const markdown = turndownService.turndown(html)
+    // Convert HTML back to markdown using the shared helper
+    const markdown = getMarkdownFromEditor(editor)
 
     onSave(markdown)
     setHasChanges(false)
