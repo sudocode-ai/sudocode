@@ -408,12 +408,8 @@ export function TiptapEditor({
     editable,
     content: htmlContent,
     onUpdate: ({ editor }) => {
-      // DEBUG: Log when onUpdate fires
-      console.log('[TipTap:debug] onUpdate fired, isLoading:', isLoadingContentRef.current)
-
       // Guard against updates while loading external content
       if (isLoadingContentRef.current) {
-        console.log('[TipTap:debug] onUpdate blocked by isLoadingContentRef guard')
         return
       }
 
@@ -423,38 +419,8 @@ export function TiptapEditor({
       if (onChange) {
         const markdown = getMarkdownFromEditor(editor)
 
-        // DEBUG: Log comparison details
-        const match = markdown === lastContentRef.current
-        console.log('[TipTap:debug] Comparing:', {
-          roundTripped: markdown.slice(0, 100) + (markdown.length > 100 ? '...' : ''),
-          lastContent: lastContentRef.current?.slice(0, 100) + (lastContentRef.current && lastContentRef.current.length > 100 ? '...' : ''),
-          match,
-        })
-
         // Only call onChange if content actually changed
-        if (!match) {
-          // DEBUG: Find first difference for detailed debugging
-          const minLen = Math.min(markdown.length, lastContentRef.current?.length || 0)
-          let firstDiffPos = -1
-          for (let i = 0; i < minLen; i++) {
-            if (markdown[i] !== lastContentRef.current?.[i]) {
-              firstDiffPos = i
-              break
-            }
-          }
-          if (firstDiffPos === -1 && markdown.length !== lastContentRef.current?.length) {
-            firstDiffPos = minLen
-          }
-          if (firstDiffPos >= 0) {
-            const start = Math.max(0, firstDiffPos - 20)
-            const end = Math.min(markdown.length, firstDiffPos + 30)
-            console.log('[TipTap:debug] First diff at char', firstDiffPos, ':', {
-              roundTripped: JSON.stringify(markdown.slice(start, end)),
-              lastContent: JSON.stringify(lastContentRef.current?.slice(start, end)),
-            })
-          }
-
-          console.log('[TipTap:debug] Content changed, calling onChange')
+        if (markdown !== lastContentRef.current) {
           lastContentRef.current = markdown
           onChange(markdown)
         }
@@ -464,9 +430,6 @@ export function TiptapEditor({
 
   // Convert markdown to HTML when content changes
   useEffect(() => {
-    // DEBUG: Log markdown-to-HTML conversion trigger
-    console.log('[TipTap:debug] Markdown-to-HTML conversion triggered, content length:', content?.length || 0)
-
     if (!content) {
       setHtmlContent('')
       return
@@ -482,7 +445,6 @@ export function TiptapEditor({
       .use(rehypeStringify, { allowDangerousHtml: true })
       .process(preprocessedContent)
       .then((file) => {
-        console.log('[TipTap:debug] HTML conversion complete, HTML length:', String(file).length)
         setHtmlContent(String(file))
       })
       .catch((error) => {
@@ -497,9 +459,6 @@ export function TiptapEditor({
       // Only update content if editor is not focused (i.e., change is from external source)
       // This prevents losing cursor position during auto-save
       if (!editor.isFocused) {
-        // DEBUG: Log external content load
-        console.log('[TipTap:debug] External content load triggered')
-
         isLoadingContentRef.current = true
         // Set emitUpdate to true to trigger TOC update
         editor.commands.setContent(htmlContent, { emitUpdate: true })
@@ -515,12 +474,8 @@ export function TiptapEditor({
 
         // Keep the guard up for a bit longer to catch any delayed events
         setTimeout(() => {
-          console.log('[TipTap:debug] Guard released after 100ms timeout')
           isLoadingContentRef.current = false
         }, 100)
-      } else {
-        // DEBUG: Log when content update is skipped due to focus
-        console.log('[TipTap:debug] External content load skipped - editor is focused')
       }
       // Don't reset hasChanges if editor is focused - user is actively editing
     }

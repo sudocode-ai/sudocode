@@ -35,26 +35,20 @@ export function TableWithControls({ editor, getPos }: NodeViewProps) {
   }
 
   const addRowBelow = () => {
-    console.log('addRowBelow called')
     if (selectFirstCell()) {
-      const result = editor.chain().focus().addRowAfter().run()
-      console.log('addRowAfter result:', result)
+      editor.chain().focus().addRowAfter().run()
     }
   }
 
   const addColumnRight = () => {
-    console.log('addColumnRight called')
     if (selectFirstCell()) {
-      const result = editor.chain().focus().addColumnAfter().run()
-      console.log('addColumnAfter result:', result)
+      editor.chain().focus().addColumnAfter().run()
     }
   }
 
   const deleteTable = () => {
-    console.log('deleteTable called')
     if (selectFirstCell()) {
-      const result = editor.chain().focus().deleteTable().run()
-      console.log('deleteTable result:', result)
+      editor.chain().focus().deleteTable().run()
     }
   }
 
