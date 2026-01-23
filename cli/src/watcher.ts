@@ -779,17 +779,6 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
                   onLog(
                     `[watch] Synced spec ${spec.id} to ${spec.file_path} (${result.action})`
                   );
-
-                  // DEBUG: Log what's in the MD file after sync
-                  try {
-                    const mdAfterSync = parseMarkdownFile(mdPath, db, baseDir);
-                    const mdMatch = mdAfterSync.content.match(/managed directories:([\s\S]{0,50})/);
-                    if (mdMatch) {
-                      onLog(`[watch:oscillation] MD content for ${spec.id} after syncJSONLToMarkdown: ${JSON.stringify(mdMatch[1])}`);
-                    }
-                  } catch (e) {
-                    // ignore
-                  }
                 } else if (result.error) {
                   onError(
                     new Error(`Failed to sync spec ${spec.id}: ${result.error}`)
