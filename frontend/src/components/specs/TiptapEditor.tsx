@@ -57,10 +57,8 @@ const lowlight = createLowlight(common)
 /**
  * Create a configured TurndownService instance with all custom rules
  * Used by getMarkdownFromEditor to ensure consistent markdown output
- *
- * @remarks Exported for testing purposes
  */
-export function createConfiguredTurndownService(): TurndownService {
+function createConfiguredTurndownService(): TurndownService {
   const turndownService = new TurndownService({
     headingStyle: 'atx',
     codeBlockStyle: 'fenced',
@@ -176,43 +174,6 @@ function getMarkdownFromEditor(editor: ReturnType<typeof useEditor>): string {
   const html = editor.getHTML()
   const turndownService = createConfiguredTurndownService()
   return turndownService.turndown(html)
-}
-
-/**
- * Convert HTML to markdown using the configured TurndownService.
- * This is the HTML→MD portion of the round-trip conversion.
- *
- * @remarks Exported for testing purposes - allows unit testing the HTML→MD conversion
- * without needing a full TipTap editor instance.
- */
-export function htmlToMarkdown(html: string): string {
-  const turndownService = createConfiguredTurndownService()
-  return turndownService.turndown(html)
-}
-
-/**
- * Perform a full round-trip conversion: Markdown → HTML → Markdown.
- * This simulates what TipTap does internally when content is loaded and then
- * converted back to markdown.
- *
- * @remarks Exported for testing purposes - allows unit testing the round-trip
- * conversion without needing a full TipTap editor instance.
- *
- * @param markdown - Original markdown content
- * @returns Promise resolving to the round-tripped markdown
- */
-export async function roundTripMarkdown(markdown: string): Promise<string> {
-  // MD → HTML (same pipeline as TiptapEditor useEffect)
-  const html = await unified()
-    .use(remarkParse)
-    .use(remarkGfm)
-    .use(remarkRehype, { allowDangerousHtml: true })
-    .use(rehypeStringify, { allowDangerousHtml: true })
-    .process(markdown)
-    .then((file) => String(file))
-
-  // HTML → MD (same as getMarkdownFromEditor)
-  return htmlToMarkdown(html)
 }
 
 // Custom extension to handle Tab key for indentation

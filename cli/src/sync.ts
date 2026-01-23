@@ -279,7 +279,6 @@ export async function syncMarkdownToJSONL(
 
     // Auto-export to JSONL if enabled
     if (autoExport) {
-      console.log(`[sync:debug] syncMarkdownToJSONL autoExport=true, exporting to JSONL for ${entityId}`);
       await exportToJSONL(db, {
         outputDir,
       });
