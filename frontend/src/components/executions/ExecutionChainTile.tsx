@@ -118,6 +118,8 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
   const [chainData, setChainData] = useState<ExecutionChainResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
+  // Track which execution IDs have pending follow-up requests to prevent duplicates
+  const pendingFollowUpParentsRef = useRef<Set<string>>(new Set())
   const [worktreeExists, setWorktreeExists] = useState(false)
   const [hasUncommittedChanges, setHasUncommittedChanges] = useState<boolean | undefined>(undefined)
   const [commitsAhead, setCommitsAhead] = useState<number | undefined>(undefined)
@@ -391,6 +393,18 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
 
       const lastExecution = chainData.executions[chainData.executions.length - 1]
 
+      // Prevent duplicate follow-up requests from the same parent execution
+      // This check is synchronous (unlike useState) to prevent race conditions
+      if (pendingFollowUpParentsRef.current.has(lastExecution.id)) {
+        console.log(
+          '[ExecutionChainTile] Follow-up already in progress for execution',
+          lastExecution.id,
+          '- ignoring duplicate request'
+        )
+        return
+      }
+      pendingFollowUpParentsRef.current.add(lastExecution.id)
+
       setSubmittingFollowUp(true)
       try {
         await executionsApi.createFollowUp(lastExecution.id, {
@@ -399,9 +413,14 @@ export function ExecutionChainTile({ executionId, onToggleVisibility }: Executio
         // Reload the chain (WebSocket will also trigger this, but we do it immediately for responsiveness)
         await loadChain()
       } catch (err) {
+        // On error, remove the lock so user can retry
+        pendingFollowUpParentsRef.current.delete(lastExecution.id)
         console.error('Failed to create follow-up:', err)
       } finally {
         setSubmittingFollowUp(false)
+        // Note: We intentionally do NOT remove from pendingFollowUpParentsRef on success
+        // because once a follow-up is created, no more follow-ups should be created from
+        // that same parent. The new follow-up becomes the new "last execution" in the chain.
       }
     },
     [chainData, loadChain]

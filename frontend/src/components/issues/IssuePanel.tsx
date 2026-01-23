@@ -150,6 +150,10 @@ export function IssuePanel({
   const activityBottomRef = useRef<HTMLDivElement>(null)
   const lastFeedbackRef = useRef<HTMLDivElement>(null)
   const escPressedWhileRunningRef = useRef(false)
+  // Track which execution IDs have pending follow-up requests to prevent duplicates
+  const pendingFollowUpParentsRef = useRef<Set<string>>(new Set())
+  // Track if a new execution is being created (simple boolean since new executions are allowed)
+  const creatingNewExecutionRef = useRef(false)
 
   // Auto-scroll state and refs (enabled when execution is running)
   const [shouldAutoScroll, setShouldAutoScroll] = useState(false)
@@ -849,6 +853,26 @@ export function IssuePanel({
   ) => {
     const shouldFollowUp = isFollowUpMode && latestExecution && !forceNew
 
+    if (shouldFollowUp) {
+      // Follow-up path: prevent duplicate follow-ups from the same parent execution
+      if (pendingFollowUpParentsRef.current.has(latestExecution.id)) {
+        console.log(
+          '[IssuePanel] Follow-up already in progress for execution',
+          latestExecution.id,
+          '- ignoring duplicate request'
+        )
+        return
+      }
+      pendingFollowUpParentsRef.current.add(latestExecution.id)
+    } else {
+      // New execution path: simple lock to prevent rapid double-clicks
+      if (creatingNewExecutionRef.current) {
+        console.log('[IssuePanel] Execution creation already in progress, ignoring duplicate request')
+        return
+      }
+      creatingNewExecutionRef.current = true
+    }
+
     try {
       // Set flag to scroll to activity section when execution appears
       shouldScrollToActivityRef.current = true
@@ -869,9 +893,23 @@ export function IssuePanel({
       // Execution will appear in activity timeline via WebSocket
       // Scroll will happen when executions state updates
     } catch (error) {
+      // On error, remove the lock so user can retry
+      if (shouldFollowUp) {
+        pendingFollowUpParentsRef.current.delete(latestExecution.id)
+      } else {
+        creatingNewExecutionRef.current = false
+      }
       console.error('Failed to create execution:', error)
       shouldScrollToActivityRef.current = false
       toast.error(shouldFollowUp ? 'Failed to create follow-up' : 'Failed to start execution')
+    } finally {
+      // For new executions, release the lock after a short delay to prevent rapid re-clicking
+      // For follow-ups, we intentionally keep the lock - no more follow-ups from same parent
+      if (!shouldFollowUp) {
+        setTimeout(() => {
+          creatingNewExecutionRef.current = false
+        }, 1000)
+      }
     }
   }
 

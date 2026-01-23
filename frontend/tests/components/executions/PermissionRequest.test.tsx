@@ -363,7 +363,7 @@ describe('PermissionRequest', () => {
       expect(screen.queryByRole('button', { name: 'Deny Always' })).not.toBeInTheDocument()
     })
 
-    it('should show Restarting... text when isSkippingAll is true', () => {
+    it('should show Restarting... badge when isSkippingAll is true', () => {
       const request = createPermissionRequest()
       const mockOnSkipAll = vi.fn()
       renderWithTheme(
@@ -375,7 +375,8 @@ describe('PermissionRequest', () => {
         />
       )
 
-      expect(screen.getByRole('button', { name: 'Restarting...' })).toBeInTheDocument()
+      // Shows a badge instead of a button when skipping
+      expect(screen.getByText('Restarting with auto-approve...')).toBeInTheDocument()
     })
 
     it('should hide separator when isSkippingAll is true', () => {
@@ -410,7 +411,7 @@ describe('PermissionRequest', () => {
       expect(screen.queryByText(/to navigate/)).not.toBeInTheDocument()
     })
 
-    it('should disable Skip All button when isSkippingAll is true', () => {
+    it('should show skipping state with badge when isSkippingAll is true', () => {
       const request = createPermissionRequest()
       const mockOnSkipAll = vi.fn()
       renderWithTheme(
@@ -422,7 +423,10 @@ describe('PermissionRequest', () => {
         />
       )
 
-      expect(screen.getByRole('button', { name: 'Restarting...' })).toBeDisabled()
+      // Should show the "Restarting with auto-approve..." badge instead of buttons
+      expect(screen.getByText('Restarting with auto-approve...')).toBeInTheDocument()
+      // No buttons should be present in skipping state
+      expect(screen.queryByRole('button')).not.toBeInTheDocument()
     })
 
     it('should still show tool call info when isSkippingAll is true', () => {
@@ -437,9 +441,12 @@ describe('PermissionRequest', () => {
         />
       )
 
+      // Tool call title and input should still be visible
       expect(screen.getByText('Bash')).toBeInTheDocument()
-      expect(screen.getByText('awaiting permission')).toBeInTheDocument()
       expect(screen.getByText('npm test')).toBeInTheDocument()
+      // But "awaiting permission" is replaced with the skipping badge
+      expect(screen.queryByText('awaiting permission')).not.toBeInTheDocument()
+      expect(screen.getByText('Restarting with auto-approve...')).toBeInTheDocument()
     })
   })
 

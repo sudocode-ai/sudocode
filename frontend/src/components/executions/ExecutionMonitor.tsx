@@ -554,24 +554,44 @@ export function ExecutionMonitor({
   // Get session notifications from WebSocket stream (compaction events, etc.)
   const sessionNotifications = wsStream.sessionNotifications
 
-  // Handle permission response - calls API and updates local state
+  // Handle permission response - updates UI immediately (optimistic) then calls API
   const handlePermissionRespond = async (requestId: string, optionId: string) => {
+    // Optimistically update UI immediately for instant feedback
+    markPermissionResponded(requestId, optionId)
+
     try {
       await api.post(`/executions/${executionId}/permission/${requestId}`, { optionId })
-      // Update local state to mark as responded
-      markPermissionResponded(requestId, optionId)
     } catch (err) {
+      // Log error but don't revert UI - the permission request won't reappear
+      // and if something went wrong, the execution will surface the issue
       console.error('[ExecutionMonitor] Error responding to permission:', err)
     }
   }
 
   // State for skip-all-permissions action
   const [isSkippingAllPermissions, setIsSkippingAllPermissions] = useState(false)
+  // Track which execution IDs have had skip-all-permissions triggered
+  // This prevents creating multiple follow-ups from the same execution
+  const skippedExecutionsRef = useRef<Set<string>>(new Set())
 
   // Handle skip-all-permissions - cancels current execution and creates follow-up with skip enabled
   const handleSkipAllPermissions = async () => {
+    // Prevent duplicate skip-all-permissions for the same execution
+    // This check is synchronous (unlike useState) to prevent race conditions
+    if (skippedExecutionsRef.current.has(executionId)) {
+      console.log(
+        '[ExecutionMonitor] Skip-all-permissions already triggered for execution',
+        executionId,
+        '- ignoring duplicate request'
+      )
+      return
+    }
+    skippedExecutionsRef.current.add(executionId)
+
+    // Set skipping state immediately to collapse the button group
+    setIsSkippingAllPermissions(true)
+
     try {
-      setIsSkippingAllPermissions(true)
       // API interceptor unwraps response, so we get the data directly (not wrapped in AxiosResponse)
       const response = (await api.post(`/executions/${executionId}/skip-all-permissions`, {
         feedback: 'Continue from where you left off.',
@@ -580,10 +600,14 @@ export function ExecutionMonitor({
       if (newExecutionId && onSkipAllPermissionsComplete) {
         onSkipAllPermissionsComplete(newExecutionId)
       }
+      // Note: We do NOT set isSkippingAllPermissions back to false on success.
+      // The execution will switch to a new follow-up, so this component will
+      // either unmount or show the new execution's state.
     } catch (err) {
-      console.error('[ExecutionMonitor] Error skipping all permissions:', err)
-    } finally {
+      // On error, reset state so user can retry
       setIsSkippingAllPermissions(false)
+      skippedExecutionsRef.current.delete(executionId)
+      console.error('[ExecutionMonitor] Error skipping all permissions:', err)
     }
   }
 

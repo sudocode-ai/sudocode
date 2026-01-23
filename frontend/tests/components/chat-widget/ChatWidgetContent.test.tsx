@@ -485,4 +485,153 @@ describe('ChatWidgetContent', () => {
       })
     })
   })
+
+  describe('Execution Request Deduplication', () => {
+    it('prevents duplicate follow-up requests when submitted rapidly', async () => {
+      const execution = createMockExecution({ id: 'exec-1', status: 'completed' })
+
+      mockGetChain.mockResolvedValue({
+        rootId: 'exec-1',
+        executions: [execution],
+      })
+
+      // Mock createFollowUp to simulate a slow API response
+      mockCreateFollowUp.mockImplementation(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve(
+                  createMockExecution({ id: 'exec-2', parent_execution_id: 'exec-1' })
+                ),
+              100
+            )
+          )
+      )
+
+      renderWithProviders(
+        <ChatWidgetContent {...defaultProps} executionId="exec-1" execution={execution} />
+      )
+
+      // Wait for chain to load
+      await waitFor(() => {
+        expect(screen.getByTestId('execution-monitor-exec-1')).toBeInTheDocument()
+      })
+
+      const input = screen.getByTestId('prompt-input')
+
+      // Simulate rapid triple submit (before the first request completes)
+      fireEvent.change(input, { target: { value: 'Follow-up 1' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      fireEvent.keyDown(input, { key: 'Enter' })
+
+      // Wait for async operations to settle
+      await waitFor(
+        () => {
+          // The ref-based lock should ensure only ONE API call is made
+          expect(mockCreateFollowUp).toHaveBeenCalledTimes(1)
+        },
+        { timeout: 500 }
+      )
+    })
+
+    it('prevents duplicate adhoc execution requests when submitted rapidly', async () => {
+      // Mock createAdhoc to simulate a slow API response
+      mockCreateAdhoc.mockImplementation(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(
+              () => resolve(createMockExecution({ id: 'exec-new' })),
+              100
+            )
+          )
+      )
+
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
+
+      const input = screen.getByTestId('prompt-input')
+
+      // Simulate rapid triple submit
+      fireEvent.change(input, { target: { value: 'New execution' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      fireEvent.keyDown(input, { key: 'Enter' })
+
+      // Wait for async operations to settle
+      await waitFor(
+        () => {
+          // The ref-based lock should ensure only ONE API call is made
+          expect(mockCreateAdhoc).toHaveBeenCalledTimes(1)
+        },
+        { timeout: 500 }
+      )
+    })
+
+    it('logs a warning when duplicate adhoc execution request is blocked', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      // Mock createAdhoc to never resolve (simulating in-flight request)
+      mockCreateAdhoc.mockImplementation(() => new Promise(() => {}))
+
+      renderWithProviders(<ChatWidgetContent {...defaultProps} />)
+
+      const input = screen.getByTestId('prompt-input')
+
+      // First submit starts the request
+      fireEvent.change(input, { target: { value: 'New execution' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+
+      // Second submit should be blocked
+      fireEvent.keyDown(input, { key: 'Enter' })
+
+      // The log should be called when the second submit is blocked
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[ChatWidgetContent] Adhoc execution creation already in progress, ignoring duplicate request'
+      )
+
+      consoleSpy.mockRestore()
+    })
+
+    it('logs a warning when duplicate follow-up request is blocked', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      const execution = createMockExecution({ id: 'exec-1', status: 'completed' })
+
+      mockGetChain.mockResolvedValue({
+        rootId: 'exec-1',
+        executions: [execution],
+      })
+
+      // Mock createFollowUp to never resolve (simulating in-flight request)
+      mockCreateFollowUp.mockImplementation(() => new Promise(() => {}))
+
+      renderWithProviders(
+        <ChatWidgetContent {...defaultProps} executionId="exec-1" execution={execution} />
+      )
+
+      // Wait for chain to load
+      await waitFor(() => {
+        expect(screen.getByTestId('execution-monitor-exec-1')).toBeInTheDocument()
+      })
+
+      const input = screen.getByTestId('prompt-input')
+
+      // First submit starts the request
+      fireEvent.change(input, { target: { value: 'Follow-up' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+
+      // Second submit should be blocked
+      fireEvent.keyDown(input, { key: 'Enter' })
+
+      // The log should be called when the second submit is blocked
+      // Message includes the execution ID being followed up on
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[ChatWidgetContent] Follow-up already in progress for execution',
+        'exec-1',
+        '- ignoring duplicate request'
+      )
+
+      consoleSpy.mockRestore()
+    })
+  })
 })

@@ -1064,6 +1064,95 @@ describe('ExecutionView', () => {
     })
   })
 
+  describe('Follow-up Request Deduplication', () => {
+    it('prevents duplicate follow-up requests when continue button is clicked rapidly', async () => {
+      const user = userEvent.setup()
+      const completedExecution = { ...mockExecution, status: 'completed' as const }
+
+      vi.mocked(executionsApi.getChain).mockResolvedValue(mockChainResponse(completedExecution))
+
+      // Mock createFollowUp to simulate a slow API response
+      const createFollowUpMock = vi.mocked(executionsApi.createFollowUp)
+      createFollowUpMock.mockImplementation(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve({
+                  ...mockExecution,
+                  id: 'exec-456',
+                  parent_execution_id: 'exec-123',
+                  status: 'running' as const,
+                }),
+              100
+            )
+          )
+      )
+
+      renderWithProviders(
+        <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('follow-up-panel')).toBeInTheDocument()
+      })
+
+      const continueButton = screen.getByRole('button', { name: /Continue/ })
+
+      // Simulate rapid triple-click (before the first request completes)
+      await user.click(continueButton)
+      await user.click(continueButton)
+      await user.click(continueButton)
+
+      // Wait for all async operations to settle
+      await waitFor(
+        () => {
+          // The ref-based lock should ensure only ONE API call is made
+          // despite multiple rapid clicks
+          expect(createFollowUpMock).toHaveBeenCalledTimes(1)
+        },
+        { timeout: 500 }
+      )
+    })
+
+    it('logs a warning when duplicate follow-up request is blocked', async () => {
+      const user = userEvent.setup()
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      const completedExecution = { ...mockExecution, status: 'completed' as const }
+
+      vi.mocked(executionsApi.getChain).mockResolvedValue(mockChainResponse(completedExecution))
+
+      // Mock createFollowUp to never resolve (simulating in-flight request)
+      vi.mocked(executionsApi.createFollowUp).mockImplementation(() => new Promise(() => {}))
+
+      renderWithProviders(
+        <ExecutionView executionId="exec-123" onFollowUpCreated={mockOnFollowUpCreated} />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('follow-up-panel')).toBeInTheDocument()
+      })
+
+      const continueButton = screen.getByRole('button', { name: /Continue/ })
+
+      // First click starts the request (will be pending forever)
+      await user.click(continueButton)
+
+      // Second click should be blocked immediately
+      await user.click(continueButton)
+
+      // The log should be called synchronously when the second click is blocked
+      // Message includes the execution ID being followed up on
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[ExecutionView] Follow-up already in progress for execution',
+        'exec-123',
+        '- ignoring duplicate request'
+      )
+
+      consoleSpy.mockRestore()
+    })
+  })
+
   describe.skip('Sync Buttons', () => {
     it('should show "Open in IDE" and "Sync Worktree to Local" buttons when execution has worktree_path', async () => {
       vi.mocked(executionsApi.getChain).mockResolvedValue(

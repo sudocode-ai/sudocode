@@ -502,4 +502,104 @@ describe('ExecutionChainTile', () => {
       }
     })
   })
+
+  describe('Follow-up Request Deduplication', () => {
+    it('prevents duplicate follow-up requests when submit button is clicked rapidly', async () => {
+      const mockExecution = createMockExecution({
+        id: 'exec-123',
+        status: 'completed',
+        issue_id: 'i-test',
+      })
+      vi.mocked(executionsApi.getChain).mockResolvedValue({
+        rootId: 'exec-123',
+        executions: [mockExecution],
+      })
+
+      // Mock createFollowUp to simulate a slow API response
+      const createFollowUpMock = vi.mocked(executionsApi.createFollowUp)
+      createFollowUpMock.mockImplementation(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve(
+                  createMockExecution({
+                    id: 'exec-456',
+                    parent_execution_id: 'exec-123',
+                    status: 'running',
+                  })
+                ),
+              100
+            )
+          )
+      )
+
+      renderWithProviders(<ExecutionChainTile executionId="exec-123" />)
+
+      // Wait for component to load
+      await waitFor(() => {
+        expect(screen.getByTestId('agent-config-panel')).toBeInTheDocument()
+      })
+
+      const sendButton = screen.getByRole('button', { name: 'Send Follow-up' })
+
+      // Simulate rapid triple-click (before the first request completes)
+      sendButton.click()
+      sendButton.click()
+      sendButton.click()
+
+      // Wait for all async operations to settle
+      await waitFor(
+        () => {
+          // The ref-based lock should ensure only ONE API call is made
+          // despite multiple rapid clicks
+          expect(createFollowUpMock).toHaveBeenCalledTimes(1)
+        },
+        { timeout: 500 }
+      )
+    })
+
+    it('logs a warning when duplicate request is blocked', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      const mockExecution = createMockExecution({
+        id: 'exec-123',
+        status: 'completed',
+        issue_id: 'i-test',
+      })
+      vi.mocked(executionsApi.getChain).mockResolvedValue({
+        rootId: 'exec-123',
+        executions: [mockExecution],
+      })
+
+      // Mock createFollowUp to simulate a slow API response that never resolves during test
+      vi.mocked(executionsApi.createFollowUp).mockImplementation(
+        () => new Promise(() => {}) // Never resolves, simulating in-flight request
+      )
+
+      renderWithProviders(<ExecutionChainTile executionId="exec-123" />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('agent-config-panel')).toBeInTheDocument()
+      })
+
+      const sendButton = screen.getByRole('button', { name: 'Send Follow-up' })
+
+      // First click starts the request (will be pending forever)
+      sendButton.click()
+
+      // Second click should be blocked immediately
+      sendButton.click()
+
+      // The log should be called synchronously when the second click is blocked
+      // Message includes the execution ID being followed up on
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[ExecutionChainTile] Follow-up already in progress for execution',
+        'exec-123',
+        '- ignoring duplicate request'
+      )
+
+      consoleSpy.mockRestore()
+    })
+  })
 })

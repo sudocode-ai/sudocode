@@ -97,6 +97,9 @@ export function ExecutionView({
   const [commitsAhead, setCommitsAhead] = useState<number | undefined>(undefined)
   const [submittingFollowUp, setSubmittingFollowUp] = useState(false)
   const [endingSession, setEndingSession] = useState(false)
+  // Track which execution IDs have pending follow-up requests to prevent duplicates
+  // Using a Set to track parent execution IDs that are currently being followed up on
+  const pendingFollowUpParentsRef = useRef<Set<string>>(new Set())
 
   // Sync state management
   const {
@@ -533,9 +536,26 @@ export function ExecutionView({
     // Get the last execution in the chain
     const lastExecution = chainData.executions[chainData.executions.length - 1]
 
+    // Prevent duplicate follow-up requests from the same parent execution
+    // This check is synchronous (unlike useState) to prevent race conditions
+    if (pendingFollowUpParentsRef.current.has(lastExecution.id)) {
+      console.log(
+        '[ExecutionView] Follow-up already in progress for execution',
+        lastExecution.id,
+        '- ignoring duplicate request'
+      )
+      return
+    }
+
     // Check if this is a persistent session that's ready for another prompt
     const isPersistentSessionReady =
       lastExecution.status === 'pending' || lastExecution.status === 'paused'
+
+    // For non-persistent sessions, mark this parent as having a pending follow-up
+    // (persistent sessions can receive multiple prompts, so we don't lock them)
+    if (!isPersistentSessionReady) {
+      pendingFollowUpParentsRef.current.add(lastExecution.id)
+    }
 
     setSubmittingFollowUp(true)
     try {
@@ -585,6 +605,8 @@ export function ExecutionView({
         }
       }
     } catch (err) {
+      // On error, remove the lock so user can retry
+      pendingFollowUpParentsRef.current.delete(lastExecution.id)
       setError(
         err instanceof Error
           ? err.message
@@ -594,6 +616,9 @@ export function ExecutionView({
       )
     } finally {
       setSubmittingFollowUp(false)
+      // Note: We intentionally do NOT remove from pendingFollowUpParentsRef on success
+      // because once a follow-up is created, no more follow-ups should be created from
+      // that same parent. The new follow-up becomes the new "last execution" in the chain.
     }
   }
 

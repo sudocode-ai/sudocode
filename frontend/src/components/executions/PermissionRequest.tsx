@@ -231,6 +231,32 @@ export function PermissionRequest({
     )
   }
 
+  // Show "skipping" state when Skip All is in progress
+  if (isSkippingAll) {
+    return (
+      <div className={`group ${className}`}>
+        <div className="flex items-start gap-2">
+          {/* Amber dot with pulse animation for skipping state */}
+          <span className="mt-0.5 animate-pulse select-none text-amber-500">⏺</span>
+          <div className="min-w-0 flex-1 py-0.5">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold">{toolCall.title}</span>
+              <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700 dark:bg-amber-900 dark:text-amber-300">
+                Restarting with auto-approve...
+              </span>
+            </div>
+            {toolInput && (
+              <div className="mt-0.5 flex items-start gap-2">
+                <span className="select-none text-muted-foreground">∟</span>
+                <span className="text-xs text-muted-foreground">{toolInput}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       ref={containerRef}
@@ -257,9 +283,9 @@ export function PermissionRequest({
             </div>
           )}
 
-          {/* Permission options - hidden when skipping all */}
+          {/* Permission options */}
           <div className="mt-2 flex flex-wrap items-center gap-2" role="group" aria-label="Permission options">
-            {!isSkippingAll && options.map((option, index) => (
+            {options.map((option, index) => (
               <button
                 key={option.optionId}
                 ref={(el) => {
@@ -279,28 +305,25 @@ export function PermissionRequest({
             {/* Skip All button - shows if onSkipAll callback is provided */}
             {onSkipAll && (
               <>
-                {!isSkippingAll && <span className="text-muted-foreground">|</span>}
+                <span className="text-muted-foreground">|</span>
                 <button
                   type="button"
                   onClick={onSkipAll}
-                  disabled={isSkippingAll}
-                  className="px-1.5 py-0.5 text-xs font-medium rounded border transition-all focus:outline-none focus:ring-2 focus:ring-offset-1 bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 focus:ring-amber-500 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-700 dark:hover:bg-amber-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-1.5 py-0.5 text-xs font-medium rounded border transition-all focus:outline-none focus:ring-2 focus:ring-offset-1 bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 focus:ring-amber-500 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-700 dark:hover:bg-amber-900"
                   title="Restart execution with all permissions auto-approved"
                 >
-                  {isSkippingAll ? 'Restarting...' : 'Skip All'}
+                  Skip All
                 </button>
               </>
             )}
           </div>
 
-          {/* Keyboard hints - hidden when skipping all */}
-          {!isSkippingAll && (
-            <div className="mt-1 text-xs text-muted-foreground">
-              Use <kbd className="rounded border bg-muted px-1">←</kbd>{' '}
-              <kbd className="rounded border bg-muted px-1">→</kbd> to navigate,{' '}
-              <kbd className="rounded border bg-muted px-1">Enter</kbd> to select
-            </div>
-          )}
+          {/* Keyboard hints */}
+          <div className="mt-1 text-xs text-muted-foreground">
+            Use <kbd className="rounded border bg-muted px-1">←</kbd>{' '}
+            <kbd className="rounded border bg-muted px-1">→</kbd> to navigate,{' '}
+            <kbd className="rounded border bg-muted px-1">Enter</kbd> to select
+          </div>
         </div>
       </div>
     </div>

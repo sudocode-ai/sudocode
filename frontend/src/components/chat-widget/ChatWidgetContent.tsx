@@ -53,6 +53,10 @@ export function ChatWidgetContent({
   className,
 }: ChatWidgetContentProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null)
+  // Track which execution IDs have pending follow-up requests to prevent duplicates
+  const pendingFollowUpParentsRef = useRef<Set<string>>(new Set())
+  // Track if an adhoc execution is being created (simple boolean since new executions are allowed)
+  const creatingAdhocExecutionRef = useRef(false)
 
   // Fetch ONLY project-assistant tagged executions for the selector
   const { data: executionsData } = useExecutions({ tags: [PROJECT_ASSISTANT_TAG] })
@@ -138,10 +142,34 @@ export function ChatWidgetContent({
         return
       }
 
+      const isFollowUpMode = chainData && chainData.executions.length > 0
+      const lastExecution = isFollowUpMode
+        ? chainData.executions[chainData.executions.length - 1]
+        : null
+
+      if (isFollowUpMode && lastExecution) {
+        // Follow-up path: prevent duplicate follow-ups from the same parent execution
+        if (pendingFollowUpParentsRef.current.has(lastExecution.id)) {
+          console.log(
+            '[ChatWidgetContent] Follow-up already in progress for execution',
+            lastExecution.id,
+            '- ignoring duplicate request'
+          )
+          return
+        }
+        pendingFollowUpParentsRef.current.add(lastExecution.id)
+      } else {
+        // Adhoc execution path: simple lock to prevent rapid double-clicks
+        if (creatingAdhocExecutionRef.current) {
+          console.log('[ChatWidgetContent] Adhoc execution creation already in progress, ignoring duplicate request')
+          return
+        }
+        creatingAdhocExecutionRef.current = true
+      }
+
       try {
-        if (chainData && chainData.executions.length > 0) {
+        if (isFollowUpMode && lastExecution) {
           // Follow-up mode - create follow-up on the last execution in the chain
-          const lastExecution = chainData.executions[chainData.executions.length - 1]
           const newExecution = await executionsApi.createFollowUp(lastExecution.id, {
             feedback: prompt.trim(),
           })
@@ -172,8 +200,22 @@ export function ChatWidgetContent({
           onCreatedExecution(newExecution)
         }
       } catch (err) {
+        // On error, remove the lock so user can retry
+        if (isFollowUpMode && lastExecution) {
+          pendingFollowUpParentsRef.current.delete(lastExecution.id)
+        } else {
+          creatingAdhocExecutionRef.current = false
+        }
         console.error('Failed to create execution:', err)
         toast.error(chainData ? 'Failed to send follow-up' : 'Failed to start execution')
+      } finally {
+        // For adhoc executions, release the lock after a short delay to prevent rapid re-clicking
+        // For follow-ups, we intentionally keep the lock - no more follow-ups from same parent
+        if (!isFollowUpMode) {
+          setTimeout(() => {
+            creatingAdhocExecutionRef.current = false
+          }, 1000)
+        }
       }
     },
     [chainData, handleContentChange, onCreatedExecution]

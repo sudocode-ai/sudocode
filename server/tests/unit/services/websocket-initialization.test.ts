@@ -106,12 +106,16 @@ describe("WebSocket Initialization Error Handling", () => {
   });
 
   it("should handle port conflicts gracefully", async () => {
-    // Start HTTP server on a specific port
-    const port = 13579; // Use an uncommon port
+    // Start HTTP server on a random available port (port 0 lets the OS assign one)
     await new Promise<void>((resolve, reject) => {
-      mockServer.listen(port, () => resolve());
+      mockServer.listen(0, () => resolve());
       mockServer.on("error", reject);
     });
+
+    // Get the dynamically assigned port
+    const address = mockServer.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    expect(port).toBeGreaterThan(0);
 
     // Create a second server on the same port - this will fail
     const secondServer = http.createServer();
