@@ -375,28 +375,28 @@ export function AgentSettingsDialog({
 
                   {/* Persistent Session Toggle */}
                   <div className="space-y-4">
-                      <div className="flex items-center justify-between rounded-lg border p-4">
-                        <div className="space-y-0.5">
-                          <Label htmlFor="persistent-session" className="text-base">
-                            Persistent Session
-                          </Label>
-                          <p className="text-sm text-muted-foreground">
-                            Keep the agent session alive for multiple prompts without losing context.
-                          </p>
-                        </div>
-                        <Switch
-                          id="persistent-session"
-                          checked={config.sessionMode !== 'discrete'}
-                          onCheckedChange={(checked) =>
-                            onConfigChange({
-                              sessionMode: checked ? 'persistent' : 'discrete',
-                            })
-                          }
-                        />
+                    <div className="flex items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="persistent-session" className="text-base">
+                          Persistent Session
+                        </Label>
+                        <p className="text-sm text-muted-foreground">
+                          Keep the agent session alive for multiple prompts without losing context.
+                        </p>
                       </div>
+                      <Switch
+                        id="persistent-session"
+                        checked={config.sessionMode !== 'discrete'}
+                        onCheckedChange={(checked) =>
+                          onConfigChange({
+                            sessionMode: checked ? 'persistent' : 'discrete',
+                          })
+                        }
+                      />
+                    </div>
 
-                      {/* Additional options when persistent mode is enabled */}
-                      {config.sessionMode !== 'discrete' && (
+                    {/* Additional options when persistent mode is enabled */}
+                    {config.sessionMode !== 'discrete' && (
                         <div className="ml-4 space-y-4 border-l-2 border-muted pl-4">
                           <div className="flex items-center justify-between">
                             <div className="space-y-0.5">
@@ -453,8 +453,8 @@ export function AgentSettingsDialog({
                             </p>
                           </div>
                         </div>
-                      )}
-                    </div>
+                    )}
+                  </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="timeout">Timeout (ms)</Label>

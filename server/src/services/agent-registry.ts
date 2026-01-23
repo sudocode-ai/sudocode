@@ -19,6 +19,7 @@ import {
   verifyExecutable,
   type VerificationResult,
 } from "../utils/executable-check.js";
+import { getCachedLoadSession } from "../routes/agents.js";
 
 /**
  * Error thrown when an agent is not found in the registry
@@ -46,6 +47,12 @@ export class AgentNotImplementedError extends Error {
 export interface AgentInfo extends AgentMetadata {
   /** Whether the agent is fully implemented (vs. stub) */
   implemented: boolean;
+  /**
+   * Whether the agent supports resuming persistent sessions (from ACP loadSession capability).
+   * undefined means the capability hasn't been discovered yet (agent hasn't been spawned).
+   * Use GET /api/agents/:agentType/models to discover capabilities.
+   */
+  supportsResume?: boolean;
   /** Whether the agent executable is available on the system */
   available?: boolean;
   /** Path to the agent executable if found */
@@ -143,6 +150,8 @@ export class AgentRegistryService {
       .map((adapter: IAgentAdapter) => ({
         ...adapter.metadata,
         implemented: this.implementedAgents.has(adapter.metadata.name),
+        // Use cached loadSession capability from ACP, undefined if not yet discovered
+        supportsResume: getCachedLoadSession(adapter.metadata.name),
       }));
 
     // Get set of already-included agent names
@@ -159,6 +168,8 @@ export class AgentRegistryService {
         supportsStreaming: true,
         supportsStructuredOutput: true,
         implemented: this.implementedAgents.has(name),
+        // Use cached loadSession capability from ACP, undefined if not yet discovered
+        supportsResume: getCachedLoadSession(name),
       }));
 
     return [...registryAgents, ...additionalAcpAgents];

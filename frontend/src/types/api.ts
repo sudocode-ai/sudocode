@@ -232,6 +232,11 @@ export interface AgentInfo {
   supportedModes: string[]
   supportsStreaming: boolean
   supportsStructuredOutput: boolean
+  /**
+   * Whether the agent supports resuming persistent sessions (from ACP loadSession capability).
+   * undefined means the capability hasn't been discovered yet (agent hasn't been spawned).
+   */
+  supportsResume?: boolean
   implemented: boolean
   /** Whether the agent executable is available on the system */
   available?: boolean

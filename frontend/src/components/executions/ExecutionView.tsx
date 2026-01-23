@@ -18,18 +18,13 @@ import { useWorktreeMutations } from '@/hooks/useWorktreeMutations'
 import { useExecutionMutations } from '@/hooks/useExecutionMutations'
 import { useVoiceNarration } from '@/hooks/useVoiceNarration'
 import { useVoiceConfig } from '@/hooks/useVoiceConfig'
+import { useAgents } from '@/hooks/useAgents'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Execution, ExecutionConfig, SyncMode } from '@/types/execution'
 import type { ToolCallTracking } from '@/types/stream'
-import {
-  Loader2,
-  XCircle,
-  ArrowDown,
-  ArrowUp,
-  StopCircle,
-} from 'lucide-react'
+import { Loader2, XCircle, ArrowDown, ArrowUp, StopCircle } from 'lucide-react'
 
 /**
  * Execution data exposed to parent component for header rendering
@@ -81,7 +76,12 @@ export interface ExecutionViewProps {
  * Each execution in the chain is rendered inline with its own ExecutionMonitor.
  * The follow-up input panel appears after the last execution.
  */
-export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, onHeaderDataChange }: ExecutionViewProps) {
+export function ExecutionView({
+  executionId,
+  onFollowUpCreated,
+  onStatusChange,
+  onHeaderDataChange,
+}: ExecutionViewProps) {
   const { deleteWorktree } = useWorktreeMutations()
   const { deleteExecution } = useExecutionMutations()
   const [chainData, setChainData] = useState<ExecutionChainResponse | null>(null)
@@ -110,7 +110,16 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
   } = useExecutionSync()
 
   // Get voice configuration from config.json
-  const { voiceEnabled, narration, ttsProvider, kokoroMode, isLoading: voiceConfigLoading } = useVoiceConfig()
+  const {
+    voiceEnabled,
+    narration,
+    ttsProvider,
+    kokoroMode,
+    isLoading: voiceConfigLoading,
+  } = useVoiceConfig()
+
+  // Get available agents for capability checking
+  const { agents } = useAgents()
 
   // Voice narration for the current execution
   // Only enable if:
@@ -848,26 +857,24 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
   )
 
   // Handle todos update from ExecutionMonitor (from plan updates)
-  const handleTodosUpdate = useCallback(
-    (execId: string, todos: TodoItem[]) => {
-      setTodosByExecution((prev) => {
-        const existing = prev.get(execId)
-        // Only update if todos changed
-        if (existing && existing.length === todos.length) {
-          const isSame = existing.every((t, i) =>
+  const handleTodosUpdate = useCallback((execId: string, todos: TodoItem[]) => {
+    setTodosByExecution((prev) => {
+      const existing = prev.get(execId)
+      // Only update if todos changed
+      if (existing && existing.length === todos.length) {
+        const isSame = existing.every(
+          (t, i) =>
             t.content === todos[i].content &&
             t.status === todos[i].status &&
             t.wasCompleted === todos[i].wasCompleted
-          )
-          if (isSame) return prev
-        }
-        const next = new Map(prev)
-        next.set(execId, todos)
-        return next
-      })
-    },
-    []
-  )
+        )
+        if (isSame) return prev
+      }
+      const next = new Map(prev)
+      next.set(execId, todos)
+      return next
+    })
+  }, [])
 
   // Handle available commands update from ExecutionMonitor (for slash command autocomplete)
   const handleAvailableCommandsUpdate = useCallback((commands: AvailableCommand[]) => {
@@ -904,7 +911,14 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
         onOpenInIDE: handleOpenInIDE,
       }
     )
-  }, [chainData, worktreeExists, cancelling, deletingExecution, onHeaderDataChange, handleOpenInIDE])
+  }, [
+    chainData,
+    worktreeExists,
+    cancelling,
+    deletingExecution,
+    onHeaderDataChange,
+    handleOpenInIDE,
+  ])
 
   // Auto-scroll effect when chain data changes
   useEffect(() => {
@@ -951,9 +965,28 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
   const rootExecution = executions[0]
   const lastExecution = executions[executions.length - 1]
 
+  // Check if the execution's agent supports resume (loadSession capability)
+  const executionAgent = agents?.find((a) => a.type === lastExecution.agent_type)
+  const agentSupportsResume = executionAgent?.supportsResume ?? false
+
+  // Check if the last execution was a persistent session
+  const lastExecutionWasPersistent = (() => {
+    if (!lastExecution.config) return false
+    try {
+      const config =
+        typeof lastExecution.config === 'string'
+          ? JSON.parse(lastExecution.config)
+          : lastExecution.config
+      return config.sessionMode === 'persistent'
+    } catch {
+      return false
+    }
+  })()
+
   // Determine if we can enable follow-up/prompt panel
-  // Terminal statuses allow creating a new follow-up execution
-  // Waiting/paused statuses allow sending a prompt to a persistent session
+  // - Pending/paused: Session is still alive, can always send another prompt
+  // - Terminal discrete execution: Can always create follow-up (new session)
+  // - Terminal persistent execution: Only if agent supports loadSession (to resume context)
   const lastExecutionTerminal =
     lastExecution.status === 'completed' ||
     lastExecution.status === 'failed' ||
@@ -961,7 +994,9 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
     lastExecution.status === 'cancelled'
   const isPersistentSessionReady =
     lastExecution.status === 'pending' || lastExecution.status === 'paused'
-  const canEnableFollowUp = lastExecutionTerminal || isPersistentSessionReady
+  const canEnableFollowUp =
+    isPersistentSessionReady ||
+    (lastExecutionTerminal && (!lastExecutionWasPersistent || agentSupportsResume))
 
   // Determine if the execution is actively running (not waiting/paused)
   // This controls the "running" indicator in AgentConfigPanel
@@ -1069,7 +1104,7 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
                     {endingSession ? 'Ending...' : 'End Session'}
                   </Button>
                   <span className="text-xs text-muted-foreground">
-                    Session {lastExecution.status === 'paused' ? 'paused' : 'pending'} for input
+                    Session {lastExecution.status === 'paused' ? 'paused' : 'waiting'} for input
                   </span>
                 </div>
               )}
@@ -1169,6 +1204,13 @@ export function ExecutionView({ executionId, onFollowUpCreated, onStatusChange, 
         {/* Works for both issue-based and adhoc executions */}
         <div className="sticky bottom-0 border-t bg-background shadow-lg">
           <div className="mx-auto w-full max-w-7xl">
+            {/* Show message when follow-ups are disabled due to missing resume support on persistent session */}
+            {lastExecutionTerminal && lastExecutionWasPersistent && !agentSupportsResume && (
+              <div className="px-4 py-2 text-center text-xs text-muted-foreground">
+                At the moment, {executionAgent?.displayName || 'This agent'} does not support
+                reloading closed sessions.
+              </div>
+            )}
             <AgentConfigPanel
               issueId={rootExecution.issue_id || undefined}
               onStart={handleFollowUpStart}

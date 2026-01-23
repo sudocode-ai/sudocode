@@ -14,6 +14,7 @@ describe('AgentSelector', () => {
       supportedModes: ['structured', 'interactive', 'hybrid'],
       supportsStreaming: true,
       supportsStructuredOutput: true,
+      supportsResume: true,
       implemented: true,
     },
     {
@@ -22,6 +23,7 @@ describe('AgentSelector', () => {
       supportedModes: ['structured'],
       supportsStreaming: false,
       supportsStructuredOutput: true,
+      supportsResume: false,
       implemented: false,
     },
     {
@@ -30,6 +32,7 @@ describe('AgentSelector', () => {
       supportedModes: ['interactive'],
       supportsStreaming: true,
       supportsStructuredOutput: false,
+      supportsResume: false,
       implemented: false,
     },
     {
@@ -38,6 +41,7 @@ describe('AgentSelector', () => {
       supportedModes: ['interactive'],
       supportsStreaming: true,
       supportsStructuredOutput: false,
+      supportsResume: false,
       implemented: false,
     },
   ]

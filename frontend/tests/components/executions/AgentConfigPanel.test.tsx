@@ -66,6 +66,7 @@ describe('AgentConfigPanel', () => {
       supportedModes: ['structured', 'interactive', 'hybrid'],
       supportsStreaming: true,
       supportsStructuredOutput: true,
+      supportsResume: true,
       implemented: true,
       available: true,
       executablePath: '/usr/local/bin/claude',
@@ -76,6 +77,7 @@ describe('AgentConfigPanel', () => {
       supportedModes: ['structured'],
       supportsStreaming: false,
       supportsStructuredOutput: true,
+      supportsResume: false,
       implemented: false,
     },
   ]
@@ -447,6 +449,7 @@ describe('AgentConfigPanel', () => {
           supportedModes: ['interactive'],
           supportsStreaming: true,
           supportsStructuredOutput: false,
+          supportsResume: false,
           implemented: true,
         },
       ]
@@ -666,6 +669,7 @@ describe('AgentConfigPanel', () => {
           supportedModes: ['interactive'],
           supportsStreaming: true,
           supportsStructuredOutput: false,
+          supportsResume: false,
           implemented: true,
         },
       ]

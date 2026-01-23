@@ -25,6 +25,7 @@ describe('useAgents', () => {
       supportedModes: ['structured', 'interactive', 'hybrid'],
       supportsStreaming: true,
       supportsStructuredOutput: true,
+      supportsResume: true,
       implemented: true,
     },
     {
@@ -33,6 +34,7 @@ describe('useAgents', () => {
       supportedModes: ['structured'],
       supportsStreaming: false,
       supportsStructuredOutput: true,
+      supportsResume: false,
       implemented: false,
     },
     {
@@ -41,6 +43,7 @@ describe('useAgents', () => {
       supportedModes: ['interactive'],
       supportsStreaming: true,
       supportsStructuredOutput: false,
+      supportsResume: false,
       implemented: false,
     },
     {
@@ -49,6 +52,7 @@ describe('useAgents', () => {
       supportedModes: ['interactive'],
       supportsStreaming: true,
       supportsStructuredOutput: false,
+      supportsResume: false,
       implemented: false,
     },
   ]

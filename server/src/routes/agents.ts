@@ -3,9 +3,45 @@ import { agentRegistryService } from "../services/agent-registry.js";
 import { AgentFactory } from "acp-factory";
 import { CommandDiscoveryService } from "../services/command-discovery-service.js";
 
-// Cache for agent models (agentType -> models[])
-const modelsCache: Map<string, { models: string[]; timestamp: number }> = new Map();
-const MODELS_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+// Cache for agent capabilities discovered by spawning (agentType -> capabilities)
+interface AgentCapabilitiesCache {
+  models: string[];
+  loadSession: boolean;
+  timestamp: number;
+}
+const capabilitiesCache: Map<string, AgentCapabilitiesCache> = new Map();
+const CAPABILITIES_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
+ * Known loadSession capabilities for agents (from ACP e2e tests).
+ * Used as fallback when capability hasn't been dynamically discovered yet.
+ * These values are based on actual agent behavior observed in testing.
+ */
+const KNOWN_LOAD_SESSION_CAPABILITIES: Record<string, boolean> = {
+  "claude-code": true,  // Confirmed: supports session persistence
+  "gemini": false,      // Confirmed: does not support loadSession
+  // Other agents: unknown until dynamically discovered
+};
+
+/**
+ * Get cached loadSession capability for an agent type.
+ * Returns cached value if available, falls back to known capabilities,
+ * or undefined if truly unknown.
+ */
+export function getCachedLoadSession(agentType: string): boolean | undefined {
+  // Check dynamic cache first (most accurate, from actual agent spawn)
+  const cached = capabilitiesCache.get(agentType);
+  if (cached && Date.now() - cached.timestamp < CAPABILITIES_CACHE_TTL) {
+    return cached.loadSession;
+  }
+
+  // Fall back to known capabilities
+  if (agentType in KNOWN_LOAD_SESSION_CAPABILITIES) {
+    return KNOWN_LOAD_SESSION_CAPABILITIES[agentType];
+  }
+
+  return undefined;
+}
 
 export function createAgentsRouter(): Router {
   const router = Router();
@@ -41,6 +77,7 @@ export function createAgentsRouter(): Router {
             supportedModes: agent.supportedModes,
             supportsStreaming: agent.supportsStreaming,
             supportsStructuredOutput: agent.supportsStructuredOutput,
+            supportsResume: agent.supportsResume,
             implemented: agent.implemented,
             available: agent.available,
             executablePath: agent.executablePath,
@@ -58,6 +95,7 @@ export function createAgentsRouter(): Router {
             supportedModes: agent.supportedModes,
             supportsStreaming: agent.supportsStreaming,
             supportsStructuredOutput: agent.supportsStructuredOutput,
+            supportsResume: agent.supportsResume,
             implemented: agent.implemented,
           })),
         });
@@ -93,10 +131,11 @@ export function createAgentsRouter(): Router {
 
       // Check cache first
       if (!skipCache) {
-        const cached = modelsCache.get(agentType);
-        if (cached && Date.now() - cached.timestamp < MODELS_CACHE_TTL) {
+        const cached = capabilitiesCache.get(agentType);
+        if (cached && Date.now() - cached.timestamp < CAPABILITIES_CACHE_TTL) {
           return res.status(200).json({
             models: cached.models,
+            loadSession: cached.loadSession,
             cached: true,
           });
         }
@@ -118,17 +157,20 @@ export function createAgentsRouter(): Router {
         session = await agent.createSession(tempCwd);
 
         const models = session.models || [];
+        const loadSession = agent.capabilities?.loadSession ?? false;
 
-        // Cache the results
-        modelsCache.set(agentType, {
+        // Cache the results including loadSession capability
+        capabilitiesCache.set(agentType, {
           models,
+          loadSession,
           timestamp: Date.now(),
         });
 
-        console.log(`[AgentsRouter] Found ${models.length} models for ${agentType}:`, models);
+        console.log(`[AgentsRouter] Found ${models.length} models for ${agentType}, loadSession: ${loadSession}`);
 
         return res.status(200).json({
           models,
+          loadSession,
           cached: false,
         });
       } finally {
