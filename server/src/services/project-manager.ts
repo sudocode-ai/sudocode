@@ -106,7 +106,11 @@ export class ProjectManager {
       const dataplaneAdapter = await getDataplaneAdapter(projectPath, db);
       if (dataplaneAdapter) {
         console.log(
-          `[ProjectManager] Dataplane adapter initialized for ${projectId} (shared db)`
+          `[ProjectManager] Dataplane adapter initialized for ${projectId} (shared db), checkpointsModule: ${!!dataplaneAdapter.checkpointsModule}, diffStacksModule: ${!!dataplaneAdapter.diffStacksModule}`
+        );
+      } else {
+        console.warn(
+          `[ProjectManager] Dataplane adapter NOT initialized for ${projectId} - checkpoints and diff stacks will not be available`
         );
       }
 

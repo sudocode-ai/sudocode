@@ -644,6 +644,17 @@ export class DataplaneAdapter {
   }
 
   /**
+   * List all streams in the dataplane
+   * @param options Optional filters for listing streams
+   */
+  listStreams(options?: { agentId?: string; status?: string }): DataplaneStream[] {
+    if (!this.tracker) {
+      return [];
+    }
+    return this.tracker.listStreams(options);
+  }
+
+  /**
    * Initialize the dataplane tracker
    */
   async initialize(): Promise<void> {
@@ -665,6 +676,9 @@ export class DataplaneAdapter {
       // Store references to modules for later use
       this._checkpointsModule = dataplane.checkpoints;
       this._diffStacksModule = dataplane.diffStacks;
+      console.log(
+        `[DataplaneAdapter] Module loading - checkpoints: ${!!dataplane.checkpoints}, diffStacks: ${!!dataplane.diffStacks}, keys: ${Object.keys(dataplane).slice(0, 10).join(', ')}`
+      );
 
       if (this.externalDb) {
         // Use shared database with table prefix (preferred)
@@ -2340,6 +2354,9 @@ export class DataplaneAdapter {
 
       // 9a. Create dataplane checkpoint (if modules are available)
       let dataplaneCheckpointId: string | null = null;
+      console.log(
+        `[checkpointSync] Module check - checkpointsModule: ${!!this._checkpointsModule}, diffStacksModule: ${!!this._diffStacksModule}`
+      );
       if (this._checkpointsModule && this._diffStacksModule) {
         try {
           // Create dataplane checkpoint with minimal data

@@ -1195,6 +1195,9 @@ export class SequentialWorkflowEngine extends BaseWorkflowEngine {
     step: WorkflowStep,
     execution: Execution
   ): Promise<void> {
+    console.log(
+      `[SequentialWorkflowEngine] handleStepSuccess called for step ${step.index + 1}, execution ${execution.id}, stream_id: ${execution.stream_id}`
+    );
     // Convert null to undefined for type compatibility
     let commitSha = execution.after_commit ?? undefined;
 
@@ -1218,6 +1221,9 @@ export class SequentialWorkflowEngine extends BaseWorkflowEngine {
     // Create dataplane checkpoint for this execution (if dataplane is enabled)
     // This ensures workflow step completions are tracked in stacks/queues
     const dataplaneAdapter = getDataplaneAdapterSync(this.repoPath);
+    console.log(
+      `[SequentialWorkflowEngine] Checkpoint check - adapter: ${!!dataplaneAdapter}, initialized: ${dataplaneAdapter?.isInitialized}, stream_id: ${execution.stream_id}, checkpointsModule: ${!!dataplaneAdapter?.checkpointsModule}, diffStacksModule: ${!!dataplaneAdapter?.diffStacksModule}`
+    );
     if (dataplaneAdapter?.isInitialized && execution.stream_id) {
       try {
         const checkpointResult = await dataplaneAdapter.checkpointSync(

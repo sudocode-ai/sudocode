@@ -79,12 +79,10 @@ export function createDiffStacksRouter(): Router {
         result = stacks;
       }
 
+      // Return array directly - frontend expects DiffStackWithCheckpoints[]
       res.json({
         success: true,
-        data: {
-          stacks: result,
-          total: result.length,
-        },
+        data: result,
       });
     } catch (error) {
       console.error("Error listing diff stacks:", error);

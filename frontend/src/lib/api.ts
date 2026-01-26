@@ -235,6 +235,129 @@ export const issuesApi = {
 }
 
 /**
+ * Diff Stacks API - New checkpoint-based diff stacks
+ */
+import type {
+  DiffStack,
+  DiffStackWithCheckpoints,
+  CheckpointsResponse,
+  CreateDiffStackRequest,
+  ReviewDiffStackRequest,
+  MergeResult,
+  CheckpointStats,
+} from '@/types/checkpoint'
+
+export interface ListDiffStacksParams {
+  reviewStatus?: string
+  targetBranch?: string
+  includeCheckpoints?: boolean
+  queuedOnly?: boolean
+}
+
+export interface ListCheckpointsParams {
+  issueId?: string
+  streamId?: string
+  includeStats?: boolean
+}
+
+export const diffStacksApi = {
+  // ============================================================================
+  // Checkpoint Operations
+  // ============================================================================
+
+  /** List checkpoints with optional filters */
+  listCheckpoints: (params?: ListCheckpointsParams) => {
+    const queryParams = new URLSearchParams()
+    if (params?.issueId) queryParams.append('issue_id', params.issueId)
+    if (params?.streamId) queryParams.append('stream_id', params.streamId)
+    if (params?.includeStats) queryParams.append('include_stats', 'true')
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : ''
+    return get<CheckpointsResponse>(`/checkpoints${query}`)
+  },
+
+  /** Get checkpoint stats (files changed, additions, deletions) */
+  getCheckpointStats: (checkpointIds: string[]) =>
+    post<Record<string, CheckpointStats>>('/checkpoints/stats', { checkpointIds }),
+
+  // ============================================================================
+  // Diff Stack CRUD
+  // ============================================================================
+
+  /** List all diff stacks */
+  list: (params?: ListDiffStacksParams) => {
+    const queryParams = new URLSearchParams()
+    if (params?.reviewStatus) queryParams.append('review_status', params.reviewStatus)
+    if (params?.targetBranch) queryParams.append('target_branch', params.targetBranch)
+    if (params?.includeCheckpoints) queryParams.append('include_checkpoints', 'true')
+    if (params?.queuedOnly) queryParams.append('queued_only', 'true')
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : ''
+    return get<DiffStackWithCheckpoints[]>(`/diff-stacks${query}`)
+  },
+
+  /** Get a diff stack by ID */
+  get: (id: string) => get<DiffStackWithCheckpoints>(`/diff-stacks/${id}`),
+
+  /** Create a new diff stack */
+  create: (data: CreateDiffStackRequest) => post<DiffStack>('/diff-stacks', data),
+
+  /** Update a diff stack */
+  update: (id: string, data: { name?: string; description?: string }) =>
+    put<DiffStack>(`/diff-stacks/${id}`, data),
+
+  /** Delete a diff stack */
+  delete: (id: string) => del(`/diff-stacks/${id}`),
+
+  // ============================================================================
+  // Checkpoint Grouping
+  // ============================================================================
+
+  /** Add checkpoint(s) to a diff stack */
+  addCheckpoints: (stackId: string, checkpointIds: string[]) =>
+    post<DiffStackWithCheckpoints>(`/diff-stacks/${stackId}/checkpoints`, { checkpointIds }),
+
+  /** Remove a checkpoint from a diff stack */
+  removeCheckpoint: (stackId: string, checkpointId: string) =>
+    del(`/diff-stacks/${stackId}/checkpoints/${checkpointId}`),
+
+  /** Reorder checkpoints in a diff stack */
+  reorderCheckpoints: (stackId: string, checkpointIds: string[]) =>
+    put<DiffStackWithCheckpoints>(`/diff-stacks/${stackId}/checkpoints/reorder`, { checkpointIds }),
+
+  // ============================================================================
+  // Review Workflow
+  // ============================================================================
+
+  /** Set review status on a diff stack */
+  review: (stackId: string, request: ReviewDiffStackRequest) =>
+    post<DiffStack>(`/diff-stacks/${stackId}/review`, request),
+
+  // ============================================================================
+  // Queue Management
+  // ============================================================================
+
+  /** Add a diff stack to the merge queue */
+  enqueue: (stackId: string, position?: number) =>
+    post<DiffStack>(`/diff-stacks/${stackId}/enqueue`, position !== undefined ? { position } : undefined),
+
+  /** Remove a diff stack from the merge queue */
+  dequeue: (stackId: string) => del(`/diff-stacks/${stackId}/enqueue`),
+
+  /** Get queued diff stacks */
+  getQueue: (targetBranch?: string) => {
+    const query = targetBranch ? `?target_branch=${encodeURIComponent(targetBranch)}` : ''
+    return get<DiffStackWithCheckpoints[]>(`/diff-stacks${query}&queued_only=true`)
+  },
+
+  // ============================================================================
+  // Merge Execution
+  // ============================================================================
+
+  /** Execute merge for a diff stack */
+  merge: (stackId: string, dryRun?: boolean) =>
+    post<MergeResult>(`/diff-stacks/${stackId}/merge`, { dry_run: dryRun }),
+}
+
+/**
  * Stacks API
  */
 import type {

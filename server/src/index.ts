@@ -27,6 +27,7 @@ import { createWorkflowsRouter } from "./routes/workflows.js";
 import { createVoiceRouter } from "./routes/voice.js";
 import { createStacksRouter } from "./routes/stacks.js";
 import { createDiffStacksRouter } from "./routes/diff-stacks.js";
+import { createCheckpointsRouter } from "./routes/checkpoints.js";
 import { createQueueRouter } from "./routes/queue.js";
 import { createBatchesRouter } from "./routes/batches.js";
 import { ProjectRegistry } from "./services/project-registry.js";
@@ -137,6 +138,7 @@ app.use("/api/issues", requireProject(projectManager), createIssuesRouter());
 app.use("/api/specs", requireProject(projectManager), createSpecsRouter());
 app.use("/api/stacks", requireProject(projectManager), createStacksRouter());
 app.use("/api/diff-stacks", requireProject(projectManager), createDiffStacksRouter());
+app.use("/api/checkpoints", requireProject(projectManager), createCheckpointsRouter());
 app.use("/api/queue", requireProject(projectManager), createQueueRouter());
 app.use("/api/batches", requireProject(projectManager), createBatchesRouter());
 app.use(
