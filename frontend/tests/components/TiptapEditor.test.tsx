@@ -171,6 +171,8 @@ describe('TiptapEditor', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
+
+
   describe('Line Numbers', () => {
     it('should display line numbers matching markdown source lines', async () => {
       // Markdown with known line numbers

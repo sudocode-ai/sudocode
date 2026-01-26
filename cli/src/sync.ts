@@ -456,6 +456,11 @@ async function syncSpec(
               ? JSON.parse(feedback.anchor)
               : feedback.anchor;
 
+          // Skip feedback without anchors - they should be preserved unchanged
+          if (!oldAnchor) {
+            continue;
+          }
+
           // Relocate the anchor
           const newAnchor = relocateFeedbackAnchor(
             oldContent,
@@ -463,10 +468,12 @@ async function syncSpec(
             oldAnchor
           );
 
-          // Update feedback with new anchor
-          updateFeedback(db, feedback.id, {
-            anchor: newAnchor,
-          });
+          // Update feedback with new anchor (newAnchor is never null here since oldAnchor was checked)
+          if (newAnchor) {
+            updateFeedback(db, feedback.id, {
+              anchor: newAnchor,
+            });
+          }
         }
       }
     }

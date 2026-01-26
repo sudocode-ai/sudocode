@@ -201,29 +201,40 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
    * and array element ordering. This ensures consistent hashes regardless of:
    * - Object key order: {"id":"x","title":"y"} vs {"title":"y","id":"x"}
    * - Array element order: [{to:"A"},{to:"B"}] vs [{to:"B"},{to:"A"}]
+   *
+   * IMPORTANT: Excludes timestamp fields (updated_at, created_at) from the hash
+   * because these change as a side effect of syncing and shouldn't trigger
+   * change detection. We only want to detect actual content changes.
    */
   function computeCanonicalHash(entity: any): string {
+    // Fields to exclude from hash comparison (timestamps change on every sync)
+    const excludeFields = new Set(["updated_at", "created_at"]);
+
     // Recursively sort keys and array elements for consistent ordering
-    const canonicalize = (obj: any): any => {
+    const canonicalize = (obj: any, isTopLevel: boolean = false): any => {
       if (obj === null || typeof obj !== "object") {
         return obj;
       }
       if (Array.isArray(obj)) {
         // Sort array elements by their JSON representation for deterministic ordering
         return obj
-          .map(canonicalize)
+          .map((item) => canonicalize(item, false))
           .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
       }
       const sorted: any = {};
       Object.keys(obj)
         .sort()
         .forEach((key) => {
-          sorted[key] = canonicalize(obj[key]);
+          // Only exclude timestamp fields at the top level of the entity
+          if (isTopLevel && excludeFields.has(key)) {
+            return; // Skip this field
+          }
+          sorted[key] = canonicalize(obj[key], false);
         });
       return sorted;
     };
 
-    const canonical = canonicalize(entity);
+    const canonical = canonicalize(entity, true);
     return crypto
       .createHash("sha256")
       .update(JSON.stringify(canonical))
@@ -269,11 +280,17 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
 
       // Compare other key fields
       if (entityType === "spec") {
-        if (frontmatter.priority !== dbEntity.priority) return false;
+        if (frontmatter.priority !== dbEntity.priority) {
+          return false;
+        }
       } else {
         const issue = dbEntity as any;
-        if (frontmatter.status !== issue.status) return false;
-        if (frontmatter.priority !== issue.priority) return false;
+        if (frontmatter.status !== issue.status) {
+          return false;
+        }
+        if (frontmatter.priority !== issue.priority) {
+          return false;
+        }
       }
 
       return true; // Content matches

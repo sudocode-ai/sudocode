@@ -678,6 +678,18 @@ Yet another token
   });
 
   describe('relocateFeedbackAnchor', () => {
+    it('should handle null anchor gracefully', () => {
+      // This tests the fix for the crash: "Cannot read properties of null (reading 'line_number')"
+      // When feedback has no anchor (anchor is null/undefined), relocateFeedbackAnchor should return null
+      const result = relocateFeedbackAnchor(SAMPLE_SPEC, SAMPLE_SPEC, null as any);
+      expect(result).toBeNull();
+    });
+
+    it('should handle undefined anchor gracefully', () => {
+      const result = relocateFeedbackAnchor(SAMPLE_SPEC, SAMPLE_SPEC, undefined as any);
+      expect(result).toBeNull();
+    });
+
     it('should keep anchor valid if content unchanged', () => {
       const anchor = createFeedbackAnchor(SAMPLE_SPEC, 7);
       const relocated = relocateFeedbackAnchor(SAMPLE_SPEC, SAMPLE_SPEC, anchor);

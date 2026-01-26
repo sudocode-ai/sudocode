@@ -419,12 +419,19 @@ export function findFuzzySection(
  * 2. Content Search (snippet + context)
  * 3. Fuzzy Section Match (Levenshtein distance)
  * 4. Mark as Stale (preserve original)
+ *
+ * @returns The relocated anchor, or null if anchor was null/undefined
  */
 export function relocateFeedbackAnchor(
   oldSpecContent: string,
   newSpecContent: string,
-  anchor: FeedbackAnchor
-): FeedbackAnchor {
+  anchor: FeedbackAnchor | null | undefined
+): FeedbackAnchor | null {
+  // Handle null/undefined anchor - feedback without anchors should be preserved unchanged
+  if (!anchor) {
+    return null;
+  }
+
   // First, verify if anchor is still valid at original location
   if (verifyAnchor(newSpecContent, anchor)) {
     return {
@@ -550,7 +557,7 @@ export interface RelocationSummary {
 export function relocateSpecFeedback(
   oldSpecContent: string,
   newSpecContent: string,
-  feedbackList: Array<{ id: string; anchor: FeedbackAnchor }>
+  feedbackList: Array<{ id: string; anchor: FeedbackAnchor | null | undefined }>
 ): RelocationSummary {
   const results: RelocationResult[] = [];
   let validCount = 0;
@@ -558,12 +565,22 @@ export function relocateSpecFeedback(
   let staleCount = 0;
 
   for (const feedback of feedbackList) {
+    // Skip feedback without anchors - they should be preserved unchanged
+    if (!feedback.anchor) {
+      continue;
+    }
+
     const oldStatus = feedback.anchor.anchor_status;
     const newAnchor = relocateFeedbackAnchor(
       oldSpecContent,
       newSpecContent,
       feedback.anchor
     );
+
+    // newAnchor should never be null here since we checked feedback.anchor above
+    if (!newAnchor) {
+      continue;
+    }
 
     const relocated = newAnchor.anchor_status === 'relocated';
 
