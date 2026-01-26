@@ -307,6 +307,18 @@ export const executionsApi = {
   interrupt: (executionId: string) =>
     post<{ success: boolean; interrupted: boolean }>(`/executions/${executionId}/interrupt`),
 
+  /**
+   * Inject a message into a running execution
+   *
+   * Behavior depends on session state:
+   * - If session is actively running: Uses session.inject() to queue message
+   * - If session is waiting (pending/paused): Triggers a new turn via prompt
+   * - Falls back to interruptWith() if inject is not supported
+   */
+  inject: (executionId: string, message: string) =>
+    // Note: Response interceptor unwraps ApiResponse, so we get the data directly
+    post<{ executionId: string; method: 'inject' | 'interrupt' | 'prompt' }>(`/executions/${executionId}/inject`, { message }),
+
   // Delete execution and its entire chain
   delete: (executionId: string, deleteBranch?: boolean, deleteWorktree?: boolean) => {
     const params = new URLSearchParams()

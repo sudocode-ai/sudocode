@@ -153,7 +153,7 @@ describe('IssuePanel - Auto-scroll', () => {
 
       // Wait a bit to ensure component is fully rendered - when running, placeholder is different
       await waitFor(() => {
-        expect(screen.getByPlaceholderText(/Execution is running/i)).toBeInTheDocument()
+        expect(screen.getByPlaceholderText(/Send message to agent/i)).toBeInTheDocument()
       })
 
       // Get scroll container
@@ -243,7 +243,7 @@ describe('IssuePanel - Auto-scroll', () => {
 
       // Wait for execution to load - when running, placeholder is different
       await waitFor(() => {
-        expect(screen.getByPlaceholderText(/Execution is running/i)).toBeInTheDocument()
+        expect(screen.getByPlaceholderText(/Send message to agent/i)).toBeInTheDocument()
       })
 
       // Get the scroll container
@@ -305,7 +305,7 @@ describe('IssuePanel - Auto-scroll', () => {
 
       // Wait for execution to load - when running, placeholder is different
       await waitFor(() => {
-        expect(screen.getByPlaceholderText(/Execution is running/i)).toBeInTheDocument()
+        expect(screen.getByPlaceholderText(/Send message to agent/i)).toBeInTheDocument()
       })
 
       // Get the scroll container
@@ -377,7 +377,7 @@ describe('IssuePanel - Auto-scroll', () => {
 
       // Wait for execution to load - when running, placeholder is different
       await waitFor(() => {
-        expect(screen.getByPlaceholderText(/Execution is running/i)).toBeInTheDocument()
+        expect(screen.getByPlaceholderText(/Send message to agent/i)).toBeInTheDocument()
       })
 
       // Get the scroll container and simulate scrolling up
@@ -467,7 +467,7 @@ describe('IssuePanel - Auto-scroll', () => {
 
       // Wait for execution to load - when running, placeholder is different
       await waitFor(() => {
-        expect(screen.getByPlaceholderText(/Execution is running/i)).toBeInTheDocument()
+        expect(screen.getByPlaceholderText(/Send message to agent/i)).toBeInTheDocument()
       })
 
       // Simulate scrolling up to disable auto-scroll
@@ -537,7 +537,7 @@ describe('IssuePanel - Auto-scroll', () => {
 
       // Wait for execution to load - when running, placeholder is different
       await waitFor(() => {
-        expect(screen.getByPlaceholderText(/Execution is running/i)).toBeInTheDocument()
+        expect(screen.getByPlaceholderText(/Send message to agent/i)).toBeInTheDocument()
       })
 
       // Clear previous scrollTo calls
@@ -577,7 +577,7 @@ describe('IssuePanel - Auto-scroll', () => {
 
       // Wait for execution to load - when running, placeholder is different
       await waitFor(() => {
-        expect(screen.getByPlaceholderText(/Execution is running/i)).toBeInTheDocument()
+        expect(screen.getByPlaceholderText(/Send message to agent/i)).toBeInTheDocument()
       })
 
       // Simulate scrolling up to disable auto-scroll

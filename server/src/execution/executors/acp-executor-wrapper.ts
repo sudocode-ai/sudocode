@@ -1128,6 +1128,202 @@ export class AcpExecutorWrapper {
     }
   }
 
+  /**
+   * Inject a message into a running session
+   *
+   * Behavior depends on session state:
+   * - If session is waiting (pending/paused): Triggers a new turn via sendPrompt() to process the message
+   * - If session is actively running: Uses session.inject() to queue message without interrupting.
+   *   The message is pushed to the session's input queue and Claude will see it on its next API call.
+   *   The response will stream back through the existing prompt() generator in the main loop.
+   * - Falls back to interruptWith() if inject is not supported
+   *
+   * @param executionId - Execution ID
+   * @param message - Message content to inject
+   * @returns Result with success status and method used
+   */
+  async inject(
+    executionId: string,
+    message: string
+  ): Promise<{
+    success: boolean;
+    method: "inject" | "interrupt" | "prompt";
+    error?: string;
+  }> {
+    const injectId = Math.random().toString(36).substring(7);
+    console.log(
+      `[AcpExecutorWrapper] [inject:${injectId}] START - Injecting message into execution ${executionId}`,
+      { messagePreview: message.substring(0, 50), timestamp: new Date().toISOString() }
+    );
+
+    const session = this.activeSessions.get(executionId);
+    if (!session) {
+      console.warn(`[AcpExecutorWrapper] [inject:${injectId}] No active session for ${executionId}`);
+      return {
+        success: false,
+        method: "inject",
+        error: "No active session for this execution",
+      };
+    }
+
+    // Check if this is a persistent session in a waiting state
+    const persistentState = this.persistentSessions.get(executionId);
+    const isWaitingSession =
+      persistentState &&
+      (persistentState.state === "pending" || persistentState.state === "paused");
+
+    if (isWaitingSession) {
+      console.log(
+        `[AcpExecutorWrapper] [inject:${injectId}] Session is WAITING (${persistentState.state}), using sendPrompt for ${executionId}`
+      );
+
+      // For waiting sessions, use sendPrompt which will properly stream the response
+      try {
+        console.log(`[AcpExecutorWrapper] [inject:${injectId}] Calling sendPrompt for waiting session`);
+        await this.sendPrompt(executionId, message);
+        console.log(`[AcpExecutorWrapper] [inject:${injectId}] END - sendPrompt completed successfully`);
+        return { success: true, method: "prompt" };
+      } catch (error) {
+        console.error(
+          `[AcpExecutorWrapper] [inject:${injectId}] Error sending prompt to waiting session ${executionId}:`,
+          error
+        );
+        return {
+          success: false,
+          method: "prompt",
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+
+    // For actively running sessions, use inject (queues message without interrupting)
+    // The message is pushed to session.input and Claude will see it on its next API call.
+    // The response streams back through the existing prompt() generator in executeWithLifecycle.
+    console.log(
+      `[AcpExecutorWrapper] [inject:${injectId}] Session is RUNNING, calling session.inject() for ${executionId}`,
+      { persistentState: persistentState?.state, timestamp: new Date().toISOString() }
+    );
+
+    const injectResult = await session.inject(message);
+    if (injectResult.success) {
+      console.log(
+        `[AcpExecutorWrapper] [inject:${injectId}] session.inject() SUCCEEDED - message queued for ${executionId}`
+      );
+
+      // Broadcast user message so it appears in the UI
+      // The agent's response will stream back through the main prompt loop
+      const userMessage: UserMessageComplete = {
+        sessionUpdate: "user_message_complete",
+        content: { type: "text", text: message },
+        timestamp: new Date(),
+      };
+      this.broadcastSessionUpdate(
+        executionId,
+        userMessage as unknown as ExtendedSessionUpdate
+      );
+      this.logsStore.appendRawLog(
+        executionId,
+        serializeCoalescedUpdate(userMessage)
+      );
+
+      console.log(`[AcpExecutorWrapper] [inject:${injectId}] END - returning success with method=inject`);
+      return { success: true, method: "inject" };
+    }
+
+    // Inject failed - fall back to interruptWith
+    console.log(
+      `[AcpExecutorWrapper] [inject:${injectId}] session.inject() FAILED, falling back to interruptWith for ${executionId}`,
+      { error: injectResult.error }
+    );
+
+    try {
+      // Broadcast user message before interrupt
+      const userMessage: UserMessageComplete = {
+        sessionUpdate: "user_message_complete",
+        content: { type: "text", text: message },
+        timestamp: new Date(),
+      };
+      this.broadcastSessionUpdate(
+        executionId,
+        userMessage as unknown as ExtendedSessionUpdate
+      );
+      this.logsStore.appendRawLog(
+        executionId,
+        serializeCoalescedUpdate(userMessage)
+      );
+
+      console.log(
+        `[AcpExecutorWrapper] [inject:${injectId}] Calling session.interruptWith() for ${executionId}`
+      );
+
+      // Use interruptWith to cancel current work and start processing the new message
+      // We need to consume and broadcast all updates from the new prompt
+      const coalescer = new SessionUpdateCoalescer();
+      const permissionManager = this.permissionManagers.get(executionId);
+      let updateCount = 0;
+
+      for await (const update of session.interruptWith(message)) {
+        updateCount++;
+
+        // Handle permission requests
+        if (
+          update.sessionUpdate === "permission_request" &&
+          permissionManager
+        ) {
+          const permUpdate = update as PermissionRequestUpdate;
+          permissionManager.addPending({
+            requestId: permUpdate.requestId,
+            sessionId: permUpdate.sessionId,
+            toolCall: permUpdate.toolCall,
+            options: permUpdate.options,
+          });
+        }
+
+        // Broadcast to frontend
+        this.broadcastSessionUpdate(executionId, update);
+
+        // Coalesce for storage
+        const coalescedUpdates = coalescer.process(update as SessionUpdate);
+        for (const coalesced of coalescedUpdates) {
+          this.logsStore.appendRawLog(
+            executionId,
+            serializeCoalescedUpdate(coalesced)
+          );
+        }
+      }
+
+      // Flush remaining coalesced state
+      const remaining = coalescer.flush();
+      for (const coalesced of remaining) {
+        this.logsStore.appendRawLog(
+          executionId,
+          serializeCoalescedUpdate(coalesced)
+        );
+      }
+
+      console.log(
+        `[AcpExecutorWrapper] [inject:${injectId}] END - interruptWith completed with ${updateCount} updates`
+      );
+
+      // For persistent sessions, transition back to waiting after interrupt completes
+      if (persistentState) {
+        await this.transitionToWaiting(executionId);
+      }
+
+      return { success: true, method: "interrupt" };
+    } catch (error) {
+      console.error(
+        `[AcpExecutorWrapper] [inject:${injectId}] Error during interruptWith for ${executionId}:`,
+        error
+      );
+      return {
+        success: false,
+        method: "interrupt",
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   // ============================================================================
   // Persistent Session Methods
   // ============================================================================
@@ -1144,17 +1340,30 @@ export class AcpExecutorWrapper {
    * @throws Error if no persistent session exists or session is not pending/paused
    */
   async sendPrompt(executionId: string, prompt: string): Promise<void> {
+    const promptId = Math.random().toString(36).substring(7);
+    console.log(
+      `[AcpExecutorWrapper] [sendPrompt:${promptId}] START - executionId=${executionId}`,
+      { promptPreview: prompt.substring(0, 50), timestamp: new Date().toISOString() }
+    );
+
     const persistentState = this.persistentSessions.get(executionId);
     if (!persistentState) {
+      console.error(`[AcpExecutorWrapper] [sendPrompt:${promptId}] No persistent session found`);
       throw new Error(
         `No persistent session found for execution ${executionId}`
       );
     }
 
+    console.log(`[AcpExecutorWrapper] [sendPrompt:${promptId}] Session state:`, {
+      state: persistentState.state,
+      promptCount: persistentState.promptCount,
+    });
+
     if (
       persistentState.state !== "pending" &&
       persistentState.state !== "paused"
     ) {
+      console.error(`[AcpExecutorWrapper] [sendPrompt:${promptId}] Invalid state: ${persistentState.state}`);
       throw new Error(
         `Cannot send prompt to session in state: ${persistentState.state}`
       );
@@ -1265,6 +1474,11 @@ export class AcpExecutorWrapper {
 
       // Transition back to pending
       await this.transitionToWaiting(executionId);
+
+      console.log(
+        `[AcpExecutorWrapper] [sendPrompt] END - executionId=${executionId}, transitioned to waiting`,
+        { newState: persistentState.state, promptCount: persistentState.promptCount }
+      );
     } catch (error) {
       console.error(
         `[AcpExecutorWrapper] Error sending prompt to persistent session ${executionId}:`,
@@ -1425,6 +1639,14 @@ export class AcpExecutorWrapper {
     executionId: string,
     update: ExtendedSessionUpdate
   ): void {
+    // Log what we're broadcasting
+    const updateType = (update as { sessionUpdate?: string }).sessionUpdate;
+    console.log(`[AcpExecutorWrapper] Broadcasting session_update:`, {
+      executionId,
+      updateType,
+      timestamp: new Date().toISOString(),
+    });
+
     // Broadcast to execution subscribers only
     // Note: Do NOT broadcast to issue subscribers - this causes duplicate messages
     // when a page is subscribed to both execution:X and issue:Y channels

@@ -1269,6 +1269,43 @@ ${feedback}`;
   }
 
   /**
+   * Inject a message into a running execution
+   *
+   * Tries session.inject() first (queues for next turn without interrupting).
+   * Falls back to interruptWith() which cancels current work and processes the message.
+   *
+   * @param executionId - ID of execution to inject into
+   * @param message - Message content
+   * @returns Result with method used and any errors
+   */
+  async injectMessage(
+    executionId: string,
+    message: string
+  ): Promise<{
+    success: boolean;
+    method?: "inject" | "interrupt" | "prompt";
+    error?: string;
+  }> {
+    const executor = this.activeExecutors.get(executionId);
+    if (!executor) {
+      return {
+        success: false,
+        error: "No active executor for this execution",
+      };
+    }
+
+    // Only ACP executors support injection
+    if (!(executor instanceof AcpExecutorWrapper)) {
+      return {
+        success: false,
+        error: "Execution does not support message injection",
+      };
+    }
+
+    return executor.inject(executionId, message);
+  }
+
+  /**
    * Clean up execution resources
    *
    * Removes the worktree and associated files. This is called automatically

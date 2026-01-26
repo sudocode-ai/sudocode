@@ -107,7 +107,7 @@ export interface ServerMessage {
  */
 export type DisconnectCallback = (
   clientId: string,
-  subscriptions: Set<string>
+  subscriptions: Set<string>,
 ) => void;
 
 /**
@@ -127,10 +127,16 @@ class WebSocketManager {
    * @param path WebSocket path (default: "/ws")
    * @param allowReinit Allow re-initialization after shutdown (default: false)
    */
-  init(server: http.Server, path: string = "/ws", allowReinit: boolean = false): void {
+  init(
+    server: http.Server,
+    path: string = "/ws",
+    allowReinit: boolean = false,
+  ): void {
     if (this.wss) {
       if (allowReinit) {
-        console.warn("[websocket] WebSocket server already initialized, but re-initialization is allowed");
+        console.warn(
+          "[websocket] WebSocket server already initialized, but re-initialization is allowed",
+        );
         // Don't return, allow re-initialization
       } else {
         console.warn("[websocket] WebSocket server already initialized");
@@ -157,11 +163,17 @@ class WebSocketManager {
       this.wss.on("connection", this.handleConnection.bind(this));
       this.startHeartbeat();
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`[websocket] Failed to initialize WebSocket server:`, errorMessage);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error(
+        `[websocket] Failed to initialize WebSocket server:`,
+        errorMessage,
+      );
       // Clean up on failure
       this.wss = null;
-      throw new Error(`Failed to initialize WebSocket server on path ${path}: ${errorMessage}`);
+      throw new Error(
+        `Failed to initialize WebSocket server on path ${path}: ${errorMessage}`,
+      );
     }
   }
 
@@ -181,7 +193,7 @@ class WebSocketManager {
     this.clients.set(clientId, client);
     if (LOG_CONNECTIONS) {
       console.log(
-        `[websocket] Client connected: ${clientId} (total: ${this.clients.size})`
+        `[websocket] Client connected: ${clientId} (total: ${this.clients.size})`,
       );
     }
 
@@ -206,7 +218,7 @@ class WebSocketManager {
     if (client) {
       if (LOG_CONNECTIONS) {
         console.log(
-          `[websocket] Client disconnected: ${clientId} (subscriptions: ${client.subscriptions.size})`
+          `[websocket] Client disconnected: ${clientId} (subscriptions: ${client.subscriptions.size})`,
         );
       }
 
@@ -219,7 +231,7 @@ class WebSocketManager {
         } catch (error) {
           console.error(
             `[websocket] Error in disconnect callback for ${clientId}:`,
-            error
+            error,
           );
         }
       }
@@ -250,7 +262,7 @@ class WebSocketManager {
   hasSubscribers(
     projectId: string,
     entityType: "issue" | "spec" | "execution" | "workflow",
-    entityId: string
+    entityId: string,
   ): boolean {
     const subscription = `${projectId}:${entityType}:${entityId}`;
     const typeSubscription = `${projectId}:${entityType}:*`;
@@ -326,7 +338,7 @@ class WebSocketManager {
     } catch (error) {
       console.error(
         `[websocket] Failed to parse message from ${clientId}:`,
-        error
+        error,
       );
       this.sendToClient(clientId, {
         type: "error",
@@ -375,7 +387,7 @@ class WebSocketManager {
     client.subscriptions.add(subscription);
     if (LOG_CONNECTIONS) {
       console.log(
-        `[websocket] Client ${clientId} subscribed to: ${subscription}`
+        `[websocket] Client ${clientId} subscribed to: ${subscription}`,
       );
     }
 
@@ -423,7 +435,7 @@ class WebSocketManager {
     client.subscriptions.delete(subscription);
     if (LOG_CONNECTIONS) {
       console.log(
-        `[websocket] Client ${clientId} unsubscribed from: ${subscription}`
+        `[websocket] Client ${clientId} unsubscribed from: ${subscription}`,
       );
     }
 
@@ -440,7 +452,7 @@ class WebSocketManager {
    */
   private async handleTTSRequest(
     clientId: string,
-    message: ClientMessage
+    message: ClientMessage,
   ): Promise<void> {
     const client = this.clients.get(clientId);
     if (!client) {
@@ -542,7 +554,10 @@ class WebSocketManager {
       // Sidecar unavailable - tell client to fallback to browser TTS
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      console.error(`[websocket] TTS request failed for ${clientId}:`, errorMessage);
+      console.error(
+        `[websocket] TTS request failed for ${clientId}:`,
+        errorMessage,
+      );
 
       this.sendToClient(clientId, {
         type: "tts_error",
@@ -569,7 +584,7 @@ class WebSocketManager {
     } catch (error) {
       console.error(
         `[websocket] Failed to send message to ${clientId}:`,
-        error
+        error,
       );
     }
   }
@@ -581,7 +596,7 @@ class WebSocketManager {
     projectId: string,
     entityType: "issue" | "spec" | "execution" | "workflow",
     entityId: string,
-    message: ServerMessage
+    message: ServerMessage,
   ): void {
     const subscription = `${projectId}:${entityType}:${entityId}`;
     const typeSubscription = `${projectId}:${entityType}:*`;
@@ -608,17 +623,17 @@ class WebSocketManager {
         } catch (error) {
           console.error(
             `[websocket] Failed to broadcast to ${client.id}:`,
-            error
+            error,
           );
         }
       }
     });
 
-    if (sentCount > 0) {
-      console.log(
-        `[websocket] Broadcasted ${message.type} for ${subscription} to ${sentCount} clients`
-      );
-    }
+    // if (sentCount > 0) {
+    //   console.log(
+    //     `[websocket] Broadcasted ${message.type} for ${subscription} to ${sentCount} clients`
+    //   );
+    // }
   }
 
   /**
@@ -645,23 +660,27 @@ class WebSocketManager {
         } catch (error) {
           console.error(
             `[websocket] Failed to broadcast to ${client.id}:`,
-            error
+            error,
           );
         }
       }
     });
 
-    if (sentCount > 0) {
-      console.log(
-        `[websocket] Broadcasted ${message.type} for project ${projectId} to ${sentCount} clients`
-      );
-    }
+    // if (sentCount > 0) {
+    //   console.log(
+    //     `[websocket] Broadcasted ${message.type} for project ${projectId} to ${sentCount} clients`
+    //   );
+    // }
   }
 
   /**
    * Broadcast project lifecycle events (opened/closed)
    */
-  broadcastProjectEvent(projectId: string, event: "opened" | "closed", data?: any): void {
+  broadcastProjectEvent(
+    projectId: string,
+    event: "opened" | "closed",
+    data?: any,
+  ): void {
     const allSubscription = `${projectId}:all`;
     const message: ServerMessage = {
       type: event === "opened" ? "project_opened" : "project_closed",
@@ -684,7 +703,7 @@ class WebSocketManager {
         } catch (error) {
           console.error(
             `[websocket] Failed to broadcast to ${client.id}:`,
-            error
+            error,
           );
         }
       }
@@ -692,7 +711,7 @@ class WebSocketManager {
 
     if (sentCount > 0) {
       console.log(
-        `[websocket] Broadcasted project_${event} for ${projectId} to ${sentCount} clients`
+        `[websocket] Broadcasted project_${event} for ${projectId} to ${sentCount} clients`,
       );
     }
   }
@@ -724,7 +743,7 @@ class WebSocketManager {
     }, this.HEARTBEAT_INTERVAL);
 
     console.log(
-      `[websocket] Heartbeat started (interval: ${this.HEARTBEAT_INTERVAL}ms)`
+      `[websocket] Heartbeat started (interval: ${this.HEARTBEAT_INTERVAL}ms)`,
     );
   }
 
@@ -818,7 +837,7 @@ export function broadcastIssueUpdate(
   projectId: string,
   issueId: string,
   action: "created" | "updated" | "deleted",
-  data?: any
+  data?: any,
 ): void {
   websocketManager.broadcast(projectId, "issue", issueId, {
     type: `issue_${action}` as any,
@@ -833,7 +852,7 @@ export function broadcastSpecUpdate(
   projectId: string,
   specId: string,
   action: "created" | "updated" | "deleted",
-  data?: any
+  data?: any,
 ): void {
   websocketManager.broadcast(projectId, "spec", specId, {
     type: `spec_${action}` as any,
@@ -847,7 +866,7 @@ export function broadcastSpecUpdate(
 export function broadcastFeedbackUpdate(
   projectId: string,
   action: "created" | "updated" | "deleted",
-  data?: any
+  data?: any,
 ): void {
   websocketManager.broadcastGeneric(projectId, {
     type: `feedback_${action}` as any,
@@ -861,7 +880,7 @@ export function broadcastFeedbackUpdate(
 export function broadcastRelationshipUpdate(
   projectId: string,
   action: "created" | "deleted",
-  data?: any
+  data?: any,
 ): void {
   websocketManager.broadcastGeneric(projectId, {
     type: `relationship_${action}` as any,
@@ -884,7 +903,7 @@ export function broadcastExecutionUpdate(
   executionId: string,
   action: "created" | "updated" | "status_changed" | "deleted",
   data?: any,
-  issueId?: string
+  issueId?: string,
 ): void {
   // Primary broadcast to execution subscribers
   websocketManager.broadcast(projectId, "execution", executionId, {
@@ -917,7 +936,9 @@ export function broadcastSessionEvent(
   projectId: string,
   executionId: string,
   event: "session_pending" | "session_paused" | "session_ended",
-  data: { promptCount: number } | { reason: "explicit" | "timeout" | "disconnect" }
+  data:
+    | { promptCount: number }
+    | { reason: "explicit" | "timeout" | "disconnect" },
 ): void {
   websocketManager.broadcast(projectId, "execution", executionId, {
     type: event,
@@ -947,7 +968,7 @@ export function broadcastVoiceNarration(
     category: "status" | "progress" | "result" | "error";
     priority: "low" | "normal" | "high";
   },
-  issueId?: string
+  issueId?: string,
 ): void {
   console.log(`[websocket] broadcastVoiceNarration called:`, {
     projectId,
@@ -1033,7 +1054,7 @@ export function broadcastWorkflowUpdate(
     | "escalation_resolved"
     | "notification"
     | "awaiting",
-  data?: any
+  data?: any,
 ): void {
   websocketManager.broadcast(projectId, "workflow", workflowId, {
     type: `workflow_${action}` as ServerMessage["type"],
@@ -1048,7 +1069,7 @@ export function broadcastWorkflowStepUpdate(
   projectId: string,
   workflowId: string,
   action: "started" | "completed" | "failed" | "skipped",
-  data?: any
+  data?: any,
 ): void {
   websocketManager.broadcast(projectId, "workflow", workflowId, {
     type: `workflow_step_${action}` as ServerMessage["type"],
@@ -1062,7 +1083,7 @@ export function broadcastWorkflowStepUpdate(
  */
 export function broadcastToProject(
   projectId: string,
-  message: { type: string; [key: string]: unknown }
+  message: { type: string; [key: string]: unknown },
 ): void {
   websocketManager.broadcastGeneric(projectId, message as ServerMessage);
 }

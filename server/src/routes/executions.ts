@@ -1124,6 +1124,101 @@ export function createExecutionsRouter(): Router {
   );
 
   /**
+   * POST /api/executions/:executionId/inject
+   *
+   * Inject a message into a running execution
+   *
+   * Tries session.inject() first (queues message for next turn without interrupting).
+   * Falls back to interruptWith() which cancels current work and processes the message.
+   *
+   * Request body:
+   * - message: string (required) - The message to inject
+   */
+  router.post(
+    "/executions/:executionId/inject",
+    async (req: Request, res: Response) => {
+      const requestId = Math.random().toString(36).substring(7);
+      try {
+        const { executionId } = req.params;
+        const { message } = req.body;
+
+        console.log(`[InjectRoute] [req:${requestId}] Received inject request`, {
+          executionId,
+          messagePreview: message?.substring?.(0, 50),
+          timestamp: new Date().toISOString(),
+        });
+
+        // Validate message
+        if (!message || typeof message !== "string" || !message.trim()) {
+          console.log(`[InjectRoute] [req:${requestId}] Invalid message, returning 400`);
+          res.status(400).json({
+            success: false,
+            data: null,
+            message: "message is required and must be a non-empty string",
+          });
+          return;
+        }
+
+        const result = await req.project!.executionService!.injectMessage(
+          executionId,
+          message
+        );
+
+        console.log(`[InjectRoute] [req:${requestId}] injectMessage returned`, {
+          success: result.success,
+          method: result.method,
+          error: result.error,
+        });
+
+        if (!result.success) {
+          res.status(404).json({
+            success: false,
+            data: null,
+            message: result.error || "Failed to inject message",
+          });
+          return;
+        }
+
+        // Determine response message based on method used
+        let responseMessage: string;
+        switch (result.method) {
+          case "inject":
+            responseMessage = "Message queued for next turn";
+            break;
+          case "prompt":
+            responseMessage = "Message sent and processed";
+            break;
+          case "interrupt":
+          default:
+            responseMessage = "Message sent via interrupt";
+            break;
+        }
+
+        res.json({
+          success: true,
+          data: {
+            executionId,
+            method: result.method,
+          },
+          message: responseMessage,
+        });
+      } catch (error) {
+        console.error("Error injecting message:", error);
+
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+
+        res.status(500).json({
+          success: false,
+          data: null,
+          error_data: errorMessage,
+          message: "Failed to inject message",
+        });
+      }
+    }
+  );
+
+  /**
    * POST /api/executions/:executionId/fork
    *
    * Fork an active execution into a new independent execution

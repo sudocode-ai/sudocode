@@ -1292,9 +1292,22 @@ export function useSessionUpdateStream(
    */
   const handleMessage = useCallback(
     (message: WebSocketMessage) => {
+      // Log all incoming messages for debugging
+      console.log('[useSessionUpdateStream] handleMessage called:', {
+        type: message.type,
+        executionId,
+        timestamp: new Date().toISOString(),
+      })
+
       // Handle execution lifecycle events
       if (message.type === 'execution_status_changed' || message.type === 'execution_updated') {
         const exec = message.data as Execution | undefined
+        console.log('[useSessionUpdateStream] Received execution lifecycle event:', {
+          type: message.type,
+          execId: exec?.id,
+          status: exec?.status,
+          timestamp: new Date().toISOString(),
+        })
         if (exec) {
           handleExecutionEvent(exec)
         }
@@ -1303,47 +1316,58 @@ export function useSessionUpdateStream(
 
       // Handle session_update messages
       if (message.type !== 'session_update') {
+        console.log('[useSessionUpdateStream] Ignoring non-session_update message:', message.type)
         return
       }
 
       const data = message.data as SessionUpdateMessage | undefined
       if (!data?.update || !data?.executionId) {
+        console.warn('[useSessionUpdateStream] session_update missing data:', { data })
         return
       }
 
       // Only process updates for our execution
       if (executionId && data.executionId !== executionId) {
+        console.log('[useSessionUpdateStream] Ignoring update for different execution:', {
+          ourId: executionId,
+          updateId: data.executionId,
+        })
         return
       }
 
-      // Debug: Log all session_update events to see what's coming through
+      // Log ALL session_update events
       const updateType = (data.update as { sessionUpdate?: string })?.sessionUpdate
-      if (
-        updateType &&
-        (updateType.includes('compaction') || updateType.includes('notification'))
-      ) {
-        console.log(
-          '[useSessionUpdateStream] Received WebSocket session_update:',
-          updateType,
-          data.update
-        )
-      }
+      console.log('[useSessionUpdateStream] Processing session_update:', {
+        updateType,
+        executionId: data.executionId,
+        timestamp: new Date().toISOString(),
+      })
 
       try {
         processUpdate(data.update)
+        console.log('[useSessionUpdateStream] Successfully processed update:', updateType)
       } catch (err) {
-        console.error('[useSessionUpdateStream] Error processing update:', err)
+        console.error('[useSessionUpdateStream] Error processing update:', err, {
+          updateType,
+          update: data.update,
+        })
         setError(err instanceof Error ? err : new Error('Failed to process SessionUpdate'))
       }
     },
     [executionId, processUpdate, handleExecutionEvent]
   )
 
+  // Keep handleMessage in a ref so the effect doesn't reset state when callbacks change
+  const handleMessageRef = useRef(handleMessage)
+  handleMessageRef.current = handleMessage
+
   // Subscribe to WebSocket on mount/executionId change
   useEffect(() => {
     if (!executionId) {
       return
     }
+
+    console.log('[useSessionUpdateStream] Effect running - resetting state for executionId:', executionId)
 
     // Reset state when execution changes
     setMessages(new Map())
@@ -1363,30 +1387,66 @@ export function useSessionUpdateStream(
     toolCallIndicesRef.current = new Map()
 
     // Subscribe to execution updates
+    console.log('[useSessionUpdateStream] Subscribing to execution:', executionId)
     subscribe('execution', executionId)
 
-    // Add message handler
+    // Add message handler - use wrapper that calls ref to get latest handler
     const handlerId = handlerIdRef.current
-    addMessageHandler(handlerId, handleMessage)
+    console.log('[useSessionUpdateStream] Adding message handler:', handlerId)
+    const wrappedHandler = (message: WebSocketMessage) => {
+      handleMessageRef.current(message)
+    }
+    addMessageHandler(handlerId, wrappedHandler)
 
     // Cleanup
     return () => {
+      console.log('[useSessionUpdateStream] Cleanup - unsubscribing from execution:', executionId)
       unsubscribe('execution', executionId)
       removeMessageHandler(handlerId)
     }
-  }, [executionId, subscribe, unsubscribe, addMessageHandler, removeMessageHandler, handleMessage])
+  }, [executionId, subscribe, unsubscribe, addMessageHandler, removeMessageHandler])
 
-  // Convert Maps to arrays for return value
-  const messagesArray = useMemo(() => Array.from(messages.values()), [messages])
-  const toolCallsArray = useMemo(() => Array.from(toolCalls.values()), [toolCalls])
-  const thoughtsArray = useMemo(() => Array.from(thoughts.values()), [thoughts])
+  // Debug: Log message state changes
+  useEffect(() => {
+    if (messages.size > 0) {
+      const msgInfo = Array.from(messages.values()).map((m) => ({
+        id: m.id.substring(0, 15),
+        role: m.role ?? 'agent',
+        index: m.index,
+        contentPreview: m.content.substring(0, 30),
+      }))
+      console.log('[useSessionUpdateStream] Messages state updated:', {
+        count: messages.size,
+        messages: msgInfo,
+      })
+    }
+  }, [messages])
+
+  // Convert Maps to arrays for return value, sorted by index for stable ordering
+  // The index field is assigned sequentially as events arrive, ensuring correct display order
+  // even when React batches state updates or network delays cause reordering
+  const messagesArray = useMemo(
+    () => Array.from(messages.values()).sort((a, b) => (a.index ?? 0) - (b.index ?? 0)),
+    [messages]
+  )
+  const toolCallsArray = useMemo(
+    () => Array.from(toolCalls.values()).sort((a, b) => (a.index ?? 0) - (b.index ?? 0)),
+    [toolCalls]
+  )
+  const thoughtsArray = useMemo(
+    () => Array.from(thoughts.values()).sort((a, b) => (a.index ?? 0) - (b.index ?? 0)),
+    [thoughts]
+  )
   const permissionRequestsArray = useMemo(
-    () => Array.from(permissionRequests.values()),
+    () => Array.from(permissionRequests.values()).sort((a, b) => (a.index ?? 0) - (b.index ?? 0)),
     [permissionRequests]
   )
-  const planUpdatesArray = useMemo(() => Array.from(planUpdates.values()), [planUpdates])
+  const planUpdatesArray = useMemo(
+    () => Array.from(planUpdates.values()).sort((a, b) => (a.index ?? 0) - (b.index ?? 0)),
+    [planUpdates]
+  )
   const sessionNotificationsArray = useMemo(
-    () => Array.from(sessionNotifications.values()),
+    () => Array.from(sessionNotifications.values()).sort((a, b) => (a.index ?? 0) - (b.index ?? 0)),
     [sessionNotifications]
   )
 

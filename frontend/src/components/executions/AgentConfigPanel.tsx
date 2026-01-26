@@ -7,7 +7,9 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
+  Send,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { ContextSearchTextarea } from '@/components/ui/context-search-textarea'
 import {
@@ -137,6 +139,11 @@ interface AgentConfigPanelProps {
    * Available slash commands from the agent (for autocomplete)
    */
   availableCommands?: import('@/hooks/useSessionUpdateStream').AvailableCommand[]
+  /**
+   * Callback for injecting a message into a running execution
+   * When provided and isRunning is true, submitting will call this instead of onStart
+   */
+  onInject?: (message: string) => Promise<{ method: 'inject' | 'interrupt' | 'prompt' }>
 }
 
 // TODO: Move this somewhere more central.
@@ -356,10 +363,12 @@ export function AgentConfigPanel({
   worktreeExists = true,
   defaultPrompt,
   availableCommands = [],
+  onInject,
 }: AgentConfigPanelProps) {
   const [loading, setLoading] = useState(false)
   const [prompt, setPrompt] = useState(defaultPrompt || '')
   const [internalForceNewExecution, setInternalForceNewExecution] = useState(false)
+  const [injecting, setInjecting] = useState(false)
   const [availableBranches, setAvailableBranches] = useState<string[]>([])
   const [currentBranch, setCurrentBranch] = useState<string>('')
 
@@ -812,7 +821,44 @@ export function AgentConfigPanel({
     }
   }, [lastExecution?.config, lastExecution?.id])
 
-  const handleStart = () => {
+  const handleStart = async () => {
+    const trimmedPrompt = prompt.trim()
+
+    // Debug logging
+    console.log('[AgentConfigPanel] handleStart called:', {
+      isRunning,
+      hasOnInject: !!onInject,
+      trimmedPrompt: trimmedPrompt.substring(0, 50),
+      injecting,
+      disabled,
+      loading,
+    })
+
+    // If execution is running and we have onInject, send message via inject API
+    if (isRunning && onInject && trimmedPrompt) {
+      console.log('[AgentConfigPanel] Taking inject path')
+      setInjecting(true)
+      try {
+        const result = await onInject(trimmedPrompt)
+        console.log('[AgentConfigPanel] Inject succeeded:', result)
+        setPrompt('') // Clear the prompt after successful injection
+
+        // Show toast only for interrupt method (inject is seamless)
+        if (result.method === 'interrupt') {
+          toast.info('Message sent via interrupt')
+        }
+      } catch (error) {
+        console.error('[AgentConfigPanel] Failed to inject message:', error)
+        toast.error(error instanceof Error ? error.message : 'Failed to send message')
+      } finally {
+        console.log('[AgentConfigPanel] Resetting injecting state')
+        setInjecting(false)
+      }
+      return
+    }
+
+    console.log('[AgentConfigPanel] Taking normal start path')
+
     // Save config and agent type to localStorage for future executions
     // Only save if config is valid to prevent persisting corrupted data
     // Sanitize before saving to ensure deprecated fields are not persisted
@@ -830,8 +876,7 @@ export function AgentConfigPanel({
 
     // Use default prompt for first messages when no prompt is provided
     // For adhoc executions (no issueId), prompt is always required
-    const finalPrompt =
-      prompt.trim() || (!isFollowUp && issueId ? `Implement issue [[${issueId}]]` : '')
+    const finalPrompt = trimmedPrompt || (!isFollowUp && issueId ? `Implement issue [[${issueId}]]` : '')
 
     // For local mode, don't send baseBranch - let the server use the current branch
     const finalConfig = config.mode === 'local' ? { ...config, baseBranch: undefined } : config
@@ -903,7 +948,31 @@ export function AgentConfigPanel({
   // For follow-ups or adhoc executions (no issueId), require a prompt
   // Note: We don't block based on agent availability - we just show warnings
   // Users can still attempt to run unavailable agents (will fail at execution time)
-  const canStart = !loading && (prompt.trim().length > 0 || (!isFollowUp && !!issueId)) && !disabled
+  // When running with onInject: require a prompt (can't inject empty message)
+  // When running without onInject: allow empty prompts for issue-based executions
+  const canStart =
+    !loading &&
+    !injecting &&
+    (isRunning && onInject
+      ? prompt.trim().length > 0 // Running with inject: always require prompt
+      : prompt.trim().length > 0 || (!isFollowUp && !!issueId)) && // Normal flow
+    !disabled
+
+  // Debug: Log state on every render when running with inject to diagnose "can't send" issue
+  useEffect(() => {
+    if (isRunning && onInject) {
+      console.log('[AgentConfigPanel] State update (inject mode):', {
+        isRunning,
+        hasOnInject: !!onInject,
+        promptLength: prompt.trim().length,
+        loading,
+        injecting,
+        disabled,
+        canStart,
+        buttonWillBeDisabled: !canStart || injecting,
+      })
+    }
+  }, [isRunning, onInject, prompt, loading, injecting, disabled, canStart])
 
   // Compact mode: inline textarea with voice input and submit/cancel button
   if (variant === 'compact') {
@@ -916,9 +985,11 @@ export function AgentConfigPanel({
             onChange={setPrompt}
             onKeyDown={handleKeyDown}
             placeholder={
-              isRunning
-                ? 'Execution is running (esc to cancel)'
-                : promptPlaceholder || 'Send feedback to the agent... (@ for context, / for commands)'
+              isRunning && onInject
+                ? 'Send message to agent... (@ for context, / for commands)'
+                : isRunning
+                  ? 'Execution is running (esc to cancel)'
+                  : promptPlaceholder || 'Send feedback to the agent... (@ for context, / for commands)'
             }
             disabled={loading || disabled}
             className="max-h-[150px] min-h-0 resize-none overflow-y-auto border-none bg-muted/80 py-2 text-sm shadow-none transition-[height] duration-100 focus-visible:ring-0 focus-visible:ring-offset-0"
@@ -946,16 +1017,38 @@ export function AgentConfigPanel({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
-                onClick={isRunning && isHoveringButton ? onCancel : handleStart}
-                disabled={isRunning ? isCancelling : !canStart}
+                onClick={isRunning && isHoveringButton && !onInject ? onCancel : handleStart}
+                disabled={
+                  isRunning && onInject
+                    ? !canStart || injecting
+                    : isRunning
+                      ? isCancelling
+                      : !canStart
+                }
                 size="sm"
                 onMouseEnter={() => setIsHoveringButton(true)}
                 onMouseLeave={() => setIsHoveringButton(false)}
                 className="h-7 w-7 shrink-0 rounded-full p-0"
-                variant={isRunning && isHoveringButton ? 'destructive' : 'default'}
-                aria-label={isRunning ? (isHoveringButton ? 'Cancel' : 'Running...') : 'Submit'}
+                variant={isRunning && isHoveringButton && !onInject ? 'destructive' : 'default'}
+                aria-label={
+                  isRunning && onInject
+                    ? injecting
+                      ? 'Sending...'
+                      : 'Send'
+                    : isRunning
+                      ? isHoveringButton
+                        ? 'Cancel'
+                        : 'Running...'
+                      : 'Submit'
+                }
               >
-                {isRunning ? (
+                {isRunning && onInject ? (
+                  injecting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )
+                ) : isRunning ? (
                   isHoveringButton ? (
                     <Square className="h-3 w-3" />
                   ) : (
@@ -967,7 +1060,15 @@ export function AgentConfigPanel({
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {isRunning ? (isHoveringButton ? 'Cancel' : 'Running...') : 'Submit'}
+              {isRunning && onInject
+                ? injecting
+                  ? 'Sending...'
+                  : 'Send'
+                : isRunning
+                  ? isHoveringButton
+                    ? 'Cancel'
+                    : 'Running...'
+                  : 'Submit'}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -1013,24 +1114,26 @@ export function AgentConfigPanel({
           onChange={setPrompt}
           onKeyDown={handleKeyDown}
           placeholder={
-            isRunning
-              ? 'Execution is running (esc to cancel)'
-              : promptPlaceholder ||
-                (loading
-                  ? 'Loading prompt...'
-                  : isFollowUp
-                    ? forceNewExecution
-                      ? isWorktreeCleaned
-                        ? 'Worktree cleaned up. Start a new execution... (@ for context, / for commands)'
+            isRunning && onInject
+              ? 'Send message to agent... (@ for context, / for commands)'
+              : isRunning
+                ? 'Execution is running (esc to cancel)'
+                : promptPlaceholder ||
+                  (loading
+                    ? 'Loading prompt...'
+                    : isFollowUp
+                      ? forceNewExecution
+                        ? isWorktreeCleaned
+                          ? 'Worktree cleaned up. Start a new execution... (@ for context, / for commands)'
+                          : allowModeToggle
+                            ? 'Start a new execution... (ctrl+k to continue previous, @ for context, / for commands)'
+                            : 'Start a new execution... (@ for context, / for commands)'
                         : allowModeToggle
-                          ? 'Start a new execution... (ctrl+k to continue previous, @ for context, / for commands)'
-                          : 'Start a new execution... (@ for context, / for commands)'
-                      : allowModeToggle
-                        ? 'Continue the previous conversation... (ctrl+k for new, @ for context, / for commands)'
-                        : 'Continue the previous conversation... (@ for context, / for commands)'
-                    : issueId
-                      ? 'Add additional context (optional) for the agent... (@ for context, / for commands)'
-                      : 'Enter a prompt for the agent... (@ for context, / for commands)')
+                          ? 'Continue the previous conversation... (ctrl+k for new, @ for context, / for commands)'
+                          : 'Continue the previous conversation... (@ for context, / for commands)'
+                      : issueId
+                        ? 'Add additional context (optional) for the agent... (@ for context, / for commands)'
+                        : 'Enter a prompt for the agent... (@ for context, / for commands)')
           }
           disabled={loading || disabled}
           className="max-h-[300px] min-h-0 resize-none overflow-y-auto border-none bg-muted/80 py-2 text-sm shadow-none transition-[height] duration-100 focus-visible:ring-0 focus-visible:ring-offset-0"
@@ -1218,16 +1321,38 @@ export function AgentConfigPanel({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  onClick={isRunning && isHoveringButton ? onCancel : handleStart}
-                  disabled={isRunning ? isCancelling : !canStart}
+                  onClick={isRunning && isHoveringButton && !onInject ? onCancel : handleStart}
+                  disabled={
+                    isRunning && onInject
+                      ? !canStart || injecting
+                      : isRunning
+                        ? isCancelling
+                        : !canStart
+                  }
                   size="sm"
                   onMouseEnter={() => setIsHoveringButton(true)}
                   onMouseLeave={() => setIsHoveringButton(false)}
                   className="h-7 w-7 shrink-0 rounded-full p-0"
-                  variant={isRunning && isHoveringButton ? 'destructive' : 'default'}
-                  aria-label={isRunning ? (isHoveringButton ? 'Cancel' : 'Running...') : 'Submit'}
+                  variant={isRunning && isHoveringButton && !onInject ? 'destructive' : 'default'}
+                  aria-label={
+                    isRunning && onInject
+                      ? injecting
+                        ? 'Sending...'
+                        : 'Send'
+                      : isRunning
+                        ? isHoveringButton
+                          ? 'Cancel'
+                          : 'Running...'
+                        : 'Submit'
+                  }
                 >
-                  {isRunning ? (
+                  {isRunning && onInject ? (
+                    injecting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )
+                  ) : isRunning ? (
                     isHoveringButton ? (
                       <Square className="h-3 w-3" />
                     ) : (
@@ -1239,7 +1364,15 @@ export function AgentConfigPanel({
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {isRunning ? (isHoveringButton ? 'Cancel' : 'Running...') : 'Submit'}
+                {isRunning && onInject
+                  ? injecting
+                    ? 'Sending...'
+                    : 'Send'
+                  : isRunning
+                    ? isHoveringButton
+                      ? 'Cancel'
+                      : 'Running...'
+                    : 'Submit'}
               </TooltipContent>
             </Tooltip>
           </div>

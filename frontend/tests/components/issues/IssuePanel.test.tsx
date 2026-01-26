@@ -472,9 +472,9 @@ describe('IssuePanel', () => {
 
     renderWithProviders(<IssuePanel issue={mockIssue} onClose={onClose} />)
 
-    // Wait for execution to load
+    // Wait for execution to load - with onInject, placeholder shows send message
     await waitFor(() => {
-      expect(screen.getByPlaceholderText('Execution is running (esc to cancel)')).toBeDisabled()
+      expect(screen.getByPlaceholderText('Send message to agent... (@ for context, / for commands)')).toBeInTheDocument()
     })
 
     // First ESC press should cancel the execution
@@ -677,7 +677,7 @@ describe('IssuePanel', () => {
       expect(screen.getByText('New conversation')).toBeInTheDocument()
     })
 
-    it('should disable input when execution is running', async () => {
+    it('should enable input for sending messages when execution is running', async () => {
       vi.mocked(executionsApi.list).mockResolvedValue([
         {
           id: 'exec-123',
@@ -694,9 +694,10 @@ describe('IssuePanel', () => {
 
       renderWithProviders(<IssuePanel issue={mockIssue} />)
 
+      // Input should be enabled for sending messages during execution
       await waitFor(() => {
-        const textarea = screen.getByPlaceholderText('Execution is running (esc to cancel)')
-        expect(textarea).toBeDisabled()
+        const textarea = screen.getByPlaceholderText('Send message to agent... (@ for context, / for commands)')
+        expect(textarea).not.toBeDisabled()
       })
     })
   })

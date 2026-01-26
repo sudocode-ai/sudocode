@@ -1760,6 +1760,9 @@ describe('ExecutionMonitor', () => {
     })
   })
 
+  // Note: MessageInput has been consolidated into AgentConfigPanel
+  // Message injection during execution is now handled via the onInject prop in AgentConfigPanel
+
   describe('Skip All Permissions', () => {
     it('should pass onSkipAllPermissions prop to AgentTrajectory when permission requests exist', () => {
       const permissionRequests = [

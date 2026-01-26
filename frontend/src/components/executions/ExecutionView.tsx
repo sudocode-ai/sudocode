@@ -525,6 +525,32 @@ export function ExecutionView({
     [executionId, onFollowUpCreated]
   )
 
+  // Handle injecting a message into a running execution
+  const handleInject = useCallback(
+    async (message: string): Promise<{ method: 'inject' | 'interrupt' | 'prompt' }> => {
+      console.log('[ExecutionView] handleInject called:', {
+        message: message.substring(0, 50),
+        hasChainData: !!chainData,
+        executionCount: chainData?.executions.length,
+      })
+
+      if (!chainData || chainData.executions.length === 0) {
+        throw new Error('No execution to inject into')
+      }
+
+      const lastExecution = chainData.executions[chainData.executions.length - 1]
+      console.log('[ExecutionView] Injecting into execution:', {
+        id: lastExecution.id,
+        status: lastExecution.status,
+      })
+
+      const result = await executionsApi.inject(lastExecution.id, message)
+      console.log('[ExecutionView] Inject result:', result)
+      return result
+    },
+    [chainData]
+  )
+
   // Handle follow-up submission - either sends prompt to persistent session or creates new execution
   const handleFollowUpStart = async (
     _config: ExecutionConfig,
@@ -1008,10 +1034,7 @@ export function ExecutionView({
     }
   })()
 
-  // Determine if we can enable follow-up/prompt panel
-  // - Pending/paused: Session is still alive, can always send another prompt
-  // - Terminal discrete execution: Can always create follow-up (new session)
-  // - Terminal persistent execution: Only if agent supports loadSession (to resume context)
+  // Execution status categories
   const lastExecutionTerminal =
     lastExecution.status === 'completed' ||
     lastExecution.status === 'failed' ||
@@ -1019,16 +1042,35 @@ export function ExecutionView({
     lastExecution.status === 'cancelled'
   const isPersistentSessionReady =
     lastExecution.status === 'pending' || lastExecution.status === 'paused'
-  const canEnableFollowUp =
-    isPersistentSessionReady ||
-    (lastExecutionTerminal && (!lastExecutionWasPersistent || agentSupportsResume))
-
-  // Determine if the execution is actively running (not waiting/paused)
-  // This controls the "running" indicator in AgentConfigPanel
   const isActivelyRunning =
     lastExecution.status === 'preparing' ||
     lastExecution.status === 'pending' ||
     lastExecution.status === 'running'
+
+  // Determine when to enable the input panel:
+  //
+  // ENABLED when:
+  // 1. Running/preparing: Can inject messages (all ACP agents support inject or interruptWith)
+  // 2. Pending/paused: Persistent session waiting for input, can send prompts
+  // 3. Terminal non-persistent: Can always create a follow-up (new session)
+  // 4. Terminal persistent with resume: Agent supports loadSession to resume context
+  //
+  // DISABLED when:
+  // - Terminal persistent WITHOUT resume: Agent can't reload closed session context
+  //
+  const canEnableFollowUp =
+    isPersistentSessionReady ||
+    (lastExecutionTerminal && (!lastExecutionWasPersistent || agentSupportsResume))
+
+  // Debug: Log state values affecting AgentConfigPanel
+  console.log('[ExecutionView] Input panel state:', {
+    lastExecutionId: lastExecution.id,
+    lastExecutionStatus: lastExecution.status,
+    isActivelyRunning,
+    canEnableFollowUp,
+    submittingFollowUp,
+    disabledProp: (!canEnableFollowUp && !isActivelyRunning) || submittingFollowUp,
+  })
 
   return (
     <TooltipProvider>
@@ -1239,9 +1281,11 @@ export function ExecutionView({
             <AgentConfigPanel
               issueId={rootExecution.issue_id || undefined}
               onStart={handleFollowUpStart}
+              onInject={handleInject}
               isFollowUp
               allowModeToggle={false}
-              disabled={!canEnableFollowUp || submittingFollowUp}
+              // Disabled only for terminal persistent sessions without resume support
+              disabled={(!canEnableFollowUp && !isActivelyRunning) || submittingFollowUp}
               isRunning={isActivelyRunning}
               onCancel={() => handleCancel(lastExecution.id)}
               isCancelling={cancelling}

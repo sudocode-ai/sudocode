@@ -927,6 +927,17 @@ export function IssuePanel({
     }
   }
 
+  // Handle injecting a message into a running execution
+  const handleInject = useCallback(
+    async (message: string): Promise<{ method: 'inject' | 'interrupt' | 'prompt' }> => {
+      if (!latestExecution) {
+        throw new Error('No execution to inject into')
+      }
+      return executionsApi.inject(latestExecution.id, message)
+    },
+    [latestExecution]
+  )
+
   const handleCopyId = async () => {
     try {
       await navigator.clipboard.writeText(issue.id)
@@ -1425,7 +1436,8 @@ export function IssuePanel({
             <AgentConfigPanel
               issueId={issue.id}
               onStart={handleStartExecution}
-              disabled={issue.archived || isUpdating || isExecutionRunning}
+              onInject={handleInject}
+              disabled={issue.archived || isUpdating}
               autoFocus={autoFocusAgentConfig}
               isFollowUp={isFollowUpMode && canFollowUp}
               isRunning={isExecutionRunning}
