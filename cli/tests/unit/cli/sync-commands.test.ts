@@ -1094,7 +1094,10 @@ Stale content from markdown`;
       expect(output).toContain("database is newer");
 
       // Verify markdown file was updated with database content
-      const updatedMd = fs.readFileSync(mdPath, "utf8");
+      // Note: File may be renamed to match new title format: {id}_{title_slug}.md
+      const renamedPath = path.join(issuesDir, "i-test1_database_issue.md");
+      const finalPath = fs.existsSync(renamedPath) ? renamedPath : mdPath;
+      const updatedMd = fs.readFileSync(finalPath, "utf8");
       expect(updatedMd).toContain("title: Database Issue");
     });
 
@@ -1197,7 +1200,10 @@ Fresh content from markdown`;
       expect(output).toContain("database is newer");
 
       // Verify issue1's markdown was updated from database
-      const md1Content = fs.readFileSync(md1Path, "utf8");
+      // Note: File may be renamed to match new title format: {id}_{title_slug}.md
+      const renamedMd1Path = path.join(issuesDir, "i-conf1_database_newer.md");
+      const finalMd1Path = fs.existsSync(renamedMd1Path) ? renamedMd1Path : md1Path;
+      const md1Content = fs.readFileSync(finalMd1Path, "utf8");
       expect(md1Content).toContain("title: Database Newer");
     });
 

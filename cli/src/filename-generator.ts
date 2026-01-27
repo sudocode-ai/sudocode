@@ -124,3 +124,41 @@ export function findExistingEntityFile(
   // Not found
   return null;
 }
+
+/**
+ * Find existing file and rename if title changed.
+ * Returns the final path to use for content update.
+ *
+ * @param entityId - The entity ID
+ * @param directory - Directory containing markdown files
+ * @param newTitle - The current/new title from the database
+ * @returns The path to use for syncing (renamed if necessary)
+ */
+export function syncFileWithRename(
+  entityId: string,
+  directory: string,
+  newTitle: string
+): string {
+  const existingFile = findExistingEntityFile(entityId, directory, newTitle);
+  const expectedFilename = generateUniqueFilename(newTitle, entityId);
+  const expectedPath = path.join(directory, expectedFilename);
+
+  if (existingFile) {
+    if (existingFile !== expectedPath) {
+      // Title changed - rename file to match new title
+      try {
+        fs.renameSync(existingFile, expectedPath);
+      } catch (error) {
+        // If rename fails (permissions, file locked), log warning and use existing path
+        console.warn(
+          `Warning: Could not rename ${existingFile} to ${expectedPath}: ${error instanceof Error ? error.message : String(error)}`
+        );
+        return existingFile;
+      }
+    }
+    return expectedPath;
+  }
+
+  // No existing file, return new path
+  return expectedPath;
+}
