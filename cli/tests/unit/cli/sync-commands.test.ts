@@ -432,12 +432,12 @@ describe("Sync Commands - Auto Direction Detection", () => {
       const output = consoleLogSpy.mock.calls.flat().join(" ");
       expect(output).toContain("Syncing from database to markdown");
 
-      // Verify database content was synced to markdown
+      // Verify database content was synced to markdown (both frontmatter AND body)
       const { parseMarkdownFile } = await import("../../../src/markdown.js");
       const parsed = parseMarkdownFile(mdPath, db, tempDir);
       expect(parsed.data.title).toBe("DB Spec");
-      // Note: syncJSONLToMarkdown preserves existing content, only updates frontmatter
-      expect(parsed.content).toContain("# Markdown content");
+      // syncJSONLToMarkdown now writes full content from database
+      expect(parsed.content).toContain("# DB content");
     });
   });
 
