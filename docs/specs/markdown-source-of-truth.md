@@ -45,34 +45,13 @@ SQLite Cache                              SQLite Cache
 ```typescript
 /**
  * Storage mode determines the source of truth for entity data
+ * - "jsonl": JSONL files are authoritative (current default)
+ * - "markdown": Markdown files are authoritative
+ *
+ * Note: JSONL is always exported regardless of mode (for git tracking).
+ * This setting only controls which format is authoritative during conflicts.
  */
 export type StorageMode = "jsonl" | "markdown";
-
-/**
- * Per-entity-type storage configuration
- */
-export interface EntityStorageConfig {
-  /** Source of truth for this entity type */
-  sourceOfTruth?: StorageMode;
-}
-
-/**
- * Storage layer configuration
- */
-export interface StorageConfig {
-  /** Global source of truth (default: "jsonl") */
-  sourceOfTruth?: StorageMode;
-
-  /** Whether to auto-export to JSONL when markdown is source of truth (default: true) */
-  autoExportJsonl?: boolean;
-
-  /** Whether to auto-generate markdown when JSONL is source of truth (default: false) */
-  autoGenerateMarkdown?: boolean;
-
-  /** Per-entity-type overrides */
-  specs?: EntityStorageConfig;
-  issues?: EntityStorageConfig;
-}
 
 export interface Config {
   version: string;
@@ -80,30 +59,19 @@ export interface Config {
   integrations?: IntegrationsConfig;
   editor?: EditorConfig;
   voice?: VoiceSettingsConfig;
-  /** Storage layer configuration (optional) */
-  storage?: StorageConfig;  // NEW
+  /** Source of truth for entity data (default: "jsonl") */
+  sourceOfTruth?: StorageMode;  // NEW - single top-level option
 }
 ```
 
-#### 1.2 Add helper functions (`cli/src/config.ts`)
+#### 1.2 Add helper function (`cli/src/config.ts`)
 
 ```typescript
 /**
- * Get the effective source of truth for an entity type
+ * Check if markdown is the source of truth
  */
-export function getSourceOfTruth(
-  config: Config,
-  entityType: "spec" | "issue"
-): StorageMode {
-  const entityConfig = entityType === "spec" ? config.storage?.specs : config.storage?.issues;
-  return entityConfig?.sourceOfTruth ?? config.storage?.sourceOfTruth ?? "jsonl";
-}
-
-/**
- * Check if markdown is source of truth for entity type
- */
-export function isMarkdownFirst(config: Config, entityType: "spec" | "issue"): boolean {
-  return getSourceOfTruth(config, entityType) === "markdown";
+export function isMarkdownFirst(config: Config): boolean {
+  return config.sourceOfTruth === "markdown";
 }
 ```
 
@@ -125,7 +93,7 @@ if (event === "unlink") {
 ```typescript
 if (event === "unlink") {
   const config = getConfig(baseDir);
-  if (isMarkdownFirst(config, entityType)) {
+  if (isMarkdownFirst(config)) {
     // Markdown is source of truth - delete entity from DB
     const entityId = getEntityIdFromPath(filePath, db, entityType);
     if (entityId) {
@@ -152,7 +120,7 @@ if (event === "unlink") {
 ```typescript
 if (syncDirection === "orphaned") {
   const config = getConfig(baseDir);
-  if (isMarkdownFirst(config, entityType)) {
+  if (isMarkdownFirst(config)) {
     // Markdown is source of truth - CREATE entity from markdown
     const syncResult = await syncMarkdownToJSONL(db, baseDir, filePath, {
       autoInitialize: true,  // Generate ID, set defaults
@@ -177,7 +145,7 @@ if (syncDirection === "orphaned") {
 **New behavior:**
 ```typescript
 const config = getConfig(baseDir);
-if (isMarkdownFirst(config, entityType)) {
+if (isMarkdownFirst(config)) {
   // Markdown is source of truth - always sync markdown → DB
   // (unless content matches, to prevent oscillation)
   syncDirection = "markdown-to-db";
@@ -199,7 +167,7 @@ if (isMarkdownFirst(config, entityType)) {
 ```typescript
 // For each markdown file without DB entry:
 const config = getConfig(baseDir);
-if (isMarkdownFirst(config, entityType)) {
+if (isMarkdownFirst(config)) {
   // Create entity from markdown file
   await syncMarkdownToJSONL(db, baseDir, filePath, { autoInitialize: true });
 } else {
@@ -224,18 +192,11 @@ function determineSyncDirection(ctx: CommandContext): {
 } {
   const config = getConfig(ctx.outputDir);
 
-  // Check per-entity-type settings
-  const specMode = getSourceOfTruth(config, "spec");
-  const issueMode = getSourceOfTruth(config, "issue");
-
-  if (specMode === "markdown" && issueMode === "markdown") {
+  if (isMarkdownFirst(config)) {
     return { direction: "from-markdown", reason: "Markdown is source of truth" };
-  } else if (specMode === "jsonl" && issueMode === "jsonl") {
-    // Use existing timestamp-based logic
-    return existingTimestampLogic();
   } else {
-    // Mixed mode - need entity-specific handling
-    return { direction: "mixed", reason: "Mixed source of truth modes" };
+    // Use existing timestamp-based logic for jsonl mode
+    return existingTimestampLogic();
   }
 }
 ```
@@ -250,11 +211,11 @@ function determineSyncDirection(ctx: CommandContext): {
 
 **New flow (markdown-first):**
 ```typescript
-if (isMarkdownFirst(config, "spec")) {
+if (isMarkdownFirst(config)) {
   // 1. Generate ID
   // 2. Write markdown file with frontmatter
   // 3. Sync markdown → DB (watcher or explicit)
-  // 4. Export JSONL (derived)
+  // 4. Export JSONL (always exported)
 } else {
   // Current flow
 }
@@ -266,10 +227,10 @@ if (isMarkdownFirst(config, "spec")) {
 
 **New flow (markdown-first):**
 ```typescript
-if (isMarkdownFirst(config, "spec")) {
+if (isMarkdownFirst(config)) {
   // 1. Delete markdown file
   // 2. Watcher triggers DB deletion
-  // 3. Export JSONL (derived)
+  // 3. Export JSONL (always exported)
 } else {
   // Current flow
 }
@@ -340,7 +301,7 @@ export async function importFromJSONL(db: Database, outputDir: string): Promise<
   const config = getConfig(outputDir);
 
   // In markdown-first mode, JSONL is derived - skip import or warn
-  if (config.storage?.sourceOfTruth === "markdown") {
+  if (isMarkdownFirst(config)) {
     console.warn("JSONL import skipped: markdown is source of truth");
     console.warn("Run 'sudocode sync --from-markdown' to rebuild from markdown files");
     return { specs: 0, issues: 0, skipped: true };
@@ -370,15 +331,11 @@ sudocode sync --auto
 #### 6.2 Config command for storage mode
 
 ```bash
-# Set global source of truth
-sudocode config set storage.sourceOfTruth markdown
+# Set source of truth
+sudocode config set sourceOfTruth markdown
 
-# Set per-entity-type
-sudocode config set storage.specs.sourceOfTruth markdown
-sudocode config set storage.issues.sourceOfTruth jsonl
-
-# View current settings
-sudocode config get storage
+# View current setting
+sudocode config get sourceOfTruth
 ```
 
 ---
@@ -393,13 +350,12 @@ Add config awareness:
 export async function scheduleExport(outputDir: string) {
   const config = getConfig(outputDir);
 
-  if (config.storage?.autoExportJsonl !== false) {
-    // Always export JSONL (even in markdown-first mode, for git tracking)
-    await exportToJSONL(db, { outputDir });
-  }
+  // Always export JSONL (for git tracking, regardless of mode)
+  await exportToJSONL(db, { outputDir });
 
-  if (isMarkdownFirst(config, "spec") || isMarkdownFirst(config, "issue")) {
-    // In markdown-first mode, also update markdown files
+  if (isMarkdownFirst(config)) {
+    // In markdown-first mode, also update markdown files from DB
+    // (for changes made via API that didn't go through markdown)
     await syncDBToMarkdown(db, outputDir);
   }
 }
@@ -444,10 +400,10 @@ describe("markdown-first mode", () => {
   it("git pull with JSONL changes does not override markdown");
 });
 
-describe("mixed mode", () => {
-  it("specs use markdown source of truth");
-  it("issues use jsonl source of truth");
-  it("sync handles mixed modes correctly");
+describe("jsonl-first mode (default)", () => {
+  it("orphaned markdown files are deleted");
+  it("JSONL changes override markdown");
+  it("entity deletion removes markdown file");
 });
 ```
 
@@ -459,10 +415,10 @@ describe("mixed mode", () => {
 
 | File | Lines Affected | Description |
 |------|----------------|-------------|
-| `types/src/index.d.ts` | +30 | Add StorageConfig interface |
-| `cli/src/config.ts` | +40 | Add helper functions |
+| `types/src/index.d.ts` | +5 | Add `sourceOfTruth` field to Config |
+| `cli/src/config.ts` | +10 | Add `isMarkdownFirst()` helper |
 | `cli/src/watcher.ts` | ~150 | Conditional logic for both modes |
-| `cli/src/cli/sync-commands.ts` | ~100 | Update sync direction logic |
+| `cli/src/cli/sync-commands.ts` | ~80 | Update sync direction logic |
 | `cli/src/import.ts` | +80 | Add rebuildFromMarkdown() |
 
 ### Medium Impact (Entity Operations)
@@ -494,7 +450,7 @@ describe("mixed mode", () => {
 sudocode sync --to-markdown
 
 # 2. Update config
-sudocode config set storage.sourceOfTruth markdown
+sudocode config set sourceOfTruth markdown
 
 # 3. Verify
 sudocode sync --from-markdown --dry-run
@@ -502,36 +458,21 @@ sudocode sync --from-markdown --dry-run
 
 ### Recommended configurations
 
-**Wiki-style documentation project:**
+**Markdown-first (wiki-style documentation):**
 ```json
 {
-  "storage": {
-    "sourceOfTruth": "markdown",
-    "autoExportJsonl": true
-  }
+  "sourceOfTruth": "markdown"
 }
 ```
 
-**CLI-heavy workflow:**
+**JSONL-first (default, CLI-heavy workflow):**
 ```json
 {
-  "storage": {
-    "sourceOfTruth": "jsonl",
-    "autoGenerateMarkdown": false
-  }
+  "sourceOfTruth": "jsonl"
 }
 ```
 
-**Hybrid (specs as docs, issues as tasks):**
-```json
-{
-  "storage": {
-    "sourceOfTruth": "jsonl",
-    "specs": { "sourceOfTruth": "markdown" },
-    "issues": { "sourceOfTruth": "jsonl" }
-  }
-}
-```
+Or simply omit the field (jsonl is default).
 
 ---
 
@@ -542,8 +483,8 @@ sudocode sync --from-markdown --dry-run
 2. **Git merge conflicts in markdown?** JSONL is optimized for line-based merges. Markdown conflicts need different handling.
 
 3. **Entities without markdown?** In markdown-first mode, should entities without `.md` files be:
-   - Auto-deleted?
-   - Auto-generated?
+   - Auto-deleted from DB?
+   - Auto-generated as `.md` files?
    - Warned about?
 
 4. **Performance at scale?** Markdown parsing is slower than JSONL. Acceptable tradeoff?
