@@ -38,35 +38,121 @@ SQLite Cache                              SQLite Cache
 
 ## Implementation Plan
 
-### Phase 1: Configuration Schema
+### Phase 0: Config Split (Prerequisite)
 
-#### 1.1 Add StorageConfig to types (`types/src/index.d.ts:353-364`)
+Split `config.json` into tracked and local files. Currently `config.json` is gitignored, but `sourceOfTruth` needs to be shared across the team.
+
+#### 0.1 New config file structure
+
+```
+.sudocode/
+├── config.json        # Git-tracked, shared project settings
+├── config.local.json  # Gitignored, machine-specific settings
+└── ...
+```
+
+#### 0.2 Update types (`types/src/index.d.ts`)
 
 ```typescript
 /**
  * Storage mode determines the source of truth for entity data
- * - "jsonl": JSONL files are authoritative (current default)
- * - "markdown": Markdown files are authoritative
- *
- * Note: JSONL is always exported regardless of mode (for git tracking).
- * This setting only controls which format is authoritative during conflicts.
  */
 export type StorageMode = "jsonl" | "markdown";
 
-export interface Config {
-  version: string;
-  worktree?: WorktreeConfig;
-  integrations?: IntegrationsConfig;
-  editor?: EditorConfig;
-  voice?: VoiceSettingsConfig;
+/**
+ * Shared project configuration (git-tracked: .sudocode/config.json)
+ */
+export interface ProjectConfig {
   /** Source of truth for entity data (default: "jsonl") */
-  sourceOfTruth?: StorageMode;  // NEW - single top-level option
+  sourceOfTruth?: StorageMode;
+  /** Integration configurations (shared across team) */
+  integrations?: IntegrationsConfig;
+}
+
+/**
+ * Local machine configuration (gitignored: .sudocode/config.local.json)
+ */
+export interface LocalConfig {
+  /** Worktree configuration (machine-specific paths) */
+  worktree?: WorktreeConfig;
+  /** Editor configuration (personal preference) */
+  editor?: EditorConfig;
+  /** Voice configuration (personal preference) */
+  voice?: VoiceSettingsConfig;
+}
+
+/**
+ * Merged configuration (ProjectConfig + LocalConfig)
+ */
+export interface Config extends ProjectConfig, LocalConfig {
+  /** @deprecated Use ProjectConfig fields directly */
+  version?: string;
 }
 ```
 
-#### 1.2 Add helper function (`cli/src/config.ts`)
+#### 0.3 Update config.ts (`cli/src/config.ts`)
 
 ```typescript
+const PROJECT_CONFIG_FILE = "config.json";
+const LOCAL_CONFIG_FILE = "config.local.json";
+
+/**
+ * Read project config (git-tracked)
+ */
+function readProjectConfig(outputDir: string): ProjectConfig {
+  const configPath = path.join(outputDir, PROJECT_CONFIG_FILE);
+  if (!fs.existsSync(configPath)) {
+    return {};
+  }
+  return JSON.parse(fs.readFileSync(configPath, "utf8"));
+}
+
+/**
+ * Read local config (gitignored)
+ */
+function readLocalConfig(outputDir: string): LocalConfig {
+  const configPath = path.join(outputDir, LOCAL_CONFIG_FILE);
+  if (!fs.existsSync(configPath)) {
+    return {};
+  }
+  return JSON.parse(fs.readFileSync(configPath, "utf8"));
+}
+
+/**
+ * Get merged config (project + local)
+ */
+export function getConfig(outputDir: string): Config {
+  const project = readProjectConfig(outputDir);
+  const local = readLocalConfig(outputDir);
+  return { ...project, ...local };
+}
+
+/**
+ * Update project config (git-tracked)
+ */
+export function updateProjectConfig(
+  outputDir: string,
+  updates: Partial<ProjectConfig>
+): void {
+  const config = readProjectConfig(outputDir);
+  Object.assign(config, updates);
+  const configPath = path.join(outputDir, PROJECT_CONFIG_FILE);
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+}
+
+/**
+ * Update local config (gitignored)
+ */
+export function updateLocalConfig(
+  outputDir: string,
+  updates: Partial<LocalConfig>
+): void {
+  const config = readLocalConfig(outputDir);
+  Object.assign(config, updates);
+  const configPath = path.join(outputDir, LOCAL_CONFIG_FILE);
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf8");
+}
+
 /**
  * Check if markdown is the source of truth
  */
@@ -75,9 +161,65 @@ export function isMarkdownFirst(config: Config): boolean {
 }
 ```
 
+#### 0.4 Update .gitignore (`.sudocode/.gitignore`)
+
+```diff
+  cache.db*
+  issues/
+  specs/
+  worktrees/
+- config.json
++ config.local.json
+  merge-driver.log
+  deploy-config.json
+  spawn-config.json
+```
+
+#### 0.5 Migration for existing projects
+
+When loading config, migrate old `config.json` to new split:
+
+```typescript
+function migrateConfigIfNeeded(outputDir: string): void {
+  const oldConfigPath = path.join(outputDir, "config.json");
+  const localConfigPath = path.join(outputDir, LOCAL_CONFIG_FILE);
+
+  if (fs.existsSync(oldConfigPath) && !fs.existsSync(localConfigPath)) {
+    const oldConfig = JSON.parse(fs.readFileSync(oldConfigPath, "utf8"));
+
+    // Extract local-only fields
+    const localConfig: LocalConfig = {};
+    if (oldConfig.worktree) localConfig.worktree = oldConfig.worktree;
+    if (oldConfig.editor) localConfig.editor = oldConfig.editor;
+    if (oldConfig.voice) localConfig.voice = oldConfig.voice;
+
+    // Extract project fields
+    const projectConfig: ProjectConfig = {};
+    if (oldConfig.integrations) projectConfig.integrations = oldConfig.integrations;
+    // sourceOfTruth would be new, not in old config
+
+    // Write split configs
+    if (Object.keys(localConfig).length > 0) {
+      fs.writeFileSync(localConfigPath, JSON.stringify(localConfig, null, 2));
+    }
+    fs.writeFileSync(oldConfigPath, JSON.stringify(projectConfig, null, 2));
+  }
+}
+```
+
+#### 0.6 Files to modify
+
+| File | Changes |
+|------|---------|
+| `types/src/index.d.ts` | Add `ProjectConfig`, `LocalConfig`, `StorageMode` |
+| `cli/src/config.ts` | Split read/write, add migration |
+| `.sudocode/.gitignore` | Track `config.json`, ignore `config.local.json` |
+| `cli/src/cli/init-command.ts` | Create both config files on init |
+| `cli/src/cli/config-commands.ts` | Route to correct file based on field |
+
 ---
 
-### Phase 2: Watcher Logic Changes
+### Phase 1: Watcher Logic Changes
 
 #### 2.1 File Deletion Handling (`cli/src/watcher.ts:470-477`)
 
@@ -178,7 +320,7 @@ if (isMarkdownFirst(config)) {
 
 ---
 
-### Phase 3: Sync Commands
+### Phase 2: Sync Commands
 
 #### 3.1 Update `determineSyncDirection()` (`cli/src/cli/sync-commands.ts:416-538`)
 
@@ -203,7 +345,7 @@ function determineSyncDirection(ctx: CommandContext): {
 
 ---
 
-### Phase 4: Entity Operations
+### Phase 3: Entity Operations
 
 #### 4.1 Spec Creation (`cli/src/cli/spec-commands.ts`)
 
@@ -242,7 +384,7 @@ Same pattern as specs.
 
 ---
 
-### Phase 5: Import/Export Changes
+### Phase 4: Import/Export Changes
 
 #### 5.1 Add `rebuildFromMarkdown()` (`cli/src/import.ts`)
 
@@ -313,7 +455,7 @@ export async function importFromJSONL(db: Database, outputDir: string): Promise<
 
 ---
 
-### Phase 6: CLI Commands
+### Phase 5: CLI Commands
 
 #### 6.1 New sync subcommand
 
@@ -340,7 +482,7 @@ sudocode config get sourceOfTruth
 
 ---
 
-### Phase 7: Server Changes
+### Phase 6: Server Changes
 
 #### 7.1 Export service (`server/src/services/export.ts`)
 
@@ -363,7 +505,7 @@ export async function scheduleExport(outputDir: string) {
 
 ---
 
-### Phase 8: Documentation Updates
+### Phase 7: Documentation Updates
 
 #### 8.1 Files to update
 
@@ -376,7 +518,7 @@ export async function scheduleExport(outputDir: string) {
 
 ---
 
-### Phase 9: Test Updates
+### Phase 8: Test Updates
 
 #### 9.1 Test files requiring changes
 
@@ -388,7 +530,7 @@ export async function scheduleExport(outputDir: string) {
 | `cli/tests/unit/cli/sync-commands.test.ts` | Test direction logic per config |
 | `cli/tests/integration/round-trip.test.ts` | Test both directions |
 
-#### 9.2 New test scenarios
+#### 8.2 New test scenarios
 
 ```typescript
 describe("markdown-first mode", () => {
@@ -411,20 +553,23 @@ describe("jsonl-first mode (default)", () => {
 
 ## File Change Summary
 
-### High Impact (Core Logic)
+### Phase 0: Config Split (Prerequisite)
 
 | File | Lines Affected | Description |
 |------|----------------|-------------|
-| `types/src/index.d.ts` | +5 | Add `sourceOfTruth` field to Config |
-| `cli/src/config.ts` | +10 | Add `isMarkdownFirst()` helper |
+| `types/src/index.d.ts` | +25 | Add `ProjectConfig`, `LocalConfig`, `StorageMode` |
+| `cli/src/config.ts` | +80 | Split read/write functions, migration logic |
+| `.sudocode/.gitignore` | ~1 | Track `config.json`, ignore `config.local.json` |
+| `cli/src/cli/init-command.ts` | ~20 | Create both config files on init |
+| `cli/src/cli/config-commands.ts` | ~30 | Route to correct file based on field |
+
+### Phase 1-4: Core Logic
+
+| File | Lines Affected | Description |
+|------|----------------|-------------|
 | `cli/src/watcher.ts` | ~150 | Conditional logic for both modes |
 | `cli/src/cli/sync-commands.ts` | ~80 | Update sync direction logic |
 | `cli/src/import.ts` | +80 | Add rebuildFromMarkdown() |
-
-### Medium Impact (Entity Operations)
-
-| File | Lines Affected | Description |
-|------|----------------|-------------|
 | `cli/src/cli/spec-commands.ts` | ~50 | Update create/delete flow |
 | `cli/src/cli/issue-commands.ts` | ~50 | Update create/delete flow |
 | `cli/src/export.ts` | ~30 | Config awareness |
