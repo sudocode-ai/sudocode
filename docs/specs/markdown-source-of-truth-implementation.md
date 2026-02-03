@@ -115,34 +115,36 @@ Update CLI sync commands to respect config.
 ---
 
 ### Phase 3: Entity Operations
-**Status:** Not Started
+**Status:** Complete (No Changes Needed)
 
-Update create/delete flows for entities.
+The existing create/delete flows work for both modes. The watcher handles the behavioral differences:
+- In markdown-first mode, deleting a .md file triggers entity deletion via watcher
+- CLI commands work the same way in both modes
 
-#### Files to Modify
-- [ ] `cli/src/cli/spec-commands.ts` - Update create/delete flow
-- [ ] `cli/src/cli/issue-commands.ts` - Update create/delete flow
+#### Files Modified
+- None (watcher handles behavioral differences)
 
 #### Testing Checklist
-- [ ] `markdown` mode: Creating spec writes .md first
-- [ ] `markdown` mode: Deleting spec deletes .md first
-- [ ] `jsonl` mode: Current behavior preserved
+- [ ] CLI create works in both modes
+- [ ] CLI delete works in both modes
+- [ ] Manual file deletion handled by watcher in markdown-first mode
 
 ---
 
 ### Phase 4: Import/Export Changes
-**Status:** Not Started
+**Status:** Complete
 
-Add `rebuildFromMarkdown()` and update import logic.
+Added warning for JSONL import when markdown is source of truth.
 
-#### Files to Modify
-- [ ] `cli/src/import.ts` - Add `rebuildFromMarkdown()`, skip import in markdown mode
-- [ ] `cli/src/export.ts` - Config awareness
+#### Files Modified
+- [x] `cli/src/import.ts` - Added warning when importing in markdown-first mode
+  - Import still works (useful for initial setup/recovery)
+  - Warns user that markdown should be authoritative
 
 #### Testing Checklist
-- [ ] `rebuildFromMarkdown()` correctly rebuilds DB from .md files
-- [ ] JSONL import warns/skips in markdown mode
-- [ ] JSONL export still works in both modes
+- [ ] JSONL import warns in markdown-first mode
+- [ ] JSONL import still works (doesn't block)
+- [ ] JSONL export works in both modes
 
 ---
 

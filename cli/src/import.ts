@@ -33,6 +33,7 @@ import {
 import { transaction } from "./operations/transactions.js";
 import * as path from "path";
 import * as fs from "fs";
+import { getConfig, isMarkdownFirst } from "./config.js";
 
 /**
  * Warnings collected during import for non-fatal issues
@@ -742,6 +743,19 @@ export async function importFromJSONL(
     resolveCollisions: shouldResolve = true,
     forceUpdateIds = [],
   } = options;
+
+  // Check if markdown is source of truth
+  const config = getConfig(inputDir);
+  if (isMarkdownFirst(config)) {
+    // In markdown-first mode, JSONL is derived, not authoritative
+    // Warn but still allow import (useful for initial setup or recovery)
+    console.warn(
+      "[import] Warning: Markdown is configured as source of truth (sourceOfTruth = 'markdown')."
+    );
+    console.warn(
+      "[import] JSONL import may override changes. Consider using 'sudocode sync --from-markdown' instead."
+    );
+  }
 
   const specsPath = path.join(inputDir, specsFile);
   const issuesPath = path.join(inputDir, issuesFile);
