@@ -23,7 +23,7 @@ import { getTags, setTags } from "../operations/tags.js";
 import { listFeedback } from "../operations/feedback.js";
 import { exportToJSONL } from "../export.js";
 import { syncJSONLToMarkdown } from "../sync.js";
-import { generateUniqueFilename } from "../filename-generator.js";
+import { generateUniqueFilename, findExistingEntityFile, syncFileWithRename } from "../filename-generator.js";
 import {
   isValidIssueStatus,
   getValidIssueStatuses,
@@ -348,7 +348,9 @@ export async function handleIssueUpdate(
     // Also update the markdown file to keep it in sync
     const issuesDir = path.join(ctx.outputDir, "issues");
     fs.mkdirSync(issuesDir, { recursive: true });
-    const mdPath = path.join(issuesDir, `${id}.md`);
+
+    // Find existing file, rename if title changed, or generate new filename
+    const mdPath = syncFileWithRename(id, issuesDir, issue.title);
     await syncJSONLToMarkdown(ctx.db, id, 'issue', mdPath);
 
     if (ctx.jsonOutput) {
@@ -408,7 +410,9 @@ export async function handleIssueClose(
     fs.mkdirSync(issuesDir, { recursive: true });
     for (const result of results) {
       if (result.success) {
-        const mdPath = path.join(issuesDir, `${result.id}.md`);
+        // Find existing file, rename if title changed, or generate new filename
+        const issue = getIssue(ctx.db, result.id);
+        const mdPath = syncFileWithRename(result.id, issuesDir, issue?.title || result.id);
         await syncJSONLToMarkdown(ctx.db, result.id, 'issue', mdPath);
       }
     }

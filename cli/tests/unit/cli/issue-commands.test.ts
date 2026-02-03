@@ -13,6 +13,7 @@ import {
   handleIssueDelete,
 } from "../../../src/cli/issue-commands.js";
 import { getIssue } from "../../../src/operations/issues.js";
+import { generateUniqueFilename } from "../../../src/filename-generator.js";
 import type Database from "better-sqlite3";
 import * as fs from "fs";
 import * as path from "path";
@@ -673,8 +674,9 @@ describe("Issue CLI Commands", () => {
       };
       await handleIssueUpdate(ctx, issueId, options);
 
-      // Check that markdown file was updated
-      const mdPath = path.join(tempDir, "issues", `${issueId}.md`);
+      // Check that markdown file was updated (renamed to match new title)
+      const mdFilename = generateUniqueFilename("Updated Title", issueId);
+      const mdPath = path.join(tempDir, "issues", mdFilename);
       expect(fs.existsSync(mdPath)).toBe(true);
 
       // Verify markdown content has updated values
@@ -694,8 +696,9 @@ describe("Issue CLI Commands", () => {
       // Close the issue
       await handleIssueClose(ctx, [issueId], {});
 
-      // Check that markdown file was updated
-      const mdPath = path.join(tempDir, "issues", `${issueId}.md`);
+      // Check that markdown file was updated (filename matches original title)
+      const mdFilename = generateUniqueFilename("Issue to Close", issueId);
+      const mdPath = path.join(tempDir, "issues", mdFilename);
       expect(fs.existsSync(mdPath)).toBe(true);
 
       // Verify markdown content has closed status
@@ -717,8 +720,9 @@ describe("Issue CLI Commands", () => {
       // Update just the status (not content)
       await handleIssueUpdate(ctx, issueId, { status: "in_progress" });
 
-      // Check that markdown file preserves content
-      const mdPath = path.join(tempDir, "issues", `${issueId}.md`);
+      // Check that markdown file preserves content (filename matches title)
+      const mdFilename = generateUniqueFilename("Issue with Content", issueId);
+      const mdPath = path.join(tempDir, "issues", mdFilename);
       const mdContent = fs.readFileSync(mdPath, "utf8");
 
       expect(mdContent).toContain("Original content");

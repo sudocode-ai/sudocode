@@ -15,6 +15,7 @@ import { listIssues } from "../operations/issues.js";
 import {
   generateUniqueFilename,
   findExistingEntityFile,
+  syncFileWithRename,
 } from "../filename-generator.js";
 import { isInitialized, performInitialization } from "./init-commands.js";
 
@@ -274,16 +275,11 @@ async function handleSyncToMarkdown(ctx: CommandContext): Promise<void> {
   console.log(chalk.gray(`  Found ${specs.length} specs in database`));
 
   for (const spec of specs) {
+    // Check if file exists at stored path, otherwise use syncFileWithRename
     let filePath = path.join(ctx.outputDir, spec.file_path);
     if (!fs.existsSync(filePath)) {
-      const foundFile = findExistingEntityFile(spec.id, specsDir, spec.title);
-
-      if (foundFile) {
-        filePath = foundFile;
-      } else {
-        const fileName = generateUniqueFilename(spec.title, spec.id);
-        filePath = path.join(specsDir, fileName);
-      }
+      // Find existing file, rename if title changed, or generate new filename
+      filePath = syncFileWithRename(spec.id, specsDir, spec.title);
     }
 
     const result = await syncJSONLToMarkdown(ctx.db, spec.id, "spec", filePath);
@@ -308,14 +304,8 @@ async function handleSyncToMarkdown(ctx: CommandContext): Promise<void> {
   console.log(chalk.gray(`  Found ${issues.length} issues in database`));
 
   for (const issue of issues) {
-    // Find existing file or generate new filename using unified scheme
-    let filePath = findExistingEntityFile(issue.id, issuesDir, issue.title);
-
-    if (!filePath) {
-      // File doesn't exist, generate new filename with unified format
-      const fileName = generateUniqueFilename(issue.title, issue.id);
-      filePath = path.join(issuesDir, fileName);
-    }
+    // Find existing file, rename if title changed, or generate new filename
+    const filePath = syncFileWithRename(issue.id, issuesDir, issue.title);
 
     const result = await syncJSONLToMarkdown(
       ctx.db,
