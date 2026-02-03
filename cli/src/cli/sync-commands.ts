@@ -17,6 +17,7 @@ import {
   findExistingEntityFile,
 } from "../filename-generator.js";
 import { isInitialized, performInitialization } from "./init-commands.js";
+import { getConfig, isMarkdownFirst } from "../config.js";
 
 export interface CommandContext {
   db: Database.Database;
@@ -410,13 +411,26 @@ function getFileModTime(filePath: string): Date | null {
 }
 
 /**
- * Determine sync direction based on database timestamps vs file modification times
- * The database is the source of truth - we compare file times against database entity timestamps
+ * Determine sync direction based on config and timestamps
+ * Direction depends on sourceOfTruth setting:
+ * - "jsonl" (default): Use timestamp comparison, prefer DB in conflicts
+ * - "markdown": Always sync from markdown (markdown is authoritative)
  */
 function determineSyncDirection(ctx: CommandContext): {
   direction: "to-markdown" | "from-markdown" | "no-sync";
   reason: string;
 } {
+  // Check source of truth setting first
+  const config = getConfig(ctx.outputDir);
+  if (isMarkdownFirst(config)) {
+    // Markdown is source of truth - always sync from markdown
+    return {
+      direction: "from-markdown",
+      reason: "Markdown is source of truth (config.sourceOfTruth = 'markdown')",
+    };
+  }
+
+  // JSONL/DB is source of truth - use timestamp comparison
   const specsDir = path.join(ctx.outputDir, "specs");
   const issuesDir = path.join(ctx.outputDir, "issues");
   const specsJsonl = path.join(ctx.outputDir, "specs.jsonl");

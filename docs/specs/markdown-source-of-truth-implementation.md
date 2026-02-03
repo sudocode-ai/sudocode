@@ -96,12 +96,16 @@ Update watcher to respect `sourceOfTruth` setting.
 ---
 
 ### Phase 2: Sync Commands
-**Status:** Not Started
+**Status:** Complete
 
 Update CLI sync commands to respect config.
 
-#### Files to Modify
-- [ ] `cli/src/cli/sync-commands.ts` - Update `determineSyncDirection()`
+#### Files Modified
+- [x] `cli/src/cli/sync-commands.ts` - Updated `determineSyncDirection()`
+  - Added imports for `getConfig` and `isMarkdownFirst`
+  - Check `sourceOfTruth` config at start of function
+  - If markdown-first, always return `from-markdown` direction
+  - Otherwise use existing timestamp-based logic
 
 #### Testing Checklist
 - [ ] `sudocode sync` uses correct direction based on config
