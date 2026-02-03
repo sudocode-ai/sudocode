@@ -54,29 +54,33 @@ Split configuration into tracked and local files:
 ---
 
 ### Phase 1: Watcher Logic Changes
-**Status:** Not Started
+**Status:** Complete
 
 Update watcher to respect `sourceOfTruth` setting.
 
-#### Files to Modify
-- [ ] `cli/src/watcher.ts` - Conditional logic for both modes
+#### Files Modified
+- [x] `cli/src/watcher.ts` - Conditional logic for both modes
+  - Added imports for `getConfig`, `isMarkdownFirst`, `deleteSpec`, `deleteIssue`
+  - Added file path to entity ID cache (`filePathToEntityCache`) for deletion handling
+  - Added helper functions: `updateFilePathCache`, `removeFilePathFromCache`, `getEntityFromFilePathCache`
 
-#### Key Changes
-1. **File deletion handling** (`watcher.ts:470-477`)
-   - `jsonl` mode: Ignore markdown file deletion (current behavior)
-   - `markdown` mode: Delete entity from DB when markdown deleted
+#### Key Changes Implemented
+1. **File deletion handling** (lines ~507-560)
+   - `jsonl` mode: Ignore markdown file deletion, preserve entity
+   - `markdown` mode: Delete entity from DB, export JSONL, clean up cache
 
-2. **Orphaned file handling** (`watcher.ts:540-554`)
+2. **Orphaned file handling** (lines ~625-706)
    - `jsonl` mode: Delete orphaned markdown files (current behavior)
-   - `markdown` mode: Create entity from orphaned markdown file
+   - `markdown` mode: Create entity from orphaned file via `syncMarkdownToJSONL`
 
-3. **Sync direction logic** (`watcher.ts:517-532`)
-   - `jsonl` mode: Timestamp-based (current behavior)
-   - `markdown` mode: Always markdown → DB
+3. **Sync direction logic** (lines ~604-630)
+   - `jsonl` mode: Timestamp-based comparison (current behavior)
+   - `markdown` mode: Always sync markdown → DB
 
-4. **Startup cleanup** (`watcher.ts:928-994`)
+4. **Startup cleanup** (lines ~1085-1200)
    - `jsonl` mode: Delete orphaned files (current behavior)
-   - `markdown` mode: Create entities from orphaned files
+   - `markdown` mode: Create entities from orphaned files, batch export
+   - Both modes: Populate file path cache for existing entities
 
 #### Testing Checklist (Watch for debounce issues!)
 - [ ] `jsonl` mode: Deleting .md file does NOT delete entity
@@ -86,6 +90,8 @@ Update watcher to respect `sourceOfTruth` setting.
 - [ ] No oscillation/infinite loops in either mode
 - [ ] Content hash caching works in both modes
 - [ ] File mtime synchronization works in both modes
+- [ ] File path cache is populated on startup
+- [ ] File path cache is updated on sync success
 
 ---
 
