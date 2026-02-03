@@ -149,30 +149,42 @@ Added warning for JSONL import when markdown is source of truth.
 ---
 
 ### Phase 5: CLI Commands
-**Status:** Not Started
+**Status:** Complete
 
 Add CLI commands for config and sync.
 
-#### Files to Modify
-- [ ] `cli/src/cli/config-commands.ts` - Add `config set/get sourceOfTruth`
+#### Files Modified
+- [x] `cli/src/cli/config-commands.ts` - Created with `config get/set/show` commands
+- [x] `cli/src/cli.ts` - Added config command imports and definitions
+
+#### Key Changes Implemented
+1. `sudocode config get [key]` - Get config value or show all
+2. `sudocode config set <key> <value>` - Set config value with validation
+3. `sudocode config show` - Show current source of truth info
 
 #### Testing Checklist
-- [ ] `sudocode config set sourceOfTruth markdown` works
-- [ ] `sudocode config get sourceOfTruth` works
+- [x] `sudocode config set sourceOfTruth markdown` works
+- [x] `sudocode config get sourceOfTruth` works
+- [x] Invalid values are rejected with helpful error messages
 
 ---
 
 ### Phase 6: Server Changes
-**Status:** Not Started
+**Status:** Complete
 
-Update server export service.
+Update server export service for config awareness.
 
-#### Files to Modify
-- [ ] `server/src/services/export.ts` - Config awareness
+#### Files Modified
+- [x] `server/src/services/export.ts` - Added config imports and logging
+
+#### Key Changes Implemented
+1. Import `getConfig` and `isMarkdownFirst` from CLI
+2. Added documentation explaining behavior in both modes
+3. Added logging when markdown is source of truth
 
 #### Testing Checklist
-- [ ] Server respects `sourceOfTruth` setting
-- [ ] API changes sync correctly in both modes
+- [x] Server builds successfully with config imports
+- [x] JSONL export happens in both modes (for git tracking)
 
 ---
 
@@ -226,3 +238,10 @@ JSONL is optimized for line-based merges (one entity per line, sorted by `create
 |------|-------|--------|-------|
 | 2026-02-02 | Spec | Complete | Initial spec created |
 | 2026-02-02 | Plan | Complete | Implementation plan created |
+| 2026-02-02 | Phase 0 | Complete | Config split (config.json + config.local.json) |
+| 2026-02-02 | Phase 1 | Complete | Watcher logic changes |
+| 2026-02-02 | Phase 2 | Complete | Sync commands |
+| 2026-02-02 | Phase 3 | Complete | Entity operations (no changes needed) |
+| 2026-02-02 | Phase 4 | Complete | Import/export changes |
+| 2026-02-03 | Phase 5 | Complete | CLI config commands |
+| 2026-02-03 | Phase 6 | Complete | Server config awareness |

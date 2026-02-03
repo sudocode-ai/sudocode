@@ -670,7 +670,7 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
                       action: "created",
                       filePath,
                       baseDir,
-                      source: "file",
+                      source: "markdown",
                       timestamp: new Date(),
                       entity: entity ?? undefined,
                       version: 1,
@@ -1030,7 +1030,7 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
   watcher.on("change", (filePath) => handleFileChange(filePath, "change"));
   watcher.on("unlink", (filePath) => handleFileChange(filePath, "unlink"));
 
-  watcher.on("ready", () => {
+  watcher.on("ready", async () => {
     const watched = watcher.getWatched();
     stats.filesWatched = Object.keys(watched).reduce(
       (total, dir) => total + watched[dir].length,

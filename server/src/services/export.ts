@@ -1,10 +1,18 @@
 /**
  * Export service - handles syncing database to JSONL and Markdown files
+ *
+ * This service respects the `sourceOfTruth` config setting:
+ * - "jsonl" (default): JSONL is authoritative, markdown is derived
+ * - "markdown": Markdown is authoritative, JSONL is derived (but still exported for git tracking)
+ *
+ * In both modes, JSONL is always exported. The difference is handled by the CLI watcher
+ * when resolving conflicts between markdown and JSONL.
  */
 
 import type Database from "better-sqlite3";
 import { exportToJSONL } from "@sudocode-ai/cli/dist/export.js";
 import { syncJSONLToMarkdown } from "@sudocode-ai/cli/dist/sync.js";
+import { getConfig, isMarkdownFirst } from "@sudocode-ai/cli/dist/config.js";
 import { getSudocodeDir } from "../utils/sudocode-dir.js";
 import * as path from "path";
 
@@ -38,18 +46,25 @@ function getExportDebouncer(db: Database.Database) {
  * Note: Markdown files are not updated here to avoid triggering mass file changes.
  * Markdown updates should happen through the watcher's reverse sync if enabled,
  * or through explicit sync commands.
+ *
+ * This function respects the sourceOfTruth config:
+ * - JSONL is always exported (for git tracking) regardless of mode
+ * - The CLI watcher handles sync direction based on the config
  */
 async function executeFullExport(db: Database.Database, outputDir?: string): Promise<void> {
   const dir = outputDir || getSudocodeDir();
+  const config = getConfig(dir);
+  const markdownFirst = isMarkdownFirst(config);
 
-  // Export to JSONL only
+  // Export to JSONL (always done regardless of sourceOfTruth mode)
   await exportToJSONL(db, { outputDir: dir });
 
-  // Note: We don't sync to markdown here because:
-  // 1. It would update ALL markdown files on every change (inefficient)
-  // 2. The watcher can handle reverse sync if enabled (JSONL → Markdown)
-  // 3. For API updates, the markdown file will be updated when the watcher
-  //    detects the JSONL change and does reverse sync
+  if (markdownFirst) {
+    // In markdown-first mode, JSONL is derived from markdown.
+    // We still export to JSONL for git tracking, but the watcher
+    // will prioritize markdown when there are conflicts.
+    console.log("[export] JSONL exported (markdown is source of truth)");
+  }
 }
 
 /**

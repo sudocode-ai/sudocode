@@ -66,6 +66,11 @@ import {
   handleRemoteStatus,
   handleRemoteStop,
 } from "./cli/remote-commands.js";
+import {
+  handleConfigGet,
+  handleConfigSet,
+  handleConfigShow,
+} from "./cli/config-commands.js";
 import { getUpdateNotification } from "./update-checker.js";
 import { VERSION } from "./version.js";
 
@@ -376,6 +381,35 @@ program
   .description("Show detailed project statistics")
   .action(async (options) => {
     await handleStats(getContext(), options);
+  });
+
+// ============================================================================
+// CONFIG COMMANDS
+// ============================================================================
+
+const config = program
+  .command("config")
+  .description("Manage sudocode configuration");
+
+config
+  .command("get [key]")
+  .description("Get config value (or show all if no key)")
+  .action(async (key) => {
+    await handleConfigGet(getContext(), key, { jsonOutput });
+  });
+
+config
+  .command("set <key> <value>")
+  .description("Set config value")
+  .action(async (key, value) => {
+    await handleConfigSet(getContext(), key, value, { jsonOutput });
+  });
+
+config
+  .command("show")
+  .description("Show current source of truth configuration")
+  .action(async () => {
+    await handleConfigShow(getContext(), { jsonOutput });
   });
 
 // ============================================================================
