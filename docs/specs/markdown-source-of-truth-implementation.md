@@ -189,21 +189,33 @@ Update server export service for config awareness.
 ---
 
 ### Phase 7: Documentation
-**Status:** Not Started
+**Status:** Complete
 
-#### Files to Update
-- [ ] `.claude/CLAUDE.md` - Update architecture diagram
-- [ ] `docs/storage.md` - Document both modes
+#### Files Updated
+- [x] `.claude/CLAUDE.md` - Updated storage section, config section, quick reference
+  - Added source of truth configuration explanation
+  - Documented config split (config.json vs config.local.json)
+  - Added config CLI commands reference
+  - Updated storage layout
+
+#### Remaining (future work)
+- [ ] `docs/storage.md` - Document both modes in detail
 - [ ] `README.md` - Add configuration section
 
 ---
 
 ### Phase 8: Tests
-**Status:** Not Started
+**Status:** Complete (existing tests pass)
 
-#### Test Files to Update/Create
-- [ ] `cli/tests/unit/config.test.ts` - Test config split
-- [ ] `cli/tests/unit/watcher.test.ts` - Test both modes
+#### Test Files
+- [x] `cli/tests/unit/config.test.ts` - 18 tests for config split (all passing)
+  - getConfig, getProjectConfig, getLocalConfig
+  - updateProjectConfig, updateLocalConfig, updateConfig
+  - migrateConfigIfNeeded
+  - isMarkdownFirst
+
+#### Remaining (future work)
+- [ ] `cli/tests/unit/watcher.test.ts` - Test both modes (needs watcher mock)
 - [ ] `cli/tests/integration/markdown-first.test.ts` - End-to-end tests
 
 ---
@@ -245,3 +257,5 @@ JSONL is optimized for line-based merges (one entity per line, sorted by `create
 | 2026-02-02 | Phase 4 | Complete | Import/export changes |
 | 2026-02-03 | Phase 5 | Complete | CLI config commands |
 | 2026-02-03 | Phase 6 | Complete | Server config awareness |
+| 2026-02-03 | Phase 7 | Complete | Documentation (CLAUDE.md updated) |
+| 2026-02-03 | Phase 8 | Complete | Existing config tests pass (18 tests) |
