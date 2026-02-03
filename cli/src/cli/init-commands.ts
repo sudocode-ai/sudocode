@@ -7,7 +7,10 @@ import * as fs from "fs";
 import * as path from "path";
 import { initDatabase } from "../db.js";
 import type Database from "better-sqlite3";
-import { VERSION } from "../version.js";
+import {
+  PROJECT_CONFIG_FILE,
+  LOCAL_CONFIG_FILE,
+} from "../config.js";
 
 export interface InitOptions {
   dir?: string;
@@ -18,13 +21,15 @@ export interface InitOptions {
  * Check if sudocode is initialized in a directory
  */
 export function isInitialized(dir: string): boolean {
-  const configPath = path.join(dir, "config.json");
+  // Check for either project config OR local config (for backwards compatibility)
+  const projectConfigPath = path.join(dir, PROJECT_CONFIG_FILE);
+  const localConfigPath = path.join(dir, LOCAL_CONFIG_FILE);
   const dbPath = path.join(dir, "cache.db");
   const specsDir = path.join(dir, "specs");
   const issuesDir = path.join(dir, "issues");
 
   return (
-    fs.existsSync(configPath) &&
+    (fs.existsSync(projectConfigPath) || fs.existsSync(localConfigPath)) &&
     fs.existsSync(dbPath) &&
     fs.existsSync(specsDir) &&
     fs.existsSync(issuesDir)
@@ -63,26 +68,43 @@ export async function performInitialization(
     database = initDatabase({ path: dbPath });
   }
 
-  // Create config.json (local, gitignored)
-  const config = {
-    version: VERSION,
-    worktree: {
-      worktreeStoragePath: ".sudocode/worktrees",
-      autoCreateBranches: true,
-      autoDeleteBranches: false,
-      enableSparseCheckout: false,
-      branchPrefix: "sudocode",
-      cleanupOrphanedWorktreesOnStartup: false,
-    },
-    editor: {
-      editorType: "vs-code",
-    },
-  };
-  fs.writeFileSync(
-    path.join(dir, "config.json"),
-    JSON.stringify(config, null, 2),
-    "utf8"
-  );
+  // Create config.json (project config, git-tracked)
+  // Only create if it doesn't exist to preserve existing settings
+  const projectConfigPath = path.join(dir, PROJECT_CONFIG_FILE);
+  if (!fs.existsSync(projectConfigPath)) {
+    const projectConfig = {
+      // sourceOfTruth defaults to "jsonl" when not specified
+    };
+    fs.writeFileSync(
+      projectConfigPath,
+      JSON.stringify(projectConfig, null, 2),
+      "utf8"
+    );
+  }
+
+  // Create config.local.json (local config, gitignored)
+  // Only create if it doesn't exist to preserve existing settings
+  const localConfigPath = path.join(dir, LOCAL_CONFIG_FILE);
+  if (!fs.existsSync(localConfigPath)) {
+    const localConfig = {
+      worktree: {
+        worktreeStoragePath: ".sudocode/worktrees",
+        autoCreateBranches: true,
+        autoDeleteBranches: false,
+        enableSparseCheckout: false,
+        branchPrefix: "sudocode",
+        cleanupOrphanedWorktreesOnStartup: false,
+      },
+      editor: {
+        editorType: "vs-code",
+      },
+    };
+    fs.writeFileSync(
+      localConfigPath,
+      JSON.stringify(localConfig, null, 2),
+      "utf8"
+    );
+  }
 
   let hasSpecsData = false;
   let hasIssuesData = false;
@@ -155,7 +177,7 @@ export async function performInitialization(
 issues/
 specs/
 worktrees/
-config.json
+config.local.json
 merge-driver.log`;
   fs.writeFileSync(path.join(dir, ".gitignore"), gitignoreContent, "utf8");
 

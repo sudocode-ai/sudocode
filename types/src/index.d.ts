@@ -348,19 +348,46 @@ export interface SpawnConfig {
 }
 
 /**
- * Config metadata file structure (.sudocode/config.json)
+ * Storage mode determines the source of truth for entity data
+ * - "jsonl": JSONL files are authoritative (default)
+ * - "markdown": Markdown files are authoritative
+ *
+ * Note: JSONL is always exported regardless of mode (for git tracking).
+ * This setting only controls which format is authoritative during conflicts.
  */
-export interface Config {
-  // TODO: Deprecate version field.
-  version: string;
-  /** Worktree configuration (optional) */
-  worktree?: WorktreeConfig;
-  /** Integration configurations (optional) */
+export type StorageMode = "jsonl" | "markdown";
+
+/**
+ * Project-level configuration (git-tracked: .sudocode/config.json)
+ * These settings are shared across the team.
+ */
+export interface ProjectConfig {
+  /** Source of truth for entity data (default: "jsonl") */
+  sourceOfTruth?: StorageMode;
+  /** Integration configurations (shared across team) */
   integrations?: IntegrationsConfig;
-  /** Editor configuration (optional) */
+}
+
+/**
+ * Local machine configuration (gitignored: .sudocode/config.local.json)
+ * These settings are specific to each developer's machine.
+ */
+export interface LocalConfig {
+  /** Worktree configuration (machine-specific paths) */
+  worktree?: WorktreeConfig;
+  /** Editor configuration (personal preference) */
   editor?: EditorConfig;
-  /** Voice configuration (optional) */
+  /** Voice configuration (personal preference) */
   voice?: VoiceSettingsConfig;
+}
+
+/**
+ * Merged configuration (ProjectConfig + LocalConfig)
+ * This is the runtime config object returned by getConfig().
+ */
+export interface Config extends ProjectConfig, LocalConfig {
+  /** @deprecated Legacy version field, no longer used */
+  version?: string;
 }
 
 /**
