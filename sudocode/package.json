@@ -1,6 +1,6 @@
 {
   "name": "sudocode",
-  "version": "1.1.19",
+  "version": "1.1.20",
   "description": "Git-native spec and issue management for AI-assisted software development - meta-package",
   "type": "module",
   "bin": {
@@ -20,13 +20,13 @@
   "author": "sudocode AI",
   "license": "Apache-2.0",
   "dependencies": {
-    "@sudocode-ai/types": "0.1.19",
-    "@sudocode-ai/cli": "0.1.19",
-    "@sudocode-ai/mcp": "0.1.19",
-    "@sudocode-ai/local-server": "0.1.19",
-    "@sudocode-ai/integration-github": "0.1.19",
-    "@sudocode-ai/integration-beads": "0.1.19",
-    "@sudocode-ai/integration-openspec": "0.1.19",
-    "@sudocode-ai/integration-speckit": "0.1.19"
+    "@sudocode-ai/types": "0.1.20",
+    "@sudocode-ai/cli": "0.1.20",
+    "@sudocode-ai/mcp": "0.1.20",
+    "@sudocode-ai/local-server": "0.1.20",
+    "@sudocode-ai/integration-github": "0.1.20",
+    "@sudocode-ai/integration-beads": "0.1.20",
+    "@sudocode-ai/integration-openspec": "0.1.20",
+    "@sudocode-ai/integration-speckit": "0.1.20"
   }
 }
