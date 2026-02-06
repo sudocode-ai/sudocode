@@ -110,21 +110,16 @@ for pkg in "${PACKAGES[@]}"; do
 
   echo "Updating $name to $target_version..."
 
-  # Use npm version to update (this also updates package-lock.json)
-  if [ "$dir" = "." ]; then
-    # Root package - update directly with Node.js to avoid triggering version script
-    node -e "
-      const fs = require('fs');
-      const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-      pkg.version = '$target_version';
-      fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-    "
-  else
-    (
-      cd "$dir"
-      npm version "$target_version" --no-git-tag-version --allow-same-version
-    )
-  fi
+  # Update version directly via Node.js to avoid npm version regenerating
+  # the lockfile during the intermediate state (before interdependencies
+  # are updated), which causes stale packages to be installed into
+  # sudocode/node_modules/.
+  node -e "
+    const fs = require('fs');
+    const pkg = JSON.parse(fs.readFileSync('$dir/package.json', 'utf8'));
+    pkg.version = '$target_version';
+    fs.writeFileSync('$dir/package.json', JSON.stringify(pkg, null, 2) + '\n');
+  "
 
   echo "✓ Updated $name"
 done

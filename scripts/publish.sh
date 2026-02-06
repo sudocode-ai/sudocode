@@ -88,26 +88,6 @@ echo ""
 echo "✓ All packages built successfully"
 echo ""
 
-# Validate meta-package won't bundle node_modules
-echo ""
-echo "=========================================="
-echo "Validating meta-package tarball..."
-echo "=========================================="
-
-PACK_OUTPUT=$(cd "$REPO_ROOT/sudocode" && npm pack --dry-run 2>&1)
-BUNDLED_DEPS=$(echo "$PACK_OUTPUT" | grep "bundled deps:" | grep -oE '[0-9]+')
-
-if [ -n "$BUNDLED_DEPS" ] && [ "$BUNDLED_DEPS" -gt 0 ]; then
-  echo "Error: Meta-package would bundle $BUNDLED_DEPS dependencies!"
-  echo "This means sudocode/node_modules/ exists and would be included in the tarball."
-  echo ""
-  echo "Fix: rm -rf sudocode/node_modules && npm install"
-  exit 1
-fi
-
-echo "✓ Meta-package tarball is clean (no bundled deps)"
-echo ""
-
 # Publish packages in dependency order
 PACKAGES=(
   "types:@sudocode-ai/types"
@@ -187,6 +167,24 @@ for pkg in "${PACKAGES[@]}"; do
   echo "------------------------------------------"
 
   cd "$REPO_ROOT/$dir"
+
+  # For the meta-package, remove node_modules/ before packing.
+  # npm auto-bundles node_modules/ when bin entries reference it,
+  # which would ship stale or duplicate packages in the tarball.
+  if [ "$name" = "sudocode" ]; then
+    rm -rf node_modules
+    echo "Cleaned node_modules/ to prevent bundling"
+
+    # Validate tarball is clean
+    PACK_OUTPUT=$(npm pack --dry-run 2>&1)
+    BUNDLED_DEPS=$(echo "$PACK_OUTPUT" | grep "bundled deps:" | grep -oE '[0-9]+')
+    if [ -n "$BUNDLED_DEPS" ] && [ "$BUNDLED_DEPS" -gt 0 ]; then
+      echo "Error: Meta-package would still bundle $BUNDLED_DEPS dependencies!"
+      cd "$REPO_ROOT"
+      exit 1
+    fi
+    echo "✓ Tarball validated (no bundled deps)"
+  fi
 
   # Get package version
   VERSION=$(node -p "require('./package.json').version")
