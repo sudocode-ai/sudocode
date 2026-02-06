@@ -229,6 +229,19 @@ done
 echo "✓ Interdependencies updated"
 
 echo ""
+echo "Regenerating lockfile..."
+echo ""
+
+# After updating all versions and interdependencies, regenerate the lockfile.
+# This is necessary because `npm version` (run earlier) regenerates the lockfile
+# at a point when interdependencies still reference the OLD version, causing npm
+# to install stale packages from the registry into sudocode/node_modules/.
+# Running `npm install` now resolves everything against the updated versions.
+rm -rf sudocode/node_modules
+npm install
+echo "✓ Lockfile regenerated"
+
+echo ""
 echo "Updating Claude plugin files..."
 echo ""
 
