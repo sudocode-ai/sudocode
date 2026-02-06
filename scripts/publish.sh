@@ -177,7 +177,7 @@ for pkg in "${PACKAGES[@]}"; do
 
     # Validate tarball is clean
     PACK_OUTPUT=$(npm pack --dry-run 2>&1)
-    BUNDLED_DEPS=$(echo "$PACK_OUTPUT" | grep "bundled deps:" | grep -oE '[0-9]+')
+    BUNDLED_DEPS=$(echo "$PACK_OUTPUT" | grep "bundled deps:" | grep -oE '[0-9]+' || true)
     if [ -n "$BUNDLED_DEPS" ] && [ "$BUNDLED_DEPS" -gt 0 ]; then
       echo "Error: Meta-package would still bundle $BUNDLED_DEPS dependencies!"
       cd "$REPO_ROOT"
