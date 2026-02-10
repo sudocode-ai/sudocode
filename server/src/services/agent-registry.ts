@@ -148,9 +148,13 @@ export class AgentRegistryService {
     // Get set of already-included agent names
     const registryAgentNames = new Set(registryAgents.map((a) => a.name));
 
-    // Get ACP-native agents from acp-factory that aren't already in registry
-    const acpAgentNames = AgentFactory.listAgents();
-    const additionalAcpAgents: AgentInfo[] = acpAgentNames
+    // Get ACP-native agents from acp-factory that aren't already in registry.
+    // Include implemented agents as well (e.g., copilot) even if not registered yet.
+    const acpAgentNames = new Set<string>([
+      ...AgentFactory.listAgents(),
+      ...this.implementedAgents,
+    ]);
+    const additionalAcpAgents: AgentInfo[] = [...acpAgentNames]
       .filter((name) => !registryAgentNames.has(name))
       .map((name) => ({
         name,
@@ -216,6 +220,7 @@ export class AgentRegistryService {
     this.initialize();
     return (
       this.registry.has(agentType) ||
+      this.implementedAgents.has(agentType) ||
       AgentFactory.listAgents().includes(agentType)
     );
   }

@@ -106,12 +106,16 @@ describe("WebSocket Initialization Error Handling", () => {
   });
 
   it("should handle port conflicts gracefully", async () => {
-    // Start HTTP server on a specific port
-    const port = 13579; // Use an uncommon port
+    // Start HTTP server on a random port
     await new Promise<void>((resolve, reject) => {
-      mockServer.listen(port, () => resolve());
+      mockServer.listen(0, () => resolve());
       mockServer.on("error", reject);
     });
+    const address = mockServer.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Failed to resolve mock server address");
+    }
+    const port = address.port;
 
     // Create a second server on the same port - this will fail
     const secondServer = http.createServer();

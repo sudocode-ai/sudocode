@@ -58,16 +58,21 @@ npm --prefix <pkg> test -- --run tests/path/to/file.test.ts
 ```
 Markdown Files (.sudocode/specs/*.md)
     ↕ (syncs via watcher)
-JSONL Files (specs.jsonl, issues.jsonl) ← SOURCE OF TRUTH (git-tracked)
+JSONL Files (specs.jsonl, issues.jsonl) ← git-tracked
     ↕ (import/export)
 SQLite Cache (cache.db) ← QUERY ENGINE (gitignored, rebuilt from JSONL)
 ```
 
+**Source of Truth Configuration** (`config.json`):
+- `"sourceOfTruth": "jsonl"` (default) - JSONL files are authoritative, markdown is derived
+- `"sourceOfTruth": "markdown"` - Markdown files are authoritative, JSONL is derived
+
 **Key Principles:**
-1. **JSONL is source of truth** - One JSON object per line, git-tracked
-2. **SQLite is query cache** - Gitignored, rebuilt after `git pull`
-3. **Markdown is human interface** - Optional, synced bidirectionally
-4. **Git handles distribution** - AI handles merge conflicts
+1. **Configurable source of truth** - Choose between JSONL or Markdown as authoritative
+2. **JSONL always exported** - For git tracking, regardless of source of truth mode
+3. **SQLite is query cache** - Gitignored, rebuilt after `git pull`
+4. **Markdown is human interface** - Can be authoritative or derived based on config
+5. **Git handles distribution** - AI handles merge conflicts
 
 ### Data Model
 
@@ -323,13 +328,28 @@ Cursor IDE agent:
 
 ## Project Configuration
 
-### Configuration File (`.sudocode/config.json`)
+Configuration is split into two files:
 
-Local configuration file (gitignored). Created during `sudocode init`.
+### Project Config (`.sudocode/config.json`) - Git-tracked
+
+Shared project settings that should be version controlled.
 
 ```json
 {
-  "version": "0.1.0",
+  "sourceOfTruth": "jsonl"
+}
+```
+
+| Key | Values | Description |
+|-----|--------|-------------|
+| `sourceOfTruth` | `"jsonl"` (default), `"markdown"` | Which files are authoritative for entity data |
+
+### Local Config (`.sudocode/config.local.json`) - Gitignored
+
+Machine-specific settings that vary per developer.
+
+```json
+{
   "worktree": {
     "worktreeStoragePath": ".sudocode/worktrees",
     "autoCreateBranches": true,
@@ -342,6 +362,14 @@ Local configuration file (gitignored). Created during `sudocode init`.
     "editorType": "vs-code"
   }
 }
+```
+
+### Config CLI Commands
+
+```bash
+sudocode config get [key]           # Show all config or specific key
+sudocode config set <key> <value>   # Set config value
+sudocode config show                # Show source of truth info
 ```
 
 ---
@@ -460,11 +488,14 @@ idx_feedback_to             (to_id)
 ### Storage Layout
 ```
 .sudocode/
-├── specs/           # Markdown + specs.jsonl (git-tracked)
-├── issues/          # issues.jsonl (git-tracked)
-├── config.json      # Configuration (gitignored)
-├── cache.db         # SQLite cache (gitignored)
-└── worktrees/       # Execution isolation (gitignored)
+├── specs/             # Markdown files (git-tracked)
+├── specs.jsonl        # Spec data (git-tracked)
+├── issues/            # Markdown files (git-tracked)
+├── issues.jsonl       # Issue data (git-tracked)
+├── config.json        # Project config (git-tracked)
+├── config.local.json  # Local config (gitignored)
+├── cache.db           # SQLite cache (gitignored)
+└── worktrees/         # Execution isolation (gitignored)
 ```
 
 ### Relationship Types
