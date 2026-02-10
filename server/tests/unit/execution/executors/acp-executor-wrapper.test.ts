@@ -394,8 +394,7 @@ describe("AcpExecutorWrapper", () => {
       expect(mockAgent.loadSession).toHaveBeenCalledWith(
         "existing-session-123",
         "/test/workdir",
-        [],
-        { agentMeta: undefined }
+        []
       );
 
       // Check that the resumed message was stored
@@ -1336,7 +1335,7 @@ describe("Compaction Events", () => {
     });
   });
 
-  it("should pass compaction config via agentMeta to createSession", async () => {
+  it("should create session without agentMeta when using current ACP session options", async () => {
     const { AgentFactory } = await import("acp-factory");
     const mockAgent = await AgentFactory.spawn("claude-code");
 
@@ -1357,21 +1356,9 @@ describe("Compaction Events", () => {
       "/test/workdir"
     );
 
-    // Verify agentMeta was passed with compaction config
-    expect(mockAgent.createSession).toHaveBeenCalledWith(
-      "/test/workdir",
-      expect.objectContaining({
-        agentMeta: {
-          claudeCode: {
-            compaction: {
-              enabled: true,
-              contextTokenThreshold: 10000,
-              customInstructions: undefined,
-            },
-          },
-        },
-      })
-    );
+    const sessionOptions = (mockAgent.createSession as any).mock.calls[0]?.[1];
+    expect(sessionOptions).toBeDefined();
+    expect(sessionOptions?.agentMeta).toBeUndefined();
   });
 
   it("should broadcast compaction_started events via WebSocket", async () => {
@@ -1550,13 +1537,9 @@ describe("Compaction Events", () => {
       "/test/workdir"
     );
 
-    // Verify agentMeta was NOT passed (or is undefined)
-    expect(mockAgent.createSession).toHaveBeenCalledWith(
-      "/test/workdir",
-      expect.objectContaining({
-        agentMeta: undefined,
-      })
-    );
+    const sessionOptions = (mockAgent.createSession as any).mock.calls[0]?.[1];
+    expect(sessionOptions).toBeDefined();
+    expect(sessionOptions?.agentMeta).toBeUndefined();
   });
 });
 

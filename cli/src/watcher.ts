@@ -553,7 +553,7 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
           } else {
             // JSONL is source of truth - ignore file deletion
             onLog(
-              `[watch] Markdown file deleted: ${relPath} (JSONL is source of truth, entity preserved)`
+              `[watch] Markdown file deleted: ${relPath} (DB/JSONL is source of truth, entity preserved)`
             );
           }
           removeFilePathFromCache(filePath);

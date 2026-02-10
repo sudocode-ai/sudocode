@@ -583,8 +583,7 @@ describe('ACP Agent Integration Tests - Claude Code Execution', () => {
       expect(mockAgent.loadSession).toHaveBeenCalledWith(
         'existing-session-456',
         '/tmp/test',
-        [],
-        { agentMeta: undefined }
+        []
       );
       expect(mockAgent.createSession).not.toHaveBeenCalled();
 

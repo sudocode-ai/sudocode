@@ -324,31 +324,14 @@ export class AcpExecutorWrapper {
       const mcpServers = convertMcpServers(
         task.metadata?.mcpServers ?? this.acpConfig.mcpServers
       );
-      // Build agentMeta for compaction settings (Claude Code specific)
-      const agentMeta = this.acpConfig.compaction?.enabled
-        ? {
-            claudeCode: {
-              compaction: {
-                enabled: true,
-                contextTokenThreshold:
-                  this.acpConfig.compaction.contextTokenThreshold,
-                customInstructions:
-                  this.acpConfig.compaction.customInstructions,
-              },
-            },
-          }
-        : undefined;
-
       console.log(`[AcpExecutorWrapper] Creating session for ${executionId}`, {
         mcpServers: mcpServers.map((s) => s.name),
         compactionEnabled: this.acpConfig.compaction?.enabled ?? false,
-        agentMeta: agentMeta ? JSON.stringify(agentMeta) : undefined,
       });
 
       session = await agent.createSession(workDir, {
         mcpServers,
         mode: this.acpConfig.mode,
-        agentMeta,
       });
       this.activeSessions.set(executionId, session);
 
@@ -596,31 +579,12 @@ export class AcpExecutorWrapper {
       });
       this.activeAgents.set(executionId, agent);
 
-      // Build agentMeta for compaction settings (Claude Code specific)
-      // This is needed for both loadSession and createSession to ensure compaction works on follow-ups
-      const agentMeta = this.acpConfig.compaction?.enabled
-        ? {
-            claudeCode: {
-              compaction: {
-                enabled: true,
-                contextTokenThreshold:
-                  this.acpConfig.compaction.contextTokenThreshold,
-                customInstructions:
-                  this.acpConfig.compaction.customInstructions,
-              },
-            },
-          }
-        : undefined;
-
       // 2. Load existing session or create new one if agent doesn't support loading
       if (agent.capabilities?.loadSession) {
         console.log(
           `[AcpExecutorWrapper] Loading session ${sessionId} for ${executionId}`
         );
-        // Pass agentMeta to loadSession so compaction config is re-applied on session resume
-        session = await agent.loadSession(sessionId, workDir, [], {
-          agentMeta,
-        });
+        session = await agent.loadSession(sessionId, workDir, []);
       } else {
         // Agent doesn't support session loading via ACP
         // For agents like Copilot that use --resume <sessionId> CLI flag,
@@ -635,7 +599,6 @@ export class AcpExecutorWrapper {
         session = await agent.createSession(workDir, {
           mcpServers,
           mode: this.acpConfig.mode,
-          agentMeta,
         });
       }
       this.activeSessions.set(executionId, session);
@@ -1399,7 +1362,9 @@ export class AcpExecutorWrapper {
    * @returns true if the agent is registered in AgentFactory
    */
   static isAcpSupported(agentType: string): boolean {
-    return AgentFactory.listAgents().includes(agentType);
+    return (
+      AgentFactory.listAgents().includes(agentType) || agentType === "copilot"
+    );
   }
 
   /**
@@ -1408,7 +1373,8 @@ export class AcpExecutorWrapper {
    * @returns Array of agent type names
    */
   static listAcpAgents(): string[] {
-    return AgentFactory.listAgents();
+    const agents = new Set<string>([...AgentFactory.listAgents(), "copilot"]);
+    return [...agents];
   }
 
   // ============================================================================

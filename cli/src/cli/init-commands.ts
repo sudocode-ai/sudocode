@@ -7,10 +7,8 @@ import * as fs from "fs";
 import * as path from "path";
 import { initDatabase } from "../db.js";
 import type Database from "better-sqlite3";
-import {
-  PROJECT_CONFIG_FILE,
-  LOCAL_CONFIG_FILE,
-} from "../config.js";
+import { PROJECT_CONFIG_FILE, LOCAL_CONFIG_FILE } from "../config.js";
+import { VERSION } from "../version.js";
 
 export interface InitOptions {
   dir?: string;
@@ -73,7 +71,16 @@ export async function performInitialization(
   const projectConfigPath = path.join(dir, PROJECT_CONFIG_FILE);
   if (!fs.existsSync(projectConfigPath)) {
     const projectConfig = {
+      version: VERSION,
       // sourceOfTruth defaults to "jsonl" when not specified
+      worktree: {
+        worktreeStoragePath: ".sudocode/worktrees",
+        autoCreateBranches: true,
+        autoDeleteBranches: false,
+        enableSparseCheckout: false,
+        branchPrefix: "sudocode",
+        cleanupOrphanedWorktreesOnStartup: false,
+      },
     };
     fs.writeFileSync(
       projectConfigPath,
@@ -177,6 +184,7 @@ export async function performInitialization(
 issues/
 specs/
 worktrees/
+config.json
 config.local.json
 merge-driver.log`;
   fs.writeFileSync(path.join(dir, ".gitignore"), gitignoreContent, "utf8");
