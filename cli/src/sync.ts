@@ -303,7 +303,7 @@ export async function syncMarkdownToJSONL(
 
 /**
  * Sync from JSONL/SQLite to markdown file
- * Updates markdown frontmatter while preserving content
+ * Writes full content (frontmatter + body) from database to markdown
  */
 export async function syncJSONLToMarkdown(
   db: Database.Database,
@@ -341,17 +341,14 @@ export async function syncJSONLToMarkdown(
       tags
     );
 
-    // Check if file exists
+    // Check if file exists (for action reporting)
     const fileExists = fs.existsSync(mdPath);
 
-    if (fileExists) {
-      // Update existing file's frontmatter only
-      updateFrontmatterFile(mdPath, frontmatter);
-    } else {
-      // Create new file with content from database
-      const content = entity.content || "";
-      writeMarkdownFile(mdPath, frontmatter, content);
-    }
+    // Write full content (frontmatter + body) from database
+    // When this function is called, sync direction has already determined
+    // that database is the source of truth, so we write everything
+    const content = entity.content || "";
+    writeMarkdownFile(mdPath, frontmatter, content);
 
     return {
       success: true,

@@ -636,7 +636,7 @@ Spec A trying to take spec-b's path.`;
       expect(parsed.content).toContain("# Spec content");
     });
 
-    it("should update existing markdown frontmatter only", async () => {
+    it("should update existing markdown with full content from database", async () => {
       // Create spec in database
       createSpec(db, {
         id: "spec-001",
@@ -657,7 +657,7 @@ priority: 2
 
 # Original Content
 
-This should be preserved.`;
+This should be overwritten.`;
 
       fs.writeFileSync(mdPath, originalContent, "utf8");
 
@@ -666,13 +666,12 @@ This should be preserved.`;
       expect(result.success).toBe(true);
       expect(result.action).toBe("updated");
 
-      // Verify frontmatter updated but content preserved
+      // Verify both frontmatter AND content are updated from database
       const parsed = parseMarkdownFile(mdPath);
       expect(parsed.data.title).toBe("Updated Title");
       expect(parsed.data.priority).toBe(3);
-      expect(parsed.content).toContain("# Original Content");
-      expect(parsed.content).toContain("This should be preserved");
-      expect(parsed.content).not.toContain("Database content");
+      expect(parsed.content).toContain("Database content");
+      expect(parsed.content).not.toContain("# Original Content");
     });
 
     it("should exclude internal metadata fields from frontmatter", async () => {
