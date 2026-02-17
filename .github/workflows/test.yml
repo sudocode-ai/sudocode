@@ -20,6 +20,7 @@ jobs:
 
       - run: npm run build
 
+      - name: Add workspace bins to PATH
+        run: echo "${{ github.workspace }}/node_modules/.bin" >> $GITHUB_PATH
+
       - run: npm run test
-        env:
-          PATH: ${{ github.workspace }}/node_modules/.bin:${{ env.PATH }}
