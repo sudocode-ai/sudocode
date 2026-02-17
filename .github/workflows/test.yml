@@ -21,3 +21,5 @@ jobs:
       - run: npm run build
 
       - run: npm run test
+        env:
+          PATH: ${{ github.workspace }}/node_modules/.bin:${{ env.PATH }}

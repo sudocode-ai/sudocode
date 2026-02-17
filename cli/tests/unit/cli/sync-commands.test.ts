@@ -1181,6 +1181,13 @@ Fresh content from markdown`;
 
       await exportToJSONL(db, { outputDir: tempDir });
 
+      // Ensure JSONL file has a future mtime so it's strictly newer than markdown
+      const futureTime = new Date(Date.now() + 5000);
+      const issuesJsonl = path.join(tempDir, "issues.jsonl");
+      if (fs.existsSync(issuesJsonl)) {
+        fs.utimesSync(issuesJsonl, futureTime, futureTime);
+      }
+
       // Create stale markdown for issue1
       const md1Path = path.join(issuesDir, "i-conf1.md");
       fs.writeFileSync(md1Path, `---\nid: i-conf1\ntitle: Stale\n---\nStale`, "utf8");
