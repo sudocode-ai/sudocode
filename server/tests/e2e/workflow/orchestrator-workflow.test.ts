@@ -56,7 +56,7 @@ describe.skipIf(SKIP_E2E)("Orchestrator Workflow E2E", () => {
     testDir = fs.mkdtempSync(path.join(os.tmpdir(), "sudocode-orch-e2e-"));
 
     // Initialize as a git repo
-    execSync("git init", { cwd: testDir, stdio: "pipe" });
+    execSync("git init -b main", { cwd: testDir, stdio: "pipe" });
     execSync('git config user.name "Test"', { cwd: testDir, stdio: "pipe" });
     execSync('git config user.email "test@test.com"', {
       cwd: testDir,

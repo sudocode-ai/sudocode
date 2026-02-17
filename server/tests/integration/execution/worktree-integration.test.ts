@@ -823,7 +823,7 @@ function setupGitRepository(repoPath: string): void {
   fs.mkdirSync(repoPath, { recursive: true });
 
   // Initialize git repository
-  execSync("git init", { cwd: repoPath });
+  execSync("git init -b main", { cwd: repoPath });
   execSync('git config user.email "test@example.com"', { cwd: repoPath });
   execSync('git config user.name "Test User"', { cwd: repoPath });
 

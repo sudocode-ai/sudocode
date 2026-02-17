@@ -20,7 +20,7 @@ describe('GitSyncCli', () => {
     gitSync = new GitSyncCli(testRepoPath);
 
     // Initialize git repo
-    execSync('git init', { cwd: testRepoPath });
+    execSync('git init -b main', { cwd: testRepoPath });
     execSync('git config user.email "test@example.com"', {
       cwd: testRepoPath,
     });

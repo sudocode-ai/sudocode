@@ -380,7 +380,7 @@ describe("ExecutionService", () => {
       try {
         // Initialize git repo
         const { execSync } = await import("child_process");
-        execSync("git init", { cwd: gitTestDir });
+        execSync("git init -b main", { cwd: gitTestDir });
         execSync('git config user.email "test@example.com"', {
           cwd: gitTestDir,
         });
@@ -431,6 +431,8 @@ describe("ExecutionService", () => {
           gitTestDir,
           gitLifecycleService
         );
+        vi.spyOn(gitService as any, 'detectSudocodeMcp').mockResolvedValue(true);
+        vi.spyOn(gitService as any, 'detectAgentMcp').mockResolvedValue(true);
 
         const issueContent = "Add OAuth2 authentication";
         const execution = await gitService.createExecution(
@@ -619,7 +621,7 @@ describe("ExecutionService", () => {
       try {
         // Initialize git repo
         const { execSync } = await import("child_process");
-        execSync("git init", { cwd: gitTestDir });
+        execSync("git init -b main", { cwd: gitTestDir });
         execSync('git config user.email "test@example.com"', {
           cwd: gitTestDir,
         });
@@ -674,6 +676,8 @@ describe("ExecutionService", () => {
           gitTestDir,
           gitLifecycleService
         );
+        vi.spyOn(gitService as any, 'detectSudocodeMcp').mockResolvedValue(true);
+        vi.spyOn(gitService as any, 'detectAgentMcp').mockResolvedValue(true);
 
         // Create execution WITHOUT specifying baseBranch
         const execution = await gitService.createExecution(

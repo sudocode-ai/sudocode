@@ -16,6 +16,7 @@ import {
   it,
   expect,
   beforeAll,
+  beforeEach,
   afterEach,
   afterAll,
   vi,
@@ -287,7 +288,14 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
     );
   });
 
+  beforeEach(() => {
+    // Mock MCP detection to avoid requiring sudocode-mcp binary in PATH
+    vi.spyOn(executionService as any, 'detectSudocodeMcp').mockResolvedValue(true);
+    vi.spyOn(executionService as any, 'detectAgentMcp').mockResolvedValue(true);
+  });
+
   afterEach(() => {
+    vi.clearAllMocks();
     // Cleanup: cancel any running executions to prevent conflicts between tests
     const runningExecutions = db
       .prepare("SELECT id FROM executions WHERE status = ?")

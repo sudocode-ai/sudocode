@@ -19,7 +19,7 @@ describe("readGitStage", () => {
     gitRepo = tmpDir;
 
     // Initialize git repo using execFileSync (safe from shell injection)
-    execFileSync("git", ["init"], { cwd: gitRepo });
+    execFileSync("git", ["init", "-b", "main"], { cwd: gitRepo });
     execFileSync("git", ["config", "user.name", "Test"], { cwd: gitRepo });
     execFileSync("git", ["config", "user.email", "test@example.com"], {
       cwd: gitRepo,

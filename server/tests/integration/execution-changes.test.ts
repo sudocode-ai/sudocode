@@ -22,7 +22,7 @@ import { createExecution } from './execution/helpers/test-setup.js'
 
 // Helper to create a real git repository for testing
 function createTestRepo(dir: string): void {
-  execSync('git init', { cwd: dir })
+  execSync('git init -b main', { cwd: dir })
   execSync('git config user.name "Test User"', { cwd: dir })
   execSync('git config user.email "test@example.com"', { cwd: dir })
 
