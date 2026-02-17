@@ -33,13 +33,6 @@ function setupFullTestEnvironment() {
   // Create test repo
   const repo = createTestRepo();
 
-  // Rename default branch to main (createTestRepo creates main branch)
-  try {
-    execSync("git branch -M main", { cwd: repo, stdio: "pipe" });
-  } catch {
-    // Branch already named main
-  }
-
   // Create test database
   const db = createTestDatabase();
 

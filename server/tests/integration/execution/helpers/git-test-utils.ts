@@ -21,7 +21,7 @@ export function createTestRepo(): string {
   const repoPath = mkdtempSync(path.join(tmpdir(), 'git-test-'));
 
   // Initialize git repo
-  execSync('git init', { cwd: repoPath, stdio: 'pipe' });
+  execSync('git init -b main', { cwd: repoPath, stdio: 'pipe' });
 
   // Configure git user (required for commits)
   execSync('git config user.name "Test User"', { cwd: repoPath, stdio: 'pipe' });

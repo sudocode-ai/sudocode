@@ -380,7 +380,7 @@ describe("ExecutionService", () => {
       try {
         // Initialize git repo
         const { execSync } = await import("child_process");
-        execSync("git init", { cwd: gitTestDir });
+        execSync("git init -b main", { cwd: gitTestDir });
         execSync('git config user.email "test@example.com"', {
           cwd: gitTestDir,
         });
@@ -619,7 +619,7 @@ describe("ExecutionService", () => {
       try {
         // Initialize git repo
         const { execSync } = await import("child_process");
-        execSync("git init", { cwd: gitTestDir });
+        execSync("git init -b main", { cwd: gitTestDir });
         execSync('git config user.email "test@example.com"', {
           cwd: gitTestDir,
         });

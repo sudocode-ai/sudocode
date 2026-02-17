@@ -32,7 +32,7 @@ describe("Workflow REST API", () => {
 
     // Initialize as a git repo
     const { execSync } = await import("child_process");
-    execSync("git init", { cwd: testDir, stdio: "pipe" });
+    execSync("git init -b main", { cwd: testDir, stdio: "pipe" });
     execSync('git config user.name "Test"', { cwd: testDir, stdio: "pipe" });
     execSync('git config user.email "test@test.com"', {
       cwd: testDir,

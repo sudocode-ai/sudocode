@@ -141,7 +141,7 @@ describe("ExecutionLifecycleService", () => {
       try {
         // Initialize git repo
         const { execSync } = await import("child_process");
-        execSync("git init", { cwd: gitTestDir });
+        execSync("git init -b main", { cwd: gitTestDir });
         execSync('git config user.email "test@example.com"', {
           cwd: gitTestDir,
         });
@@ -590,7 +590,7 @@ describe("ExecutionLifecycleService", () => {
       try {
         // Initialize git repo
         const { execSync } = await import("child_process");
-        execSync("git init", { cwd: gitTestDir });
+        execSync("git init -b main", { cwd: gitTestDir });
         execSync('git config user.email "test@example.com"', { cwd: gitTestDir });
         execSync('git config user.name "Test User"', { cwd: gitTestDir });
         fs.writeFileSync(path.join(gitTestDir, "README.md"), "# Test\n");
