@@ -206,7 +206,8 @@ vi.mock("../../src/execution/executors/agent-executor-wrapper.js", () => {
   };
 });
 
-describe("Multi-Agent Support - Phase 1 Integration", () => {
+// Requires sudocode-mcp binary in system PATH (not available in CI)
+describe.skipIf(!!process.env.CI)("Multi-Agent Support - Phase 1 Integration", () => {
   let db: Database.Database;
   let testDbPath: string;
   let testDir: string;
@@ -469,8 +470,7 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
     });
   });
 
-  // These tests require sudocode-mcp binary in PATH (installed locally, not in CI)
-  describe.skipIf(!!process.env.CI)("ExecutionService Multi-Agent Integration", () => {
+  describe("ExecutionService Multi-Agent Integration", () => {
     it("should create execution with default claude-code agent", async () => {
       // Create without specifying agentType
       const execution = await executionService.createExecution(
