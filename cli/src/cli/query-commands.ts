@@ -5,6 +5,7 @@
 import chalk from 'chalk';
 import type Database from 'better-sqlite3';
 import { getReadyIssues, getBlockedIssues } from '../operations/issues.js';
+import { trackCommand } from '../telemetry.js';
 
 export interface CommandContext {
   db: Database.Database;
@@ -20,6 +21,7 @@ export async function handleReady(
   ctx: CommandContext,
   options: ReadyOptions
 ): Promise<void> {
+  const startTime = Date.now();
   try {
     const results: any = {};
 
@@ -40,7 +42,9 @@ export async function handleReady(
       }
       console.log();
     }
+    await trackCommand(ctx.outputDir, "ready", {}, true, Date.now() - startTime);
   } catch (error) {
+    await trackCommand(ctx.outputDir, "ready", {}, false, Date.now() - startTime);
     console.error(chalk.red('✗ Failed to get ready items'));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);

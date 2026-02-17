@@ -186,7 +186,9 @@ specs/
 worktrees/
 config.json
 config.local.json
-merge-driver.log`;
+merge-driver.log
+telemetry-buffer.jsonl
+telemetry-flush.json`;
   fs.writeFileSync(path.join(dir, ".gitignore"), gitignoreContent, "utf8");
 
   database.close();

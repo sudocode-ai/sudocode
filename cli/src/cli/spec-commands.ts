@@ -22,6 +22,7 @@ import { listFeedback } from "../operations/feedback.js";
 import { exportToJSONL } from "../export.js";
 import { writeMarkdownFile } from "../markdown.js";
 import { generateUniqueFilename } from "../filename-generator.js";
+import { trackCommand } from "../telemetry.js";
 
 export interface CommandContext {
   db: Database.Database;
@@ -42,6 +43,7 @@ export async function handleSpecCreate(
   title: string,
   options: SpecCreateOptions
 ): Promise<void> {
+  const startTime = Date.now();
   try {
     // Generate spec ID and UUID
     const { id: specId, uuid: specUUID } = generateSpecId(
@@ -104,7 +106,9 @@ export async function handleSpecCreate(
       console.log(chalk.gray(`  Title: ${title}`));
       console.log(chalk.gray(`  File: ${filePath}`));
     }
+    await trackCommand(ctx.outputDir, "spec_create", { title }, true, Date.now() - startTime);
   } catch (error) {
+    await trackCommand(ctx.outputDir, "spec_create", { title }, false, Date.now() - startTime);
     console.error(chalk.red("✗ Failed to create spec"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
@@ -122,6 +126,7 @@ export async function handleSpecList(
   ctx: CommandContext,
   options: SpecListOptions
 ): Promise<void> {
+  const startTime = Date.now();
   try {
     // Use search if grep is provided, otherwise use list with filters
     const specs = options.grep
@@ -160,7 +165,9 @@ export async function handleSpecList(
       }
       console.log();
     }
+    await trackCommand(ctx.outputDir, "spec_list", {}, true, Date.now() - startTime);
   } catch (error) {
+    await trackCommand(ctx.outputDir, "spec_list", {}, false, Date.now() - startTime);
     console.error(chalk.red("✗ Failed to list specs"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
@@ -171,6 +178,7 @@ export async function handleSpecShow(
   ctx: CommandContext,
   id: string
 ): Promise<void> {
+  const startTime = Date.now();
   try {
     const spec = getSpec(ctx.db, id);
     if (!spec) {
@@ -271,7 +279,9 @@ export async function handleSpecShow(
 
       console.log();
     }
+    await trackCommand(ctx.outputDir, "spec_show", { id }, true, Date.now() - startTime);
   } catch (error) {
+    await trackCommand(ctx.outputDir, "spec_show", { id }, false, Date.now() - startTime);
     console.error(chalk.red("✗ Failed to show spec"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
@@ -292,6 +302,7 @@ export async function handleSpecUpdate(
   id: string,
   options: SpecUpdateOptions
 ): Promise<void> {
+  const startTime = Date.now();
   try {
     const spec = getSpec(ctx.db, id);
     if (!spec) {
@@ -381,7 +392,9 @@ export async function handleSpecUpdate(
       if (options.priority)
         console.log(chalk.gray(`  Priority: ${updated.priority}`));
     }
+    await trackCommand(ctx.outputDir, "spec_update", { id }, true, Date.now() - startTime);
   } catch (error) {
+    await trackCommand(ctx.outputDir, "spec_update", { id }, false, Date.now() - startTime);
     console.error(chalk.red("✗ Failed to update spec"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);

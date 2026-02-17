@@ -38,6 +38,7 @@ export interface ConfigLoadResult {
 const PROJECT_CONFIG_FIELDS: (keyof ProjectConfig)[] = [
   "sourceOfTruth",
   "integrations",
+  "telemetry",
 ];
 
 /**
@@ -47,6 +48,7 @@ const LOCAL_CONFIG_FIELDS: (keyof LocalConfig)[] = [
   "worktree",
   "editor",
   "voice",
+  "telemetry",
 ];
 
 /**
@@ -175,7 +177,12 @@ export function getConfig(outputDir: string): Config {
   const project = readProjectConfig(outputDir);
   const local = readLocalConfig(outputDir);
 
-  return { ...project, ...local };
+  // Deep-merge telemetry (spans both project and local config)
+  const telemetry = (project.telemetry || local.telemetry)
+    ? { ...project.telemetry, ...local.telemetry }
+    : undefined;
+
+  return { ...project, ...local, ...(telemetry !== undefined ? { telemetry } : {}) };
 }
 
 /**

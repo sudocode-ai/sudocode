@@ -366,6 +366,13 @@ export interface ProjectConfig {
   sourceOfTruth?: StorageMode;
   /** Integration configurations (shared across team) */
   integrations?: IntegrationsConfig;
+  /** Telemetry configuration (project-level, git-tracked) */
+  telemetry?: {
+    /** Stable anonymous identifier for this project */
+    projectId?: string;
+    /** @deprecated Use projectId instead */
+    anonymousId?: string;
+  };
 }
 
 /**
@@ -379,15 +386,42 @@ export interface LocalConfig {
   editor?: EditorConfig;
   /** Voice configuration (personal preference) */
   voice?: VoiceSettingsConfig;
+  /** Telemetry configuration (machine-specific, gitignored) */
+  telemetry?: {
+    /** OTLP endpoint URL (e.g., Grafana Cloud OTLP gateway) */
+    endpoint?: string;
+    /** Full Authorization header value (e.g., "Basic <base64>" or "Bearer <token>") */
+    authHeader?: string;
+    /** Disable telemetry entirely (default: false) */
+    disabled?: boolean;
+  };
+}
+
+/**
+ * Merged telemetry configuration (ProjectConfig.telemetry + LocalConfig.telemetry)
+ */
+export interface TelemetryConfig {
+  /** Stable anonymous identifier for this project (from ProjectConfig) */
+  projectId?: string;
+  /** @deprecated Use projectId instead */
+  anonymousId?: string;
+  /** OTLP endpoint URL (from LocalConfig) */
+  endpoint?: string;
+  /** Full Authorization header value (from LocalConfig) */
+  authHeader?: string;
+  /** Disable telemetry entirely (from LocalConfig) */
+  disabled?: boolean;
 }
 
 /**
  * Merged configuration (ProjectConfig + LocalConfig)
  * This is the runtime config object returned by getConfig().
  */
-export interface Config extends ProjectConfig, LocalConfig {
+export interface Config extends Omit<ProjectConfig, 'telemetry'>, Omit<LocalConfig, 'telemetry'> {
   /** @deprecated Legacy version field, no longer used */
   version?: string;
+  /** Merged telemetry configuration */
+  telemetry?: TelemetryConfig;
 }
 
 /**
