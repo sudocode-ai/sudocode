@@ -469,7 +469,8 @@ describe("Multi-Agent Support - Phase 1 Integration", () => {
     });
   });
 
-  describe("ExecutionService Multi-Agent Integration", () => {
+  // These tests require sudocode-mcp binary in PATH (installed locally, not in CI)
+  describe.skipIf(!!process.env.CI)("ExecutionService Multi-Agent Integration", () => {
     it("should create execution with default claude-code agent", async () => {
       // Create without specifying agentType
       const execution = await executionService.createExecution(

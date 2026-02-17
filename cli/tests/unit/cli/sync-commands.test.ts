@@ -1181,23 +1181,16 @@ Fresh content from markdown`;
 
       await exportToJSONL(db, { outputDir: tempDir });
 
-      // Ensure JSONL file has a future mtime so it's strictly newer than markdown
-      const futureTime = new Date(Date.now() + 5000);
-      const issuesJsonl = path.join(tempDir, "issues.jsonl");
-      if (fs.existsSync(issuesJsonl)) {
-        fs.utimesSync(issuesJsonl, futureTime, futureTime);
-      }
-
       // Create stale markdown for issue1
       const md1Path = path.join(issuesDir, "i-conf1.md");
       fs.writeFileSync(md1Path, `---\nid: i-conf1\ntitle: Stale\n---\nStale`, "utf8");
       fs.utimesSync(md1Path, pastTime, pastTime);
 
-      await sleep(100);
-
-      // Create fresh markdown for issue2
+      // Create markdown for issue2 (also set to past so JSONL is strictly newer)
       const md2Path = path.join(issuesDir, "i-conf2.md");
       fs.writeFileSync(md2Path, `---\nid: i-conf2\ntitle: Fresh MD\n---\nFresh`, "utf8");
+      const slightlyPast = new Date(Date.now() - 2000);
+      fs.utimesSync(md2Path, slightlyPast, slightlyPast);
 
       // Run sync - should prefer database as source of truth in conflict
       await handleSync(ctx, {});
