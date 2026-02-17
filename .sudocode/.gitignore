@@ -6,3 +6,5 @@ config.local.json
 merge-driver.log
 deploy-config.json
 spawn-config.json
+telemetry-buffer.jsonl
+telemetry-flush.json

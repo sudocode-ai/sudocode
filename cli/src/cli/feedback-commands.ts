@@ -22,6 +22,7 @@ import {
   isValidFeedbackType,
   getValidFeedbackTypes,
 } from '../validation.js';
+import { trackCommand } from '../telemetry.js';
 
 export interface CommandContext {
   db: Database.Database;
@@ -48,6 +49,7 @@ export async function handleFeedbackAdd(
   toId: string,
   options: FeedbackAddOptions
 ): Promise<void> {
+  const startTime = Date.now();
   try {
     // Validate feedback type
     if (!isValidFeedbackType(options.type)) {
@@ -134,7 +136,9 @@ export async function handleFeedbackAdd(
         console.log(chalk.gray(`  Location: ${anchor.section_heading || 'Unknown'} (line ${anchor.line_number})`));
       }
     }
+    await trackCommand(ctx.outputDir, "add_feedback", { to_id: toId, from_id: issueId, feedback_type: options.type }, true, Date.now() - startTime);
   } catch (error) {
+    await trackCommand(ctx.outputDir, "add_feedback", { to_id: toId, from_id: issueId, feedback_type: options.type }, false, Date.now() - startTime);
     console.error(chalk.red('✗ Failed to create feedback'));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);

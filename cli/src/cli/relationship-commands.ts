@@ -14,6 +14,7 @@ import {
   isValidRelationshipType,
   getValidRelationshipTypes,
 } from "../validation.js";
+import { trackCommand } from "../telemetry.js";
 
 export interface CommandContext {
   db: Database.Database;
@@ -31,6 +32,7 @@ export async function handleLink(
   to: string,
   options: LinkOptions
 ): Promise<void> {
+  const startTime = Date.now();
   try {
     // Validate relationship type
     if (!isValidRelationshipType(options.type)) {
@@ -104,7 +106,9 @@ export async function handleLink(
         chalk.cyan(to)
       );
     }
+    await trackCommand(ctx.outputDir, "link", { from_id: from, to_id: to, type: options.type }, true, Date.now() - startTime);
   } catch (error) {
+    await trackCommand(ctx.outputDir, "link", { from_id: from, to_id: to, type: options.type }, false, Date.now() - startTime);
     console.error(chalk.red("✗ Failed to create relationship"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);

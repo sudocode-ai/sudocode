@@ -133,14 +133,21 @@ export async function handleConfigSet(
   const projectKeys = ["sourceOfTruth", "integrations"];
   const localKeys = ["worktree", "editor", "voice"];
 
-  const isProjectKey = projectKeys.includes(key) || key.startsWith("integrations.");
+  // Telemetry spans both config files — route subkeys accordingly
+  const telemetryProjectKeys = ["telemetry.projectId"];
+  const telemetryLocalKeys = ["telemetry.endpoint", "telemetry.authHeader", "telemetry.disabled"];
+
+  const isProjectKey = projectKeys.includes(key) ||
+    key.startsWith("integrations.") ||
+    telemetryProjectKeys.includes(key);
   const isLocalKey = localKeys.includes(key) ||
     key.startsWith("worktree.") ||
     key.startsWith("editor.") ||
-    key.startsWith("voice.");
+    key.startsWith("voice.") ||
+    telemetryLocalKeys.includes(key);
 
   if (!isProjectKey && !isLocalKey) {
-    const error = `Unknown config key '${key}'. Valid keys: ${[...projectKeys, ...localKeys].join(", ")}`;
+    const error = `Unknown config key '${key}'. Valid keys: ${[...projectKeys, ...localKeys, ...telemetryProjectKeys, ...telemetryLocalKeys].join(", ")}`;
     if (jsonOutput) {
       console.log(JSON.stringify({ error }));
     } else {

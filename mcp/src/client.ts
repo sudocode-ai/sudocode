@@ -117,6 +117,9 @@ export class SudocodeClient {
         env: {
           ...process.env,
           SUDOCODE_DISABLE_UPDATE_CHECK: "true",
+          ...(process.env.SUDOCODE_SESSION_ID
+            ? { SUDOCODE_SESSION_ID: process.env.SUDOCODE_SESSION_ID }
+            : {}),
         },
       });
 

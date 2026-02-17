@@ -28,6 +28,7 @@ import {
   isValidIssueStatus,
   getValidIssueStatuses,
 } from "../validation.js";
+import { trackCommand } from "../telemetry.js";
 
 export interface CommandContext {
   db: Database.Database;
@@ -48,6 +49,7 @@ export async function handleIssueCreate(
   title: string,
   options: IssueCreateOptions
 ): Promise<void> {
+  const startTime = Date.now();
   try {
     // Generate issue ID and UUID
     const { id: issueId, uuid: issueUUID } = generateIssueId(ctx.db, ctx.outputDir);
@@ -91,7 +93,9 @@ export async function handleIssueCreate(
         console.log(chalk.gray(`  Assignee: ${options.assignee}`));
       }
     }
+    await trackCommand(ctx.outputDir, "issue_create", { title }, true, Date.now() - startTime);
   } catch (error) {
+    await trackCommand(ctx.outputDir, "issue_create", { title }, false, Date.now() - startTime);
     console.error(chalk.red("✗ Failed to create issue"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
@@ -111,6 +115,7 @@ export async function handleIssueList(
   ctx: CommandContext,
   options: IssueListOptions
 ): Promise<void> {
+  const startTime = Date.now();
   try {
     // Validate status if provided
     if (options.status && !isValidIssueStatus(options.status)) {
@@ -173,7 +178,9 @@ export async function handleIssueList(
       }
       console.log();
     }
+    await trackCommand(ctx.outputDir, "issue_list", {}, true, Date.now() - startTime);
   } catch (error) {
+    await trackCommand(ctx.outputDir, "issue_list", {}, false, Date.now() - startTime);
     console.error(chalk.red("✗ Failed to list issues"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
@@ -184,6 +191,7 @@ export async function handleIssueShow(
   ctx: CommandContext,
   id: string
 ): Promise<void> {
+  const startTime = Date.now();
   try {
     const issue = getIssue(ctx.db, id);
     if (!issue) {
@@ -296,7 +304,9 @@ export async function handleIssueShow(
 
       console.log();
     }
+    await trackCommand(ctx.outputDir, "issue_show", { id }, true, Date.now() - startTime);
   } catch (error) {
+    await trackCommand(ctx.outputDir, "issue_show", { id }, false, Date.now() - startTime);
     console.error(chalk.red("✗ Failed to show issue"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
@@ -318,6 +328,7 @@ export async function handleIssueUpdate(
   id: string,
   options: IssueUpdateOptions
 ): Promise<void> {
+  const startTime = Date.now();
   try {
     // Validate status if provided
     if (options.status && !isValidIssueStatus(options.status)) {
@@ -361,7 +372,9 @@ export async function handleIssueUpdate(
         console.log(chalk.gray(`  ${key}: ${updates[key]}`));
       });
     }
+    await trackCommand(ctx.outputDir, "issue_update", { id, status: options.status, archived: options.archived === 'true' }, true, Date.now() - startTime);
   } catch (error) {
+    await trackCommand(ctx.outputDir, "issue_update", { id, status: options.status, archived: options.archived === 'true' }, false, Date.now() - startTime);
     console.error(chalk.red("✗ Failed to update issue"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
@@ -377,6 +390,7 @@ export async function handleIssueClose(
   ids: string[],
   options: IssueCloseOptions
 ): Promise<void> {
+  const startTime = Date.now();
   try {
     const results = [];
     for (const id of ids) {
@@ -420,7 +434,9 @@ export async function handleIssueClose(
     if (ctx.jsonOutput) {
       console.log(JSON.stringify(results, null, 2));
     }
+    await trackCommand(ctx.outputDir, "issue_close", { id: ids.join(",") }, true, Date.now() - startTime);
   } catch (error) {
+    await trackCommand(ctx.outputDir, "issue_close", { id: ids.join(",") }, false, Date.now() - startTime);
     console.error(chalk.red("✗ Failed to close issues"));
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
