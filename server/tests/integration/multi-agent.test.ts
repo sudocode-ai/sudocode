@@ -16,6 +16,7 @@ import {
   it,
   expect,
   beforeAll,
+  beforeEach,
   afterEach,
   afterAll,
   vi,
@@ -206,8 +207,7 @@ vi.mock("../../src/execution/executors/agent-executor-wrapper.js", () => {
   };
 });
 
-// Requires sudocode-mcp binary in system PATH (not available in CI)
-describe.skipIf(!!process.env.CI)("Multi-Agent Support - Phase 1 Integration", () => {
+describe("Multi-Agent Support - Phase 1 Integration", () => {
   let db: Database.Database;
   let testDbPath: string;
   let testDir: string;
@@ -288,7 +288,14 @@ describe.skipIf(!!process.env.CI)("Multi-Agent Support - Phase 1 Integration", (
     );
   });
 
+  beforeEach(() => {
+    // Mock MCP detection to avoid requiring sudocode-mcp binary in PATH
+    vi.spyOn(executionService as any, 'detectSudocodeMcp').mockResolvedValue(true);
+    vi.spyOn(executionService as any, 'detectAgentMcp').mockResolvedValue(true);
+  });
+
   afterEach(() => {
+    vi.clearAllMocks();
     // Cleanup: cancel any running executions to prevent conflicts between tests
     const runningExecutions = db
       .prepare("SELECT id FROM executions WHERE status = ?")

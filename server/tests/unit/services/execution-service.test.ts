@@ -371,7 +371,7 @@ describe("ExecutionService", () => {
       expect(execution.worktree_path).toBe(null);
     });
 
-    it.skipIf(!!process.env.CI)("should capture before_commit in local mode", async () => {
+    it("should capture before_commit in local mode", async () => {
       // Create a real git repo for this test
       const gitTestDir = fs.mkdtempSync(
         path.join(os.tmpdir(), "sudocode-test-git-local-")
@@ -431,6 +431,8 @@ describe("ExecutionService", () => {
           gitTestDir,
           gitLifecycleService
         );
+        vi.spyOn(gitService as any, 'detectSudocodeMcp').mockResolvedValue(true);
+        vi.spyOn(gitService as any, 'detectAgentMcp').mockResolvedValue(true);
 
         const issueContent = "Add OAuth2 authentication";
         const execution = await gitService.createExecution(
@@ -610,7 +612,7 @@ describe("ExecutionService", () => {
       expect(execution.branch_name).toBe("feature-branch");
     });
 
-    it.skipIf(!!process.env.CI)("should default to current branch when baseBranch not provided", async () => {
+    it("should default to current branch when baseBranch not provided", async () => {
       // Create a real git repo for this test
       const gitTestDir = fs.mkdtempSync(
         path.join(os.tmpdir(), "sudocode-test-git-branch-")
@@ -674,6 +676,8 @@ describe("ExecutionService", () => {
           gitTestDir,
           gitLifecycleService
         );
+        vi.spyOn(gitService as any, 'detectSudocodeMcp').mockResolvedValue(true);
+        vi.spyOn(gitService as any, 'detectAgentMcp').mockResolvedValue(true);
 
         // Create execution WITHOUT specifying baseBranch
         const execution = await gitService.createExecution(
