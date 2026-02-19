@@ -18,9 +18,9 @@ YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-info()    { printf "${BLUE}[info]${NC} %s\n" "$1"; }
-success() { printf "${GREEN}[ok]${NC} %s\n" "$1"; }
-warn()    { printf "${YELLOW}[warn]${NC} %s\n" "$1"; }
+info()    { printf "${BLUE}[info]${NC} %s\n" "$1" >&2; }
+success() { printf "${GREEN}[ok]${NC} %s\n" "$1" >&2; }
+warn()    { printf "${YELLOW}[warn]${NC} %s\n" "$1" >&2; }
 error()   { printf "${RED}[error]${NC} %s\n" "$1" >&2; }
 die()     { error "$1"; exit 1; }
 
