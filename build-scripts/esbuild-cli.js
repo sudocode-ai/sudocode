@@ -19,7 +19,15 @@ const nodeBuiltins = [
 ];
 
 // Shim import.meta.url for CJS output (SEA in Node 22 only supports CJS)
-const importMetaShim = 'var __import_meta_url = require("url").pathToFileURL(__filename).href;';
+// Also suppress the SEA require() warning (cosmetic — our bindings shim uses createRequire correctly)
+const importMetaShim = [
+  'var __import_meta_url = require("url").pathToFileURL(__filename).href;',
+  'var __origEmit = process.emit;',
+  'process.emit = function(e, w) {',
+  '  if (e === "warning" && w && w.message && w.message.includes("require() provided to the main script")) return false;',
+  '  return __origEmit.apply(this, arguments);',
+  '};',
+].join('\n');
 
 /**
  * Plugin that replaces `require('bindings')` with a SEA-compatible loader.
