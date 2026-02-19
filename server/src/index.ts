@@ -283,13 +283,14 @@ async function main() {
 
   // Serve static frontend
   // In development: ../../frontend/dist (workspace)
+  // In SEA binary: ../public relative to binary (e.g. ~/.local/share/sudocode/public/)
   // In production: ./public (bundled with server package in dist/public)
-  const isDev =
-    process.env.NODE_ENV !== "production" &&
-    existsSync(path.join(__dirname, "../../frontend/dist"));
-  const frontendPath = isDev
-    ? path.join(__dirname, "../../frontend/dist")
-    : path.join(__dirname, "public");
+  const frontendCandidates = [
+    path.join(__dirname, "../../frontend/dist"),
+    path.join(path.dirname(process.execPath), "..", "public"),
+    path.join(__dirname, "public"),
+  ];
+  const frontendPath = frontendCandidates.find((p) => existsSync(p)) || frontendCandidates[frontendCandidates.length - 1];
   console.log(`[server] Serving static frontend from: ${frontendPath}`);
 
   // Serve static files
