@@ -28,6 +28,8 @@
     "test:server": "npm test --workspace=server",
     "test:frontend": "npm test --workspace=frontend",
     "test:types": "npm test --workspace=types",
+    "build:sea": "node build-scripts/esbuild-cli.js && node build-scripts/esbuild-mcp.js && node build-scripts/esbuild-server.js",
+    "package:sea": "node build-scripts/package-sea.js",
     "clean": "npm run clean --workspaces --if-present",
     "dev": "npm run dev --workspaces --if-present",
     "dev:server": "SUDOCODE_DIR=$(pwd)/.sudocode npm run dev --workspace=server",
