@@ -1,15 +1,12 @@
 name: Build Binaries
 
 on:
-  # Automatic on version tags (same tag triggers npm publish + binary build)
-  push:
-    tags:
-      - 'v*.*.*'
-    # TODO: Remove this branch trigger before merging to main
-    branches:
-      - fix-build-codespaces
+  # TODO: Re-enable tag trigger when publish.yml is tested and working
+  # push:
+  #   tags:
+  #     - 'v*.*.*'
 
-  # Manual dispatch for dev/test builds
+  # Manual dispatch for builds (use after ./scripts/publish.sh)
   workflow_dispatch:
     inputs:
       channel:
@@ -85,12 +82,7 @@ jobs:
 
       - name: Determine channel
         id: channel
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "channel=stable" >> $GITHUB_OUTPUT
-          else
-            echo "channel=${{ inputs.channel }}" >> $GITHUB_OUTPUT
-          fi
+        run: echo "channel=${{ inputs.channel }}" >> $GITHUB_OUTPUT
 
       - name: Package for ${{ matrix.platform }}
         run: node build-scripts/package-sea.js --platform=${{ matrix.platform }} --channel=${{ steps.channel.outputs.channel }}
@@ -240,6 +232,47 @@ jobs:
           # Force a sync and verify no errors
           $BIN_DIR/sudocode sync
 
+      - name: Test - XDG install simulation
+        run: |
+          echo "=== Simulating install.sh XDG layout ==="
+          # Install package to ~/.local/share/sudocode/
+          rm -rf $HOME/.local/share/sudocode
+          mkdir -p $HOME/.local/share/sudocode $HOME/.local/bin
+          cp -r $PKG_DIR/* $HOME/.local/share/sudocode/
+
+          # Create symlinks in ~/.local/bin/ (same as install.sh)
+          ln -sf $HOME/.local/share/sudocode/bin/sudocode $HOME/.local/bin/sudocode
+          ln -sf $HOME/.local/share/sudocode/bin/sudocode $HOME/.local/bin/sdc
+          ln -sf $HOME/.local/share/sudocode/bin/sudocode-server $HOME/.local/bin/sudocode-server
+          ln -sf $HOME/.local/share/sudocode/bin/sudocode-mcp $HOME/.local/bin/sudocode-mcp
+
+          # Test via symlink paths (real user experience)
+          $HOME/.local/bin/sudocode --version
+          $HOME/.local/bin/sdc --version
+          echo "CLI works via symlink"
+
+          # Test server finds ../public/ via symlinked path
+          cd /tmp/test-project
+          $HOME/.local/bin/sudocode-server &
+          SERVER_PID=$!
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:3000/health > /tmp/xdg-health.json 2>/dev/null; then
+              echo "Server via symlink is up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          if [ -f /tmp/xdg-health.json ]; then
+            node -p "const h = JSON.parse(require('fs').readFileSync('/tmp/xdg-health.json','utf8')); if (h.status !== 'ok') process.exit(1)"
+            echo "XDG install simulation passed"
+          else
+            echo "Server via symlink failed to start"
+            kill $SERVER_PID 2>/dev/null || true
+            exit 1
+          fi
+          kill $SERVER_PID 2>/dev/null || true
+          wait $SERVER_PID 2>/dev/null || true
+
   # Step 4: Test musl via Docker on ubuntu
   test-musl:
     name: Test ${{ matrix.platform }} (Docker Alpine)
@@ -305,13 +338,28 @@ jobs:
             kill $SERVER_PID 2>/dev/null || true
             wait $SERVER_PID 2>/dev/null || true
 
+            echo "=== XDG install simulation ==="
+            mkdir -p /root/.local/share/sudocode /root/.local/bin
+            cp -r /sudocode/* /root/.local/share/sudocode/
+            ln -sf /root/.local/share/sudocode/bin/sudocode /root/.local/bin/sudocode
+            ln -sf /root/.local/share/sudocode/bin/sudocode-server /root/.local/bin/sudocode-server
+            /root/.local/bin/sudocode --version && echo "CLI via symlink OK"
+            cd /tmp/proj
+            /root/.local/bin/sudocode-server &
+            XDG_PID=$!
+            sleep 5
+            curl -sf http://localhost:3000/health && echo " - Server via symlink OK"
+            kill $XDG_PID 2>/dev/null || true
+            wait $XDG_PID 2>/dev/null || true
+
             echo "=== All musl tests passed ==="
           '
 
-  # Step 5: Create GitHub Release (only on version tags, not branch pushes)
+  # Step 5: Create GitHub Release
+  # For workflow_dispatch: stable → full release with vX.Y.Z tag, dev → prerelease with dev-SHA tag
+  # TODO: When publish.yml is working, re-add tag trigger and auto-detect channel
   release:
     name: Create Release
-    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     needs: [test, test-musl]
     permissions:
@@ -331,16 +379,28 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Determine release tag
+        id: tag
+        run: |
+          CHANNEL="${{ inputs.channel }}"
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "$CHANNEL" = "stable" ]; then
+            echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+            echo "name=v${VERSION}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=dev-${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+            echo "name=Dev Build dev-${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+          fi
+          echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Generate manifest
         run: |
-          CHANNEL="${{ github.event_name == 'push' && 'stable' || inputs.channel }}"
-          VERSION=$(node -p "require('./package.json').version")
-
-          if [ "$CHANNEL" = "dev" ]; then
-            TAG="dev-${GITHUB_SHA:0:7}"
-          else
-            TAG="${GITHUB_REF_NAME}"
-          fi
+          TAG="${{ steps.tag.outputs.tag }}"
+          CHANNEL="${{ steps.tag.outputs.channel }}"
+          VERSION="${{ steps.tag.outputs.version }}"
 
           node -e "
           const fs = require('fs');
@@ -370,22 +430,11 @@ jobs:
           console.log('Manifest:', Object.keys(manifest.platforms).length, 'platforms');
           "
 
-      - name: Determine release tag
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
-            echo "prerelease=false" >> $GITHUB_OUTPUT
-          else
-            echo "tag=dev-${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
-            echo "prerelease=true" >> $GITHUB_OUTPUT
-          fi
-
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          name: ${{ github.event_name == 'push' && format('v{0}', steps.tag.outputs.tag) || format('Dev Build {0}', steps.tag.outputs.tag) }}
+          name: ${{ steps.tag.outputs.name }}
           prerelease: ${{ steps.tag.outputs.prerelease }}
           files: |
             artifacts/*.tar.gz
@@ -399,6 +448,7 @@ jobs:
           echo "## Binary Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Tag: \`${{ steps.tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "Channel: \`${{ steps.tag.outputs.channel }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Platforms tested" >> $GITHUB_STEP_SUMMARY
           echo "- linux-x64 (ubuntu-latest)" >> $GITHUB_STEP_SUMMARY
