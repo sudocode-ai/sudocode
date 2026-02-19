@@ -149,8 +149,12 @@ parse_manifest() {
     CHECKSUM=$(echo "$section" | grep '"sha256"' | sed -E 's/.*"sha256"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
   fi
 
-  [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ] && die "Platform $platform not found in manifest."
-  [ -z "$CHECKSUM" ] || [ "$CHECKSUM" = "null" ] && die "Checksum not found for $platform."
+  if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
+    die "Platform $platform not found in manifest."
+  fi
+  if [ -z "$CHECKSUM" ] || [ "$CHECKSUM" = "null" ]; then
+    die "Checksum not found for $platform."
+  fi
 }
 
 download_tarball() {
