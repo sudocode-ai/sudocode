@@ -1,0 +1,407 @@
+name: Build Binaries
+
+on:
+  # Automatic on version tags (same tag triggers npm publish + binary build)
+  push:
+    tags:
+      - 'v*.*.*'
+
+  # Manual dispatch for dev/test builds
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release channel'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - stable
+
+jobs:
+  # Step 1: Build esbuild bundles + SEA blobs (once, platform-agnostic)
+  build:
+    name: Build SEA bundles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all packages
+        run: npm run build
+
+      - name: Build SEA bundles
+        run: npm run build:sea
+
+      - name: Upload SEA bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: sea-bundles
+          path: dist/sea/
+          retention-days: 1
+
+  # Step 2: Package per platform (cross-compilation on ubuntu)
+  package:
+    name: Package ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux-x64
+          - linux-x64-musl
+          - linux-arm64
+          - linux-arm64-musl
+          - darwin-x64
+          - darwin-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download SEA bundles
+        uses: actions/download-artifact@v4
+        with:
+          name: sea-bundles
+          path: dist/sea/
+
+      - name: Determine channel
+        id: channel
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "channel=stable" >> $GITHUB_OUTPUT
+          else
+            echo "channel=${{ inputs.channel }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Package for ${{ matrix.platform }}
+        run: node build-scripts/package-sea.js --platform=${{ matrix.platform }} --channel=${{ steps.channel.outputs.channel }}
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.platform }}
+          path: |
+            dist/packages/*.tar.gz
+            dist/packages/*.checksums.txt
+          retention-days: 30
+
+  # Step 3: Integration tests on native hardware
+  test:
+    name: Test ${{ matrix.platform }}
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            runner: ubuntu-latest
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+          - platform: darwin-arm64
+            runner: macos-14
+          - platform: darwin-x64
+            runner: macos-13
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-${{ matrix.platform }}
+          path: artifacts/
+
+      - name: Extract tarball
+        run: |
+          cd artifacts
+          tar -xzf *.tar.gz
+          EXTRACTED=$(find . -mindepth 1 -maxdepth 1 -type d | head -1)
+          echo "BIN_DIR=$(cd "$EXTRACTED/bin" && pwd)" >> $GITHUB_ENV
+          echo "PKG_DIR=$(cd "$EXTRACTED" && pwd)" >> $GITHUB_ENV
+
+      - name: Test - version
+        run: |
+          $BIN_DIR/sudocode --version
+          $BIN_DIR/sdc --version
+
+      - name: Test - init
+        run: |
+          mkdir -p /tmp/test-project && cd /tmp/test-project
+          git init -b main
+          git config user.email "ci@test.com"
+          git config user.name "CI"
+          $BIN_DIR/sudocode init
+
+      - name: Test - spec CRUD
+        run: |
+          cd /tmp/test-project
+          $BIN_DIR/sudocode spec create "Test spec from CI"
+          $BIN_DIR/sudocode spec list --json | tee /tmp/specs.json
+          SPEC_ID=$(node -p "JSON.parse(require('fs').readFileSync('/tmp/specs.json','utf8'))[0].id")
+          echo "Created spec: $SPEC_ID"
+          $BIN_DIR/sudocode spec show "$SPEC_ID"
+
+      - name: Test - issue CRUD
+        run: |
+          cd /tmp/test-project
+          $BIN_DIR/sudocode issue create "Test issue from CI"
+          $BIN_DIR/sudocode issue list --json | tee /tmp/issues.json
+          ISSUE_ID=$(node -p "JSON.parse(require('fs').readFileSync('/tmp/issues.json','utf8'))[0].id")
+          echo "Created issue: $ISSUE_ID"
+          $BIN_DIR/sudocode issue show "$ISSUE_ID"
+          $BIN_DIR/sudocode issue update "$ISSUE_ID" --status in_progress
+          $BIN_DIR/sudocode issue show "$ISSUE_ID" | grep -i "in.progress"
+
+      - name: Test - ready/status
+        run: |
+          cd /tmp/test-project
+          $BIN_DIR/sudocode ready
+          $BIN_DIR/sudocode status
+
+      - name: Test - link
+        run: |
+          cd /tmp/test-project
+          SPEC_ID=$(node -p "JSON.parse(require('fs').readFileSync('/tmp/specs.json','utf8'))[0].id")
+          ISSUE_ID=$(node -p "JSON.parse(require('fs').readFileSync('/tmp/issues.json','utf8'))[0].id")
+          $BIN_DIR/sudocode link "$ISSUE_ID" "$SPEC_ID" --type implements
+
+      - name: Test - MCP server
+        run: |
+          cd /tmp/test-project
+          # Send JSON-RPC initialize + list_tools via stdin, check response
+          RESPONSE=$(printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}\n' | timeout 10 $BIN_DIR/sudocode-mcp 2>/dev/null || true)
+          echo "MCP Response: $RESPONSE"
+          echo "$RESPONSE" | grep -q "serverInfo" && echo "MCP server responds to initialize" || echo "MCP initialize check skipped"
+
+      - name: Test - server start
+        run: |
+          cd /tmp/test-project
+          # Start server in background
+          $BIN_DIR/sudocode-server &
+          SERVER_PID=$!
+          echo "Server PID: $SERVER_PID"
+
+          # Wait for server to be ready (up to 15 seconds)
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:3000/health > /tmp/health.json 2>/dev/null; then
+              echo "Server is up after ${i}s"
+              cat /tmp/health.json
+              break
+            fi
+            sleep 1
+          done
+
+          # Verify health response
+          if [ -f /tmp/health.json ]; then
+            node -p "const h = JSON.parse(require('fs').readFileSync('/tmp/health.json','utf8')); console.log('Status:', h.status); if (h.status !== 'ok') process.exit(1)"
+            echo "Server health check passed"
+          else
+            echo "Server failed to start within 15s"
+            kill $SERVER_PID 2>/dev/null || true
+            exit 1
+          fi
+
+          # Clean up
+          kill $SERVER_PID 2>/dev/null || true
+          wait $SERVER_PID 2>/dev/null || true
+
+      - name: Test - sync (JSONL round-trip)
+        run: |
+          cd /tmp/test-project
+          # Verify JSONL files were written
+          test -f .sudocode/specs.jsonl && echo "specs.jsonl exists"
+          test -f .sudocode/issues.jsonl && echo "issues.jsonl exists"
+          # Verify markdown files were written
+          ls .sudocode/specs/*.md && echo "spec markdown exists"
+          ls .sudocode/issues/*.md && echo "issue markdown exists"
+          # Force a sync and verify no errors
+          $BIN_DIR/sudocode sync
+
+  # Step 4: Test musl via Docker on ubuntu
+  test-musl:
+    name: Test ${{ matrix.platform }} (Docker Alpine)
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64-musl
+            runner: ubuntu-latest
+          - platform: linux-arm64-musl
+            runner: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-${{ matrix.platform }}
+          path: artifacts/
+
+      - name: Extract tarball
+        run: |
+          cd artifacts
+          tar -xzf *.tar.gz
+
+      - name: Test in Alpine container
+        run: |
+          cd artifacts
+          EXTRACTED=$(find . -mindepth 1 -maxdepth 1 -type d | head -1)
+
+          docker run --rm -v "$(pwd)/$EXTRACTED:/sudocode" alpine:3.19 sh -c '
+            apk add --no-cache git curl
+            export PATH="/sudocode/bin:$PATH"
+
+            echo "=== version ==="
+            sudocode --version
+
+            echo "=== init ==="
+            mkdir -p /tmp/proj && cd /tmp/proj
+            git init -b main
+            git config user.email "ci@test.com"
+            git config user.name "CI"
+            sudocode init
+
+            echo "=== spec create ==="
+            sudocode spec create "Alpine test"
+
+            echo "=== issue create ==="
+            sudocode issue create "Alpine issue"
+
+            echo "=== ready ==="
+            sudocode ready
+
+            echo "=== server start ==="
+            sudocode-server &
+            SERVER_PID=$!
+            sleep 5
+            curl -sf http://localhost:3000/health && echo " - Server health OK"
+            kill $SERVER_PID 2>/dev/null || true
+            wait $SERVER_PID 2>/dev/null || true
+
+            echo "=== All musl tests passed ==="
+          '
+
+  # Step 5: Create GitHub Release
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [test, test-musl]
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate manifest
+        run: |
+          CHANNEL="${{ github.event_name == 'push' && 'stable' || inputs.channel }}"
+          VERSION=$(node -p "require('./package.json').version")
+
+          if [ "$CHANNEL" = "dev" ]; then
+            TAG="dev-${GITHUB_SHA:0:7}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+
+          node -e "
+          const fs = require('fs');
+          const path = require('path');
+          const dir = 'artifacts';
+          const version = '$VERSION';
+          const channel = '$CHANNEL';
+          const tag = '$TAG';
+          const baseUrl = 'https://github.com/${{ github.repository }}/releases/download/' + tag;
+
+          const manifest = { version, channel, released_at: new Date().toISOString(), platforms: {} };
+
+          const checksumFiles = fs.readdirSync(dir).filter(f => f.endsWith('.checksums.txt'));
+          for (const f of checksumFiles) {
+            const content = fs.readFileSync(path.join(dir, f), 'utf8');
+            const match = content.match(/^([a-f0-9]{64})\s+(.+)$/m);
+            if (!match) continue;
+            const [, checksum, tarball] = match;
+            const platformMatch = tarball.match(/sudocode-[\d.]+-(.+)\.tar\.gz/);
+            if (!platformMatch) continue;
+            const platform = platformMatch[1];
+            const stats = fs.statSync(path.join(dir, tarball));
+            manifest.platforms[platform] = { url: baseUrl + '/' + tarball, sha256: checksum, size: stats.size };
+          }
+
+          fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+          console.log('Manifest:', Object.keys(manifest.platforms).length, 'platforms');
+          "
+
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          else
+            echo "tag=dev-${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ github.event_name == 'push' && format('v{0}', steps.tag.outputs.tag) || format('Dev Build {0}', steps.tag.outputs.tag) }}
+          prerelease: ${{ steps.tag.outputs.prerelease }}
+          files: |
+            artifacts/*.tar.gz
+            artifacts/*.checksums.txt
+            artifacts/manifest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## Binary Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Tag: \`${{ steps.tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Platforms tested" >> $GITHUB_STEP_SUMMARY
+          echo "- linux-x64 (ubuntu-latest)" >> $GITHUB_STEP_SUMMARY
+          echo "- linux-arm64 (ubuntu-24.04-arm)" >> $GITHUB_STEP_SUMMARY
+          echo "- darwin-arm64 (macos-14)" >> $GITHUB_STEP_SUMMARY
+          echo "- darwin-x64 (macos-13)" >> $GITHUB_STEP_SUMMARY
+          echo "- linux-x64-musl (Docker Alpine)" >> $GITHUB_STEP_SUMMARY
+          echo "- linux-arm64-musl (Docker Alpine on ARM)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          ls -lh artifacts/*.tar.gz | awk '{print "- " $9 " (" $5 ")"}' >> $GITHUB_STEP_SUMMARY

@@ -13,11 +13,21 @@ const __dirname = path.dirname(__filename);
  * Get the CLI version from package.json
  */
 export function getVersion(): string {
-  // In development (running from src/), go up one level
-  // In production (running from dist/), go up one level
-  const packageJsonPath = path.join(__dirname, "..", "package.json");
-  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
-  return packageJson.version;
+  // In compiled binaries (SEA/Bun), import.meta.url resolves to a virtual path.
+  // Fall back to reading package.json relative to the executable.
+  const candidates = [
+    path.join(__dirname, "..", "package.json"),
+    path.join(path.dirname(process.execPath), "..", "package.json"),
+    path.join(path.dirname(process.execPath), "package.json"),
+  ];
+  for (const p of candidates) {
+    try {
+      return JSON.parse(fs.readFileSync(p, "utf8")).version;
+    } catch {
+      continue;
+    }
+  }
+  return "0.0.0-unknown";
 }
 
 /**
