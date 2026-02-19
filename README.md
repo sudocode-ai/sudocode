@@ -35,7 +35,6 @@ sudocode is a lightweight agent orchestration system that lives in your repo. Ad
 - Bring order to chaos by organizing your requirements, background context, and implementation plans into structured, executable issue graphs
 - Visualize outputs and execution feedback in real-time
 - Run as many Claude Code/Codex/Cursor (+more) agents in parallel as you can handle
-- Isolate agent work in worktrees and creates checkpoints
 
 ### How it works
 
