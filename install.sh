@@ -4,7 +4,15 @@ set -e
 # sudocode installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/sudocode-ai/sudocode/main/install.sh | sh
 
-INSTALL_DIR="${SUDOCODE_INSTALL_DIR:-$HOME/.sudocode/bin}"
+# XDG-compliant install paths:
+#   Package:  ~/.local/share/sudocode/  (binaries, node_modules, public, package.json)
+#   Symlinks: ~/.local/bin/             (sudocode, sdc, sudocode-server, sudocode-mcp)
+#
+# ~/.local/bin is already in PATH on most Linux distros (Ubuntu, Debian, Fedora).
+# Override with SUDOCODE_INSTALL_DIR to change the package directory.
+
+PACKAGE_DIR="${SUDOCODE_INSTALL_DIR:-$HOME/.local/share/sudocode}"
+BIN_DIR="$HOME/.local/bin"
 GITHUB_REPO="sudocode-ai/sudocode"
 GITHUB_RELEASES="https://github.com/${GITHUB_REPO}/releases"
 VERSION=""
@@ -45,7 +53,7 @@ parse_args() {
         shift 2
         ;;
       --help|-h)
-        cat <<EOF
+        cat >&2 <<EOF
 sudocode installer
 
 Usage:
@@ -58,7 +66,7 @@ Options:
   --help, -h         Show this help message
 
 Environment:
-  SUDOCODE_INSTALL_DIR   Custom install directory (default: \$HOME/.sudocode/bin)
+  SUDOCODE_INSTALL_DIR   Custom package directory (default: \$HOME/.local/share/sudocode)
 EOF
         exit 0
         ;;
@@ -105,7 +113,9 @@ get_latest_version() {
   info "Fetching latest stable version..."
   VERSION=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
     | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-  [ -z "$VERSION" ] && die "Failed to fetch latest version. Use --version to specify."
+  if [ -z "$VERSION" ]; then
+    die "Failed to fetch latest version. Use --version to specify."
+  fi
   echo "$VERSION"
 }
 
@@ -113,7 +123,9 @@ get_latest_dev_version() {
   info "Fetching latest dev build..."
   VERSION=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases" \
     | grep '"tag_name":' | grep '"dev-' | sed -E 's/.*"([^"]+)".*/\1/' | head -n 1)
-  [ -z "$VERSION" ] && die "No dev builds found."
+  if [ -z "$VERSION" ]; then
+    die "No dev builds found."
+  fi
   echo "$VERSION"
 }
 
@@ -177,51 +189,67 @@ verify_checksum() {
     die "No sha256sum or shasum found."
   fi
 
-  [ "$computed" != "$CHECKSUM" ] && die "Checksum mismatch!\n  Expected: $CHECKSUM\n  Got:      $computed"
+  if [ "$computed" != "$CHECKSUM" ]; then
+    die "Checksum mismatch!\n  Expected: $CHECKSUM\n  Got:      $computed"
+  fi
   success "Checksum verified"
 }
 
 install_binaries() {
   local extract_dir="$1"
-  info "Installing to $INSTALL_DIR..."
-  mkdir -p "$INSTALL_DIR"
 
   # Find the extracted directory
   local extracted
   extracted=$(find "$extract_dir" -mindepth 1 -maxdepth 1 -type d | head -n 1)
-  [ -z "$extracted" ] && die "Empty archive"
+  if [ -z "$extracted" ]; then
+    die "Empty archive"
+  fi
 
-  # Install bin/ contents
+  # Install package contents to PACKAGE_DIR
+  info "Installing to $PACKAGE_DIR..."
+  if [ -d "$PACKAGE_DIR" ]; then
+    rm -rf "$PACKAGE_DIR"
+  fi
+  mkdir -p "$PACKAGE_DIR"
+
+  # Copy bin/ contents
   if [ -d "${extracted}/bin" ]; then
-    cp -f "${extracted}/bin/"* "$INSTALL_DIR/" 2>/dev/null || true
-    # Handle symlinks separately (cp -f may dereference)
+    mkdir -p "$PACKAGE_DIR/bin"
+    cp -f "${extracted}/bin/"* "$PACKAGE_DIR/bin/" 2>/dev/null || true
+    # Recreate sdc symlink (cp -f may dereference)
     if [ -L "${extracted}/bin/sdc" ]; then
-      ln -sf sudocode "$INSTALL_DIR/sdc"
+      ln -sf sudocode "$PACKAGE_DIR/bin/sdc"
     fi
+    chmod +x "$PACKAGE_DIR/bin/sudocode" 2>/dev/null || true
+    chmod +x "$PACKAGE_DIR/bin/sudocode-server" 2>/dev/null || true
+    chmod +x "$PACKAGE_DIR/bin/sudocode-mcp" 2>/dev/null || true
   fi
 
-  # Install native modules alongside binaries
+  # Copy native modules
   if [ -d "${extracted}/node_modules" ]; then
-    cp -rf "${extracted}/node_modules" "$INSTALL_DIR/"
+    cp -rf "${extracted}/node_modules" "$PACKAGE_DIR/"
   fi
 
-  # Install frontend assets
+  # Copy frontend assets
   if [ -d "${extracted}/public" ]; then
-    cp -rf "${extracted}/public" "$INSTALL_DIR/"
+    cp -rf "${extracted}/public" "$PACKAGE_DIR/"
   fi
 
-  # Install package.json (for version detection) one level up from bin/
+  # Copy package.json (for version detection)
   if [ -f "${extracted}/package.json" ]; then
-    local parent_dir
-    parent_dir=$(dirname "$INSTALL_DIR")
-    cp -f "${extracted}/package.json" "$parent_dir/package.json"
+    cp -f "${extracted}/package.json" "$PACKAGE_DIR/package.json"
   fi
 
-  chmod +x "$INSTALL_DIR/sudocode" 2>/dev/null || true
-  chmod +x "$INSTALL_DIR/sudocode-server" 2>/dev/null || true
-  chmod +x "$INSTALL_DIR/sudocode-mcp" 2>/dev/null || true
+  success "Installed to $PACKAGE_DIR"
 
-  success "Installed to $INSTALL_DIR"
+  # Create symlinks in BIN_DIR
+  info "Creating symlinks in $BIN_DIR..."
+  mkdir -p "$BIN_DIR"
+  ln -sf "$PACKAGE_DIR/bin/sudocode" "$BIN_DIR/sudocode"
+  ln -sf "$PACKAGE_DIR/bin/sudocode" "$BIN_DIR/sdc"
+  ln -sf "$PACKAGE_DIR/bin/sudocode-server" "$BIN_DIR/sudocode-server"
+  ln -sf "$PACKAGE_DIR/bin/sudocode-mcp" "$BIN_DIR/sudocode-mcp"
+  success "Symlinks created in $BIN_DIR"
 }
 
 get_shell_config() {
@@ -238,8 +266,7 @@ get_shell_config() {
 }
 
 add_to_path() {
-  if echo "$PATH" | tr ':' '\n' | grep -Fxq "$INSTALL_DIR"; then
-    info "$INSTALL_DIR already in PATH"
+  if echo "$PATH" | tr ':' '\n' | grep -Fxq "$BIN_DIR"; then
     return
   fi
 
@@ -252,17 +279,20 @@ add_to_path() {
   touch "$config"
 
   if [ "$shell_name" = "fish" ]; then
-    printf '\n# sudocode\nfish_add_path %s\n' "$INSTALL_DIR" >> "$config"
+    printf '\n# sudocode\nfish_add_path %s\n' "$BIN_DIR" >> "$config"
   else
-    printf '\n# sudocode\nexport PATH="%s:$PATH"\n' "$INSTALL_DIR" >> "$config"
+    printf '\n# sudocode\nexport PATH="%s:$PATH"\n' "$BIN_DIR" >> "$config"
   fi
 
-  success "Added to PATH in $config"
+  PATH_MODIFIED=1
+  success "Added $BIN_DIR to PATH in $config"
 }
 
 main() {
   info "sudocode installer"
-  echo ""
+  echo "" >&2
+
+  PATH_MODIFIED=""
 
   parse_args "$@"
 
@@ -286,25 +316,24 @@ main() {
   install_binaries "$EXTRACT_DIR"
   add_to_path
 
-  local shell_name
-  shell_name=$(basename "${SHELL:-sh}")
-
   echo "" >&2
   success "sudocode installed!"
   echo "" >&2
-  if echo "$PATH" | tr ':' '\n' | grep -Fxq "$INSTALL_DIR"; then
-    echo "  Verify: sudocode --version" >&2
-    echo "  Get started: cd <project> && sudocode init" >&2
-  else
-    echo "  To get started, run:" >&2
+  if [ -n "$PATH_MODIFIED" ]; then
+    local shell_name
+    shell_name=$(basename "${SHELL:-sh}")
+    echo "  To get started, restart your shell or run:" >&2
     echo "" >&2
     if [ "$shell_name" = "fish" ]; then
-      echo "    fish_add_path $INSTALL_DIR" >&2
+      echo "    fish_add_path $BIN_DIR" >&2
     else
-      echo "    export PATH=\"$INSTALL_DIR:\$PATH\"" >&2
+      echo "    export PATH=\"$BIN_DIR:\$PATH\"" >&2
     fi
     echo "" >&2
     echo "  Then verify: sudocode --version" >&2
+  else
+    echo "  Verify: sudocode --version" >&2
+    echo "  Get started: cd <project> && sudocode init" >&2
   fi
   echo "" >&2
 }
