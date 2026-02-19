@@ -252,13 +252,12 @@ add_to_path() {
   touch "$config"
 
   if [ "$shell_name" = "fish" ]; then
-    printf '\n# sudocode\nset -gx PATH %s $PATH\n' "$INSTALL_DIR" >> "$config"
+    printf '\n# sudocode\nfish_add_path %s\n' "$INSTALL_DIR" >> "$config"
   else
     printf '\n# sudocode\nexport PATH="%s:$PATH"\n' "$INSTALL_DIR" >> "$config"
   fi
 
   success "Added to PATH in $config"
-  warn "Restart your shell or run: source $config"
 }
 
 main() {
@@ -287,13 +286,27 @@ main() {
   install_binaries "$EXTRACT_DIR"
   add_to_path
 
-  echo ""
+  local shell_name
+  shell_name=$(basename "${SHELL:-sh}")
+
+  echo "" >&2
   success "sudocode installed!"
-  echo ""
-  echo "  1. Restart your shell or run: source $(get_shell_config)"
-  echo "  2. Verify: sudocode --version"
-  echo "  3. Initialize: cd <project> && sudocode init"
-  echo ""
+  echo "" >&2
+  if echo "$PATH" | tr ':' '\n' | grep -Fxq "$INSTALL_DIR"; then
+    echo "  Verify: sudocode --version" >&2
+    echo "  Get started: cd <project> && sudocode init" >&2
+  else
+    echo "  To get started, run:" >&2
+    echo "" >&2
+    if [ "$shell_name" = "fish" ]; then
+      echo "    fish_add_path $INSTALL_DIR" >&2
+    else
+      echo "    export PATH=\"$INSTALL_DIR:\$PATH\"" >&2
+    fi
+    echo "" >&2
+    echo "  Then verify: sudocode --version" >&2
+  fi
+  echo "" >&2
 }
 
 main "$@"
