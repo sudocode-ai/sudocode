@@ -5,6 +5,9 @@ on:
   push:
     tags:
       - 'v*.*.*'
+    # TODO: Remove this branch trigger before merging to main
+    branches:
+      - fix-build-codespaces
 
   # Manual dispatch for dev/test builds
   workflow_dispatch:
@@ -305,9 +308,10 @@ jobs:
             echo "=== All musl tests passed ==="
           '
 
-  # Step 5: Create GitHub Release
+  # Step 5: Create GitHub Release (only on version tags, not branch pushes)
   release:
     name: Create Release
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     needs: [test, test-musl]
     permissions:
