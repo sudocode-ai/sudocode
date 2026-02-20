@@ -44,11 +44,7 @@ const PLATFORMS = {
     nodeBinaryPath: `node-${NODE_VERSION}-linux-arm64/bin/node`,
     postjectFlags: [],
   },
-  'linux-arm64-musl': {
-    nodeUrl: `https://unofficial-builds.nodejs.org/download/release/${NODE_VERSION}/node-${NODE_VERSION}-linux-arm64-musl.tar.gz`,
-    nodeBinaryPath: `node-${NODE_VERSION}-linux-arm64-musl/bin/node`,
-    postjectFlags: [],
-  },
+  // NOTE: linux-arm64-musl not available from unofficial-builds.nodejs.org
   'darwin-x64': {
     nodeUrl: `https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-darwin-x64.tar.gz`,
     nodeBinaryPath: `node-${NODE_VERSION}-darwin-x64/bin/node`,
@@ -215,7 +211,6 @@ async function downloadSqlitePrebuilt(platform, targetDir) {
     'linux-x64': { os: 'linux', arch: 'x64' },
     'linux-x64-musl': { os: 'linuxmusl', arch: 'x64' },
     'linux-arm64': { os: 'linux', arch: 'arm64' },
-    'linux-arm64-musl': { os: 'linuxmusl', arch: 'arm64' },
     'darwin-x64': { os: 'darwin', arch: 'x64' },
     'darwin-arm64': { os: 'darwin', arch: 'arm64' },
   };
