@@ -82,6 +82,7 @@ describe('AgentConfigPanel', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     vi.mocked(repositoryApi.getInfo).mockResolvedValue({
       name: 'test-repo',
       path: '/test/path',

@@ -21,6 +21,10 @@ import ProjectsPage from '@/pages/ProjectsPage'
 import ExecutionsPage from '@/pages/ExecutionsPage'
 import WorkflowsPage from '@/pages/WorkflowsPage'
 import WorkflowDetailPage from '@/pages/WorkflowDetailPage'
+import { cleanExpiredDrafts } from '@/hooks/usePersistedDraft'
+
+// Prune stale draft entries from localStorage on startup
+cleanExpiredDrafts()
 
 // Configure TanStack Query
 const queryClient = new QueryClient({

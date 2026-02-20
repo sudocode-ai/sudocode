@@ -32,6 +32,7 @@ import { useAgentActions } from '@/hooks/useAgentActions'
 import { useWorktrees } from '@/hooks/useWorktrees'
 import { useVoiceConfig } from '@/hooks/useVoiceConfig'
 import { useAgentCommands } from '@/hooks/useAgentCommands'
+import { usePersistedDraft } from '@/hooks/usePersistedDraft'
 import type { CodexConfig } from './CodexConfigForm'
 import type { CopilotConfig } from './CopilotConfigForm'
 import type { GeminiConfig } from './GeminiConfigForm'
@@ -358,7 +359,17 @@ export function AgentConfigPanel({
   availableCommands = [],
 }: AgentConfigPanelProps) {
   const [loading, setLoading] = useState(false)
-  const [prompt, setPrompt] = useState(defaultPrompt || '')
+
+  // Persist prompt drafts to localStorage, keyed by issue or execution.
+  // Disabled when defaultPrompt is provided or no entity exists to key against.
+  const draftKey = useMemo(() => {
+    if (defaultPrompt !== undefined) return null
+    if (issueId) return `prompt:issue:${issueId}`
+    if (currentExecution?.id) return `prompt:exec:${currentExecution.id}`
+    return null
+  }, [defaultPrompt, issueId, currentExecution?.id])
+
+  const { value: prompt, setValue: setPrompt, clearDraft } = usePersistedDraft(draftKey, defaultPrompt || '')
   const [internalForceNewExecution, setInternalForceNewExecution] = useState(false)
   const [availableBranches, setAvailableBranches] = useState<string[]>([])
   const [currentBranch, setCurrentBranch] = useState<string>('')
@@ -838,6 +849,7 @@ export function AgentConfigPanel({
 
     onStart(finalConfig, finalPrompt, selectedAgentType, forceNewExecution)
     setPrompt('') // Clear the prompt after submission
+    clearDraft() // Remove persisted draft from localStorage
     setForceNewExecution(false) // Reset the flag after submission
   }
 
