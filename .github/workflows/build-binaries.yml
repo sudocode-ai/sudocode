@@ -59,7 +59,6 @@ jobs:
           - linux-x64
           - linux-x64-musl
           - linux-arm64
-          - linux-arm64-musl
           - darwin-x64
           - darwin-arm64
 
@@ -283,8 +282,6 @@ jobs:
         include:
           - platform: linux-x64-musl
             runner: ubuntu-latest
-          - platform: linux-arm64-musl
-            runner: ubuntu-24.04-arm
 
     runs-on: ${{ matrix.runner }}
 
@@ -456,6 +453,5 @@ jobs:
           echo "- darwin-arm64 (macos-14)" >> $GITHUB_STEP_SUMMARY
           echo "- darwin-x64 (macos-13)" >> $GITHUB_STEP_SUMMARY
           echo "- linux-x64-musl (Docker Alpine)" >> $GITHUB_STEP_SUMMARY
-          echo "- linux-arm64-musl (Docker Alpine on ARM)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           ls -lh artifacts/*.tar.gz | awk '{print "- " $9 " (" $5 ")"}' >> $GITHUB_STEP_SUMMARY
