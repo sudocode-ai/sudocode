@@ -1465,4 +1465,106 @@ describe('AgentConfigPanel', () => {
       })
     })
   })
+
+  describe('Draft Persistence', () => {
+    beforeEach(() => {
+      localStorage.clear()
+    })
+
+    it('should persist prompt draft to localStorage for issue-keyed panels', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(<AgentConfigPanel issueId="i-draft1" onStart={mockOnStart} />)
+
+      const textarea = await screen.findByPlaceholderText(
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
+      )
+      await user.type(textarea, 'my draft prompt')
+
+      // Wait for debounce to flush
+      await waitFor(() => {
+        const stored = localStorage.getItem('sudocode:draft:prompt:issue:i-draft1')
+        expect(stored).not.toBeNull()
+        expect(JSON.parse(stored!).value).toBe('my draft prompt')
+      })
+    })
+
+    it('should restore draft on remount', async () => {
+      // Pre-populate a draft
+      localStorage.setItem(
+        'sudocode:draft:prompt:issue:i-draft2',
+        JSON.stringify({ value: 'restored draft', ts: Date.now() })
+      )
+
+      renderWithProviders(<AgentConfigPanel issueId="i-draft2" onStart={mockOnStart} />)
+
+      const textarea = await screen.findByPlaceholderText(
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
+      )
+      expect(textarea).toHaveValue('restored draft')
+    })
+
+    it('should clear draft on submission', async () => {
+      const user = userEvent.setup()
+
+      // Pre-populate a draft
+      localStorage.setItem(
+        'sudocode:draft:prompt:issue:i-draft3',
+        JSON.stringify({ value: 'will be cleared', ts: Date.now() })
+      )
+
+      renderWithProviders(<AgentConfigPanel issueId="i-draft3" onStart={mockOnStart} />)
+
+      const textarea = await screen.findByPlaceholderText(
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
+      )
+      expect(textarea).toHaveValue('will be cleared')
+
+      const runButton = screen.getByRole('button', { name: /Submit/i })
+      await user.click(runButton)
+
+      expect(localStorage.getItem('sudocode:draft:prompt:issue:i-draft3')).toBeNull()
+    })
+
+    it('should not persist drafts when defaultPrompt is provided', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(
+        <AgentConfigPanel issueId="i-draft4" onStart={mockOnStart} defaultPrompt="preset" />
+      )
+
+      const textarea = await screen.findByPlaceholderText(
+        'Add additional context (optional) for the agent... (@ for context, / for commands)'
+      )
+      await user.clear(textarea)
+      await user.type(textarea, 'modified prompt')
+
+      // Wait and verify nothing was written
+      await new Promise((r) => setTimeout(r, 500))
+      expect(localStorage.getItem('sudocode:draft:prompt:issue:i-draft4')).toBeNull()
+    })
+
+    it('should key by execution ID for adhoc executions without issueId', async () => {
+      const user = userEvent.setup()
+
+      renderWithProviders(
+        <AgentConfigPanel
+          onStart={mockOnStart}
+          isFollowUp
+          lastExecution={{ id: 'exec-adhoc-1', mode: 'local' }}
+        />
+      )
+
+      const textarea = await screen.findByPlaceholderText(
+        /continue the previous conversation/i
+      )
+      await user.type(textarea, 'adhoc follow-up')
+
+      await waitFor(() => {
+        const stored = localStorage.getItem('sudocode:draft:prompt:exec:exec-adhoc-1')
+        expect(stored).not.toBeNull()
+        expect(JSON.parse(stored!).value).toBe('adhoc follow-up')
+      })
+    })
+  })
 })
