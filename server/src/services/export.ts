@@ -13,7 +13,9 @@ import type Database from "better-sqlite3";
 import { exportToJSONL } from "@sudocode-ai/cli/dist/export.js";
 import { syncJSONLToMarkdown } from "@sudocode-ai/cli/dist/sync.js";
 import { getConfig, isMarkdownFirst } from "@sudocode-ai/cli/dist/config.js";
+import { syncFileWithRename } from "@sudocode-ai/cli/dist/filename-generator.js";
 import { getSudocodeDir } from "../utils/sudocode-dir.js";
+import * as fs from "fs";
 import * as path from "path";
 
 // Global debouncer state (keyed by database instance)
@@ -82,16 +84,18 @@ export async function syncEntityToMarkdown(
     const { getIssueById } = await import("./issues.js");
     const issue = getIssueById(db, entityId);
     if (issue) {
-      const mdPath = path.join(dir, "issues", `${issue.id}.md`);
+      const issuesDir = path.join(dir, "issues");
+      const mdPath = syncFileWithRename(issue.id, issuesDir, issue.title);
       await syncJSONLToMarkdown(db, issue.id, "issue", mdPath);
     }
   } else {
     const { getSpecById } = await import("./specs.js");
     const spec = getSpecById(db, entityId);
     if (spec) {
-      const mdPath = spec.file_path
+      const specsDir = path.join(dir, "specs");
+      const mdPath = spec.file_path && fs.existsSync(path.join(dir, spec.file_path))
         ? path.join(dir, spec.file_path)
-        : path.join(dir, "specs", `${spec.id}.md`);
+        : syncFileWithRename(spec.id, specsDir, spec.title);
       await syncJSONLToMarkdown(db, spec.id, "spec", mdPath);
     }
   }
