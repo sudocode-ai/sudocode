@@ -364,12 +364,10 @@ export function AgentConfigPanel({
   // Disabled when defaultPrompt is provided or no entity exists to key against.
   // For adhoc executions (no issueId), key by lastExecution.id — the most recent
   // execution in the chain that we're writing a follow-up for.
-  const draftKey = useMemo(() => {
-    if (defaultPrompt !== undefined) return null
-    if (issueId) return `prompt:issue:${issueId}`
-    if (lastExecution?.id) return `prompt:exec:${lastExecution.id}`
-    return null
-  }, [defaultPrompt, issueId, lastExecution?.id])
+  const draftKey = defaultPrompt !== undefined ? null
+    : issueId ? `prompt:issue:${issueId}`
+    : lastExecution?.id ? `prompt:exec:${lastExecution.id}`
+    : null
 
   const { value: prompt, setValue: setPrompt, clearDraft } = usePersistedDraft(draftKey, defaultPrompt || '')
   const [internalForceNewExecution, setInternalForceNewExecution] = useState(false)
