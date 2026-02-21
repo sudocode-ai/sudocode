@@ -7,8 +7,33 @@ import * as fs from "fs";
 import * as path from "path";
 import { initDatabase } from "../db.js";
 import type Database from "better-sqlite3";
-import { PROJECT_CONFIG_FILE, LOCAL_CONFIG_FILE } from "../config.js";
-import { VERSION } from "../version.js";
+import { PROJECT_CONFIG_FILE, LOCAL_CONFIG_FILE, getProjectConfig } from "../config.js";
+import type { StorageMode } from "@sudocode-ai/types";
+
+/**
+ * Build .gitignore content based on sourceOfTruth mode.
+ *
+ * In jsonl mode: specs/ and issues/ dirs are derived (gitignored)
+ * In markdown mode: specs/ and issues/ dirs are authoritative (tracked)
+ */
+export function buildGitignore(sourceOfTruth: StorageMode): string {
+  const lines = [
+    "cache.db*",
+    "worktrees/",
+    "config.local.json",
+    "merge-driver.log",
+    "telemetry-buffer.jsonl",
+    "telemetry-flush.json",
+  ];
+
+  if (sourceOfTruth === "jsonl") {
+    // Markdown dirs are derived from JSONL — gitignore them
+    lines.splice(1, 0, "issues/", "specs/");
+  }
+  // In markdown mode, specs/ and issues/ are the source of truth — track them
+
+  return lines.join("\n");
+}
 
 export interface InitOptions {
   dir?: string;
@@ -71,16 +96,7 @@ export async function performInitialization(
   const projectConfigPath = path.join(dir, PROJECT_CONFIG_FILE);
   if (!fs.existsSync(projectConfigPath)) {
     const projectConfig = {
-      version: VERSION,
       // sourceOfTruth defaults to "jsonl" when not specified
-      worktree: {
-        worktreeStoragePath: ".sudocode/worktrees",
-        autoCreateBranches: true,
-        autoDeleteBranches: false,
-        enableSparseCheckout: false,
-        branchPrefix: "sudocode",
-        cleanupOrphanedWorktreesOnStartup: false,
-      },
     };
     fs.writeFileSync(
       projectConfigPath,
@@ -179,17 +195,12 @@ export async function performInitialization(
     }
   }
 
-  // Create .gitignore file
-  const gitignoreContent = `cache.db*
-issues/
-specs/
-worktrees/
-config.json
-config.local.json
-merge-driver.log
-telemetry-buffer.jsonl
-telemetry-flush.json`;
-  fs.writeFileSync(path.join(dir, ".gitignore"), gitignoreContent, "utf8");
+  // Generate .gitignore based on sourceOfTruth config
+  const gitignorePath = path.join(dir, ".gitignore");
+  const projectConfig = getProjectConfig(dir);
+  const sourceOfTruth: StorageMode = projectConfig.sourceOfTruth || "jsonl";
+  const gitignoreContent = buildGitignore(sourceOfTruth);
+  fs.writeFileSync(gitignorePath, gitignoreContent, "utf8");
 
   database.close();
 
