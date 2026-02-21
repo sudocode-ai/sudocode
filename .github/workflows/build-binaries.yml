@@ -67,6 +67,8 @@ jobs:
             runner: macos-14
           - platform: darwin-arm64
             runner: macos-14
+          - platform: win-x64
+            runner: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -100,6 +102,7 @@ jobs:
           name: binaries-${{ matrix.platform }}
           path: |
             dist/packages/*.tar.gz
+            dist/packages/*.zip
             dist/packages/*.checksums.txt
           retention-days: 30
 
@@ -278,6 +281,133 @@ jobs:
           kill $SERVER_PID 2>/dev/null || true
           wait $SERVER_PID 2>/dev/null || true
 
+  # Step 3b: Windows integration tests
+  test-win:
+    name: Test win-x64
+    needs: package
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-win-x64
+          path: artifacts/
+
+      - name: Extract zip
+        shell: pwsh
+        run: |
+          cd artifacts
+          $zip = Get-ChildItem -Filter *.zip | Select-Object -First 1
+          Expand-Archive -Path $zip.FullName -DestinationPath .
+          $extracted = Get-ChildItem -Directory | Select-Object -First 1
+          echo "BIN_DIR=$((Resolve-Path "$($extracted.FullName)\bin").Path)" >> $env:GITHUB_ENV
+          echo "PKG_DIR=$((Resolve-Path $extracted.FullName).Path)" >> $env:GITHUB_ENV
+
+      - name: Test - version
+        shell: pwsh
+        run: |
+          & "$env:BIN_DIR\sudocode.exe" --version
+          & "$env:BIN_DIR\sdc.cmd" --version
+
+      - name: Test - init
+        shell: pwsh
+        run: |
+          $testDir = "$env:TEMP\test-project"
+          New-Item -ItemType Directory -Force -Path $testDir | Out-Null
+          Set-Location $testDir
+          git init -b main
+          git config user.email "ci@test.com"
+          git config user.name "CI"
+          & "$env:BIN_DIR\sudocode.exe" init
+
+      - name: Test - spec CRUD
+        shell: pwsh
+        run: |
+          Set-Location "$env:TEMP\test-project"
+          & "$env:BIN_DIR\sudocode.exe" spec create "Test spec from CI"
+          $specsJson = & "$env:BIN_DIR\sudocode.exe" spec list --json
+          $specsJson | Out-File -FilePath "$env:TEMP\specs.json" -Encoding utf8
+          $specId = (node -p "JSON.parse(require('fs').readFileSync('$($env:TEMP -replace '\\','/')//specs.json','utf8'))[0].id")
+          Write-Host "Created spec: $specId"
+          & "$env:BIN_DIR\sudocode.exe" spec show $specId
+
+      - name: Test - issue CRUD
+        shell: pwsh
+        run: |
+          Set-Location "$env:TEMP\test-project"
+          & "$env:BIN_DIR\sudocode.exe" issue create "Test issue from CI"
+          $issuesJson = & "$env:BIN_DIR\sudocode.exe" issue list --json
+          $issuesJson | Out-File -FilePath "$env:TEMP\issues.json" -Encoding utf8
+          $issueId = (node -p "JSON.parse(require('fs').readFileSync('$($env:TEMP -replace '\\','/')//issues.json','utf8'))[0].id")
+          Write-Host "Created issue: $issueId"
+          & "$env:BIN_DIR\sudocode.exe" issue show $issueId
+          & "$env:BIN_DIR\sudocode.exe" issue update $issueId --status in_progress
+          $output = & "$env:BIN_DIR\sudocode.exe" issue show $issueId
+          if ($output -match "in.progress") { Write-Host "Status updated" } else { exit 1 }
+
+      - name: Test - ready/status
+        shell: pwsh
+        run: |
+          Set-Location "$env:TEMP\test-project"
+          & "$env:BIN_DIR\sudocode.exe" ready
+          & "$env:BIN_DIR\sudocode.exe" status
+
+      - name: Test - link
+        shell: pwsh
+        run: |
+          Set-Location "$env:TEMP\test-project"
+          $specId = (node -p "JSON.parse(require('fs').readFileSync('$($env:TEMP -replace '\\','/')//specs.json','utf8'))[0].id")
+          $issueId = (node -p "JSON.parse(require('fs').readFileSync('$($env:TEMP -replace '\\','/')//issues.json','utf8'))[0].id")
+          & "$env:BIN_DIR\sudocode.exe" link $issueId $specId --type implements
+
+      - name: Test - server start
+        shell: pwsh
+        run: |
+          Set-Location "$env:TEMP\test-project"
+          $proc = Start-Process -FilePath "$env:BIN_DIR\sudocode-server.exe" -PassThru -NoNewWindow
+          Write-Host "Server PID: $($proc.Id)"
+
+          $ready = $false
+          for ($i = 1; $i -le 15; $i++) {
+            try {
+              $response = Invoke-WebRequest -Uri "http://localhost:3000/health" -UseBasicParsing -ErrorAction Stop
+              $response.Content | Out-File -FilePath "$env:TEMP\health.json" -Encoding utf8
+              Write-Host "Server is up after ${i}s"
+              $ready = $true
+              break
+            } catch {
+              Start-Sleep -Seconds 1
+            }
+          }
+
+          if ($ready) {
+            $health = Get-Content "$env:TEMP\health.json" | ConvertFrom-Json
+            if ($health.status -eq "ok") { Write-Host "Server health check passed" } else { exit 1 }
+          } else {
+            Write-Host "Server failed to start within 15s"
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            exit 1
+          }
+
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+
+      - name: Test - sync (JSONL round-trip)
+        shell: pwsh
+        run: |
+          Set-Location "$env:TEMP\test-project"
+          if (Test-Path ".sudocode\specs.jsonl") { Write-Host "specs.jsonl exists" }
+          if (Test-Path ".sudocode\issues.jsonl") { Write-Host "issues.jsonl exists" }
+          Get-ChildItem ".sudocode\specs\*.md" | ForEach-Object { Write-Host "spec markdown: $_" }
+          Get-ChildItem ".sudocode\issues\*.md" | ForEach-Object { Write-Host "issue markdown: $_" }
+          & "$env:BIN_DIR\sudocode.exe" sync
+
   # Step 4: Test musl via Docker on ubuntu
   test-musl:
     name: Test ${{ matrix.platform }} (Docker Alpine)
@@ -364,7 +494,7 @@ jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [test, test-musl]
+    needs: [test, test-win, test-musl]
     permissions:
       contents: write
 
@@ -422,7 +552,7 @@ jobs:
             const match = content.match(/^([a-f0-9]{64})\s+(.+)$/m);
             if (!match) continue;
             const [, checksum, tarball] = match;
-            const platformMatch = tarball.match(/sudocode-[\d.]+-(.+)\.tar\.gz/);
+            const platformMatch = tarball.match(/sudocode-[\d.]+-(.+?)(?:\.tar\.gz|\.zip)/);
             if (!platformMatch) continue;
             const platform = platformMatch[1];
             const stats = fs.statSync(path.join(dir, tarball));
@@ -441,6 +571,7 @@ jobs:
           prerelease: ${{ steps.tag.outputs.prerelease }}
           files: |
             artifacts/*.tar.gz
+            artifacts/*.zip
             artifacts/*.checksums.txt
             artifacts/manifest.json
         env:
@@ -457,7 +588,8 @@ jobs:
           echo "- linux-x64 (ubuntu-latest)" >> $GITHUB_STEP_SUMMARY
           echo "- linux-arm64 (ubuntu-24.04-arm)" >> $GITHUB_STEP_SUMMARY
           echo "- darwin-arm64 (macos-14)" >> $GITHUB_STEP_SUMMARY
-          echo "- darwin-x64 (macos-13)" >> $GITHUB_STEP_SUMMARY
+          echo "- darwin-x64 (macos-14)" >> $GITHUB_STEP_SUMMARY
+          echo "- win-x64 (windows-latest)" >> $GITHUB_STEP_SUMMARY
           echo "- linux-x64-musl (Docker Alpine)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          ls -lh artifacts/*.tar.gz | awk '{print "- " $9 " (" $5 ")"}' >> $GITHUB_STEP_SUMMARY
+          ls -lh artifacts/*.tar.gz artifacts/*.zip 2>/dev/null | awk '{print "- " $9 " (" $5 ")"}' >> $GITHUB_STEP_SUMMARY
