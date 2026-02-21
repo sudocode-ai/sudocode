@@ -226,4 +226,14 @@ if [ -n "$DRY_RUN" ]; then
   echo ""
   echo "This was a dry run. No packages were actually published."
   echo "Remove --dry-run to publish for real."
+else
+  echo ""
+  echo "=========================================="
+  echo "Next: Build binaries"
+  echo "=========================================="
+  echo ""
+  echo "  gh workflow run build-binaries.yml -f channel=stable"
+  echo ""
+  echo "  Monitor: https://github.com/sudocode-ai/sudocode/actions"
+  echo ""
 fi

@@ -23,9 +23,7 @@
     "sudocode": {
       "command": "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/run-mcp.sh",
       "args": [],
-      "env": {
-        "SUDOCODE_WORKING_DIR": "${workspaceFolder}"
-      }
+      "env": {}
     }
   }
 }
