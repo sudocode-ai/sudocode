@@ -460,9 +460,11 @@ export function importSpecs(
   }
 
   // Second pass: set parent_id for newly added specs (now all parents exist)
+  // Preserve updated_at to avoid clobbering timestamps set in pass 1
   for (const spec of specsWithParents) {
     updateSpec(db, spec.id, {
       parent_id: spec.parent_id,
+      updated_at: spec.updated_at,
     });
   }
 
@@ -641,9 +643,11 @@ export function importIssues(
   }
 
   // Second pass: set parent_id for newly added issues (now all parents exist)
+  // Preserve updated_at to avoid clobbering timestamps set in pass 1
   for (const issue of issuesWithParents) {
     updateIssue(db, issue.id, {
       parent_id: issue.parent_id,
+      updated_at: issue.updated_at,
     });
   }
 
