@@ -2357,6 +2357,175 @@ describe("Import Operations", () => {
     });
   });
 
+  describe("Parent-Child Import Timestamp Preservation", () => {
+    it("should preserve updated_at on issues with parent_id during import", async () => {
+      const originalTimestamp = "2025-06-15T10:00:00Z";
+
+      const issues: IssueJSONL[] = [
+        {
+          id: "i-child",
+          uuid: "uuid-child",
+          title: "Child Issue",
+          content: "Child content",
+          status: "open",
+          priority: 2,
+          assignee: null,
+          parent_id: "i-parent",
+          archived: false,
+          archived_at: null,
+          created_at: "2025-06-01T00:00:00Z",
+          updated_at: originalTimestamp,
+          closed_at: null,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+        {
+          id: "i-parent",
+          uuid: "uuid-parent",
+          title: "Parent Issue",
+          content: "Parent content",
+          status: "open",
+          priority: 2,
+          assignee: null,
+          parent_id: null,
+          archived: false,
+          archived_at: null,
+          created_at: "2025-06-01T00:00:00Z",
+          updated_at: originalTimestamp,
+          closed_at: null,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), []);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), issues);
+
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      const child = getIssue(db, "i-child");
+      expect(child).toBeDefined();
+      expect(child!.parent_id).toBe("i-parent");
+      // The bug: two-pass parent import was clobbering updated_at with CURRENT_TIMESTAMP
+      expect(child!.updated_at).toBe(originalTimestamp);
+    });
+
+    it("should preserve updated_at on specs with parent_id during import", async () => {
+      const originalTimestamp = "2025-06-15T10:00:00Z";
+
+      const specs: SpecJSONL[] = [
+        {
+          id: "s-child",
+          uuid: "uuid-child",
+          title: "Child Spec",
+          file_path: "specs/child.md",
+          content: "Child content",
+          priority: 2,
+          parent_id: "s-parent",
+          archived: false,
+          archived_at: null,
+          created_at: "2025-06-01T00:00:00Z",
+          updated_at: originalTimestamp,
+          relationships: [],
+          tags: [],
+        },
+        {
+          id: "s-parent",
+          uuid: "uuid-parent",
+          title: "Parent Spec",
+          file_path: "specs/parent.md",
+          content: "Parent content",
+          priority: 2,
+          parent_id: null,
+          archived: false,
+          archived_at: null,
+          created_at: "2025-06-01T00:00:00Z",
+          updated_at: originalTimestamp,
+          relationships: [],
+          tags: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), specs);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), []);
+
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      const child = getSpec(db, "s-child");
+      expect(child).toBeDefined();
+      expect(child!.parent_id).toBe("s-parent");
+      expect(child!.updated_at).toBe(originalTimestamp);
+    });
+
+    it("should not clobber updated_at after full import-export cycle with parent hierarchy", async () => {
+      const originalTimestamp = "2025-06-15T10:00:00Z";
+
+      const issues: IssueJSONL[] = [
+        {
+          id: "i-child",
+          uuid: "uuid-child",
+          title: "Child Issue",
+          content: "Child content",
+          status: "open",
+          priority: 2,
+          assignee: null,
+          parent_id: "i-parent",
+          archived: false,
+          archived_at: null,
+          created_at: "2025-06-01T00:00:00Z",
+          updated_at: originalTimestamp,
+          closed_at: null,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+        {
+          id: "i-parent",
+          uuid: "uuid-parent",
+          title: "Parent Issue",
+          content: "Parent content",
+          status: "open",
+          priority: 2,
+          assignee: null,
+          parent_id: null,
+          archived: false,
+          archived_at: null,
+          created_at: "2025-06-01T00:00:00Z",
+          updated_at: originalTimestamp,
+          closed_at: null,
+          relationships: [],
+          tags: [],
+          feedback: [],
+        },
+      ];
+
+      await writeJSONL(path.join(TEST_DIR, "specs.jsonl"), []);
+      await writeJSONL(path.join(TEST_DIR, "issues.jsonl"), issues);
+
+      // Import → export → verify timestamps survive the round-trip
+      await importFromJSONL(db, { inputDir: TEST_DIR });
+
+      const { exportToJSONL } = await import("../../src/export.js");
+      await exportToJSONL(db, { outputDir: TEST_DIR });
+
+      const exportedContent = fs.readFileSync(
+        path.join(TEST_DIR, "issues.jsonl"),
+        "utf-8"
+      );
+      const lines = exportedContent.trim().split("\n");
+      const exportedIssues = lines.map((l) => JSON.parse(l));
+
+      const exportedChild = exportedIssues.find(
+        (i: any) => i.id === "i-child"
+      );
+      expect(exportedChild).toBeDefined();
+      expect(exportedChild.updated_at).toBe(originalTimestamp);
+      expect(exportedChild.parent_id).toBe("i-parent");
+    });
+  });
+
   describe("external_links Import Behavior", () => {
     it("should clear external_links in SQLite when JSONL has no external_links field", async () => {
       // Create spec with external_links in database
