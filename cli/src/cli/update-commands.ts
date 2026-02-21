@@ -124,6 +124,38 @@ function isUsingVoltaForSudocode(): boolean {
 }
 
 /**
+ * Best-effort update of the Claude Code marketplace plugin.
+ * If the claude CLI is not available, prints a note and moves on.
+ */
+function updateClaudePlugin(): void {
+  try {
+    execSync("claude --version", { stdio: "pipe" });
+  } catch {
+    console.log();
+    console.log(
+      chalk.dim(
+        "Claude CLI not found — skipping marketplace plugin update"
+      )
+    );
+    return;
+  }
+
+  try {
+    console.log();
+    console.log(chalk.dim("Updating Claude Code marketplace plugin..."));
+    execSync("claude plugin marketplace update sudocode-ai/sudocode", {
+      stdio: "inherit",
+    });
+    execSync("claude plugin update sudocode@sudocode-marketplace", {
+      stdio: "inherit",
+    });
+    console.log(chalk.green("✓ Claude Code plugin updated"));
+  } catch {
+    // Best-effort — don't fail the overall update
+  }
+}
+
+/**
  * Handle update check command
  */
 export async function handleUpdateCheck(): Promise<void> {
@@ -196,6 +228,9 @@ export async function handleUpdate(): Promise<void> {
     console.log(chalk.green("✓ Update completed successfully!"));
     console.log();
     console.log("Run 'sudocode --version' to verify the new version");
+
+    // Best-effort: update Claude Code marketplace plugin
+    updateClaudePlugin();
   } catch (error) {
     console.log();
     console.error(chalk.red("✗ Update failed"));
