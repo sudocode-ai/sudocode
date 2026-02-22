@@ -55,6 +55,11 @@ const PLATFORMS = {
     nodeBinaryPath: `node-${NODE_VERSION}-darwin-arm64/bin/node`,
     postjectFlags: ['--macho-segment-name', 'NODE_SEA'],
   },
+  'win-x64': {
+    nodeUrl: `https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-win-x64.zip`,
+    nodeBinaryPath: `node-${NODE_VERSION}-win-x64/node.exe`,
+    postjectFlags: [],
+  },
 };
 
 const BINARIES = [
@@ -102,16 +107,21 @@ async function downloadNodeBinary(platform, config) {
     return extractedPath;
   }
 
-  const tarPath = path.join(platformBuildDir, 'node.tar.gz');
-  await downloadFile(config.nodeUrl, tarPath);
+  const isZip = config.nodeUrl.endsWith('.zip');
+  const archivePath = path.join(platformBuildDir, isZip ? 'node.zip' : 'node.tar.gz');
+  await downloadFile(config.nodeUrl, archivePath);
 
-  await execFileAsync('tar', ['-xzf', tarPath, '-C', platformBuildDir]);
+  if (isZip) {
+    await execFileAsync('unzip', ['-q', archivePath, '-d', platformBuildDir]);
+  } else {
+    await execFileAsync('tar', ['-xzf', archivePath, '-C', platformBuildDir]);
+  }
 
   if (!fs.existsSync(extractedPath)) {
     throw new Error(`Failed to extract Node.js binary for ${platform}`);
   }
 
-  fs.unlinkSync(tarPath);
+  fs.unlinkSync(archivePath);
   return extractedPath;
 }
 
@@ -213,6 +223,7 @@ async function downloadSqlitePrebuilt(platform, targetDir) {
     'linux-arm64': { os: 'linux', arch: 'arm64' },
     'darwin-x64': { os: 'darwin', arch: 'x64' },
     'darwin-arm64': { os: 'darwin', arch: 'arm64' },
+    'win-x64': { os: 'win32', arch: 'x64' },
   };
 
   const p = platformMap[platform];
@@ -272,16 +283,23 @@ async function packagePlatform(platform, config) {
   // Download Node.js binary for this platform
   const nodeBinaryPath = await downloadNodeBinary(platform, config);
 
+  const isWindows = platform.startsWith('win');
+  const ext = isWindows ? '.exe' : '';
+
   // Inject SEA blobs
   for (const binary of BINARIES) {
     const blobPath = path.join(seaDir, binary.blob);
-    const outputPath = path.join(binDir, binary.name);
-    console.log(`  Injecting ${binary.name}...`);
+    const outputPath = path.join(binDir, `${binary.name}${ext}`);
+    console.log(`  Injecting ${binary.name}${ext}...`);
     await injectBlob(nodeBinaryPath, blobPath, outputPath, config.postjectFlags);
   }
 
-  // Create sdc symlink
-  fs.symlinkSync('sudocode', path.join(binDir, 'sdc'));
+  // Create sdc shortcut
+  if (isWindows) {
+    fs.writeFileSync(path.join(binDir, 'sdc.cmd'), '@echo off\r\n"%~dp0sudocode.exe" %*\r\n');
+  } else {
+    fs.symlinkSync('sudocode', path.join(binDir, 'sdc'));
+  }
 
   // Download platform-specific better-sqlite3 prebuild
   await downloadSqlitePrebuilt(platform, packageDir);
@@ -292,23 +310,25 @@ async function packagePlatform(platform, config) {
   // Create package.json at package root (version.ts reads from ../package.json relative to bin/)
   fs.writeFileSync(path.join(packageDir, 'package.json'), JSON.stringify({ version }, null, 2));
 
-  // Create tarball using system tar
-  const tarballName = `${packageName}.tar.gz`;
-  const tarballPath = path.join(packagesDir, tarballName);
-  await execFileAsync('tar', ['-czf', tarballPath, '-C', buildDir, packageName]);
+  // Create archive
+  const archiveName = isWindows ? `${packageName}.zip` : `${packageName}.tar.gz`;
+  const archivePath = path.join(packagesDir, archiveName);
+  if (isWindows) {
+    await execFileAsync('zip', ['-r', '-q', archivePath, packageName], { cwd: buildDir });
+  } else {
+    await execFileAsync('tar', ['-czf', archivePath, '-C', buildDir, packageName]);
+  }
 
-  const stats = fs.statSync(tarballPath);
-  const checksum = sha256(tarballPath);
+  const stats = fs.statSync(archivePath);
+  const checksum = sha256(archivePath);
   const sizeMB = (stats.size / 1024 / 1024).toFixed(1);
-  console.log(`  ${tarballName} (${sizeMB} MB) sha256:${checksum.slice(0, 12)}...`);
+  console.log(`  ${archiveName} (${sizeMB} MB) sha256:${checksum.slice(0, 12)}...`);
 
   // Write per-platform checksum file
-  fs.writeFileSync(
-    tarballPath.replace('.tar.gz', '.checksums.txt'),
-    `${checksum}  ${tarballName}\n`
-  );
+  const checksumPath = path.join(packagesDir, `${packageName}.checksums.txt`);
+  fs.writeFileSync(checksumPath, `${checksum}  ${archiveName}\n`);
 
-  return { path: tarballPath, name: tarballName, platform, checksum, size: stats.size };
+  return { path: archivePath, name: archiveName, platform, checksum, size: stats.size };
 }
 
 function generateManifest(packages, version, channel) {

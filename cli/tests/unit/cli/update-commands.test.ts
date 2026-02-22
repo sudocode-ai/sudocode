@@ -10,6 +10,7 @@ import {
   handleUpdateDismiss,
 } from "../../../src/cli/update-commands.js";
 import * as updateChecker from "../../../src/update-checker.js";
+import * as installSource from "../../../src/install-source.js";
 
 // Mock child_process
 vi.mock("child_process");
@@ -343,6 +344,161 @@ describe("Update CLI Commands", () => {
       const output = consoleLogSpy.mock.calls.flat().join(" ");
       expect(output).toContain("Package: @sudocode-ai/cli");
       expect(output).toContain("npm install -g @sudocode-ai/cli --force");
+    });
+  });
+
+  describe("Binary Install Detection", () => {
+    it("should route to binary update when source is binary", async () => {
+      vi.spyOn(installSource, "detectInstallSource").mockReturnValue("binary");
+
+      vi.spyOn(updateChecker, "checkForUpdates").mockResolvedValue({
+        current: "0.1.5",
+        latest: "0.1.7",
+        updateAvailable: true,
+      });
+
+      // Mock fetch to fail (simulates network error during GitHub release check)
+      global.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
+
+      // Make process.exit throw to actually stop execution (prevents continued
+      // execution into downloadFile which uses https and makes real HTTP requests)
+      processExitSpy.mockImplementation(((code?: number) => {
+        throw new Error(`process.exit(${code})`);
+      }) as any);
+
+      await expect(handleUpdate()).rejects.toThrow("process.exit(1)");
+
+      const output = consoleLogSpy.mock.calls.flat().join(" ");
+      expect(output).toContain("Install source: binary");
+      expect(output).toContain("Failed to fetch latest release");
+    });
+
+    it("should show reinstall instructions on Windows for binary install", async () => {
+      vi.spyOn(installSource, "detectInstallSource").mockReturnValue("binary");
+
+      // Mock Windows platform
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, "platform", {
+        value: "win32",
+        configurable: true,
+      });
+
+      vi.spyOn(updateChecker, "checkForUpdates").mockResolvedValue({
+        current: "0.1.5",
+        latest: "0.1.7",
+        updateAvailable: true,
+      });
+
+      // Make process.exit throw to actually stop execution
+      processExitSpy.mockImplementation(((code?: number) => {
+        throw new Error(`process.exit(${code})`);
+      }) as any);
+
+      try {
+        await expect(handleUpdate()).rejects.toThrow("process.exit(1)");
+
+        const output = consoleLogSpy.mock.calls.flat().join(" ");
+        expect(output).toContain("Self-update is not supported on Windows");
+      } finally {
+        Object.defineProperty(process, "platform", {
+          value: originalPlatform,
+          configurable: true,
+        });
+      }
+    });
+
+    it("should skip binary update if already on latest version", async () => {
+      vi.spyOn(installSource, "detectInstallSource").mockReturnValue("binary");
+
+      vi.spyOn(updateChecker, "checkForUpdates").mockResolvedValue({
+        current: "0.1.7",
+        latest: "0.1.7",
+        updateAvailable: false,
+      });
+
+      await handleUpdate();
+
+      const output = consoleLogSpy.mock.calls.flat().join(" ");
+      expect(output).toContain("Already on latest version");
+    });
+  });
+
+  describe("handleUpdateCheck with install source", () => {
+    it("should show binary source info when binary install", async () => {
+      vi.spyOn(installSource, "detectInstallSource").mockReturnValue("binary");
+      vi.spyOn(installSource, "detectPlatform").mockReturnValue("darwin-arm64");
+
+      vi.spyOn(updateChecker, "checkForUpdates").mockResolvedValue({
+        current: "0.1.5",
+        latest: "0.1.7",
+        updateAvailable: true,
+      });
+
+      await handleUpdateCheck();
+
+      const output = consoleLogSpy.mock.calls.flat().join(" ");
+      expect(output).toContain("Source:");
+      expect(output).toContain("binary");
+      expect(output).toContain("darwin-arm64");
+      // Should NOT show npm manual install instructions for binary installs
+      expect(output).not.toContain("npm install -g");
+    });
+
+    it("should show npm package info when npm install", async () => {
+      vi.spyOn(installSource, "detectInstallSource").mockReturnValue("npm-standalone");
+
+      vi.mocked(execSync).mockImplementation((cmd: any) => {
+        if (cmd.includes("npm list -g sudocode")) {
+          throw new Error("Package not found");
+        }
+        return Buffer.from("");
+      });
+
+      vi.spyOn(updateChecker, "checkForUpdates").mockResolvedValue({
+        current: "0.1.5",
+        latest: "0.1.7",
+        updateAvailable: true,
+      });
+
+      await handleUpdateCheck();
+
+      const output = consoleLogSpy.mock.calls.flat().join(" ");
+      expect(output).toContain("Package:");
+      expect(output).toContain("npm install -g");
+    });
+
+    it("should show GitHub releases link when binary install check fails", async () => {
+      vi.spyOn(installSource, "detectInstallSource").mockReturnValue("binary");
+
+      vi.spyOn(updateChecker, "checkForUpdates").mockResolvedValue(null);
+
+      await handleUpdateCheck();
+
+      const output = consoleLogSpy.mock.calls.flat().join(" ");
+      expect(output).toContain("Unable to check for updates");
+      expect(output).toContain("github.com/sudocode-ai/sudocode/releases");
+    });
+
+    it("should show Volta-managed detection when volta source", async () => {
+      vi.spyOn(installSource, "detectInstallSource").mockReturnValue("volta");
+
+      vi.mocked(execSync).mockImplementation((cmd: any) => {
+        if (cmd.includes("npm list -g sudocode")) {
+          throw new Error("Package not found");
+        }
+        return Buffer.from("");
+      });
+
+      vi.spyOn(updateChecker, "checkForUpdates").mockResolvedValue({
+        current: "0.1.5",
+        latest: "0.1.7",
+        updateAvailable: true,
+      });
+
+      await handleUpdate();
+
+      const output = consoleLogSpy.mock.calls.flat().join(" ");
+      expect(output).toContain("Volta-managed installation");
     });
   });
 
