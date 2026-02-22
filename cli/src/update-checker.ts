@@ -7,8 +7,10 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { VERSION } from "./version.js";
+import { isBinaryInstall } from "./install-source.js";
 
 const PACKAGE_NAME = "@sudocode-ai/cli";
+const GITHUB_REPO = "sudocode-ai/sudocode";
 const CACHE_DIR = path.join(os.tmpdir(), "sudocode-cli");
 const CACHE_FILE = path.join(CACHE_DIR, "update-cache.json");
 const DISMISS_FILE = path.join(CACHE_DIR, "update-dismissed.json");
@@ -55,6 +57,35 @@ async function fetchLatestVersion(): Promise<string | null> {
 
     const data = (await response.json()) as NpmRegistryResponse;
     return data.version || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch latest version from GitHub Releases (for binary installs)
+ */
+async function fetchLatestVersionFromGitHub(): Promise<string | null> {
+  try {
+    const response = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
+      {
+        headers: {
+          Accept: "application/vnd.github+json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as { tag_name?: string };
+    const tag = data.tag_name;
+    if (!tag) return null;
+
+    // Strip leading "v" from tag (e.g. "v0.1.22" → "0.1.22")
+    return tag.startsWith("v") ? tag.slice(1) : tag;
   } catch {
     return null;
   }
@@ -118,8 +149,10 @@ export async function checkForUpdates(): Promise<UpdateInfo | null> {
     };
   }
 
-  // Fetch latest version from npm
-  const latest = await fetchLatestVersion();
+  // Fetch latest version from appropriate source
+  const latest = isBinaryInstall()
+    ? await fetchLatestVersionFromGitHub()
+    : await fetchLatestVersion();
   if (!latest) {
     return null;
   }

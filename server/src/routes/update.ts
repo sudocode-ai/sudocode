@@ -6,6 +6,9 @@ import {
   dismissUpdate,
   isOlderVersion,
 } from "@sudocode-ai/cli/update-checker";
+import {
+  detectInstallSource,
+} from "@sudocode-ai/cli/install-source";
 
 // Reference to the HTTP server - set via setServerInstance
 let serverInstance: import("http").Server | null = null;
@@ -89,10 +92,27 @@ export function createUpdateRouter(): Router {
 
   /**
    * POST /api/update/install
-   * Install the latest version via npm
+   * Install the latest version
    */
   router.post("/install", async (_req: Request, res: Response) => {
     try {
+      const source = detectInstallSource();
+
+      // Binary install: not supported via server API
+      // (CLI handles binary updates directly; the server binary would need to replace itself)
+      if (source === "binary") {
+        const isWindows = process.platform === "win32";
+        res.status(400).json({
+          success: false,
+          error: isWindows
+            ? "Self-update is not supported on Windows. Please reinstall manually."
+            : "Binary updates must be run from the CLI: sudocode update",
+          installSource: "binary",
+        });
+        return;
+      }
+
+      // npm/Volta install: existing flow
       const packageToUpdate = detectInstalledPackage();
       console.log(`[update] Installing ${packageToUpdate}...`);
 

@@ -12,6 +12,7 @@ import {
   clearUpdateCache,
   dismissUpdate,
 } from "../../src/update-checker.js";
+import * as installSource from "../../src/install-source.js";
 
 const CACHE_DIR = path.join(os.tmpdir(), "sudocode-cli");
 const CACHE_FILE = path.join(CACHE_DIR, "update-cache.json");
@@ -145,6 +146,103 @@ describe("Update Checker", () => {
 
     it("should handle missing cache file gracefully", () => {
       expect(() => clearUpdateCache()).not.toThrow();
+    });
+  });
+
+  describe("checkForUpdates (binary install)", () => {
+    it("should fetch from GitHub Releases when binary install", async () => {
+      vi.spyOn(installSource, "isBinaryInstall").mockReturnValue(true);
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ tag_name: "v99.0.0" }),
+      } as Response);
+
+      clearUpdateCache();
+      const result = await checkForUpdates();
+      expect(result).not.toBeNull();
+      expect(result?.latest).toBe("99.0.0");
+      expect(result?.updateAvailable).toBe(true);
+
+      // Should have called GitHub Releases API, not npm
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("api.github.com/repos/sudocode-ai/sudocode/releases/latest"),
+        expect.any(Object)
+      );
+    });
+
+    it("should strip v prefix from GitHub tag", async () => {
+      vi.spyOn(installSource, "isBinaryInstall").mockReturnValue(true);
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ tag_name: "v1.2.3" }),
+      } as Response);
+
+      clearUpdateCache();
+      const result = await checkForUpdates();
+      expect(result?.latest).toBe("1.2.3");
+    });
+
+    it("should handle GitHub tag without v prefix", async () => {
+      vi.spyOn(installSource, "isBinaryInstall").mockReturnValue(true);
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ tag_name: "2.0.0" }),
+      } as Response);
+
+      clearUpdateCache();
+      const result = await checkForUpdates();
+      expect(result?.latest).toBe("2.0.0");
+    });
+
+    it("should return null if GitHub API fails", async () => {
+      vi.spyOn(installSource, "isBinaryInstall").mockReturnValue(true);
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+      } as Response);
+
+      clearUpdateCache();
+      const result = await checkForUpdates();
+      expect(result).toBeNull();
+    });
+
+    it("should return null if GitHub response has no tag_name", async () => {
+      vi.spyOn(installSource, "isBinaryInstall").mockReturnValue(true);
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({}),
+      } as Response);
+
+      clearUpdateCache();
+      const result = await checkForUpdates();
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("checkForUpdates (npm install)", () => {
+    it("should fetch from npm registry when not binary install", async () => {
+      vi.spyOn(installSource, "isBinaryInstall").mockReturnValue(false);
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ version: "99.0.0" }),
+      } as Response);
+
+      clearUpdateCache();
+      const result = await checkForUpdates();
+      expect(result).not.toBeNull();
+      expect(result?.latest).toBe("99.0.0");
+
+      // Should have called npm registry, not GitHub
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("registry.npmjs.org"),
+        expect.any(Object)
+      );
     });
   });
 
