@@ -10,6 +10,7 @@ import { exportToJSONL } from "../export.js";
 import { syncJSONLToMarkdown } from "../sync.js";
 import { getSpec } from "../operations/specs.js";
 import { getIssue } from "../operations/issues.js";
+import { syncFileWithRename } from "../filename-generator.js";
 import {
   isValidRelationshipType,
   getValidRelationshipTypes,
@@ -88,7 +89,8 @@ export async function handleLink(
     } else {
       const issue = getIssue(ctx.db, from);
       if (issue) {
-        const issuePath = path.join(ctx.outputDir, "issues", `${from}.md`);
+        const issuesDir = path.join(ctx.outputDir, "issues");
+        const issuePath = syncFileWithRename(from, issuesDir, issue.title);
         await syncJSONLToMarkdown(ctx.db, from, "issue", issuePath);
       }
     }

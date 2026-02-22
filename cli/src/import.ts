@@ -12,6 +12,7 @@ import {
   deleteSpec,
   getSpec,
 } from "./operations/specs.js";
+import { findExistingEntityFile } from "./filename-generator.js";
 import {
   listIssues,
   createIssue,
@@ -869,9 +870,13 @@ export async function importFromJSONL(
         markdownFilesToDelete.push(path.join(inputDir, spec.file_path));
       }
     }
-    // Collect issue file paths (issues use standard path format)
+    // Collect issue file paths
     for (const id of issueChanges.deleted) {
-      markdownFilesToDelete.push(path.join(inputDir, "issues", `${id}.md`));
+      const issuesDir = path.join(inputDir, "issues");
+      const existing = findExistingEntityFile(id, issuesDir);
+      if (existing) {
+        markdownFilesToDelete.push(existing);
+      }
     }
   }
 

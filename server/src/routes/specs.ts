@@ -13,6 +13,7 @@ import {
   deleteExistingSpec,
 } from "../services/specs.js";
 import { generateSpecId } from "@sudocode-ai/cli/dist/id-generator.js";
+import { generateUniqueFilename } from "@sudocode-ai/cli/dist/filename-generator.js";
 import { getSpecFromJsonl } from "@sudocode-ai/cli/dist/operations/external-links.js";
 import { broadcastSpecUpdate } from "../services/websocket.js";
 import {
@@ -130,7 +131,7 @@ export function createSpecsRouter(): Router {
       const { id, uuid } = generateSpecId(req.project!.db, outputDir);
 
       // Generate file path for the spec (relative path)
-      const file_path = `specs/${id}.md`;
+      const file_path = `specs/${generateUniqueFilename(title, id)}`;
 
       // Create spec using CLI operation
       const spec = createNewSpec(req.project!.db, {

@@ -18,6 +18,7 @@ import { broadcastIssueUpdate } from "../services/websocket.js";
 import { triggerExport, executeExportNow, syncEntityToMarkdown } from "../services/export.js";
 import { refreshIssue } from "../services/external-refresh-service.js";
 import * as path from "path";
+import { findExistingEntityFile } from "@sudocode-ai/cli/dist/filename-generator.js";
 import * as fs from "fs";
 
 export function createIssuesRouter(): Router {
@@ -305,19 +306,16 @@ export function createIssuesRouter(): Router {
       const jsonlIssue = getIssueFromJsonl(req.project!.sudocodeDir, id);
       const externalLinks = jsonlIssue?.external_links || [];
 
-      // Save file_path before deletion (issues use standard path format)
-      const markdownPath = path.join(
-        req.project!.sudocodeDir,
-        "issues",
-        `${id}.md`
-      );
+      // Find markdown file before deletion (entity still in DB)
+      const issuesDir = path.join(req.project!.sudocodeDir, "issues");
+      const markdownPath = findExistingEntityFile(id, issuesDir);
 
       // Delete issue using CLI operation
       const deleted = deleteExistingIssue(req.project!.db, id);
 
       if (deleted) {
         // Delete markdown file if it exists
-        if (fs.existsSync(markdownPath)) {
+        if (markdownPath && fs.existsSync(markdownPath)) {
           try {
             fs.unlinkSync(markdownPath);
           } catch (err) {

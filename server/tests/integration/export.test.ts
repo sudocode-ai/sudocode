@@ -10,6 +10,7 @@ import { createIssuesRouter } from "../../src/routes/issues.js";
 import { createSpecsRouter } from "../../src/routes/specs.js";
 import { cleanupExport } from "../../src/services/export.js";
 import { parseMarkdownFile } from "@sudocode-ai/cli/dist/markdown.js";
+import { findExistingEntityFile } from "@sudocode-ai/cli/dist/filename-generator.js";
 import { ProjectManager } from "../../src/services/project-manager.js";
 import { ProjectRegistry } from "../../src/services/project-registry.js";
 import { requireProject } from "../../src/middleware/project-context.js";
@@ -149,8 +150,9 @@ describe("JSONL Export Integration", () => {
       expect(exportedIssue.priority).toBe(newIssue.priority);
 
       // Verify markdown file was created
-      const issueMdPath = path.join(testProjectPath, ".sudocode", "issues", `${issueId}.md`);
-      expect(fs.existsSync(issueMdPath)).toBeTruthy();
+      const issuesDir = path.join(testProjectPath, ".sudocode", "issues");
+      const issueMdPath = findExistingEntityFile(issueId, issuesDir);
+      expect(issueMdPath).toBeTruthy();
 
       // Verify markdown file content
       const project = projectManager.getProject(projectId)!;
@@ -202,7 +204,8 @@ describe("JSONL Export Integration", () => {
       expect(updatedIssue.title).toBe("Issue to Update"); // Original title preserved
 
       // Verify markdown file was updated
-      const issueMdPath = path.join(testProjectPath, ".sudocode", "issues", `${issueId}.md`);
+      const issuesDir2 = path.join(testProjectPath, ".sudocode", "issues");
+      const issueMdPath = findExistingEntityFile(issueId, issuesDir2)!;
       const project = projectManager.getProject(projectId)!;
       const parsed = parseMarkdownFile(issueMdPath, project.db, testProjectPath);
       expect(parsed.data.status).toBe(updates.status);

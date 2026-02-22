@@ -11,6 +11,7 @@ import { getSpec, updateSpec } from '../operations/specs.js';
 import { getIssue, updateIssue } from '../operations/issues.js';
 import { parseMarkdown, stringifyMarkdown } from '../markdown.js';
 import { exportToJSONL } from '../export.js';
+import { findExistingEntityFile, syncFileWithRename } from '../filename-generator.js';
 
 export interface CommandContext {
   db: Database.Database;
@@ -63,7 +64,9 @@ export async function handleAddReference(
       entity = getIssue(ctx.db, entityId);
       if (entity) {
         entityType = 'issue';
-        filePath = path.join(ctx.outputDir, 'issues', `${entityId}.md`);
+        const issuesDir = path.join(ctx.outputDir, 'issues');
+        filePath = findExistingEntityFile(entityId, issuesDir, entity.title)
+          ?? syncFileWithRename(entityId, issuesDir, entity.title);
       } else {
         console.error(chalk.red(`✗ Entity not found: ${entityId}`));
         process.exit(1);
