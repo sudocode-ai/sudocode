@@ -228,8 +228,8 @@ describe("Specs API", () => {
       // Verify file_path is relative, not absolute
       expect(path.isAbsolute(filePath)).toBe(false);
 
-      // Verify file_path matches the pattern specs/{id}.md
-      expect(filePath).toBe(`specs/${specId}.md`);
+      // Verify file_path matches the pattern specs/{id}_{title_slug}.md
+      expect(filePath).toMatch(new RegExp(`^specs/${specId}_.+\\.md$`));
 
       // Verify file_path starts with specs/
       expect(filePath.startsWith("specs/")).toBe(true);

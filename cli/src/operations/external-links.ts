@@ -21,6 +21,7 @@ import {
   getAdaptiveHashLength,
   generateUUID,
 } from "../id-generator.js";
+import { generateUniqueFilename } from "../filename-generator.js";
 import * as path from "path";
 
 /**
@@ -655,9 +656,8 @@ export function createSpecFromExternal(
   const { id, uuid } = generateSpecIdFromJsonl(sudocodeDir);
   const now = new Date().toISOString();
 
-  // Generate file_path from id (required for SpecJSONL)
-  // File path is just a reference for imported specs - actual files are in the external system
-  const file_path = `specs/${id}.md`;
+  // Generate file_path from id and title (required for SpecJSONL)
+  const file_path = `specs/${generateUniqueFilename(input.title, id)}`;
 
   // Resolve external relationships to sudocode relationships
   const relationships = resolveExternalRelationships(

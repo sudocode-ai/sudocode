@@ -12,6 +12,7 @@ import type Database from "better-sqlite3";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { generateUniqueFilename } from "../../../src/filename-generator.js";
 
 describe("Relationship CLI Commands", () => {
   let db: Database.Database;
@@ -347,7 +348,7 @@ describe("Relationship CLI Commands", () => {
       await handleLink(ctx, issue1Id, issue2Id, { type: "blocks" });
 
       // Verify markdown file was created/updated with relationship
-      const issuePath = path.join(tempDir, "issues", `${issue1Id}.md`);
+      const issuePath = path.join(tempDir, "issues", generateUniqueFilename("Test Issue 1", issue1Id));
       expect(fs.existsSync(issuePath)).toBe(true);
 
       const content = fs.readFileSync(issuePath, "utf-8");

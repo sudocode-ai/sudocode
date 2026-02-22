@@ -23,6 +23,7 @@ import { getTags } from "./operations/tags.js";
 import {
   findExistingEntityFile,
   generateUniqueFilename,
+  syncFileWithRename,
 } from "./filename-generator.js";
 import { getOutgoingRelationships } from "./operations/relationships.js";
 import type { EntitySyncEvent, FileChangeEvent } from "@sudocode-ai/types/events";
@@ -870,21 +871,19 @@ export function startWatcher(options: WatcherOptions): WatcherControl {
 
                 // Find markdown file path
                 let entityFilePath: string;
-                if (entityType === "spec" && entity && "file_path" in entity) {
+                const entityDir = path.join(
+                  baseDir,
+                  entityType === "spec" ? "specs" : "issues"
+                );
+                if (entityType === "spec" && entity && "file_path" in entity && entity.file_path) {
                   entityFilePath = path.join(baseDir, entity.file_path);
-                } else if (
-                  entityType === "issue" &&
-                  entity &&
-                  "file_path" in entity
-                ) {
-                  entityFilePath = path.join(baseDir, entity.file_path);
+                } else if (entity && "title" in entity && entity.title) {
+                  // Use syncFileWithRename to find existing file or generate proper filename
+                  entityFilePath = syncFileWithRename(entityId, entityDir, entity.title);
                 } else {
-                  // Fallback to default path
-                  entityFilePath = path.join(
-                    baseDir,
-                    entityType === "spec" ? "specs" : "issues",
-                    `${entityId}.md`
-                  );
+                  // Last resort fallback — find by ID scan or generate with ID-only name
+                  const existing = findExistingEntityFile(entityId, entityDir);
+                  entityFilePath = existing ?? path.join(entityDir, `${entityId}.md`);
                 }
 
                 await onEntitySync({

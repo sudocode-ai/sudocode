@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { initDatabase } from "../../../src/db.js";
-import { performInitialization } from "../../../src/cli/init-commands.js";
+import { performInitialization, buildGitignore } from "../../../src/cli/init-commands.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -46,17 +46,25 @@ describe("Init Command", () => {
       expect(fs.existsSync(path.join(sudocodeDir, "config.json"))).toBe(true);
       expect(fs.existsSync(path.join(sudocodeDir, ".gitignore"))).toBe(true);
 
-      // Verify config content
+      // Verify config.json is project config (no worktree or version)
       const config = JSON.parse(
         fs.readFileSync(path.join(sudocodeDir, "config.json"), "utf8")
       );
-      expect(config.version).toBeDefined();
+      expect(config.worktree).toBeUndefined();
+      expect(config.version).toBeUndefined();
+
+      // Verify config.local.json has worktree settings
+      const localConfig = JSON.parse(
+        fs.readFileSync(path.join(sudocodeDir, "config.local.json"), "utf8")
+      );
+      expect(localConfig.worktree).toBeDefined();
+      expect(localConfig.editor).toBeDefined();
 
       // Verify JSONL files are empty
       expect(fs.readFileSync(path.join(sudocodeDir, "specs.jsonl"), "utf8")).toBe("");
       expect(fs.readFileSync(path.join(sudocodeDir, "issues.jsonl"), "utf8")).toBe("");
 
-      // Verify .gitignore content
+      // Verify .gitignore content (default jsonl mode)
       const gitignoreContent = fs.readFileSync(
         path.join(sudocodeDir, ".gitignore"),
         "utf8"
@@ -65,18 +73,13 @@ describe("Init Command", () => {
       expect(gitignoreContent).toContain("issues/");
       expect(gitignoreContent).toContain("specs/");
       expect(gitignoreContent).toContain("worktrees/");
-      expect(gitignoreContent).toContain("config.json");
+      expect(gitignoreContent).toContain("config.local.json");
+      // config.json should NOT be gitignored — it's project config
+      expect(gitignoreContent).not.toContain("config.json");
     });
-
   });
 
   describe("preserving existing files", () => {
-    beforeEach(() => {
-      // Create .sudocode directory for tests
-      const sudocodeDir = path.join(tempDir, ".sudocode");
-      fs.mkdirSync(sudocodeDir, { recursive: true });
-    });
-
     it("should preserve existing specs.jsonl", async () => {
       const sudocodeDir = path.join(tempDir, ".sudocode");
       fs.mkdirSync(sudocodeDir, { recursive: true });
@@ -382,6 +385,81 @@ describe("Init Command", () => {
       // Verify database was created but is empty
       const dbPath = path.join(sudocodeDir, "cache.db");
       expect(fs.existsSync(dbPath)).toBe(true);
+    });
+  });
+
+  describe("buildGitignore", () => {
+    it("should include specs/ and issues/ in jsonl mode", () => {
+      const content = buildGitignore("jsonl");
+      expect(content).toContain("specs/");
+      expect(content).toContain("issues/");
+      expect(content).toContain("cache.db*");
+      expect(content).toContain("config.local.json");
+      expect(content).not.toContain("config.json");
+    });
+
+    it("should NOT include specs/ and issues/ in markdown mode", () => {
+      const content = buildGitignore("markdown");
+      expect(content).not.toContain("specs/");
+      expect(content).not.toContain("issues/");
+      expect(content).toContain("cache.db*");
+      expect(content).toContain("config.local.json");
+    });
+
+    it("should always include common entries", () => {
+      for (const mode of ["jsonl", "markdown"] as const) {
+        const content = buildGitignore(mode);
+        expect(content).toContain("cache.db*");
+        expect(content).toContain("worktrees/");
+        expect(content).toContain("config.local.json");
+        expect(content).toContain("merge-driver.log");
+        expect(content).toContain("telemetry-buffer.jsonl");
+        expect(content).toContain("telemetry-flush.json");
+      }
+    });
+  });
+
+  describe("markdown mode init", () => {
+    it("should generate markdown-mode .gitignore when sourceOfTruth is markdown", async () => {
+      const sudocodeDir = path.join(tempDir, ".sudocode");
+      fs.mkdirSync(sudocodeDir, { recursive: true });
+
+      // Pre-create config.json with markdown mode
+      fs.writeFileSync(
+        path.join(sudocodeDir, "config.json"),
+        JSON.stringify({ sourceOfTruth: "markdown" }, null, 2),
+        "utf8"
+      );
+
+      await performInitialization({
+        dir: sudocodeDir,
+        jsonOutput: true,
+      });
+
+      const gitignoreContent = fs.readFileSync(
+        path.join(sudocodeDir, ".gitignore"),
+        "utf8"
+      );
+      // In markdown mode, specs/ and issues/ should be tracked
+      expect(gitignoreContent).not.toContain("specs/");
+      expect(gitignoreContent).not.toContain("issues/");
+      expect(gitignoreContent).toContain("cache.db*");
+    });
+
+    it("should generate jsonl-mode .gitignore by default", async () => {
+      const sudocodeDir = path.join(tempDir, ".sudocode");
+
+      await performInitialization({
+        dir: sudocodeDir,
+        jsonOutput: true,
+      });
+
+      const gitignoreContent = fs.readFileSync(
+        path.join(sudocodeDir, ".gitignore"),
+        "utf8"
+      );
+      expect(gitignoreContent).toContain("specs/");
+      expect(gitignoreContent).toContain("issues/");
     });
   });
 });
