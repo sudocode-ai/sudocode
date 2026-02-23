@@ -20,6 +20,13 @@ CHANNEL="stable"
 PLATFORM=""
 TEMP_DIR=""
 
+# GitHub API auth header (avoids 60 req/hr rate limit for unauthenticated requests)
+GH_AUTH_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+GH_AUTH_HEADER=""
+if [ -n "$GH_AUTH_TOKEN" ]; then
+  GH_AUTH_HEADER="Authorization: token ${GH_AUTH_TOKEN}"
+fi
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
@@ -111,7 +118,11 @@ get_platform() {
 
 get_latest_version() {
   info "Fetching latest stable version..."
-  VERSION=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
+  local curl_args="-fsSL"
+  if [ -n "$GH_AUTH_HEADER" ]; then
+    curl_args="$curl_args -H \"$GH_AUTH_HEADER\""
+  fi
+  VERSION=$(eval curl $curl_args "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
     | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
   if [ -z "$VERSION" ]; then
     die "Failed to fetch latest version. Use --version to specify."
@@ -121,7 +132,11 @@ get_latest_version() {
 
 get_latest_dev_version() {
   info "Fetching latest dev build..."
-  VERSION=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases" \
+  local curl_args="-fsSL"
+  if [ -n "$GH_AUTH_HEADER" ]; then
+    curl_args="$curl_args -H \"$GH_AUTH_HEADER\""
+  fi
+  VERSION=$(eval curl $curl_args "https://api.github.com/repos/${GITHUB_REPO}/releases" \
     | grep '"tag_name":' | grep '"dev-' | sed -E 's/.*"([^"]+)".*/\1/' | head -n 1)
   if [ -z "$VERSION" ]; then
     die "No dev builds found."
