@@ -307,6 +307,10 @@ async function handleBinaryUpdate(): Promise<void> {
         // Skip symlinks (sdc) — recreate after
         const stat = fs.lstatSync(srcFile);
         if (stat.isSymbolicLink()) continue;
+        // On Linux, overwriting a running executable fails with ETXTBSY.
+        // Unlinking first removes the directory entry while the OS keeps the
+        // old inode alive for the running process. The new copy gets a fresh inode.
+        try { fs.unlinkSync(destFile); } catch { /* may not exist */ }
         fs.copyFileSync(srcFile, destFile);
         fs.chmodSync(destFile, 0o755);
       }
