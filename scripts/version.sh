@@ -272,12 +272,63 @@ echo "✓ Claude plugin files updated"
 
 echo ""
 echo "=========================================="
+echo "Creating release branch and PR..."
+echo "=========================================="
+echo ""
+
+# Ensure we're on main
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+if [ "$CURRENT_BRANCH" != "main" ]; then
+  echo "Error: Must be on main branch (currently on $CURRENT_BRANCH)"
+  exit 1
+fi
+
+# Check for clean working tree (only our version changes should be present)
+BRANCH_NAME="release/$VERSION"
+
+# Create release branch
+echo "Creating branch $BRANCH_NAME..."
+git checkout -b "$BRANCH_NAME"
+
+# Commit all version changes
+echo "Committing version changes..."
+git add -A
+git commit -m "Bump version to $VERSION"
+
+# Push branch
+echo "Pushing branch..."
+git push -u origin "$BRANCH_NAME"
+
+# Create PR
+echo "Creating pull request..."
+PR_URL=$(gh pr create \
+  --title "Bump version to $VERSION" \
+  --body "$(cat <<EOF
+## Version bump to $VERSION
+
+Packages: \`$VERSION\` | Meta-package: \`$META_VERSION\`
+
+## After merge
+
+\`\`\`bash
+git checkout main && git pull
+git tag v$VERSION
+git push --tags
+./scripts/publish.sh
+gh workflow run build-binaries.yml -f channel=stable
+\`\`\`
+EOF
+)" 2>&1)
+
+echo ""
+echo "=========================================="
 echo "✓ All versions updated successfully!"
 echo "=========================================="
 echo ""
-echo "Next steps:"
-echo "  1. Review the changes: git diff"
-echo "  2. Commit: git add -A && git commit -m 'Bump version to $VERSION'"
-echo "  3. Tag: git tag v$VERSION"
-echo "  4. Push: git push && git push --tags"
-echo "  5. Publish: ./scripts/publish.sh"
+echo "PR created: $PR_URL"
+echo ""
+echo "After CI passes and PR is merged:"
+echo "  1. git checkout main && git pull"
+echo "  2. git tag v$VERSION && git push --tags"
+echo "  3. ./scripts/publish.sh"
+echo "  4. gh workflow run build-binaries.yml -f channel=stable"
