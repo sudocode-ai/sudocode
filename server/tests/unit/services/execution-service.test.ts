@@ -1530,6 +1530,75 @@ describe("ExecutionService", () => {
     });
   });
 
+  describe("deleteWorktree", () => {
+    it("should cancel a running execution before deleting its worktree", async () => {
+      const issueContent = "Add OAuth2 authentication with JWT tokens";
+      const execution = await service.createExecution(
+        testIssueId,
+        { mode: "worktree" as const },
+        issueContent
+      );
+
+      // Execution starts as running
+      expect(execution.status).toBe("running");
+      expect(execution.worktree_path).toBeTruthy();
+
+      // Create the worktree directory so fs.existsSync passes
+      fs.mkdirSync(execution.worktree_path!, { recursive: true });
+
+      try {
+        await service.deleteWorktree(execution.id);
+
+        // Verify the execution was cancelled (status changed to stopped)
+        const { getExecution } = await import(
+          "../../../src/services/executions.js"
+        );
+        const updated = getExecution(db, execution.id);
+        expect(updated?.status).toBe("stopped");
+        expect(updated?.completed_at).toBeTruthy();
+      } finally {
+        // Clean up the temporary directory
+        if (fs.existsSync(execution.worktree_path!)) {
+          fs.rmSync(execution.worktree_path!, { recursive: true, force: true });
+        }
+      }
+    });
+
+    it("should not attempt cancellation for already completed executions", async () => {
+      const issueContent = "Add OAuth2 authentication with JWT tokens";
+      const execution = await service.createExecution(
+        testIssueId,
+        { mode: "worktree" as const },
+        issueContent
+      );
+
+      // Mark execution as completed
+      updateExecution(db, execution.id, {
+        status: "completed",
+        completed_at: new Date().toISOString(),
+      });
+
+      // Create the worktree directory so fs.existsSync passes
+      fs.mkdirSync(execution.worktree_path!, { recursive: true });
+
+      try {
+        // Should succeed without trying to cancel
+        await service.deleteWorktree(execution.id);
+
+        // Status should remain completed (not stopped)
+        const { getExecution } = await import(
+          "../../../src/services/executions.js"
+        );
+        const updated = getExecution(db, execution.id);
+        expect(updated?.status).toBe("completed");
+      } finally {
+        if (fs.existsSync(execution.worktree_path!)) {
+          fs.rmSync(execution.worktree_path!, { recursive: true, force: true });
+        }
+      }
+    });
+  });
+
   describe("WebSocket broadcasting", () => {
     it("should broadcast execution_created when creating execution with issue", async () => {
       const { broadcastExecutionUpdate } = await import(

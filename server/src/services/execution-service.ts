@@ -1330,7 +1330,19 @@ ${feedback}`;
       );
     }
 
-    // TODO: Cancel any running execution.
+    // Cancel the execution if it is still active so the worktree isn't
+    // pulled out from under a running agent process.
+    if (execution.status === "running" || execution.status === "pending") {
+      try {
+        await this.cancelExecution(executionId);
+      } catch (err) {
+        console.warn(
+          `[ExecutionService] Failed to cancel execution ${executionId} during worktree deletion:`,
+          err
+        );
+        // Continue with deletion even if cancel fails
+      }
+    }
 
     // Get worktree manager from lifecycle service
     const worktreeManager = (this.lifecycleService as any).worktreeManager;
