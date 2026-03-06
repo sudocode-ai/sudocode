@@ -285,7 +285,7 @@ async function runExecution(): Promise<void> {
         timeout: config.timeout,
       },
       metadata: {
-        model: config.model || "claude-sonnet-4",
+        model: config.model || "default",
         captureFileChanges: config.captureFileChanges ?? true,
         captureToolCalls: config.captureToolCalls ?? true,
         issueId: execution.issue_id,

@@ -105,19 +105,52 @@ export function createAgentsRouter(): Router {
       // Spawn agent and get models
       console.log(`[AgentsRouter] Fetching models for ${agentType}...`);
       let agent = null;
-      let session = null;
 
       try {
         agent = await AgentFactory.spawn(agentType, {
           permissionMode: "auto-deny", // Don't allow any operations
         });
 
-        // Create a temporary session to get available models
-        // Use a temp directory that exists
-        const tempCwd = process.cwd();
-        session = await agent.createSession(tempCwd);
+        // claude-code-acp >= 0.13.10 sends models asynchronously via
+        // extNotification("_model_state_update") after session creation.
+        // Set up a promise to capture that notification before creating the session.
+        let resolveModels: (models: string[]) => void;
+        const modelsPromise = new Promise<string[]>((resolve) => {
+          resolveModels = resolve;
+        });
 
-        const models = session.models || [];
+        // Intercept extNotification on the agent's client handler to capture the model list.
+        // clientHandler is private in TypeScript but accessible at runtime.
+        const clientHandler = (agent as any).clientHandler;
+        if (clientHandler && typeof clientHandler.extNotification === "function") {
+          const originalExtNotification = clientHandler.extNotification.bind(clientHandler);
+          clientHandler.extNotification = async (method: string, params: Record<string, unknown>) => {
+            console.log(`[AgentsRouter] extNotification: ${method}`, JSON.stringify(params).slice(0, 500));
+            if (method === "_model_state_update" || method === "model_state_update") {
+              const modelsData = params.models as { availableModels?: Array<{ modelId: string }> } | undefined;
+              if (modelsData?.availableModels) {
+                const modelList = modelsData.availableModels.map((m) => m.modelId);
+                resolveModels!(modelList);
+              }
+            }
+            return originalExtNotification(method, params);
+          };
+        }
+
+        // Create a temporary session to trigger model fetching
+        const tempCwd = process.cwd();
+        const session = await agent.createSession(tempCwd);
+
+        // Use synchronous models if available (older claude-code-acp),
+        // otherwise wait for the async notification (with timeout)
+        let models = session.models || [];
+        if (models.length === 0) {
+          const MODELS_TIMEOUT = 15000; // 15 seconds
+          const timeoutPromise = new Promise<string[]>((resolve) =>
+            setTimeout(() => resolve([]), MODELS_TIMEOUT)
+          );
+          models = await Promise.race([modelsPromise, timeoutPromise]);
+        }
 
         // Cache the results
         modelsCache.set(agentType, {

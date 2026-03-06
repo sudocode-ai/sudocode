@@ -121,7 +121,7 @@ export const claudeCodeHandler: AgentConfigHandler = {
     // Build model environment variable
     const modelEnvVars: Record<string, string> = {};
     const model = rawConfig.model || rawConfig.agentConfig?.model;
-    if (model) {
+    if (model && model !== "default") {
       modelEnvVars.ANTHROPIC_MODEL = model;
     }
 

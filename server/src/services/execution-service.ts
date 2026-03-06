@@ -540,7 +540,7 @@ export class ExecutionService {
         timeout: mergedConfig.timeout,
       },
       metadata: {
-        model: mergedConfig.model || "claude-sonnet-4",
+        model: mergedConfig.model || "default",
         captureFileChanges: mergedConfig.captureFileChanges ?? true,
         captureToolCalls: mergedConfig.captureToolCalls ?? true,
         issueId: issueId ?? undefined,
@@ -869,7 +869,7 @@ ${feedback}`;
         // Spread all config fields from parent execution first
         ...parsedConfig,
         // Then override specific fields for this follow-up
-        model: parsedConfig.model || "claude-sonnet-4",
+        model: parsedConfig.model || "default",
         captureFileChanges: parsedConfig.captureFileChanges ?? true,
         captureToolCalls: parsedConfig.captureToolCalls ?? true,
         issueId: prevExecution.issue_id ?? undefined,
