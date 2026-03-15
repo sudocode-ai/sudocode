@@ -54,6 +54,13 @@ jobs:
         scenario: [fresh-install, dev-environment]
 
     steps:
+      - name: Checkout profiling scripts only
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/profiling
+          sparse-checkout-cone-mode: false
+
       - name: Download tarball
         uses: actions/download-artifact@v4
         with:
@@ -64,13 +71,6 @@ jobs:
         with:
           node-version: 20
           # CRITICAL: No cache to ensure clean environment
-
-      - name: Checkout profiling scripts only
-        uses: actions/checkout@v4
-        with:
-          sparse-checkout: |
-            scripts/profiling
-          sparse-checkout-cone-mode: false
 
       - name: Environment Setup - Fresh Install
         if: matrix.scenario == 'fresh-install'
