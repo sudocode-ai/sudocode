@@ -20,6 +20,7 @@ import type {
 } from "@sudocode-ai/types";
 import { getExecution } from "./executions.js";
 import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 
 /**
  * Service for calculating code changes from execution commits
@@ -254,6 +255,50 @@ export class ExecutionChangesService {
       commitRange: captured.commitRange,
       uncommitted: captured.uncommitted,
     };
+  }
+
+  /**
+   * Try to read a file from disk, checking worktree first then repo root.
+   * Used as fallback when git show fails (e.g. for untracked files).
+   */
+  private tryReadFromDisk(
+    normalizedPath: string,
+    worktreePath: string | null
+  ): string {
+    // Try worktree first if it exists
+    if (worktreePath && existsSync(worktreePath)) {
+      const worktreeFile = join(worktreePath, normalizedPath);
+      if (existsSync(worktreeFile)) {
+        try {
+          const content = readFileSync(worktreeFile, "utf-8");
+          console.log(
+            `[ExecutionChangesService] Read untracked file from worktree: ${normalizedPath} (${content.length} chars)`
+          );
+          return content;
+        } catch {
+          // Fall through to repo path
+        }
+      }
+    }
+
+    // Try repo root
+    const diskPath = join(this.repoPath, normalizedPath);
+    if (existsSync(diskPath)) {
+      try {
+        const content = readFileSync(diskPath, "utf-8");
+        console.log(
+          `[ExecutionChangesService] Read untracked file from disk: ${normalizedPath} (${content.length} chars)`
+        );
+        return content;
+      } catch {
+        // Fall through
+      }
+    }
+
+    console.log(
+      `[ExecutionChangesService] File not found at HEAD or on disk: ${normalizedPath}`
+    );
+    return "";
   }
 
   /**
@@ -816,12 +861,12 @@ export class ExecutionChangesService {
             `[ExecutionChangesService] New content length: ${newContent.length}`
           );
         } catch (error) {
-          // File might have been deleted
+          // File might not exist in commit - try reading from disk (untracked file)
           console.log(
-            `[ExecutionChangesService] Failed to get new content:`,
+            `[ExecutionChangesService] Failed to get new content from commit:`,
             error instanceof Error ? error.message : error
           );
-          newContent = "";
+          newContent = this.tryReadFromDisk(normalizedPath, execution.worktree_path);
         }
       } else if (
         execution.worktree_path &&
@@ -832,8 +877,6 @@ export class ExecutionChangesService {
           `[ExecutionChangesService] Fetching new content from worktree: ${execution.worktree_path}`
         );
         try {
-          const { readFileSync } = await import("fs");
-          const { join } = await import("path");
           const fullPath = join(execution.worktree_path, normalizedPath);
           console.log(`[ExecutionChangesService] Checking file: ${fullPath}`);
           if (existsSync(fullPath)) {
@@ -850,7 +893,7 @@ export class ExecutionChangesService {
           return { success: false, error: `Failed to read file: ${error}` };
         }
       } else {
-        // No after_commit and no worktree - use HEAD
+        // No after_commit and no worktree - try HEAD first, fall back to disk
         console.log(`[ExecutionChangesService] Fetching new content from HEAD`);
         try {
           newContent = execSync(`git show HEAD:${normalizedPath}`, {
@@ -863,8 +906,11 @@ export class ExecutionChangesService {
             `[ExecutionChangesService] New content length: ${newContent.length}`
           );
         } catch (error) {
-          console.log(`[ExecutionChangesService] File deleted at HEAD`);
-          newContent = "";
+          // File might be untracked - try reading from disk
+          console.log(
+            `[ExecutionChangesService] File not found at HEAD, trying disk`
+          );
+          newContent = this.tryReadFromDisk(normalizedPath, execution.worktree_path);
         }
       }
 

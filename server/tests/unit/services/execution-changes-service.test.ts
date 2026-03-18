@@ -759,6 +759,135 @@ describe("ExecutionChangesService", () => {
       expect(result.newContent).toBe(newContent);
     });
 
+    it("should read untracked file from disk when beforeCommit equals afterCommit", async () => {
+      const commit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Create an untracked file on disk (not committed)
+      fs.writeFileSync(
+        path.join(testRepo, "untracked-report.md"),
+        "# Validation Report\n\nAll checks passed.\n"
+      );
+
+      // Create execution where no commit was made (before === after)
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit, after_commit)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run("exec-untracked-1", "claude-code", "main", "main", "completed", commit, commit);
+
+      // Get file diff for the untracked file
+      const result = await service.getFileDiff("exec-untracked-1", "untracked-report.md");
+
+      // Should read from disk since git show HEAD:file fails for untracked files
+      expect(result.success).toBe(true);
+      expect(result.oldContent).toBe(""); // Doesn't exist in before_commit
+      expect(result.newContent).toBe("# Validation Report\n\nAll checks passed.\n");
+    });
+
+    it("should read untracked file from disk when no afterCommit and no worktree", async () => {
+      const commit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Create an untracked file on disk
+      fs.writeFileSync(
+        path.join(testRepo, "new-file.ts"),
+        "export const generated = true;\n"
+      );
+
+      // Create execution without after_commit (and no worktree)
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run("exec-untracked-2", "claude-code", "main", "main", "completed", commit);
+
+      const result = await service.getFileDiff("exec-untracked-2", "new-file.ts");
+
+      expect(result.success).toBe(true);
+      expect(result.oldContent).toBe("");
+      expect(result.newContent).toBe("export const generated = true;\n");
+    });
+
+    it("should read untracked file from worktree when worktree exists", async () => {
+      const beforeCommit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Create a worktree
+      const worktreePath = path.join(testRepo, "..", "test-worktree-untracked");
+      execSync(`git worktree add ${worktreePath}`, { cwd: testRepo, stdio: "pipe" });
+
+      // Create an untracked file in the worktree
+      fs.writeFileSync(
+        path.join(worktreePath, "generated-output.md"),
+        "Generated content here\n"
+      );
+
+      // Create execution with worktree (no after_commit)
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit, worktree_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run("exec-untracked-3", "claude-code", "main", "main", "running", beforeCommit, worktreePath);
+
+      const result = await service.getFileDiff("exec-untracked-3", "generated-output.md");
+
+      // Cleanup worktree
+      execSync(`git worktree remove --force ${worktreePath}`, { cwd: testRepo, stdio: "pipe" });
+
+      // Should read from worktree filesystem (Branch B handles this)
+      expect(result.success).toBe(true);
+      expect(result.oldContent).toBe("");
+      expect(result.newContent).toBe("Generated content here\n");
+    });
+
+    it("should read untracked file in subdirectory from disk", async () => {
+      const commit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      // Create an untracked file in a subdirectory
+      fs.mkdirSync(path.join(testRepo, "forecasting"), { recursive: true });
+      fs.writeFileSync(
+        path.join(testRepo, "forecasting", "VALIDATION_REPORT.md"),
+        "# Forecasting Validation\n\nResults: OK\n"
+      );
+
+      // Create execution where no commit was made
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit, after_commit)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run("exec-untracked-4", "claude-code", "main", "main", "completed", commit, commit);
+
+      const result = await service.getFileDiff("exec-untracked-4", "forecasting/VALIDATION_REPORT.md");
+
+      expect(result.success).toBe(true);
+      expect(result.oldContent).toBe("");
+      expect(result.newContent).toBe("# Forecasting Validation\n\nResults: OK\n");
+    });
+
+    it("should return empty content when file truly does not exist anywhere", async () => {
+      const commit = execSync("git rev-parse HEAD", {
+        cwd: testRepo,
+        encoding: "utf-8",
+      }).trim();
+
+      db.prepare(`
+        INSERT INTO executions (id, agent_type, target_branch, branch_name, status, before_commit, after_commit)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run("exec-untracked-5", "claude-code", "main", "main", "completed", commit, commit);
+
+      const result = await service.getFileDiff("exec-untracked-5", "nonexistent/file.ts");
+
+      expect(result.success).toBe(true);
+      expect(result.oldContent).toBe("");
+      expect(result.newContent).toBe("");
+    });
+
     it("should work for follow-up executions using root execution's before_commit", async () => {
       // Create root execution
       const beforeCommit = execSync("git rev-parse HEAD", {
