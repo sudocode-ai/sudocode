@@ -88,7 +88,7 @@ function isValidPersistedSettings(value: unknown): value is PersistedWorkflowSet
   }
 
   // Validate agentType
-  const validAgentTypes = ['claude-code', 'codex', 'copilot', 'cursor']
+  const validAgentTypes = ['claude-code', 'codex', 'copilot', 'cursor', 'opencode']
   if (typeof settings.agentType !== 'string' || !validAgentTypes.includes(settings.agentType)) {
     return false
   }
@@ -625,6 +625,7 @@ export function CreateWorkflowDialog({
                     <SelectItem value="codex">Codex</SelectItem>
                     <SelectItem value="copilot">Copilot</SelectItem>
                     <SelectItem value="cursor">Cursor</SelectItem>
+                    <SelectItem value="opencode">OpenCode</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
